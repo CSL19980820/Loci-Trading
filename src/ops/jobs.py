@@ -24,6 +24,11 @@ from src.ops.store import OpsError, OpsStore
 
 logger = logging.getLogger(__name__)
 
+#: 账本默认路径。PalaceStore 不像 MarketStore 那样接受 None。
+DEFAULT_PALACE_DB = str(
+    __import__("pathlib").Path(__file__).resolve().parents[2] / ".palace" / "qianlong.db"
+)
+
 Executor = Callable[[dict[str, Any], "JobContext"], dict[str, Any]]
 
 #: 技能模式的系统提示前缀。项目铁律在这里强制注入，不依赖技能包自觉。
@@ -54,11 +59,13 @@ class JobContext:
         ops_store: OpsStore | None = None,
         skill_root: str | None = None,
         master_key: str | None = None,
+        palace_db: str | None = None,
     ) -> None:
         self.market_db = market_db
         self.ops_store = ops_store
         self.skill_root = skill_root
         self.master_key = master_key
+        self.palace_db = palace_db
 
     def market(self):
         from src.market import MarketStore
@@ -111,7 +118,16 @@ def execute_sync(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
 
 
 def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
-    """跑一次选股。结果整体落进执行记录，事后可追溯当天选了什么。"""
+    """跑一次选股。结果整体落进执行记录，事后可追溯当天选了什么。
+
+    ``record_candidates=True`` 时同时把入选标的写进账本的候选池——这是
+    整个反馈闭环的接头处：
+
+        选股 → 候选池 → T+N 后自动验证 → 知道这套战法准不准
+
+    不写候选池的话，复盘引擎的候选池验证永远没有数据可验，"当初否决的票
+    后来涨了多少"这个最有价值的问题就问不出来。
+    """
     from src.strategies import screen
 
     slug = config.get("strategy")
@@ -126,7 +142,11 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             params=config.get("params"),
             codes=config.get("codes"),
         )
-    return {
+        names = {
+            item["code"]: item["name"] for item in store.list_instruments(status="")
+        } if config.get("record_candidates") else {}
+
+    payload = {
         "strategy": result.strategy_slug,
         "trade_date": result.trade_date,
         "universe_size": result.universe_size,
@@ -135,6 +155,64 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
         "pick_count": len(result.picks),
         "picks": result.picks,
     }
+
+    if config.get("record_candidates"):
+        payload["recorded"] = _record_candidates(result, config, context, names)
+    return payload
+
+
+def _record_candidates(
+    result: Any, config: dict[str, Any], context: JobContext, names: dict[str, str]
+) -> dict[str, Any]:
+    """把选股结果写进候选池。
+
+    pool_id 默认用 "策略slug@日期"：同一天跑多个战法各自成池，复盘时能
+    按战法分开统计，而不是混成一锅。同池同标的重复写入会被账本的唯一
+    索引覆盖成最新一次，所以重跑任务是幂等的。
+    """
+    from src.palace import PalaceError, PalaceStore
+
+    pool_id = str(config.get("pool_id") or f"{result.strategy_slug}@{result.trade_date}")
+    decision = str(config.get("decision") or "入选")
+    written, failed = 0, []
+
+    with PalaceStore(context.palace_db or DEFAULT_PALACE_DB) as palace:
+        for pick in result.picks:
+            code = str(pick["code"])
+            try:
+                palace.record_candidate(
+                    code=code,
+                    name=names.get(code, ""),
+                    decision=decision,
+                    reason=_factor_reason(result.strategy_slug, pick.get("factors") or {}),
+                    occurred_on=result.trade_date,
+                    pool_id=pool_id,
+                    timing=result.entry_timing,
+                    rule_version=result.strategy_slug,
+                    evidence=pick.get("factors") or {},
+                    source="job:screen",
+                )
+                written += 1
+            except PalaceError as exc:
+                # 单只写失败不该让整批作废——记下来，其余照常入池。
+                failed.append({"code": code, "error": str(exc)[:200]})
+
+    return {"pool_id": pool_id, "written": written, "failed": failed}
+
+
+def _factor_reason(slug: str, factors: dict[str, Any]) -> str:
+    """把关键因子压成一句人能读的理由。
+
+    候选记录只留"某战法选中"是没用的——三个月后回看，你需要知道当时是
+    哪几个数字让它入选的。
+    """
+    parts = [
+        f"{key}={value:.2f}"
+        for key, value in factors.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    ]
+    body = "，".join(parts[:6]) or "（无数值因子）"
+    return f"{slug} 选中：{body}"[:500]
 
 
 def execute_backtest(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
@@ -309,7 +387,7 @@ def _gather_context(config: dict[str, Any], context: JobContext) -> dict[str, An
         try:
             from src.palace import PalaceStore
 
-            with PalaceStore(config.get("palace_db") or None) as palace:
+            with PalaceStore(context.palace_db or DEFAULT_PALACE_DB) as palace:
                 blocks["positions"] = palace.positions_payload()
         except Exception as exc:
             blocks["positions"] = f"未取得真实数据：{type(exc).__name__}: {exc}"
