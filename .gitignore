@@ -14,11 +14,16 @@ frontend/dist/
 output/
 *.log
 
-# 数据库：账本/行情/AI 会话都是运行时数据，不进仓库
+# 数据库与运行时数据：账本/行情/运维状态都不进仓库
 .palace/
+.market/
+.ops/
 *.db
 *.db-wal
 *.db-shm
+
+# 用户安装的技能包。仓库只提供安装机制，不携带任何具体技能。
+.skills/
 
 # 密钥
 .env

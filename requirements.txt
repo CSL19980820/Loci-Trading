@@ -12,6 +12,13 @@ itsdangerous>=2.2.0
 # 缺它则 import src.fetcher 直接 ModuleNotFoundError。
 yfinance>=0.2.0
 
+# 定时任务调度（进程内单例，不引入 broker）
+apscheduler>=3.10.0
+# 技能包 SKILL.md 的 YAML frontmatter
+PyYAML>=6.0
+# API Key 静态加密（AES-256-GCM）
+cryptography>=42.0.0
+
 # 可选：PDF 导出后端。src/toolbox.py 懒加载，缺失时降级为 HTML 打印源
 # 并标注 PDF skipped，不影响主流程，因此不作为硬依赖。
 # weasyprint>=60.0
