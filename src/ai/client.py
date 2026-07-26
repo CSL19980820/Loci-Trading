@@ -35,9 +35,22 @@ class LLMError(RuntimeError):
 
 
 @dataclass
+class ToolCall:
+    """模型请求调用某个工具。两种协议的差异在这里被抹平。"""
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ChatMessage:
     role: str
     content: str
+    #: assistant 消息可能带工具调用请求
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    #: tool 消息要指明回应的是哪一次调用
+    tool_call_id: str = ""
 
 
 @dataclass
@@ -46,11 +59,16 @@ class ChatResponse:
     model: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+    tool_calls: list[ToolCall] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
+
+    @property
+    def wants_tools(self) -> bool:
+        return bool(self.tool_calls)
 
 
 @dataclass
@@ -113,26 +131,66 @@ def chat(
     system: str = "",
     max_tokens: int = 4096,
     temperature: float = 0.3,
+    tools: list[dict[str, Any]] | None = None,
 ) -> ChatResponse:
-    """一次非流式对话。两种协议在这里被抹平成同一个返回结构。"""
+    """一次非流式对话。两种协议在这里被抹平成同一个返回结构。
+
+    tools 用各协议自己的 schema 格式（由 McpTool.to_*_schema 生成）。
+    """
     if config.protocol == "anthropic":
-        return _chat_anthropic(config, messages, system, max_tokens, temperature)
-    return _chat_openai(config, messages, system, max_tokens, temperature)
+        return _chat_anthropic(config, messages, system, max_tokens, temperature, tools)
+    return _chat_openai(config, messages, system, max_tokens, temperature, tools)
+
+
+def _openai_messages(messages: list[ChatMessage], system: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if system:
+        out.append({"role": "system", "content": system})
+    for message in messages:
+        if message.role == "tool":
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": message.tool_call_id,
+                    "content": message.content,
+                }
+            )
+        elif message.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": message.content or None,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                            },
+                        }
+                        for call in message.tool_calls
+                    ],
+                }
+            )
+        else:
+            out.append({"role": message.role, "content": message.content})
+    return out
 
 
 def _chat_openai(
     config: ProviderConfig, messages: list[ChatMessage], system: str,
-    max_tokens: int, temperature: float,
+    max_tokens: int, temperature: float, tools: list[dict[str, Any]] | None = None,
 ) -> ChatResponse:
-    payload_messages = ([{"role": "system", "content": system}] if system else []) + [
-        {"role": message.role, "content": message.content} for message in messages
-    ]
-    body = {
+    body: dict[str, Any] = {
         "model": config.model,
-        "messages": payload_messages,
+        "messages": _openai_messages(messages, system),
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
     with _client(config) as client:
         try:
             response = client.post(
@@ -150,31 +208,90 @@ def _chat_openai(
     choices = data.get("choices") or []
     if not choices:
         raise LLMError(f"{config.name} 未返回任何回复内容")
-    text = (choices[0].get("message") or {}).get("content") or ""
+    message = choices[0].get("message") or {}
     usage = data.get("usage") or {}
+
+    calls: list[ToolCall] = []
+    for item in message.get("tool_calls") or []:
+        function = item.get("function") or {}
+        calls.append(
+            ToolCall(
+                id=str(item.get("id", "")),
+                name=str(function.get("name", "")),
+                # arguments 是 JSON 字符串；模型偶尔会给出不合法 JSON，
+                # 这时降级为空参数并把原文留在日志里，而不是整轮崩掉。
+                arguments=_safe_json(function.get("arguments"), config.name),
+            )
+        )
+
     return ChatResponse(
-        text=text,
+        text=message.get("content") or "",
         model=str(data.get("model", config.model)),
         input_tokens=int(usage.get("prompt_tokens", 0) or 0),
         output_tokens=int(usage.get("completion_tokens", 0) or 0),
+        tool_calls=calls,
         raw=data,
     )
 
 
+def _safe_json(raw: Any, provider: str) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        logger.warning("%s 返回的工具参数不是合法 JSON，已按空参数处理", provider)
+        return {}
+
+
+def _anthropic_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
+    """Anthropic 用 content block 表达工具调用，且 tool_result 属于 user 角色。"""
+    out: list[dict[str, Any]] = []
+    for message in messages:
+        if message.role == "tool":
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": message.tool_call_id,
+                            "content": message.content,
+                        }
+                    ],
+                }
+            )
+        elif message.tool_calls:
+            blocks: list[dict[str, Any]] = []
+            if message.content:
+                blocks.append({"type": "text", "text": message.content})
+            blocks.extend(
+                {"type": "tool_use", "id": call.id, "name": call.name, "input": call.arguments}
+                for call in message.tool_calls
+            )
+            out.append({"role": "assistant", "content": blocks})
+        else:
+            out.append({"role": message.role, "content": message.content})
+    return out
+
+
 def _chat_anthropic(
     config: ProviderConfig, messages: list[ChatMessage], system: str,
-    max_tokens: int, temperature: float,
+    max_tokens: int, temperature: float, tools: list[dict[str, Any]] | None = None,
 ) -> ChatResponse:
     body: dict[str, Any] = {
         "model": config.model,
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "messages": [
-            {"role": message.role, "content": message.content} for message in messages
-        ],
+        "messages": _anthropic_messages(messages),
     }
     if system:
         body["system"] = system
+    if tools:
+        body["tools"] = tools
     with _client(config) as client:
         try:
             response = client.post(
@@ -192,12 +309,22 @@ def _chat_anthropic(
 
     blocks = data.get("content") or []
     text = "".join(block.get("text", "") for block in blocks if block.get("type") == "text")
+    calls = [
+        ToolCall(
+            id=str(block.get("id", "")),
+            name=str(block.get("name", "")),
+            arguments=block.get("input") if isinstance(block.get("input"), dict) else {},
+        )
+        for block in blocks
+        if block.get("type") == "tool_use"
+    ]
     usage = data.get("usage") or {}
     return ChatResponse(
         text=text,
         model=str(data.get("model", config.model)),
         input_tokens=int(usage.get("input_tokens", 0) or 0),
         output_tokens=int(usage.get("output_tokens", 0) or 0),
+        tool_calls=calls,
         raw=data,
     )
 

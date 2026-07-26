@@ -180,7 +180,8 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     config 提供供应商与上下文，铁律由 SKILL_SYSTEM_PREFIX 强制前置——
     技能包本身无权覆盖它。
     """
-    from src.ai import ChatMessage, chat, resolve_config
+    from src.ai import resolve_config
+    from src.ai.agent import format_tool_trace, make_mcp_executor, run_agent
 
     slug = config.get("skill")
     provider_name = config.get("provider")
@@ -207,23 +208,75 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     context_blocks = _gather_context(config, context)
     user_prompt = _compose_prompt(config, context_blocks)
 
-    response = chat(
+    # 技能包声明的 tools 用来把工具面收窄：一个 MCP server 可能有 60+ 个
+    # 工具，全塞进 system prompt 会占掉大量上下文，而多数技能只用三五个。
+    tool_schemas, executor = _resolve_tools(config, skill, context, provider.protocol)
+
+    result = run_agent(
         provider,
-        [ChatMessage(role="user", content=user_prompt)],
         system=SKILL_SYSTEM_PREFIX + "\n" + skill["instructions"],
+        user_prompt=user_prompt,
+        tool_schemas=tool_schemas,
+        tool_executor=executor,
+        max_rounds=int(config.get("max_rounds", 8)),
         max_tokens=int(config.get("max_tokens", 4096)),
         temperature=float(config.get("temperature", 0.3)),
     )
-    return {
-        "skill": skill["slug"],
-        "skill_version": skill["version"],
-        "provider": provider.name,
-        "model": response.model,
-        "input_tokens": response.input_tokens,
-        "output_tokens": response.output_tokens,
-        "context_used": sorted(context_blocks),
-        "output": response.text,
-    }
+
+    payload = result.to_dict()
+    payload.update(
+        {
+            "skill": skill["slug"],
+            "skill_version": skill["version"],
+            "provider": provider.name,
+            "context_used": sorted(context_blocks),
+            "tool_trace": format_tool_trace(result.invocations),
+        }
+    )
+    return payload
+
+
+def _resolve_tools(
+    config: dict[str, Any], skill: dict[str, Any], context: JobContext, protocol: str
+):
+    """按配置装配 MCP 工具。没有配置 server 就退化成无工具的单轮对话。"""
+    server_names = config.get("mcp_servers")
+    if server_names is None:
+        return None, None
+    if context.ops_store is None:
+        return None, None
+
+    try:
+        from src.intel.registry import build_client, collect_tools
+    except ImportError as exc:
+        logger.warning("MCP 依赖缺失（%s），技能将以无工具模式运行", exc.name)
+        return None, None
+
+    names = [str(item) for item in server_names] if server_names else None
+    allow = config.get("tools") or skill.get("allowed_tools") or None
+    tools, routing = collect_tools(context.ops_store, names, allow=allow)
+    if not tools:
+        logger.warning("未匹配到任何 MCP 工具（server=%s allow=%s）", names, allow)
+        return None, None
+
+    clients: dict[str, Any] = {}
+    for server in {tool.server for tool in tools}:
+        try:
+            clients[server] = build_client(
+                context.ops_store, server, master_key=context.master_key
+            )
+        except Exception as exc:
+            # 一个 server 连不上不该让整个技能跑不起来，其余工具照常可用。
+            logger.warning("MCP server %s 不可用：%s", server, exc)
+
+    schemas = [
+        tool.to_anthropic_schema() if protocol == "anthropic" else tool.to_openai_schema()
+        for tool in tools
+        if tool.server in clients
+    ]
+    if not schemas:
+        return None, None
+    return schemas, make_mcp_executor(clients, routing)
 
 
 def _gather_context(config: dict[str, Any], context: JobContext) -> dict[str, Any]:

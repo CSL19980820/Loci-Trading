@@ -190,6 +190,81 @@ def cmd_genkey(args: argparse.Namespace) -> int:
     return 0
 
 
+
+# ---- MCP server -----------------------------------------------------
+
+def cmd_mcp_add(args: argparse.Namespace) -> int:
+    from src.intel.registry import save_server
+
+    with _store(args) as store:
+        record = save_server(
+            store, name=args.name, url=args.url, token=args.token or None,
+            proxy_url=args.proxy, note=args.note, verify=not args.no_verify,
+        )
+    print(f"已注册 MCP server：{record['name']}")
+    print(f"  URL        {record['url']}")
+    print(f"  令牌       {record['token_last4'] or '（无）'}")
+    print(f"  发现工具   {len(record['tools'])} 个")
+    if record["tools"]:
+        names = [t["name"] for t in record["tools"][:10]]
+        print(f"  样例       {', '.join(names)}")
+        print()
+        print("在技能任务里这样用（tools 留空则用技能包 SKILL.md 声明的那几个）：")
+        print(f"  --config '{{\"skill\":\"<技能>\",\"provider\":\"<供应商>\","
+              f"\"mcp_servers\":[\"{record['name']}\"]}}'")
+    return 0
+
+
+def cmd_mcp_list(args: argparse.Namespace) -> int:
+    with _store(args) as store:
+        servers = store.list_mcp_servers()
+    if not servers:
+        print("尚未注册任何 MCP server。")
+        print("外部 MCP 补的是本地行情仓算不出来的数据：涨停梯队、炸板池、")
+        print("封板事件流需要盘中逐笔；概念热度、龙虎榜、研报本地没有数据源。")
+        return 0
+    for item in servers:
+        state = "" if item["is_active"] else "  [停用]"
+        print(f"{item['name']:<16} {item['url']}{state}")
+        print(f"  令牌 {item['token_last4'] or '无'}   工具 {len(item['tools'])} 个"
+              f"   同步于 {item['tools_synced_at'] or '—'}")
+    return 0
+
+
+def cmd_mcp_tools(args: argparse.Namespace) -> int:
+    from src.intel.registry import refresh_tools
+
+    with _store(args) as store:
+        tools = refresh_tools(store, args.name)
+    print(f"共 {len(tools)} 个工具：")
+    for tool in tools:
+        desc = " ".join((tool["description"] or "").split())[:88]
+        print(f"  {tool['name']:<28} {desc}")
+    return 0
+
+
+def cmd_mcp_call(args: argparse.Namespace) -> int:
+    from src.intel.registry import build_client
+
+    payload = json.loads(args.args) if args.args else {}
+    with _store(args) as store:
+        client = build_client(store, args.name)
+    result = client.call_tool(args.tool, payload)
+    if result["is_error"]:
+        print("调用返回错误：", file=sys.stderr)
+    print(result["text"][:6000])
+    return 1 if result["is_error"] else 0
+
+
+def cmd_mcp_remove(args: argparse.Namespace) -> int:
+    with _store(args) as store:
+        if not store.delete_mcp_server(args.name):
+            print(f"没有找到 MCP server：{args.name}", file=sys.stderr)
+            return 1
+    print(f"已删除 MCP server：{args.name}")
+    return 0
+
+
 # ---- 定时任务 -------------------------------------------------------
 
 def cmd_job_add(args: argparse.Namespace) -> int:
@@ -356,6 +431,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("genkey", help="生成 PALACE_AI_MASTER_KEY").set_defaults(func=cmd_genkey)
 
+
+    mcp = sub.add_parser("mcp", help="外部 MCP 数据源").add_subparsers(dest="action", required=True)
+    madd = mcp.add_parser("add", help="注册 MCP server（会当场握手并拉工具列表）")
+    madd.add_argument("--name", required=True)
+    madd.add_argument("--url", required=True)
+    madd.add_argument("--token", default="", help="Bearer 令牌")
+    madd.add_argument("--proxy", default="", help="该 server 专用代理")
+    madd.add_argument("--note", default="")
+    madd.add_argument("--no-verify", action="store_true", help="跳过连接校验")
+    madd.set_defaults(func=cmd_mcp_add)
+    mcp.add_parser("list", help="列出已注册 server").set_defaults(func=cmd_mcp_list)
+    mtools = mcp.add_parser("tools", help="刷新并列出工具")
+    mtools.add_argument("name")
+    mtools.set_defaults(func=cmd_mcp_tools)
+    mcall = mcp.add_parser("call", help="直接调一个工具（排障用）")
+    mcall.add_argument("name")
+    mcall.add_argument("tool")
+    mcall.add_argument("--args", default="", help="参数 JSON")
+    mcall.set_defaults(func=cmd_mcp_call)
+    mremove = mcp.add_parser("remove", help="删除 server")
+    mremove.add_argument("name")
+    mremove.set_defaults(func=cmd_mcp_remove)
+
     job = sub.add_parser("job", help="定时任务管理").add_subparsers(dest="action", required=True)
     jadd = job.add_parser("add", help="创建任务")
     jadd.add_argument("name")
@@ -394,7 +492,16 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(levelname)s %(name)s: %(message)s",
     )
-    return int(args.func(args))
+    try:
+        return int(args.func(args))
+    except Exception as exc:
+        # 业务错误（配额用尽、数据未就绪、配置不对）不该以裸 traceback 呈现——
+        # 那看起来像程序崩了，其实是外部服务在如实告诉你一件事。
+        # 需要堆栈时加 --verbose。
+        if args.verbose:
+            raise
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

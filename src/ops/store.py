@@ -78,6 +78,23 @@ CREATE TABLE IF NOT EXISTS llm_providers (
     updated_at      TEXT NOT NULL
 );
 
+-- 外部 MCP server。接一个新数据源 = 加一行配置，工具由 tools/list 自动发现，
+-- 不需要为每个接口手写一份 schema。token 与 LLM Key 同样只存密文。
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL UNIQUE,
+    url             TEXT NOT NULL,
+    encrypted_token BLOB,
+    token_last4     TEXT NOT NULL DEFAULT '',
+    proxy_url       TEXT NOT NULL DEFAULT '',
+    tools_json      TEXT NOT NULL DEFAULT '[]',
+    tools_synced_at TEXT NOT NULL DEFAULT '',
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    note            TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
 -- 定时任务。cron 表达式 + 类型 + 该类型自己的配置。
 CREATE TABLE IF NOT EXISTS jobs (
     id           TEXT PRIMARY KEY,
@@ -456,6 +473,74 @@ class OpsStore:
                 "DELETE FROM llm_providers WHERE name = ? OR id = ?", (name_or_id, name_or_id)
             )
             return cursor.rowcount > 0
+
+    # ---- MCP server ------------------------------------------------
+
+    def upsert_mcp_server(self, payload: dict[str, Any]) -> str:
+        server_id = payload.get("id") or new_id("MCP")
+        with self._transaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO mcp_servers(id, name, url, encrypted_token, token_last4,
+                                        proxy_url, tools_json, tools_synced_at,
+                                        is_active, note, created_at, updated_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(name) DO UPDATE SET
+                    url=excluded.url,
+                    encrypted_token=COALESCE(excluded.encrypted_token, mcp_servers.encrypted_token),
+                    token_last4=CASE WHEN excluded.encrypted_token IS NOT NULL
+                                     THEN excluded.token_last4 ELSE mcp_servers.token_last4 END,
+                    proxy_url=excluded.proxy_url, tools_json=excluded.tools_json,
+                    tools_synced_at=excluded.tools_synced_at, is_active=excluded.is_active,
+                    note=excluded.note, updated_at=excluded.updated_at
+                """,
+                (
+                    server_id,
+                    str(payload["name"]),
+                    str(payload["url"]).rstrip("/"),
+                    payload.get("encrypted_token"),
+                    str(payload.get("token_last4", "")),
+                    str(payload.get("proxy_url", "")),
+                    dumps(payload.get("tools", [])),
+                    str(payload.get("tools_synced_at", "")),
+                    1 if payload.get("is_active", True) else 0,
+                    str(payload.get("note", "")),
+                ),
+            )
+        return server_id
+
+    def get_mcp_server(
+        self, name_or_id: str, *, include_secret: bool = False
+    ) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM mcp_servers WHERE name = ? OR id = ?", (name_or_id, name_or_id)
+        ).fetchone()
+        return self._mcp_row(row, include_secret=include_secret) if row else None
+
+    def list_mcp_servers(self, *, active_only: bool = False) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM mcp_servers"
+        if active_only:
+            sql += " WHERE is_active = 1"
+        sql += " ORDER BY name"
+        return [self._mcp_row(row) for row in self.conn.execute(sql)]
+
+    def delete_mcp_server(self, name_or_id: str) -> bool:
+        with self._transaction() as cursor:
+            cursor.execute(
+                "DELETE FROM mcp_servers WHERE name = ? OR id = ?", (name_or_id, name_or_id)
+            )
+            return cursor.rowcount > 0
+
+    @staticmethod
+    def _mcp_row(row: sqlite3.Row, *, include_secret: bool = False) -> dict[str, Any]:
+        data = dict(row)
+        data["tools"] = loads(data.pop("tools_json", "[]"), [])
+        data["is_active"] = bool(data.get("is_active"))
+        secret = data.pop("encrypted_token", None)
+        data["has_token"] = secret is not None
+        if include_secret:
+            data["encrypted_token"] = secret
+        return data
 
     @staticmethod
     def _provider_row(row: sqlite3.Row, *, include_secret: bool = False) -> dict[str, Any]:
