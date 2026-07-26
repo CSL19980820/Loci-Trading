@@ -288,6 +288,91 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def cmd_optimize(args: argparse.Namespace) -> int:
+    """扫描退出规则，回答"这套战法该怎么卖"。
+
+    横向对比已经指出：八个战法的 MFE 都远高于净收益，浮盈普遍拿不住。
+    那问题就不在选股而在退出——换战法解决不了，得直接找出更好的卖法。
+
+    这里固定选股信号不动，只扫持有期 × 止盈 × 止损三个维度，看哪一组
+    组合的超额最高。
+    """
+    from src.backtest import BacktestConfig, backtest_strategy
+
+    holds = [int(x) for x in args.holds.split(",") if x.strip()]
+    targets: list[float | None] = [
+        None if x.strip() in ("", "0") else float(x) for x in args.targets.split(",")
+    ]
+    stops: list[float | None] = [
+        None if x.strip() in ("", "0") else float(x) for x in args.stops.split(",")
+    ]
+
+    total = len(holds) * len(targets) * len(stops)
+    print(f"扫描 {total} 组退出规则（持有 {len(holds)} × 止盈 {len(targets)} × 止损 {len(stops)}）…")
+
+    rows = []
+    with _store(args) as store:
+        for hold in holds:
+            for target in targets:
+                for stop in stops:
+                    try:
+                        result = backtest_strategy(
+                            store, args.strategy, start=args.start, end=args.end,
+                            config=BacktestConfig(
+                                hold_days=hold, take_profit_pct=target,
+                                stop_loss_pct=stop, benchmark=args.benchmark or None,
+                            ),
+                        )
+                    except Exception as exc:
+                        print(f"  跳过 {hold}d/{target}/{stop}：{exc}", file=sys.stderr)
+                        continue
+                    metrics = result.metrics
+                    if metrics.get("trades"):
+                        rows.append((hold, target, stop, metrics))
+
+    if not rows:
+        print("没有产生任何可评估的交易。", file=sys.stderr)
+        return 1
+
+    key = "avg_alpha" if any(m.get("avg_alpha") is not None for *_, m in rows) else "avg_net_return"
+    rows.sort(key=lambda item: item[3].get(key) or -999, reverse=True)
+
+    print()
+    print(f"{'持有':>5}{'止盈':>8}{'止损':>8}{'笔数':>8}{'胜率':>8}{'净收益':>9}{'超额':>9}  退出分布")
+    print("-" * 92)
+    for hold, target, stop, m in rows[: args.top]:
+        alpha = m.get("avg_alpha")
+        reasons = m.get("exit_reasons") or {}
+        labels = {"hold_expired": "到期", "stop_loss": "止损",
+                  "take_profit": "止盈", "data_end": "无数据"}
+        dist = " ".join(f"{labels.get(k, k)}{v}" for k, v in reasons.items())
+        print(f"{hold:>4}d{(f'{target:+.0f}%' if target else '—'):>8}"
+              f"{(f'{stop:+.0f}%' if stop else '—'):>8}{m['trades']:>8}"
+              f"{m['win_rate']:>7.1f}%{m['avg_net_return']:>8.2f}%"
+              f"{(f'{alpha:+.2f}%' if alpha is not None else '—'):>9}  {dist}")
+
+    best = rows[0]
+    baseline = next(
+        (r for r in rows if r[1] is None and r[2] is None), None
+    )
+    print()
+    print(f"最优组合：持有 {best[0]} 日"
+          f"{f'，止盈 {best[1]:+.0f}%' if best[1] else '，不设止盈'}"
+          f"{f'，止损 {best[2]:+.0f}%' if best[2] else '，不设止损'}")
+    if baseline and baseline is not best:
+        gain = (best[3].get(key) or 0) - (baseline[3].get(key) or 0)
+        print(f"相比「只按持有期到期了结」，超额提升 {gain:+.2f} 个百分点。")
+    if best[3].get("caution"):
+        print(f"⚠ {best[3]['caution']}")
+    print()
+    print("注意：这是在同一段历史上反复试参数，天然存在过拟合风险。")
+    print("换一段区间重跑一次，若最优组合完全不同，说明它只是拟合了噪声。")
+    print()
+    print(DISCLAIMER)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="潜龙行情仓与选股引擎", formatter_class=argparse.RawDescriptionHelpFormatter
@@ -321,6 +406,17 @@ def build_parser() -> argparse.ArgumentParser:
     bench = sub.add_parser("bench", help="实测选股性能")
     bench.add_argument("--strategy", default="qianlong-auction")
     bench.set_defaults(func=cmd_bench)
+
+    opt = sub.add_parser("optimize", help="扫描退出规则，找最优卖法")
+    opt.add_argument("strategy")
+    opt.add_argument("--start", default=None)
+    opt.add_argument("--end", default=None)
+    opt.add_argument("--holds", default="1,2,3,5", help="持有天数候选")
+    opt.add_argument("--targets", default="0,3,5,8", help="止盈候选，0 表示不设")
+    opt.add_argument("--stops", default="0,-5,-8", help="止损候选，0 表示不设")
+    opt.add_argument("--benchmark", default="000300")
+    opt.add_argument("--top", type=int, default=12, help="展示前 N 组")
+    opt.set_defaults(func=cmd_optimize)
 
     cmp = sub.add_parser("compare", help="横向对比全部战法的超额收益")
     cmp.add_argument("--start", default=None)
