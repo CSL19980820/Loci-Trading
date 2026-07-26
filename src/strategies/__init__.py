@@ -16,7 +16,7 @@ from src.strategies.base import (
 from src.strategies.screener import ScreenResult, screen
 
 # 导入即注册。顺序无关，slug 重复会在 register 里直接报错。
-from src.strategies import qianlong  # noqa: F401  (side-effect import)
+from src.strategies import lugaowen, qianlong  # noqa: F401  (side-effect import)
 
 __all__ = [
     "ENTRY_TIMINGS",

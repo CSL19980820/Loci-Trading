@@ -17,6 +17,13 @@ pandas/numpy 的 C 路径，反而比逐票循环更快。
 ``SUM(X,0)`` 表示从头累计、``BARSLAST`` 当日成立时为 0）。翻译层不"修正"
 原语义——那属于改策略，必须显式决策。
 """
+from src.formula.board import (
+    limit_ratio_for,
+    limit_ratio_panel,
+    limit_up_flags,
+    one_word_flags,
+)
+from src.formula.chips import COST, WINNER, chip_cost_series, chip_winner_series
 from src.formula.functions import (
     ABS,
     AVEDEV,
@@ -49,6 +56,14 @@ from src.formula.functions import (
 
 __all__ = [
     "ABS",
+    "COST",
+    "WINNER",
+    "chip_cost_series",
+    "chip_winner_series",
+    "limit_ratio_for",
+    "limit_ratio_panel",
+    "limit_up_flags",
+    "one_word_flags",
     "AVEDEV",
     "BARSCOUNT",
     "BARSLAST",
