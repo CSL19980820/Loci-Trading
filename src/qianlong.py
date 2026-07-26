@@ -19,14 +19,28 @@ def ytsl(df: pd.DataFrame) -> pd.Series:
 
 
 def chenxing_line(y: pd.Series) -> pd.Series:
-    """辰星线: YTSL 的 20 期递减加权均线 (权重 20..1)。"""
-    weights = np.arange(20, 0, -1, dtype=float)
-    def _wma(s: pd.Series) -> float:
-        if len(s) < 20:
-            return np.nan
-        return float(np.dot(s.values, weights) / weights.sum())
+    """辰星线: YTSL 的近期加权均线, 当天权重最大。
 
-    return y.rolling(20).apply(_wma, raw=False)
+    忠实翻译 tdx/潜龙出海_主图.txt 的原式::
+
+        (20*YTSL + 19*REF(YTSL,1) + ... + 2*REF(YTSL,18) + REF(YTSL,20)) / 211
+
+    原式有两处怪异构造, 这里照抄而不"修正", 以保证与通达信同源:
+
+    1. 跳过 REF(YTSL,19), 却纳入 REF(YTSL,20) 且权重为 1;
+    2. 分母 211 与权重之和 210 (= 20 + [19+18+...+2] + 1) 不等,
+       即原式并非严格归一化, 结果比真加权均值低约 0.47%。
+
+    改成 210 归一属于策略口径变更, 需要单独决策, 不在翻译层擅自处理。
+
+    因此第一个有效值需要 21 根 K 线 (offset 0..20)。
+    """
+    y = y.astype(float)
+    total = y * 20.0
+    for offset in range(1, 19):  # REF 1..18 -> 权重 19..2
+        total = total + y.shift(offset) * (20 - offset)
+    total = total + y.shift(20)  # REF 20 -> 权重 1; 原式跳过 REF 19
+    return total / 211.0
 
 
 def calc_state_chains(close: pd.Series) -> dict[str, pd.Series]:
