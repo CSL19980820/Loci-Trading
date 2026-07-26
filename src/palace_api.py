@@ -502,6 +502,7 @@ def create_app(
             write_dependency=require_write_access,
             market_db=os.environ.get("PALACE_MARKET_DB") or None,
             ops_db=os.environ.get("PALACE_OPS_DB") or None,
+            palace_db=str(resolved_db),
             scheduler_getter=lambda: scheduler_box["instance"],
         )
     )

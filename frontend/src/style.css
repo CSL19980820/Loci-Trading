@@ -1307,3 +1307,14 @@ select:focus {
     width: 100%;
   }
 }
+
+/* 复盘里最重要的那句结论（如"利润在回吐"）要跳出来，
+   不能和普通说明文字混在一起被略过。 */
+.highlight-hint {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.875rem;
+}

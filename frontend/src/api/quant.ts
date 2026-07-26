@@ -216,3 +216,33 @@ export function refreshProviderModels(name: string): Promise<{ models: string[];
 export function deleteProvider(name: string): Promise<{ removed: boolean }> {
   return quantRequest(`/providers/${encodeURIComponent(name)}`, { method: 'DELETE' })
 }
+
+// ---- 复盘 -----------------------------------------------------------
+
+export function getEquityCurve(options: { start?: string; end?: string; benchmarks?: string } = {}) {
+  return quantRequest<import('@/types/quant').EquityCurve>(`/review/equity${query(options)}`)
+}
+
+export function getRoundTrips(code?: string) {
+  return quantRequest<{
+    trips: import('@/types/quant').RoundTrip[]
+    summary: import('@/types/quant').RoundTripSummary
+  }>(`/review/trips${query({ code })}`)
+}
+
+export function getCandidateOutcomes(limit = 300) {
+  return quantRequest<{
+    outcomes: import('@/types/quant').CandidateOutcome[]
+    summary: import('@/types/quant').CandidateSummary
+  }>(`/review/candidates${query({ limit })}`)
+}
+
+export function getPlanOutcomes() {
+  return quantRequest<import('@/types/quant').PlanOutcome[]>('/review/plans')
+}
+
+export function getPositionsAsOf(date?: string) {
+  return quantRequest<{ code: string; name: string; shares: number; cost: number; cost_value: number }[]>(
+    `/review/positions${query({ date })}`,
+  )
+}

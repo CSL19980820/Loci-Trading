@@ -25,6 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field
 #: 但要在读进内存之前就挡住，不能等解包时才发现。
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
+#: 账本默认路径。PalaceStore 不接受 None，必须显式给。
+DEFAULT_PALACE_DB = str(Path(__file__).resolve().parents[2] / ".palace" / "qianlong.db")
+
 
 class QuantModel(BaseModel):
     """与账本写入同样的严格校验：多一个字段就 422，不静默忽略。"""
@@ -104,6 +107,7 @@ def build_quant_router(
     write_dependency,
     market_db: str | None = None,
     ops_db: str | None = None,
+    palace_db: str | None = None,
     scheduler_getter=None,
 ) -> APIRouter:
     """构造 router。依赖由 palace_api 注入，便于测试时整体替换。"""
@@ -281,6 +285,93 @@ def build_quant_router(
                 {**trade.__dict__, "alpha_pct": trade.alpha_pct} for trade in result.trades
             ]
         return body
+
+    # ---- 复盘 -------------------------------------------------------
+    # 与 /api/backtest 问的是两个不同问题：那个问"这套战法本身有没有
+    # alpha"，这里问"我自己做得怎么样"。全部基于真实账本与真实行情，
+    # 不经过任何 LLM。
+
+    def _palace():
+        from src.palace import PalaceStore
+
+        return PalaceStore(palace_db or DEFAULT_PALACE_DB)
+
+    @router.get("/api/review/equity", tags=["review"])
+    def review_equity(
+        start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        benchmarks: str = Query(default="000300", max_length=64),
+    ) -> dict[str, Any]:
+        try:
+            from src.review import build_equity_curve
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        codes = tuple(item.strip() for item in benchmarks.split(",") if item.strip())
+        with _palace() as palace, _market() as market:
+            return build_equity_curve(
+                palace, market, start=start, end=end, benchmarks=codes
+            ).to_dict()
+
+    @router.get("/api/review/trips", tags=["review"])
+    def review_trips(
+        code: str | None = Query(default=None, pattern=r"^\d{6}$"),
+    ) -> dict[str, Any]:
+        try:
+            from src.review import attribute_round_trips, round_trips, summarize_round_trips
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _palace() as palace, _market() as market:
+            trips = attribute_round_trips(round_trips(palace, code=code), market)
+            return {
+                "trips": [trip.to_dict() for trip in trips],
+                "summary": summarize_round_trips(trips),
+            }
+
+    @router.get("/api/review/candidates", tags=["review"])
+    def review_candidates(
+        limit: int = Query(default=300, ge=1, le=2000),
+        benchmark: str | None = Query(default="000300", pattern=r"^\d{6}$"),
+    ) -> dict[str, Any]:
+        try:
+            from src.review import evaluate_candidates, summarize_candidates
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _palace() as palace, _market() as market:
+            outcomes = evaluate_candidates(palace, market, limit=limit, benchmark=benchmark)
+            return {
+                "outcomes": [outcome.to_dict() for outcome in outcomes],
+                "summary": summarize_candidates(outcomes),
+            }
+
+    @router.get("/api/review/plans", tags=["review"])
+    def review_plans() -> list[dict[str, Any]]:
+        try:
+            from src.review import evaluate_plans
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _palace() as palace, _market() as market:
+            return evaluate_plans(palace, market)
+
+    @router.get("/api/review/positions", tags=["review"])
+    def review_positions(
+        date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    ) -> list[dict[str, Any]]:
+        """回放某天收盘时的持仓。此前只能取"现在"。"""
+        try:
+            from src.review import positions_as_of
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _palace() as palace:
+            return [
+                {
+                    "code": item.code,
+                    "name": item.name,
+                    "shares": item.shares,
+                    "cost": item.cost,
+                    "cost_value": item.cost_value,
+                }
+                for item in positions_as_of(palace, date)
+            ]
 
     # ---- 技能包 -----------------------------------------------------
 
