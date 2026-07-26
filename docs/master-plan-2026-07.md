@@ -159,17 +159,43 @@ ai_usage_daily(trade_date, provider, model, ..., estimated_cost_cents)
 
 每个阶段都能独立发布验证，不要求一次性重构到位。
 
-### P0 · 地基与止血（S，但必须最先做完）
+### P0 · 地基与止血 —— ✅ 已完成（2026-07-26）
 
-没有这一步，后面任何返工都无法收拾。
+| # | 事项 | 状态 |
+|---|---|---|
+| 1 | 基线提交 + 补全 `.gitignore` / 新增 `.gitattributes` | ✅ `a143d15` |
+| 2 | 修辰星线 WMA 权重方向倒挂 + 单测 | ✅ `6b45728` |
+| 3 | 补 `yfinance` 依赖 + scipy 缺失改显式告警 | ✅ `db37dd4` |
+| 4 | 会话 Cookie 默认带 `Secure` + 登录失败限流 | ✅ `0abbda5` |
+| 5 | 发布前强制 pytest + HTTP 模式一致性校验 | ✅ `8340bf7` |
+| 6 | 验证服务器出网 | ✅ 见下表 |
+| 7 | 验证 `.env` 新增密钥不被同步覆盖 | ✅ 见 P4 |
 
-1. **`git init` 基线提交** + 补 `.gitignore`（`.venv/ output/ .palace/ frontend/node_modules/ frontend/dist/ *.db*`）。
-2. **修辰星线 WMA 权重方向 bug**。必须在任何策略回测工作之前——否则跑出来的历史回测全部作废重跑。
-3. `requirements.txt` 补 `yfinance`；`breakeven_probability` 的 scipy 缺失从静默 `return []` 改为显式告警。
-4. **验证服务器出网**：能不能连 东财/新浪（akshare）、能不能连 api.anthropic.com / api.deepseek.com。五分钟的事，但它决定 P2 和 P4 能不能做、要不要配代理。
-5. **验证 `PALACE_AI_MASTER_KEY` 与"永不同步 .env"机制兼容**。这是不对称风险：跳过它、等 P4 做完才发现密钥被同步或提交，代价是所有已存 key 作废重配。
-6. 补两个已知安全洞：session Cookie 的 `https_only` 从写死 `False` 改为按部署模式决定；登录端点加限流。
-7. `sync-to-server.ps1` 发布前**强制跑 pytest**，不过不许打包。
+辰星线的实测影响：模拟 120 根真实走势，修复前后 **99 个交易日里有 36 天「辰星升」布尔信号完全相反**。所有基于它的信号与 `score_signals` 打分此前都建立在错误数值上。
+
+#### P0 实测结论（2026-07-26，容器内直连，无代理变量）
+
+| 目标 | 结果 | 对计划的影响 |
+|---|---|---|
+| 东财 `push2.eastmoney.com`（带 UA） | **200 / 0.14s** | P2 行情仓零障碍，不需要代理 |
+| 新浪 `hq.sinajs.cn`（带 Referer） | **200 / 0.10s** | 同上 |
+| `pypi.org` | **200 / 0.61s** | 扩容 requirements-runtime 可行 |
+| DeepSeek | **401 / 0.12s**（可达） | P4 直连可用，零代理 |
+| OpenRouter | **200 / 0.99s** | P4 直连可用，零代理 |
+| Anthropic | 403（地域封锁） | 必须走代理 |
+| OpenAI | Network unreachable | 必须走代理 |
+| 宿主代理 `172.17.0.1:7890` | **可达**（mihomo 监听 `*:7890`） | 容器可用它访问境外 API |
+
+推论，直接改写了 P4 的默认路径：
+
+- **OpenRouter 直连可达是最优解**。一个 key 接 100+ 模型（含 Claude、GPT），协议是 OpenAI 兼容，`GET /api/v1/models` 能自动拉模型列表——正好落在 D3 的通用供应商模型里，**零代理即可用上 Claude**。DeepSeek 同理，成本更低。
+- 直连 Anthropic / OpenAI 官方 API 才需要 `172.17.0.1:7890`，且已验证该代理从容器可达。所以"每个供应商可单独配代理"不只是设计上合理，是已验证可行。
+- 之前从宿主机 shell 测出的"东财失败"是我漏带 UA 造成的假阴性；宿主机测 pypi 超时而容器内 200，说明两者出口路由不同。**结论必须以容器内为准**，这是应用真正跑的地方。
+
+另外两条实测事实：
+
+- **uvicorn 确认单 worker**（容器 CMD 无 `--workers`），APScheduler 进程内单例安全，不会重复触发抓取或烧 token。这条是 P2 定时任务的前提，现在被证实了。
+- **服务器 4 核 / 3786MB 内存，当前仅 1150MB 可用；磁盘 40G 用了 49%，剩 21G。** 磁盘对行情仓绰绰有余，**内存是真瓶颈**：pandas+numpy+scipy 装上再跑回测，1.1G 可用内存会很紧。P2 必须给 docker-compose 加内存 limit，回测要控制批量大小，全市场扫描大概率需要分片跑。
 
 ### P1 · 前端可用性（M）—— 投入产出比最高的一步
 
@@ -212,7 +238,9 @@ ai_usage_daily(trade_date, provider, model, ..., estimated_cost_cents)
   - `protocol = anthropic`：走 `anthropic` SDK（`base_url` 可覆盖，便于走中转）。Anthropic 无公开模型列表接口，退化为内置候选 + 手填。
   - 拉不到模型列表一律降级为手填 model id，不阻断保存。
   - 只有这两种协议实现，**新增供应商 = 加一条配置记录，不需要改代码**。
-- **Key 安全**：AES-256-GCM 加密（AAD 绑定 `provider_id`），主密钥 `PALACE_AI_MASTER_KEY` 只存服务器 `.env`。保存时先发一次 `max_tokens=1` 的最小请求校验有效性，失败不落库。GET 只返回末 4 位，**永不回显明文或密文**；解密只发生在调用 SDK 前一行，是局部变量；日志中间件对 `Authorization/api_key` 正则脱敏。
+- **Key 安全**：AES-256-GCM 加密（AAD 绑定 `provider_id`），主密钥 `PALACE_AI_MASTER_KEY` 只存服务器 `.env`。
+  - P0 已验证 `.env` 的隔离是可靠的：发布脚本的上传白名单是**显式枚举**（只有 `requirements.txt` / `src/` / `frontend/dist/` / 四个 `deploy/` 文件），无通配；远端脚本对 `.env` **只有读操作**（`test -f` / `grep` / `sed -n` / `--env-file`），全脚本没有任何一处写入它；`.gitignore` 也覆盖了 `.env` 与 `deploy/.env`。所以新增主密钥不会被同步覆盖，也不会进仓库。
+  - **但有个坑**：`deploy/docker-compose.yml` 用的是显式 `environment:` 白名单，**没有 `env_file:` 段**。往 `.env` 里加变量，容器默认看不到。P4 必须同步在 compose 的 `environment` 块加一行 `PALACE_AI_MASTER_KEY: ${PALACE_AI_MASTER_KEY:?...}`，否则症状是"我明明配了密钥，应用却说没配"。保存时先发一次 `max_tokens=1` 的最小请求校验有效性，失败不落库。GET 只返回末 4 位，**永不回显明文或密文**；解密只发生在调用 SDK 前一行，是局部变量；日志中间件对 `Authorization/api_key` 正则脱敏。
 - **运行时出网代理**：`docker-compose.yml` 现在的 `HTTP_PROXY/HTTPS_PROXY` 只在构建阶段生效，运行容器没有任何出网通路。P4 要在 `environment` 块补上**可选的**运行时代理变量——境内直连的供应商（DeepSeek 等）不受影响，境外的（Anthropic/OpenAI/OpenRouter）走代理。代理地址每个供应商可单独覆盖，避免"为了一家境外模型把所有出网都绕道"。
 - **服务端 Agent 循环**（手写，不上 LangGraph）：约 20 个只读工具自动执行（取行情、算指标、查账本、跑筛选、跑回测、在线检索），6 个账本写工具走**两段式**——模型只能"提议"，落 `pending_confirmation`，前端弹确认卡片，你点确认后端才真调 `PalaceStore` 落库，再把**真实**结果喂回模型继续。
 - **SSE 流式**：`token_delta / tool_call_start / tool_call_result / tool_call_awaiting_confirmation / usage`。前端渲染成可展开的工具调用卡片。**Nginx 要为 SSE 单开 location**（`proxy_buffering off` + 长超时），现在两份模板都是笼统 60s，会直接掐断。
