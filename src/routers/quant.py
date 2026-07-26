@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 import shutil
 import tempfile
+import threading
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -64,9 +65,23 @@ class SyncRequest(QuantModel):
     refresh_instruments: bool = False
 
 
+class AnalysisRequest(QuantModel):
+    """横向对比与退出扫描共用的入参。"""
+
+    strategy: str | None = Field(default=None, max_length=64)
+    strategies: list[str] | None = None
+    start: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    holds: list[int] | None = None
+    targets: list[float] | None = None
+    stops: list[float] | None = None
+    stop_loss_pct: float | None = Field(default=None, ge=-100, le=0)
+    benchmark: str | None = Field(default="000300", pattern=r"^\d{6}$")
+
+
 class JobCreate(QuantModel):
     name: str = Field(min_length=1, max_length=64)
-    kind: Literal["sync", "screen", "backtest", "skill"]
+    kind: Literal["sync", "screen", "backtest", "compare", "optimize", "skill"]
     cron: str = Field(default="", max_length=120)
     config: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
@@ -285,6 +300,61 @@ def build_quant_router(
                 {**trade.__dict__, "alpha_pct": trade.alpha_pct} for trade in result.trades
             ]
         return body
+
+    # ---- 分析任务（异步）---------------------------------------------
+    # 横向对比与退出扫描都是分钟级的：对比 8 个战法 × 2 个持有期要跑 16 次
+    # 全市场回测，扫描 48 组更久。同步返回必然被 Nginx 的 60s 超时掐断，
+    # 所以做成后台任务，接口只回 run_id，前端轮询 /api/jobs/runs 拿结果。
+
+    @router.post("/api/analysis/{kind}", tags=["strategy"], status_code=202)
+    def start_analysis(
+        kind: Literal["compare", "optimize"],
+        payload: AnalysisRequest,
+        _write: None = write_guard,
+    ) -> dict[str, Any]:
+        try:
+            from src.ops import JobContext, OpsStore, run_job
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+
+        config = {k: v for k, v in payload.model_dump().items() if v is not None}
+        if kind == "optimize" and not config.get("strategy"):
+            raise HTTPException(status_code=422, detail="退出规则扫描必须指定 strategy")
+
+        store = _ops()
+        # 用固定名字的一次性任务：重复触发会复用同一条 job 记录，
+        # 执行历史仍然逐次留痕，不会积累一堆同类型的僵尸任务。
+        name = f"[即时] {kind}" + (f" {config['strategy']}" if config.get("strategy") else "")
+        job = store.get_job_by_name(name)
+        if job is None:
+            job_id = store.create_job(name=name, kind=kind, config=config, enabled=False)
+        else:
+            job_id = job["id"]
+            store.update_job(job_id, config=config)
+        job = store.get_job(job_id)
+
+        def worker() -> None:
+            # 独立连接：SQLite 连接不能跨线程共享。
+            with OpsStore(ops_db) as own:
+                run_job(
+                    own, job_id,
+                    context=JobContext(market_db=market_db, ops_store=own, palace_db=palace_db),
+                    trigger="api",
+                )
+
+        run_id = store.start_run(job or {"id": job_id, "name": name, "kind": kind}, trigger="api")
+        # start_run 只是占位，真正的记录由 run_job 自己写；把占位标成 skipped
+        # 免得它永远停在 running 状态污染历史。
+        store.finish_run(run_id, status="skipped", result={"note": "已转入后台执行"})
+        store.close()
+
+        threading.Thread(target=worker, name=f"analysis-{kind}", daemon=True).start()
+        return {
+            "job_id": job_id,
+            "kind": kind,
+            "status": "started",
+            "poll": f"/api/jobs/runs?job_id={job_id}&limit=1",
+        }
 
     # ---- 复盘 -------------------------------------------------------
     # 与 /api/backtest 问的是两个不同问题：那个问"这套战法本身有没有

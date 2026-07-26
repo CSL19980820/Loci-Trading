@@ -1318,3 +1318,29 @@ select:focus {
   border-radius: 0 6px 6px 0;
   font-size: 0.875rem;
 }
+
+/* 分析操作区：按钮与日期选择横向排布，窄屏换行 */
+.analysis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.inline-field input,
+.analysis-actions select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+}

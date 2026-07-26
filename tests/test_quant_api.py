@@ -3,7 +3,9 @@ from __future__ import annotations
 import io
 from pathlib import Path
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from fastapi.testclient import TestClient
@@ -305,3 +307,63 @@ class ProductionAuthTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnalysisEndpointTests(unittest.TestCase):
+    """横向对比与退出扫描是分钟级任务，必须异步——同步返回会被网关掐断。
+
+    这里只验接口契约，不真跑分析：真跑一轮要几十秒，且后台线程会持着
+    SQLite 连接，临时目录清不掉。用 patch 把执行本身换成空操作。
+    """
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        base = Path(self.temp.name)
+        import os
+
+        os.environ["PALACE_MARKET_DB"] = str(base / "market.db")
+        os.environ["PALACE_OPS_DB"] = str(base / "ops.db")
+        self.client = TestClient(create_app(base / "palace.db", base / "no-static"))
+        self._patch = patch("src.ops.run_job", return_value={"status": "success"})
+        self._patch.start()
+
+    def tearDown(self) -> None:
+        self._patch.stop()
+        self.client.close()
+        # 后台线程会持着 SQLite 连接；不等它收工，Windows 上删不掉临时目录。
+        for thread in threading.enumerate():
+            if thread.name.startswith("analysis-"):
+                thread.join(timeout=10)
+        self.temp.cleanup()
+
+    def test_returns_202_with_a_pollable_job_id(self) -> None:
+        response = self.client.post("/api/analysis/compare", json={"holds": [1]})
+        self.assertEqual(response.status_code, 202, response.text)
+        body = response.json()
+        self.assertTrue(body["job_id"])
+        self.assertIn("job_id=", body["poll"])
+
+    def test_optimize_requires_a_strategy(self) -> None:
+        response = self.client.post("/api/analysis/optimize", json={"holds": [1]})
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("strategy", response.json()["detail"])
+
+    def test_unknown_kind_is_rejected_by_the_path_schema(self) -> None:
+        self.assertEqual(self.client.post("/api/analysis/mystery", json={}).status_code, 422)
+
+    def test_extra_field_is_rejected(self) -> None:
+        response = self.client.post("/api/analysis/compare", json={"nope": 1})
+        self.assertEqual(response.status_code, 422)
+
+    def test_repeated_triggers_reuse_one_job_record(self) -> None:
+        """一次性分析不该在任务表里积累一堆同类型僵尸任务。"""
+        first = self.client.post("/api/analysis/compare", json={"holds": [1]}).json()
+        second = self.client.post("/api/analysis/compare", json={"holds": [3]}).json()
+        self.assertEqual(first["job_id"], second["job_id"])
+
+    def test_analysis_job_is_created_disabled(self) -> None:
+        """即时分析不该被调度器捡去定时跑。"""
+        body = self.client.post("/api/analysis/compare", json={"holds": [1]}).json()
+        jobs = {job["id"]: job for job in self.client.get("/api/jobs").json()}
+        self.assertFalse(jobs[body["job_id"]]["enabled"])
+        self.assertEqual(jobs[body["job_id"]]["cron"], "")

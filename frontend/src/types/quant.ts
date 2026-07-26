@@ -312,3 +312,60 @@ export interface PlanOutcome {
   status_final: string
   note?: string
 }
+
+// ---- 分析任务（异步）-------------------------------------------------
+// 横向对比与退出扫描是分钟级的，同步返回会被网关超时掐断，
+// 所以走后台任务 + 轮询。
+
+export interface AnalysisStarted {
+  job_id: string
+  kind: 'compare' | 'optimize'
+  status: string
+  poll: string
+}
+
+export interface CompareRow {
+  label: string
+  strategy: string
+  hold_days: number
+  trades: number
+  win_rate: number
+  avg_net_return: number
+  avg_mfe: number | null
+  avg_mae: number | null
+  avg_alpha: number | null
+  /** MFE 均值 − 净收益均值：持有期内的浮盈最终没拿住多少 */
+  give_back: number
+  caution?: string
+}
+
+export interface CompareResult {
+  rows: CompareRow[]
+  failures: { label: string; error: string }[]
+  range: { start: string | null; end: string | null }
+  worst_give_back: CompareRow | null
+  hint: string
+}
+
+export interface OptimizeRow {
+  hold_days: number
+  take_profit_pct: number | null
+  stop_loss_pct: number | null
+  trades: number
+  win_rate: number
+  avg_net_return: number
+  avg_alpha: number | null
+  exit_reasons: Record<string, number>
+  caution?: string
+}
+
+export interface OptimizeResult {
+  strategy: string
+  rows: OptimizeRow[]
+  best: OptimizeRow | null
+  baseline: OptimizeRow | null
+  improvement: number | null
+  /** 参数扫描天生会生产漂亮数字，这句提示必须显示出来 */
+  warning: string
+  note?: string
+}

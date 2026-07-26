@@ -83,6 +83,115 @@
     </p>
   </section>
 
+  <!-- 横向对比与退出扫描：分钟级任务，后台跑 + 轮询 -->
+  <section class="panel mb">
+    <div class="panel-bar">
+      <h2>分析</h2>
+      <span v-if="analysisBusy" class="muted mono">{{ analysisLabel }} 运行中…</span>
+    </div>
+    <div class="analysis-actions">
+      <button class="quiet-button" type="button" :disabled="analysisBusy" @click="runCompare">
+        横向对比全部战法
+      </button>
+      <select v-model="optimizeTarget" :disabled="analysisBusy">
+        <option value="">选一个战法扫描退出规则</option>
+        <option v-for="item in strategies" :key="item.slug" :value="item.slug">
+          {{ item.name }}
+        </option>
+      </select>
+      <button
+        class="quiet-button"
+        type="button"
+        :disabled="analysisBusy || !optimizeTarget"
+        @click="runOptimize"
+      >
+        扫描退出规则
+      </button>
+      <label class="inline-field">
+        起始
+        <input v-model="analysisStart" type="date" :disabled="analysisBusy" />
+      </label>
+    </div>
+    <p class="form-hint">
+      对比按<strong>超额</strong>排序而不是绝对收益——大盘涨的时候什么都赚。
+      「回吐」= MFE 均值 − 净收益均值，即持有期内的浮盈最终没拿住多少；
+      多数战法回吐都大，说明问题在退出纪律而不在选股。
+    </p>
+    <p v-if="analysisBusy" class="form-hint">
+      全市场跑一轮通常要几十秒到几分钟。可以离开本页，结果会留在运维页的执行历史里。
+    </p>
+
+    <div v-if="compareResult" class="table-wrap">
+      <table class="dense">
+        <thead>
+          <tr>
+            <th>战法</th><th class="r">笔数</th><th class="r">胜率</th>
+            <th class="r">净收益</th><th class="r">MFE</th><th class="r">MAE</th>
+            <th class="r">超额</th><th class="r">回吐</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in compareResult.rows" :key="row.label">
+            <td><strong>{{ row.label }}</strong></td>
+            <td class="r mono">{{ row.trades.toLocaleString('zh-CN') }}</td>
+            <td class="r mono">{{ row.win_rate.toFixed(1) }}%</td>
+            <td class="r mono" :class="toneClass(row.avg_net_return)">{{ signed(row.avg_net_return) }}</td>
+            <td class="r mono tone-up">{{ signed(row.avg_mfe ?? undefined) }}</td>
+            <td class="r mono tone-down">{{ signed(row.avg_mae ?? undefined) }}</td>
+            <td class="r mono" :class="toneClass(row.avg_alpha ?? 0)">
+              <strong>{{ signed(row.avg_alpha ?? undefined) }}</strong>
+            </td>
+            <td class="r mono">
+              {{ row.give_back.toFixed(2) }}%<span v-if="row.give_back > 4" class="tone-down"> ⚠</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p v-if="compareResult?.hint" class="form-hint highlight-hint">→ {{ compareResult.hint }}</p>
+
+    <template v-if="optimizeResult">
+      <div class="table-wrap">
+        <table class="dense">
+          <thead>
+            <tr>
+              <th class="r">持有</th><th class="r">止盈</th><th class="r">止损</th>
+              <th class="r">笔数</th><th class="r">胜率</th><th class="r">净收益</th>
+              <th class="r">超额</th><th>退出分布</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, index) in optimizeResult.rows.slice(0, 12)" :key="index">
+              <td class="r mono">{{ row.hold_days }}d</td>
+              <td class="r mono">{{ row.take_profit_pct ? signed(row.take_profit_pct) : '—' }}</td>
+              <td class="r mono">{{ row.stop_loss_pct ? signed(row.stop_loss_pct) : '—' }}</td>
+              <td class="r mono">{{ row.trades }}</td>
+              <td class="r mono">{{ row.win_rate.toFixed(1) }}%</td>
+              <td class="r mono" :class="toneClass(row.avg_net_return)">{{ signed(row.avg_net_return) }}</td>
+              <td class="r mono" :class="toneClass(row.avg_alpha ?? 0)">
+                <strong>{{ signed(row.avg_alpha ?? undefined) }}</strong>
+              </td>
+              <td class="dim mono">{{ exitDist(row.exit_reasons) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-if="optimizeResult.best" class="form-hint highlight-hint">
+        → 最优：持有 {{ optimizeResult.best.hold_days }} 日{{
+          optimizeResult.best.take_profit_pct
+            ? `，止盈 ${signed(optimizeResult.best.take_profit_pct)}`
+            : '，不设止盈'
+        }}{{
+          optimizeResult.best.stop_loss_pct
+            ? `，止损 ${signed(optimizeResult.best.stop_loss_pct)}`
+            : '，不设止损'
+        }}<span v-if="optimizeResult.improvement !== null">
+          （比只按持有期了结高 {{ signed(optimizeResult.improvement) }}）</span>
+      </p>
+      <p class="form-error">⚠ {{ optimizeResult.warning }}</p>
+    </template>
+  </section>
+
   <section v-if="screenResult" class="panel mb">
     <div class="panel-bar">
       <h2>
@@ -175,13 +284,22 @@ import { computed, onMounted, ref } from 'vue'
 
 import {
   CapabilityUnavailableError,
+  awaitJobResult,
   getMarketCoverage,
   getStrategies,
   runBacktest,
   runScreen,
+  startAnalysis,
 } from '@/api/quant'
 import { toneClass } from '@/lib/format'
-import type { BacktestResult, MarketCoverage, ScreenResult, StrategyInfo } from '@/types/quant'
+import type {
+  BacktestResult,
+  CompareResult,
+  MarketCoverage,
+  OptimizeResult,
+  ScreenResult,
+  StrategyInfo,
+} from '@/types/quant'
 
 const strategies = ref<StrategyInfo[]>([])
 const coverage = ref<MarketCoverage | null>(null)
@@ -189,6 +307,13 @@ const screenResult = ref<ScreenResult | null>(null)
 const backtestResult = ref<BacktestResult | null>(null)
 const busy = ref(false)
 const unavailable = ref('')
+
+const compareResult = ref<CompareResult | null>(null)
+const optimizeResult = ref<OptimizeResult | null>(null)
+const analysisBusy = ref(false)
+const analysisLabel = ref('')
+const optimizeTarget = ref('')
+const analysisStart = ref('2025-01-01')
 
 /** 因子列取所有入选标的的并集，保证列头稳定，不会因为某只票缺一项就错位。 */
 const factorKeys = computed(() => {
@@ -270,6 +395,64 @@ async function backtest(slug: string): Promise<void> {
     runBacktest({ strategy: slug, hold_days: 3, stop_loss_pct: -6, benchmark: '000300' }),
   )
   if (result) backtestResult.value = result
+}
+
+function exitDist(reasons: Record<string, number>): string {
+  const labels: Record<string, string> = {
+    hold_expired: '到期', stop_loss: '止损', take_profit: '止盈', data_end: '无数据',
+  }
+  return Object.entries(reasons)
+    .map(([key, count]) => `${labels[key] ?? key}${count}`)
+    .join(' ')
+}
+
+/** 触发后台分析并轮询。任务是分钟级的，同步等待会被网关超时掐断。 */
+async function runAnalysis(
+  kind: 'compare' | 'optimize',
+  payload: Record<string, unknown>,
+): Promise<unknown> {
+  analysisBusy.value = true
+  analysisLabel.value = kind === 'compare' ? '横向对比' : '退出扫描'
+  unavailable.value = ''
+  compareResult.value = null
+  optimizeResult.value = null
+  try {
+    const started = await startAnalysis(kind, payload)
+    const run = await awaitJobResult(started.job_id)
+    if (run.status === 'failed') {
+      unavailable.value = run.error_text.split('\n')[0] || '分析失败'
+      return null
+    }
+    return run.result
+  } catch (caught: unknown) {
+    unavailable.value =
+      caught instanceof CapabilityUnavailableError
+        ? caught.message
+        : caught instanceof Error
+          ? caught.message
+          : '分析失败'
+    return null
+  } finally {
+    analysisBusy.value = false
+    analysisLabel.value = ''
+  }
+}
+
+async function runCompare(): Promise<void> {
+  const result = await runAnalysis('compare', { start: analysisStart.value, holds: [1, 3] })
+  if (result) compareResult.value = result as CompareResult
+}
+
+async function runOptimize(): Promise<void> {
+  if (!optimizeTarget.value) return
+  const result = await runAnalysis('optimize', {
+    strategy: optimizeTarget.value,
+    start: analysisStart.value,
+    holds: [1, 2, 3, 5],
+    targets: [0, 3, 5, 8],
+    stops: [0, -5, -8],
+  })
+  if (result) optimizeResult.value = result as OptimizeResult
 }
 
 onMounted(reload)

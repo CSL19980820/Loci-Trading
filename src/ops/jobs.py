@@ -413,10 +413,145 @@ def _compose_prompt(config: dict[str, Any], blocks: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+
+def execute_compare(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
+    """横向对比多个战法在同一区间、同一成本口径下的超额。
+
+    单看一个战法的绝对收益意义有限——大盘涨的时候什么都赚。这里统一区间
+    与成本，按超额排序，并算出每个战法的"回吐"（MFE 均值 − 净收益均值）。
+    回吐大说明浮盈拿不住，问题在退出而不在选股。
+    """
+    from src.backtest import BacktestConfig, backtest_strategy
+    from src.strategies import all_strategies, get
+
+    holds = [int(h) for h in (config.get("holds") or [1, 3])]
+    slugs = config.get("strategies")
+    engines = [get(str(s)) for s in slugs] if slugs else all_strategies()
+
+    rows: list[dict[str, Any]] = []
+    failures: list[dict[str, str]] = []
+    with context.market() as store:
+        for engine in engines:
+            for hold in holds:
+                label = f"{engine.slug}/{hold}d"
+                try:
+                    result = backtest_strategy(
+                        store, engine.slug,
+                        start=config.get("start"), end=config.get("end"),
+                        config=BacktestConfig(
+                            hold_days=hold,
+                            stop_loss_pct=config.get("stop_loss_pct", -8.0),
+                            benchmark=config.get("benchmark", "000300"),
+                        ),
+                    )
+                except Exception as exc:
+                    # 一个战法算不出来不该让整批对比作废。
+                    failures.append({"label": label, "error": f"{type(exc).__name__}: {exc}"[:200]})
+                    continue
+                metrics = result.metrics
+                if not metrics.get("trades"):
+                    continue
+                rows.append(
+                    {
+                        "label": label, "strategy": engine.slug, "hold_days": hold,
+                        "trades": metrics["trades"], "win_rate": metrics["win_rate"],
+                        "avg_net_return": metrics["avg_net_return"],
+                        "avg_mfe": metrics.get("avg_mfe"), "avg_mae": metrics.get("avg_mae"),
+                        "avg_alpha": metrics.get("avg_alpha"),
+                        "give_back": round(
+                            (metrics.get("avg_mfe") or 0) - (metrics.get("avg_net_return") or 0), 4
+                        ),
+                        "caution": metrics.get("caution", ""),
+                    }
+                )
+
+    rows.sort(key=lambda item: item.get("avg_alpha") if item.get("avg_alpha") is not None
+              else item["avg_net_return"], reverse=True)
+    worst = max(rows, key=lambda item: item["give_back"]) if rows else None
+    return {
+        "rows": rows, "failures": failures,
+        "range": {"start": config.get("start"), "end": config.get("end")},
+        "worst_give_back": worst,
+        "hint": (
+            f"回吐最严重的是 {worst['label']}（{worst['give_back']:.2f} 个百分点）。"
+            "若多数战法回吐都大，说明问题在退出纪律而不在选股。"
+        ) if worst and worst["give_back"] > 4 else "",
+    }
+
+
+def execute_optimize(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
+    """扫描退出规则：固定选股信号，只改持有期 / 止盈 / 止损。
+
+    参数扫描天生会生产漂亮数字。结果里必须带上过拟合提示，并建议换区间
+    重跑——不加这句，它就只是个自我欺骗的工具。
+    """
+    from src.backtest import BacktestConfig, backtest_strategy
+
+    slug = config.get("strategy")
+    if not slug:
+        raise JobError("optimize 任务必须指定 strategy")
+
+    holds = [int(x) for x in (config.get("holds") or [1, 2, 3, 5])]
+    targets = [None if not x else float(x) for x in (config.get("targets") or [0, 3, 5, 8])]
+    stops = [None if not x else float(x) for x in (config.get("stops") or [0, -5, -8])]
+
+    rows: list[dict[str, Any]] = []
+    with context.market() as store:
+        for hold in holds:
+            for target in targets:
+                for stop in stops:
+                    try:
+                        result = backtest_strategy(
+                            store, str(slug),
+                            start=config.get("start"), end=config.get("end"),
+                            config=BacktestConfig(
+                                hold_days=hold, take_profit_pct=target, stop_loss_pct=stop,
+                                benchmark=config.get("benchmark", "000300"),
+                            ),
+                        )
+                    except Exception:
+                        continue
+                    metrics = result.metrics
+                    if not metrics.get("trades"):
+                        continue
+                    rows.append(
+                        {
+                            "hold_days": hold, "take_profit_pct": target, "stop_loss_pct": stop,
+                            "trades": metrics["trades"], "win_rate": metrics["win_rate"],
+                            "avg_net_return": metrics["avg_net_return"],
+                            "avg_alpha": metrics.get("avg_alpha"),
+                            "exit_reasons": metrics.get("exit_reasons", {}),
+                            "caution": metrics.get("caution", ""),
+                        }
+                    )
+
+    if not rows:
+        return {"rows": [], "note": "没有产生任何可评估的交易"}
+
+    rows.sort(key=lambda item: item.get("avg_alpha") if item.get("avg_alpha") is not None
+              else item["avg_net_return"], reverse=True)
+    best = rows[0]
+    baseline = next(
+        (r for r in rows if r["take_profit_pct"] is None and r["stop_loss_pct"] is None), None
+    )
+    key = "avg_alpha" if best.get("avg_alpha") is not None else "avg_net_return"
+    return {
+        "strategy": slug, "rows": rows, "best": best, "baseline": baseline,
+        "improvement": round((best.get(key) or 0) - (baseline.get(key) or 0), 4)
+        if baseline else None,
+        "warning": (
+            "这是在同一段历史上反复试参数，天然存在过拟合风险。"
+            "换一段区间重跑一次，若最优组合完全不同，说明它只拟合了噪声。"
+        ),
+    }
+
+
 EXECUTORS: dict[str, Executor] = {
     "sync": execute_sync,
     "screen": execute_screen,
     "backtest": execute_backtest,
+    "compare": execute_compare,
+    "optimize": execute_optimize,
     "skill": execute_skill,
 }
 

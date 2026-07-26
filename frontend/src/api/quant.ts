@@ -246,3 +246,37 @@ export function getPositionsAsOf(date?: string) {
     `/review/positions${query({ date })}`,
   )
 }
+
+// ---- 分析任务（异步）------------------------------------------------
+
+export function startAnalysis(
+  kind: 'compare' | 'optimize',
+  payload: {
+    strategy?: string
+    strategies?: string[]
+    start?: string
+    end?: string
+    holds?: number[]
+    targets?: number[]
+    stops?: number[]
+    stop_loss_pct?: number
+    benchmark?: string
+  },
+): Promise<import('@/types/quant').AnalysisStarted> {
+  return quantRequest(`/analysis/${kind}`, { method: 'POST', body: JSON.stringify(payload) })
+}
+
+/** 轮询直到任务结束。分析任务是分钟级的，间隔取 3 秒足够。 */
+export async function awaitJobResult(
+  jobId: string,
+  { intervalMs = 3000, timeoutMs = 900_000 }: { intervalMs?: number; timeoutMs?: number } = {},
+): Promise<import('@/types/quant').JobRun> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const runs = await getJobRuns({ job_id: jobId, limit: 3 })
+    const done = runs.find((run) => run.status === 'success' || run.status === 'failed')
+    if (done) return done
+    if (Date.now() > deadline) throw new Error('分析任务超时；可到运维页查看执行历史')
+    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+  }
+}
