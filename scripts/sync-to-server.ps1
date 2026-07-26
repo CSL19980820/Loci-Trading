@@ -10,6 +10,7 @@ param(
     [switch]$DryRun,
     [switch]$InitializeData,
     [switch]$SkipFrontendBuild,
+    [switch]$SkipTests,
 
     [switch]$ConfigureNginx,
     [switch]$AllowInsecureHttp,
@@ -123,6 +124,29 @@ try {
         if ($nginxConfig -match '__PALACE_') {
             throw 'Nginx 配置模板仍含未替换占位符。'
         }
+    }
+
+    # 测试门禁排在前端构建之前：它更快，失败时不必白等一次 npm run build。
+    if (-not $SkipTests) {
+        $pythonExe = Join-Path $projectRoot '.venv/Scripts/python.exe'
+        if (-not (Test-Path -LiteralPath $pythonExe)) {
+            $fallbackPython = Get-Command python -ErrorAction SilentlyContinue
+            if (-not $fallbackPython) {
+                throw '未找到 Python 解释器，无法执行发布前测试。请先运行 setup.ps1，或显式使用 -SkipTests。'
+            }
+            $pythonExe = $fallbackPython.Source
+        }
+        Write-Host '发布前测试：pytest tests/'
+        Push-Location $projectRoot
+        try {
+            Invoke-NativeCommand -FilePath $pythonExe -Arguments @('-m', 'pytest', 'tests/', '-q')
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    else {
+        Write-Warning '已跳过发布前测试（-SkipTests）。'
     }
 
     if (-not $SkipFrontendBuild) {
@@ -347,6 +371,26 @@ if [ "$configure_nginx" = "1" ]; then
         echo "PALACE_ALLOWED_HOSTS 首个域名（$configured_domain）必须与 -Domain（$domain）一致。" >&2
         exit 1
     }
+    # 会话 Cookie 的 Secure 标记必须与 Nginx 的协议模式一致，否则登录会静默失效：
+    # HTTP 模式下带 Secure 的 Cookie 浏览器根本不会回传，表现为"登录成功但立刻又被踢回登录页"。
+    configured_insecure="$(sed -n 's/^PALACE_INSECURE_HTTP=//p' "$env_file" | tail -n 1 | tr -d '[:space:]')"
+    if [ "$allow_insecure_http" = "1" ]; then
+        case "$configured_insecure" in
+            1|true|TRUE|yes|YES|on|ON) : ;;
+            *)
+                echo "HTTP 模式需要在 $env_file 设置 PALACE_INSECURE_HTTP=1，否则登录会话无法保持。" >&2
+                exit 1
+                ;;
+        esac
+    else
+        case "$configured_insecure" in
+            ''|0|false|FALSE|no|NO|off|OFF) : ;;
+            *)
+                echo "HTTPS 模式下 $env_file 不能保留 PALACE_INSECURE_HTTP=$configured_insecure；请删除该行或置 0。" >&2
+                exit 1
+                ;;
+        esac
+    fi
 fi
 test -d "$stage/release" || { echo "上传的发布包不完整：$stage/release" >&2; exit 1; }
 test ! -e "$release_dir" || { echo "发布目录已存在：$release_dir" >&2; exit 1; }

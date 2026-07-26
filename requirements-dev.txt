@@ -1,0 +1,5 @@
+# 开发与发布门禁依赖。scripts/sync-to-server.ps1 打包前会跑 pytest，
+# 因此发布机需要先 pip install -r requirements-dev.txt。
+-r requirements.txt
+
+pytest>=8.0.0

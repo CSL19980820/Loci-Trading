@@ -50,6 +50,8 @@ PALACE_AUTH_PASSWORD=由服务器维护者预先设置的固定密码
 PALACE_SESSION_SECRET=替换为openssl-rand-hex-32生成的随机值
 ```
 
+`PALACE_INSECURE_HTTP` 是可选项，默认不设。不设时会话 Cookie 带 `Secure` 标记，只经 HTTPS 回传，这是推荐状态。仅当使用下文的 HTTP 临时模式时才需要置 `1`，否则浏览器不会回传 Cookie，表现为“登录成功但立刻被踢回登录页”。`-ConfigureNginx` 会校验这个值与协议模式一致，不一致直接终止部署。
+
 在服务器上生成写入令牌的真实命令：
 
 ```bash
@@ -84,6 +86,7 @@ HTTP 模式的 Nginx 不保存、生成或轮换任何密码。登录由应用�
 
 - DNS 已将 `qianlong.chenkit.cloud` 指向该服务器，且 `/srv/qianlong-palace/.env` 内 `PALACE_ALLOWED_HOSTS` 的第一个域名与它完全一致。
 - `/srv/qianlong-palace/.env` 已预先配置固定账号 `PALACE_AUTH_USERNAME=admin`、固定 `PALACE_AUTH_PASSWORD` 与 `PALACE_SESSION_SECRET`。同步脚本绝不生成、替换或轮换这些值。
+- `/srv/qianlong-palace/.env` 已设置 `PALACE_INSECURE_HTTP=1`。HTTP 模式下会话 Cookie 必须去掉 `Secure` 标记，否则浏览器不回传 Cookie，登录无法保持。切回 HTTPS 时必须删除该行或置 `0`，脚本会校验，不一致即终止。
 
 当前服务器使用自定义 Nginx 二进制。自动配置会先确认主配置包含 `conf.d/*.conf`，不会替换 `/home/software/nginx/conf/nginx.conf` 或其他站点；若当前 Nginx 不包含该目录，脚本会失败而不写入。
 
@@ -118,7 +121,15 @@ rtk pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\sync-to-server.ps1 `
 rtk pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\sync-to-server.ps1 -Deploy
 ```
 
-脚本默认会执行 `npm run build`，上传临时 staging 包，在服务器上做 Compose 配置校验、构建镜像并等待健康检查。仅健康检查通过才把 `current` 指向新版本。构建或健康检查失败时，旧版本保持为当前版本；若新容器失败，脚本会尝试恢复旧版本容器。
+脚本会先跑 `pytest tests/`，不过不打包；随后执行 `npm run build`，上传临时 staging 包，在服务器上做 Compose 配置校验、构建镜像并等待健康检查。仅健康检查通过才把 `current` 指向新版本。构建或健康检查失败时，旧版本保持为当前版本；若新容器失败，脚本会尝试恢复旧版本容器。
+
+发布前测试依赖 `pytest`，安装方式：
+
+```bash
+.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
+```
+
+确有必要时可用 `-SkipTests` 跳过，脚本会打印警告。这是逃生口，不是常规用法。
 
 日常代码同步不需要再次修改 Nginx。仅在域名、协议模式、证书、私钥或 Basic Auth 文件路径变动时，重新携带完整的 `-ConfigureNginx` 参数；脚本会覆盖自己的独立 `server` 文件并保留带时间戳的上一份备份。
 
