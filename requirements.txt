@@ -8,3 +8,10 @@ fastapi>=0.115.0
 uvicorn>=0.30.0
 httpx2>=2.9.0
 itsdangerous>=2.2.0
+# src/fetcher.py 是模块级 import yfinance（K 线备源），不是懒加载：
+# 缺它则 import src.fetcher 直接 ModuleNotFoundError。
+yfinance>=0.2.0
+
+# 可选：PDF 导出后端。src/toolbox.py 懒加载，缺失时降级为 HTML 打印源
+# 并标注 PDF skipped，不影响主流程，因此不作为硬依赖。
+# weasyprint>=60.0

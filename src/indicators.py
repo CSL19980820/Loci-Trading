@@ -4,8 +4,12 @@
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def add_ma(df: pd.DataFrame, periods: tuple[int, ...] = (5, 10, 20, 60),
@@ -120,6 +124,12 @@ def breakeven_probability(
     try:
         from scipy.stats import norm
     except ImportError:
+        # 曾经是静默 return []：模板拿到空列表就不渲染回本概率表格，
+        # 用户完全无从知道这一节为什么消失。缺依赖必须说出来。
+        logger.warning(
+            "未安装 scipy，跳过回本概率估算（报告将缺少该章节）。"
+            "安装方式：pip install scipy"
+        )
         return []
     required = target / current - 1
     out = []
