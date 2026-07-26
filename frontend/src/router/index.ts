@@ -9,6 +9,8 @@ const router = createRouter({
     { path: '/journal', name: 'journal', component: () => import('@/views/JournalView.vue'), meta: { title: '交割单' } },
     { path: '/pool', name: 'pool', component: () => import('@/views/PoolView.vue'), meta: { title: '候选池' } },
     { path: '/reviews', name: 'reviews', component: () => import('@/views/ReviewsView.vue'), meta: { title: '复盘' } },
+    { path: '/quant', name: 'quant', component: () => import('@/views/QuantView.vue'), meta: { title: '量化' } },
+    { path: '/ops', name: 'ops', component: () => import('@/views/OpsView.vue'), meta: { title: '运维' } },
     { path: '/archive/:code', name: 'archive', component: () => import('@/views/ArchiveView.vue'), meta: { title: '档案' } },
     { path: '/login', name: 'login', component: () => import('@/views/LoginView.vue'), meta: { title: '登录', public: true } },
   ],

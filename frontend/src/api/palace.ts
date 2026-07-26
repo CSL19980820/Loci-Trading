@@ -26,7 +26,10 @@ function sleep(ms: number): Promise<void> {
 
 async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
-  if (!headers.has('Content-Type') && init?.body) {
+  // FormData 必须让浏览器自己设 Content-Type——它要在里面带 multipart
+  // 的 boundary，手工设会让后端解析不出文件。
+  const isFormData = init?.body instanceof FormData
+  if (!headers.has('Content-Type') && init?.body && !isFormData) {
     headers.set('Content-Type', 'application/json')
   }
   const response = await fetch(`${API_ROOT}${path}`, {
@@ -107,6 +110,116 @@ export function getAnalytics(): Promise<Analytics> {
 export function createTrade(payload: TradePayload): Promise<{ id: string }> {
   return request<{ id: string }>('/trades', { method: 'POST', body: JSON.stringify(payload) })
 }
+
+// ---- 此前只有后端接口、前端一个按钮都没有的五类写入 -----------------
+// 它们是"线上只能看不能记，什么都要回本地 CLI"的直接原因。
+
+export interface CandidatePayload {
+  code: string
+  decision: string
+  reason: string
+  name?: string
+  occurred_on?: string | null
+  pool_id?: string
+  score?: number | null
+  timing?: string
+  rule_version?: string
+  evidence?: Record<string, unknown>
+  source?: string
+}
+
+export interface PlanPayload {
+  code: string
+  title: string
+  scenario: string
+  occurred_on?: string | null
+  entry_zone?: string
+  stop_price?: number | null
+  target_price?: number | null
+  layers?: number | null
+  invalidation?: string
+  rule_version?: string
+  supersedes_id?: string | null
+  note?: string
+  source?: string
+}
+
+export interface ReviewPayload {
+  entity_type: 'plan' | 'candidate' | 'trade'
+  entity_id: string
+  outcome: string
+  reviewed_on?: string | null
+  strategy_tag?: string
+  return_pct?: number | null
+  max_favorable_pct?: number | null
+  max_adverse_pct?: number | null
+  lesson?: string
+  next_rule?: string
+  source?: string
+}
+
+export interface SnapshotPayload {
+  total_assets: number
+  occurred_on?: string | null
+  cash?: number | null
+  note?: string
+  source?: string
+}
+
+export interface CashflowPayload {
+  amount: number
+  occurred_on?: string | null
+  note?: string
+  source?: string
+}
+
+/** 后端 WriteModel 是 extra="forbid"：多一个字段就 422。所以只提交填了的项。 */
+function compact<T extends object>(payload: T): Partial<T> {
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === '') continue
+    out[key] = value
+  }
+  return out as Partial<T>
+}
+
+export function createCandidate(payload: CandidatePayload): Promise<{ id: string }> {
+  return request<{ id: string }>('/candidates', {
+    method: 'POST',
+    body: JSON.stringify(compact(payload)),
+  })
+}
+
+export function createPlan(payload: PlanPayload): Promise<{ id: string }> {
+  return request<{ id: string }>('/plans', {
+    method: 'POST',
+    body: JSON.stringify(compact(payload)),
+  })
+}
+
+export function createReview(payload: ReviewPayload): Promise<{ id: string }> {
+  return request<{ id: string }>('/reviews', {
+    method: 'POST',
+    body: JSON.stringify(compact(payload)),
+  })
+}
+
+export function createSnapshot(payload: SnapshotPayload): Promise<{ id: string }> {
+  return request<{ id: string }>('/snapshots', {
+    method: 'POST',
+    body: JSON.stringify(compact(payload)),
+  })
+}
+
+export function createCashflow(payload: CashflowPayload): Promise<{ id: string }> {
+  return request<{ id: string }>('/cashflows', {
+    method: 'POST',
+    body: JSON.stringify(compact(payload)),
+  })
+}
+
+/** 供 api/quant.ts 复用同一套凭据、重试与错误契约。 */
+export { request as apiRequest }
 
 export function getSession(): Promise<SessionStatus> {
   return request<SessionStatus>('/auth/session')

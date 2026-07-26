@@ -1251,3 +1251,59 @@ select:focus {
     transition: none !important;
   }
 }
+/* ── 侧栏录入入口 ───────────────────────────────────────────────
+   候选/预案/复盘/资产/出入金五类录入。此前后端有接口、前端一个按钮
+   都没有，导致线上只能看不能记，什么都要回本地 CLI。 */
+.rail-actions {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rail-actions-label {
+  font-size: 0.75rem;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+  padding: 0 0.25rem 0.25rem;
+}
+
+.rail-action {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+/* ── 表单说明 ──────────────────────────────────────────────────
+   用来解释"这个字段为什么重要"，而不只是标个名字。 */
+.form-hint {
+  margin: 0.5rem 0 0;
+  padding: 0 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--dim);
+}
+
+/* 面板内联表单：与弹窗共用 .trade-form 的排版，去掉弹窗特有的边距 */
+.inline-form {
+  padding: 0.75rem 0 0.25rem;
+}
+
+.upload-label {
+  cursor: pointer;
+}
+
+@media (max-width: 980px) {
+  .rail-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+  }
+
+  .rail-actions-label {
+    width: 100%;
+  }
+}
