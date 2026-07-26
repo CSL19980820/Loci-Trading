@@ -384,3 +384,74 @@ GET/POST/DELETE      /api/providers
 - **`ak.stock_info_a_code_name()` 不可用**：它依赖 py_mini_racer 执行 JS，
   在多线程同步下会触发**原生崩溃**——整个进程直接挂掉，连 traceback 都
   没有。已改用交易所各自的列表接口。
+
+---
+
+## 10. 外部情报（MCP）
+
+### 分工
+
+| | 本地行情仓 | 外部 MCP |
+|---|---|---|
+| 数据 | 全市场日线、复权因子、交易日历 | 涨停梯队、炸板池、封板事件流、概念热度、龙虎榜、研报、公告 |
+| 为什么 | 量价计算要高频大批量 | 这些要盘中逐笔或全网抓取，本地没有数据源 |
+| 规模 | 5509 只一次算完，891 ms | 有配额（典型 5000 次/天、50 次/分） |
+| 时机 | 离线、随时 | 在线、低频、小批量 |
+
+**不要拿 MCP 做全市场扫描**——一次选股 5509 只，当天配额立刻见底。
+
+### 接入
+
+```bash
+python ops.py mcp add --name wudao \
+    --url https://stock.quicktiny.cn/api/mcp --token lb_xxx
+python ops.py mcp list
+python ops.py mcp tools wudao          # 刷新并列出（wudao 实测 63 个）
+python ops.py mcp call wudao kline --args '{"codes":["600519"],"days":5}'
+```
+
+注册时会**当场握手并拉工具列表**，连不上就不落库——配置错误应该在保存时
+暴露，而不是等某个半夜的定时任务失败。
+
+token 与 LLM Key 同一套加密：主密钥在环境变量、密文在 `ops.db`，
+AAD 绑定 server id。密文被搬到另一行会直接解不开——没有这层绑定，
+攻击者可以把 A 的 token 挪到 B 声明的 URL 上，等于主动把凭据送出去。
+
+### 为什么是 MCP 而不是包 REST
+
+wudao 同时提供 REST，直接调也能用。但它有 63 个工具，手工包一遍要写
+63 份 schema，上游一改就全过时。MCP 的 `tools/list` **自动发现**——
+接一个新 server 只是加一行配置，工具自动出现在 Agent 的可用列表里。
+约 150 行代码换零维护成本。
+
+### 为什么不用 LangChain / LangGraph
+
+它们要解决的问题（供应商抽象、密钥管理、工具循环、状态编排）本项目已经
+自己实现了，而且更贴合业务约束——两段式写入、配额刹车、铁律强制前置。
+服务器只剩约 1.1 G 可用内存，那条依赖链背不起。
+
+### 让技能用上这些工具
+
+```bash
+python ops.py job add 盘后简报 skill --cron "40 15 * * 1-5" \
+    --config '{"skill":"my-skill","provider":"openrouter",
+               "mcp_servers":["wudao"],
+               "tools":["limit_up_ladder","theme_intraday_capital"]}'
+```
+
+`tools` 留空则用技能包 `SKILL.md` 里 `tools:` 声明的那几个。**务必收窄**：
+一个 server 63 个工具的 schema 全塞进 system prompt 会占掉大量上下文，
+而多数技能只用三五个。
+
+### 三道刹车
+
+无人值守下，陷入循环的 Agent 会安静地烧光配额与 token：
+
+- **轮数上限**（默认 8）：撞上就停，并在输出里**如实说明分析可能不完整**
+- **单轮工具数上限**（默认 8）：模型偶尔一口气请求二十个
+- **失败不中断**：工具报错原文如实回传给模型让它换路子。**不能返回空结果**——
+  那会让模型以为"查到了但没数据"，进而编造结论
+
+只接**只读工具**。写账本必须走"AI 提议 → 人工确认"的两段式，不该发生在
+无人值守的定时任务里。定时技能能查任意数据、能给结论，但改不了任何一条
+账本记录。
