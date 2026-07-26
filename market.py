@@ -221,6 +221,73 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def cmd_compare(args: argparse.Namespace) -> int:
+    """横向对比全部战法，回答"我到底该用哪个"。
+
+    单看一个战法的绝对收益意义有限——大盘涨的时候什么都赚。真正有用的是
+    **同一区间、同一成本口径下的横向超额**，以及每个战法的 MFE 与净收益
+    的差距（差距大 = 浮盈拿不住，问题在退出而不在选股）。
+    """
+    from src.backtest import BacktestConfig, backtest_strategy
+    from src.strategies import all_strategies, get
+
+    holds = [int(h) for h in args.holds.split(",") if h.strip()]
+    engines = [get(s.strip()) for s in args.strategies.split(",")] if args.strategies         else all_strategies()
+
+    rows = []
+    with _store(args) as store:
+        for engine in engines:
+            for hold in holds:
+                try:
+                    result = backtest_strategy(
+                        store, engine.slug, start=args.start, end=args.end,
+                        config=BacktestConfig(
+                            hold_days=hold, stop_loss_pct=args.stop or None,
+                            benchmark=args.benchmark or None,
+                        ),
+                    )
+                except Exception as exc:
+                    print(f"  {engine.slug}/{hold}d 失败：{type(exc).__name__}: {exc}",
+                          file=sys.stderr)
+                    continue
+                metrics = result.metrics
+                if metrics.get("trades"):
+                    rows.append((f"{engine.slug}/{hold}d", metrics))
+
+    if not rows:
+        print("没有任何战法产生可评估的交易。", file=sys.stderr)
+        return 1
+
+    # 按超额排序：绝对收益会被大盘涨跌掩盖真实水平。
+    key = "avg_alpha" if any(m.get("avg_alpha") is not None for _, m in rows) else "avg_net_return"
+    rows.sort(key=lambda item: item[1].get(key) or -999, reverse=True)
+
+    print(f"{'战法':<24}{'笔数':>7}{'胜率':>8}{'净收益':>9}{'MFE':>8}{'MAE':>8}{'超额':>8}  回吐")
+    print("-" * 88)
+    for label, m in rows:
+        alpha = m.get("avg_alpha")
+        give_back = (m.get("avg_mfe") or 0) - (m.get("avg_net_return") or 0)
+        flag = " ⚠" if give_back > 4 else ""
+        print(f"{label:<24}{m['trades']:>7}{m['win_rate']:>7.1f}%"
+              f"{m['avg_net_return']:>8.2f}%{m.get('avg_mfe', 0):>7.2f}%"
+              f"{m.get('avg_mae', 0):>7.2f}%"
+              f"{('%+.2f%%' % alpha) if alpha is not None else '—':>8}"
+              f"  {give_back:>5.2f}%{flag}")
+        if m.get("caution"):
+            print(f"{'':24}  ⚠ {m['caution']}")
+
+    worst = max(rows, key=lambda item: (item[1].get("avg_mfe") or 0) - (item[1].get("avg_net_return") or 0))
+    gap = (worst[1].get("avg_mfe") or 0) - (worst[1].get("avg_net_return") or 0)
+    print()
+    print(f"「回吐」= MFE 均值 − 净收益均值：持有期内的浮盈最终没拿住多少。")
+    print(f"全场最严重的是 {worst[0]}（{gap:.2f} 个百分点）。若多数战法回吐都大，")
+    print(f"说明问题在退出纪律而不在选股——换战法解决不了，得先加止盈或缩短持有期。")
+    print()
+    print(DISCLAIMER)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="潜龙行情仓与选股引擎", formatter_class=argparse.RawDescriptionHelpFormatter
@@ -254,6 +321,15 @@ def build_parser() -> argparse.ArgumentParser:
     bench = sub.add_parser("bench", help="实测选股性能")
     bench.add_argument("--strategy", default="qianlong-auction")
     bench.set_defaults(func=cmd_bench)
+
+    cmp = sub.add_parser("compare", help="横向对比全部战法的超额收益")
+    cmp.add_argument("--start", default=None)
+    cmp.add_argument("--end", default=None)
+    cmp.add_argument("--holds", default="1,3", help="逗号分隔的持有天数")
+    cmp.add_argument("--stop", type=float, default=-8.0, help="止损百分比，0 表示不设")
+    cmp.add_argument("--benchmark", default="000300")
+    cmp.add_argument("--strategies", default="", help="限定对比范围，逗号分隔 slug")
+    cmp.set_defaults(func=cmd_compare)
 
     bt = sub.add_parser("backtest", help="对策略跑信号级回测")
     bt.add_argument("strategy", help="策略 slug")
