@@ -22,7 +22,7 @@ DEFAULT_DB = PROJECT_ROOT / ".ops" / "ops.db"
 SCHEMA_VERSION = 1
 
 #: 任务类型。每种对应 src/ops/jobs.py 里的一个执行器。
-JOB_KINDS = ("sync", "screen", "backtest", "compare", "optimize", "skill")
+JOB_KINDS = ("sync", "screen", "backtest", "compare", "optimize", "prune", "skill")
 
 #: 任务与执行状态。
 RUN_STATUSES = ("running", "success", "failed", "skipped")

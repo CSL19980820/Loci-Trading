@@ -396,6 +396,34 @@ python ops.py serve                  # 前台常驻调度
 
 线上由 FastAPI 生命周期接管，`PALACE_ENABLE_SCHEDULER=1` 开启。
 
+### 一套能直接用的日常流水线
+
+```bash
+python ops.py job add "01 盘后同步行情" sync --cron "35 15 * * 1-5"     --config '{"workers":6,"interval":0.08}'
+
+# record_candidates 是关键：选股结果自动入候选池，T+N 后复盘引擎才有得验
+python ops.py job add "02 盘后选股·分手快乐" screen --cron "45 15 * * 1-5"     --config '{"strategy":"lugw-fenshou","record_candidates":true}'
+python ops.py job add "03 盘后选股·潜龙原版" screen --cron "47 15 * * 1-5"     --config '{"strategy":"qianlong-close","record_candidates":true}'
+python ops.py job add "04 竞价前选股·潜龙竞价" screen --cron "26 9 * * 1-5"     --config '{"strategy":"qianlong-auction","record_candidates":true}'
+
+# 周末回顾：战法还有没有效、卖法要不要调
+python ops.py job add "05 周末战法对比" compare --cron "0 10 * * 6"     --config '{"start":"2025-01-01","holds":[1,3]}'
+python ops.py job add "06 周末退出扫描" optimize --cron "30 10 * * 6"     --config '{"strategy":"lugw-fenshou","start":"2025-01-01"}'
+
+# 执行记录每天累积，不清理会把几百 KB 的运维库撑到几百 MB
+python ops.py job add "07 每周清理执行历史" prune --cron "0 3 * * 0"     --config '{"keep_per_job":200}'
+```
+
+时间安排的理由：15:35 同步（收盘后行情已出），15:45 起选股（同步已完成），
+9:26 跑竞价版（集合竞价 9:25 结束，开盘前还有 4 分钟）。
+
+`record_candidates` 是整条回路的接头处：
+
+    选股 → 候选池 → T+N 后自动验证 → 知道这套战法准不准
+
+不开这个开关，复盘页的候选池验证永远没有数据可验。入池记录的 reason 会
+带上触发它的具体因子数值——只写"某战法选中"，三个月后回看等于没记。
+
 ### 三条设计约束
 
 - **必须单 worker。** APScheduler 是进程内单例。多 worker 下同一条 cron

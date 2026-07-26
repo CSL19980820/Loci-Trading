@@ -81,7 +81,7 @@ class AnalysisRequest(QuantModel):
 
 class JobCreate(QuantModel):
     name: str = Field(min_length=1, max_length=64)
-    kind: Literal["sync", "screen", "backtest", "compare", "optimize", "skill"]
+    kind: Literal["sync", "screen", "backtest", "compare", "optimize", "prune", "skill"]
     cron: str = Field(default="", max_length=120)
     config: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
