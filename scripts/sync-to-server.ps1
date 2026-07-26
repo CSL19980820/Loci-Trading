@@ -371,27 +371,55 @@ if [ "$configure_nginx" = "1" ]; then
         echo "PALACE_ALLOWED_HOSTS 首个域名（$configured_domain）必须与 -Domain（$domain）一致。" >&2
         exit 1
     }
-    # 会话 Cookie 的 Secure 标记必须与 Nginx 的协议模式一致，否则登录会静默失效：
-    # HTTP 模式下带 Secure 的 Cookie 浏览器根本不会回传，表现为"登录成功但立刻又被踢回登录页"。
-    configured_insecure="$(sed -n 's/^PALACE_INSECURE_HTTP=//p' "$env_file" | tail -n 1 | tr -d '[:space:]')"
-    if [ "$allow_insecure_http" = "1" ]; then
+fi
+
+# 会话 Cookie 的 Secure 标记必须与站点实际协议一致，否则登录静默失效：
+# HTTP 站点上带 Secure 的 Cookie 浏览器根本不会回传，症状是"登录成功
+# 但立刻又被踢回登录页"，且没有任何报错，极难排查。
+#
+# 这条检查对所有部署生效，不只 -ConfigureNginx：协议模式往往是上一次
+# 部署定下的，而本次可能只是普通同步，同样会把不匹配的配置推上去。
+existing_site="/home/software/nginx/conf/conf.d/qianlong-palace.conf"
+configured_insecure="$(sed -n 's/^PALACE_INSECURE_HTTP=//p' "$env_file" | tail -n 1 | tr -d '[:space:]')"
+if [ "$configure_nginx" = "1" ]; then
+    expect_insecure="$allow_insecure_http"      # 本次显式选定的模式
+elif [ -r "$existing_site" ]; then
+    # 站点已存在：有 ssl_certificate 即 HTTPS，否则按 HTTP 处理。
+    if grep -qE '^[[:space:]]*ssl_certificate[[:space:]]' "$existing_site"; then
+        expect_insecure="0"
+    else
+        expect_insecure="1"
+    fi
+else
+    expect_insecure="skip"                      # 读不到站点配置，无从判断
+fi
+
+case "$expect_insecure" in
+    1)
         case "$configured_insecure" in
             1|true|TRUE|yes|YES|on|ON) : ;;
             *)
-                echo "HTTP 模式需要在 $env_file 设置 PALACE_INSECURE_HTTP=1，否则登录会话无法保持。" >&2
+                echo "站点当前是 HTTP 模式，但 $env_file 未设置 PALACE_INSECURE_HTTP=1。" >&2
+                echo "直接部署会让会话 Cookie 带上 Secure 标记，浏览器不再回传，登录将无法保持。" >&2
+                echo "二选一：① 在 .env 增加 PALACE_INSECURE_HTTP=1 维持现状；② 切换到 HTTPS（推荐）。" >&2
                 exit 1
                 ;;
         esac
-    else
+        ;;
+    0)
         case "$configured_insecure" in
             ''|0|false|FALSE|no|NO|off|OFF) : ;;
             *)
-                echo "HTTPS 模式下 $env_file 不能保留 PALACE_INSECURE_HTTP=$configured_insecure；请删除该行或置 0。" >&2
+                echo "站点是 HTTPS 模式，但 $env_file 保留了 PALACE_INSECURE_HTTP=$configured_insecure。" >&2
+                echo "这会让会话 Cookie 失去 Secure 标记，属于静默降级；请删除该行或置 0。" >&2
                 exit 1
                 ;;
         esac
-    fi
-fi
+        ;;
+    *)
+        echo "提示：读不到 $existing_site，跳过 Cookie/协议一致性检查。" >&2
+        ;;
+esac
 test -d "$stage/release" || { echo "上传的发布包不完整：$stage/release" >&2; exit 1; }
 test ! -e "$release_dir" || { echo "发布目录已存在：$release_dir" >&2; exit 1; }
 
