@@ -1,0 +1,228 @@
+#!/usr/bin/env python
+"""行情仓与选股的命令行入口。
+
+    python market.py instruments                    刷新证券列表
+    python market.py sync --limit 500               同步日线（断点续跑）
+    python market.py sync --codes 600519,000001     只同步指定标的
+    python market.py coverage                       看仓库现状
+    python market.py strategies                     列出已注册战法
+    python market.py screen qianlong-auction        跑一次全市场选股
+    python market.py bench                          面板加载与选股性能实测
+
+设计上刻意让每个子命令都能单独重跑：同步有 watermark 断点，选股是纯函数，
+中途失败重来一次就好，不需要先清理什么状态。
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+from pathlib import Path
+import sys
+import time
+
+from src.market import MarketStore, sync_instruments, sync_quotes
+from src.market.store import DEFAULT_DB
+from src.strategies import describe_all, get, screen
+
+DISCLAIMER = "本工具仅用于信息整理与方法论辅助，输出不构成任何投资建议。股市有风险，入市需谨慎。"
+
+
+def _store(args: argparse.Namespace) -> MarketStore:
+    return MarketStore(args.db)
+
+
+def cmd_instruments(args: argparse.Namespace) -> int:
+    with _store(args) as store:
+        count = sync_instruments(store)
+        stocks = len(store.list_instruments(instrument_type="STOCK"))
+        index = len(store.list_instruments(instrument_type="INDEX"))
+    print(f"证券列表已更新：{count} 条（个股 {stocks}，指数 {index}）")
+    return 0
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    with _store(args) as store:
+        if args.codes:
+            codes = [code.strip() for code in args.codes.split(",") if code.strip()]
+            types: dict[str, str] = {}
+        else:
+            instruments = store.list_instruments()
+            if not instruments:
+                print("证券列表为空，请先执行：python market.py instruments", file=sys.stderr)
+                return 2
+            codes = [item["code"] for item in instruments]
+            types = {item["code"]: item["instrument_type"] for item in instruments}
+        if args.limit:
+            codes = codes[: args.limit]
+
+    total = len(codes)
+    last_report = [0.0]
+
+    def progress(done: int, count: int, code: str) -> None:
+        now = time.monotonic()
+        if now - last_report[0] >= 2.0 or done == count:
+            last_report[0] = now
+            print(f"\r  进度 {done}/{count}", end="", flush=True)
+
+    print(f"开始同步 {total} 只证券（并发 {args.workers}，最小间隔 {args.interval}s）")
+    report = sync_quotes(
+        lambda: MarketStore(args.db),
+        codes,
+        instrument_types=types if not args.codes else None,
+        workers=args.workers,
+        min_interval=args.interval,
+        force=args.force,
+        with_factors=not args.no_factors,
+        progress=progress,
+    )
+    print()
+    print(report.summary())
+    if report.failures:
+        print(f"失败 {len(report.failures)} 只，前 5 个：")
+        for code, message in report.failures[:5]:
+            print(f"  {code}: {message[:110]}")
+        print("重试方式：python market.py sync --codes " + ",".join(c for c, _ in report.failures[:20]))
+    return 0 if not report.failures else 1
+
+
+def cmd_coverage(args: argparse.Namespace) -> int:
+    with _store(args) as store:
+        data = store.coverage()
+    print(f"库文件      {data['db_path']}  {data['db_bytes'] / 1e6:.1f} MB")
+    print(f"证券数      {data['codes']}")
+    print(f"行数        {data['rows']:,}")
+    print(f"日期区间    {data['first_date']} ~ {data['last_date']}")
+    print(f"同步失败    {data['failed_codes']} 只")
+    return 0
+
+
+def cmd_strategies(args: argparse.Namespace) -> int:
+    for item in describe_all():
+        print(f"{item['slug']:<20} {item['name']}")
+        print(f"  {item['description']}")
+        print(f"  入场={item['entry_timing']}  需要字段={','.join(item['required_fields'])}"
+              f"  最少K线={item['min_bars']}")
+    return 0
+
+
+def cmd_screen(args: argparse.Namespace) -> int:
+    params = json.loads(args.params) if args.params else None
+    with _store(args) as store:
+        result = screen(
+            store,
+            args.strategy,
+            trade_date=args.date,
+            params=params,
+            codes=[c.strip() for c in args.codes.split(",")] if args.codes else None,
+        )
+    print(result.summary())
+    if args.json:
+        print(json.dumps(result.__dict__, ensure_ascii=False, indent=2, default=str))
+        return 0
+    for pick in result.picks:
+        factors = result_factor_line(pick["factors"])
+        print(f"  {pick['code']}  开={pick['open']}  收={pick['close']}   {factors}")
+    if not result.picks:
+        print("  （当日无标的满足条件）")
+    print()
+    print(DISCLAIMER)
+    return 0
+
+
+def result_factor_line(factors: dict) -> str:
+    """把因子字典压成一行可读文本，只展示数值型的关键项。"""
+    keys = ["昨涨幅", "昨振幅", "昨实体", "昨量比", "昨换手"]
+    parts = [
+        f"{key}={factors[key]:.2f}"
+        for key in keys
+        if isinstance(factors.get(key), (int, float))
+    ]
+    return " ".join(parts)
+
+
+def cmd_bench(args: argparse.Namespace) -> int:
+    """实测面板加载与选股耗时，并按当前候选池规模外推到全市场。"""
+    engine = get(args.strategy)
+    with _store(args) as store:
+        coverage = store.coverage()
+        if coverage["codes"] == 0:
+            print("行情仓为空，请先同步", file=sys.stderr)
+            return 2
+
+        started = time.monotonic()
+        days = store.trading_days()
+        bars = engine.min_bars() + 20
+        start = days[max(0, len(days) - bars)]
+        panels = store.load_panel(
+            fields=engine.required_fields(), start=start, min_bars=engine.min_bars()
+        )
+        load_seconds = time.monotonic() - started
+
+        shape = panels["close"].shape
+        started = time.monotonic()
+        result = engine.compute(panels)
+        compute_seconds = time.monotonic() - started
+
+    picked = int(result.signals.iloc[-1].sum())
+    universe = shape[1]
+    print(f"候选池        {universe} 只 × {shape[0]} 个交易日")
+    print(f"面板加载      {load_seconds * 1000:.0f} ms")
+    print(f"信号计算      {compute_seconds * 1000:.0f} ms   （全部 {shape[0]} 个交易日一次算完）")
+    print(f"合计          {(load_seconds + compute_seconds) * 1000:.0f} ms，最后一日选出 {picked} 只")
+    if universe:
+        factor = 5400 / universe
+        print(
+            f"外推全市场    约 {(load_seconds + compute_seconds) * factor:.2f} s "
+            f"（按 5400 只线性外推，仅供参考）"
+        )
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="潜龙行情仓与选股引擎", formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--db", default=str(DEFAULT_DB), help=f"行情库路径（默认 {DEFAULT_DB}）")
+    parser.add_argument("--verbose", action="store_true", help="输出调试日志")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("instruments", help="刷新证券列表").set_defaults(func=cmd_instruments)
+
+    sync = sub.add_parser("sync", help="同步日线行情")
+    sync.add_argument("--codes", default="", help="逗号分隔的代码；不传则同步全部")
+    sync.add_argument("--limit", type=int, default=0, help="只同步前 N 只，用于试跑")
+    sync.add_argument("--workers", type=int, default=4, help="并发数（默认 4，过高易被限流）")
+    sync.add_argument("--interval", type=float, default=0.15, help="全局最小请求间隔秒数")
+    sync.add_argument("--force", action="store_true", help="忽略 watermark，强制重新同步")
+    sync.add_argument("--no-factors", action="store_true", help="跳过复权因子，加快首次回填")
+    sync.set_defaults(func=cmd_sync)
+
+    sub.add_parser("coverage", help="查看行情仓现状").set_defaults(func=cmd_coverage)
+    sub.add_parser("strategies", help="列出已注册战法").set_defaults(func=cmd_strategies)
+
+    scr = sub.add_parser("screen", help="跑一次选股")
+    scr.add_argument("strategy", help="策略 slug，见 strategies 子命令")
+    scr.add_argument("--date", default=None, help="交易日，默认取仓库最新一日")
+    scr.add_argument("--codes", default="", help="限定股票池，逗号分隔")
+    scr.add_argument("--params", default="", help="覆盖参数的 JSON")
+    scr.add_argument("--json", action="store_true", help="输出完整 JSON")
+    scr.set_defaults(func=cmd_screen)
+
+    bench = sub.add_parser("bench", help="实测选股性能")
+    bench.add_argument("--strategy", default="qianlong-auction")
+    bench.set_defaults(func=cmd_bench)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

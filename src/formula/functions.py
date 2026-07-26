@@ -1,0 +1,359 @@
+"""通达信内建函数的向量化实现。
+
+每个函数都同时接受 ``pd.Series``（单票）与 ``pd.DataFrame``（全市场面板，
+index=交易日 / columns=股票代码）。绝大多数直接落在 pandas 的同名算子上，
+天然对两种形状都成立；少数需要沿时间轴做位置运算的（BARSLAST / HHVBARS）
+用 numpy 手写，同样一次覆盖所有列。
+
+约定：时间轴永远是 axis=0（行=交易日，由旧到新）。
+"""
+from __future__ import annotations
+
+from typing import TypeVar, Union
+
+import numpy as np
+import pandas as pd
+
+#: 面板或单票。两者在本模块里走完全相同的代码路径。
+Frame = Union[pd.Series, pd.DataFrame]
+F = TypeVar("F", pd.Series, pd.DataFrame)
+
+__all__ = [
+    "ABS", "AVEDEV", "BARSCOUNT", "BARSLAST", "BARSSINCE", "COUNT", "CROSS",
+    "DMA", "EMA", "EVERY", "EXIST", "FILTER", "HHV", "HHVBARS", "IF", "LLV",
+    "LLVBARS", "MA", "MAX", "MIN", "REF", "SMA", "STD", "SUM", "WMA",
+    "ZTPRICE", "weighted_ref_sum",
+]
+
+
+# --------------------------------------------------------------------------
+# 位移与均线
+# --------------------------------------------------------------------------
+
+def REF(series: F, periods: int) -> F:
+    """REF(X, N)：N 个周期前的值。N=0 返回自身。"""
+    if periods == 0:
+        return series
+    return series.shift(periods)
+
+
+def MA(series: F, periods: int) -> F:
+    """MA(X, N)：N 周期简单均线。不足 N 根返回空值，与通达信一致。"""
+    if periods <= 0:
+        raise ValueError("MA 的周期必须为正")
+    return series.rolling(periods).mean()
+
+
+def EMA(series: F, periods: int) -> F:
+    """EMA(X, N)：指数移动平均，alpha = 2/(N+1)。"""
+    if periods <= 0:
+        raise ValueError("EMA 的周期必须为正")
+    return series.ewm(span=periods, adjust=False).mean()
+
+
+def SMA(series: F, periods: int, weight: float = 1.0) -> F:
+    """SMA(X, N, M)：通达信的递推均值 Y = (M*X + (N-M)*Y') / N。
+
+    注意它不是"简单移动平均"——那是 MA。这里等价于 alpha = M/N 的 EMA，
+    KDJ、RSI 等指标依赖这个口径。
+    """
+    if periods <= 0:
+        raise ValueError("SMA 的周期必须为正")
+    return series.ewm(alpha=weight / periods, adjust=False).mean()
+
+
+def WMA(series: F, periods: int) -> F:
+    """WMA(X, N)：线性加权均线，当期权重最大（N, N-1, ..., 1）。
+
+    权重方向是这个函数最容易写反的地方——通达信里越近的周期权重越大。
+    """
+    if periods <= 0:
+        raise ValueError("WMA 的周期必须为正")
+    # rolling 传进来的窗口是"最旧在前、当期在末"，所以权重要递增排列。
+    # 写成 arange(periods, 0, -1) 会把最大权重压在最旧那根上——这正是
+    # src/qianlong.py 辰星线曾经踩过的坑，别再踩第二次。
+    weights = np.arange(1, periods + 1, dtype=float)
+    weights /= weights.sum()
+
+    def _apply(window: np.ndarray) -> float:
+        return float(np.dot(window, weights))
+
+    return series.rolling(periods).apply(_apply, raw=True)
+
+
+def weighted_ref_sum(series: F, weights: dict[int, float], divisor: float) -> F:
+    """按 {REF 偏移: 权重} 直接展开的加权和，再除以指定分母。
+
+    专为翻译"手写展开成一长串 REF"的通达信公式而设（潜龙出海的辰星线
+    就是这种写法）。这类公式经常出现跳过某个偏移、或者分母与权重和不等
+    的构造，硬套 WMA 会悄悄改掉原意，所以给它一个可以照抄的入口。
+    """
+    if divisor == 0:
+        raise ValueError("分母不能为 0")
+    total = None
+    for offset, weight in weights.items():
+        term = REF(series, offset) * weight
+        total = term if total is None else total + term
+    if total is None:
+        raise ValueError("权重表为空")
+    return total / divisor
+
+
+def DMA(series: F, alpha: F | float) -> F:
+    """DMA(X, A)：动态权重移动平均 Y = A*X + (1-A)*Y'，A 可以是序列。"""
+    if isinstance(alpha, (int, float)):
+        return series.ewm(alpha=float(alpha), adjust=False).mean()
+    values = np.asarray(series, dtype=float)
+    weights = np.clip(np.asarray(alpha, dtype=float), 0.0, 1.0)
+    out = np.full_like(values, np.nan, dtype=float)
+    prev = None
+    for i in range(values.shape[0]):
+        current, weight = values[i], weights[i]
+        if prev is None:
+            prev = np.where(np.isnan(current), np.nan, current)
+        else:
+            step = weight * current + (1 - weight) * prev
+            prev = np.where(np.isnan(current), prev, step)
+        out[i] = prev
+    return _like(series, out)
+
+
+# --------------------------------------------------------------------------
+# 区间统计
+# --------------------------------------------------------------------------
+
+def SUM(series: F, periods: int) -> F:
+    """SUM(X, N)：N 周期求和。N=0 表示从上市首日累计到当前。"""
+    if periods == 0:
+        return series.cumsum()
+    return series.rolling(periods).sum()
+
+
+def HHV(series: F, periods: int) -> F:
+    """HHV(X, N)：N 周期最高。N=0 表示历史最高。"""
+    if periods == 0:
+        return series.cummax()
+    return series.rolling(periods).max()
+
+
+def LLV(series: F, periods: int) -> F:
+    """LLV(X, N)：N 周期最低。N=0 表示历史最低。"""
+    if periods == 0:
+        return series.cummin()
+    return series.rolling(periods).min()
+
+
+def STD(series: F, periods: int) -> F:
+    """STD(X, N)：N 周期标准差。通达信用样本标准差（分母 N-1）。"""
+    return series.rolling(periods).std(ddof=1)
+
+
+def AVEDEV(series: F, periods: int) -> F:
+    """AVEDEV(X, N)：N 周期平均绝对偏差，BOLL 的变体与 CCI 会用到。"""
+
+    def _apply(window: np.ndarray) -> float:
+        return float(np.abs(window - window.mean()).mean())
+
+    return series.rolling(periods).apply(_apply, raw=True)
+
+
+def COUNT(condition: F, periods: int) -> F:
+    """COUNT(COND, N)：N 周期内条件成立的次数。N=0 表示自上市累计。"""
+    flags = _to_float_flags(condition)
+    if periods == 0:
+        return flags.cumsum()
+    return flags.rolling(periods).sum()
+
+
+def EVERY(condition: F, periods: int) -> F:
+    """EVERY(COND, N)：N 周期内条件是否始终成立。"""
+    return COUNT(condition, periods) >= periods
+
+
+def EXIST(condition: F, periods: int) -> F:
+    """EXIST(COND, N)：N 周期内条件是否出现过。"""
+    return COUNT(condition, periods) >= 1
+
+
+def FILTER(condition: F, periods: int) -> F:
+    """FILTER(COND, N)：条件成立后 N 周期内不再重复成立。
+
+    用于把连续信号压成"第一根"，避免同一波行情被反复计入。
+    """
+    raw = np.asarray(_to_float_flags(condition).fillna(0.0), dtype=float) > 0
+    single = raw.ndim == 1
+    flags = raw[:, None] if single else raw
+    out = np.zeros_like(flags, dtype=bool)
+    # 有状态（要记住"还封着几根"），只能沿时间轴推进；但每一步对全部
+    # 股票是向量运算，循环次数等于交易日数而不是股票数。
+    blocked = np.zeros(flags.shape[1], dtype=int)
+    for i in range(flags.shape[0]):
+        fire = flags[i] & (blocked <= 0)
+        out[i] = fire
+        blocked = np.where(fire, periods, np.maximum(blocked - 1, 0))
+    return _like(condition, out[:, 0] if single else out)
+
+
+# --------------------------------------------------------------------------
+# 位置类：距离上一次成立 / 距离最值
+# --------------------------------------------------------------------------
+
+def BARSLAST(condition: F) -> F:
+    """BARSLAST(COND)：距上一次条件成立的周期数，当日成立为 0。
+
+    从未成立过则为空值。实现是"把成立位置写进数组再前向填充"，
+    整段没有 Python 循环，全市场一次算完。
+    """
+    flags = np.asarray(_to_float_flags(condition), dtype=float) > 0
+    positions = np.arange(flags.shape[0], dtype=float)
+    if flags.ndim == 1:
+        marks = np.where(flags, positions, np.nan)
+    else:
+        marks = np.where(flags, positions[:, None], np.nan)
+    filled = pd.DataFrame(marks) if marks.ndim == 2 else pd.Series(marks)
+    filled = filled.ffill().to_numpy(dtype=float)
+    if marks.ndim == 1:
+        return _like(condition, positions - filled)
+    return _like(condition, positions[:, None] - filled)
+
+
+def BARSSINCE(condition: F) -> F:
+    """BARSSINCE(COND)：距**第一次**条件成立的周期数。"""
+    flags = np.asarray(_to_float_flags(condition), dtype=float) > 0
+    single = flags.ndim == 1
+    matrix = flags[:, None] if single else flags
+    positions = np.arange(matrix.shape[0], dtype=float)
+    result = np.full(matrix.shape, np.nan, dtype=float)
+    # 每列只需定位首次成立的位置，之后是等差数列，不必逐行推进。
+    for column in range(matrix.shape[1]):
+        hits = np.flatnonzero(matrix[:, column])
+        if hits.size:
+            first = hits[0]
+            result[first:, column] = positions[first:] - first
+    return _like(condition, result[:, 0] if single else result)
+
+
+def BARSCOUNT(series: F) -> F:
+    """BARSCOUNT(X)：从首个有效值起算的有效周期数（含当前）。
+
+    次新股用它来排除"上市不久、指标窗口还没填满"的票。
+    """
+    valid = series.notna()
+    counter = valid.cumsum()
+    started = valid.cummax()
+    result = counter.where(started)
+    return result
+
+
+def HHVBARS(series: F, periods: int) -> F:
+    """HHVBARS(X, N)：N 周期内最高价距今的周期数，当日最高为 0。"""
+    return _extreme_bars(series, periods, highest=True)
+
+
+def LLVBARS(series: F, periods: int) -> F:
+    """LLVBARS(X, N)：N 周期内最低价距今的周期数，当日最低为 0。"""
+    return _extreme_bars(series, periods, highest=False)
+
+
+def _extreme_bars(series: F, periods: int, *, highest: bool) -> F:
+    if periods <= 0:
+        raise ValueError("HHVBARS/LLVBARS 的周期必须为正")
+    values = np.asarray(series, dtype=float)
+    single = values.ndim == 1
+    matrix = values[:, None] if single else values
+    rows, cols = matrix.shape
+    out = np.full((rows, cols), np.nan, dtype=float)
+    if rows >= periods:
+        from numpy.lib.stride_tricks import sliding_window_view
+
+        windows = sliding_window_view(matrix, periods, axis=0)  # (rows-N+1, cols, N)
+        with np.errstate(invalid="ignore"):
+            picker = np.nanargmax if highest else np.nanargmin
+            allnan = np.all(np.isnan(windows), axis=2)
+            safe = np.where(np.isnan(windows), -np.inf if highest else np.inf, windows)
+            index_in_window = picker(safe, axis=2).astype(float)
+            index_in_window[allnan] = np.nan
+        out[periods - 1 :] = (periods - 1) - index_in_window
+    return _like(series, out[:, 0] if single else out)
+
+
+# --------------------------------------------------------------------------
+# 逻辑与算术
+# --------------------------------------------------------------------------
+
+def CROSS(fast: Frame, slow: Frame) -> Frame:
+    """CROSS(A, B)：A 上穿 B。今日 A>B 且昨日 A<=B。"""
+    return (fast > slow) & (REF(fast, 1) <= REF(slow, 1))
+
+
+def IF(condition: Frame, when_true: Frame | float, when_false: Frame | float) -> Frame:
+    """IF(COND, A, B)：逐元素三元选择。A/B 可以是常数或同形序列。"""
+    if not isinstance(condition, (pd.Series, pd.DataFrame)):
+        raise TypeError("IF 的条件必须是 Series 或 DataFrame")
+    mask = _to_float_flags(condition) > 0
+    if isinstance(when_true, (pd.Series, pd.DataFrame)):
+        return when_true.where(mask, when_false)
+    # 真值分支是常数：先铺成与条件同形，再让假值分支填进去。
+    filled = mask.astype(float)
+    filled[:] = float(when_true)
+    return filled.where(mask, when_false)
+
+
+def ABS(series: Frame) -> Frame:
+    """ABS(X)：绝对值。"""
+    return series.abs()
+
+
+def MAX(left: Frame | float, right: Frame | float) -> Frame:
+    """MAX(A, B)：逐元素取大。"""
+    if isinstance(left, (pd.Series, pd.DataFrame)):
+        return left.clip(lower=right) if not isinstance(right, (pd.Series, pd.DataFrame)) else left.where(left >= right, right)
+    return right.clip(lower=left)
+
+
+def MIN(left: Frame | float, right: Frame | float) -> Frame:
+    """MIN(A, B)：逐元素取小。"""
+    if isinstance(left, (pd.Series, pd.DataFrame)):
+        return left.clip(upper=right) if not isinstance(right, (pd.Series, pd.DataFrame)) else left.where(left <= right, right)
+    return right.clip(upper=left)
+
+
+def ZTPRICE(prev_close: Frame, ratio: float = 0.1) -> Frame:
+    """ZTPRICE(REF(CLOSE,1), R)：涨停价。
+
+    交易所对涨跌停价取"四舍五入到分"，且是逢五进一；Python 内建 round()
+    是银行家舍入（0.5 取偶），直接用会让一批票的涨停价差一分钱，进而
+    让"是否涨停"判错。这里显式做逢五进一。
+    """
+    raw = prev_close * (1.0 + ratio)
+    return _round_half_up(raw, 2)
+
+
+def _round_half_up(series: Frame, digits: int) -> Frame:
+    scale = 10.0**digits
+    values = np.asarray(series, dtype=float)
+    # 加一个极小量抵消二进制表示误差（如 10.045 实际存成 10.04499...）。
+    rounded = np.floor(values * scale + 0.5 + 1e-9) / scale
+    return _like(series, np.where(np.isnan(values), np.nan, rounded))
+
+
+# --------------------------------------------------------------------------
+# 内部工具
+# --------------------------------------------------------------------------
+
+def _to_float_flags(condition: Frame) -> Frame:
+    """把条件转成 0/1 浮点。
+
+    条件通常已经是比较运算的结果（bool dtype），此时不含 NaN——pandas 对
+    含 NaN 的比较直接给 False，语义上等同通达信"数据不足即不成立"。
+    若传进来的是数值序列，非零视为成立，NaN 保持 NaN 以免把缺数据
+    当成信号。
+    """
+    return condition.astype(float)
+
+
+def _like(template: Frame, values: np.ndarray) -> Frame:
+    """把 numpy 结果套回与输入同形的 pandas 对象。"""
+    if isinstance(template, pd.DataFrame):
+        return pd.DataFrame(values, index=template.index, columns=template.columns)
+    return pd.Series(np.asarray(values).reshape(-1), index=template.index, name=template.name)
