@@ -179,6 +179,48 @@ def cmd_bench(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backtest(args: argparse.Namespace) -> int:
+    from src.backtest import BacktestConfig, backtest_strategy
+
+    config = BacktestConfig(
+        hold_days=args.hold,
+        stop_loss_pct=args.stop if args.stop else None,
+        take_profit_pct=args.target if args.target else None,
+        benchmark=args.benchmark or None,
+    )
+    params = json.loads(args.params) if args.params else None
+    with _store(args) as store:
+        result = backtest_strategy(
+            store, args.strategy, start=args.start, end=args.end,
+            params=params, config=config,
+        )
+
+    print(result.summary())
+    if result.skipped:
+        print("  跳过：" + "，".join(f"{k} {v} 次" for k, v in result.skipped.items()))
+    metrics = result.metrics
+    if metrics.get("trades"):
+        print(f"  持有 {metrics['avg_hold_days']} 日  盈利 {metrics['wins']} / 亏损 {metrics['losses']}")
+        print(f"  单笔最好 {metrics['best']:+.2f}%   最差 {metrics['worst']:+.2f}%")
+        if "avg_alpha" in metrics:
+            print(f"  相对基准超额均值 {metrics['avg_alpha']:+.2f}%   跑赢基准比例 {metrics['alpha_win_rate']:.1f}%")
+        print(f"  退出原因 {metrics['exit_reasons']}")
+        print(f"  往返成本已扣 {result.config['commission_bps'] * 2 + result.config['stamp_duty_bps'] + result.config['slippage_bps'] * 2:.0f} bps")
+        if metrics.get("caution"):
+            print(f"  ⚠ {metrics['caution']}")
+    if args.trades and result.trades:
+        print("\n  信号日     入场日     代码    入场    出场    持有  净收益   MFE     MAE    退出")
+        for trade in result.trades:
+            print(
+                f"  {trade.signal_date} {trade.entry_date} {trade.code}  "
+                f"{trade.entry_price:7.2f} {trade.exit_price:7.2f} {trade.hold_days:3d}  "
+                f"{trade.net_return_pct:+7.2f}% {trade.mfe_pct:+6.2f}% {trade.mae_pct:+6.2f}%  {trade.exit_reason}"
+            )
+    print()
+    print(DISCLAIMER)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="潜龙行情仓与选股引擎", formatter_class=argparse.RawDescriptionHelpFormatter
@@ -212,6 +254,18 @@ def build_parser() -> argparse.ArgumentParser:
     bench = sub.add_parser("bench", help="实测选股性能")
     bench.add_argument("--strategy", default="qianlong-auction")
     bench.set_defaults(func=cmd_bench)
+
+    bt = sub.add_parser("backtest", help="对策略跑信号级回测")
+    bt.add_argument("strategy", help="策略 slug")
+    bt.add_argument("--start", default=None, help="起始交易日 YYYY-MM-DD")
+    bt.add_argument("--end", default=None, help="结束交易日 YYYY-MM-DD")
+    bt.add_argument("--hold", type=int, default=3, help="固定持有交易日数（默认 3）")
+    bt.add_argument("--stop", type=float, default=-6.0, help="止损百分比，传 0 表示不设")
+    bt.add_argument("--target", type=float, default=0.0, help="止盈百分比，0 表示不设")
+    bt.add_argument("--benchmark", default="000300", help="基准指数，空字符串表示不比")
+    bt.add_argument("--params", default="", help="覆盖策略参数的 JSON")
+    bt.add_argument("--trades", action="store_true", help="逐笔打印交易明细")
+    bt.set_defaults(func=cmd_backtest)
     return parser
 
 
