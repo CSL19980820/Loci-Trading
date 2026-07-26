@@ -236,3 +236,83 @@ class PanelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IncrementalSyncTests(unittest.TestCase):
+    """增量同步的跳过判据。判错就是每天静默地什么都不做。"""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.db = Path(self.temp.name) / "market.db"
+        self.store = MarketStore(self.db)
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.temp.cleanup()
+
+    def _sync(self, *, synced_on: str, stale_after_days: int | None = None) -> int:
+        """把 watermark 的同步时间改成指定日期，再看会不会被跳过。"""
+        from src.market.sync import sync_quotes
+
+        self.store.set_watermark("600519", last_trade_date="2026-03-01", status="ok")
+        self.store.conn.execute(
+            "UPDATE ingest_watermark SET last_synced_at = ? WHERE code = '600519'",
+            (f"{synced_on}T10:00:00+08:00",),
+        )
+        self.store.conn.commit()
+
+        calls: list[str] = []
+
+        class Recorder:
+            name = "recorder"
+
+            def fetch_daily(self, code, *, instrument_type="STOCK"):
+                calls.append(code)
+                return _quotes(["2026-03-02"])
+
+            def fetch_adjust_factors(self, code):
+                return pd.DataFrame(columns=["date", "hfq_factor"])
+
+        kwargs = {} if stale_after_days is None else {"stale_after_days": stale_after_days}
+        sync_quotes(
+            lambda: MarketStore(self.db), ["600519"],
+            sources=[Recorder()], workers=1, min_interval=0.0,
+            with_factors=False, **kwargs,
+        )
+        return len(calls)
+
+    def test_skips_only_what_was_synced_today(self) -> None:
+        from datetime import date, timedelta
+
+        today = date.today().isoformat()
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+
+        self.assertEqual(self._sync(synced_on=today), 0, "今天同步过的应跳过")
+        self.assertEqual(
+            self._sync(synced_on=yesterday), 1,
+            "昨天同步过的今天必须重新取——默认跳过它会让每日同步静默失效",
+        )
+
+    def test_force_ignores_the_watermark(self) -> None:
+        from datetime import date
+        from src.market.sync import sync_quotes
+
+        self.store.set_watermark("600519", status="ok")
+
+        calls: list[str] = []
+
+        class Recorder:
+            name = "recorder"
+
+            def fetch_daily(self, code, *, instrument_type="STOCK"):
+                calls.append(code)
+                return _quotes(["2026-03-02"])
+
+            def fetch_adjust_factors(self, code):
+                return pd.DataFrame(columns=["date", "hfq_factor"])
+
+        sync_quotes(
+            lambda: MarketStore(self.db), ["600519"], sources=[Recorder()],
+            workers=1, min_interval=0.0, force=True, with_factors=False,
+        )
+        self.assertEqual(len(calls), 1)

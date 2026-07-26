@@ -117,7 +117,7 @@ def sync_quotes(
     workers: int = 4,
     min_interval: float = 0.15,
     force: bool = False,
-    stale_after_days: int = 1,
+    stale_after_days: int = 0,
     with_factors: bool = True,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> SyncReport:
@@ -126,8 +126,13 @@ def sync_quotes(
     store_factory 而不是 store：SQLite 连接不能跨线程共享，每个 worker
     自己开一条连接。调用方通常传 ``lambda: MarketStore(path)``。
 
-    force=False 时，watermark 显示今天已同步过的票直接跳过——每日增量
-    重复触发（比如手动点了"补数"又赶上定时任务）不会重复打接口。
+    force=False 时，watermark 显示**今天**已同步过的票直接跳过——重复触发
+    （比如手动点了"补数"又赶上定时任务）不会重复打接口。
+
+    ``stale_after_days`` 必须默认 0，即"只跳过今天同步过的"。曾经默认 1，
+    结果是昨天同步过的票今天也被跳过——盘后同步任务每天都报
+    "跳过 5500 / 成功 0"，看起来一切正常，实际一条新数据都不取。
+    这是最难发现的那类失败：没有报错、没有异常，只是什么都没做。
     """
     chain = list(sources or default_sources())
     types = instrument_types or {}
