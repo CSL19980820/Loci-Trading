@@ -186,3 +186,43 @@ class BoardLimitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissingTurnoverTests(unittest.TestCase):
+    """没有换手率就没有筹码分布——必须给空值，不能给一个看着正常的错数字。"""
+
+    def test_all_nan_turnover_yields_nan_not_a_stale_price(self) -> None:
+        """衰减率缺失会让筹码永远停在第一天，算出来毫无意义。
+
+        这种静默的错误答案比直接报错危险得多：它会一路流进选股结果，
+        而且看起来完全正常。
+        """
+        index = pd.Index(DAYS[:20], name="trade_date")
+        close = pd.Series([10.0 + i for i in range(20)], index=index, dtype=float)
+        turnover = pd.Series([np.nan] * 20, index=index, dtype=float)
+        cost = COST(close * 1.02, close * 0.98, close, turnover, 50.0)
+        self.assertTrue(cost.isna().all(), "换手率全缺时 COST 必须全为空")
+
+    def test_zero_turnover_is_also_unusable(self) -> None:
+        index = pd.Index(DAYS[:20], name="trade_date")
+        close = pd.Series([10.0 + i for i in range(20)], index=index, dtype=float)
+        turnover = pd.Series([0.0] * 20, index=index, dtype=float)
+        self.assertTrue(COST(close * 1.02, close * 0.98, close, turnover, 50.0).isna().all())
+
+    def test_one_bad_column_does_not_poison_the_others(self) -> None:
+        """全市场面板里有几只票缺数据是常态，不能因此让整批作废。"""
+        index = pd.Index(DAYS[:20], name="trade_date")
+        good = pd.Series([10.0 + i for i in range(20)], index=index, dtype=float)
+        close = pd.DataFrame({"600001": good, "600002": good}, index=index)
+        turnover = pd.DataFrame(
+            {"600001": [0.05] * 20, "600002": [np.nan] * 20}, index=index
+        )
+        cost = COST(close * 1.02, close * 0.98, close, turnover, 50.0)
+        self.assertFalse(cost["600001"].isna().all(), "有数据的票应正常算出")
+        self.assertTrue(cost["600002"].isna().all(), "缺数据的票应全空")
+
+    def test_winner_also_refuses_without_turnover(self) -> None:
+        index = pd.Index(DAYS[:20], name="trade_date")
+        close = pd.Series([10.0 + i for i in range(20)], index=index, dtype=float)
+        turnover = pd.Series([np.nan] * 20, index=index, dtype=float)
+        self.assertTrue(WINNER(close * 1.02, close * 0.98, close, turnover).isna().all())

@@ -166,6 +166,14 @@ def chip_cost_series(
     targets = np.asarray(percents, dtype=float) / 100.0
     out = {percent: np.full((rows, cols), np.nan) for percent in percents}
 
+    # 完全没有换手率数据的标的必须整列作废。
+    # 缺失换手率会让衰减率变成 0，筹码分布永远停在第一天的价格分布上——
+    # 算出来是个看着正常、实则毫无意义的数字。这种静默的错误答案
+    # 比直接报错危险得多，因为它会一路流进选股结果。
+    usable_column = np.isfinite(turnover_a).any(axis=0) & (
+        np.nan_to_num(turnover_a, nan=0.0) > 0
+    ).any(axis=0)
+
     for t, chips, centers, started in _accumulate(
         high_a, low_a, close_a, turnover_a, bins=bins, decay=decay
     ):
@@ -181,7 +189,7 @@ def chip_cost_series(
             index = np.argmax(cumulative >= target, axis=0)
             reached = cumulative[index, np.arange(cols)] >= target
             values = centers[index, np.arange(cols)]
-            out[percent][t] = np.where(usable & reached, values, np.nan)
+            out[percent][t] = np.where(usable & reached & usable_column, values, np.nan)
 
     template = close if isinstance(close, pd.DataFrame) else None
     return {
@@ -207,6 +215,10 @@ def chip_winner_series(
     reference = close_a if price is None else _prepare(price, price, price, price)[0]
     rows, cols = close_a.shape
     out = np.full((rows, cols), np.nan)
+    # 与 chip_cost_series 同理：没有换手率就没有筹码分布，不能给数字。
+    usable_column = np.isfinite(turnover_a).any(axis=0) & (
+        np.nan_to_num(turnover_a, nan=0.0) > 0
+    ).any(axis=0)
 
     for t, chips, centers, started in _accumulate(
         high_a, low_a, close_a, turnover_a, bins=bins, decay=decay
@@ -216,7 +228,9 @@ def chip_winner_series(
         total = chips.sum(axis=0)
         usable = total > 1e-12
         below = np.where(centers <= reference[t][None, :], chips, 0.0).sum(axis=0)
-        out[t] = np.where(usable, below / np.where(usable, total, 1.0) * 100.0, np.nan)
+        out[t] = np.where(
+            usable & usable_column, below / np.where(usable, total, 1.0) * 100.0, np.nan
+        )
 
     return _restore(out, close, close if isinstance(close, pd.DataFrame) else None, single)
 
