@@ -21,6 +21,8 @@ services:
       PALACE_AUTH_USERNAME: ${PALACE_AUTH_USERNAME:?请在 /srv/qianlong-palace/.env 设置 PALACE_AUTH_USERNAME}
       PALACE_AUTH_PASSWORD: ${PALACE_AUTH_PASSWORD:?请在 /srv/qianlong-palace/.env 设置 PALACE_AUTH_PASSWORD}
       PALACE_SESSION_SECRET: ${PALACE_SESSION_SECRET:?请在 /srv/qianlong-palace/.env 设置 PALACE_SESSION_SECRET}
+      # 可选，默认空=会话 Cookie 带 Secure。仅 HTTP 临时排障模式才置 1。
+      PALACE_INSECURE_HTTP: ${PALACE_INSECURE_HTTP:-}
       PALACE_DB: /data/qianlong.db
       PALACE_STATIC_DIR: /app/frontend/dist
     ports:

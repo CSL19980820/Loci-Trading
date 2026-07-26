@@ -8,6 +8,7 @@ from pathlib import Path
 import logging
 import os
 import sqlite3
+import time
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -117,6 +118,63 @@ def _split_hosts(raw: str) -> list[str]:
     return [host.strip() for host in raw.split(",") if host.strip()]
 
 
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+class LoginThrottle:
+    """登录失败限流，防止固定口令被暴力枚举。
+
+    单容器单进程部署，用内存计数就够；进程重启计数清零，这是已知取舍。
+    它只是下限保护，真正的边界仍是 PALACE_AUTH_PASSWORD 的熵值，
+    以及 HTTPS 部署下 Nginx 那层 Basic Auth。
+    """
+
+    def __init__(self, *, max_failures: int = 5, window_seconds: int = 900) -> None:
+        self.max_failures = max_failures
+        self.window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+
+    def _recent(self, key: str, now: float) -> list[float]:
+        cutoff = now - self.window_seconds
+        recent = [stamp for stamp in self._failures.get(key, []) if stamp > cutoff]
+        if recent:
+            self._failures[key] = recent
+        else:
+            self._failures.pop(key, None)
+        return recent
+
+    def retry_after(self, key: str) -> int:
+        """仍在锁定期内返回剩余秒数；未锁定返回 0。"""
+        now = time.monotonic()
+        recent = self._recent(key, now)
+        if len(recent) < self.max_failures:
+            return 0
+        return max(1, int(self.window_seconds - (now - recent[0])))
+
+    def record_failure(self, key: str) -> None:
+        now = time.monotonic()
+        recent = self._recent(key, now)
+        recent.append(now)
+        self._failures[key] = recent
+        self._prune(now)
+
+    def reset(self, key: str) -> None:
+        self._failures.pop(key, None)
+
+    def _prune(self, now: float) -> None:
+        """伪造来源 IP 可以刷出大量条目，超阈值时清掉已过期的键。"""
+        if len(self._failures) <= 1024:
+            return
+        cutoff = now - self.window_seconds
+        for key in [
+            key
+            for key, stamps in self._failures.items()
+            if not any(stamp > cutoff for stamp in stamps)
+        ]:
+            self._failures.pop(key, None)
+
+
 def create_app(
     db_path: Path | str | None = None,
     static_dir: Path | str | None = None,
@@ -127,6 +185,7 @@ def create_app(
     auth_username: str | None = None,
     auth_password: str | None = None,
     session_secret: str | None = None,
+    insecure_http: bool | None = None,
 ) -> FastAPI:
     """创建可测试的 FastAPI 实例；每个请求独立持有 SQLite 连接。"""
     resolved_db = Path(db_path or os.environ.get("PALACE_DB") or DEFAULT_DB)
@@ -147,6 +206,17 @@ def create_app(
         raise RuntimeError("生产环境必须配置 PALACE_AUTH_PASSWORD")
     if is_production and not resolved_session_secret:
         raise RuntimeError("生产环境必须配置 PALACE_SESSION_SECRET")
+    # 会话 Cookie 默认带 Secure；只有显式声明的 HTTP 临时排障模式才放开，
+    # 与 sync-to-server.ps1 的 -AllowInsecureHttp 是同一个决定。
+    resolved_insecure_http = (
+        insecure_http if insecure_http is not None else _env_flag("PALACE_INSECURE_HTTP")
+    )
+    if is_production and resolved_insecure_http:
+        logger.warning(
+            "PALACE_INSECURE_HTTP 已开启：会话 Cookie 不带 Secure 标记，"
+            "登录凭证会以明文经网络传输。仅限短期排障，勿长期对公网运行。"
+        )
+    login_throttle = LoginThrottle()
     app = FastAPI(
         title="潜龙记忆宫殿 API",
         version="1.0.0",
@@ -237,7 +307,7 @@ def create_app(
             session_cookie="palace_session",
             max_age=60 * 60 * 24 * 30,
             same_site="lax",
-            https_only=False,
+            https_only=not resolved_insecure_http,
         )
 
     @app.exception_handler(PalaceError)
@@ -259,15 +329,31 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok", "db": str(resolved_db)}
 
+    def _throttle_key(request: Request) -> str:
+        """限流按来源 IP 计。uvicorn 以 --proxy-headers 启动，
+        经 Nginx 转发后 request.client.host 已是真实来源。"""
+        return request.client.host if request.client else "unknown"
+
     @app.post("/api/auth/login", tags=["auth"])
     def login(payload: LoginInput, request: Request) -> dict[str, str | bool]:
         if not is_production:
             return {"authenticated": True, "username": "local"}
+        throttle_key = _throttle_key(request)
+        blocked_for = login_throttle.retry_after(throttle_key)
+        if blocked_for:
+            logger.warning("登录失败次数过多，暂时拒绝来源 %s", throttle_key)
+            raise HTTPException(
+                status_code=429,
+                detail="登录失败次数过多，请稍后再试",
+                headers={"Retry-After": str(blocked_for)},
+            )
         if not (
             compare_digest(payload.username, resolved_auth_username)
             and compare_digest(payload.password, resolved_auth_password)
         ):
+            login_throttle.record_failure(throttle_key)
             raise HTTPException(status_code=401, detail="账号或密码错误")
+        login_throttle.reset(throttle_key)
         request.session.clear()
         request.session["username"] = resolved_auth_username
         return {"authenticated": True, "username": resolved_auth_username}

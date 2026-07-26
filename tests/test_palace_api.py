@@ -6,7 +6,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from src.palace_api import create_app
+from src.palace_api import LoginThrottle, create_app
 
 
 class PalaceApiTests(unittest.TestCase):
@@ -136,7 +136,9 @@ class PalaceApiTests(unittest.TestCase):
             session_secret="test-session-secret",
         )
         payload = {"action": "BUY", "code": "300358", "name": "楚天科技", "shares": 100, "price": 8.3}
-        with TestClient(app) as client:
+        # 生产形态是 HTTPS：会话 Cookie 带 Secure，只会经加密信道回传。
+        # 用 http:// 跑这个用例的话客户端不会带回 Cookie，那是正确行为。
+        with TestClient(app, base_url="https://testserver") as client:
             blocked_read = client.get("/api/dashboard")
             bad_login = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
             login = client.post("/api/auth/login", json={"username": "admin", "password": "test-password"})
@@ -161,6 +163,7 @@ class PalaceApiTests(unittest.TestCase):
         self.assertIn("max-age=2592000", login.headers["set-cookie"].lower())
         self.assertIn("httponly", login.headers["set-cookie"].lower())
         self.assertIn("samesite=lax", login.headers["set-cookie"].lower())
+        self.assertIn("secure", login.headers["set-cookie"].lower())
         self.assertEqual(readable.status_code, 200)
         self.assertEqual(allowed_by_session.status_code, 201)
         self.assertTrue(session.json()["authenticated"])
@@ -170,6 +173,86 @@ class PalaceApiTests(unittest.TestCase):
         self.assertEqual(extra.status_code, 422)
         self.assertEqual(allowed_by_session.headers["x-content-type-options"], "nosniff")
         self.assertIn("frame-ancestors 'none'", allowed_by_session.headers["content-security-policy"])
+
+    def _production_app(self, name: str, **overrides: object):
+        kwargs: dict[str, object] = {
+            "environment": "production",
+            "allowed_hosts": ["testserver"],
+            "write_token": "test-agent-token",
+            "auth_username": "admin",
+            "auth_password": "test-password",
+            "session_secret": "test-session-secret",
+        }
+        kwargs.update(overrides)
+        return create_app(
+            Path(self.temp.name) / name, Path(self.temp.name) / "no-static", **kwargs
+        )
+
+    def test_insecure_http_mode_drops_the_secure_flag(self) -> None:
+        """HTTP 临时排障模式必须显式声明，才允许 Cookie 不带 Secure。"""
+        app = self._production_app("insecure.db", insecure_http=True)
+        with TestClient(app) as client:
+            login = client.post(
+                "/api/auth/login", json={"username": "admin", "password": "test-password"}
+            )
+            readable = client.get("/api/dashboard")
+        self.assertEqual(login.status_code, 200)
+        self.assertNotIn("secure", login.headers["set-cookie"].lower())
+        self.assertEqual(readable.status_code, 200)
+
+    def test_login_throttles_after_repeated_failures(self) -> None:
+        """连续失败达到阈值后锁定，且锁定期内正确口令同样被拒。"""
+        app = self._production_app("throttle.db")
+        with TestClient(app, base_url="https://testserver") as client:
+            failures = [
+                client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+                for _ in range(5)
+            ]
+            blocked = client.post(
+                "/api/auth/login", json={"username": "admin", "password": "wrong"}
+            )
+            blocked_even_with_right_password = client.post(
+                "/api/auth/login", json={"username": "admin", "password": "test-password"}
+            )
+        self.assertTrue(all(item.status_code == 401 for item in failures))
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("Retry-After", blocked.headers)
+        self.assertGreater(int(blocked.headers["Retry-After"]), 0)
+        self.assertEqual(blocked_even_with_right_password.status_code, 429)
+
+    def test_successful_login_clears_the_failure_counter(self) -> None:
+        """登录成功要把计数清零，否则零星手滑会累积成误锁。"""
+        app = self._production_app("throttle-reset.db")
+        with TestClient(app, base_url="https://testserver") as client:
+            for _ in range(4):
+                client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+            ok = client.post(
+                "/api/auth/login", json={"username": "admin", "password": "test-password"}
+            )
+            for _ in range(4):
+                client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+            still_allowed = client.post(
+                "/api/auth/login", json={"username": "admin", "password": "test-password"}
+            )
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(still_allowed.status_code, 200)
+
+
+class LoginThrottleTests(unittest.TestCase):
+    def test_failures_expire_out_of_the_window(self) -> None:
+        """窗口滑过后自动解锁，不需要重启进程。"""
+        throttle = LoginThrottle(max_failures=2, window_seconds=0)
+        throttle.record_failure("1.2.3.4")
+        throttle.record_failure("1.2.3.4")
+        self.assertEqual(throttle.retry_after("1.2.3.4"), 0)
+
+    def test_counts_are_per_source(self) -> None:
+        """一个来源被锁不应连坐其他来源。"""
+        throttle = LoginThrottle(max_failures=2)
+        throttle.record_failure("1.2.3.4")
+        throttle.record_failure("1.2.3.4")
+        self.assertGreater(throttle.retry_after("1.2.3.4"), 0)
+        self.assertEqual(throttle.retry_after("5.6.7.8"), 0)
 
 
 if __name__ == "__main__":
