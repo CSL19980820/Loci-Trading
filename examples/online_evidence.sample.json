@@ -1,0 +1,35 @@
+{
+  "template_id": "stock_research_final_v1",
+  "generated_by": "codex",
+  "query_time": "2026-05-06 22:15:00 UTC+8",
+  "status": "sample",
+  "summary": "此文件为 Codex 在线核验证据样例。实际使用时请替换为真实网页、公告和数据核验结果。",
+  "sources": [
+    {
+      "title": "上市公司公告样例",
+      "url": "https://www.cninfo.com.cn/",
+      "source": "巨潮资讯",
+      "checked_at": "2026-05-06 22:15:00 UTC+8",
+      "source_type": "official_disclosure",
+      "key_points": [
+        "示例：公告标题、披露日期和事项摘要。",
+        "示例：需继续核验的审批条件或风险因素。"
+      ],
+      "inference": "示例：该公告可能影响市场关注度，但不等同于确定性利好或利空。"
+    }
+  ],
+  "data_cross_checks": [
+    {
+      "field": "latest_price",
+      "program_value": "10.80",
+      "online_value": "10.79",
+      "verdict": "close",
+      "note": "示例：不同数据源刷新时间不同，轻微差异可接受。"
+    }
+  ],
+  "open_questions": [
+    "示例：最新一期财报披露日期是否已更新？",
+    "示例：是否存在停牌、ST、退市风险或重大资产重组公告？"
+  ],
+  "compliance_note": "以上为公开资料核验样例，不构成投资建议。"
+}

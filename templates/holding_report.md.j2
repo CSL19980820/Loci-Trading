@@ -1,0 +1,318 @@
+# {{ name }}({{ code }}) AI 辅助分析报告
+
+> **模板版本**：{{ template_id }}
+
+> **数据时点**：{{ query_time }}
+> **数据来源**：AkShare 聚合（东方财富 / 新浪 / 同花顺口径）
+> **重要声明**：以下内容为**信息整理与研究方法辅助**，不构成任何买卖建议。A 股波动剧烈，**股市有风险，入市需谨慎**，决策与结果由您本人负责。
+
+---
+
+## 一、持仓现状诊断
+
+{% if data.evidence_only %}
+> 当前为**证据版报告**：未取得可验证的真实 K 线，技术面、概率测算和规则引擎评分未完整运行。以下仅展示已取得的财务、公告、资金流和在线核验证据。
+{% endif %}
+
+| 项目 | 数值 | 备注 |
+|---|---|---|
+| 股票 | {{ name }}({{ code }}) | {{ market_full }} |
+| 持仓数量 | {{ position.shares }} 股 |  |
+| 成本价 | {{ '%.3f'|format(position.cost) }} 元 |  |
+| 总成本 | {{ '{:,.2f}'.format(position.total_cost) }} 元 |  |
+| 当前价 | {% if position.current is not none %}{{ '%.2f'|format(position.current) }} 元{% else %}待核验{% endif %} | {% if realtime_change %}较昨收 {{ realtime_change }}{% endif %} |
+| 当前市值 | {% if position.market_value is not none %}{{ '{:,.2f}'.format(position.market_value) }} 元{% else %}待核验{% endif %} |  |
+| 浮动盈亏 | {% if position.pnl is not none %}**{{ '{:+,.2f}'.format(position.pnl) }} 元**{% else %}待核验{% endif %} | {% if position.pnl_pct is not none %}**{{ '{:+.2f}%'.format(position.pnl_pct) }}**{% else %}-{% endif %} |
+| 回本需{% if position.pnl_pct is not none and position.pnl_pct < 0 %}涨{% else %}跌{% endif %} | {% if position.need_up_pct is not none %}{{ '%.2f'|format(position.need_up_pct) }}%{% else %}待核验{% endif %} | |
+| 持仓状态 | **{{ position.level }}** | |
+
+{% if position.cost_percentile_90d is not none and vwap30 is not none %}
+**关键锚点**：您的成本位落在近 90 日价格区间的 **{{ '%.1f'|format(position.cost_percentile_90d) }}% 分位**（0=最低 100=最高）。近 30 日市场加权成本(VWAP) 为 **{{ '%.2f'|format(vwap30) }} 元**，您的成本{% if position.cost > vwap30 %}高于{% else %}低于{% endif %}市场均价 **{{ '%.1f'|format((position.cost/vwap30 - 1)*100|abs) }}%**。
+{% else %}
+**关键锚点**：未取得真实价格区间与 VWAP，成本分位和市场均价对比暂不输出。
+{% endif %}
+
+---
+
+## 二、K 线回看（近 {{ kline_tail|length if kline_tail is not none else 0 }} 根日线，前复权）
+
+{% if data.evidence_only %}
+未取得可验证的真实 K 线，当前不展示行情回看内容。
+{% else %}
+
+{% if kline_highlights %}
+**关键拐点**：
+{% for hp in kline_highlights %}
+- {{ hp }}
+{% endfor %}
+{% endif %}
+
+**近 10 根 K 线**：
+
+| 日期 | 开盘 | 收盘 | 最高 | 最低 | 涨跌% | 换手% |
+|---|---|---|---|---|---|---|
+{% for row in kline_last10 -%}
+| {{ row['日期'] }} | {{ '%.2f'|format(row['开盘']) }} | {{ '%.2f'|format(row['收盘']) }} | {{ '%.2f'|format(row['最高']) }} | {{ '%.2f'|format(row['最低']) }} | {{ '%+.2f'|format(row['涨跌幅']) }} | {{ '%.2f'|format(row['换手率']) }} |
+{% endfor %}
+{% endif %}
+
+---
+
+## 三、技术面快照
+
+{% if data.evidence_only %}
+技术指标未运行。需要补齐真实 K 线后，才会输出 MA、MACD、RSI、BOLL、筹码分布和回本概率。
+{% else %}
+
+| 指标 | 数值 | 解读 |
+|---|---|---|
+| 最新收盘 | {{ '%.2f'|format(levels.current) }} |  |
+{% if levels.MA5 -%}
+| MA5 / MA10 | {{ '%.2f'|format(levels.MA5) }} / {{ '%.2f'|format(levels.MA10) }} | {% if levels.current > levels.MA5 %}短期站上均价{% else %}短期均价压制{% endif %} |
+{% endif -%}
+{% if levels.MA20 -%}
+| MA20 | **{{ '%.2f'|format(levels.MA20) }}** | 关键短中期支撑 |
+{% endif -%}
+{% if levels.MA60 -%}
+| MA60 | {{ '%.2f'|format(levels.MA60) }} | 中期趋势线 |
+{% endif -%}
+| MACD 信号 | {{ trend.macd_signal }} | {{ macd_interpretation }} |
+{% if last_rsi -%}
+| RSI14 | {{ '%.2f'|format(last_rsi) }} | {% if last_rsi > 70 %}超买{% elif last_rsi < 30 %}超卖{% else %}中性{% endif %} |
+{% endif -%}
+| 趋势分类 | {{ trend.trend }} ({{ trend.strength }}) | |
+
+**筹码密集区**（近 30 日成交分布）：
+
+| 价格区间 | 成交量(万手) | 占比 |
+|---|---|---|
+{% for row in chip_distribution -%}
+| {{ row['价格区间'] }} | {{ '%.0f'|format(row['成交量']/10000) }} | {{ '%.1f%%'|format(row['占比']) }} |
+{% endfor %}
+{% endif %}
+
+---
+
+## 四、资金面
+
+{% if fund_stance.available -%}
+**最近 {{ fund_stance.days }} 日主力态度**：**{{ fund_stance.stance }}**（累计 {{ '%+.2f'|format(fund_stance.main_sum/1e8) }} 亿）
+
+| 资金类型 | 近 {{ fund_stance.days }} 日净额 |
+|---|---|
+| 主力 | {{ '%+.2f'|format(fund_stance.main_sum/1e8) }} 亿 |
+| 超大单 | {{ '%+.2f'|format(fund_stance.big_sum/1e8) }} 亿 |
+| 小单 | {{ '%+.2f'|format(fund_stance.small_sum/1e8) }} 亿 |
+
+{% if fund_stance.divergence_warning %}
+> ⚠️ **警告**：主力净流出且小单净流入，呈现「**主力出货、散户接盘**」形态，短期应警惕。
+{% endif %}
+{% else -%}
+> 资金流数据采集失败或不可用
+{% endif %}
+
+{% if lhb_table -%}
+**龙虎榜**：近 90 天上榜 {{ lhb_count }} 次，最近一次：{{ lhb_latest }}
+{% endif %}
+
+---
+
+## 五、基本面与行业面
+
+{% if financial_summary -%}
+**主要财务指标**（来源：新浪）：
+
+| 指标 | 最新期 | 同比/环比 |
+|---|---|---|
+{% for item in financial_summary -%}
+| {{ item.name }} | {{ item.value }} | {{ item.change }} |
+{% endfor %}
+{% endif %}
+
+{% if reports_summary -%}
+**近期机构研报**（前 {{ reports_summary|length }} 篇）：
+
+| 机构 | 评级 | 日期 | 2026E EPS / PE |
+|---|---|---|---|
+{% for r in reports_summary -%}
+| {{ r.org }} | {{ r.rating }} | {{ r.date }} | {{ r.eps_pe }} |
+{% endfor %}
+{% endif %}
+
+---
+
+## 六、关键价位 & 回本概率
+
+**关键价位**（从高到低排列）：
+
+```
+{% for item in key_levels_sorted -%}
+{{ '%-6.2f'|format(item.price) }} ── {{ item.label }}
+{% endfor -%}
+```
+
+{% if data.evidence_only %}
+未取得真实 K 线，关键价位和回本概率不具备解释力，本节仅保留模板结构。
+{% else %}
+**回本概率估算**（基于近 60 日波动率 {{ '%.2f%%'|format(vol.annual_vol*100) }} 年化）：
+
+| 时间 | 无趋势假设 | 基于近 20 日趋势 |
+|---|---|---|
+{% for p in breakeven_probs -%}
+| {{ p.days }} 交易日 | {{ '%.1f%%'|format(p.prob_no_drift) }} | {{ '%.1f%%'|format(p.prob_with_drift) }} |
+{% endfor %}
+
+> 概率模型基于正态分布近似, 不代表未来实际走势, 仅供参考.
+{% endif %}
+
+---
+
+## 七、买入辅助检查（非买入建议）
+
+{% if buy_check.score_pct is not none %}
+**研究条件成熟度**：**{{ buy_check.grade }}**，得分 **{{ '%.1f'|format(buy_check.score_pct) }}/100**
+{% else %}
+**研究条件成熟度**：**{{ buy_check.grade }}**
+{% endif %}
+
+{% if buy_check.checks %}
+| 检查项 | 权重 | 结果 | 说明 |
+|---|---:|---|---|
+{% for item in buy_check.checks -%}
+| {{ item.name }} | {{ item.weight }} | {{ '通过' if item.passed else '未通过' }} | {{ item.detail }} |
+{% endfor %}
+{% endif %}
+
+{% if buy_check.blockers %}
+**主要阻断项**：
+{% for item in buy_check.blockers %}
+- {{ item.name }}：{{ item.detail }}
+{% endfor %}
+{% endif %}
+
+> {{ buy_check.decision_note }}
+
+---
+
+## 八、风险雷达
+
+**综合风险等级**：**{{ risk_radar.overall }}**（均分 {{ risk_radar.avg_score }}，低=1 / 中=2 / 高=3）
+
+| 风险项 | 等级 | 说明 |
+|---|---|---|
+{% for item in risk_radar['items'] -%}
+| {{ item.name }} | {{ item.level }} | {{ item.detail }} |
+{% endfor %}
+
+---
+
+## 九、持仓组合分析
+
+{% if portfolio.available -%}
+**组合总览**：总成本 **{{ '{:,.2f}'.format(portfolio.total_cost) }} 元**，当前市值 **{{ '{:,.2f}'.format(portfolio.total_value) }} 元**，总盈亏 **{{ '{:+,.2f}'.format(portfolio.total_pnl) }} 元**（{{ '{:+.2f}%'.format(portfolio.total_pnl_pct) }}）。
+
+**集中度**：**{{ portfolio.concentration }}**；第一大持仓占比 {{ '%.1f%%'|format(portfolio.top1_weight) }}，前三大持仓占比 {{ '%.1f%%'|format(portfolio.top3_weight) }}。
+
+| 代码 | 名称 | 股数 | 成本价 | 当前价 | 市值 | 盈亏% | 权重 |
+|---|---|---:|---:|---:|---:|---:|---:|
+{% for h in portfolio.holdings -%}
+| {{ h.code }} | {{ h.name }} | {{ h.shares }} | {{ '%.3f'|format(h.cost) }} | {{ '%.2f'|format(h.current_price) }} | {{ '{:,.2f}'.format(h.market_value) }} | {{ '{:+.2f}%'.format(h.pnl_pct) }} | {{ '%.1f%%'|format(h.weight) }} |
+{% endfor %}
+{% else -%}
+未提供持仓组合 CSV。本节可通过 `--portfolio-csv` 启用，CSV 列为 `code,name,cost,shares,current_price`。
+{% endif %}
+
+---
+
+## 十、三档情景观察框架（非交易指令）
+
+{% if strategies %}
+{% for s in strategies %}
+### {{ s.name }}
+
+**适用**: {{ s.suitable }}
+
+| 触发条件 | 观察重点 |
+|---|---|
+{% for a in s.actions -%}
+| {{ a.condition }} | {{ a.action }} |
+{% endfor %}
+
+**情景测算**: 压力 **{{ '{:+,.0f}'.format(s.expected.worst) }} 元** / 中性 **{{ '{:+,.0f}'.format(s.expected.mid) }} 元** / 乐观 **{{ '{:+,.0f}'.format(s.expected.best) }} 元**
+
+{% endfor %}
+{% else %}
+未取得真实 K 线，情景观察框架未运行。
+{% endif %}
+
+**规则引擎观察**：**{{ recommended_scheme }}**
+
+> ⚠️ 上述情景基于历史数据和经验规则生成, **不是交易指令，也不构成投资建议**。请结合您自身的风险承受能力、资金期限和独立判断进一步核验。
+
+---
+
+## 十一、Codex 在线核验摘要
+
+{% if online_evidence.available -%}
+**核验状态**：已合并 Codex 在线证据  
+**核验时点**：{{ online_evidence.query_time or '未提供' }}  
+**证据文件**：{{ online_evidence.path or '未提供' }}
+
+{% if online_evidence.summary %}
+**核验摘要**：{{ online_evidence.summary }}
+{% endif %}
+
+{% if online_evidence.sources %}
+| 来源 | 标题 | 核验时点 | 摘要 |
+|---|---|---|---|
+{% for src in online_evidence.sources -%}
+| {{ src.source }} | {{ src.title }} | {{ src.checked_at }} | {{ (src.key_points|join('；')) if src.key_points else '-' }} |
+{% endfor %}
+{% endif %}
+
+{% if online_evidence.data_cross_checks %}
+**数据交叉核验**：
+{% for item in online_evidence.data_cross_checks %}
+- {{ item.field }}：程序值 {{ item.program_value }} / 在线值 {{ item.online_value }} / 结论 {{ item.verdict }}；{{ item.note }}
+{% endfor %}
+{% endif %}
+
+{% if online_evidence.open_questions %}
+**待继续核验**：
+{% for q in online_evidence.open_questions %}
+- {{ q }}
+{% endfor %}
+{% endif %}
+{% else -%}
+未提供 Codex 在线核验证据。本报告仅基于程序抓取与本地计算结果生成。
+{% endif %}
+
+如需把本报告交给本地大模型或其他 AI 继续解读，请使用同目录下 `ai_context.json`。建议提示词：
+
+```text
+{{ ai_context.suggested_prompt }}
+```
+
+AI 解读边界：只能输出事实、观察点、风险和待核验信息，不得输出确定性买卖指令或收益承诺。
+
+---
+
+## 十二、风险提示
+
+1. **市场风险**：A 股单日波动可超 ±10%，本股年化波动率 {{ '%.2f%%'|format(vol.annual_vol*100) }}，风险较高。
+2. **基本面风险**：行业政策、大宗商品价格、公司经营等均可能超预期变化。
+3. **数据口径**：技术指标为**前复权**计算, 请以您的券商软件为准。
+4. **模型局限**：回本概率模型基于正态分布假设, 无法预测趋势反转/黑天鹅。
+5. **时效性**：本报告为 **{{ query_time }}** 的快照, 行情瞬息万变, 决策前请复核最新数据。
+6. **资金流口径**：资金流多为平台模型估算，不应单独作为交易依据。
+
+---
+
+**最后重申**：以上所有内容为信息整理与公开数据分析，**不构成任何投资建议**。
+具体交易请基于您自身的风险承受能力、资金规划和独立判断做出。
+
+**股市有风险，入市需谨慎**。
+
+---
+
+*报告由 stock-analyzer 自动生成 | {{ query_time }}*

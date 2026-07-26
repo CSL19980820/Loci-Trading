@@ -1,0 +1,4 @@
+# 线上记忆宫殿只运行 FastAPI 账本与静态工作台；研究分析依赖留在本地 Agent 环境。
+fastapi>=0.115.0
+uvicorn>=0.30.0
+itsdangerous>=2.2.0

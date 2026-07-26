@@ -1,0 +1,34 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# 前端
+node_modules/
+frontend/dist/
+
+# 运行产物
+output/
+*.log
+
+# 数据库：账本/行情/AI 会话都是运行时数据，不进仓库
+.palace/
+*.db
+*.db-wal
+*.db-shm
+
+# 密钥
+.env
+.env.*
+!.env.example
+
+# 工具与编辑器缓存
+.codegraph/
+.omo/
+.omx/
+.tmp/
+.idea/
+.vscode/

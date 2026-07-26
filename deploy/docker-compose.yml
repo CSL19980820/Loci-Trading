@@ -1,0 +1,43 @@
+name: qianlong-palace
+
+services:
+  palace:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      # 服务器的出网代理只监听在宿主机回环地址；构建阶段通过 host
+      # 网络和标准 proxy build args 使用它，值不会进入最终镜像或运行容器。
+      network: host
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
+    restart: unless-stopped
+    user: "10001:10001"
+    environment:
+      PALACE_ENV: production
+      PALACE_ALLOWED_HOSTS: ${PALACE_ALLOWED_HOSTS:?请在 /srv/qianlong-palace/.env 设置 PALACE_ALLOWED_HOSTS}
+      PALACE_WRITE_TOKEN: ${PALACE_WRITE_TOKEN:?请在 /srv/qianlong-palace/.env 设置 PALACE_WRITE_TOKEN}
+      PALACE_AUTH_USERNAME: ${PALACE_AUTH_USERNAME:?请在 /srv/qianlong-palace/.env 设置 PALACE_AUTH_USERNAME}
+      PALACE_AUTH_PASSWORD: ${PALACE_AUTH_PASSWORD:?请在 /srv/qianlong-palace/.env 设置 PALACE_AUTH_PASSWORD}
+      PALACE_SESSION_SECRET: ${PALACE_SESSION_SECRET:?请在 /srv/qianlong-palace/.env 设置 PALACE_SESSION_SECRET}
+      PALACE_DB: /data/qianlong.db
+      PALACE_STATIC_DIR: /app/frontend/dist
+    ports:
+      - "127.0.0.1:18787:8787"
+    volumes:
+      - /srv/qianlong-palace/data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os; from urllib.request import Request, urlopen; host=os.environ['PALACE_ALLOWED_HOSTS'].split(',')[0].strip(); urlopen(Request('http://127.0.0.1:8787/api/health', headers={'Host': host}), timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
