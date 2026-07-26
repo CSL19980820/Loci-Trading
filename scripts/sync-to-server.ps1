@@ -452,7 +452,10 @@ if [ -z "$container_id" ]; then
     exit 1
 fi
 health=""
-for attempt in $(seq 1 20); do
+# 等待上限 120s（60 × 2s）。原来是 40s，那是按「镜像只有 fastapi/uvicorn、
+# 秒级启动」设计的；补齐 pandas/akshare 之后光 import 就要好几秒，
+# 40s 会把正常启动误判成失败并触发不必要的回滚。
+for attempt in $(seq 1 60); do
     health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"
     [ "$health" = "healthy" ] && break
     [ "$health" = "unhealthy" ] && break

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
@@ -34,7 +35,13 @@ import zipfile
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_SKILL_ROOT = PROJECT_ROOT / ".skills"
+
+#: 技能包的安装根目录。
+#:
+#: 线上**必须**用 PALACE_SKILL_ROOT 指到数据卷（如 /data/skills）。
+#: 默认值在仓库目录下，而线上每次发布都会把代码换成一个新的 release 目录——
+#: 装在那里的技能包会随着下一次同步凭空消失，且没有任何报错。
+DEFAULT_SKILL_ROOT = Path(os.environ.get("PALACE_SKILL_ROOT") or (PROJECT_ROOT / ".skills"))
 
 #: 单个包的压缩包体积上限。
 MAX_ARCHIVE_BYTES = 20 * 1024 * 1024

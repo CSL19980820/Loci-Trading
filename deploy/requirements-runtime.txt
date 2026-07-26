@@ -1,4 +1,31 @@
-# 线上记忆宫殿只运行 FastAPI 账本与静态工作台；研究分析依赖留在本地 Agent 环境。
+# 线上运行时依赖。
+#
+# 这份清单曾经只有 fastapi/uvicorn/itsdangerous——那意味着线上是个哑账本：
+# 取不了行情、算不了指标、跑不了回测、调不了 LLM，import src.fetcher 直接
+# ImportError。现在补齐，让「线上直接用」成立。
+#
+# 代价是镜像体积从几十 MB 涨到 GB 级，构建时间也明显变长。相应地：
+# - scripts/sync-to-server.ps1 的健康检查等待时间已同步放宽
+# - deploy/docker-compose.yml 已加内存 limit（服务器仅剩约 1.1G 可用）
+#
+# 若哪天要退回最小镜像，删掉「分析与行情」及其后的部分即可：账本 API 与
+# 静态工作台照常可用，新增能力会返回 503 并说清缺了什么依赖。
+
+# --- 基础服务 ---
 fastapi>=0.115.0
 uvicorn>=0.30.0
 itsdangerous>=2.2.0
+python-multipart>=0.0.9    # 技能包 zip 上传
+
+# --- 分析与行情 ---
+pandas>=2.0.0
+numpy>=1.24.0
+akshare>=1.12.0            # 行情源；镜像体积主要来自它那串爬虫依赖
+
+# --- 定时任务与技能包 ---
+apscheduler>=3.10.0
+PyYAML>=6.0
+
+# --- LLM 接入 ---
+cryptography>=42.0.0       # API Key 静态加密（AES-256-GCM）
+httpx2>=2.9.0              # LLM HTTP 客户端，支持按供应商单独配代理

@@ -2,7 +2,8 @@
 
 API 只为本地工作台和 Agent 编排提供账本读写能力，不包含认证、远程托管或自动交易。
 """
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
+from contextlib import asynccontextmanager
 from hmac import compare_digest
 from pathlib import Path
 import logging
@@ -217,7 +218,47 @@ def create_app(
             "登录凭证会以明文经网络传输。仅限短期排障，勿长期对公网运行。"
         )
     login_throttle = LoginThrottle()
+    # 调度器实例存在这里，供关闭钩子与 /api/jobs/schedule 取用。
+    scheduler_box: dict[str, Any] = {"instance": None}
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        """进程内定时调度的启停。
+
+        显式开关而非默认开启：本地开发、跑测试、执行一次性脚本时都会创建
+        app，不该顺手把定时任务也跑起来——半夜多份重复的行情同步就是这么
+        来的。生产环境在 compose 里设 PALACE_ENABLE_SCHEDULER=1。
+        """
+        if _env_flag("PALACE_ENABLE_SCHEDULER"):
+            try:
+                from src.ops import JobContext
+                from src.ops.scheduler import JobScheduler
+
+                market_db = os.environ.get("PALACE_MARKET_DB") or None
+                scheduler = JobScheduler(
+                    db_path=os.environ.get("PALACE_OPS_DB") or None,
+                    context_factory=lambda: JobContext(market_db=market_db),
+                )
+                scheduler.start()
+                scheduler_box["instance"] = scheduler
+                plan = scheduler.reload()
+                logger.info("调度器已启动，装载 %s 个任务", plan["count"])
+                for rejected in plan["rejected"]:
+                    logger.error(
+                        "任务 %s 的 cron 非法：%s", rejected["name"], rejected["reason"]
+                    )
+            except ImportError as exc:
+                logger.warning("调度器依赖缺失（%s），定时任务未启动", exc.name)
+        try:
+            yield
+        finally:
+            scheduler = scheduler_box.get("instance")
+            if scheduler is not None:
+                scheduler.shutdown()
+                scheduler_box["instance"] = None
+
     app = FastAPI(
+        lifespan=lifespan,
         title="潜龙记忆宫殿 API",
         version="1.0.0",
         description="本地研究账本 API。所有读写均可追溯；不执行自动交易。",
@@ -449,6 +490,21 @@ def create_app(
     @app.post("/api/cashflows", status_code=201, tags=["account"])
     def create_cashflow(payload: CashflowInput, store: Store, _: WriteAccess) -> dict[str, str]:
         return {"id": store.record_account_event(kind="CASHFLOW", **payload.model_dump())}
+
+    # ---- 行情 / 策略 / 回测 / 技能 / 任务 / 供应商 -----------------
+    # 这些能力依赖 pandas、akshare、apscheduler 等可选重量级库。router 内部
+    # 全部懒导入：即便线上镜像只装了最小依赖，账本 API 也照常可用，
+    # 对应接口返回 503 并说清缺什么。GET /api/capabilities 可一次看清。
+    from src.routers import build_quant_router
+
+    app.include_router(
+        build_quant_router(
+            write_dependency=require_write_access,
+            market_db=os.environ.get("PALACE_MARKET_DB") or None,
+            ops_db=os.environ.get("PALACE_OPS_DB") or None,
+            scheduler_getter=lambda: scheduler_box["instance"],
+        )
+    )
 
     dist_dir = Path(static_dir or os.environ.get("PALACE_STATIC_DIR") or (PROJECT_ROOT / "frontend" / "dist"))
     if dist_dir.is_dir():
