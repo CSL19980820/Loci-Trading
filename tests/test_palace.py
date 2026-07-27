@@ -18,7 +18,94 @@ class PalaceStoreTests(unittest.TestCase):
         self.store.close()
         self.temp.cleanup()
 
-    def test_partial_sell_reprices_remaining_cost_and_keeps_audit_event(self) -> None:
+    def test_candidates_by_strategy_filters_by_rule_version(self) -> None:
+        """按战法查历史选股，只返回匹配 rule_version 的记录。"""
+        self.store.record_candidate(
+            code="000001", name="平安银行", decision="入选", reason="test",
+            occurred_on="2026-06-01", pool_id="strat-a@2026-06-01", rule_version="strat-a",
+        )
+        self.store.record_candidate(
+            code="000002", name="万科A", decision="入选", reason="test",
+            occurred_on="2026-06-01", pool_id="strat-b@2026-06-01", rule_version="strat-b",
+        )
+        self.store.record_candidate(
+            code="000003", name="国药控股", decision="入选", reason="test",
+            occurred_on="2026-06-02", pool_id="strat-a@2026-06-02", rule_version="strat-a",
+        )
+        results = self.store.candidates_by_strategy("strat-a")
+        codes = [r["code"] for r in results]
+        self.assertIn("000001", codes)
+        self.assertIn("000003", codes)
+        self.assertNotIn("000002", codes)
+
+    def test_candidates_by_strategy_respects_date_range(self) -> None:
+        for day in ("2026-05-01", "2026-06-01", "2026-07-01"):
+            self.store.record_candidate(
+                code="000001", name="平安银行", decision="入选", reason="test",
+                occurred_on=day, pool_id=f"s@{day}", rule_version="strat-x",
+            )
+        results = self.store.candidates_by_strategy("strat-x", start="2026-06-01", end="2026-06-30")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["date"], "2026-06-01")
+
+    def test_candidates_by_strategy_deduplicates_same_day(self) -> None:
+        """同一天同一标的重跑两次，只返回最新一条。"""
+        self.store.record_candidate(
+            code="000001", name="平安银行", decision="入选", reason="first run",
+            occurred_on="2026-06-01", pool_id="s@2026-06-01", rule_version="strat-x",
+        )
+        self.store.record_candidate(
+            code="000001", name="平安银行", decision="入选", reason="second run",
+            occurred_on="2026-06-01", pool_id="s@2026-06-01", rule_version="strat-x",
+        )
+        results = self.store.candidates_by_strategy("strat-x")
+        self.assertEqual(len(results), 1)
+
+    def test_winrate_trend_groups_by_month(self) -> None:
+        """胜率趋势按月聚合。"""
+        self.store.record_trade(action="BUY", code="000001", name="A", shares=100, price=10, occurred_on="2026-05-01")
+        self.store.record_trade(action="SELL", code="000001", shares=100, price=12, occurred_on="2026-05-02")
+
+        review_id = self.store.record_review(
+            entity_type="trade",
+            entity_id="dummy",
+            outcome="盈利",
+            reviewed_on="2026-05-10",
+            strategy_tag="strat-z",
+            return_pct=5.0,
+        )
+        self.store.record_review(
+            entity_type="trade",
+            entity_id="dummy2",
+            outcome="亏损",
+            reviewed_on="2026-05-15",
+            strategy_tag="strat-z",
+            return_pct=-3.0,
+        )
+        trend = self.store.winrate_trend(strategy_tags=["strat-z"], granularity="month")
+        self.assertEqual(len(trend), 1)
+        row = trend[0]
+        self.assertEqual(row["strategy_tag"], "strat-z")
+        self.assertEqual(row["total"], 2)
+        self.assertEqual(row["wins"], 1)
+        self.assertAlmostEqual(row["win_rate"], 50.0)
+
+    def test_strategy_winrates_returns_all_tags(self) -> None:
+        """综合胜率汇总包含所有战法。"""
+        for tag, ret in [("aa", 5.0), ("aa", -2.0), ("bb", 8.0)]:
+            self.store.record_review(
+                entity_type="trade", entity_id="x",
+                outcome="ok", reviewed_on="2026-06-01",
+                strategy_tag=tag, return_pct=ret,
+            )
+        summary = self.store.strategy_winrates()
+        tags = {row["strategy_tag"] for row in summary}
+        self.assertIn("aa", tags)
+        self.assertIn("bb", tags)
+        aa = next(r for r in summary if r["strategy_tag"] == "aa")
+        self.assertEqual(aa["total"], 2)
+        self.assertEqual(aa["wins"], 1)
+        self.assertAlmostEqual(aa["win_rate"], 50.0)
         self.store.record_trade(action="BUY", code="300358", name="楚天科技", shares=100, price=10, occurred_on="2026-07-01")
         self.store.record_trade(action="BUY", code="300358", shares=100, price=12, occurred_on="2026-07-02")
         result = self.store.record_trade(action="SELL", code="300358", shares=50, price=10, occurred_on="2026-07-03")

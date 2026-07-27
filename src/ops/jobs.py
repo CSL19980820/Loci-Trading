@@ -146,18 +146,28 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             item["code"]: item["name"] for item in store.list_instruments(status="")
         } if config.get("record_candidates") else {}
 
+    # top_n=0 或未设置表示不限制，> 0 则只保留前 N 名。
+    # 排名依据 ScreenResult.picks 的原始顺序：各战法自己按 score/信号强度排好了。
+    top_n = int(config.get("top_n") or 0)
+    picks = result.picks[:top_n] if top_n > 0 else result.picks
+
     payload = {
         "strategy": result.strategy_slug,
         "trade_date": result.trade_date,
         "universe_size": result.universe_size,
         "entry_timing": result.entry_timing,
         "elapsed_seconds": round(result.elapsed_seconds, 3),
-        "pick_count": len(result.picks),
-        "picks": result.picks,
+        "pick_count": len(picks),
+        "picks": picks,
+        "top_n_applied": top_n if top_n > 0 else None,
     }
 
     if config.get("record_candidates"):
-        payload["recorded"] = _record_candidates(result, config, context, names)
+        # 把截断后的 picks 临时替换进 result，让 _record_candidates 只写入前 N 名。
+        import copy
+        trimmed = copy.copy(result)
+        trimmed.picks = picks   # ScreenResult 是普通 dataclass，直接赋值
+        payload["recorded"] = _record_candidates(trimmed, config, context, names)
     return payload
 
 

@@ -212,6 +212,82 @@ class JobExecutionTests(unittest.TestCase):
         with self.assertRaises(OpsError):
             run_job(self.store, "JOB-nope")
 
+
+class ExecuteScreenTopNTests(unittest.TestCase):
+    """top_n 配置必须实际生效，不能只是存进 JSON 就不管了。"""
+
+    def _run_screen(self, top_n: int, pick_count: int = 10) -> dict:
+        """用 mock 跑一次 execute_screen，返回结果。
+
+        screen 函数是在 execute_screen 函数体内 `from src.strategies import screen`
+        懒导入的，所以 patch 目标是 src.strategies 模块上的属性。
+        """
+        from unittest.mock import MagicMock, patch
+        from src.strategies.screener import ScreenResult
+        from src.ops.jobs import execute_screen
+
+        picks = [{"code": f"{i:06d}", "factors": {}} for i in range(pick_count)]
+        fake_result = ScreenResult(
+            strategy_slug="test-strat",
+            trade_date="2026-01-02",
+            picks=picks,
+            universe_size=5000,
+            elapsed_seconds=0.1,
+            entry_timing="open",
+        )
+
+        ctx = MagicMock()
+        market_ctx = MagicMock()
+        market_ctx.__enter__ = MagicMock(return_value=market_ctx)
+        market_ctx.__exit__ = MagicMock(return_value=False)
+        ctx.market.return_value = market_ctx
+
+        with patch("src.strategies.screen", return_value=fake_result):
+            return execute_screen({"strategy": "test-strat", "top_n": top_n}, ctx)
+
+    def test_top_n_zero_returns_all_picks(self) -> None:
+        result = self._run_screen(top_n=0, pick_count=10)
+        self.assertEqual(result["pick_count"], 10)
+        self.assertEqual(len(result["picks"]), 10)
+        self.assertIsNone(result["top_n_applied"])
+
+    def test_top_n_limits_picks(self) -> None:
+        result = self._run_screen(top_n=3, pick_count=10)
+        self.assertEqual(result["pick_count"], 3)
+        self.assertEqual(len(result["picks"]), 3)
+        self.assertEqual(result["top_n_applied"], 3)
+
+    def test_top_n_larger_than_picks_returns_all(self) -> None:
+        result = self._run_screen(top_n=50, pick_count=10)
+        self.assertEqual(result["pick_count"], 10)
+        # top_n 设了就记录，即使实际 picks 不足 50，日志里能追溯配置值
+        self.assertEqual(result["top_n_applied"], 50)
+
+
+class JobExecutionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = OpsStore(Path(self.temp.name) / "ops.db")
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.temp.cleanup()
+
+    def test_failure_is_recorded_not_raised(self) -> None:
+        """定时任务最怕静默失败，所以异常要落库而不是往上抛。"""
+        job_id = self.store.create_job(name="bad", kind="skill", config={})
+        outcome = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
+        self.assertEqual(outcome["status"], "failed")
+
+        runs = self.store.list_runs(job_id=job_id)
+        self.assertEqual(runs[0]["status"], "failed")
+        self.assertIn("skill", runs[0]["error_text"])
+        self.assertEqual(self.store.get_job(job_id)["last_status"], "failed")
+
+    def test_unknown_job_is_rejected(self) -> None:
+        with self.assertRaises(OpsError):
+            run_job(self.store, "JOB-nope")
+
     def test_skill_job_requires_an_installed_skill(self) -> None:
         job_id = self.store.create_job(
             name="s", kind="skill", config={"skill": "missing", "provider": "p"}

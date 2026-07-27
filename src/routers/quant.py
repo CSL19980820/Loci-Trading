@@ -629,7 +629,9 @@ def build_quant_router(
             try:
                 return run_job(
                     store, job_id,
-                    context=JobContext(market_db=market_db, ops_store=store),
+                    context=JobContext(
+                        market_db=market_db, ops_store=store, palace_db=palace_db
+                    ),
                     trigger="api",
                 )
             except OpsError as exc:

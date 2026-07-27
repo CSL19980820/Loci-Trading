@@ -1038,9 +1038,11 @@ class PalaceStore:
         返回 [{period, strategy_tag, total, wins, win_rate}]，按 period+tag 升序。
         """
         if granularity == "week":
-            period_expr = "strftime('%Y-W%W', occurred_on)"
+            # 用本周周一日期作为 period key（YYYY-MM-DD），避免 strftime('%W') 的
+            # W00 边界问题（年初第一个周一之前的天数会落到 W00）。
+            period_expr = "date(reviewed_on, 'weekday 0', '-6 days')"
         else:
-            period_expr = "strftime('%Y-%m', occurred_on)"
+            period_expr = "strftime('%Y-%m', reviewed_on)"
 
         params: list[Any] = []
         where = "return_pct IS NOT NULL"
@@ -1081,7 +1083,7 @@ class PalaceStore:
                    COUNT(*) AS total,
                    SUM(CASE WHEN return_pct > 0 THEN 1 ELSE 0 END) AS wins,
                    AVG(return_pct) AS avg_return,
-                   MAX(occurred_on) AS last_reviewed
+                   MAX(reviewed_on) AS last_reviewed
             FROM reviews
             WHERE return_pct IS NOT NULL
             GROUP BY strategy_tag
