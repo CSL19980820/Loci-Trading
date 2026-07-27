@@ -13,6 +13,7 @@ const router = createRouter({
     { path: '/quant', name: 'quant', component: () => import('@/views/QuantView.vue'), meta: { title: '量化' } },
     { path: '/strategy-converter', name: 'strategy-converter', component: () => import('@/views/StrategyConverterView.vue'), meta: { title: 'AI 策略转换' } },
     { path: '/winrate', name: 'winrate', component: () => import('@/views/WinRateView.vue'), meta: { title: '胜率统计' } },
+    { path: '/insights', name: 'insights', component: () => import('@/views/InsightsView.vue'), meta: { title: '洞察' } },
     { path: '/screen-history', name: 'screen-history', component: () => import('@/views/ScreenHistoryView.vue'), meta: { title: '选股记录' } },
     { path: '/ops', name: 'ops', component: () => import('@/views/OpsView.vue'), meta: { title: '运维' } },
     { path: '/archive/:code', name: 'archive', component: () => import('@/views/ArchiveView.vue'), meta: { title: '档案' } },

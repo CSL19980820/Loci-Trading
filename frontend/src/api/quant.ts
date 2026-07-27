@@ -422,3 +422,46 @@ export function getScreenToday(options: {
 }): Promise<import('@/types/quant').ScreenTodayResult> {
   return quantRequest(`/screen/today${query({ strategy: options.strategy, force_sync: options.force_sync ? 'true' : undefined })}`)
 }
+
+// ---- 洞察层：衰减 / 重叠 / 体检 / 审计 / 策略档案 / AI判定 ----------
+
+export function getMarketHealth(date?: string): Promise<Record<string, unknown>> {
+  return quantRequest(`/market/health${query({ date })}`)
+}
+
+export function getDecay(options: { window?: number; baseline?: number } = {}): Promise<Record<string, unknown>[]> {
+  return quantRequest(`/insights/decay${query(options)}`)
+}
+
+export function getOverlap(days?: number): Promise<Record<string, unknown>[]> {
+  return quantRequest(`/insights/overlap${query({ days })}`)
+}
+
+export function getStrategyDoc(slug: string): Promise<Record<string, unknown>> {
+  return quantRequest(`/strategies/${encodeURIComponent(slug)}/doc`)
+}
+
+export function upsertStrategyDoc(slug: string, payload: Record<string, string>): Promise<Record<string, unknown>> {
+  return quantRequest(`/strategies/${encodeURIComponent(slug)}/doc`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function auditStrategy(slug: string): Promise<Record<string, unknown>> {
+  return quantRequest(`/strategies/${encodeURIComponent(slug)}/audit`)
+}
+
+export function listAiJudgments(strategyTag: string, limit = 100): Promise<Record<string, unknown>[]> {
+  return quantRequest(`/ai/judgments/${encodeURIComponent(strategyTag)}${query({ limit })}`)
+}
+
+export function createAiJudgment(payload: {
+  strategy_tag: string
+  decision: 'buy' | 'hold_cash' | 'partial'
+  top_codes?: string[]
+  reason?: string
+  occurred_on?: string
+}): Promise<{ id: string }> {
+  return quantRequest('/ai/judgments', { method: 'POST', body: JSON.stringify(payload) })
+}

@@ -14,6 +14,7 @@
           <RouterLink to="/pool" class="nav-link" active-class="nav-link-active">候选</RouterLink>
           <RouterLink to="/reviews" class="nav-link" active-class="nav-link-active">复盘</RouterLink>
           <RouterLink to="/winrate" class="nav-link" active-class="nav-link-active">胜率</RouterLink>
+          <RouterLink to="/insights" class="nav-link" active-class="nav-link-active">洞察</RouterLink>
           <RouterLink to="/quant" class="nav-link" active-class="nav-link-active">量化</RouterLink>
           <RouterLink to="/strategy-converter" class="nav-link" active-class="nav-link-active">AI转策略</RouterLink>
           <RouterLink to="/screen-history" class="nav-link" active-class="nav-link-active">选股</RouterLink>
