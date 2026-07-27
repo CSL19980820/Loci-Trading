@@ -50,6 +50,7 @@ class CandidateOutcome:
     max_favorable_pct: float | None = None
     benchmark_returns: dict[int, float | None] = field(default_factory=dict)
     note: str = ""
+    tier: str = "core"
 
     def alpha(self, horizon: int) -> float | None:
         own = self.returns.get(horizon)
@@ -72,6 +73,7 @@ class CandidateOutcome:
             "alpha": {f"t{h}": self.alpha(h) for h in HORIZONS},
             "max_favorable_pct": self.max_favorable_pct,
             "note": self.note,
+            "tier": self.tier,
         }
 
 
@@ -105,7 +107,7 @@ def evaluate_candidates(
         dict(row)
         for row in palace.conn.execute(
             """
-            SELECT id, occurred_on, code, name, score, decision FROM (
+            SELECT id, occurred_on, code, name, score, decision, tier FROM (
                 SELECT *, ROW_NUMBER() OVER (
                     PARTITION BY occurred_on, pool_id, code
                     ORDER BY created_at DESC, id DESC
@@ -129,6 +131,7 @@ def evaluate_candidates(
                 selected=_is_selected(row["decision"]),
                 score=None if row["score"] is None else float(row["score"]),
                 base_close=None, note="行情仓为空，未取得真实数据",
+                tier=str(row.get("tier") or "core"),
             )
             for row in rows
         ]
@@ -151,6 +154,7 @@ def evaluate_candidates(
             selected=_is_selected(row["decision"]),
             score=None if row["score"] is None else float(row["score"]),
             base_close=None,
+            tier=str(row.get("tier") or "core"),
         )
 
         index = position_of.get(base_date)

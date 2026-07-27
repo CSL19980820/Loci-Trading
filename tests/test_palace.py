@@ -258,5 +258,69 @@ class PalaceStoreTests(unittest.TestCase):
         self.assertEqual(int(count), 1)
 
 
+    def test_position_tracking_lifecycle(self) -> None:
+        """open → update price → close → appears in summary."""
+        tid = self.store.open_tracking(
+            strategy_tag="strat-x",
+            pool_id="POOL-2026-07-01",
+            code="000001",
+            name="平安银行",
+            tier="core",
+            signal_date="2026-07-01",
+            entry_date="2026-07-02",
+            hold_days=3,
+            exit_by_date="2026-07-07",
+            entry_price=12.5,
+        )
+        self.assertTrue(tid.startswith("PT-"))
+
+        active = self.store.list_active_tracking("strat-x")
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0]["id"], tid)
+        self.assertEqual(active[0]["status"], "active")
+
+        self.store.close_tracking(tid, exit_price=13.0, actual_return=4.0, reason="expired")
+
+        active_after = self.store.list_active_tracking("strat-x")
+        self.assertEqual(len(active_after), 0)
+
+        summary = self.store.tracking_summary("strat-x")
+        self.assertEqual(len(summary), 1)
+        row = summary[0]
+        self.assertEqual(row["id"], tid)
+        self.assertEqual(row["exit_price"], 13.0)
+        self.assertAlmostEqual(row["actual_return"], 4.0)
+        self.assertEqual(row["status"], "expired")
+
+    def test_tracking_summary_only_closed(self) -> None:
+        """tracking_summary excludes active records."""
+        closed_id = self.store.open_tracking(
+            strategy_tag="strat-y",
+            pool_id="POOL-2026-07-02",
+            code="000002",
+            name="万科A",
+            signal_date="2026-07-02",
+            entry_date="2026-07-03",
+            hold_days=3,
+            exit_by_date="2026-07-08",
+        )
+        _active_id = self.store.open_tracking(
+            strategy_tag="strat-y",
+            pool_id="POOL-2026-07-02",
+            code="000003",
+            name="国药控股",
+            signal_date="2026-07-02",
+            entry_date="2026-07-03",
+            hold_days=3,
+            exit_by_date="2026-07-08",
+        )
+        self.store.close_tracking(closed_id, reason="expired")
+
+        summary = self.store.tracking_summary("strat-y")
+        ids = [r["id"] for r in summary]
+        self.assertIn(closed_id, ids)
+        self.assertNotIn(_active_id, ids)
+
+
 if __name__ == "__main__":
     unittest.main()

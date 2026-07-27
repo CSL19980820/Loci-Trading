@@ -147,6 +147,21 @@ CREATE TABLE IF NOT EXISTS strategy_docs (
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
+
+-- 自定义策略版本历史。最多保留10个版本，超出时删最旧的「未被任务引用」版本。
+-- 被任务引用的版本不删：如果任务正在用某版本，删掉会让任务崩溃。
+CREATE TABLE IF NOT EXISTS strategy_versions (
+    id          TEXT PRIMARY KEY,
+    slug        TEXT NOT NULL,
+    version     INTEGER NOT NULL,
+    code        TEXT NOT NULL,
+    file_path   TEXT NOT NULL DEFAULT '',
+    issues      TEXT NOT NULL DEFAULT '[]',
+    created_at  TEXT NOT NULL,
+    is_active   INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_sv_slug ON strategy_versions(slug, version DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sv_slug_active ON strategy_versions(slug) WHERE is_active=1;
 """
 
 _SCHEMA_READY: set[str] = set()
@@ -635,3 +650,113 @@ class OpsStore:
             "SELECT * FROM strategy_docs ORDER BY slug"
         ).fetchall()
         return [dict(row) for row in rows]
+
+    # ---- 策略版本历史 -----------------------------------------------------
+
+    def save_strategy_version(
+        self, slug: str, code: str, file_path: str = "", issues: list | None = None
+    ) -> int:
+        """保存新版本，激活它，旧版本失活，超出10个就清理最旧的未引用版本。"""
+        version_id = new_id("SV")
+        with self._transaction() as cursor:
+            # 取当前最大版本号
+            row = cursor.execute(
+                "SELECT MAX(version) AS mv FROM strategy_versions WHERE slug = ?", (slug,)
+            ).fetchone()
+            next_ver = int(row["mv"] or 0) + 1
+            # 新版本入库
+            cursor.execute(
+                "INSERT INTO strategy_versions(id, slug, version, code, file_path, issues, created_at, is_active)"
+                " VALUES(?, ?, ?, ?, ?, ?, datetime('now'), 1)",
+                (version_id, slug, next_ver, code, file_path, dumps(issues or [])),
+            )
+            # 旧版本失活
+            cursor.execute(
+                "UPDATE strategy_versions SET is_active=0 WHERE slug=? AND id!=?",
+                (slug, version_id),
+            )
+        # 清理：超过10个且未被任务引用的最旧版本
+        self._prune_strategy_versions(slug)
+        return next_ver
+
+    def _prune_strategy_versions(self, slug: str, keep: int = 10) -> None:
+        rows = self.conn.execute(
+            "SELECT id, version FROM strategy_versions WHERE slug=? ORDER BY version DESC",
+            (slug,),
+        ).fetchall()
+        if len(rows) <= keep:
+            return
+        # 哪些 slug 被任务引用了（在 config_json 里出现过）
+        all_configs = self.conn.execute("SELECT config_json FROM jobs").fetchall()
+        referenced_ids: set[str] = set()
+        for cfg_row in all_configs:
+            cfg = loads(cfg_row["config_json"], {})
+            if str(cfg.get("strategy", "")) == slug:
+                # 任务引用了这个 slug 的某版本，保护 active 版本
+                act = self.conn.execute(
+                    "SELECT id FROM strategy_versions WHERE slug=? AND is_active=1", (slug,)
+                ).fetchone()
+                if act:
+                    referenced_ids.add(act["id"])
+        to_delete = [r["id"] for r in rows[keep:] if r["id"] not in referenced_ids]
+        if to_delete:
+            with self._transaction() as cursor:
+                cursor.executemany(
+                    "DELETE FROM strategy_versions WHERE id=?", [(vid,) for vid in to_delete]
+                )
+
+    def list_strategy_versions(self, slug: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT id, slug, version, file_path, issues, created_at, is_active"
+            " FROM strategy_versions WHERE slug=? ORDER BY version DESC",
+            (slug,),
+        ).fetchall()
+        return [
+            {
+                "id": row["id"], "slug": row["slug"], "version": row["version"],
+                "file_path": row["file_path"], "issues": loads(row["issues"], []),
+                "created_at": row["created_at"], "is_active": bool(row["is_active"]),
+            }
+            for row in rows
+        ]
+
+    def get_strategy_version(self, slug: str, version: int | None = None) -> dict[str, Any] | None:
+        if version is None:
+            row = self.conn.execute(
+                "SELECT * FROM strategy_versions WHERE slug=? AND is_active=1", (slug,)
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT * FROM strategy_versions WHERE slug=? AND version=?", (slug, version)
+            ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["issues"] = loads(d.get("issues", "[]"), [])
+        d["is_active"] = bool(d.get("is_active"))
+        return d
+
+    # ---- Skill MCP 依赖声明 ---------------------------------------------
+
+    def update_skill_mcp_servers(self, slug: str, server_names: list[str]) -> None:
+        """记录技能包声明的 MCP server 依赖（覆盖式更新）。"""
+        with self._transaction() as cursor:
+            # 列可能不存在（旧库迁移）；先确保列存在
+            try:
+                cursor.execute(
+                    "ALTER TABLE skills ADD COLUMN mcp_servers_json TEXT NOT NULL DEFAULT '[]'"
+                )
+            except Exception:
+                pass  # 列已存在
+            cursor.execute(
+                "UPDATE skills SET mcp_servers_json=?, updated_at=datetime('now') WHERE slug=?",
+                (dumps(server_names), slug),
+            )
+
+    def get_skill_mcp_servers(self, slug: str) -> list[str]:
+        row = self.conn.execute(
+            "SELECT mcp_servers_json FROM skills WHERE slug=?", (slug,)
+        ).fetchone()
+        if not row:
+            return []
+        return loads(row["mcp_servers_json"] or "[]", [])

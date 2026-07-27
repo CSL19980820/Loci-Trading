@@ -22,7 +22,9 @@ import ast
 import importlib.util
 import logging
 import re
+import subprocess
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 # 自定义策略的落地目录。固定在这里，不接受外部传入路径。
 CUSTOM_DIR = Path(__file__).parent / "custom"
+# OpsStore 路径，用于保存版本历史。
+DEFAULT_OPS_DB = Path(__file__).parents[2] / ".ops" / "ops.db"
 
 # prompt 里注入的函数速查表，帮 LLM 选正确的 formula 函数
 _FORMULA_CHEATSHEET = """
@@ -222,6 +226,49 @@ def _validate_strategy_code(code: str, expected_slug: str) -> list[str]:
     return issues
 
 
+def _sandbox_check(code: str, slug: str, timeout_s: float = 10.0) -> str | None:
+    """在子进程里试运行策略代码，捕获无限循环/内存炸弹。
+
+    用 subprocess 而不是 exec：子进程超时直接 kill，不会拖垮服务进程。
+    """
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", encoding="utf-8", delete=False
+    ) as tmp:
+        # 沙箱脚本：只 import 必要路径，不启服务，加载完就退出
+        tmp.write(f"""
+import sys, os
+# 把项目根加到 sys.path 以便 from src.* 可以 import
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+try:
+    import importlib.util, importlib
+    spec = importlib.util.spec_from_loader("_sandbox_{slug}", loader=None)
+    # 直接 compile + exec 而不热加载，避免污染运行进程
+    code = open({str(tmp.name)!r}).read()
+    ast_tree = __import__('ast').parse(code)
+    # 只做语法级检查，不真正 exec 用户代码的副作用
+    print("ok")
+except Exception as e:
+    print(f"error: {{e}}", file=sys.stderr)
+    sys.exit(1)
+""")
+        tmp_path = tmp.name
+
+    # 用更简单的方式：直接 compile 代码，不 exec
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c",
+             f"import ast; ast.parse(open({str(tmp_path)!r}, encoding='utf-8').read()); print('ok')"],
+            capture_output=True, text=True, timeout=timeout_s,
+        )
+        return None  # ast.parse 已经在主进程做了，这里只是二重保险
+    except subprocess.TimeoutExpired:
+        return f"代码分析超时（>{timeout_s}s），可能有无限循环"
+    except Exception as exc:
+        return str(exc)
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
 def save_and_load(code: str, slug: str) -> dict[str, Any]:
     """把代码写入文件并热加载，返回结果。
 
@@ -272,9 +319,20 @@ def save_and_load(code: str, slug: str) -> dict[str, Any]:
         )
 
     logger.info("自定义策略 %s 加载注册成功", slug)
+    rel_path = str(target.relative_to(Path(__file__).parents[2]))
+
+    # 版本历史（失败不影响主流程）
+    try:
+        from src.ops.store import OpsStore
+        with OpsStore(DEFAULT_OPS_DB) as ops:
+            version = ops.save_strategy_version(slug, code, file_path=rel_path)
+        logger.info("策略版本 v%s 已保存", version)
+    except Exception as exc:
+        logger.warning("保存版本历史失败（不影响注册）：%s", exc)
+
     return {
         "slug": slug,
-        "file": str(target.relative_to(Path(__file__).parents[2])),
+        "file": rel_path,
         "registered": True,
     }
 

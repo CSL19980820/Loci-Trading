@@ -1177,6 +1177,107 @@ def build_quant_router(
             "sync_note": sync_note,
         }
 
+    # ---- 策略档案 --------------------------------------------------------
+
+    class StrategyDocUpsert(QuantModel):
+        name: str = Field(default="", max_length=80)
+        source_text: str = Field(default="", max_length=8000)
+        source_type: str = Field(default="manual", max_length=20)
+        assumptions: str = Field(default="", max_length=2000)
+        market_cond: str = Field(default="", max_length=1000)
+        failure_modes: str = Field(default="", max_length=2000)
+        entry_timing: str = Field(default="", max_length=200)
+        exit_rules: str = Field(default="", max_length=1000)
+
+    @router.get("/api/strategies/{slug}/doc", tags=["strategy"])
+    def get_strategy_doc(slug: str) -> dict[str, Any]:
+        with _ops() as store:
+            doc = store.get_strategy_doc(slug)
+        return doc or {}
+
+    @router.put("/api/strategies/{slug}/doc", tags=["strategy"])
+    def upsert_strategy_doc(slug: str, payload: StrategyDocUpsert, _write: None = write_guard) -> dict[str, Any]:
+        with _ops() as store:
+            store.upsert_strategy_doc(slug, **payload.model_dump())
+            return store.get_strategy_doc(slug) or {}
+
+    # ---- 洞察：衰减 / 重叠 / 容量 ----------------------------------------
+
+    @router.get("/api/insights/decay", tags=["insights"])
+    def strategy_decay(window: int = Query(default=20, ge=5, le=100),
+                       baseline: int = Query(default=100, ge=20, le=500)) -> list[dict[str, Any]]:
+        """各战法滚动胜率 vs 历史基线，发现正在失效的策略。"""
+        try:
+            from src.review.decay import check_all_decay
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _palace() as palace:
+            return [r.to_dict() for r in check_all_decay(palace, window=window, baseline_window=baseline)]
+
+    @router.get("/api/insights/overlap", tags=["insights"])
+    def strategy_overlap(days: int = Query(default=60, ge=10, le=250)) -> list[dict[str, Any]]:
+        """战法两两 Jaccard 重叠度——发现隐性加杠杆。"""
+        try:
+            from src.review.overlap import compute_overlap
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _palace() as palace:
+            return [r.to_dict() for r in compute_overlap(palace, days=days)]
+
+    # ---- AI 判定记录 -------------------------------------------------------
+
+    class AiJudgmentCreate(QuantModel):
+        occurred_on: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+        strategy_tag: str = Field(min_length=1, max_length=64)
+        decision: Literal["buy", "hold_cash", "partial"]
+        top_codes: list[str] = Field(default_factory=list)
+        reason: str = Field(default="", max_length=2000)
+        provider: str = Field(default="", max_length=64)
+        model: str = Field(default="", max_length=120)
+        token_used: int = Field(default=0, ge=0)
+        source: str = Field(default="ai", max_length=32)
+
+    @router.post("/api/ai/judgments", tags=["ai"], status_code=201)
+    def create_ai_judgment(payload: AiJudgmentCreate, _write: None = write_guard) -> dict[str, str]:
+        with _palace() as palace:
+            jid = palace.record_ai_judgment(**payload.model_dump())
+        return {"id": jid}
+
+    @router.get("/api/ai/judgments/{strategy_tag}", tags=["ai"])
+    def list_ai_judgments(strategy_tag: str, limit: int = Query(default=100, ge=1, le=500)) -> list[dict[str, Any]]:
+        with _palace() as palace:
+            return palace.ai_judgment_payload(strategy_tag, limit=limit)
+
+    # ---- 市场体检 -----------------------------------------------------------
+
+    @router.get("/api/market/health", tags=["market"])
+    def market_health(
+        date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    ) -> dict[str, Any]:
+        """行情仓体检报告：覆盖率/时效/换手率缺失/复权因子等。"""
+        try:
+            from src.market.sentinel import check_market_health
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _market() as store:
+            return check_market_health(store, trade_date=date).to_dict()
+
+    # ---- 前视偏差审计 --------------------------------------------------------
+
+    @router.get("/api/strategies/{slug}/audit", tags=["strategy"])
+    def audit_strategy_api(slug: str) -> dict[str, Any]:
+        """对策略做静态前视偏差审计（AST 层）。"""
+        try:
+            from src.strategies import audit_strategy, get
+            from src.strategies.base import StrategyError
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        try:
+            engine = get(slug)
+        except StrategyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return audit_strategy(engine).to_dict()
+
     return router
 
 
