@@ -129,6 +129,10 @@ class PalaceStore:
     def init_schema(self) -> None:
         resolved = str(self.db_path.resolve())
         if resolved in _SCHEMA_READY or self._schema_is_current():
+            # 即使版本一致也要跑迁移：ADD COLUMN 是幂等的，
+            # 但如果有人加了新列忘记 bump SCHEMA_VERSION，不跑迁移就会爆。
+            # 代价：每次首次连接多跑几条 ALTER TABLE，全部 try/except 跳过，微秒级。
+            self._run_migrations()
             _SCHEMA_READY.add(resolved)
             return
 
