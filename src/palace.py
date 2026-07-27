@@ -16,7 +16,7 @@ from typing import Any, Iterator, Sequence
 from uuid import uuid4
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class PalaceError(ValueError):
@@ -307,9 +307,66 @@ class PalaceStore:
             """
         )
         self._dedupe_candidate_reviews()
+        self._run_migrations()
         self._set_meta("schema_version", str(SCHEMA_VERSION))
         self.conn.commit()
         _SCHEMA_READY.add(str(self.db_path.resolve()))
+
+    def _run_migrations(self) -> None:
+        """增量列迁移：对已有数据库补加新列。
+
+        CREATE TABLE IF NOT EXISTS 对已存在的表什么都不做，
+        所以新增的列必须用 ALTER TABLE ADD COLUMN 单独迁移。
+        SQLite 的 ALTER TABLE 在列已存在时会报错，用 try/except 跳过。
+        """
+        migrations = [
+            # v4: candidate_reviews 增加 tier 列
+            "ALTER TABLE candidate_reviews ADD COLUMN tier TEXT NOT NULL DEFAULT 'core'",
+            # v4: ai_judgments 表（若旧库没有 executescript 建出来，补建）
+            """CREATE TABLE IF NOT EXISTS ai_judgments (
+                id           TEXT PRIMARY KEY,
+                occurred_on  TEXT NOT NULL,
+                strategy_tag TEXT NOT NULL,
+                decision     TEXT NOT NULL,
+                top_codes    TEXT NOT NULL DEFAULT '[]',
+                reason       TEXT NOT NULL DEFAULT '',
+                provider     TEXT NOT NULL DEFAULT '',
+                model        TEXT NOT NULL DEFAULT '',
+                token_used   INTEGER NOT NULL DEFAULT 0,
+                source       TEXT NOT NULL DEFAULT 'ai',
+                created_at   TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_ai_judgments_strategy ON ai_judgments(strategy_tag, occurred_on DESC)",
+            # v4: position_tracking 表补建
+            """CREATE TABLE IF NOT EXISTS position_tracking (
+                id              TEXT PRIMARY KEY,
+                strategy_tag    TEXT NOT NULL,
+                pool_id         TEXT NOT NULL,
+                code            TEXT NOT NULL,
+                name            TEXT NOT NULL DEFAULT '',
+                tier            TEXT NOT NULL DEFAULT 'core',
+                signal_date     TEXT NOT NULL,
+                entry_date      TEXT NOT NULL,
+                hold_days       INTEGER NOT NULL DEFAULT 3,
+                exit_by_date    TEXT NOT NULL,
+                entry_price     REAL,
+                exit_price      REAL,
+                max_price       REAL,
+                min_price       REAL,
+                actual_return   REAL,
+                status          TEXT NOT NULL DEFAULT 'active',
+                closed_reason   TEXT NOT NULL DEFAULT '',
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_pt_strategy ON position_tracking(strategy_tag, signal_date DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_pt_status ON position_tracking(status, exit_by_date)",
+        ]
+        for sql in migrations:
+            try:
+                self.conn.execute(sql)
+            except Exception:
+                pass  # 列已存在或表已存在，跳过
 
     def _dedupe_candidate_reviews(self) -> None:
         """清理历史重复：同日同池同标的只留最新一条。"""
