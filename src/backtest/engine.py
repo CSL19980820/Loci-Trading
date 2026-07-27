@@ -186,7 +186,19 @@ def run_backtest(
     # 一字板：全天最高等于最低。涨停一字买不进、跌停一字卖不出。
     one_word = np.isclose(high_a, low_a) & np.isfinite(high_a)
 
-    entry_offset = 0 if entry_timing == "open" else 1
+    # 三种入场时点对应两个自由度：哪一天、用哪个价。
+    #   open      当日开盘（9:25 竞价筛出来的，开盘就能买）
+    #   close     当日收盘（14:50 左右筛，收盘价成交）
+    #   next_open 次日开盘（盘后筛，只能等下一个交易日）
+    # 把 close 拿 next_open 凑是错的：少等一天的同时还按错的价成交，
+    # 回测收益会系统性偏离，且偏离方向不固定，事后无法校正。
+    if entry_timing == "next_open":
+        entry_offset, entry_at_close = 1, False
+    elif entry_timing == "close":
+        entry_offset, entry_at_close = 0, True
+    else:
+        entry_offset, entry_at_close = 0, False
+    entry_prices = close_a if entry_at_close else open_a
     skipped: dict[str, int] = {}
 
     def skip(reason: str) -> None:
@@ -201,7 +213,7 @@ def run_backtest(
             skip("入场日超出数据范围")
             continue
 
-        entry_price = open_a[entry_idx, col]
+        entry_price = entry_prices[entry_idx, col]
         if not np.isfinite(entry_price) or entry_price <= 0:
             skip("入场日无行情（停牌或缺数据）")
             continue

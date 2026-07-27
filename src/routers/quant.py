@@ -41,6 +41,7 @@ class ScreenRequest(QuantModel):
     date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     codes: list[str] | None = None
     params: dict[str, Any] | None = None
+    skip_health_check: bool = False  # 调试/单票场景可跳过全市场覆盖率检查
 
 
 class BacktestRequest(QuantModel):
@@ -288,6 +289,7 @@ def build_quant_router(
     @router.post("/api/strategies/screen", tags=["strategy"])
     def run_screen(payload: ScreenRequest) -> dict[str, Any]:
         try:
+            from src.market.sentinel import DataQualityError
             from src.strategies import screen
             from src.strategies.base import StrategyError
         except ImportError as exc:
@@ -297,7 +299,16 @@ def build_quant_router(
                 result = screen(
                     store, payload.strategy, trade_date=payload.date,
                     params=payload.params, codes=payload.codes,
+                    health_check=not payload.skip_health_check,
                 )
+            except DataQualityError as exc:
+                # 422 而不是 500：这不是代码出错，是数据不合格。前端要能
+                # 原样展示体检报告，让人知道该去补哪份数据。
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"数据体检未通过，已拒绝选股：{exc}",
+                    headers={"X-Data-Health": "blocked"},
+                ) from exc
             except StrategyError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
@@ -308,6 +319,7 @@ def build_quant_router(
             "elapsed_seconds": round(result.elapsed_seconds, 3),
             "params": result.params,
             "picks": result.picks,
+            "health": result.health,
         }
 
     @router.post("/api/backtest", tags=["strategy"])

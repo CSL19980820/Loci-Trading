@@ -30,6 +30,9 @@ class ScreenResult:
     elapsed_seconds: float = 0.0
     params: dict[str, Any] = field(default_factory=dict)
     entry_timing: str = ""
+    #: 选股前那次数据体检的结论。带上它，事后才能区分"当时数据是干净的"
+    #: 和"当时就有警告只是没人看"——后者是复盘时最容易漏掉的解释。
+    health: dict[str, Any] | None = None
 
     def summary(self) -> str:
         return (
@@ -58,18 +61,30 @@ def screen(
     codes: list[str] | None = None,
     extra_bars: int = 20,
     adjust: str = "qfq",
+    health_check: bool = True,
 ) -> ScreenResult:
     """在指定交易日跑一次全市场选股。
 
     trade_date 为空时取行情仓里最新的交易日。extra_bars 是在策略声明的
     min_bars 之上额外多取的根数，用来吸收停牌造成的空洞——某只票停牌 10 天，
     它的有效 K 线就比日历天数少 10 根，不留余量会让指标算不出来。
+
+    health_check: 选股前先体检行情仓，不合格直接抛 ``DataQualityError``。
+                  默认开启，因为"选出一份静默错掉的候选池"比"选不出来"危险
+                  得多——后者你立刻知道，前者可能拿去下单。只在指定 codes
+                  的小范围调试时自动跳过（全市场覆盖率对单票没有意义）。
     """
     import time
 
     engine = get(strategy) if isinstance(strategy, str) else strategy
     resolved_params = merge_params(engine, params)
     started = time.monotonic()
+
+    health: dict[str, Any] | None = None
+    if health_check and not codes:
+        from src.market.sentinel import guard_market_health
+
+        health = guard_market_health(store, trade_date=trade_date).to_dict()
 
     bars = engine.min_bars() + max(0, extra_bars)
     start, end = _resolve_start(store, trade_date, bars)
@@ -91,6 +106,7 @@ def screen(
             elapsed_seconds=time.monotonic() - started,
             params=resolved_params,
             entry_timing=engine.entry_timing,
+            health=health,
         )
 
     result: SignalResult = engine.compute(panels, resolved_params)
@@ -116,6 +132,7 @@ def screen(
         elapsed_seconds=time.monotonic() - started,
         params=resolved_params,
         entry_timing=engine.entry_timing,
+        health=health,
     )
 
 

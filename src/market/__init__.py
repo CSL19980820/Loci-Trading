@@ -8,6 +8,12 @@
 - 数据源适配器  SinaSource / EastmoneySource
 - sync_quotes  同步编排（全量回填 / 每日增量）
 """
+from src.market.sentinel import (
+    DataQualityError,
+    HealthReport,
+    check_market_health,
+    guard_market_health,
+)
 from src.market.sources import (
     EastmoneySource,
     QuoteSource,
@@ -19,13 +25,17 @@ from src.market.store import MarketStore, normalize_code, to_sina_symbol
 from src.market.sync import SyncReport, sync_instruments, sync_quotes
 
 __all__ = [
+    "DataQualityError",
     "EastmoneySource",
+    "HealthReport",
     "MarketStore",
     "QuoteSource",
     "SinaSource",
     "SourceError",
     "SyncReport",
+    "check_market_health",
     "default_sources",
+    "guard_market_health",
     "normalize_code",
     "sync_instruments",
     "sync_quotes",
