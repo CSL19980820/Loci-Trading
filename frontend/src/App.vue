@@ -13,7 +13,9 @@
           <RouterLink to="/journal" class="nav-link" active-class="nav-link-active">交割</RouterLink>
           <RouterLink to="/pool" class="nav-link" active-class="nav-link-active">候选</RouterLink>
           <RouterLink to="/reviews" class="nav-link" active-class="nav-link-active">复盘</RouterLink>
+          <RouterLink to="/winrate" class="nav-link" active-class="nav-link-active">胜率</RouterLink>
           <RouterLink to="/quant" class="nav-link" active-class="nav-link-active">量化</RouterLink>
+          <RouterLink to="/screen-history" class="nav-link" active-class="nav-link-active">选股</RouterLink>
           <RouterLink to="/ops" class="nav-link" active-class="nav-link-active">运维</RouterLink>
           <RouterLink
             v-if="firstPosition"

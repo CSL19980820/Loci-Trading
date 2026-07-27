@@ -324,6 +324,93 @@ export interface AnalysisStarted {
   poll: string
 }
 
+// ---- MCP server -----------------------------------------------------
+
+export interface McpServer {
+  id: string
+  name: string
+  url: string
+  token_last4: string
+  has_token: boolean
+  proxy_url: string
+  tools: { name: string; description: string }[]
+  tools_synced_at: string
+  is_active: boolean
+  note: string
+}
+
+// ---- 策略定时选股配置 ------------------------------------------------
+
+export interface StrategyJobConfig {
+  cron: string
+  enabled: boolean
+  auto_review: boolean
+  trading_days: number
+  top_n: number
+  hold_days: number
+  stop_loss_pct: number | null
+}
+
+export interface StrategyJob extends Job {
+  slug: string
+  bound: boolean
+}
+
+// ---- 胜率趋势 -------------------------------------------------------
+
+export interface WinRateSummary {
+  strategy_tag: string
+  total: number
+  wins: number
+  win_rate: number | null
+  avg_return: number | null
+  last_reviewed: string
+}
+
+export interface WinRateTrendPoint {
+  period: string
+  strategy_tag: string
+  total: number
+  wins: number
+  win_rate: number | null
+}
+
+// ---- 选股历史 -------------------------------------------------------
+
+export interface ScreenCandidate {
+  id: string
+  date: string
+  pool_id: string
+  code: string
+  name: string
+  score: number | null
+  decision: string
+  timing: string
+  reason: string
+  rule_version: string
+  evidence: Record<string, unknown>
+  source: string
+  created_at: string
+}
+
+export interface ScreenHistory {
+  strategy: string
+  total: number
+  dates: string[]
+  by_date: Record<string, ScreenCandidate[]>
+}
+
+export interface ScreenTodayResult {
+  strategy: string
+  trade_date: string
+  entry_timing: string
+  universe_size: number
+  elapsed_seconds: number
+  picks: Pick[]
+  synced: boolean
+  sync_note: string
+}
+
 export interface CompareRow {
   label: string
   strategy: string

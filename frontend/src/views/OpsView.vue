@@ -48,6 +48,90 @@
     </p>
   </section>
 
+  <!-- MCP server -->
+  <section class="panel mb">
+    <div class="panel-bar">
+      <h2>MCP Server <span class="chip">{{ mcpServers.length }}</span></h2>
+      <button class="text-link" type="button" @click="mcpFormOpen = !mcpFormOpen">
+        {{ mcpFormOpen ? '收起' : '添加' }}
+      </button>
+    </div>
+
+    <form v-if="mcpFormOpen" class="trade-form inline-form" @submit.prevent="submitMcp">
+      <fieldset>
+        <label>
+          名称
+          <input v-model.trim="mcpForm.name" required placeholder="my-data-source" />
+        </label>
+        <label>
+          URL
+          <input v-model.trim="mcpForm.url" required placeholder="https://mcp.example.com" />
+        </label>
+        <label>
+          Token（可选）
+          <input v-model.trim="mcpForm.token" type="password" autocomplete="off" placeholder="Bearer token，公开 server 留空" />
+        </label>
+        <label>
+          专用代理
+          <input v-model.trim="mcpForm.proxy_url" placeholder="http://172.17.0.1:7890" />
+        </label>
+        <label>
+          备注
+          <input v-model.trim="mcpForm.note" placeholder="用途说明" />
+        </label>
+        <label class="checkbox-label">
+          <input v-model="mcpForm.verify" type="checkbox" />
+          保存时握手校验（推荐）
+        </label>
+      </fieldset>
+      <div class="dialog-actions">
+        <button class="quiet-button" type="button" @click="mcpFormOpen = false">取消</button>
+        <button class="primary-button" type="submit" :disabled="busy">保存并发现工具</button>
+      </div>
+      <p class="form-hint">
+        保存时发起 tools/list 发现工具列表；校验失败不入库。Token 用 AES-256-GCM 加密存储，只回末四位。
+      </p>
+    </form>
+
+    <div v-if="mcpServers.length" class="table-wrap">
+      <table class="dense">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>URL</th>
+            <th>Token</th>
+            <th class="r">工具数</th>
+            <th>同步时间</th>
+            <th class="r">状态</th>
+            <th class="r">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in mcpServers" :key="item.id">
+            <td><strong>{{ item.name }}</strong></td>
+            <td class="mono dim">{{ item.url }}</td>
+            <td class="mono">{{ item.token_last4 || '无' }}</td>
+            <td class="r mono">{{ item.tools.length }}</td>
+            <td class="mono dim">{{ item.tools_synced_at?.slice(0, 16) || '—' }}</td>
+            <td class="r">
+              <span :class="item.is_active ? 'tag' : 'chip muted-chip'">{{ item.is_active ? '启用' : '停用' }}</span>
+            </td>
+            <td class="r">
+              <button class="quiet-button" type="button" :disabled="busy" @click="refreshMcp(item.name)">刷新</button>
+              <button class="quiet-button" type="button" :disabled="busy" @click="toggleMcp(item)">
+                {{ item.is_active ? '停用' : '启用' }}
+              </button>
+              <button class="quiet-button" type="button" :disabled="busy" @click="dropMcp(item.name)">删除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p v-else-if="!mcpFormOpen" class="empty pad">
+      尚未配置 MCP server。添加后工具列表自动发现，可在技能包和 Agent 中使用。
+    </p>
+  </section>
+
   <!-- LLM 供应商 -->
   <section class="panel mb">
     <div class="panel-bar">
@@ -257,22 +341,28 @@ import {
   CapabilityUnavailableError,
   createJob,
   deleteJob,
+  deleteMcpServer,
   deleteProvider,
   getJobRuns,
   getJobs,
+  getMcpServers,
   getProviders,
   getScheduleStatus,
   getSkills,
   installSkill,
+  refreshMcpTools,
   removeSkill,
   runJob,
+  saveMcpServer,
   saveProvider,
+  toggleMcpServer,
   updateJob,
 } from '@/api/quant'
-import type { Job, JobKind, JobRun, LlmProvider, ScheduleStatus, Skill } from '@/types/quant'
+import type { Job, JobKind, JobRun, LlmProvider, McpServer, ScheduleStatus, Skill } from '@/types/quant'
 
 const skills = ref<Skill[]>([])
 const providers = ref<LlmProvider[]>([])
+const mcpServers = ref<McpServer[]>([])
 const jobs = ref<Job[]>([])
 const runs = ref<JobRun[]>([])
 const schedule = ref<ScheduleStatus | null>(null)
@@ -290,6 +380,16 @@ const providerForm = reactive({
   proxy_url: '',
 })
 
+const mcpFormOpen = ref(false)
+const mcpForm = reactive({
+  name: '',
+  url: '',
+  token: '',
+  proxy_url: '',
+  note: '',
+  verify: true,
+})
+
 const jobFormOpen = ref(false)
 const jobForm = reactive({ name: '', kind: 'sync' as JobKind, cron: '', configText: '' })
 
@@ -304,7 +404,7 @@ const configPlaceholder = computed(() => {
 })
 
 function kindLabel(kind: string): string {
-  return { sync: '同步行情', screen: '选股', backtest: '回测', skill: '技能模式' }[kind] ?? kind
+  return { sync: '同步行情', screen: '选股', backtest: '回测', skill: '技能模式', compare: '横向对比', optimize: '退出扫描', prune: '清理历史' }[kind] ?? kind
 }
 
 function statusLabel(status: string): string {
@@ -343,15 +443,17 @@ async function guard<T>(task: () => Promise<T>, done?: string): Promise<T | null
 
 async function reload(): Promise<void> {
   await guard(async () => {
-    const [s, p, j, r, sc] = await Promise.all([
+    const [s, p, m, j, r, sc] = await Promise.all([
       getSkills(),
       getProviders(),
+      getMcpServers(),
       getJobs(),
       getJobRuns({ limit: 20 }),
       getScheduleStatus(),
     ])
     skills.value = s
     providers.value = p
+    mcpServers.value = m
     jobs.value = j
     runs.value = r
     schedule.value = sc
@@ -361,7 +463,7 @@ async function reload(): Promise<void> {
 async function onUpload(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-  input.value = '' // 允许重复上传同一个文件
+  input.value = ''
   if (!file) return
   const installed = await guard(() => installSkill(file))
   if (installed) {
@@ -396,6 +498,43 @@ async function submitProvider(): Promise<void> {
 
 async function dropProvider(name: string): Promise<void> {
   await guard(() => deleteProvider(name), `已删除 ${name}`)
+  await reload()
+}
+
+async function submitMcp(): Promise<void> {
+  const saved = await guard(() =>
+    saveMcpServer({
+      name: mcpForm.name,
+      url: mcpForm.url,
+      token: mcpForm.token || undefined,
+      proxy_url: mcpForm.proxy_url,
+      note: mcpForm.note,
+      verify: mcpForm.verify,
+    }),
+  )
+  if (saved) {
+    notice.value = `已保存 ${saved.name}，发现 ${saved.tools.length} 个工具`
+    mcpFormOpen.value = false
+    Object.assign(mcpForm, { name: '', url: '', token: '', proxy_url: '', note: '', verify: true })
+    await reload()
+  }
+}
+
+async function refreshMcp(name: string): Promise<void> {
+  const result = await guard(() => refreshMcpTools(name))
+  if (result) {
+    notice.value = `${name} 已刷新，${result.count} 个工具`
+    await reload()
+  }
+}
+
+async function toggleMcp(item: McpServer): Promise<void> {
+  await guard(() => toggleMcpServer(item.name, !item.is_active))
+  await reload()
+}
+
+async function dropMcp(name: string): Promise<void> {
+  await guard(() => deleteMcpServer(name), `已删除 ${name}`)
   await reload()
 }
 

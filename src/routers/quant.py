@@ -106,6 +106,26 @@ class ProviderCreate(QuantModel):
     discover_models: bool = True
 
 
+class McpServerCreate(QuantModel):
+    name: str = Field(min_length=1, max_length=64)
+    url: str = Field(min_length=8, max_length=300)
+    token: str | None = Field(default=None, max_length=500)
+    proxy_url: str = Field(default="", max_length=300)
+    note: str = Field(default="", max_length=500)
+    verify: bool = True
+
+
+class StrategyJobConfig(QuantModel):
+    """每个战法对应的定时选股参数。"""
+    cron: str = Field(default="", max_length=120)
+    enabled: bool = True
+    auto_review: bool = False       # 选完自动写入候选池（record_candidates）
+    trading_days: int = Field(default=60, ge=1, le=500)   # 回测/验证取多少个交易日
+    top_n: int = Field(default=0, ge=0, le=200)           # 0=不限，>0=只取前N名
+    hold_days: int = Field(default=3, ge=1, le=250)
+    stop_loss_pct: float | None = Field(default=-6.0, ge=-100, le=0)
+
+
 def _missing_dependency(exc: ImportError) -> HTTPException:
     """缺依赖返回 503 而不是 500：这是环境没装齐，不是代码出错。"""
     return HTTPException(
@@ -688,4 +708,271 @@ def build_quant_router(
                 raise HTTPException(status_code=404, detail=f"未配置的供应商：{name}")
         return {"removed": True}
 
+    # ---- MCP server -------------------------------------------------
+
+    @router.get("/api/mcp", tags=["mcp"])
+    def list_mcp_servers() -> list[dict[str, Any]]:
+        """列出所有 MCP server（不返回 token 明文）。"""
+        with _ops() as store:
+            return store.list_mcp_servers()
+
+    @router.post("/api/mcp", tags=["mcp"], status_code=201)
+    def save_mcp_server(payload: McpServerCreate, _write: None = write_guard) -> dict[str, Any]:
+        try:
+            from src.ai.crypto import CryptoError
+            from src.intel.registry import save_server
+            from src.ops import OpsError
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _ops() as store:
+            try:
+                return save_server(
+                    store,
+                    name=payload.name,
+                    url=payload.url,
+                    token=payload.token,
+                    proxy_url=payload.proxy_url,
+                    note=payload.note,
+                    verify=payload.verify,
+                )
+            except (OpsError, CryptoError) as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @router.post("/api/mcp/{name}/refresh", tags=["mcp"])
+    def refresh_mcp_tools(name: str, _write: None = write_guard) -> dict[str, Any]:
+        """重新发现工具。上游新增工具后不必删了重配。"""
+        try:
+            from src.ai.crypto import CryptoError
+            from src.intel.registry import refresh_tools
+            from src.ops import OpsError
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        with _ops() as store:
+            try:
+                tools = refresh_tools(store, name)
+            except (OpsError, CryptoError) as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"tools": tools, "count": len(tools)}
+
+    @router.patch("/api/mcp/{name}", tags=["mcp"])
+    def toggle_mcp_server(
+        name: str,
+        payload: dict[str, Any],
+        _write: None = write_guard,
+    ) -> dict[str, Any]:
+        """启用/停用 MCP server（只支持 is_active 字段）。"""
+        with _ops() as store:
+            record = store.get_mcp_server(name, include_secret=True)
+            if record is None:
+                raise HTTPException(status_code=404, detail=f"未注册的 MCP server：{name}")
+            record["is_active"] = bool(payload.get("is_active", record["is_active"]))
+            store.upsert_mcp_server(record)
+            return store.get_mcp_server(name) or {}
+
+    @router.delete("/api/mcp/{name}", tags=["mcp"])
+    def delete_mcp_server(name: str, _write: None = write_guard) -> dict[str, bool]:
+        with _ops() as store:
+            if not store.delete_mcp_server(name):
+                raise HTTPException(status_code=404, detail=f"未注册的 MCP server：{name}")
+        return {"removed": True}
+
+    # ---- 策略定时选股配置 -------------------------------------------
+    # 每个战法可以绑定一条 screen 类型的 job，配置 cron、auto_review、
+    # top_n 等参数。前端通过 PUT /api/strategies/{slug}/job 来 upsert。
+
+    @router.get("/api/strategies/{slug}/job", tags=["strategy"])
+    def get_strategy_job(slug: str) -> dict[str, Any]:
+        """读取某战法绑定的定时选股 job；没有则返回空配置。"""
+        job_name = f"screen:{slug}"
+        with _ops() as store:
+            job = store.get_job_by_name(job_name)
+        if job is None:
+            return {"slug": slug, "bound": False}
+        return {"slug": slug, "bound": True, **job}
+
+    @router.put("/api/strategies/{slug}/job", tags=["strategy"])
+    def upsert_strategy_job(
+        slug: str, payload: StrategyJobConfig, _write: None = write_guard
+    ) -> dict[str, Any]:
+        """给战法绑定（或更新）一条定时选股任务。
+
+        配置写进 job.config_json，execute_screen 已支持 top_n 和
+        record_candidates（= auto_review）。trading_days 用于回测范围，
+        不影响实时选股，留在 config 里供将来的自动验证任务消费。
+        """
+        try:
+            from src.ops import OpsError
+            from src.ops.scheduler import SchedulerError, validate_cron
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+
+        # 先校验战法存在
+        try:
+            from src.strategies import get as get_strategy
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        try:
+            get_strategy(slug)
+        except Exception as exc:
+            raise HTTPException(status_code=404, detail=f"未知战法：{slug}") from exc
+
+        if payload.cron:
+            try:
+                validate_cron(payload.cron)
+            except SchedulerError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        job_name = f"screen:{slug}"
+        config = {
+            "strategy": slug,
+            "record_candidates": payload.auto_review,
+            "top_n": payload.top_n,
+            "trading_days": payload.trading_days,
+            "hold_days": payload.hold_days,
+            "stop_loss_pct": payload.stop_loss_pct,
+        }
+
+        with _ops() as store:
+            existing = store.get_job_by_name(job_name)
+            try:
+                if existing is None:
+                    job_id = store.create_job(
+                        name=job_name, kind="screen",
+                        cron=payload.cron, config=config, enabled=payload.enabled,
+                    )
+                else:
+                    job_id = existing["id"]
+                    store.update_job(
+                        job_id, cron=payload.cron, config=config, enabled=payload.enabled,
+                    )
+            except OpsError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            job = store.get_job(job_id)
+
+        _reload_scheduler()
+        return {"slug": slug, "bound": True, **(job or {})}
+
+    @router.delete("/api/strategies/{slug}/job", tags=["strategy"])
+    def unbind_strategy_job(slug: str, _write: None = write_guard) -> dict[str, bool]:
+        """解除战法的定时选股绑定。"""
+        job_name = f"screen:{slug}"
+        with _ops() as store:
+            job = store.get_job_by_name(job_name)
+            if job is None:
+                raise HTTPException(status_code=404, detail=f"战法 {slug} 没有绑定定时任务")
+            store.delete_job(job["id"])
+        _reload_scheduler()
+        return {"removed": True}
+
+    # ---- 胜率趋势 + 综合胜率 ----------------------------------------
+
+    @router.get("/api/winrate/summary", tags=["review"])
+    def winrate_summary() -> list[dict[str, Any]]:
+        """各战法综合胜率（全时段汇总）。首页滚动卡片用。"""
+        with _palace() as palace:
+            return palace.strategy_winrates()
+
+    @router.get("/api/winrate/trend", tags=["review"])
+    def winrate_trend(
+        granularity: Literal["month", "week"] = Query(default="month"),
+        tags: str | None = Query(default=None, max_length=500),
+    ) -> list[dict[str, Any]]:
+        """按时间粒度分战法统计胜率趋势。tags 用逗号分隔多个战法名。"""
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        with _palace() as palace:
+            return palace.winrate_trend(strategy_tags=tag_list, granularity=granularity)
+
+    # ---- 选股历史 + 准实时 ------------------------------------------
+
+    @router.get("/api/screen/history", tags=["strategy"])
+    def screen_history(
+        strategy: str = Query(min_length=1, max_length=64),
+        start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        """按战法查历史选股记录（从账本候选池读取）。"""
+        with _palace() as palace:
+            items = palace.candidates_by_strategy(
+                strategy, start=start, end=end, limit=limit
+            )
+        # 按日期分组，前端方便展示
+        by_date: dict[str, list[dict]] = {}
+        for item in items:
+            by_date.setdefault(item["date"], []).append(item)
+        return {
+            "strategy": strategy,
+            "total": len(items),
+            "dates": sorted(by_date.keys(), reverse=True),
+            "by_date": by_date,
+        }
+
+    @router.get("/api/screen/today", tags=["strategy"])
+    def screen_today(
+        strategy: str = Query(min_length=1, max_length=64),
+        force_sync: bool = Query(default=False),
+    ) -> dict[str, Any]:
+        """取当天最新选股结果（准实时）。
+
+        工作流：先看行情仓最新日期，如果今天（或最近交易日）的行情已有
+        且本地 screen 可运行，就直接 screen；否则先触发一次轻量同步（
+        limit=200 最活跃标的，或最近有过信号的标的）再 screen。
+        慢 1-2 分钟可接受。
+        """
+        try:
+            from src.strategies import screen as run_screen
+            from src.strategies.base import StrategyError
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+
+        # 如果 force_sync 或行情仓数据陈旧（last_date < 今天），先同步
+        synced = False
+        sync_note = ""
+        if force_sync or _should_sync_today():
+            try:
+                from src.ops.jobs import JobContext, execute_sync
+                ctx = JobContext(market_db=market_db)
+                report = execute_sync(
+                    {"workers": 6, "interval": 0.1, "with_factors": True},
+                    ctx,
+                )
+                synced = True
+                sync_note = f"同步 {report.get('succeeded', 0)} 只，跳过 {report.get('skipped', 0)} 只"
+            except Exception as exc:
+                sync_note = f"同步失败（{exc}），使用本地数据"
+
+        with _market() as store:
+            try:
+                result = run_screen(store, strategy)
+            except StrategyError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        return {
+            "strategy": result.strategy_slug,
+            "trade_date": result.trade_date,
+            "entry_timing": result.entry_timing,
+            "universe_size": result.universe_size,
+            "elapsed_seconds": round(result.elapsed_seconds, 3),
+            "picks": result.picks,
+            "synced": synced,
+            "sync_note": sync_note,
+        }
+
     return router
+
+
+def _should_sync_today() -> bool:
+    """简单判断：行情仓最新日期不是今天就触发同步。
+
+    不在 build_quant_router 里，避免每次请求都构造 MarketStore。
+    """
+    from datetime import date as _date
+    try:
+        from src.market import MarketStore
+        # market_db 是 None 会走默认路径，这里用全局默认即可。
+        with MarketStore(None) as store:
+            cov = store.coverage()
+        last = cov.get("last_date", "")
+        return last < _date.today().isoformat()
+    except Exception:
+        return False

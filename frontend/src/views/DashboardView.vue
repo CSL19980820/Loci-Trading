@@ -8,6 +8,24 @@
   </header>
 
   <template v-if="dashboard">
+    <!-- 策略胜率滚动卡片 -->
+    <section v-if="winRates.length" class="win-rate-strip" aria-label="策略胜率">
+      <div class="win-rate-scroll">
+        <RouterLink
+          v-for="item in winRates"
+          :key="item.strategy_tag"
+          to="/winrate"
+          class="win-rate-card"
+        >
+          <span class="wrc-tag">{{ item.strategy_tag }}</span>
+          <span class="wrc-rate" :class="winRateTone(item.win_rate)">
+            {{ item.win_rate !== null ? `${item.win_rate}%` : '—' }}
+          </span>
+          <span class="wrc-sub">{{ item.total }} 笔复盘</span>
+        </RouterLink>
+      </div>
+    </section>
+
     <section class="stat-strip" aria-label="核心指标">
       <div class="stat" :class="toneClass(dashboard.account.realized_pnl)">
         <span class="stat-k">累计已实现</span>
@@ -208,16 +226,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
+import { getWinRateSummary } from '@/api/quant'
 import Sparkline from '@/components/Sparkline.vue'
 import TradeDialog from '@/components/TradeDialog.vue'
 import { money, signedMoney, toneClass } from '@/lib/format'
 import { usePalaceStore } from '@/stores/palace'
+import type { WinRateSummary } from '@/types/quant'
 
 const store = usePalaceStore()
 const dashboard = computed(() => store.dashboard)
 const tradeDialogOpen = ref(false)
+const winRates = ref<WinRateSummary[]>([])
 
 const equityValues = computed(() => store.analytics?.equity_curve.map((item) => item.cumulative_pnl) ?? [])
 const lastEquity = computed(() => equityValues.value[equityValues.value.length - 1] ?? 0)
@@ -233,7 +254,6 @@ const totalShares = computed(
   () => dashboard.value?.positions.reduce((sum, item) => sum + item.shares, 0) ?? 0,
 )
 
-/** 有标题/备注/未选计数时才展示轻量纪要，避免空壳条 */
 const candidateBriefVisible = computed(() => {
   const s = dashboard.value?.candidate_summary
   if (!s) return false
@@ -246,4 +266,55 @@ function scoreTone(score: number | null): string {
   if (score >= 60) return 'score-mid'
   return 'score-low'
 }
+
+function winRateTone(rate: number | null): string {
+  if (rate === null) return ''
+  if (rate >= 60) return 'wr-high'
+  if (rate >= 45) return 'wr-mid'
+  return 'wr-low'
+}
+
+onMounted(async () => {
+  try {
+    winRates.value = await getWinRateSummary()
+  } catch {
+    // 胜率卡片是次要信息，加载失败静默忽略
+  }
+})
 </script>
+
+<style scoped>
+.win-rate-strip {
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.win-rate-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.win-rate-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: inherit;
+  min-width: 96px;
+  transition: border-color 0.15s;
+}
+.win-rate-card:hover { border-color: var(--accent); }
+.wrc-tag { font-size: 11px; color: var(--muted); white-space: nowrap; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+.wrc-rate { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.wrc-sub { font-size: 11px; color: var(--dim); }
+.wr-high { color: var(--up); }
+.wr-mid { color: var(--text); }
+.wr-low { color: var(--down); }
+</style>

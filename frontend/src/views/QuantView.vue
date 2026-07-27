@@ -63,14 +63,83 @@
             <td class="r mono">{{ item.min_bars }}</td>
             <td class="reason">{{ item.description }}</td>
             <td class="r">
-              <button class="quiet-button" type="button" :disabled="busy" @click="screen(item.slug)">
-                选股
-              </button>
-              <button class="quiet-button" type="button" :disabled="busy" @click="backtest(item.slug)">
-                回测
+              <button class="quiet-button" type="button" :disabled="busy" @click="screen(item.slug)">选股</button>
+              <button class="quiet-button" type="button" :disabled="busy" @click="backtest(item.slug)">回测</button>
+              <button
+                class="quiet-button"
+                type="button"
+                :class="{ 'text-link': configTarget === item.slug }"
+                @click="toggleConfig(item.slug)"
+              >
+                {{ configTarget === item.slug ? '收起' : '配置' }}
               </button>
             </td>
           </tr>
+          <template v-for="item in strategies" :key="`cfg-${item.slug}`">
+            <tr v-if="configTarget === item.slug" class="config-row">
+              <td colspan="5">
+                <div class="strategy-config">
+                  <h3>{{ item.name }} — 定时选股配置</h3>
+                  <form class="config-form" @submit.prevent="saveConfig(item.slug)">
+                    <div class="config-grid">
+                      <label>
+                        Cron 表达式
+                        <input v-model.trim="configForm.cron" placeholder="45 15 * * 1-5（留空=仅手动）" />
+                      </label>
+                      <label>
+                        每次取前 N 名
+                        <input v-model.number="configForm.top_n" type="number" min="0" max="200" placeholder="0=不限" />
+                      </label>
+                      <label>
+                        验证交易日数
+                        <input v-model.number="configForm.trading_days" type="number" min="1" max="500" />
+                      </label>
+                      <label>
+                        默认持有天数
+                        <input v-model.number="configForm.hold_days" type="number" min="1" max="250" />
+                      </label>
+                      <label>
+                        止损 %（负数）
+                        <input v-model.number="configForm.stop_loss_pct" type="number" step="0.5" placeholder="-6" />
+                      </label>
+                    </div>
+                    <div class="config-checks">
+                      <label class="checkbox-label">
+                        <input v-model="configForm.auto_review" type="checkbox" />
+                        自动复盘（选完写入候选池，记录选股来源）
+                      </label>
+                      <label class="checkbox-label">
+                        <input v-model="configForm.enabled" type="checkbox" />
+                        启用定时任务
+                      </label>
+                    </div>
+                    <div class="dialog-actions">
+                      <button
+                        v-if="strategyJobs[item.slug]?.bound"
+                        class="quiet-button"
+                        type="button"
+                        :disabled="busy"
+                        @click="removeConfig(item.slug)"
+                      >
+                        解除绑定
+                      </button>
+                      <button class="quiet-button" type="button" @click="configTarget = ''">取消</button>
+                      <button class="primary-button" type="submit" :disabled="busy">保存</button>
+                    </div>
+                  </form>
+                  <p v-if="strategyJobs[item.slug]?.bound" class="form-hint">
+                    已绑定：cron <code>{{ strategyJobs[item.slug].cron || '手动' }}</code>，
+                    自动复盘 {{ strategyJobs[item.slug].config?.record_candidates ? '开' : '关' }}，
+                    top_n {{ strategyJobs[item.slug].config?.top_n || '不限' }}
+                  </p>
+                  <p class="form-hint">
+                    「自动复盘」开启后每次运行选股会把入选标的写入候选池（pool_id = 战法@日期），
+                    T+N 验证才能有数据。top_n=0 表示不限制。
+                  </p>
+                </div>
+              </td>
+            </tr>
+          </template>
           <tr v-if="!strategies.length">
             <td colspan="5" class="empty">无已注册战法</td>
           </tr>
@@ -280,16 +349,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import {
   CapabilityUnavailableError,
   awaitJobResult,
   getMarketCoverage,
   getStrategies,
+  getStrategyJob,
   runBacktest,
   runScreen,
   startAnalysis,
+  unbindStrategyJob,
+  upsertStrategyJob,
 } from '@/api/quant'
 import { toneClass } from '@/lib/format'
 import type {
@@ -299,6 +371,7 @@ import type {
   OptimizeResult,
   ScreenResult,
   StrategyInfo,
+  StrategyJob,
 } from '@/types/quant'
 
 const strategies = ref<StrategyInfo[]>([])
@@ -315,7 +388,85 @@ const analysisLabel = ref('')
 const optimizeTarget = ref('')
 const analysisStart = ref('2025-01-01')
 
-/** 因子列取所有入选标的的并集，保证列头稳定，不会因为某只票缺一项就错位。 */
+// ---- 策略配置 -------------------------------------------------------
+const configTarget = ref('')   // 当前展开配置面板的 slug
+const strategyJobs = ref<Record<string, StrategyJob>>({})  // slug → job
+const configForm = reactive({
+  cron: '',
+  auto_review: false,
+  trading_days: 60,
+  top_n: 0,
+  hold_days: 3,
+  stop_loss_pct: -6,
+  enabled: true,
+})
+
+async function toggleConfig(slug: string): Promise<void> {
+  if (configTarget.value === slug) {
+    configTarget.value = ''
+    return
+  }
+  configTarget.value = slug
+  // 加载现有配置
+  try {
+    const job = await getStrategyJob(slug)
+    strategyJobs.value[slug] = job
+    if (job.bound) {
+      const cfg = job.config ?? {}
+      configForm.cron = job.cron ?? ''
+      configForm.auto_review = Boolean(cfg.record_candidates)
+      configForm.trading_days = Number(cfg.trading_days ?? 60)
+      configForm.top_n = Number(cfg.top_n ?? 0)
+      configForm.hold_days = Number(cfg.hold_days ?? 3)
+      configForm.stop_loss_pct = cfg.stop_loss_pct !== undefined ? Number(cfg.stop_loss_pct) : -6
+      configForm.enabled = job.enabled
+    } else {
+      Object.assign(configForm, { cron: '', auto_review: false, trading_days: 60, top_n: 0, hold_days: 3, stop_loss_pct: -6, enabled: true })
+    }
+  } catch {
+    Object.assign(configForm, { cron: '', auto_review: false, trading_days: 60, top_n: 0, hold_days: 3, stop_loss_pct: -6, enabled: true })
+  }
+}
+
+async function saveConfig(slug: string): Promise<void> {
+  busy.value = true
+  unavailable.value = ''
+  try {
+    const job = await upsertStrategyJob(slug, {
+      cron: configForm.cron,
+      auto_review: configForm.auto_review,
+      trading_days: configForm.trading_days,
+      top_n: configForm.top_n,
+      hold_days: configForm.hold_days,
+      stop_loss_pct: configForm.stop_loss_pct,
+      enabled: configForm.enabled,
+    })
+    strategyJobs.value[slug] = job
+    unavailable.value = ''
+    configTarget.value = ''
+  } catch (e: unknown) {
+    unavailable.value = e instanceof Error ? e.message : '保存失败'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function removeConfig(slug: string): Promise<void> {
+  busy.value = true
+  try {
+    await unbindStrategyJob(slug)
+    const job = await getStrategyJob(slug)
+    strategyJobs.value[slug] = job
+    configTarget.value = ''
+  } catch (e: unknown) {
+    unavailable.value = e instanceof Error ? e.message : '删除失败'
+  } finally {
+    busy.value = false
+  }
+}
+
+// ---- 通用 -----------------------------------------------------------
+
 const factorKeys = computed(() => {
   const keys = new Set<string>()
   for (const pick of screenResult.value?.picks ?? []) {
@@ -406,7 +557,6 @@ function exitDist(reasons: Record<string, number>): string {
     .join(' ')
 }
 
-/** 触发后台分析并轮询。任务是分钟级的，同步等待会被网关超时掐断。 */
 async function runAnalysis(
   kind: 'compare' | 'optimize',
   payload: Record<string, unknown>,
@@ -457,3 +607,32 @@ async function runOptimize(): Promise<void> {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.config-row > td {
+  padding: 0;
+  border-top: none;
+}
+.strategy-config {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 4px 0 8px;
+}
+.strategy-config h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.config-form { display: flex; flex-direction: column; gap: 10px; }
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.config-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.config-grid input { padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 6px; }
+.config-checks { display: flex; gap: 16px; flex-wrap: wrap; }
+.checkbox-label { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+</style>

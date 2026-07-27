@@ -280,3 +280,89 @@ export async function awaitJobResult(
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
   }
 }
+
+// ---- MCP server -----------------------------------------------------
+
+export function getMcpServers(): Promise<import('@/types/quant').McpServer[]> {
+  return quantRequest('/mcp')
+}
+
+export function saveMcpServer(payload: {
+  name: string
+  url: string
+  token?: string
+  proxy_url?: string
+  note?: string
+  verify?: boolean
+}): Promise<import('@/types/quant').McpServer> {
+  return quantRequest('/mcp', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function refreshMcpTools(name: string): Promise<{ tools: unknown[]; count: number }> {
+  return quantRequest(`/mcp/${encodeURIComponent(name)}/refresh`, { method: 'POST' })
+}
+
+export function toggleMcpServer(
+  name: string,
+  is_active: boolean,
+): Promise<import('@/types/quant').McpServer> {
+  return quantRequest(`/mcp/${encodeURIComponent(name)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ is_active }),
+  })
+}
+
+export function deleteMcpServer(name: string): Promise<{ removed: boolean }> {
+  return quantRequest(`/mcp/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+// ---- 策略定时选股配置 -----------------------------------------------
+
+export function getStrategyJob(slug: string): Promise<import('@/types/quant').StrategyJob> {
+  return quantRequest(`/strategies/${encodeURIComponent(slug)}/job`)
+}
+
+export function upsertStrategyJob(
+  slug: string,
+  payload: import('@/types/quant').StrategyJobConfig,
+): Promise<import('@/types/quant').StrategyJob> {
+  return quantRequest(`/strategies/${encodeURIComponent(slug)}/job`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function unbindStrategyJob(slug: string): Promise<{ removed: boolean }> {
+  return quantRequest(`/strategies/${encodeURIComponent(slug)}/job`, { method: 'DELETE' })
+}
+
+// ---- 胜率趋势 -------------------------------------------------------
+
+export function getWinRateSummary(): Promise<import('@/types/quant').WinRateSummary[]> {
+  return quantRequest('/winrate/summary')
+}
+
+export function getWinRateTrend(options: {
+  granularity?: 'month' | 'week'
+  tags?: string
+} = {}): Promise<import('@/types/quant').WinRateTrendPoint[]> {
+  return quantRequest(`/winrate/trend${query(options)}`)
+}
+
+// ---- 选股历史 + 准实时 ----------------------------------------------
+
+export function getScreenHistory(options: {
+  strategy: string
+  start?: string
+  end?: string
+  limit?: number
+}): Promise<import('@/types/quant').ScreenHistory> {
+  return quantRequest(`/screen/history${query(options)}`)
+}
+
+export function getScreenToday(options: {
+  strategy: string
+  force_sync?: boolean
+}): Promise<import('@/types/quant').ScreenTodayResult> {
+  return quantRequest(`/screen/today${query({ strategy: options.strategy, force_sync: options.force_sync ? 'true' : undefined })}`)
+}

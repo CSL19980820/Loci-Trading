@@ -963,6 +963,143 @@ class PalaceStore:
             },
         }
 
+    def candidates_by_strategy(
+        self,
+        rule_version: str,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """按战法（rule_version）查历史选股记录。
+
+        每天、每标的取最新一条（同池同标的可能重跑），按日期倒序。
+        用于前端"选股历史"页：按战法+日期区间浏览，不依赖账本的精选口径。
+        """
+        params: list[Any] = [rule_version]
+        clauses = ["rule_version = ?"]
+        if start:
+            clauses.append("occurred_on >= ?")
+            params.append(start)
+        if end:
+            clauses.append("occurred_on <= ?")
+            params.append(end)
+        where = " AND ".join(clauses)
+        params.append(int(limit))
+        rows = self.conn.execute(
+            f"""
+            SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
+                   rule_version, evidence_json, source, created_at
+            FROM (
+                SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
+                       rule_version, evidence_json, source, created_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY occurred_on, code
+                           ORDER BY created_at DESC, id DESC
+                       ) AS rn
+                FROM candidate_reviews
+                WHERE {where}
+            ) ranked
+            WHERE rn = 1
+            ORDER BY occurred_on DESC, score DESC NULLS LAST
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "date": str(row["occurred_on"]),
+                "pool_id": str(row["pool_id"]),
+                "code": str(row["code"]),
+                "name": str(row["name"]),
+                "score": float(row["score"]) if row["score"] is not None else None,
+                "decision": str(row["decision"]),
+                "timing": str(row["timing"]),
+                "reason": str(row["reason"]),
+                "rule_version": str(row["rule_version"]),
+                "evidence": _loads(str(row["evidence_json"])),
+                "source": str(row["source"]),
+                "created_at": str(row["created_at"]),
+            }
+            for row in rows
+        ]
+
+    def winrate_trend(
+        self,
+        *,
+        strategy_tags: list[str] | None = None,
+        granularity: str = "month",
+    ) -> list[dict[str, Any]]:
+        """按时间粒度统计各战法的胜率趋势。
+
+        数据源：reviews 表的 return_pct 字段（有复盘记录时才有值）。
+        granularity: 'month'(YYYY-MM) 或 'week'(YYYY-Www)。
+        返回 [{period, strategy_tag, total, wins, win_rate}]，按 period+tag 升序。
+        """
+        if granularity == "week":
+            period_expr = "strftime('%Y-W%W', occurred_on)"
+        else:
+            period_expr = "strftime('%Y-%m', occurred_on)"
+
+        params: list[Any] = []
+        where = "return_pct IS NOT NULL"
+        if strategy_tags:
+            placeholders = ",".join("?" * len(strategy_tags))
+            where += f" AND strategy_tag IN ({placeholders})"
+            params.extend(strategy_tags)
+
+        rows = self.conn.execute(
+            f"""
+            SELECT {period_expr} AS period,
+                   strategy_tag,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN return_pct > 0 THEN 1 ELSE 0 END) AS wins
+            FROM reviews
+            WHERE {where}
+            GROUP BY period, strategy_tag
+            ORDER BY period ASC, strategy_tag ASC
+            """,
+            params,
+        ).fetchall()
+        return [
+            {
+                "period": str(row["period"]),
+                "strategy_tag": str(row["strategy_tag"]),
+                "total": int(row["total"]),
+                "wins": int(row["wins"]),
+                "win_rate": round(int(row["wins"]) / int(row["total"]) * 100, 1) if row["total"] else None,
+            }
+            for row in rows
+        ]
+
+    def strategy_winrates(self) -> list[dict[str, Any]]:
+        """各战法综合胜率（全时段汇总）。用于首页滚动展示。"""
+        rows = self.conn.execute(
+            """
+            SELECT strategy_tag,
+                   COUNT(*) AS total,
+                   SUM(CASE WHEN return_pct > 0 THEN 1 ELSE 0 END) AS wins,
+                   AVG(return_pct) AS avg_return,
+                   MAX(occurred_on) AS last_reviewed
+            FROM reviews
+            WHERE return_pct IS NOT NULL
+            GROUP BY strategy_tag
+            ORDER BY total DESC
+            """
+        ).fetchall()
+        return [
+            {
+                "strategy_tag": str(row["strategy_tag"]),
+                "total": int(row["total"]),
+                "wins": int(row["wins"]),
+                "win_rate": round(int(row["wins"]) / int(row["total"]) * 100, 1) if row["total"] else None,
+                "avg_return": round(float(row["avg_return"]), 2) if row["avg_return"] is not None else None,
+                "last_reviewed": str(row["last_reviewed"]) if row["last_reviewed"] else "",
+            }
+            for row in rows
+        ]
+
     @staticmethod
     def _is_selected_decision(decision: str) -> bool:
         """精选口径：重点/入选/高确定性等视为通过筛选，其余记为未精选。"""
