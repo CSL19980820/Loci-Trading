@@ -395,7 +395,7 @@ const configForm = reactive({
   cron: '',
   auto_review: false,
   trading_days: 60,
-  top_n: 0,
+  top_n: 3,    // 默认取前3名
   hold_days: 3,
   stop_loss_pct: -6,
   enabled: true,

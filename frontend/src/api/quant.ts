@@ -281,7 +281,63 @@ export async function awaitJobResult(
   }
 }
 
-// ---- MCP server -----------------------------------------------------
+// ---- AI 策略转换器 --------------------------------------------------
+
+export function listCustomStrategies(): Promise<{ slug: string; name: string; file: string }[]> {
+  return quantRequest('/strategies/custom')
+}
+
+export function convertStrategy(payload: {
+  source: string
+  source_type: 'tdx' | 'description'
+  slug: string
+  name: string
+  provider: string
+  model?: string
+  entry_timing: 'open' | 'next_open'
+  dry_run?: boolean
+}): Promise<{
+  status: 'ok' | 'preview' | 'issues' | 'syntax_error' | 'load_error'
+  code: string
+  slug: string
+  issues?: string[]
+  error?: string
+  file?: string
+  registered?: boolean
+}> {
+  return quantRequest('/strategies/convert', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function saveConvertedStrategy(payload: {
+  code: string
+  slug: string
+}): Promise<{ slug: string; file: string; registered: boolean }> {
+  return quantRequest('/strategies/convert/save', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteCustomStrategy(slug: string): Promise<{ removed: boolean }> {
+  return quantRequest(`/strategies/custom/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+}
+
+export function generateSkillMd(payload: {
+  description: string
+  slug: string
+  name: string
+  provider: string
+  model?: string
+  context_hints?: string[]
+}): Promise<{ slug: string; name: string; skill_md: string }> {
+  return quantRequest('/skills/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
 
 export function getMcpServers(): Promise<import('@/types/quant').McpServer[]> {
   return quantRequest('/mcp')

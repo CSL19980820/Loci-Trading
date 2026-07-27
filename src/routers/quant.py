@@ -121,9 +121,33 @@ class StrategyJobConfig(QuantModel):
     enabled: bool = True
     auto_review: bool = False       # 选完自动写入候选池（record_candidates）
     trading_days: int = Field(default=60, ge=1, le=500)   # 回测/验证取多少个交易日
-    top_n: int = Field(default=0, ge=0, le=200)           # 0=不限，>0=只取前N名
+    top_n: int = Field(default=3, ge=0, le=200)           # 0=不限，>0=只取前N名，默认3
     hold_days: int = Field(default=3, ge=1, le=250)
     stop_loss_pct: float | None = Field(default=-6.0, ge=-100, le=0)
+
+
+class StrategyConvertRequest(QuantModel):
+    """AI 策略转换：通达信公式或文字描述 → Python 策略类。"""
+    source: str = Field(min_length=10, max_length=8000, description="通达信公式原文或策略文字描述")
+    source_type: Literal["tdx", "description"] = "tdx"
+    slug: str = Field(min_length=2, max_length=40, pattern=r"^[a-z0-9][a-z0-9\-]*$",
+                      description="策略 slug，如 my-golden-cross，全小写加连字符")
+    name: str = Field(min_length=2, max_length=40, description="策略中文名，如 金叉选股")
+    provider: str = Field(min_length=1, max_length=64, description="使用的 LLM 供应商名称")
+    model: str = Field(default="", max_length=120)
+    entry_timing: Literal["open", "next_open"] = "next_open"
+    dry_run: bool = False  # True=只生成代码不保存，用于预览
+
+
+class SkillGenerateRequest(QuantModel):
+    """AI 生成 Skill 指令文件。"""
+    description: str = Field(min_length=20, max_length=2000, description="技能用途的文字描述")
+    slug: str = Field(min_length=2, max_length=40, pattern=r"^[a-z0-9][a-z0-9\-]*$")
+    name: str = Field(min_length=2, max_length=40)
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(default="", max_length=120)
+    context_hints: list[str] = Field(default_factory=list,
+                                     description="需要哪些数据上下文，如 ['screen','positions']")
 
 
 def _missing_dependency(exc: ImportError) -> HTTPException:
@@ -865,6 +889,187 @@ def build_quant_router(
             store.delete_job(job["id"])
         _reload_scheduler()
         return {"removed": True}
+
+    # ---- AI 策略转换器 -----------------------------------------------
+
+    @router.get("/api/strategies/custom", tags=["strategy"])
+    def list_custom_strategies() -> list[dict[str, Any]]:
+        """列出已保存的自定义策略文件。"""
+        try:
+            from src.strategies.converter import list_custom_strategies as _list
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        return _list()
+
+    @router.post("/api/strategies/convert", tags=["strategy"])
+    def convert_strategy(
+        payload: StrategyConvertRequest, _write: None = write_guard
+    ) -> dict[str, Any]:
+        """把通达信公式或文字描述转成可注册的 Python 策略。
+
+        dry_run=True 时只生成代码不保存，用于预览和人工审核。
+        干净的代码才落盘并热加载注册。
+        """
+        try:
+            from src.ai import resolve_config
+            from src.strategies.converter import (
+                _extract_code, _syntax_check, _validate_strategy_code,
+                build_convert_prompt, save_and_load,
+            )
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+
+        with _ops() as store:
+            try:
+                provider = resolve_config(
+                    store, payload.provider,
+                    model=payload.model,
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail=f"供应商配置错误：{exc}") from exc
+
+        # 构建 prompt 并调用 LLM
+        prompt = build_convert_prompt(
+            source=payload.source,
+            source_type=payload.source_type,
+            slug=payload.slug,
+            name=payload.name,
+            entry_timing=payload.entry_timing,
+        )
+        try:
+            from src.ai.client import ChatMessage, chat
+            messages = [ChatMessage(role="user", content=prompt)]
+            response = chat(provider, messages, max_tokens=4096, temperature=0.1)
+            raw = response.content
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"LLM 请求失败：{exc}") from exc
+
+        code = _extract_code(raw)
+
+        # 语法检查
+        syntax_err = _syntax_check(code)
+        if syntax_err:
+            return {
+                "status": "syntax_error",
+                "error": syntax_err,
+                "code": code,
+                "slug": payload.slug,
+            }
+
+        # 完整性检查
+        issues = _validate_strategy_code(code, payload.slug)
+
+        if payload.dry_run or issues:
+            return {
+                "status": "preview" if not issues else "issues",
+                "issues": issues,
+                "code": code,
+                "slug": payload.slug,
+            }
+
+        # 保存并热加载
+        try:
+            result = save_and_load(code, payload.slug)
+        except RuntimeError as exc:
+            return {
+                "status": "load_error",
+                "error": str(exc),
+                "code": code,
+                "slug": payload.slug,
+            }
+
+        return {
+            "status": "ok",
+            "issues": [],
+            "code": code,
+            "slug": payload.slug,
+            **result,
+        }
+
+    @router.post("/api/strategies/convert/save", tags=["strategy"])
+    def save_converted_strategy(
+        payload: dict[str, Any], _write: None = write_guard
+    ) -> dict[str, Any]:
+        """在用户审核后，把已生成的代码保存注册（dry_run 预览后的第二步）。"""
+        code = str(payload.get("code", ""))
+        slug = str(payload.get("slug", ""))
+        if not code or not slug:
+            raise HTTPException(status_code=422, detail="code 和 slug 均为必填")
+        try:
+            from src.strategies.converter import (
+                _syntax_check, _validate_strategy_code, save_and_load
+            )
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+
+        syntax_err = _syntax_check(code)
+        if syntax_err:
+            raise HTTPException(status_code=422, detail=f"代码有语法错误：{syntax_err}")
+
+        issues = _validate_strategy_code(code, slug)
+        if issues:
+            raise HTTPException(status_code=422, detail=f"代码有问题：{'; '.join(issues)}")
+
+        try:
+            result = save_and_load(code, slug)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return result
+
+    @router.delete("/api/strategies/custom/{slug}", tags=["strategy"])
+    def delete_custom_strategy(slug: str, _write: None = write_guard) -> dict[str, bool]:
+        """删除自定义策略文件并从注册表移除。"""
+        try:
+            from src.strategies.converter import delete_custom_strategy as _delete
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+        if not _delete(slug):
+            raise HTTPException(status_code=404, detail=f"未找到自定义策略：{slug}")
+        return {"removed": True}
+
+    @router.post("/api/skills/generate", tags=["skills"])
+    def generate_skill_md(
+        payload: SkillGenerateRequest, _write: None = write_guard
+    ) -> dict[str, Any]:
+        """根据描述让 AI 生成 SKILL.md 内容。
+
+        返回生成的文本，用户可以复制或直接下载为 .zip 安装包。
+        此接口不自动安装，安装走 POST /api/skills（上传 zip）。
+        """
+        try:
+            from src.ai import resolve_config
+            from src.strategies.converter import build_skill_prompt
+        except ImportError as exc:
+            raise _missing_dependency(exc) from exc
+
+        with _ops() as store:
+            try:
+                provider = resolve_config(
+                    store, payload.provider,
+                    model=payload.model,
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=422, detail=f"供应商配置错误：{exc}") from exc
+
+        prompt = build_skill_prompt(
+            description=payload.description,
+            slug=payload.slug,
+            name=payload.name,
+            context_hints=payload.context_hints,
+        )
+        try:
+            from src.ai.client import ChatMessage, chat
+            messages = [ChatMessage(role="user", content=prompt)]
+            response = chat(provider, messages, max_tokens=2048, temperature=0.3)
+            skill_md = response.content.strip()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"LLM 请求失败：{exc}") from exc
+
+        return {
+            "slug": payload.slug,
+            "name": payload.name,
+            "skill_md": skill_md,
+        }
 
     # ---- 胜率趋势 + 综合胜率 ----------------------------------------
 
