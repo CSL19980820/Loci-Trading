@@ -199,6 +199,9 @@ class OpsStore:
         if key not in _SCHEMA_READY:
             self.init_schema()
             _SCHEMA_READY.add(key)
+        # 迁移始终执行：CREATE TABLE IF NOT EXISTS 和 ALTER TABLE ADD COLUMN 都是幂等的，
+        # 多跑一次耗时微秒，但能保证旧 ops.db 自动补齐新表和新列。
+        self._run_migrations()
 
     def close(self) -> None:
         self.conn.close()
@@ -760,3 +763,43 @@ class OpsStore:
         if not row:
             return []
         return loads(row["mcp_servers_json"] or "[]", [])
+
+    def _run_migrations(self) -> None:
+        """增量迁移：对已有 ops.db 补加新表和新列。幂等，每次连接都执行。"""
+        migrations = [
+            # strategy_docs 表（旧库可能没有）
+            """CREATE TABLE IF NOT EXISTS strategy_docs (
+                slug            TEXT PRIMARY KEY,
+                name            TEXT NOT NULL DEFAULT '',
+                source_text     TEXT NOT NULL DEFAULT '',
+                source_type     TEXT NOT NULL DEFAULT '',
+                assumptions     TEXT NOT NULL DEFAULT '',
+                market_cond     TEXT NOT NULL DEFAULT '',
+                failure_modes   TEXT NOT NULL DEFAULT '',
+                entry_timing    TEXT NOT NULL DEFAULT '',
+                exit_rules      TEXT NOT NULL DEFAULT '',
+                version         TEXT NOT NULL DEFAULT '1',
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            )""",
+            # strategy_versions 表（旧库可能没有）
+            """CREATE TABLE IF NOT EXISTS strategy_versions (
+                id          TEXT PRIMARY KEY,
+                slug        TEXT NOT NULL,
+                version     INTEGER NOT NULL,
+                code        TEXT NOT NULL,
+                file_path   TEXT NOT NULL DEFAULT '',
+                issues      TEXT NOT NULL DEFAULT '[]',
+                created_at  TEXT NOT NULL,
+                is_active   INTEGER NOT NULL DEFAULT 1
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_sv_slug ON strategy_versions(slug, version DESC)",
+            # skills 表补列 mcp_servers_json
+            "ALTER TABLE skills ADD COLUMN mcp_servers_json TEXT NOT NULL DEFAULT '[]'",
+        ]
+        for sql in migrations:
+            try:
+                self.conn.execute(sql)
+                self.conn.commit()
+            except Exception:
+                pass  # 表/列/索引已存在，跳过
