@@ -151,6 +151,17 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     top_n = int(config.get("top_n") or 0)
     picks = result.picks[:top_n] if top_n > 0 else result.picks
 
+    reserve_n = int(config.get("reserve_n") or (top_n * 3 if top_n > 0 else 0))
+
+    def _tier(index: int) -> str:
+        if top_n <= 0:
+            return "core"
+        if index < top_n:
+            return "core"
+        if reserve_n <= 0 or index < top_n + reserve_n:
+            return "reserve"
+        return "dropped"
+
     payload = {
         "strategy": result.strategy_slug,
         "trade_date": result.trade_date,
@@ -163,11 +174,15 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     }
 
     if config.get("record_candidates"):
-        # 把截断后的 picks 临时替换进 result，让 _record_candidates 只写入前 N 名。
         import copy
-        trimmed = copy.copy(result)
-        trimmed.picks = picks   # ScreenResult 是普通 dataclass，直接赋值
-        payload["recorded"] = _record_candidates(trimmed, config, context, names)
+        # _record_candidates gets ALL picks with tier annotation
+        tagged_result = copy.copy(result)
+        tagged_picks = [
+            {**p, "_tier": _tier(i)}
+            for i, p in enumerate(result.picks)
+        ]
+        tagged_result.picks = tagged_picks
+        payload["recorded"] = _record_candidates(tagged_result, config, context, names)
     return payload
 
 
@@ -190,6 +205,7 @@ def _record_candidates(
         for pick in result.picks:
             code = str(pick["code"])
             try:
+                tier = str(pick.pop("_tier", "core"))
                 palace.record_candidate(
                     code=code,
                     name=names.get(code, ""),
@@ -200,6 +216,7 @@ def _record_candidates(
                     timing=result.entry_timing,
                     rule_version=result.strategy_slug,
                     evidence=pick.get("factors") or {},
+                    tier=tier,
                     source="job:screen",
                 )
                 written += 1

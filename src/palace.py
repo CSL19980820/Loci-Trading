@@ -215,6 +215,7 @@ class PalaceStore:
                 reason TEXT NOT NULL,
                 rule_version TEXT NOT NULL DEFAULT 'qianlong-v1',
                 evidence_json TEXT NOT NULL DEFAULT '{}',
+                tier TEXT NOT NULL DEFAULT 'core',
                 source TEXT NOT NULL DEFAULT 'manual',
                 created_at TEXT NOT NULL
             );
@@ -257,6 +258,23 @@ class PalaceStore:
                 created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_reviews_entity ON reviews(entity_type, entity_id, reviewed_on);
+
+            -- AI 判定记录：独立于量化选股，记录 AI 筛选结论。
+            -- 不记录的话无法事后算 AI 的 alpha（AI 否决的那些天量化 top3 赚了多少）。
+            CREATE TABLE IF NOT EXISTS ai_judgments (
+                id           TEXT PRIMARY KEY,
+                occurred_on  TEXT NOT NULL,
+                strategy_tag TEXT NOT NULL,
+                decision     TEXT NOT NULL CHECK (decision IN ('buy', 'hold_cash', 'partial')),
+                top_codes    TEXT NOT NULL DEFAULT '[]',
+                reason       TEXT NOT NULL DEFAULT '',
+                provider     TEXT NOT NULL DEFAULT '',
+                model        TEXT NOT NULL DEFAULT '',
+                token_used   INTEGER NOT NULL DEFAULT 0,
+                source       TEXT NOT NULL DEFAULT 'ai',
+                created_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_ai_judgments_strategy ON ai_judgments(strategy_tag, occurred_on DESC);
             """
         )
         self._dedupe_candidate_reviews()
@@ -478,6 +496,7 @@ class PalaceStore:
         timing: str = "",
         rule_version: str = "qianlong-v1",
         evidence: dict[str, Any] | None = None,
+        tier: str = "core",
         source: str = "manual",
     ) -> str:
         """写入候选裁决。同日同池同标的只占一席：重复提交幂等，改判则覆盖。"""
@@ -492,12 +511,13 @@ class PalaceStore:
         timing_value = timing.strip()
         rule_value = rule_version.strip() or "qianlong-v1"
         source_value = source.strip() or "manual"
+        tier_value = tier.strip() or "core"
         evidence_json = _dumps(evidence)
         with self._transaction() as cursor:
             self._upsert_stock(cursor, code, name_value)
             existing = cursor.execute(
                 """
-                SELECT id, name, score, decision, timing, reason, rule_version, evidence_json, source
+                SELECT id, name, score, decision, timing, reason, rule_version, evidence_json, tier, source
                 FROM candidate_reviews
                 WHERE occurred_on = ? AND pool_id = ? AND code = ?
                 """,
@@ -519,6 +539,7 @@ class PalaceStore:
                     and str(existing["reason"]) == reason_value
                     and str(existing["rule_version"]) == rule_value
                     and str(existing["evidence_json"]) == evidence_json
+                    and str(existing["tier"]) == tier_value
                     and str(existing["source"]) == source_value
                 )
                 if same:
@@ -527,7 +548,7 @@ class PalaceStore:
                     """
                     UPDATE candidate_reviews
                     SET name = ?, score = ?, decision = ?, timing = ?, reason = ?,
-                        rule_version = ?, evidence_json = ?, source = ?, created_at = ?
+                        rule_version = ?, evidence_json = ?, tier = ?, source = ?, created_at = ?
                     WHERE id = ?
                     """,
                     (
@@ -538,6 +559,7 @@ class PalaceStore:
                         reason_value,
                         rule_value,
                         evidence_json,
+                        tier_value,
                         source_value,
                         _now(),
                         str(existing["id"]),
@@ -550,8 +572,8 @@ class PalaceStore:
                 """
                 INSERT INTO candidate_reviews(
                     id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                    rule_version, evidence_json, source, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    rule_version, evidence_json, tier, source, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
@@ -565,6 +587,7 @@ class PalaceStore:
                     reason_value,
                     rule_value,
                     evidence_json,
+                    tier_value,
                     source_value,
                     _now(),
                 ),
@@ -678,10 +701,10 @@ class PalaceStore:
         rows = self.conn.execute(
             """
             SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                   rule_version, evidence_json, source, created_at
+                   rule_version, evidence_json, tier, source, created_at
             FROM (
                 SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                       rule_version, evidence_json, source, created_at,
+                       rule_version, evidence_json, tier, source, created_at,
                        ROW_NUMBER() OVER (
                            PARTITION BY pool_id, code
                            ORDER BY created_at DESC, id DESC
@@ -707,6 +730,7 @@ class PalaceStore:
                 "reason": str(row["reason"]),
                 "rule_version": str(row["rule_version"]),
                 "evidence": _loads(str(row["evidence_json"])),
+                "tier": str(row["tier"]),
                 "source": str(row["source"]),
                 "created_at": str(row["created_at"]),
             }
@@ -1587,3 +1611,59 @@ class PalaceStore:
         self._set_meta("qianlong_state_import", _dumps({"path": str(path), "date": imported_on, "events": imported}))
         self.conn.commit()
         return {"date": imported_on, "position_events": imported, "realized_pnl_baseline": realized, "total_assets": assets}
+
+    def record_ai_judgment(
+        self,
+        *,
+        occurred_on: str | None = None,
+        strategy_tag: str,
+        decision: str,
+        top_codes: list[str],
+        reason: str = "",
+        provider: str = "",
+        model: str = "",
+        token_used: int = 0,
+        source: str = "ai",
+    ) -> str:
+        """记录 AI 的选/弃仓决定，独立于量化选股池。
+        事后可算 AI 否决的那些天量化 top3 真实涨了多少（AI alpha 核算）。
+        """
+        jid = f"AJ-{uuid4().hex[:12].upper()}"
+        date_value = normalize_date(occurred_on)
+        with self._transaction() as cursor:
+            cursor.execute(
+                "INSERT INTO ai_judgments(id, occurred_on, strategy_tag, decision, top_codes,"
+                " reason, provider, model, token_used, source, created_at)"
+                " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+                (
+                    jid,
+                    date_value,
+                    strategy_tag,
+                    decision,
+                    json.dumps(top_codes, ensure_ascii=False),
+                    reason[:2000],
+                    provider[:64],
+                    model[:120],
+                    int(token_used),
+                    source,
+                ),
+            )
+        return jid
+
+    def ai_judgment_payload(self, strategy_tag: str, limit: int = 100) -> list[dict[str, Any]]:
+        """返回指定战法的 AI 判定记录，按日期倒序。"""
+        rows = self.conn.execute(
+            "SELECT * FROM ai_judgments WHERE strategy_tag = ?"
+            " ORDER BY occurred_on DESC, created_at DESC LIMIT ?",
+            (strategy_tag, limit),
+        ).fetchall()
+        result = []
+        for row in rows:
+            d = dict(row)
+            raw = d.get("top_codes") or "[]"
+            try:
+                d["top_codes"] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                d["top_codes"] = []
+            result.append(d)
+        return result

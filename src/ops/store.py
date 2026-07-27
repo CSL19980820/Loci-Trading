@@ -129,6 +129,24 @@ CREATE TABLE IF NOT EXISTS job_runs (
 
 CREATE INDEX IF NOT EXISTS idx_runs_job ON job_runs(job_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_status ON job_runs(status, started_at DESC);
+
+-- 量化战法档案：结构化记录战法形成背景、核心假设、适用市况和已知失效场景。
+-- 有了这些，AI 做可行性分析和复盘优化时才有具体的可质疑点，
+-- 而不是对着一行 description 瞎猜。
+CREATE TABLE IF NOT EXISTS strategy_docs (
+    slug            TEXT PRIMARY KEY,
+    name            TEXT NOT NULL DEFAULT '',
+    source_text     TEXT NOT NULL DEFAULT '',
+    source_type     TEXT NOT NULL DEFAULT '',
+    assumptions     TEXT NOT NULL DEFAULT '',
+    market_cond     TEXT NOT NULL DEFAULT '',
+    failure_modes   TEXT NOT NULL DEFAULT '',
+    entry_timing    TEXT NOT NULL DEFAULT '',
+    exit_rules      TEXT NOT NULL DEFAULT '',
+    version         TEXT NOT NULL DEFAULT '1',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
 """
 
 _SCHEMA_READY: set[str] = set()
@@ -553,3 +571,67 @@ class OpsStore:
             # 只有真正要发起调用时才带上密文，且调用方需立刻解密使用、不得留存。
             data["encrypted_key"] = secret
         return data
+
+    # ---- 战法档案 -------------------------------------------------
+
+    def upsert_strategy_doc(self, slug: str, **fields: Any) -> str:
+        """写入或更新战法档案。只更新传入的字段，未传的保持原值。"""
+        allowed = {"name", "source_text", "source_type", "assumptions",
+                   "market_cond", "failure_modes", "entry_timing", "exit_rules", "version"}
+        updates = {k: str(v) for k, v in fields.items() if k in allowed}
+        slug = slug.strip()
+        if not slug:
+            raise OpsError("战法档案 slug 不能为空")
+        existing = self.conn.execute(
+            "SELECT * FROM strategy_docs WHERE slug = ?", (slug,)
+        ).fetchone()
+        now = json.dumps(None)  # placeholder — use real datetime below
+        import datetime as _dt
+        now_str = _dt.datetime.now().astimezone().isoformat(timespec="seconds")
+        with self._transaction() as cursor:
+            if existing is None:
+                row = {
+                    "slug": slug,
+                    "name": "",
+                    "source_text": "",
+                    "source_type": "",
+                    "assumptions": "",
+                    "market_cond": "",
+                    "failure_modes": "",
+                    "entry_timing": "",
+                    "exit_rules": "",
+                    "version": "1",
+                    "created_at": now_str,
+                    "updated_at": now_str,
+                }
+                row.update(updates)
+                cursor.execute(
+                    "INSERT INTO strategy_docs(slug, name, source_text, source_type, assumptions,"
+                    " market_cond, failure_modes, entry_timing, exit_rules, version,"
+                    " created_at, updated_at)"
+                    " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (row["slug"], row["name"], row["source_text"], row["source_type"],
+                     row["assumptions"], row["market_cond"], row["failure_modes"],
+                     row["entry_timing"], row["exit_rules"], row["version"],
+                     row["created_at"], row["updated_at"]),
+                )
+            else:
+                set_parts = ", ".join(f"{k} = ?" for k in updates)
+                set_parts += ", updated_at = ?"
+                vals = list(updates.values()) + [now_str, slug]
+                cursor.execute(
+                    f"UPDATE strategy_docs SET {set_parts} WHERE slug = ?", vals
+                )
+        return slug
+
+    def get_strategy_doc(self, slug: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM strategy_docs WHERE slug = ?", (slug.strip(),)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_strategy_docs(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT * FROM strategy_docs ORDER BY slug"
+        ).fetchall()
+        return [dict(row) for row in rows]
