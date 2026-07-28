@@ -1,0 +1,4 @@
+# Bun install: same registry as .npmrc
+[install]
+registry = "https://registry.npmmirror.com"
+exact = true

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "wudao-a-stock": {
+      "url": "https://REPLACE_WITH_YOUR_MCP_URL/mcp",
+      "headers": {
+        "Authorization": "Bearer ${WUDAO_API_KEY}"
+      },
+      "note": "把本文件复制/改名为 data/mcp.json；密钥用环境变量，不要写死进仓库"
+    }
+  }
+}

@@ -9,21 +9,28 @@ __pycache__/
 # 前端
 node_modules/
 frontend/dist/
+frontend/dist-rolldown/
+frontend/test-results/
+frontend/playwright-report/
+frontend/package-lock.json
+
 
 # 运行产物
 output/
 *.log
+Loci.exe
+Loci/
+loci.config.json
+build/
+
+# 旧 PyInstaller 输出（现默认打到仓库根）
+dist/Loci.exe
 
 # 数据库与运行时数据：账本/行情/运维状态都不进仓库
-.palace/
-.market/
-.ops/
+data/
 *.db
 *.db-wal
 *.db-shm
-
-# 用户安装的技能包。仓库只提供安装机制，不携带任何具体技能。
-.skills/
 
 # 密钥
 .env
@@ -37,3 +44,8 @@ output/
 .tmp/
 .idea/
 .vscode/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/

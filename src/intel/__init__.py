@@ -1,16 +1,27 @@
-"""外部情报接入：通过 MCP 或 REST 拿到本地行情仓算不出来的数据。
+"""外部情报（MCP）限界上下文。"""
+from src.intel.infrastructure.mcp import McpClient, McpError, McpTool
+from src.intel.infrastructure.mcp_config import load_mcp_json_raw, upsert_mcp_server_json
+from src.intel.infrastructure.registry import (
+    build_client,
+    collect_tools,
+    delete_server,
+    list_effective_mcp_servers,
+    refresh_tools,
+    save_server,
+    set_server_active,
+)
 
-分工很清楚，不要混：
-
-- **本地行情仓**（src/market）做量价计算：高频、大批量、离线。全市场选股
-  891ms 算完 5509 只，这种规模不可能走 API。
-- **外部情报**（这里）补本地算不出来的：涨停梯队、炸板池、封板事件流需要
-  盘中逐笔；概念热度、板块排行、龙虎榜、研报、公告本地根本没有数据源。
-  低频、小批量、在线，且有配额。
-
-配额是硬约束（典型 5000 次/天、50 次/分），所以这一层必须做限流与缓存，
-不能让某次批量调用把当天的额度打光。
-"""
-from src.intel.mcp import McpClient, McpError, McpTool
-
-__all__ = ["McpClient", "McpError", "McpTool"]
+__all__ = [
+    "McpClient",
+    "McpError",
+    "McpTool",
+    "build_client",
+    "collect_tools",
+    "delete_server",
+    "list_effective_mcp_servers",
+    "load_mcp_json_raw",
+    "refresh_tools",
+    "save_server",
+    "set_server_active",
+    "upsert_mcp_server_json",
+]

@@ -1,0 +1,185 @@
+"""运维状态库：定时任务、执行历史、LLM 供应商。
+
+与账本 (palace.db)、行情仓 (market.db) 一样物理隔离。
+
+技能正文在 ``data/skills/*/SKILL.md``，MCP 在 ``data/mcp.json``——二者都不进本库。
+本库只保留任务状态与 LLM 密钥密文（主密钥在环境变量）。
+
+实现拆分：
+- ``store_helpers`` — 常量 / OpsError / new_id / dumps / loads
+- ``store_schema`` — DDL 与迁移清单
+- ``store_jobs`` / ``store_providers`` / ``store_strategy`` — 领域 mixin
+"""
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+import sqlite3
+
+from src.ops.infrastructure.store_helpers import (
+    DEFAULT_DB,
+    JOB_KINDS,
+    MANAGED_SYNC_EOD,
+    MANAGED_SYNC_INTRADAY,
+    OpsError,
+    RUN_STATUSES,
+    dumps,
+    loads,
+    new_id,
+    yaml_safe_dump,
+)
+from src.ops.infrastructure.store_jobs import OpsJobsMixin
+from src.ops.infrastructure.store_providers import OpsProvidersMixin
+from src.ops.infrastructure.store_schema import (
+    SCHEMA_VERSION,
+    _MIGRATIONS,
+    _SCHEMA,
+    _SCHEMA_READY,
+)
+from src.ops.infrastructure.store_strategy import OpsStrategyMixin
+
+__all__ = [
+    "DEFAULT_DB",
+    "JOB_KINDS",
+    "MANAGED_SYNC_EOD",
+    "MANAGED_SYNC_INTRADAY",
+    "OpsError",
+    "OpsStore",
+    "RUN_STATUSES",
+    "SCHEMA_VERSION",
+    "dumps",
+    "loads",
+    "new_id",
+    "yaml_safe_dump",
+]
+
+
+class OpsStore(OpsJobsMixin, OpsProvidersMixin, OpsStrategyMixin):
+    """任务 / LLM 供应商的读写。每个请求或任务持有独立连接。"""
+
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path or DEFAULT_DB)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(self.db_path, timeout=30.0)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA busy_timeout=30000")
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA foreign_keys=ON")
+        key = str(self.db_path.resolve())
+        if key not in _SCHEMA_READY:
+            self.init_schema()
+            _SCHEMA_READY.add(key)
+        # 迁移始终执行：CREATE TABLE IF NOT EXISTS 和 ALTER TABLE ADD COLUMN 都是幂等的，
+        # 多跑一次耗时微秒，但能保证旧 ops.db 自动补齐新表和新列。
+        self._run_migrations()
+
+    def close(self) -> None:
+        self.conn.close()
+
+    def __enter__(self) -> OpsStore:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.close()
+
+    @contextmanager
+    def _transaction(self) -> Iterator[sqlite3.Cursor]:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("BEGIN")
+            yield cursor
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def init_schema(self) -> None:
+        with self._transaction() as cursor:
+            cursor.executescript(_SCHEMA)
+            cursor.execute(
+                "INSERT INTO meta(key, value, updated_at) VALUES('schema_version', ?, datetime('now'))"
+                " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (str(SCHEMA_VERSION),),
+            )
+
+    def _export_legacy_mcp_to_json(self) -> None:
+        """旧 ops.db.mcp_servers → data/mcp.json（仅当 json 尚无同名项时）。"""
+        try:
+            rows = self.conn.execute("SELECT * FROM mcp_servers").fetchall()
+        except sqlite3.Error:
+            return
+        if not rows:
+            return
+        try:
+            from src.intel import load_mcp_json_raw, upsert_mcp_server_json
+        except Exception:
+            return
+        existing = load_mcp_json_raw()
+        servers = existing.get("mcpServers") or existing.get("mcp_servers") or {}
+        if not isinstance(servers, dict):
+            servers = {}
+        for row in rows:
+            name = str(row["name"])
+            if name in servers:
+                continue
+            tools = loads(row["tools_json"] if "tools_json" in row.keys() else "[]", [])
+            upsert_mcp_server_json(
+                name=name,
+                url=str(row["url"]),
+                token=None,
+                proxy_url=str(row["proxy_url"] or ""),
+                note=str(row["note"] or "migrated-from-ops.db"),
+                tools=tools if isinstance(tools, list) else [],
+                tools_synced_at=str(row["tools_synced_at"] or ""),
+                disabled=not bool(row["is_active"]),
+            )
+
+    def _export_legacy_skills_to_disk(self) -> None:
+        """旧 ops.db.skills → 若目录缺 SKILL.md 则补写一份。"""
+        try:
+            rows = self.conn.execute("SELECT * FROM skills").fetchall()
+        except sqlite3.Error:
+            return
+        from src.shared.paths import skill_root
+
+        root = skill_root()
+        root.mkdir(parents=True, exist_ok=True)
+        for row in rows:
+            slug = str(row["slug"])
+            folder = root / slug
+            folder.mkdir(parents=True, exist_ok=True)
+            manifest = folder / "SKILL.md"
+            if manifest.is_file():
+                continue
+            meta = {
+                "name": str(row["name"] or slug),
+                "slug": slug,
+                "version": str(row["version"] or ""),
+                "description": str(row["description"] or slug),
+                "enabled": bool(row["enabled"]),
+            }
+            tools = loads(row["allowed_tools"] if "allowed_tools" in row.keys() else "[]", [])
+            if tools:
+                meta["tools"] = tools
+            cron = str(row["default_cron"] or "")
+            if cron:
+                meta["cron"] = cron
+            body = str(row["instructions"] or "").strip() or f"# {slug}\n"
+            dumped = yaml_safe_dump(meta)
+            manifest.write_text(f"---\n{dumped}\n---\n\n{body}\n", encoding="utf-8")
+
+    def _run_migrations(self) -> None:
+        """增量迁移：对已有 ops.db 补加新表和新列。幂等，每次连接都执行。"""
+        # 先把旧 skills / mcp_servers 迁出，再 DROP
+        self._export_legacy_mcp_to_json()
+        self._export_legacy_skills_to_disk()
+
+        for sql in _MIGRATIONS:
+            try:
+                self.conn.execute(sql)
+                self.conn.commit()
+            except Exception:
+                pass  # 表/列/索引已存在，跳过

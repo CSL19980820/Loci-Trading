@@ -1,98 +1,28 @@
-<template>
-  <RouterView v-if="isPublicRoute" />
-  <template v-else>
-    <a class="skip-link" href="#main-content">跳至主内容</a>
-    <div class="app-shell">
-      <aside class="side-rail" aria-label="导航">
-        <RouterLink class="brand" to="/" aria-label="首页">
-          <span class="brand-mark" aria-hidden="true">潜</span>
-          <strong>潜龙</strong>
-        </RouterLink>
-        <nav>
-          <RouterLink to="/" class="nav-link" exact-active-class="nav-link-active">总览</RouterLink>
-          <RouterLink to="/journal" class="nav-link" active-class="nav-link-active">交割</RouterLink>
-          <RouterLink to="/pool" class="nav-link" active-class="nav-link-active">候选</RouterLink>
-          <RouterLink to="/reviews" class="nav-link" active-class="nav-link-active">复盘</RouterLink>
-          <RouterLink to="/winrate" class="nav-link" active-class="nav-link-active">胜率</RouterLink>
-          <RouterLink to="/insights" class="nav-link" active-class="nav-link-active">洞察</RouterLink>
-          <RouterLink to="/quant" class="nav-link" active-class="nav-link-active">量化</RouterLink>
-          <RouterLink to="/strategy-converter" class="nav-link" active-class="nav-link-active">AI转策略</RouterLink>
-          <RouterLink to="/screen-history" class="nav-link" active-class="nav-link-active">选股</RouterLink>
-          <RouterLink to="/ops" class="nav-link" active-class="nav-link-active">运维</RouterLink>
-          <RouterLink
-            v-if="firstPosition"
-            :to="`/archive/${firstPosition.code}`"
-            class="nav-link"
-            active-class="nav-link-active"
-          >
-            档案
-          </RouterLink>
-        </nav>
-
-        <!-- 录入入口。这五类此前后端有接口、前端一个按钮都没有，
-             是"线上只能看不能记，什么都要回本地 CLI"的直接原因。 -->
-        <div class="rail-actions">
-          <span class="rail-actions-label">记录</span>
-          <button
-            v-for="entry in recordEntries"
-            :key="entry.kind"
-            class="quiet-button rail-action"
-            type="button"
-            @click="openRecord(entry.kind)"
-          >
-            {{ entry.label }}
-          </button>
-        </div>
-      </aside>
-
-      <section class="workspace">
-        <div v-if="store.loading" class="load-line" aria-hidden="true" />
-        <p v-if="store.notice" class="toast" role="status">
-          {{ store.notice }}
-          <button type="button" aria-label="关闭" @click="store.clearNotice">×</button>
-        </p>
-        <p v-if="store.error" class="error-banner" role="alert">
-          <span>{{ store.error }}</span>
-          <span class="error-actions">
-            <button type="button" class="quiet-button" @click="retryLoad">重试</button>
-            <button type="button" aria-label="关闭" @click="store.clearError">×</button>
-          </span>
-        </p>
-        <main id="main-content" tabindex="-1" class="main-content">
-          <RouterView />
-        </main>
-        <footer class="app-foot">
-          <button class="quiet-button" type="button" @click="signOut">退出</button>
-        </footer>
-      </section>
-    </div>
-    <RecordDialog v-model="recordOpen" :kind="recordKind" @saved="onRecorded" />
-  </template>
-</template>
-
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { EditPen } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
-import { logout } from '@/api/palace'
-import RecordDialog, { type RecordKind } from '@/components/RecordDialog.vue'
-import { usePalaceStore } from '@/stores/palace'
+import AppSidebar from '@/shared/components/layout/AppSidebar.vue'
+import MobileBottomNav from '@/shared/components/layout/MobileBottomNav.vue'
+import MarketBootstrapDialog from '@/shared/components/dialogs/MarketBootstrapDialog.vue'
+import RecordDialog, { type RecordKind } from '@/shared/components/dialogs/RecordDialog.vue'
+import TradeDialog from '@/shared/components/dialogs/TradeDialog.vue'
+import { useMarketSyncGate } from '@/shared/composables/useMarketSyncGate'
+import { usePalaceStore } from '@/shared/stores/palace'
 
 const store = usePalaceStore()
 const route = useRoute()
-const router = useRouter()
+const { syncing, busyLabel } = useMarketSyncGate()
 const isPublicRoute = computed(() => route.meta.public === true)
-const firstPosition = computed(() => store.firstPosition)
+const archivePath = computed(() =>
+  store.firstPosition ? `/archive/${store.firstPosition.code}` : null,
+)
 
-const recordEntries: { kind: RecordKind; label: string }[] = [
-  { kind: 'candidate', label: '候选' },
-  { kind: 'plan', label: '预案' },
-  { kind: 'review', label: '复盘' },
-  { kind: 'snapshot', label: '资产' },
-  { kind: 'cashflow', label: '出入金' },
-]
 const recordOpen = ref(false)
 const recordKind = ref<RecordKind>('candidate')
+const tradeOpen = ref(false)
 
 function openRecord(kind: RecordKind): void {
   recordKind.value = kind
@@ -100,15 +30,76 @@ function openRecord(kind: RecordKind): void {
 }
 
 function onRecorded(): void {
-  // 写入后刷新当前页，让新记录立刻出现，不用手动重载。
   void store.loadRoute(route, true)
 }
+
+function onTradeSaved(): void {
+  void store.loadRoute(route, true)
+}
+
+function isTypingContext(): boolean {
+  const el = document.activeElement
+  if (!el || !(el instanceof HTMLElement)) return false
+  const tag = el.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  if (el.isContentEditable) return true
+  return false
+}
+
+function showShortcutHelp(): void {
+  void ElMessageBox.alert(
+    ['n — 记成交', 'c — 写候选', 'p — 写预案', '? — 显示本帮助'].join('\n'),
+    '键盘快捷键',
+    { confirmButtonText: '知道了' },
+  )
+}
+
+function onGlobalKeydown(event: KeyboardEvent): void {
+  if (isPublicRoute.value) return
+  if (isTypingContext()) return
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+
+  if (event.key === '?' || (event.shiftKey && event.key === '/')) {
+    event.preventDefault()
+    showShortcutHelp()
+    return
+  }
+
+  const key = event.key.toLowerCase()
+  if (key === 'n') {
+    event.preventDefault()
+    tradeOpen.value = true
+  } else if (key === 'c') {
+    event.preventDefault()
+    openRecord('candidate')
+  } else if (key === 'p') {
+    event.preventDefault()
+    openRecord('plan')
+  }
+}
+
+function onQuitWhileSyncing(event: BeforeUnloadEvent): void {
+  if (!syncing.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('beforeunload', onQuitWhileSyncing)
+  window.addEventListener('pagehide', onQuitWhileSyncing)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('beforeunload', onQuitWhileSyncing)
+  window.removeEventListener('pagehide', onQuitWhileSyncing)
+})
 
 watch(
   () => ({ name: route.name, path: route.fullPath, public: route.meta.public === true }),
   ({ public: isPublic }) => {
     if (isPublic) return
-    // 路由变化需要刷新；同一 key 的并发请求由 store 序号丢弃过期响应。
     void store.loadRoute(route, true)
   },
   { immediate: true },
@@ -118,12 +109,81 @@ function retryLoad(): void {
   store.clearError()
   void store.loadRoute(route, true)
 }
-
-async function signOut(): Promise<void> {
-  try {
-    await logout()
-  } finally {
-    await router.replace('/login')
-  }
-}
 </script>
+
+<template>
+  <RouterView v-if="isPublicRoute" />
+  <template v-else>
+    <a class="skip-link" href="#main-content">跳至主内容</a>
+    <div class="app-shell app-shell--with-mobile-nav">
+      <AppSidebar :archive-path="archivePath" @record="openRecord" />
+
+      <section class="workspace">
+        <el-alert
+          v-if="syncing"
+          :title="busyLabel"
+          type="warning"
+          show-icon
+          :closable="false"
+          class="banner sync-banner"
+        />
+        <el-progress
+          v-if="store.loading"
+          :percentage="100"
+          :indeterminate="true"
+          :show-text="false"
+          :stroke-width="3"
+          class="load-bar"
+        />
+        <el-alert
+          v-if="store.notice"
+          :title="store.notice"
+          type="success"
+          show-icon
+          closable
+          class="banner"
+          @close="store.clearNotice"
+        />
+        <el-alert
+          v-if="store.error"
+          :title="store.error"
+          type="error"
+          show-icon
+          class="banner"
+          @close="store.clearError"
+        >
+          <template #default>
+            <el-button size="small" @click="retryLoad">重试</el-button>
+          </template>
+        </el-alert>
+        <main id="main-content" tabindex="-1" class="main-content">
+          <div class="page-host">
+            <RouterView />
+          </div>
+        </main>
+      </section>
+    </div>
+    <RecordDialog v-model="recordOpen" :kind="recordKind" @saved="onRecorded" />
+    <TradeDialog v-model="tradeOpen" @saved="onTradeSaved" />
+    <MarketBootstrapDialog />
+
+    <MobileBottomNav :archive-path="archivePath" />
+
+    <div class="record-fab">
+      <el-dropdown trigger="click" @command="openRecord">
+        <el-button type="primary" circle size="large" aria-label="记一笔">
+          <el-icon><EditPen /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="candidate">候选</el-dropdown-item>
+            <el-dropdown-item command="plan">预案</el-dropdown-item>
+            <el-dropdown-item command="review">复盘</el-dropdown-item>
+            <el-dropdown-item command="snapshot">资产</el-dropdown-item>
+            <el-dropdown-item command="cashflow">出入金</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+    </div>
+  </template>
+</template>

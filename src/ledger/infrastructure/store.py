@@ -1,0 +1,94 @@
+"""潜龙记忆宫殿的本地事件账本。
+
+这个模块只记录事实、预案与复盘结果，不生成自动交易指令。核心原则是：
+任何当前仓位都能由 ``position_events`` 回放得到；任何结论都带有日期、来源和
+可选的证据字段，便于日后追溯与量化复盘。
+
+实现按职责拆到同目录 mixin 模块；本文件组合为 ``PalaceStore`` 并 re-export 公开符号。
+"""
+from __future__ import annotations
+
+from contextlib import contextmanager
+from pathlib import Path
+import sqlite3
+from typing import Iterator
+
+from src.ledger.infrastructure.ai_judgments import AiJudgmentMixin
+from src.ledger.infrastructure.candidates import CandidateMixin
+from src.ledger.infrastructure.import_qianlong import ImportQianlongMixin
+from src.ledger.infrastructure.plans_reviews import PlanReviewMixin
+from src.ledger.infrastructure.queries import QueryMixin
+from src.ledger.infrastructure.schema import SchemaMixin
+from src.ledger.infrastructure.store_types import (
+    SCHEMA_VERSION,
+    PalaceError,
+    Position,
+    _dumps,
+    _loads,
+    _normalize_decision,
+    _now,
+    normalize_code,
+    normalize_date,
+)
+from src.ledger.infrastructure.tracking import TrackingMixin
+from src.ledger.infrastructure.trades import TradeMixin
+
+__all__ = [
+    "SCHEMA_VERSION",
+    "PalaceError",
+    "PalaceStore",
+    "Position",
+    "normalize_code",
+    "normalize_date",
+    "_dumps",
+    "_loads",
+    "_normalize_decision",
+    "_now",
+]
+
+
+class PalaceStore(
+    SchemaMixin,
+    TradeMixin,
+    CandidateMixin,
+    PlanReviewMixin,
+    QueryMixin,
+    ImportQianlongMixin,
+    AiJudgmentMixin,
+    TrackingMixin,
+):
+    """SQLite 账本：当前快照为投影，事件表才是可审计的事实来源。"""
+
+    def __init__(self, db_path: Path | str):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # timeout/busy_timeout：并发读写（多 API 同时打同一库）时等锁而不是立刻失败。
+        self.conn = sqlite3.connect(self.db_path, timeout=30.0)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA busy_timeout = 30000")
+        journal = self.conn.execute("PRAGMA journal_mode").fetchone()
+        if journal is None or str(journal[0]).lower() != "wal":
+            self.conn.execute("PRAGMA journal_mode = WAL")
+        self.init_schema()
+
+    def close(self) -> None:
+        self.conn.close()
+
+    def __enter__(self) -> PalaceStore:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self.close()
+
+    @contextmanager
+    def _transaction(self) -> Iterator[sqlite3.Cursor]:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("BEGIN")
+            yield cursor
+        except Exception:
+            self.conn.rollback()
+            raise
+        else:
+            self.conn.commit()

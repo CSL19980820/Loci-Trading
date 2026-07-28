@@ -1,20 +1,17 @@
-"""LLM 接入层。
-
-通用供应商模型：名称 + Base URL + Key + 协议（openai_compatible / anthropic）。
-不硬编码任何厂商，新增一家只是加一行配置记录。
-"""
-from src.ai.client import (
+"""AI 限界上下文：供应商与对话客户端。"""
+from src.ai.infrastructure.client import (
     PROTOCOLS,
     ChatMessage,
     ChatResponse,
     LLMError,
     ProviderConfig,
+    ToolCall,
     chat,
     list_models,
     validate,
 )
-from src.ai.crypto import CryptoError, MASTER_KEY_ENV, generate_master_key, mask_secret
-from src.ai.providers import refresh_models, resolve_config, save_provider
+from src.ai.infrastructure.crypto import CryptoError, MASTER_KEY_ENV, generate_master_key, mask_secret
+from src.ai.infrastructure.providers import refresh_models, resolve_config, save_provider
 
 __all__ = [
     "MASTER_KEY_ENV",
@@ -24,6 +21,7 @@ __all__ = [
     "CryptoError",
     "LLMError",
     "ProviderConfig",
+    "ToolCall",
     "chat",
     "generate_master_key",
     "list_models",

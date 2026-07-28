@@ -2,15 +2,14 @@ akshare>=1.12.0
 pandas>=2.0.0
 numpy>=1.24.0
 scipy>=1.10.0
-jinja2>=3.1.0
-markdown>=3.5.0
+# market 只读分析旁路（可关；不替代 palace/market SQLite 权威）
+duckdb>=1.0.0
+# 可选回测加速（LOCI_BACKTEST_FAST=1）；缺省仍走经典引擎
+vectorbt>=0.26.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
 httpx2>=2.9.0
 itsdangerous>=2.2.0
-# src/fetcher.py 是模块级 import yfinance（K 线备源），不是懒加载：
-# 缺它则 import src.fetcher 直接 ModuleNotFoundError。
-yfinance>=0.2.0
 
 # 定时任务调度（进程内单例，不引入 broker）
 apscheduler>=3.10.0
@@ -19,6 +18,11 @@ PyYAML>=6.0
 # API Key 静态加密（AES-256-GCM）
 cryptography>=42.0.0
 
-# 可选：PDF 导出后端。src/toolbox.py 懒加载，缺失时降级为 HTML 打印源
-# 并标注 PDF skipped，不影响主流程，因此不作为硬依赖。
-# weasyprint>=60.0
+# 桌面窗口（Loci.exe / python loci.py）
+pywebview>=5.0
+# 任务栏托盘悬停行情提示
+pystray>=0.19
+Pillow>=10.0
+
+# 可选：打 Windows exe
+# pyinstaller>=6.0

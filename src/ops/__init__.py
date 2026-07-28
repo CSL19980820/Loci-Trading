@@ -1,24 +1,28 @@
-"""运维层：技能包、定时任务、执行历史、LLM 供应商配置。
-
-「装个 zip 就多一个能定时跑的模式」和「通达信公式转成能定时跑的量化脚本」
-这两件事，最后都落在这里：技能包与策略都被包装成 job，由同一个调度器
-按 cron 触发，由同一套执行记录留痕。
-"""
-from src.ops.jobs import EXECUTORS, JobContext, JobError, run_job
-from src.ops.scheduler import JobScheduler, SchedulerError, validate_cron
-from src.ops.skills import (
+"""运维限界上下文：技能、任务、调度、LLM 配置索引。"""
+from src.ops.application.jobs import EXECUTORS, JobContext, JobError, run_job
+from src.ops.infrastructure.scheduler import JobScheduler, SchedulerError, validate_cron
+from src.ops.application import skill_runs
+from src.ops.application.skills import (
     SkillError,
     SkillPackage,
+    discover_skills,
     install_skill,
+    install_skill_dir,
+    load_skill_from_disk,
     parse_manifest,
     read_skill_file,
+    resolve_skill,
+    set_skill_enabled,
     uninstall_skill,
 )
-from src.ops.store import JOB_KINDS, OpsError, OpsStore
+from src.ops.infrastructure.store import JOB_KINDS, OpsError, OpsStore, new_id
+from src.ops.infrastructure.store_helpers import MANAGED_SYNC_EOD, MANAGED_SYNC_INTRADAY
 
 __all__ = [
     "EXECUTORS",
     "JOB_KINDS",
+    "MANAGED_SYNC_EOD",
+    "MANAGED_SYNC_INTRADAY",
     "JobContext",
     "JobError",
     "JobScheduler",
@@ -27,10 +31,17 @@ __all__ = [
     "SchedulerError",
     "SkillError",
     "SkillPackage",
+    "discover_skills",
     "install_skill",
+    "install_skill_dir",
+    "load_skill_from_disk",
+    "new_id",
     "parse_manifest",
     "read_skill_file",
+    "resolve_skill",
     "run_job",
+    "set_skill_enabled",
+    "skill_runs",
     "uninstall_skill",
     "validate_cron",
 ]

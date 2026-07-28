@@ -16,7 +16,7 @@ flowchart LR
   F --> B
 ```
 
-数据默认保存在 `.palace/qianlong.db`（Git 忽略）。当前仓位是事件账本的投影。
+数据默认保存在 `data/palace.db`（Git 忽略）。当前仓位是事件账本的投影。
 
 ## Web 工作台页面
 
@@ -56,8 +56,8 @@ flowchart LR
   --return-pct 3.2 --mfe 7.1 --mae -2.4 --lesson "回踩确认有效" `
   --next-rule "保留 D-low，样本满 5 条再调整"
 
-.\.venv\Scripts\python.exe palace.py dashboard --output output\palace-dashboard.md
-.\.venv\Scripts\python.exe palace.py timeline 300358 --output output\300358-timeline.md
+.\.venv\Scripts\python.exe palace.py dashboard --output data\palace-dashboard.md
+.\.venv\Scripts\python.exe palace.py timeline 300358 --output data\300358-timeline.md
 .\.venv\Scripts\python.exe palace.py scorecard
 ```
 

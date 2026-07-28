@@ -1,0 +1,122 @@
+[importlinter]
+root_package = src
+include_external_packages = True
+
+# 只拦「直接」深掏兄弟上下文 infrastructure；经 src.<ctx> 包根再导出不算违约。
+# 同上下文（api/application/domain/infrastructure）放进 allowed_importers。
+
+[importlinter:contract:protect-market-infra]
+name = Protect market.infrastructure
+type = protected
+protected_modules =
+    src.market.infrastructure
+allowed_importers =
+    src.market
+    src.market.api
+    src.market.application
+    src.market.domain
+    src.market.infrastructure
+
+[importlinter:contract:protect-ledger-infra]
+name = Protect ledger.infrastructure
+type = protected
+protected_modules =
+    src.ledger.infrastructure
+allowed_importers =
+    src.ledger
+    src.ledger.api
+    src.ledger.application
+    src.ledger.domain
+    src.ledger.infrastructure
+
+[importlinter:contract:protect-ops-infra]
+name = Protect ops.infrastructure
+type = protected
+protected_modules =
+    src.ops.infrastructure
+allowed_importers =
+    src.ops
+    src.ops.api
+    src.ops.application
+    src.ops.domain
+    src.ops.infrastructure
+
+[importlinter:contract:protect-ai-infra]
+name = Protect ai.infrastructure
+type = protected
+protected_modules =
+    src.ai.infrastructure
+allowed_importers =
+    src.ai
+    src.ai.api
+    src.ai.application
+    src.ai.domain
+    src.ai.infrastructure
+
+[importlinter:contract:protect-intel-infra]
+name = Protect intel.infrastructure
+type = protected
+protected_modules =
+    src.intel.infrastructure
+allowed_importers =
+    src.intel
+    src.intel.api
+    src.intel.application
+    src.intel.domain
+    src.intel.infrastructure
+
+[importlinter:contract:protect-review-infra]
+name = Protect review.infrastructure
+type = protected
+protected_modules =
+    src.review.infrastructure
+allowed_importers =
+    src.review
+    src.review.api
+    src.review.application
+    src.review.domain
+    src.review.infrastructure
+
+[importlinter:contract:protect-strategy-infra]
+name = Protect strategy.infrastructure
+type = protected
+protected_modules =
+    src.strategy.infrastructure
+allowed_importers =
+    src.strategy
+    src.strategy.api
+    src.strategy.application
+    src.strategy.domain
+    src.strategy.infrastructure
+
+[importlinter:contract:protect-backtest-infra]
+name = Protect backtest.infrastructure
+type = protected
+protected_modules =
+    src.backtest.infrastructure
+allowed_importers =
+    src.backtest
+    src.backtest.api
+    src.backtest.application
+    src.backtest.domain
+    src.backtest.infrastructure
+
+[importlinter:contract:domain-no-web-framework]
+name = Domain must not import FastAPI
+type = forbidden
+source_modules =
+    src.ledger.domain
+    src.market.domain
+    src.review.domain
+    src.strategy.domain
+    src.ops.domain
+    src.ai.domain
+    src.intel.domain
+    src.backtest.domain
+    src.formula.domain
+forbidden_modules =
+    fastapi
+    starlette
+    httpx
+    httpx2
+allow_indirect_imports = false

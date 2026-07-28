@@ -3,6 +3,9 @@
 > 立项日期：2026-07-26
 > 状态：**已定稿**（三个关键决策见 §9，已确认）
 > 本文是路线图，不是实现文档。每个阶段落地时另开 ADR。
+>
+> **2026-07-28 更新**：公网服务器部署已废弃下线（域名返回 410）。文中 `deploy/`、
+> `sync-to-server.ps1`、线上 Docker 相关条目仅作历史记录，不再执行。
 
 ---
 
@@ -22,7 +25,7 @@
 
 1. **仓库一个 commit 都没有。** `git log` → `does not have any commits yet`。40+ 文件全 untracked，没有任何回滚基线。
 2. **`src/qianlong.py` 的辰星线算错了。** 原公式是"当天权重 20、越往回越小"的近期加权 WMA，代码里 `np.arange(20,0,-1)` 与 rolling 窗口点积，把权重 20 给了 20 天前那根、权重 1 给了当天，**权重方向整体倒挂**。所有基于它的信号和打分都建立在错误数值上。
-3. **`requirements.txt` 缺 `yfinance`**，但 `src/fetcher.py` 顶部是模块级 `import yfinance`。照 requirements 新建的环境，`import src.fetcher` 直接崩。
+3. **`requirements.txt` 缺 `yfinance`**（历史：旧报告链 `src/fetcher`）。**2026-07-28 已删除整条旧报告/discover 工具链。**
 
 还有一份被低估的资产：[docs/stock-pick-backtest-2026-07.md](stock-pick-backtest-2026-07.md)。你手工做的那次回测（MFE/MAE、Hold-N 退出曲线、市场调整 alpha、评分单调性检验、前视偏差告警、拒绝集验证）**就是自动化复盘引擎的需求文档**，§7.5 那张表直接是待办清单。这份方法论应该被代码化，而不是每次手算。
 
@@ -73,7 +76,7 @@
 │                                  重算 / 盘后 AI 简报            │
 └───────┬───────────────┬────────────────┬─────────────────────┘
         │               │                │
-   qianlong.db      market.db          ai.db
+   palace.db      market.db          ai.db
    (账本,不可变)    (行情,可重建)      (对话/密钥,可清理)
 ```
 
@@ -83,7 +86,7 @@
 
 ## 4. 数据模型总账（已消除方案冲突，此为定稿）
 
-### 4.1 账本 `qianlong.db` —— 现有 9 表原则上不动
+### 4.1 账本 `palace.db` —— 现有 9 表原则上不动
 
 只做两处加法：
 - `candidate_reviews` / `plans` / `reviews` 各加 `strategy_id TEXT`，与现有 `rule_version` / `strategy_tag` 自由文本过渡期并存。
@@ -293,7 +296,7 @@ ai_usage_daily(trade_date, provider, model, ..., estimated_cost_cents)
 ### P5 · 多策略系统（XL）
 
 - `StrategyEngine` Protocol：`default_params / score / signals / backtest` 四个方法。现有 `discovery.py`（四维打分）和 `qianlong.py`（潜龙出海状态机）各包一层适配器注册为前两个成员。
-- **把通达信公式真正复刻成 Python 信号函数**。现状是：`tdx/潜龙出海_选股*.txt` 里那些才是真正的选股条件（T5 突破、L4 量能换手、抗织布、9:25 竞价过滤），`src/qianlong.py` 只 port 了主图状态机，里面的"量能共振""突破 20 日高"是开发者自己加的启发式、不是原公式。另外卢高文六个涨停战法、以及它们依赖的 `COST()` 换手率衰减筹码分布，Python 侧完全空白（现有 `calc_chip_distribution` 只是等宽分箱直方图，语义差很远）。这块基本从零写。
+- **把通达信公式真正复刻成 Python 信号函数**。潜龙出海选股条件（T5 突破、L4 量能换手、抗织布、9:25 竞价过滤）与主图状态机应落在 `src/strategies/qianlong.py` / `src/qianlong.py`；卢高文六个涨停战法及 `COST()` 换手率衰减筹码分布见 `src/strategies/lugaowen.py`（`COST()` 语义与等宽分箱直方图仍有差距）。
 - **回测引擎自写 pandas 事件驱动**，精确还原 A 股 T+1 不可当日卖出、涨跌停不可成交、停牌跳过。不上 qlib/zipline/backtrader——它们默认面向美股 T+0，适配成本比自写高。
 - **防前视偏差是架构级约束**：每个信号函数配一条"信号截断一致性"单测（只喂到 T 日的数据 vs 喂全部历史，同一个 T 日信号值必须完全一致），作为 CI 强制门禁。你手工回测里踩过的那个坑（用 D 日盘中数据做 D 日决策）不能再踩。
 - 前端策略中心：各策略独立候选池、独立复盘、独立绩效，并排对比。

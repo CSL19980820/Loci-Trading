@@ -1,20 +1,12 @@
-# stock-analyzer - Windows PowerShell 环境初始化脚本
-# 用法:   .\setup.ps1
-# 前置:   需安装 uv (https://docs.astral.sh/uv/) 或 Python 3.10+
-#
-# 执行流程:
-#   1) 检测 uv / Python
-#   2) 创建 .venv 虚拟环境
-#   3) 安装 requirements.txt
-#   4) 提示使用方法
+# stock-analyzer 环境初始化
+
+用法: `.\setup.ps1`
 
 $ErrorActionPreference = "Stop"
-
-Write-Host "=== stock-analyzer 环境初始化 ===" -ForegroundColor Cyan
+Write-Host "=== Loci / stock-analyzer 环境初始化 ===" -ForegroundColor Cyan
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $projectRoot
 
-# 1. 检测 uv
 $useUv = $false
 try {
     $uvVersion = & uv --version 2>$null
@@ -24,19 +16,13 @@ try {
     }
 } catch {}
 
-# 2. 创建虚拟环境
 if (-not (Test-Path ".venv")) {
     Write-Host "[步骤 1/3] 创建虚拟环境 .venv ..." -ForegroundColor Yellow
-    if ($useUv) {
-        & uv venv --python 3.12
-    } else {
-        & python -m venv .venv
-    }
+    if ($useUv) { & uv venv --python 3.12 } else { & python -m venv .venv }
 } else {
     Write-Host "[跳过] .venv 已存在" -ForegroundColor Gray
 }
 
-# 3. 安装依赖
 Write-Host "[步骤 2/3] 安装依赖 ..." -ForegroundColor Yellow
 $pythonExe = ".\.venv\Scripts\python.exe"
 if ($useUv) {
@@ -46,20 +32,15 @@ if ($useUv) {
     & $pythonExe -m pip install -r requirements.txt
 }
 
-# 4. 验证
 Write-Host "[步骤 3/3] 验证安装 ..." -ForegroundColor Yellow
-& $pythonExe -c "import akshare, pandas, scipy, jinja2, markdown; print('[OK] 所有依赖就绪')"
+& $pythonExe -c "import fastapi, pandas, akshare, duckdb; print('[OK] 核心依赖可用')"
 
 Write-Host ""
 Write-Host "=== 初始化完成 ===" -ForegroundColor Green
-Write-Host ""
-Write-Host "使用方法:" -ForegroundColor Cyan
-Write-Host "  .\.venv\Scripts\python.exe analyze.py 002460 --cost 84.363 --shares 600 --formats all"
-Write-Host ""
-Write-Host "PDF 说明:" -ForegroundColor Cyan
-Write-Host "  如需直接导出 PDF, 可额外安装 weasyprint 或 wkhtmltopdf；未安装时仍会生成 HTML 打印源。"
-Write-Host ""
-Write-Host "或先激活环境:" -ForegroundColor Cyan
-Write-Host "  .\.venv\Scripts\Activate.ps1"
-Write-Host "  python analyze.py 002460 --cost 84.363 --shares 600"
-Write-Host ""
+Write-Host "启动桌面:  .\.venv\Scripts\python.exe loci.py"
+Write-Host "仅 API:    .\.venv\Scripts\python.exe -m cli.serve"
+Write-Host "前端:      cd frontend; bun install; bun run dev"
+Write-Host "测试:      .\.venv\Scripts\python.exe -m pytest tests/ -q"
+Write-Host "架构:      .\.venv\Scripts\lint-imports.exe"
+Write-Host "可选:      `$env:LOCI_MARKET_DUCKDB='1'  # market load_panel DuckDB 旁路"
+Write-Host "可选:      `$env:LOCI_BACKTEST_FAST='1'  # 回测加速旁路（失败回退经典）"

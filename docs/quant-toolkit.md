@@ -29,6 +29,9 @@ COUNT(close > ma20, 12)    # → (close > ma20).rolling(12).sum()
 
 ---
 
+选股默认股票池为「主板+创业板+科创板、剔除 ST、屏蔽北交所」。
+范围由 `src/market/universe.py` 与选股 API 契约约定。
+
 ## 1. 行情仓
 
 ### 首次准备
@@ -80,16 +83,16 @@ python market.py bench                           # 性能实测
 
 ### 已实现
 
-| slug | 战法 | 入场时点 | 源公式 |
+| slug | 战法 | 入场时点 | 实现 |
 |---|---|---|---|
-| `qianlong-auction` | 潜龙出海·竞价版 | 当日开盘 | `tdx/潜龙出海_选股.txt` |
-| `qianlong-close` | 潜龙出海·原版 | 次日开盘 | `tdx/潜龙出海_选股_原版.txt` |
-| `lugw-sanwai` | 卢高文·三外有三 | 次日开盘 | `lugw_tdx_formulas.md` 公式 1 |
-| `lugw-tianyi` | 卢高文·天衣无缝 | 次日开盘 | 同上 公式 2 |
-| `lugw-daoba` | 卢高文·倒拔杨柳 | 次日开盘 | 同上 公式 3 |
-| `lugw-haidi` | 卢高文·海底捞月 | 次日开盘 | 同上 公式 4 |
-| `lugw-fenshou` | 卢高文·分手快乐 | 次日开盘 | 同上 公式 5 |
-| `lugw-chouma` | 卢高文·筹码峰突破 | 次日开盘 | 同上 公式 6（依赖 `COST()`）|
+| `qianlong-auction` | 潜龙出海·竞价版 | 当日开盘 | `src/strategies/qianlong.py` |
+| `qianlong-close` | 潜龙出海·原版 | 次日开盘 | 同上 |
+| `lugw-sanwai` | 卢高文·三外有三 | 次日开盘 | `src/strategies/lugaowen.py` |
+| `lugw-tianyi` | 卢高文·天衣无缝 | 次日开盘 | 同上 |
+| `lugw-daoba` | 卢高文·倒拔杨柳 | 次日开盘 | 同上 |
+| `lugw-haidi` | 卢高文·海底捞月 | 次日开盘 | 同上 |
+| `lugw-fenshou` | 卢高文·分手快乐 | 次日开盘 | 同上 |
+| `lugw-chouma` | 卢高文·筹码峰突破 | 次日开盘 | 同上（依赖 `COST()`）|
 
 **入场时点是策略元数据的一部分，不是回测参数。** 同一套形态条件，
 "9:25 竞价筛、当日开盘买"和"盘后筛、次日开盘买"是两个完全不同的策略，
@@ -367,6 +370,12 @@ python ops.py provider add --name anthropic --protocol anthropic \
 
 ## 6. 定时任务
 
+运维页也可配置：
+
+- **行情同步**：盘中增量（默认每 5 分钟，`*/5 9-14 * * 1-5`）+ 日终重刷（默认 16:00，`mode=today_refresh` 只刷当日 OHLC）。会自动维护「行情盘中增量」「行情日终重刷」两条托管任务。
+- **推送**：企业微信群机器人 Webhook；任务类型 `notify`（触价 / 日终简报 / 最近选股 / 同步失败），或其它任务勾选 `push_wecom`。
+- 调度需 `PALACE_ENABLE_SCHEDULER=1`。
+
 四类任务走同一套调度与留痕：
 
 ```bash
@@ -488,9 +497,8 @@ GET/POST/DELETE      /api/providers
 - **`COST()` 筹码分布未实现**：卢高文六个涨停战法依赖它（换手率衰减的
   筹码分布分位数）。现有 `calc_chip_distribution` 只是等宽分箱直方图，
   语义相差很远，不能直接拿来复刻。
-- **「一箭穿心」源材料不在仓库里**：对 `tdx/`、`lugw_tdx_formulas.*`、
-  `潜龙出海.txt` 及那份 `.doc` 做过全文与字节级扫描，均无命中。需要你
-  提供公式文本才能复刻。
+- **「一箭穿心」源材料不在仓库里**：通达信原文与课程稿已从仓库移除；
+  现有 Python 策略实现中均无命中。需要你提供公式文本才能复刻。
 - **akshare 上游不稳**：底层是爬公开网页接口，随时可能改版或限流封 IP。
   已做多源降级（新浪主 / 东财备）与限速，但不能假设长期稳定。
 - **`ak.stock_info_a_code_name()` 不可用**：它依赖 py_mini_racer 执行 JS，

@@ -1,0 +1,161 @@
+/** 行情：覆盖率 / 实时条 / 看板 / K 线 / 同步 / 引导 / 股票池 / 体检。 */
+import { quantRequest, query } from '@/shared/api/quant_client'
+import type {
+  Capabilities,
+  Instrument,
+  MarketBoard,
+  MarketCoverage,
+  QuoteSeries,
+  UniverseFunnel,
+  UniversePreset,
+  UniverseSpec,
+  UniverseStats,
+} from '@/shared/types/quant'
+
+export function getCapabilities(): Promise<Capabilities> {
+  return quantRequest<Capabilities>('/capabilities')
+}
+
+export function getMarketCoverage(): Promise<MarketCoverage> {
+  return quantRequest<MarketCoverage>('/market/coverage')
+}
+
+export interface LiveTapeItem {
+  code: string
+  label: string
+  symbol?: string
+  kind: 'index' | 'position' | 'watch'
+  name?: string
+  price: number | null
+  pct: number | null
+  change?: number | null
+  pnl_pct?: number | null
+  market_value?: number | null
+  shares?: number
+  cost?: number
+  trade_time?: string
+  source?: string
+  ok?: boolean
+}
+
+export interface LiveTape {
+  as_of: string
+  source: string
+  error: string
+  title: string
+  indices: LiveTapeItem[]
+  positions: LiveTapeItem[]
+  watches: LiveTapeItem[]
+  items: LiveTapeItem[]
+}
+
+export function getLiveTape(refresh = false): Promise<LiveTape> {
+  return quantRequest<LiveTape>(`/market/live-tape${refresh ? '?refresh=true' : ''}`)
+}
+
+export function searchInstruments(q: string, limit = 20): Promise<Instrument[]> {
+  return quantRequest<Instrument[]>(`/market/search${query({ q, limit })}`)
+}
+
+export function getMarketBoard(options: {
+  q?: string
+  page?: number
+  page_size?: number
+  live?: boolean
+  instrument_type?: string
+  status?: string
+} = {}): Promise<MarketBoard> {
+  const live = options.live === true ? 'true' : 'false'
+  return quantRequest(
+    `/market/board${query({
+      q: options.q,
+      page: options.page,
+      page_size: options.page_size,
+      live,
+      instrument_type: options.instrument_type,
+      status: options.status,
+    })}`,
+  )
+}
+
+export function getQuotes(
+  code: string,
+  options: {
+    start?: string
+    end?: string
+    adjust?: 'qfq' | 'hfq' | 'none'
+    limit?: number
+  } = {},
+): Promise<QuoteSeries> {
+  const path = `/market/quotes/${encodeURIComponent(code)}`
+  return quantRequest<QuoteSeries>(`${path}${query(options)}`)
+}
+
+export function syncMarket(payload: {
+  codes?: string[]
+  limit?: number
+  workers?: number
+  interval?: number
+  force?: boolean
+  refresh_instruments?: boolean
+}): Promise<Record<string, unknown>> {
+  return quantRequest('/market/sync', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export interface MarketBootstrapStatus {
+  status: 'idle' | 'running' | 'done' | 'error'
+  phase: string
+  done: number
+  total: number
+  percent: number
+  code: string
+  message: string
+  needed?: boolean
+  backfill_kind?: string
+  coverage?: MarketCoverage
+  session?: import('@/shared/lib/marketSession').MarketSession
+  report?: Record<string, unknown> | null
+}
+
+export function getMarketSession(): Promise<import('@/shared/lib/marketSession').MarketSession> {
+  return quantRequest('/market/session')
+}
+
+export function getMarketBootstrap(): Promise<MarketBootstrapStatus> {
+  return quantRequest<MarketBootstrapStatus>('/market/bootstrap')
+}
+
+export function startMarketBootstrap(payload: {
+  workers?: number
+  interval?: number
+  limit?: number
+  with_factors?: boolean
+} = {}): Promise<MarketBootstrapStatus> {
+  return quantRequest<MarketBootstrapStatus>('/market/bootstrap', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getUniversePresets(): Promise<UniversePreset[]> {
+  return quantRequest<UniversePreset[]>('/universe/presets')
+}
+
+export function getUniverseStats(): Promise<UniverseStats> {
+  return quantRequest<UniverseStats>('/universe/stats')
+}
+
+export function previewUniverse(payload: UniverseSpec): Promise<{
+  universe: UniverseSpec
+  universe_funnel: UniverseFunnel
+  code_count: number
+}> {
+  return quantRequest('/universe/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getMarketHealth(date?: string): Promise<Record<string, unknown>> {
+  return quantRequest(`/market/health${query({ date })}`)
+}
