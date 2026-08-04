@@ -2,6 +2,7 @@
 
 明文 Key 的生命周期被压到最短：进来 → 校验 → 加密 → 落库，此后只有
 真正要发请求的那一刻才解密成局部变量。任何列表/详情接口都只回末四位。
+模型目录（启用、上下文、输出上限）经 ops.model_catalog 规范化后落 models_json。
 """
 from __future__ import annotations
 
@@ -10,16 +11,61 @@ from typing import Any
 
 from src.ai.infrastructure.client import (
     LLMError,
+    PROTOCOLS,
     ProviderConfig,
     list_models as fetch_models,
     validate as probe_provider,
 )
 from src.ai.infrastructure.crypto import decrypt_secret, encrypt_secret, mask_secret
-from src.ops import OpsError, OpsStore, new_id
+from src.ops import (
+    OpsError,
+    OpsStore,
+    ensure_default_in_catalog,
+    find_model_entry,
+    merge_discovered,
+    new_id,
+    normalize_models,
+)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _catalog_from_record(record: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not record:
+        return []
+    if record.get("model_catalog") is not None:
+        return normalize_models(record.get("model_catalog"))
+    return normalize_models(record.get("models"))
+
+
+def _resolve_runtime_model(
+    record: dict[str, Any], catalog: list[dict[str, Any]], requested_model: str
+) -> tuple[str, dict[str, Any] | None]:
+    """解析运行期模型，并兼容旧库中已停用的默认模型。"""
+    default_model = str(record.get("default_model") or "").strip()
+    requested = str(requested_model or "").strip()
+    chosen = requested or default_model
+    entry = find_model_entry(catalog, chosen)
+    if entry and entry.get("enabled"):
+        return chosen, entry
+
+    # 助手会把会话中缓存的默认模型显式带回；只要它仍等于当前默认值，
+    # 就和未传模型一样按目录顺序降级，且不静默改写用户的持久化配置。
+    uses_default = not requested or chosen == default_model
+    if uses_default:
+        fallback = next((item for item in catalog if item.get("enabled")), None)
+        if fallback is not None:
+            return str(fallback["id"]), fallback
+        if catalog:
+            raise OpsError(f"供应商 {record['name']} 没有可用的启用模型")
+
+    if not chosen:
+        raise OpsError(f"供应商 {record['name']} 未指定模型")
+    if entry is not None:
+        raise OpsError(f"供应商 {record['name']} 的模型 {chosen} 已停用")
+    return chosen, None
 
 
 def save_provider(
@@ -43,8 +89,11 @@ def save_provider(
     换默认模型时不必让用户重新粘贴一遍密钥。
     """
     name = name.strip()
+    protocol = protocol.strip()
     if not name:
         raise OpsError("供应商名称不能为空")
+    if protocol not in PROTOCOLS:
+        raise OpsError(f"未知协议：{protocol}（可选 {list(PROTOCOLS)}）")
     base_url = base_url.strip().rstrip("/")
     if not base_url.startswith(("http://", "https://")):
         raise OpsError("Base URL 必须以 http:// 或 https:// 开头")
@@ -64,7 +113,7 @@ def save_provider(
     plaintext = api_key.strip() if api_key else _decrypt_existing(existing, master_key)
 
     validated_at = existing.get("validated_at", "") if existing else ""
-    models = existing.get("models", []) if existing else []
+    catalog = _catalog_from_record(existing)
     models_synced_at = existing.get("models_synced_at", "") if existing else ""
 
     if validate or discover_models:
@@ -75,10 +124,10 @@ def save_provider(
         if discover_models:
             discovered = fetch_models(config)
             if discovered:
-                models = discovered
+                catalog = merge_discovered(catalog, discovered)
                 models_synced_at = _now()
                 if not model:
-                    model = discovered[0]
+                    model = str(discovered[0]["id"])
         if validate:
             if not model:
                 raise OpsError(
@@ -95,6 +144,8 @@ def save_provider(
                 raise OpsError(f"API Key 校验未通过，未保存：{exc}") from exc
             validated_at = _now()
 
+    catalog = ensure_default_in_catalog(catalog, model)
+
     store.upsert_provider(
         {
             "id": provider_id,
@@ -104,7 +155,7 @@ def save_provider(
             "encrypted_key": encrypted,
             "key_last4": last4,
             "default_model": model,
-            "models": models,
+            "models": catalog,
             "models_synced_at": models_synced_at,
             "proxy_url": proxy_url,
             "is_active": True,
@@ -140,6 +191,7 @@ def resolve_config(
     """取出可直接发起调用的配置。明文密钥只存在于返回值里，用完即弃。
 
     name_or_id 为空时优先使用 is_default=1 的供应商。
+    目录里若有该模型的上下文/输出上限，一并挂到 ProviderConfig（本批不改 chat 公式）。
     """
     record: dict[str, Any] | None
     if not str(name_or_id).strip():
@@ -155,13 +207,11 @@ def resolve_config(
     if not record.get("encrypted_key"):
         raise OpsError(f"供应商 {record['name']} 没有保存 API Key")
 
+    catalog = _catalog_from_record(record)
+    chosen, entry = _resolve_runtime_model(record, catalog, model)
     plaintext = decrypt_secret(
         record["encrypted_key"], aad=record["id"], master_key=master_key
     )
-    chosen = model or record.get("default_model") or ""
-    if not chosen:
-        raise OpsError(f"供应商 {record['name']} 未指定模型")
-
     config = ProviderConfig(
         name=record["name"],
         protocol=record["protocol"],
@@ -169,34 +219,98 @@ def resolve_config(
         api_key=plaintext,
         model=chosen,
         proxy_url=record.get("proxy_url", ""),
+        context_window=entry.get("context_window") if entry else None,
+        max_output_tokens=entry.get("max_output_tokens") if entry else None,
     )
     if timeout is not None:
         config.timeout = timeout
     return config
 
 
+def get_model_entry(
+    store: OpsStore, name_or_id: str, model_id: str = ""
+) -> dict[str, Any] | None:
+    """读取供应商目录里某模型的元数据；model_id 空则用默认模型。"""
+    record = store.get_provider(name_or_id)
+    if record is None:
+        return None
+    catalog = _catalog_from_record(record)
+    if not str(model_id).strip():
+        _, entry = _resolve_runtime_model(record, catalog, "")
+        return entry
+    return find_model_entry(catalog, str(model_id).strip())
+
+
+def update_provider_models(
+    store: OpsStore,
+    name_or_id: str,
+    *,
+    models: list[dict[str, Any]] | list[str],
+    default_model: str | None = None,
+) -> dict[str, Any]:
+    """整表替换模型目录（启停、上下文、增删手动项、默认模型）。"""
+    record = store.get_provider(name_or_id)
+    if record is None:
+        raise OpsError(f"未配置的供应商：{name_or_id}")
+    catalog = normalize_models(models)
+    chosen = (
+        str(default_model).strip()
+        if default_model is not None
+        else str(record.get("default_model") or "")
+    )
+    if chosen:
+        default_entry = find_model_entry(catalog, chosen)
+        if default_entry is None:
+            raise OpsError(f"默认模型不在目录中：{chosen}")
+        if not default_entry.get("enabled"):
+            raise OpsError(f"默认模型已停用：{chosen}")
+    store.upsert_provider(
+        {
+            "id": record["id"],
+            "name": record["name"],
+            "protocol": record["protocol"],
+            "base_url": record["base_url"],
+            "encrypted_key": None,
+            "default_model": chosen,
+            "models": catalog,
+            "models_synced_at": record.get("models_synced_at", ""),
+            "proxy_url": record.get("proxy_url", ""),
+            "is_active": record["is_active"],
+            "validated_at": record.get("validated_at", ""),
+            "note": record.get("note", ""),
+        }
+    )
+    saved = store.get_provider(name_or_id)
+    if saved is None:  # pragma: no cover
+        raise OpsError("更新模型目录后读取失败")
+    return saved
+
+
 def refresh_models(
     store: OpsStore, name_or_id: str, *, master_key: str | None = None
-) -> list[str]:
-    """重新拉取模型列表。供应商上新模型后不必删了重配。"""
+) -> list[dict[str, Any]]:
+    """重新拉取模型并合并进目录。供应商上新模型后不必删了重配。"""
     config = resolve_config(store, name_or_id, master_key=master_key)
-    models = fetch_models(config)
+    discovered = fetch_models(config)
     record = store.get_provider(name_or_id)
-    if record and models:
-        store.upsert_provider(
-            {
-                "id": record["id"],
-                "name": record["name"],
-                "protocol": record["protocol"],
-                "base_url": record["base_url"],
-                "encrypted_key": None,  # 保留原密钥
-                "default_model": record["default_model"],
-                "models": models,
-                "models_synced_at": _now(),
-                "proxy_url": record.get("proxy_url", ""),
-                "is_active": record["is_active"],
-                "validated_at": record.get("validated_at", ""),
-                "note": record.get("note", ""),
-            }
-        )
-    return models
+    if record is None:
+        raise OpsError(f"未配置的供应商：{name_or_id}")
+    catalog = merge_discovered(_catalog_from_record(record), discovered)
+    catalog = ensure_default_in_catalog(catalog, str(record.get("default_model") or ""))
+    store.upsert_provider(
+        {
+            "id": record["id"],
+            "name": record["name"],
+            "protocol": record["protocol"],
+            "base_url": record["base_url"],
+            "encrypted_key": None,  # 保留原密钥
+            "default_model": record["default_model"],
+            "models": catalog,
+            "models_synced_at": _now() if discovered else record.get("models_synced_at", ""),
+            "proxy_url": record.get("proxy_url", ""),
+            "is_active": record["is_active"],
+            "validated_at": record.get("validated_at", ""),
+            "note": record.get("note", ""),
+        }
+    )
+    return catalog

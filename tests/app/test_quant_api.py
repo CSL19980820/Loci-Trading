@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from src.app.main import create_app
@@ -60,21 +61,287 @@ class QuantApiTests(unittest.TestCase):
             self.assertIn(key, body)
         self.assertIsInstance(body["missing"], list)
 
+    def test_live_board_persists_snapshot_after_returning_quotes(self) -> None:
+        """行情台实时列表返回后仍应启动节流的当日行情落库。"""
+        import os
+
+        from src.market import MarketStore
+
+        with MarketStore(os.environ["PALACE_MARKET_DB"]) as store:
+            store.upsert_instruments(
+                [
+                    {
+                        "code": "600519",
+                        "name": "贵州茅台",
+                        "market": "SH",
+                        "instrument_type": "STOCK",
+                    }
+                ]
+            )
+
+        persisted = threading.Event()
+        captured: dict[str, object] = {}
+
+        def fake_apply_today_spot(*args, **kwargs) -> int:
+            captured.update(kwargs)
+            persisted.set()
+            return 1
+
+        with (
+            patch(
+                "src.market.infrastructure.live_tape.fetch_live_quotes",
+                return_value=[
+                    {
+                        "code": "600519",
+                        "name": "贵州茅台",
+                        "price": 1500.0,
+                        "pct": 1.2,
+                        "change": 18.0,
+                        "prev_close": 1482.0,
+                    }
+                ],
+            ),
+            patch("src.market.api.router.board_spot_persist_gate", return_value=True),
+            patch("src.market.apply_today_spot", side_effect=fake_apply_today_spot),
+        ):
+            response = self.client.get("/api/market/board?live=true&page_size=1")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(persisted.wait(timeout=2), "实时行情返回后未触发当日行情落库")
+        live_quotes = captured.get("live_quotes")
+        self.assertIsInstance(live_quotes, list)
+        self.assertEqual(live_quotes[0]["code"], "600519")
+
+    def test_live_board_does_not_consume_persist_window_for_empty_quotes(self) -> None:
+        """首轮空行情不应让下一轮有效行情等待节流窗口才落库。"""
+        import os
+
+        from src.market import MarketStore
+
+        with MarketStore(os.environ["PALACE_MARKET_DB"]) as store:
+            store.upsert_instruments(
+                [
+                    {
+                        "code": "600519",
+                        "name": "贵州茅台",
+                        "market": "SH",
+                        "instrument_type": "STOCK",
+                    }
+                ]
+            )
+
+        persisted = threading.Event()
+        quote = {
+            "code": "600519",
+            "name": "贵州茅台",
+            "price": 1500.0,
+            "pct": 1.2,
+            "change": 18.0,
+            "prev_close": 1482.0,
+        }
+        with (
+            patch("src.market.infrastructure.live_tape.fetch_live_quotes", side_effect=[[], [quote]]),
+            patch("src.market.apply_today_spot", side_effect=lambda *_a, **_k: persisted.set() or 1),
+            patch("src.market.api.router._SPOT_PERSIST_LAST", 0.0),
+        ):
+            first = self.client.get("/api/market/board?live=true&page_size=1")
+            second = self.client.get("/api/market/board?live=true&page_size=1")
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertTrue(persisted.wait(timeout=2), "有效实时行情被空响应错误节流")
+
+    def test_market_search_uses_database_pagination(self) -> None:
+        """搜索不能把全量证券列表搬到 API 进程后再过滤。"""
+        calls: list[dict[str, object]] = []
+
+        class FakeStore:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def list_instruments(self, **kwargs):
+                raise AssertionError("search must not load all instruments")
+
+            def page_instruments(self, **kwargs):
+                calls.append(kwargs)
+                return 1, [{"code": "600519", "name": "贵州茅台"}]
+
+        with patch("src.market.api.router.market_store", return_value=FakeStore()):
+            response = self.client.get("/api/market/search?q=茅台&limit=1")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), [{"code": "600519", "name": "贵州茅台"}])
+        self.assertEqual(calls, [{"q": "茅台", "instrument_type": None, "status": "", "offset": 0, "limit": 1}])
+
+    def test_market_search_does_not_treat_whitespace_as_empty_query(self) -> None:
+        class FakeStore:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def page_instruments(self, **kwargs):
+                return 1, [{"code": "600519", "name": "贵州茅台"}]
+
+        with patch("src.market.api.router.market_store", return_value=FakeStore()):
+            response = self.client.get("/api/market/search?q=%20%20")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), [])
+
+    def test_minute_rejects_invalid_code_as_client_error(self) -> None:
+        response = self.client.get("/api/market/minute/not-a-code")
+
+        self.assertEqual(response.status_code, 422, response.text)
+
+    def test_minute_reports_actual_trade_date_when_query_date_is_omitted(self) -> None:
+        import pandas as pd
+
+        frame = pd.DataFrame(
+            {
+                "datetime": ["2026-07-31 09:30:00"],
+                "close": [10.5],
+                "volume": [100],
+            }
+        )
+        with patch(
+            "src.market.infrastructure.adapters.fetch_minute_routed",
+            return_value=(frame, "test"),
+        ), patch(
+            "src.market.application.minute.unadjusted_prev_close",
+            return_value=10.0,
+        ):
+            response = self.client.get("/api/market/minute/600519")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["trade_date"], "2026-07-31")
+        self.assertEqual(body["prev_close"], 10.0)
+        self.assertEqual(body["adjust"], "none")
+
     # ---- 策略 -----------------------------------------------------
 
     def test_lists_registered_strategies_with_entry_timing(self) -> None:
         """入场时点必须出现在接口里：前端和回测都要靠它才知道怎么用信号。"""
         items = self.client.get("/api/strategies").json()
         slugs = {item["slug"] for item in items}
-        self.assertIn("qianlong-auction", slugs)
+        self.assertIn("qianlong-close-v3", slugs)
         for item in items:
-            self.assertIn(item["entry_timing"], ("open", "next_open"))
+            self.assertIn(item["entry_timing"], ("open", "close", "next_open", "next_dip"))
             self.assertIn("params", item)
+
+    def test_strategy_job_upsert_persists_schedule_and_universe(self) -> None:
+        """工坊详情保存：结构化定时 + 行情范围写入 ops job，并回传完整时间预览。"""
+        unbound = self.client.get("/api/strategies/qianlong-close-v3/job").json()
+        self.assertFalse(unbound["bound"])
+
+        response = self.client.put(
+            "/api/strategies/qianlong-close-v3/job",
+            json={
+                "schedule_mode": "interval",
+                "interval_minutes": 10,
+                "window_start_hour": 9,
+                "window_start_minute": 30,
+                "window_end_hour": 14,
+                "window_end_minute": 50,
+                "auto_review": True,
+                "enabled": True,
+                "universe": {
+                    "preset": "custom",
+                    "boards": ["main", "chi_next", "star"],
+                    "exclude_st": True,
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertTrue(body["bound"])
+        self.assertEqual(body["cron"], "*/10 9-14 * * 1-5")
+        self.assertTrue(body["enabled"])
+        self.assertEqual(body["config"]["schedule"]["mode"], "interval")
+        self.assertEqual(body["config"]["universe"]["boards"], ["main", "chi_next", "star"])
+        self.assertTrue(body["config"]["universe"]["exclude_st"])
+        self.assertTrue(body["config"]["push_wecom"])
+        self.assertEqual(len(body["next_runs"]), 5)
+        self.assertRegex(body["next_runs"][0], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")
+
+        again = self.client.get("/api/strategies/qianlong-close-v3/job").json()
+        self.assertTrue(again["bound"])
+        self.assertEqual(again["config"]["schedule"]["interval_minutes"], 10)
+
+        push_off = self.client.put(
+            "/api/strategies/qianlong-close-v3/job",
+            json={
+                "schedule_mode": "once",
+                "run_hour": 15,
+                "run_minute": 30,
+                "push_wecom": False,
+                "universe": {"boards": ["main"], "exclude_st": True},
+            },
+        )
+        self.assertEqual(push_off.status_code, 200, push_off.text)
+        self.assertFalse(push_off.json()["config"]["push_wecom"])
+
+        off = self.client.put(
+            "/api/strategies/qianlong-close-v3/job",
+            json={"schedule_mode": "off", "universe": {"boards": ["main"], "exclude_st": False}},
+        )
+        self.assertEqual(off.status_code, 200, off.text)
+        self.assertFalse(off.json()["bound"])
+        self.assertEqual(off.json()["next_runs"], [])
+        gone = self.client.get("/api/strategies/qianlong-close-v3/job").json()
+        self.assertFalse(gone["bound"])
+
+    def test_skill_job_upsert_persists_push_wecom(self) -> None:
+        """技能详情保存定时 + 推送开关，写入 skill:{slug}。"""
+        install = self.client.post(
+            "/api/skills",
+            files={"file": ("test-skill.zip", _skill_zip(), "application/zip")},
+        )
+        self.assertEqual(install.status_code, 201, install.text)
+
+        unbound = self.client.get("/api/skills/test-skill/job").json()
+        self.assertFalse(unbound["bound"])
+
+        bad = self.client.put(
+            "/api/skills/test-skill/job",
+            json={"schedule_mode": "once", "run_hour": 15, "run_minute": 30},
+        )
+        self.assertEqual(bad.status_code, 422)
+
+        response = self.client.put(
+            "/api/skills/test-skill/job",
+            json={
+                "schedule_mode": "once",
+                "run_hour": 15,
+                "run_minute": 30,
+                "provider": "demo-llm",
+                "push_wecom": True,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertTrue(body["bound"])
+        self.assertEqual(body["name"], "skill:test-skill")
+        self.assertEqual(body["kind"], "skill")
+        self.assertTrue(body["config"]["push_wecom"])
+        self.assertEqual(body["config"]["provider"], "demo-llm")
+
+        off = self.client.put(
+            "/api/skills/test-skill/job",
+            json={"schedule_mode": "off", "provider": "demo-llm"},
+        )
+        self.assertEqual(off.status_code, 200, off.text)
+        self.assertFalse(off.json()["bound"])
 
     def test_screen_on_empty_market_reports_clearly(self) -> None:
         """行情仓是空的时候要给可读的 422，而不是 500。"""
         response = self.client.post(
-            "/api/strategies/screen", json={"strategy": "qianlong-auction"}
+            "/api/strategies/screen", json={"strategy": "qianlong-close-v3"}
         )
         self.assertEqual(response.status_code, 422)
         self.assertIn("行情", response.json()["detail"])
@@ -87,248 +354,30 @@ class QuantApiTests(unittest.TestCase):
         """与账本写入同样的严格校验：多字段就 422，不静默忽略。"""
         response = self.client.post(
             "/api/strategies/screen",
-            json={"strategy": "qianlong-auction", "unknown": 1},
+            json={"strategy": "qianlong-close-v3", "unknown": 1},
         )
         self.assertEqual(response.status_code, 422)
 
-    def test_universe_rejects_bse_board(self) -> None:
+    def test_universe_accepts_bse_board_explicitly(self) -> None:
         response = self.client.post(
-            "/api/strategies/screen",
+            "/api/universe/preview",
             json={
-                "strategy": "qianlong-auction",
-                "universe": {"boards": ["main", "bse"]},
+                "preset": "custom",
+                "boards": ["main", "bse"],
             },
         )
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["universe"]["boards"], ["main", "bse"])
 
     def test_universe_presets_endpoint(self) -> None:
         response = self.client.get("/api/universe/presets")
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertTrue(body)
-        for item in body:
-            self.assertNotIn("bse", item["boards"])
-            if item["id"] == "default_a_share":
-                self.assertTrue(item["exclude_st"])
-
-    def test_universe_stats_endpoint(self) -> None:
-        response = self.client.get("/api/universe/stats")
-        self.assertEqual(response.status_code, 200)
-        body = response.json()
-        self.assertTrue(body["bse_blocked"])
-        self.assertIn("by_board", body)
-
-    def test_backtest_validates_ranges(self) -> None:
-        for payload, field in (
-            ({"strategy": "x", "hold_days": 0}, "hold_days"),
-            ({"strategy": "x", "stop_loss_pct": 5.0}, "stop_loss_pct"),
-            ({"strategy": "x", "benchmark": "abc"}, "benchmark"),
-        ):
-            with self.subTest(field=field):
-                self.assertEqual(self.client.post("/api/backtest", json=payload).status_code, 422)
-
-    # ---- 技能包 ---------------------------------------------------
-
-    def test_install_list_and_remove_skill(self) -> None:
-        response = self.client.post(
-            "/api/skills", files={"file": ("skill.zip", _skill_zip(), "application/zip")}
-        )
-        self.assertEqual(response.status_code, 201, response.text)
-        body = response.json()
-        self.assertEqual(body["slug"], "test-skill")
-        self.assertEqual(body["default_cron"], "0 16 * * 1-5")
-        # 列表接口不该把完整指令正文吐出来，那可能很长。
-        self.assertNotIn("instructions", body)
-
-        listed = self.client.get("/api/skills").json()
-        self.assertEqual([item["slug"] for item in listed], ["test-skill"])
-
-        detail = self.client.get("/api/skills/test-skill").json()
-        self.assertIn("请按步骤执行", detail["instructions"])
-
-        self.assertEqual(self.client.delete("/api/skills/test-skill").status_code, 200)
-        self.assertEqual(self.client.get("/api/skills").json(), [])
-
-    def test_rejects_non_zip_upload(self) -> None:
-        response = self.client.post(
-            "/api/skills", files={"file": ("evil.sh", b"rm -rf /", "text/plain")}
-        )
-        self.assertEqual(response.status_code, 422)
-
-    def test_rejects_zip_slip_through_the_api(self) -> None:
-        """安全检查必须在 HTTP 这一层也生效，不能只在 CLI 上把关。"""
-        payload = _skill_zip({"../../evil.md": "pwned"})
-        response = self.client.post(
-            "/api/skills", files={"file": ("skill.zip", payload, "application/zip")}
-        )
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("Zip Slip", response.json()["detail"])
-
-    def test_missing_skill_is_404(self) -> None:
-        self.assertEqual(self.client.get("/api/skills/nope").status_code, 404)
-        self.assertEqual(self.client.delete("/api/skills/nope").status_code, 404)
-
-    # ---- 任务 -----------------------------------------------------
-
-    def test_job_lifecycle(self) -> None:
-        created = self.client.post(
-            "/api/jobs",
-            json={
-                "name": "盘后同步", "kind": "sync", "cron": "35 15 * * 1-5",
-                "config": {"limit": 100},
-            },
-        )
-        self.assertEqual(created.status_code, 201, created.text)
-        job_id = created.json()["id"]
-        self.assertEqual(created.json()["config"]["limit"], 100)
-
-        patched = self.client.patch(f"/api/jobs/{job_id}", json={"enabled": False})
-        self.assertEqual(patched.status_code, 200)
-        self.assertFalse(patched.json()["enabled"])
-
-        self.assertEqual(len(self.client.get("/api/jobs").json()), 1)
-        self.assertEqual(self.client.delete(f"/api/jobs/{job_id}").status_code, 200)
-        self.assertEqual(self.client.get("/api/jobs").json(), [])
-
-    def test_wecom_settings_validation_and_market_sync_upsert(self) -> None:
-        bad = self.client.put("/api/ops/settings/wecom", json={"url": "http://evil.example/x"})
-        self.assertEqual(bad.status_code, 422)
-
-        url = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcdef1234567890"
-        saved = self.client.put("/api/ops/settings/wecom", json={"url": url})
-        self.assertEqual(saved.status_code, 200, saved.text)
-        self.assertTrue(saved.json()["configured"])
-        self.assertIn("****7890", saved.json()["url_masked"])
-
-        got = self.client.get("/api/ops/settings/wecom")
-        self.assertTrue(got.json()["configured"])
-
-        sync = self.client.put(
-            "/api/ops/market-sync",
-            json={
-                "enabled_intraday": True,
-                "interval_minutes": 5,
-                "enabled_eod": True,
-                "eod_hour": 16,
-                "eod_minute": 0,
-                "workers": 4,
-                "push_wecom_on_fail": False,
-            },
-        )
-        self.assertEqual(sync.status_code, 200, sync.text)
-        body = sync.json()
-        self.assertTrue(body["enabled_intraday"])
-        self.assertEqual(body["interval_minutes"], 5)
-        jobs = {job["name"]: job for job in self.client.get("/api/jobs").json()}
-        self.assertIn("行情盘中增量", jobs)
-        self.assertIn("行情日终重刷", jobs)
-        self.assertEqual(jobs["行情盘中增量"]["cron"], "*/5 9-14 * * 1-5")
-        self.assertEqual(jobs["行情日终重刷"]["cron"], "0 16 * * 1-5")
-        self.assertEqual(jobs["行情日终重刷"]["config"]["mode"], "today_refresh")
-
-        notify = self.client.post(
-            "/api/jobs",
-            json={"name": "触价推送", "kind": "notify", "cron": "", "config": {"template": "alerts"}},
-        )
-        self.assertEqual(notify.status_code, 201, notify.text)
-        self.assertEqual(notify.json()["kind"], "notify")
-
-    def test_invalid_cron_is_rejected_at_creation(self) -> None:
-        """写错的 cron 必须当场拒绝，不能等到它安静地永不触发。"""
-        response = self.client.post(
-            "/api/jobs", json={"name": "bad", "kind": "sync", "cron": "35 15 * *"}
-        )
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("5 个字段", response.json()["detail"])
-
-    def test_duplicate_job_name_is_422(self) -> None:
-        payload = {"name": "dup", "kind": "sync"}
-        self.assertEqual(self.client.post("/api/jobs", json=payload).status_code, 201)
-        self.assertEqual(self.client.post("/api/jobs", json=payload).status_code, 422)
-
-    def test_unknown_job_kind_is_rejected_by_schema(self) -> None:
-        response = self.client.post("/api/jobs", json={"name": "x", "kind": "mystery"})
-        self.assertEqual(response.status_code, 422)
-
-    def test_running_a_failing_job_records_it_instead_of_500(self) -> None:
-        """任务失败是业务结果，不是服务器错误。"""
-        created = self.client.post(
-            "/api/jobs", json={"name": "s", "kind": "skill", "config": {}}
-        ).json()
-        outcome = self.client.post(f"/api/jobs/{created['id']}/run")
-        self.assertEqual(outcome.status_code, 200)
-        self.assertEqual(outcome.json()["status"], "failed")
-
-        runs = self.client.get("/api/jobs/runs").json()
-        self.assertEqual(runs[0]["status"], "failed")
-        self.assertTrue(runs[0]["error_text"])
-
-    def test_missing_job_run_is_404(self) -> None:
-        self.assertEqual(self.client.post("/api/jobs/JOB-nope/run").status_code, 404)
-
-    def test_schedule_status_is_reported_even_when_disabled(self) -> None:
-        """"我的定时任务到底装上没有"必须能直接问出来，而不是等到点看结果。"""
-        body = self.client.get("/api/jobs/schedule").json()
-        self.assertFalse(body["running"])
-        self.assertIn("reason", body)
-
-    # ---- 供应商 ---------------------------------------------------
-
-    def test_provider_list_starts_empty(self) -> None:
-        self.assertEqual(self.client.get("/api/providers").json(), [])
-
-    def test_provider_requires_valid_base_url(self) -> None:
-        response = self.client.post(
-            "/api/providers",
-            json={"name": "p", "base_url": "not-a-url", "api_key": "sk-x",
-                  "validate_key": False, "discover_models": False},
-        )
-        self.assertEqual(response.status_code, 422)
-
-    def test_provider_without_master_key_fails_cleanly(self) -> None:
-        """没配主密钥就存 Key，必须给出可操作的提示而不是 500。"""
-        import os
-
-        os.environ.pop("PALACE_AI_MASTER_KEY", None)
-        response = self.client.post(
-            "/api/providers",
-            json={"name": "p", "base_url": "https://example.com/v1", "api_key": "sk-x",
-                  "validate_key": False, "discover_models": False},
-        )
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("PALACE_AI_MASTER_KEY", response.json()["detail"])
-
-    def test_provider_round_trip_never_exposes_the_key(self) -> None:
-        import os
-
-        from src.ai.infrastructure.crypto import generate_master_key
-
-        os.environ["PALACE_AI_MASTER_KEY"] = generate_master_key()
-        try:
-            created = self.client.post(
-                "/api/providers",
-                json={
-                    "name": "openrouter", "base_url": "https://openrouter.ai/api/v1",
-                    "api_key": "sk-super-secret-1234", "model": "some/model",
-                    "validate_key": False, "discover_models": False,
-                },
-            )
-            self.assertEqual(created.status_code, 201, created.text)
-            body = created.json()
-            self.assertEqual(body["key_last4"], "****1234")
-            self.assertNotIn("encrypted_key", body)
-            self.assertNotIn("sk-super-secret", created.text)
-
-            listed = self.client.get("/api/providers")
-            self.assertNotIn("sk-super-secret", listed.text)
-            self.assertTrue(listed.json()[0]["has_key"])
-
-            self.assertEqual(self.client.delete("/api/providers/openrouter").status_code, 200)
-        finally:
-            os.environ.pop("PALACE_AI_MASTER_KEY", None)
-
-    def test_deleting_unknown_provider_is_404(self) -> None:
-        self.assertEqual(self.client.delete("/api/providers/nope").status_code, 404)
+        self.assertTrue(any("bse" in item["boards"] for item in body))
+        default = next(item for item in body if item["id"] == "default_a_share")
+        self.assertNotIn("bse", default["boards"])
+        self.assertTrue(default["exclude_st"])
 
 
 class ProductionAuthTests(unittest.TestCase):
@@ -363,6 +412,31 @@ class ProductionAuthTests(unittest.TestCase):
             with self.subTest(path=path):
                 response = getattr(self.client, method)(path, **kwargs)
                 self.assertEqual(response.status_code, 401, f"{path} 未鉴权就放行了")
+
+    def test_sync_screen_candidate_writes_use_write_guard(self) -> None:
+        """默认入库的同步选股必须在计算和持久化前经过写守卫。"""
+        from src.strategy.api.router import build_strategy_router
+
+        def reject_write() -> None:
+            raise HTTPException(status_code=401, detail="write access denied")
+
+        app = FastAPI()
+        app.include_router(build_strategy_router(write_dependency=reject_write))
+        with (
+            TestClient(app, raise_server_exceptions=False) as client,
+            patch(
+                "src.strategy.api.router.market_store",
+                side_effect=AssertionError("写守卫应在选股前拒绝请求"),
+            ),
+            patch("src.strategy.api.router.should_sync_today", return_value=False),
+        ):
+            for method, path, kwargs in (
+                ("post", "/api/strategies/screen", {"json": {"strategy": "qianlong-close-v3"}}),
+                ("get", "/api/screen/today?strategy=qianlong-close-v3", {}),
+            ):
+                with self.subTest(path=path):
+                    response = getattr(client, method)(path, **kwargs)
+                    self.assertEqual(response.status_code, 401, response.text)
 
     def test_agent_bearer_token_is_accepted(self) -> None:
         response = self.client.post(
@@ -440,11 +514,63 @@ class AnalysisEndpointTests(unittest.TestCase):
         self.assertFalse(jobs[body["job_id"]]["enabled"])
         self.assertEqual(jobs[body["job_id"]]["cron"], "")
 
+    def test_analysis_uses_a_run_snapshot_and_returns_that_run_id(self) -> None:
+        calls: list[tuple[object, str | None]] = []
+
+        def fake_run_job(_store, job, **kwargs):
+            calls.append((job, kwargs.get("run_id")))
+            return {"status": "success"}
+
+        with patch("src.ops.run_job", side_effect=fake_run_job):
+            first = self.client.post(
+                "/api/analysis/compare", json={"holds": [1]}
+            ).json()
+            second = self.client.post(
+                "/api/analysis/compare", json={"holds": [3]}
+            ).json()
+            for thread in list(threading.enumerate()):
+                if thread.name.startswith("analysis-"):
+                    thread.join(timeout=5)
+
+        self.assertNotEqual(first["run_id"], second["run_id"])
+        self.assertIn(f"run_id={first['run_id']}", first["poll"])
+        self.assertIn(f"run_id={second['run_id']}", second["poll"])
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(isinstance(job, dict) for job, _ in calls))
+        self.assertEqual(
+            {int(job["config"]["holds"][0]) for job, _ in calls},
+            {1, 3},
+        )
+        self.assertEqual(
+            {run_id for _, run_id in calls},
+            {first["run_id"], second["run_id"]},
+        )
+
+    def test_analysis_thread_start_failure_marks_run_failed(self) -> None:
+        """任务槽已落库后若线程无法启动，不能留下永远 running 的历史。"""
+        with patch("src.strategy.api.router.threading.Thread") as thread:
+            thread.return_value.start.side_effect = RuntimeError("no thread slots")
+            response = self.client.post("/api/analysis/compare", json={"holds": [1]})
+
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertIn("no thread slots", response.json()["detail"])
+
+        from src.ops import OpsStore
+        import os
+
+        with OpsStore(os.environ["PALACE_OPS_DB"]) as store:
+            job = store.get_job_by_name("[即时] compare")
+            self.assertIsNotNone(job)
+            runs = store.list_runs(job_id=job["id"], limit=10)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["status"], "failed")
+        self.assertIn("no thread slots", runs[0]["error_text"])
+
 
 class ShouldSyncTodayTests(unittest.TestCase):
     def test_uses_explicit_market_db_not_default_path(self) -> None:
         """线上 PALACE_MARKET_DB 与默认 data/market.db 不是同一个库。"""
-        from src.app.legacy.quant_router import _should_sync_today
+        from src.app.legacy.quant_common import should_sync_today
 
         with tempfile.TemporaryDirectory() as tmp:
             market_db = Path(tmp) / "prod-market.db"
@@ -467,5 +593,5 @@ class ShouldSyncTodayTests(unittest.TestCase):
                     return {"last_date": ""}
 
             with patch("src.market.MarketStore", FakeStore):
-                self.assertTrue(_should_sync_today(str(market_db)))
+                self.assertTrue(should_sync_today(str(market_db)))
             self.assertEqual(seen, [str(market_db)])

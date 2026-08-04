@@ -38,7 +38,21 @@ def attribute_round_trips(
         if end < start:
             continue
 
-        frame = market.history(trip.code, start=start, end=end, adjust="qfq")
+        start_index = position_of.get(start)
+        assert start_index is not None  # start 来自 calendar
+        end_index = position_of.get(end)
+        if end_index is not None:
+            trip.hold_days = end_index - start_index
+        # MAE/MFE 从开仓次日起算：买入价是当日成交价，当天最低点可能
+        # 出现在买入之前，把买入前的最低价计入 MAE 会系统性低估。
+        entry_day = start_index + 1
+        if entry_day >= len(calendar) or calendar[entry_day] > end:
+            continue
+        mae_start = calendar[entry_day]
+
+        # MAE/MFE 用不复权行情：avg_cost 是成交时的名义价，qfq 会把除权前的
+        # 历史价缩水，与名义成本错位后 MAE/MFE 系统性失真。
+        frame = market.history(trip.code, start=mae_start, end=end, adjust="none")
         if frame.empty:
             continue
 
@@ -52,10 +66,6 @@ def attribute_round_trips(
             trip.mae_pct = round((min(lows) / entry - 1) * 100, 4)
         if highs:
             trip.mfe_pct = round((max(highs) / entry - 1) * 100, 4)
-
-        start_index, end_index = position_of.get(start), position_of.get(end)
-        if start_index is not None and end_index is not None:
-            trip.hold_days = end_index - start_index
     return trips
 
 
@@ -122,11 +132,6 @@ def summarize_round_trips(trips: list[RoundTrip]) -> dict[str, Any]:
     if mfes and returns:
         give_back = sum(mfes) / len(mfes) - sum(returns) / len(returns)
         summary["profit_give_back_pct"] = round(give_back, 4)
-        if give_back > 3:
-            summary["hint"] = (
-                f"持有期内平均最大浮盈比最终收益高 {give_back:.1f} 个百分点，"
-                "利润在回吐，问题更可能出在退出纪律而不是选股"
-            )
 
     holds = [trip.hold_days for trip in closed if trip.hold_days is not None]
     if holds:
@@ -149,6 +154,4 @@ def summarize_round_trips(trips: list[RoundTrip]) -> dict[str, Any]:
         bucket["realized_pnl"] = round(bucket["realized_pnl"] + trip.realized_pnl, 2)
     summary["by_month"] = dict(sorted(by_month.items()))
 
-    if len(closed) < 10:
-        summary["caution"] = f"仅 {len(closed)} 段已了结持仓，统计量不稳定"
     return summary

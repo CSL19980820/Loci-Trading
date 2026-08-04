@@ -1,28 +1,26 @@
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import type { Router, RouteLocationNormalizedLoaded } from 'vue-router'
 
 import { getMarketBoard, getMarketSession } from '@/shared/api/quant'
-import { isAshareLiveWindow } from '@/shared/lib/marketSession'
-import type { IndicatorKind } from '@/shared/components/charts/KlineChart.vue'
-import type { KPeriod } from '@/shared/lib/indicators'
+import { toBatchItems } from '@/shared/lib/batchBrowse'
+import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
 import type { BoardRow } from '@/shared/types/quant'
 
-import { useQuotesQuery } from './useQuotesQuery'
-
-type Adjust = 'qfq' | 'hfq' | 'none'
-type DeskTab = 'market' | 'trades' | 'candidates'
+export type BoardSort = 'code' | 'turnover_desc' | 'turnover_asc'
 
 export function useDataQueryMarket(opts: {
   route: RouteLocationNormalizedLoaded
   router: Router
-  tab: { value: DeskTab }
   busy: { value: boolean }
   error: { value: string }
   liveError: { value: string }
 }) {
   const marketQ = ref('')
-  /** 勾选后：盘中后台叠实时并尝试入库；非 live 窗口不自动轮询 */
-  const liveOn = ref(isAshareLiveWindow())
+  /** 行情台默认叠实时；盘中自动轮询，非 live 窗口不强拉 */
+  const liveOn = ref(true)
+  const industryFilter = ref('')
+  const turnoverMin = ref<number | null>(null)
+  const boardSort = ref<BoardSort>('code')
   const page = ref(1)
   const pageSize = ref(50)
   const boardRows = ref<BoardRow[]>([])
@@ -30,38 +28,46 @@ export function useDataQueryMarket(opts: {
   const boardAsOf = ref('')
   const liveEnriching = ref(false)
 
-  const detailCode = ref('')
-  const detailName = ref('')
-  const adjust = ref<Adjust>('qfq')
-  const period = ref<KPeriod>('day')
-  const indicator = ref<IndicatorKind>('macd')
-
-  const { quote: quoteCached, refetch: refetchQuotes } = useQuotesQuery(detailCode, () => ({
-    adjust: adjust.value,
-    limit: 800,
-  }))
-
-  /** Colada 试点：有详情代码才暴露缓存结果 */
-  const quote = computed(() => (detailCode.value ? quoteCached.value : null))
-
   let refreshTimer: ReturnType<typeof setInterval> | null = null
   let sessionTimer: ReturnType<typeof setInterval> | null = null
   let sessionLiveAllowed: boolean | null = null
-  let enrichSeq = 0
+  let boardRequestSeq = 0
+  let refreshGeneration = 0
+  let sessionRequestSeq = 0
+  let liveRequestInFlight = false
+
+  function boardQueryOpts(live: boolean) {
+    return {
+      q: marketQ.value.trim(),
+      page: page.value,
+      page_size: pageSize.value,
+      live,
+      industry: industryFilter.value || undefined,
+      sort: boardSort.value,
+      turnover_min: turnoverMin.value ?? undefined,
+    }
+  }
 
   async function refreshSessionGate(): Promise<boolean> {
+    const requestSeq = ++sessionRequestSeq
     try {
       const s = await getMarketSession()
+      if (requestSeq !== sessionRequestSeq) {
+        return sessionLiveAllowed ?? false
+      }
       sessionLiveAllowed = Boolean(s.live_allowed)
     } catch {
-      sessionLiveAllowed = isAshareLiveWindow()
+      if (requestSeq !== sessionRequestSeq) {
+        return sessionLiveAllowed ?? false
+      }
+      sessionLiveAllowed = false
     }
     return sessionLiveAllowed
   }
 
   function livePollAllowed(): boolean {
     if (sessionLiveAllowed != null) return sessionLiveAllowed
-    return isAshareLiveWindow()
+    return false
   }
 
   function stopSessionTimer(): void {
@@ -73,34 +79,19 @@ export function useDataQueryMarket(opts: {
 
   function startSessionTimer(): void {
     stopSessionTimer()
+    const generation = refreshGeneration
     sessionTimer = setInterval(() => {
       void refreshSessionGate().then((allowed) => {
+        if (generation !== refreshGeneration) return
         if (!allowed) stopRefresh()
       })
     }, 60_000)
   }
 
-  const adjustLabel = computed(() =>
-    ({ qfq: '前复权', hfq: '后复权', none: '不复权' })[adjust.value],
-  )
-
-  const lastClose = computed(() => {
-    const bars = quote.value?.bars
-    if (!bars?.length) return '—'
-    const c = bars[bars.length - 1]?.close
-    return c == null ? '—' : Number(c).toFixed(2)
-  })
-
-  const detailPct = computed(() => {
-    const bars = quote.value?.bars
-    if (!bars || bars.length < 2) return null
-    const a = Number(bars[bars.length - 2]?.close)
-    const b = Number(bars[bars.length - 1]?.close)
-    if (!a || Number.isNaN(a) || Number.isNaN(b)) return null
-    return ((b - a) / a) * 100
-  })
-
   function stopRefresh(): void {
+    refreshGeneration += 1
+    // 关闭实时后，已发出的 live 请求不能再覆盖本地列表。
+    boardRequestSeq += 1
     if (refreshTimer) {
       clearInterval(refreshTimer)
       refreshTimer = null
@@ -110,13 +101,15 @@ export function useDataQueryMarket(opts: {
 
   function startRefresh(): void {
     stopRefresh()
-    if (!liveOn.value || detailCode.value || opts.tab.value !== 'market') return
+    if (!liveOn.value) return
+    const generation = refreshGeneration
     void refreshSessionGate().then((allowed) => {
-      if (!allowed) return
+      if (generation !== refreshGeneration || !liveOn.value || !allowed) return
       refreshTimer = setInterval(() => {
         if (document.hidden) return
         if (!livePollAllowed()) {
           void refreshSessionGate().then((stillAllowed) => {
+            if (generation !== refreshGeneration) return
             if (!stillAllowed) stopRefresh()
           })
           return
@@ -129,27 +122,27 @@ export function useDataQueryMarket(opts: {
 
   /** 只读本机库，列表立刻出来 */
   async function loadBoard(): Promise<void> {
-    if (detailCode.value) return
+    const seq = ++boardRequestSeq
+    liveEnriching.value = false
     opts.busy.value = true
     opts.error.value = ''
     try {
-      const board = await getMarketBoard({
-        q: marketQ.value.trim(),
-        page: page.value,
-        page_size: pageSize.value,
-        live: false,
-      })
+      const board = await getMarketBoard(boardQueryOpts(false))
+      if (seq !== boardRequestSeq) return
       boardRows.value = board.items
       boardTotal.value = board.total
       boardAsOf.value = board.as_of?.slice(11, 19) || ''
       opts.liveError.value = ''
     } catch (caught: unknown) {
+      if (seq !== boardRequestSeq) return
       opts.error.value = (caught as Error).message || '加载行情列表失败'
     } finally {
-      opts.busy.value = false
+      if (seq === boardRequestSeq) opts.busy.value = false
     }
     if (liveOn.value) {
+      const generation = refreshGeneration
       void refreshSessionGate().then((allowed) => {
+        if (seq !== boardRequestSeq || generation !== refreshGeneration) return
         if (allowed) {
           void enrichLiveBoard()
           startRefresh()
@@ -164,27 +157,23 @@ export function useDataQueryMarket(opts: {
 
   /** 后台叠当前页实时（不挡 busy），服务端会异步写入当日 bar */
   async function enrichLiveBoard(): Promise<void> {
-    if (detailCode.value || opts.tab.value !== 'market') return
-    if (!liveOn.value || !livePollAllowed()) return
-    const seq = ++enrichSeq
+    if (!liveOn.value || !livePollAllowed() || liveRequestInFlight) return
+    liveRequestInFlight = true
+    const seq = ++boardRequestSeq
     liveEnriching.value = true
     try {
-      const board = await getMarketBoard({
-        q: marketQ.value.trim(),
-        page: page.value,
-        page_size: pageSize.value,
-        live: true,
-      })
-      if (seq !== enrichSeq || detailCode.value) return
+      const board = await getMarketBoard(boardQueryOpts(true))
+      if (seq !== boardRequestSeq) return
       boardRows.value = board.items
       boardTotal.value = board.total
       boardAsOf.value = board.as_of?.slice(11, 19) || ''
       opts.liveError.value = board.live_error || ''
     } catch (caught: unknown) {
-      if (seq !== enrichSeq) return
+      if (seq !== boardRequestSeq) return
       opts.liveError.value = (caught as Error).message || '实时刷新失败'
     } finally {
-      if (seq === enrichSeq) liveEnriching.value = false
+      liveRequestInFlight = false
+      if (seq === boardRequestSeq) liveEnriching.value = false
     }
   }
 
@@ -198,42 +187,32 @@ export function useDataQueryMarket(opts: {
     void loadBoard()
   }
 
+  /** 点行进档案页详情（含批量浏览），详情主场在 ArchiveView */
   async function openDetail(row: BoardRow): Promise<void> {
-    detailCode.value = row.code
-    detailName.value = row.name || row.code
-    stopRefresh()
-    await opts.router.replace({ query: { ...opts.route.query, code: row.code } })
-    await loadDetail()
-  }
-
-  function closeDetail(): void {
-    detailCode.value = ''
-    detailName.value = ''
-    const next = { ...opts.route.query }
-    delete next.code
-    void opts.router.replace({ query: next })
-    void loadBoard()
-  }
-
-  async function loadDetail(): Promise<void> {
-    if (!detailCode.value) return
-    stopRefresh()
-    opts.busy.value = true
-    opts.error.value = ''
-    try {
-      await refetchQuotes()
-      if (quoteCached.value?.name) detailName.value = quoteCached.value.name
-    } catch (caught: unknown) {
-      opts.error.value = (caught as Error).message || '加载日线失败'
-    } finally {
-      opts.busy.value = false
-    }
+    const batch = useBatchBrowseStore()
+    batch.openBatch({
+      source: '行情台',
+      sourcePath: opts.route.fullPath || '/data',
+      focusCode: row.code,
+      items: toBatchItems(
+        boardRows.value.map((item) => ({
+          code: item.code,
+          name: item.name,
+          pct: item.pct ?? item.local_pct ?? null,
+        })),
+      ),
+    })
+    await opts.router.push({
+      path: `/archive/${row.code}`,
+      query: { view: 'quote' },
+    })
   }
 
   watch(liveOn, (on) => {
-    if (detailCode.value) return
     if (on) {
+      const generation = refreshGeneration
       void refreshSessionGate().then((allowed) => {
+        if (generation !== refreshGeneration || !liveOn.value) return
         if (allowed) {
           void enrichLiveBoard()
           startRefresh()
@@ -252,27 +231,19 @@ export function useDataQueryMarket(opts: {
   return {
     marketQ,
     liveOn,
+    industryFilter,
+    turnoverMin,
+    boardSort,
     liveEnriching,
     page,
     pageSize,
     boardRows,
     boardTotal,
     boardAsOf,
-    detailCode,
-    detailName,
-    quote,
-    adjust,
-    period,
-    indicator,
-    adjustLabel,
-    lastClose,
-    detailPct,
     loadBoard,
     onSearch,
     onPageSizeChange,
     openDetail,
-    closeDetail,
-    loadDetail,
     startRefresh,
     stopRefresh,
   }

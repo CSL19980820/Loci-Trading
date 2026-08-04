@@ -15,12 +15,17 @@ export interface MarketSession {
   is_trading_day: boolean
   last_trading_day: string | null
   expected_last_date: string | null
+  coverage_first_date: string | null
   coverage_last_date: string | null
   coverage_rows: number
   db_is_current: boolean
   lag_trading_days: number
   needs_backfill: boolean
   backfill_kind: 'empty' | 'catchup' | 'none' | string
+  /** 将补区间起点（含）；空库为 null */
+  backfill_from: string | null
+  /** 将补区间终点 / 目标覆盖日（含） */
+  backfill_to: string | null
   live_allowed: boolean
   live_reason: LiveReason
   in_live_clock: boolean

@@ -11,6 +11,7 @@ from src.ops.application.jobs.compare import execute_compare
 from src.ops.application.jobs.context import Executor, JobContext
 from src.ops.application.jobs.notify import _maybe_push_wecom, execute_notify
 from src.ops.application.jobs.optimize import execute_optimize
+from src.ops.application.jobs.outcome import execute_outcome
 from src.ops.application.jobs.prune import execute_prune
 from src.ops.application.jobs.screen import execute_screen
 from src.ops.application.jobs.skill import execute_skill
@@ -28,6 +29,7 @@ EXECUTORS: dict[str, Executor] = {
     "prune": execute_prune,
     "skill": execute_skill,
     "notify": execute_notify,
+    "outcome": execute_outcome,
 }
 
 
@@ -37,6 +39,7 @@ def run_job(
     *,
     context: JobContext | None = None,
     trigger: str = "manual",
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """执行一个任务并完整记录过程。
 
@@ -54,11 +57,19 @@ def run_job(
     if executor is None:
         raise OpsError(f"没有 {kind} 类型的执行器")
 
+    if not run_id:
+        run_id, claimed = store.claim_run(job, trigger=trigger)
+        if not claimed:
+            logger.info("任务 %s 已在运行，跳过重复触发", job.get("name"))
+            return {
+                "run_id": run_id,
+                "status": "skipped",
+                "reason": "任务正在执行",
+            }
+
     ctx = context or JobContext(ops_store=store)
     if ctx.ops_store is None:
         ctx.ops_store = store
-
-    run_id = store.start_run(job, trigger=trigger)
     started = time.monotonic()
     try:
         result = executor(dict(job.get("config") or {}), ctx)

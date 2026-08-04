@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.app.legacy.quant_common import McpServerCreate, missing_dependency, ops_store
+from src.app.legacy.quant_common import McpProbeRequest, McpServerCreate, missing_dependency, ops_store
 
 
 def build_intel_router(*, write_dependency) -> APIRouter:
@@ -17,9 +17,13 @@ def build_intel_router(*, write_dependency) -> APIRouter:
         """列出 MCP server（仅 data/mcp.json；不返回 token 明文）。"""
         try:
             from src.intel.infrastructure.registry import list_effective_mcp_servers
+            from src.ops import OpsError
         except ImportError as exc:
             raise missing_dependency(exc) from exc
-        rows = list_effective_mcp_servers(active_only=False)
+        try:
+            rows = list_effective_mcp_servers(active_only=False)
+        except OpsError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         cleaned: list[dict[str, Any]] = []
         for row in rows:
             item = {
@@ -54,14 +58,30 @@ def build_intel_router(*, write_dependency) -> APIRouter:
         """重新发现工具并写回 mcp.json。"""
         try:
             from src.intel.infrastructure.registry import refresh_tools
+            from src.intel.infrastructure.mcp import McpError
             from src.ops import OpsError
         except ImportError as exc:
             raise missing_dependency(exc) from exc
         try:
             tools = refresh_tools(name)
+        except McpError as exc:
+            raise HTTPException(status_code=503, detail="MCP 服务暂不可用") from exc
         except OpsError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"tools": tools, "count": len(tools)}
+
+    @router.post("/api/mcp/{name}/probe", tags=["mcp"])
+    def probe_mcp_server(
+        name: str,
+        _payload: McpProbeRequest | None = None,
+        _write: None = write_guard,
+    ) -> dict[str, Any]:
+        """服务级连通性探测：握手、列工具并刷新清单，不执行任意工具。"""
+        try:
+            from src.intel.infrastructure.registry import probe_mcp
+        except ImportError as exc:
+            raise missing_dependency(exc) from exc
+        return probe_mcp(name)
 
     @router.patch("/api/mcp/{name}", tags=["mcp"])
     def toggle_mcp_server(

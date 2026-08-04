@@ -1,209 +1,267 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+/**
+ * 工坊「定时」台：本机任务可 CRUD；战法/技能绑定（screen:/skill:）只读。
+ */
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   createJob,
   deleteJob,
+  getProviders,
   getScheduleStatus,
+  getSkills,
+  getStrategies,
   runJob,
   updateJob,
 } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import Sheet from '@/shared/components/layout/Sheet.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
-import type { Job, JobKind, ScheduleStatus } from '@/shared/types/quant'
-import { kindLabel, statusLabel } from '../composables/opsLabels'
+import { toErrorMessage } from '@/shared/lib/errors'
+import type {
+  Job,
+  JobKind,
+  LlmProvider,
+  ScheduleStatus,
+  Skill,
+  StrategyInfo,
+} from '@/shared/types/quant'
+
+import JobDetailPane from './JobDetailPane.vue'
+import JobEditorDialog from './JobEditorDialog.vue'
+import JobRunsDialog from './JobRunsDialog.vue'
+import type { ReceiptPair } from './SettingsPanel.vue'
+import SettingsPanel from './SettingsPanel.vue'
+import {
+  isBoundManagedJob,
+  isSkillBoundJob,
+  isStrategyBoundJob,
+  jobOriginLabel,
+  skillSlugFromBoundJob,
+  strategySlugFromBoundJob,
+} from '../composables/jobOwnership'
+import { formatNext, kindLabel } from '../composables/opsLabels'
 import { useJobsQuery } from '../composables/useJobsQuery'
 import { useOpsFeedback } from '../composables/useOpsFeedback'
-import CodeEditor from './CodeEditor.vue'
 
 const emit = defineEmits<{
   'schedule-changed': [schedule: ScheduleStatus | null]
   'enable-recommended-sync': []
   'runs-changed': []
+  changed: []
+  'count-changed': [enabled: number]
 }>()
 
+const router = useRouter()
+const route = useRoute()
 const { busy, notice, errorText, guard } = useOpsFeedback()
 
-const { jobs, refetch: refetchJobs } = useJobsQuery()
+const { jobs, isPending: jobsPending, error: jobsQueryError, refetch: refetchJobs } = useJobsQuery()
 const schedule = ref<ScheduleStatus | null>(null)
+const loadError = ref('')
+const selectedId = ref<string | null>(null)
+const kindFilter = ref<'all' | JobKind>('all')
+const formOpen = ref(false)
+const editingJob = ref<Job | null>(null)
+const runsOpen = ref(false)
+const detailRef = ref<InstanceType<typeof JobDetailPane> | null>(null)
 
-const jobFormOpen = ref(false)
-const jobEditingId = ref<string | null>(null)
-const jobForm = reactive({
-  name: '',
-  kind: 'sync' as JobKind,
-  cron: '',
-  cronPreset: 'manual',
-  configText: '',
-  syncMode: 'full',
-  workers: 4,
-  force: false,
-  strategy: '',
-  topN: 3,
-  recordCandidates: true,
-  useAiPick: false,
-  provider: '',
-  skill: '',
-  notifyTemplate: 'alerts',
-  pushWecom: false,
+watch(
+  () => route.query.runs,
+  (raw) => {
+    if (raw === '1' || raw === 'true') runsOpen.value = true
+  },
+  { immediate: true },
+)
+
+watch(runsOpen, (open) => {
+  if (open) return
+  if (route.query.runs == null) return
+  const next = { ...route.query }
+  delete next.runs
+  void router.replace({ query: next })
 })
 
-const configPlaceholder = computed(() => {
-  const samples: Partial<Record<JobKind, string>> = {
-    sync: '{"workers": 6}',
-    screen: '{"strategy": "qianlong-auction"}',
-    backtest: '{"strategy": "qianlong-auction", "start": "2025-01-01", "hold_days": 1}',
-    skill: '{"skill": "my-skill", "provider": "openrouter", "context": ["screen"]}',
-    notify: '{"template": "alerts"}',
+const strategies = ref<StrategyInfo[]>([])
+const skills = ref<Skill[]>([])
+const providers = ref<LlmProvider[]>([])
+
+const receipt = computed((): ReceiptPair[] => {
+  const list = jobs.value
+  const enabled = list.filter((j) => j.enabled).length
+  const failed = list.filter((j) => j.last_status === 'failed').length
+  const bound = list.filter((j) => isBoundManagedJob(j)).length
+  const nextHits = schedule.value?.jobs
+    .map((j) => j.next_run_at)
+    .filter(Boolean)
+    .sort()
+  const pairs: ReceiptPair[] = [
+    { key: '在册', value: String(list.length) },
+    { key: '启用', value: String(enabled) },
+    { key: '绑定', value: String(bound) },
+    { key: '上次失败', value: String(failed) },
+  ]
+  if (nextHits?.[0]) {
+    pairs.push({ key: '下次', value: nextHits[0].replace('T', ' ').slice(0, 16) })
   }
-  return samples[jobForm.kind] ?? '{}'
+  return pairs
 })
+
+const filteredJobs = computed(() => {
+  const list = jobs.value
+  if (kindFilter.value === 'all') return list
+  return list.filter((j) => j.kind === kindFilter.value)
+})
+
+const selected = computed(() => {
+  const id = selectedId.value
+  if (!id) return null
+  return jobs.value.find((j) => j.id === id) ?? null
+})
+
+const jobsError = computed(() => {
+  const queryError = toErrorMessage(jobsQueryError.value, '定时任务加载失败')
+  return queryError || loadError.value
+})
+
+watch(
+  filteredJobs,
+  (list) => {
+    if (!list.length) {
+      selectedId.value = null
+      return
+    }
+    if (!selectedId.value || !list.some((j) => j.id === selectedId.value)) {
+      selectedId.value = list[0].id
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => jobs.value.filter((j) => j.enabled).length,
+  (n) => emit('count-changed', n),
+  { immediate: true },
+)
 
 async function load(): Promise<void> {
-  const [, sc] = await Promise.all([refetchJobs(), getScheduleStatus()])
-  schedule.value = sc
-  emit('schedule-changed', sc)
-}
-
-function applyCronPreset(): void {
-  const map: Record<string, string> = {
-    manual: '',
-    intraday5: '*/5 9-14 * * 1-5',
-    post1535: '35 15 * * 1-5',
-    eod1600: '0 16 * * 1-5',
+  loadError.value = ''
+  const [jobsResult, scheduleResult, strategiesResult, skillsResult, providersResult] = await Promise.allSettled([
+    refetchJobs(),
+    getScheduleStatus(),
+    getStrategies(),
+    getSkills(),
+    getProviders(),
+  ])
+  const failures = [
+    [jobsResult, '定时任务加载失败'],
+    [scheduleResult, '调度状态加载失败'],
+    [strategiesResult, '战法列表加载失败'],
+    [skillsResult, '技能列表加载失败'],
+    [providersResult, '模型提供方加载失败'],
+  ] as const
+  const failed = failures.find(([result]) => result.status === 'rejected')
+  if (failed?.[0].status === 'rejected') {
+    loadError.value = toErrorMessage(failed[0].reason, failed[1])
   }
-  if (jobForm.cronPreset !== 'custom') {
-    jobForm.cron = map[jobForm.cronPreset] ?? ''
+  if (scheduleResult.status === 'fulfilled') schedule.value = scheduleResult.value
+  if (strategiesResult.status === 'fulfilled') strategies.value = strategiesResult.value
+  if (skillsResult.status === 'fulfilled') skills.value = skillsResult.value
+  if (providersResult.status === 'fulfilled') providers.value = providersResult.value
+  emit('schedule-changed', schedule.value)
+  emit('changed')
+}
+
+function displayName(job: Job): string {
+  if (isStrategyBoundJob(job)) {
+    const slug = strategySlugFromBoundJob(job)
+    const hit = strategies.value.find((s) => s.slug === slug)
+    return hit?.name || slug || job.name
   }
-}
-
-function resetJobForm(): void {
-  jobEditingId.value = null
-  Object.assign(jobForm, {
-    name: '',
-    kind: 'sync',
-    cron: '',
-    cronPreset: 'manual',
-    configText: '',
-    syncMode: 'full',
-    workers: 4,
-    force: false,
-    strategy: '',
-    topN: 3,
-    recordCandidates: true,
-    useAiPick: false,
-    provider: '',
-    skill: '',
-    notifyTemplate: 'alerts',
-    pushWecom: false,
-  })
-}
-
-function openCreateJob(): void {
-  resetJobForm()
-  jobFormOpen.value = true
-}
-
-function openEditJob(job: Job): void {
-  resetJobForm()
-  jobEditingId.value = job.id
-  jobForm.name = job.name
-  jobForm.kind = job.kind
-  jobForm.cron = job.cron || ''
-  const cron = job.cron || ''
-  if (!cron) jobForm.cronPreset = 'manual'
-  else if (cron === '*/5 9-14 * * 1-5') jobForm.cronPreset = 'intraday5'
-  else if (cron === '35 15 * * 1-5') jobForm.cronPreset = 'post1535'
-  else if (cron === '0 16 * * 1-5') jobForm.cronPreset = 'eod1600'
-  else jobForm.cronPreset = 'custom'
-  const cfg = job.config || {}
-  jobForm.syncMode = String(cfg.mode || 'full')
-  jobForm.workers = Number(cfg.workers || 4)
-  jobForm.force = Boolean(cfg.force)
-  jobForm.strategy = String(cfg.strategy || '')
-  jobForm.topN = Number(cfg.top_n ?? 3)
-  jobForm.recordCandidates = Boolean(cfg.record_candidates)
-  jobForm.useAiPick = Boolean(cfg.use_ai_pick)
-  jobForm.provider = String(cfg.provider || '')
-  jobForm.skill = String(cfg.skill || '')
-  jobForm.notifyTemplate = String(cfg.template || 'alerts')
-  jobForm.pushWecom = Boolean(cfg.push_wecom)
-  jobFormOpen.value = true
-}
-
-function buildJobConfig(): Record<string, unknown> {
-  let extra: Record<string, unknown> = {}
-  if (jobForm.configText.trim()) {
-    extra = JSON.parse(jobForm.configText) as Record<string, unknown>
+  if (isSkillBoundJob(job)) {
+    const slug = skillSlugFromBoundJob(job)
+    const hit = skills.value.find((s) => s.slug === slug)
+    return hit?.name || slug || job.name
   }
-  const base: Record<string, unknown> = { ...extra }
-  if (jobForm.kind === 'sync') {
-    Object.assign(base, {
-      mode: jobForm.syncMode,
-      workers: jobForm.workers,
-      force: jobForm.force,
-      push_wecom: jobForm.pushWecom,
-    })
-  } else if (jobForm.kind === 'screen') {
-    Object.assign(base, {
-      strategy: jobForm.strategy,
-      top_n: jobForm.topN,
-      record_candidates: jobForm.recordCandidates,
-      use_ai_pick: jobForm.useAiPick,
-      push_wecom: jobForm.pushWecom,
-    })
-    if (jobForm.provider) base.provider = jobForm.provider
-  } else if (jobForm.kind === 'skill') {
-    Object.assign(base, {
-      skill: jobForm.skill,
-      provider: jobForm.provider,
-      push_wecom: jobForm.pushWecom,
-    })
-  } else if (jobForm.kind === 'notify') {
-    Object.assign(base, { template: jobForm.notifyTemplate })
-  } else if (jobForm.pushWecom) {
-    base.push_wecom = true
-  }
-  return base
+  return job.name
 }
 
-function nextRunOf(id: string): string {
-  const hit = schedule.value?.jobs.find((item) => item.id === id)
-  return hit?.next_run_at?.replace('T', ' ').slice(0, 16) ?? '—'
+function cronLabel(job: Job): string {
+  if (!job.cron) return '仅手动'
+  if (job.cron === '*/5 9-14 * * 1-5') return '盘中每 5 分钟'
+  if (job.cron === '30 15 * * 1-5') return '工作日 15:30'
+  if (job.cron === '35 15 * * 1-5') return '工作日 15:35'
+  if (job.cron === '0 16 * * 1-5') return '工作日 16:00'
+  return job.cron
 }
 
-async function submitJob(): Promise<void> {
-  applyCronPreset()
-  let config: Record<string, unknown>
-  try {
-    config = buildJobConfig()
-  } catch {
-    errorText.value = '配置不是合法 JSON'
-    return
-  }
-  if (jobEditingId.value) {
+function nextRunOf(job: Job): string {
+  if (!job.cron) return '仅手动'
+  if (!job.enabled) return '已停用'
+  const hit = schedule.value?.jobs.find((item) => item.id === job.id)
+  const text = formatNext(hit?.next_run_at)
+  if (text !== '—') return text
+  // 调度器未跑时后端仍会按 cron 推算；若仍无值，展示原因
+  return schedule.value?.reason ? `—（${schedule.value.reason}）` : '—'
+}
+
+function selectedStrategyText(job: Job): string {
+  return strategyLabel(String(job.config?.strategy || strategySlugFromBoundJob(job)))
+}
+
+function selectedSkillText(job: Job): string {
+  return skillLabel(String(job.config?.skill || skillSlugFromBoundJob(job) || ''))
+}
+
+function strategyLabel(slug: string): string {
+  return strategies.value.find((s) => s.slug === slug)?.name || slug || '—'
+}
+
+function skillLabel(slug: string): string {
+  return skills.value.find((s) => s.slug === slug)?.name || slug || '—'
+}
+
+function openCreate(): void {
+  editingJob.value = null
+  formOpen.value = true
+}
+
+function openEdit(job: Job): void {
+  if (isBoundManagedJob(job)) return
+  editingJob.value = job
+  formOpen.value = true
+}
+
+async function onFormSubmit(payload: {
+  id: string | null
+  name: string
+  kind: JobKind
+  cron: string
+  config: Record<string, unknown>
+}): Promise<void> {
+  if (payload.id) {
     const saved = await guard(() =>
-      updateJob(jobEditingId.value!, {
-        cron: jobForm.cron,
-        config,
-      }),
+      updateJob(payload.id!, { cron: payload.cron, config: payload.config }),
     )
     if (saved) {
       notice.value = `已更新任务 ${saved.name}`
-      jobFormOpen.value = false
-      resetJobForm()
+      formOpen.value = false
       await load()
     }
     return
   }
   const created = await guard(() =>
-    createJob({ name: jobForm.name, kind: jobForm.kind, cron: jobForm.cron, config }),
+    createJob({
+      name: payload.name,
+      kind: payload.kind,
+      cron: payload.cron,
+      config: payload.config,
+    }),
   )
   if (created) {
     notice.value = `已创建任务 ${created.name}`
-    jobFormOpen.value = false
-    resetJobForm()
+    formOpen.value = false
+    selectedId.value = created.id
     await load()
   }
 }
@@ -212,193 +270,251 @@ async function fire(job: Job): Promise<void> {
   const outcome = await guard(() => runJob(job.id))
   if (outcome) {
     notice.value =
-      outcome.status === 'failed' ? `任务失败：${outcome.error ?? ''}` : `任务 ${job.name} 执行成功`
+      outcome.status === 'failed'
+        ? `任务失败：${outcome.error ?? ''}`
+        : outcome.status === 'skipped'
+          ? `任务 ${displayName(job)} 已跳过：${outcome.error?.trim() || '未提供原因'}`
+        : `任务 ${displayName(job)} 执行成功`
   }
   await load()
+  await detailRef.value?.reloadRuns()
   emit('runs-changed')
 }
 
 async function toggle(job: Job): Promise<void> {
+  if (isBoundManagedJob(job)) return
   await guard(() => updateJob(job.id, { enabled: !job.enabled }))
   await load()
 }
 
-async function confirmDropJob(job: Job): Promise<void> {
+async function confirmDrop(job: Job): Promise<void> {
+  if (isBoundManagedJob(job)) return
   if (!(await confirmDangerous(`确定删除定时任务「${job.name}」？`, '确认删除', '删除'))) return
   await guard(() => deleteJob(job.id), `已删除 ${job.name}`)
   await load()
 }
 
+function goBoundDetail(job: Job): void {
+  if (isStrategyBoundJob(job)) {
+    const slug = strategySlugFromBoundJob(job)
+    if (!slug) return
+    void router.push({ path: '/quant', query: { tab: 'engines', strategy: slug } })
+    return
+  }
+  if (isSkillBoundJob(job)) {
+    const slug = skillSlugFromBoundJob(job)
+    if (!slug) return
+    void router.push({ path: '/quant', query: { tab: 'skills', skill: slug } })
+  }
+}
+
+onMounted(() => {
+  void load()
+})
+
 defineExpose({ load, schedule })
 </script>
 
 <template>
-  <Sheet title="定时任务" :chip="jobs.length">
-    <template #actions>
-      <el-button type="primary" link @click="openCreateJob">新建</el-button>
+  <SettingsPanel title="定时任务" fill :receipt="receipt">
+    <template #action>
+      <el-button :disabled="busy" @click="runsOpen = true">全部历史</el-button>
+      <el-button type="primary" :disabled="busy" @click="openCreate">新建</el-button>
     </template>
 
-    <div v-if="jobs.length" class="table-wrap">
-      <table class="dense">
-        <thead>
-          <tr>
-            <th>名称</th>
-            <th>类型</th>
-            <th>cron</th>
-            <th>上次</th>
-            <th>下次触发</th>
-            <th class="r">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="job in jobs" :key="job.id">
-            <td>
-              <strong>{{ job.name }}</strong>
-              <span v-if="!job.enabled" class="chip muted-chip">停用</span>
-            </td>
-            <td><span class="tag">{{ kindLabel(job.kind) }}</span></td>
-            <td class="mono">{{ job.cron || '手动' }}</td>
-            <td>
-              <span :class="job.last_status === 'failed' ? 'tone-down' : ''">
-                {{ statusLabel(job.last_status) }}
-              </span>
-              <span class="dim mono"> {{ job.last_run_at }}</span>
-            </td>
-            <td class="mono dim">{{ nextRunOf(job.id) }}</td>
-            <td class="r">
-              <el-button size="small" text :disabled="busy" @click="openEditJob(job)">编辑</el-button>
-              <el-button size="small" text :disabled="busy" @click="fire(job)">执行</el-button>
-              <el-button size="small" text :disabled="busy" @click="toggle(job)">
-                {{ job.enabled ? '停用' : '启用' }}
-              </el-button>
-              <el-button size="small" text :disabled="busy" @click="confirmDropJob(job)">
-                删除
-              </el-button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <EmptyState
-      v-else
-      description="尚无任务"
-      reason="还没有手动或定时任务"
-      eta="可一键启用推荐行情同步，或新建选股/推送任务"
+    <el-alert
+      v-if="notice"
+      :title="notice"
+      type="success"
+      show-icon
+      closable
+      class="jobs-alert"
+      @close="notice = ''"
+    />
+    <el-alert
+      v-if="errorText"
+      :title="errorText"
+      type="error"
+      show-icon
+      closable
+      class="jobs-alert"
+      @close="errorText = ''"
+    />
+
+    <el-alert
+      v-if="jobsError && !jobsPending"
+      :title="jobsError"
+      type="error"
+      show-icon
+      :closable="false"
+      class="jobs-alert"
     >
-      <el-button type="primary" @click="emit('enable-recommended-sync')">启用推荐同步</el-button>
-      <el-button @click="openCreateJob">新建任务</el-button>
+      <el-button size="small" @click="load">重试</el-button>
+    </el-alert>
+
+    <div v-else-if="jobs.length" class="jobs-desk">
+      <aside class="jobs-rail">
+        <el-select v-model="kindFilter" size="small" class="jobs-filter">
+          <el-option label="全部类型" value="all" />
+          <el-option label="同步行情" value="sync" />
+          <el-option label="选股" value="screen" />
+          <el-option label="技能" value="skill" />
+          <el-option label="企微推送" value="notify" />
+          <el-option label="其它" value="outcome" />
+        </el-select>
+        <el-scrollbar class="jobs-list-scroll">
+          <div
+            v-for="job in filteredJobs"
+            :key="job.id"
+            role="button"
+            tabindex="0"
+            class="job-row"
+            :class="{ active: job.id === selectedId }"
+            @click="selectedId = job.id"
+            @keydown.enter.prevent="selectedId = job.id"
+          >
+            <div class="job-row-top">
+              <strong>{{ displayName(job) }}</strong>
+              <el-tag
+                size="small"
+                effect="light"
+                :type="isBoundManagedJob(job) ? 'info' : 'danger'"
+              >
+                {{ jobOriginLabel(job) }}
+              </el-tag>
+            </div>
+            <div class="job-row-meta">
+              <span>{{ kindLabel(job.kind) }}</span>
+              <span :class="job.enabled ? 'on' : 'off'">{{ job.enabled ? '启用' : '停用' }}</span>
+            </div>
+          </div>
+          <EmptyState v-if="!filteredJobs.length" description="该类型下没有任务" />
+        </el-scrollbar>
+      </aside>
+
+      <JobDetailPane
+        v-if="selected"
+        ref="detailRef"
+        :job="selected"
+        :busy="busy"
+        :title="displayName(selected)"
+        :cron-text="cronLabel(selected)"
+        :next-run-text="nextRunOf(selected)"
+        :strategy-text="selected.kind === 'screen' ? selectedStrategyText(selected) : undefined"
+        :skill-text="selected.kind === 'skill' ? selectedSkillText(selected) : undefined"
+        @fire="fire(selected)"
+        @edit="openEdit(selected)"
+        @toggle="toggle(selected)"
+        @drop="confirmDrop(selected)"
+        @go-bound="goBoundDetail(selected)"
+      />
+      <EmptyState v-else description="选择左侧一条任务查看详情" />
+    </div>
+
+    <EmptyState v-else-if="!jobsPending" description="尚无任务">
+      <el-button type="primary" @click="emit('enable-recommended-sync')">配置推荐同步</el-button>
+      <el-button @click="openCreate">新建任务</el-button>
     </EmptyState>
-    <p v-if="schedule && !schedule.running" class="form-hint">
-      调度器未启用（{{ schedule.reason }}）。任务仍可手动执行；线上需在容器设置
-      PALACE_ENABLE_SCHEDULER=1。
-    </p>
-  </Sheet>
+  </SettingsPanel>
 
-  <el-dialog
-    v-model="jobFormOpen"
-    :title="jobEditingId ? '编辑定时任务' : '新建定时任务'"
-    width="40rem"
-    destroy-on-close
-  >
-    <el-form label-position="top" @submit.prevent="submitJob">
-      <div class="form-grid">
-        <el-form-item label="名称" required>
-          <el-input v-model.trim="jobForm.name" :disabled="Boolean(jobEditingId)" />
-        </el-form-item>
-        <el-form-item label="类型">
-          <el-select v-model="jobForm.kind" class="full" :disabled="Boolean(jobEditingId)">
-            <el-option label="同步行情" value="sync" />
-            <el-option label="选股" value="screen" />
-            <el-option label="回测" value="backtest" />
-            <el-option label="技能模式" value="skill" />
-            <el-option label="企微推送" value="notify" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="调度预设" class="full-span">
-          <el-select v-model="jobForm.cronPreset" class="full" @change="applyCronPreset">
-            <el-option label="仅手动" value="manual" />
-            <el-option label="盘中每 5 分钟" value="intraday5" />
-            <el-option label="工作日 15:35" value="post1535" />
-            <el-option label="工作日 16:00" value="eod1600" />
-            <el-option label="自定义 cron" value="custom" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="jobForm.cronPreset === 'custom'" label="cron" class="full-span">
-          <el-input v-model.trim="jobForm.cron" placeholder="35 15 * * 1-5" />
-        </el-form-item>
+  <JobEditorDialog
+    v-model="formOpen"
+    :editing="editingJob"
+    :strategies="strategies"
+    :skills="skills"
+    :providers="providers"
+    :busy="busy"
+    @submit="onFormSubmit"
+  />
 
-        <template v-if="jobForm.kind === 'sync'">
-          <el-form-item label="模式">
-            <el-select v-model="jobForm.syncMode" class="full">
-              <el-option label="增量 + 当日补数" value="full" />
-              <el-option label="仅重刷当日" value="today_refresh" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="workers">
-            <el-input-number v-model="jobForm.workers" :min="1" :max="16" />
-          </el-form-item>
-          <el-form-item label="force 重拉">
-            <el-switch v-model="jobForm.force" />
-          </el-form-item>
-        </template>
-
-        <template v-if="jobForm.kind === 'screen'">
-          <el-form-item label="战法 slug" class="full-span">
-            <el-input v-model.trim="jobForm.strategy" placeholder="qianlong-auction" />
-          </el-form-item>
-          <el-form-item label="top_n">
-            <el-input-number v-model="jobForm.topN" :min="0" :max="200" />
-          </el-form-item>
-          <el-form-item label="写入候选池">
-            <el-switch v-model="jobForm.recordCandidates" />
-          </el-form-item>
-          <el-form-item label="AI 精选">
-            <el-switch v-model="jobForm.useAiPick" />
-          </el-form-item>
-          <el-form-item v-if="jobForm.useAiPick" label="LLM 供应商" class="full-span">
-            <el-input v-model.trim="jobForm.provider" placeholder="默认供应商可留空" />
-          </el-form-item>
-        </template>
-
-        <template v-if="jobForm.kind === 'skill'">
-          <el-form-item label="技能 slug" class="full-span">
-            <el-input v-model.trim="jobForm.skill" />
-          </el-form-item>
-          <el-form-item label="LLM 供应商" class="full-span">
-            <el-input v-model.trim="jobForm.provider" />
-          </el-form-item>
-        </template>
-
-        <template v-if="jobForm.kind === 'notify'">
-          <el-form-item label="推送模板" class="full-span">
-            <el-select v-model="jobForm.notifyTemplate" class="full">
-              <el-option label="触价提醒" value="alerts" />
-              <el-option label="日终简报" value="digest" />
-              <el-option label="最近选股结果" value="screen_last" />
-              <el-option label="同步失败告警" value="sync_fail" />
-            </el-select>
-          </el-form-item>
-        </template>
-
-        <el-form-item v-if="jobForm.kind !== 'notify'" label="完成后推企微" class="full-span">
-          <el-switch v-model="jobForm.pushWecom" />
-        </el-form-item>
-
-        <el-form-item label="高级 · 原始 JSON" class="full-span">
-          <el-collapse>
-            <el-collapse-item title="覆盖/追加配置（可选）" name="raw">
-              <CodeEditor v-model="jobForm.configText" language="json" height="10rem" />
-              <p class="form-hint">{{ configPlaceholder }}</p>
-            </el-collapse-item>
-          </el-collapse>
-        </el-form-item>
-      </div>
-    </el-form>
-    <template #footer>
-      <el-button @click="jobFormOpen = false">取消</el-button>
-      <el-button type="primary" :disabled="busy" @click="submitJob">
-        {{ jobEditingId ? '保存' : '创建' }}
-      </el-button>
-    </template>
-  </el-dialog>
+  <JobRunsDialog v-model="runsOpen" @changed="emit('changed')" />
 </template>
+
+<style scoped>
+.jobs-alert {
+  margin: 0.55rem 0.85rem 0;
+  flex-shrink: 0;
+}
+.jobs-desk {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  gap: 0.85rem;
+  min-height: 18rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.55rem 0.85rem 0.75rem;
+}
+.jobs-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 0;
+  border-right: 1px solid var(--rule);
+  padding-right: 0.65rem;
+}
+.jobs-filter {
+  width: 100%;
+  flex-shrink: 0;
+}
+.jobs-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.job-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 0.55rem 0.6rem;
+  margin-bottom: 0.25rem;
+  cursor: pointer;
+}
+.job-row:hover {
+  background: color-mix(in srgb, var(--panel) 80%, var(--rule));
+}
+.job-row.active {
+  border-color: var(--rule);
+  background: color-mix(in srgb, var(--accent, #b54a32) 8%, transparent);
+}
+.job-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+.job-row-top strong {
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job-row-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.job-row-meta .on {
+  color: var(--success, #3f7d4e);
+}
+.job-row-meta .off {
+  color: var(--muted);
+}
+@media (max-width: 800px) {
+  .jobs-desk {
+    grid-template-columns: 1fr;
+  }
+  .jobs-rail {
+    border-right: none;
+    padding-right: 0;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.65rem;
+    max-height: 14rem;
+  }
+}
+</style>

@@ -9,6 +9,98 @@ def _weekday_fallback_is_trading(d: date) -> bool:
     return d.weekday() < 5
 
 
+def _backfill_window(
+    *,
+    last_date: str | None,
+    expected: str | None,
+    days: list[str],
+    empty: bool,
+    needs_backfill: bool,
+) -> tuple[str | None, str | None]:
+    """给出将补区间 [from, to]（含端点交易日）；空库则 from 为空、to 为目标日。"""
+    if not needs_backfill or not expected:
+        return None, None
+    if empty or not last_date:
+        return None, expected
+    if last_date >= expected:
+        return None, None
+    if days:
+        missing = [d for d in days if last_date < d <= expected]
+        if missing:
+            return missing[0], missing[-1]
+    # 日历过期或不含缺口：用库日次日 → 目标日
+    try:
+        nxt = date.fromisoformat(last_date).toordinal() + 1
+        return date.fromordinal(nxt).isoformat(), expected
+    except ValueError:
+        return None, expected
+
+
+def _prev_closed_trading_day(
+    *,
+    today: str,
+    days: list[str],
+    now_date: date,
+) -> str | None:
+    """上一已收盘交易日（严格早于 today）。收盘前日 K 只要求覆盖到这一天。"""
+    if days:
+        prior = [d for d in days if d < today]
+        if prior:
+            return prior[-1]
+    d = now_date
+    for _ in range(10):
+        d = date.fromordinal(d.toordinal() - 1)
+        if _weekday_fallback_is_trading(d):
+            return d.isoformat()
+    return None
+
+
+def _resolve_trading_day(
+    *,
+    today: str,
+    days: list[str],
+    now_date: date,
+) -> tuple[bool, str | None]:
+    """判定今日是否交易日，并给出「截至今天」的最近交易日（含今日若今日交易）。
+
+    交易日历来自行情库重建：若日历最大日落后于「今天」，说明日历过期，
+    此时不能把「今天不在日历里」当成休市——否则工作日会被误标「非交易日」。
+    """
+    if not days:
+        is_trading = _weekday_fallback_is_trading(now_date)
+        last_trading_day = today if is_trading else None
+        if not is_trading:
+            d = now_date
+            for _ in range(10):
+                d = date.fromordinal(d.toordinal() - 1)
+                if _weekday_fallback_is_trading(d):
+                    last_trading_day = d.isoformat()
+                    break
+        return is_trading, last_trading_day
+
+    day_set = set(days)
+    max_cal = max(days)
+    if today in day_set:
+        is_trading = True
+    elif today > max_cal:
+        # 日历未覆盖到今天：按工作日粗判，避免误报休市
+        is_trading = _weekday_fallback_is_trading(now_date)
+    else:
+        # 日历已覆盖今天及之后，但今天不在其中 → 真节假日/休市
+        is_trading = False
+
+    prior = [d for d in days if d <= today]
+    if is_trading and today > max_cal:
+        last_trading_day = today
+    elif prior:
+        last_trading_day = prior[-1]
+    elif is_trading:
+        last_trading_day = today
+    else:
+        last_trading_day = days[-1]
+    return is_trading, last_trading_day
+
+
 def build_session_status(
     *,
     coverage: dict[str, Any] | None,
@@ -18,12 +110,14 @@ def build_session_status(
     """统一会话状态。
 
     - 非交易日：不自动拉实时
-    - 交易日 15:00 后：若库内 last_date 已是今日（或上一交易日且今日非交易），停实时轮询，读库即可
-    - last_date 落后于上一交易日：needs_backfill（周末打开等场景）
+    - 交易日 15:00 前：日 K 只要求覆盖到上一已收盘交易日（不催补「今日」未定稿日线）
+    - 交易日 15:00 后：若库内 last_date 已是今日，停实时轮询；否则可补今日
+    - last_date 落后于应覆盖日：needs_backfill（周末打开等场景）
     """
     now = now or datetime.now()
     today = now.date().isoformat()
     mins = now.hour * 60 + now.minute
+    after_close = mins >= 15 * 60
     in_live_clock = (9 * 60 + 15) <= mins < (15 * 60)  # [09:15, 15:00)
 
     days = list(trading_days or [])
@@ -32,25 +126,21 @@ def build_session_status(
     last_date = str(cov.get("last_date") or "") or None
     first_date = str(cov.get("first_date") or "") or None
 
-    if days:
-        is_trading = today in set(days)
-        # 上一交易日：日历中 <= today 的最后一天
-        prior = [d for d in days if d <= today]
-        last_trading_day = prior[-1] if prior else days[-1]
-    else:
-        is_trading = _weekday_fallback_is_trading(now.date())
-        last_trading_day = today if is_trading else None
-        # 无日历时：往前找最近工作日
-        if not is_trading:
-            d = now.date()
-            for _ in range(10):
-                d = date.fromordinal(d.toordinal() - 1)
-                if _weekday_fallback_is_trading(d):
-                    last_trading_day = d.isoformat()
-                    break
+    is_trading, last_trading_day = _resolve_trading_day(
+        today=today,
+        days=days,
+        now_date=now.date(),
+    )
 
-    # 库是否已覆盖到「应有的最新交易日」
-    expected = today if is_trading else last_trading_day
+    # 日 K 应覆盖日：收盘前不含今日（今日日线尚未定稿，盘中靠实时）
+    if is_trading and after_close:
+        expected = today
+    elif is_trading:
+        expected = _prev_closed_trading_day(
+            today=today, days=days, now_date=now.date()
+        )
+    else:
+        expected = last_trading_day
     db_is_current = bool(last_date and expected and last_date >= expected)
 
     lag_trading_days = 0
@@ -62,6 +152,15 @@ def build_session_status(
                 lag_trading_days = max(0, i_exp - i_last)
             elif i_exp >= 0 and i_last < 0:
                 lag_trading_days = max(1, i_exp)  # 库日期不在日历上，至少算落后
+            elif i_exp < 0 and expected > max(days):
+                # 日历过期：用自然日差粗估落后
+                try:
+                    lag_trading_days = max(
+                        1,
+                        (date.fromisoformat(expected) - date.fromisoformat(last_date)).days,
+                    )
+                except ValueError:
+                    lag_trading_days = 1
         except ValueError:
             lag_trading_days = 0
     elif expected and not last_date:
@@ -78,6 +177,13 @@ def build_session_status(
 
     empty = rows == 0
     needs_backfill = empty or lag_trading_days >= 1
+    backfill_from, backfill_to = _backfill_window(
+        last_date=last_date,
+        expected=expected,
+        days=days,
+        empty=empty,
+        needs_backfill=needs_backfill,
+    )
 
     # 实时轮询闸门
     live_allowed = False
@@ -112,6 +218,8 @@ def build_session_status(
         "lag_trading_days": lag_trading_days,
         "needs_backfill": needs_backfill,
         "backfill_kind": "empty" if empty else ("catchup" if needs_backfill else "none"),
+        "backfill_from": backfill_from,
+        "backfill_to": backfill_to,
         "live_allowed": live_allowed,
         "live_reason": live_reason,
         "in_live_clock": in_live_clock,

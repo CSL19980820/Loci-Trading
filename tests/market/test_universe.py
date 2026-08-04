@@ -1,4 +1,4 @@
-"""股票池归类与默认剔除（ST / 北交所）单测。"""
+"""股票池归类与默认/高级筛选单测。"""
 from __future__ import annotations
 
 import tempfile
@@ -7,7 +7,6 @@ from pathlib import Path
 
 from src.market.infrastructure.store import MarketStore
 from src.market.domain.universe import (
-    UniverseError,
     UniverseSpec,
     classify_board,
     expand_spec,
@@ -42,13 +41,13 @@ class ExpandSpecTests(unittest.TestCase):
         self.assertTrue(final["exclude_st"])
         self.assertNotIn("bse", final["boards"])
 
-    def test_bse_rejected(self) -> None:
-        with self.assertRaises(UniverseError):
-            expand_spec(UniverseSpec(preset="custom", boards=("main", "bse")))
+    def test_bse_can_be_selected_explicitly(self) -> None:
+        final = expand_spec(UniverseSpec(preset="custom", boards=("main", "bse")))
+        self.assertEqual(final["boards"], ["main", "bse"])
 
-    def test_presets_never_list_bse(self) -> None:
-        for item in list_presets():
-            self.assertNotIn("bse", item["boards"])
+    def test_all_a_share_preset_includes_bse(self) -> None:
+        preset = next(item for item in list_presets() if item["id"] == "all_a_share")
+        self.assertIn("bse", preset["boards"])
 
 
 class ResolveUniverseTests(unittest.TestCase):
@@ -62,6 +61,7 @@ class ResolveUniverseTests(unittest.TestCase):
                     "name": "浦发银行",
                     "market": "sh",
                     "board": "上交所",
+                    "industry": "银行",
                     "instrument_type": "STOCK",
                     "list_date": "1999-11-10",
                     "status": "normal",
@@ -71,6 +71,7 @@ class ResolveUniverseTests(unittest.TestCase):
                     "name": "宁德时代",
                     "market": "sz",
                     "board": "创业板",
+                    "industry": "电池",
                     "instrument_type": "STOCK",
                     "list_date": "2018-06-15",
                     "status": "normal",
@@ -80,6 +81,7 @@ class ResolveUniverseTests(unittest.TestCase):
                     "name": "中芯国际",
                     "market": "sh",
                     "board": "上交所",
+                    "industry": "半导体",
                     "instrument_type": "STOCK",
                     "list_date": "2020-07-16",
                     "status": "normal",
@@ -89,6 +91,7 @@ class ResolveUniverseTests(unittest.TestCase):
                     "name": "*ST示例",
                     "market": "sh",
                     "board": "上交所",
+                    "industry": "银行",
                     "instrument_type": "STOCK",
                     "list_date": "2000-01-01",
                     "status": "normal",
@@ -98,6 +101,7 @@ class ResolveUniverseTests(unittest.TestCase):
                     "name": "北交示例",
                     "market": "bj",
                     "board": "北交所",
+                    "industry": "软件",
                     "instrument_type": "STOCK",
                     "list_date": "2021-01-01",
                     "status": "normal",
@@ -119,6 +123,19 @@ class ResolveUniverseTests(unittest.TestCase):
         resolved = resolve_universe(self.store, {"preset": "include_st"})
         self.assertIn("600001", resolved.codes)
         self.assertNotIn("830799", resolved.codes)
+
+    def test_explicit_bse_and_industry_filters(self) -> None:
+        resolved = resolve_universe(
+            self.store,
+            {
+                "preset": "all_a_share",
+                "industries_include": ["软件", "半导体"],
+                "industries_exclude": ["半导体"],
+            },
+        )
+        self.assertEqual(resolved.codes, ["830799"])
+        self.assertEqual(resolved.spec["industries_include"], ["软件", "半导体"])
+        self.assertEqual(resolved.funnel.after_industry, 1)
 
     def test_main_only(self) -> None:
         resolved = resolve_universe(self.store, {"preset": "main_only"})

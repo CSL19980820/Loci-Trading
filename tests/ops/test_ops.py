@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tempfile
+from threading import Barrier, Event
 import unittest
 from unittest.mock import patch
 
@@ -50,6 +52,59 @@ class CryptoTests(unittest.TestCase):
             encrypt_secret("x", aad="a", master_key="")
         self.assertIn("PALACE_AI_MASTER_KEY", str(ctx.exception))
 
+    def test_ensure_local_master_key_writes_file(self) -> None:
+        import os
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from src.ai.infrastructure.crypto import MASTER_KEY_ENV, ensure_local_master_key
+
+        prev_key = os.environ.pop(MASTER_KEY_ENV, None)
+        prev_env = os.environ.get("PALACE_ENV")
+        os.environ["PALACE_ENV"] = "local"
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                with patch("src.shared.paths.writable_root", return_value=root):
+                    key = ensure_local_master_key()
+                    self.assertTrue(key)
+                    self.assertEqual(os.environ.get(MASTER_KEY_ENV), key)
+                    path = root / ".palace_ai_master_key"
+                    self.assertTrue(path.is_file())
+                    self.assertEqual(path.read_text(encoding="utf-8").strip(), key)
+
+                    os.environ.pop(MASTER_KEY_ENV, None)
+                    again = ensure_local_master_key()
+                    self.assertEqual(again, key)
+        finally:
+            if prev_key is None:
+                os.environ.pop(MASTER_KEY_ENV, None)
+            else:
+                os.environ[MASTER_KEY_ENV] = prev_key
+            if prev_env is None:
+                os.environ.pop("PALACE_ENV", None)
+            else:
+                os.environ["PALACE_ENV"] = prev_env
+
+    def test_ensure_local_skips_production(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        from src.ai.infrastructure.crypto import MASTER_KEY_ENV, ensure_local_master_key
+
+        prev = os.environ.pop(MASTER_KEY_ENV, None)
+        try:
+            with patch.dict(os.environ, {"PALACE_ENV": "production"}, clear=False):
+                os.environ.pop(MASTER_KEY_ENV, None)
+                self.assertIsNone(ensure_local_master_key())
+                self.assertNotIn(MASTER_KEY_ENV, os.environ)
+        finally:
+            if prev is None:
+                os.environ.pop(MASTER_KEY_ENV, None)
+            else:
+                os.environ[MASTER_KEY_ENV] = prev
+
     def test_corrupt_payload_is_rejected(self) -> None:
         with self.assertRaises(CryptoError):
             decrypt_secret(b"tooshort", aad="a", master_key=self.key)
@@ -64,6 +119,10 @@ class CronValidationTests(unittest.TestCase):
         for expression in ("35 15 * * 1-5", "0 9 * * *", "*/15 * * * *"):
             with self.subTest(expression=expression):
                 self.assertIsNotNone(validate_cron(expression))
+
+    def test_cron_uses_shanghai_timezone(self) -> None:
+        trigger = validate_cron("35 15 * * 1-5")
+        self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
 
     def test_rejects_wrong_field_count(self) -> None:
         """写错的 cron 必须当场报错，不能等到它安静地永不触发。"""
@@ -109,6 +168,43 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(OpsError):
             self.store.create_job(name="dup", kind="sync")
 
+    def test_ensure_job_is_atomic_across_connections(self) -> None:
+        """并发启动时，同一个托管任务只能被创建一次而非让一方报重名。"""
+        barrier = Barrier(2)
+
+        def ensure() -> str:
+            with OpsStore(self.store.db_path) as concurrent_store:
+                barrier.wait()
+                return concurrent_store.ensure_job(
+                    name="concurrent-managed",
+                    kind="sync",
+                    cron="0 9 * * 1-5",
+                    config={"workers": 2},
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            job_ids = list(executor.map(lambda _: ensure(), range(2)))
+
+        self.assertEqual(job_ids[0], job_ids[1])
+        jobs = [job for job in self.store.list_jobs() if job["name"] == "concurrent-managed"]
+        self.assertEqual(len(jobs), 1)
+
+    def test_ensure_job_preserves_existing_config_when_not_replaced(self) -> None:
+        job_id = self.store.create_job(
+            name="managed", kind="sync", cron="0 9 * * 1-5", config={"workers": 4}
+        )
+
+        ensured_id = self.store.ensure_job(
+            name="managed", kind="screen", cron="30 15 * * 1-5", config=None, enabled=False
+        )
+
+        job = self.store.get_job(job_id)
+        self.assertEqual(ensured_id, job_id)
+        self.assertEqual(job["kind"], "sync")
+        self.assertEqual(job["cron"], "30 15 * * 1-5")
+        self.assertEqual(job["config"], {"workers": 4})
+        self.assertFalse(job["enabled"])
+
     def test_unknown_job_kind_is_rejected(self) -> None:
         with self.assertRaises(OpsError):
             self.store.create_job(name="x", kind="mystery")
@@ -117,6 +213,36 @@ class StoreTests(unittest.TestCase):
         job_id = self.store.create_job(name="x", kind="sync")
         with self.assertRaises(OpsError):
             self.store.update_job(job_id, kind="screen")
+
+    def test_conditional_job_mutations_do_not_touch_changed_target(self) -> None:
+        job_id = self.store.create_job(name="assistant-owned", kind="sync")
+
+        self.assertFalse(
+            self.store.update_job(
+                job_id,
+                enabled=False,
+                expected_name="assistant-owned",
+                allowed_kinds={"skill"},
+            )
+        )
+        self.assertTrue(self.store.get_job(job_id)["enabled"])
+        self.assertFalse(
+            self.store.delete_job(
+                job_id,
+                expected_name="renamed",
+                allowed_kinds={"sync"},
+            )
+        )
+        self.assertIsNotNone(self.store.get_job(job_id))
+        self.assertTrue(
+            self.store.update_job(
+                job_id,
+                enabled=False,
+                expected_name="assistant-owned",
+                allowed_kinds={"sync"},
+            )
+        )
+        self.assertFalse(self.store.get_job(job_id)["enabled"])
 
     def test_run_history_updates_job_status(self) -> None:
         job_id = self.store.create_job(name="x", kind="sync")
@@ -130,6 +256,24 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(runs[0]["result"]["rows"], 10)
         self.assertEqual(runs[0]["trigger"], "schedule")
         self.assertEqual(self.store.get_job(job_id)["last_status"], "success")
+
+    def test_claim_run_recovers_a_stale_running_record(self) -> None:
+        job_id = self.store.create_job(name="x", kind="sync")
+        job = self.store.get_job(job_id)
+        stale_id = self.store.start_run(job)
+        with self.store._transaction() as cursor:
+            cursor.execute(
+                "UPDATE job_runs SET started_at = '2000-01-01 00:00:00' WHERE id = ?",
+                (stale_id,),
+            )
+
+        run_id, claimed = self.store.claim_run(job)
+
+        self.assertTrue(claimed)
+        self.assertNotEqual(run_id, stale_id)
+        runs = {run["id"]: run for run in self.store.list_runs(job_id=job_id, limit=10)}
+        self.assertEqual(runs[stale_id]["status"], "failed")
+        self.assertIn("超过 24 小时", runs[stale_id]["error_text"])
 
     def test_failed_run_keeps_the_full_error_text(self) -> None:
         """只留状态码不留报错，等于失败了也查不出为什么。"""
@@ -148,6 +292,38 @@ class StoreTests(unittest.TestCase):
         self.store.prune_runs(keep_per_job=5)
         self.assertEqual(len(self.store.list_runs(job_id=job_id, limit=100)), 5)
 
+    def test_delete_runs_removes_selected_ids(self) -> None:
+        job_id = self.store.create_job(name="x", kind="sync")
+        job = self.store.get_job(job_id)
+        ids = []
+        for _ in range(3):
+            run_id = self.store.start_run(job)
+            self.store.finish_run(run_id, status="success")
+            ids.append(run_id)
+        removed = self.store.delete_runs(ids[:2])
+        self.assertEqual(removed, 2)
+        left = self.store.list_runs(job_id=job_id, limit=10)
+        self.assertEqual(len(left), 1)
+        self.assertEqual(left[0]["id"], ids[2])
+        self.assertEqual(self.store.delete_runs([]), 0)
+
+    def test_running_run_cannot_be_deleted_or_release_the_execution_claim(self) -> None:
+        job_id = self.store.create_job(name="exclusive", kind="sync")
+        job = self.store.get_job(job_id)
+        assert job is not None
+        run_id = self.store.start_run(job)
+
+        with self.assertRaisesRegex(OpsError, "运行中的任务记录不可删除"):
+            self.store.delete_runs([run_id])
+        claimed_id, claimed = self.store.claim_run(job)
+        self.assertFalse(claimed)
+        self.assertEqual(claimed_id, run_id)
+
+        self.store.finish_run(run_id, status="success")
+        self.assertEqual(self.store.delete_runs([run_id]), 1)
+        with self.assertRaisesRegex(OpsError, "不存在或已被删除"):
+            self.store.finish_run(run_id, status="success")
+
     def test_provider_never_exposes_the_secret_by_default(self) -> None:
         self.store.upsert_provider(
             {
@@ -164,6 +340,24 @@ class StoreTests(unittest.TestCase):
 
         with_secret = self.store.get_provider("openrouter", include_secret=True)
         self.assertEqual(with_secret["encrypted_key"], b"cipher-bytes")
+
+    def test_save_provider_rejects_unknown_protocol_before_database_write(self) -> None:
+        from src.ai.infrastructure.crypto import generate_master_key
+        from src.ai.infrastructure.providers import save_provider
+
+        with self.assertRaisesRegex(OpsError, "未知协议"):
+            save_provider(
+                self.store,
+                name="invalid-protocol",
+                protocol="not-a-protocol",
+                base_url="https://example.test",
+                api_key="sk-test",
+                model="demo",
+                validate=False,
+                discover_models=False,
+                master_key=generate_master_key(),
+            )
+        self.assertIsNone(self.store.get_provider("invalid-protocol"))
 
     def test_updating_provider_without_key_keeps_the_existing_one(self) -> None:
         """改 base_url 不该逼用户重新粘一遍密钥。"""
@@ -188,30 +382,29 @@ class StoreTests(unittest.TestCase):
         )
         self.assertEqual(self.store.get_provider("p")["base_url"], "https://a/v1")
 
+    def test_legacy_models_string_list_is_presented_as_catalog(self) -> None:
+        """旧库 string[] 读出时升格为 model_catalog，models 仅启用 id。"""
+        from src.ops.infrastructure.store_helpers import dumps
 
-class JobExecutionTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory()
-        self.store = OpsStore(Path(self.temp.name) / "ops.db")
-
-    def tearDown(self) -> None:
-        self.store.close()
-        self.temp.cleanup()
-
-    def test_failure_is_recorded_not_raised(self) -> None:
-        """定时任务最怕静默失败，所以异常要落库而不是往上抛。"""
-        job_id = self.store.create_job(name="bad", kind="skill", config={})
-        outcome = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
-        self.assertEqual(outcome["status"], "failed")
-
-        runs = self.store.list_runs(job_id=job_id)
-        self.assertEqual(runs[0]["status"], "failed")
-        self.assertIn("skill", runs[0]["error_text"])
-        self.assertEqual(self.store.get_job(job_id)["last_status"], "failed")
-
-    def test_unknown_job_is_rejected(self) -> None:
-        with self.assertRaises(OpsError):
-            run_job(self.store, "JOB-nope")
+        with self.store._transaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO llm_providers(
+                    id, name, protocol, base_url, encrypted_key, key_last4,
+                    default_model, models_json, models_synced_at, proxy_url,
+                    is_active, is_default, validated_at, note, created_at, updated_at
+                ) VALUES(
+                    'LLM1', 'legacy', 'openai_compatible', 'https://a/v1',
+                    NULL, '', 'm1', ?, '', '', 1, 0, '', '',
+                    datetime('now'), datetime('now')
+                )
+                """,
+                (dumps(["m1", "m2"]),),
+            )
+        row = self.store.get_provider("legacy")
+        assert row is not None
+        self.assertEqual(row["models"], ["m1", "m2"])
+        self.assertEqual([item["id"] for item in row["model_catalog"]], ["m1", "m2"])
 
 
 class ExecuteScreenTopNTests(unittest.TestCase):
@@ -288,6 +481,47 @@ class JobExecutionTests(unittest.TestCase):
     def test_unknown_job_is_rejected(self) -> None:
         with self.assertRaises(OpsError):
             run_job(self.store, "JOB-nope")
+
+    def test_same_job_is_executed_once_across_connections(self) -> None:
+        job_id = self.store.create_job(name="exclusive", kind="sync")
+        started = Event()
+        release = Event()
+        from src.ops.application.jobs import EXECUTORS
+
+        original = EXECUTORS["sync"]
+
+        def blocking_executor(_config: dict, _context: JobContext) -> dict:
+            started.set()
+            self.assertTrue(release.wait(timeout=5))
+            return {"ok": True}
+
+        def invoke() -> dict:
+            with OpsStore(self.store.db_path) as concurrent_store:
+                return run_job(
+                    concurrent_store,
+                    job_id,
+                    context=JobContext(ops_store=concurrent_store),
+                    trigger="test",
+                )
+
+        EXECUTORS["sync"] = blocking_executor
+        try:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                first = executor.submit(invoke)
+                self.assertTrue(started.wait(timeout=5))
+                duplicate = executor.submit(invoke).result(timeout=5)
+                release.set()
+                original_outcome = first.result(timeout=5)
+        finally:
+            release.set()
+            EXECUTORS["sync"] = original
+
+        self.assertEqual(duplicate["status"], "skipped")
+        self.assertEqual(duplicate["reason"], "任务正在执行")
+        self.assertEqual(original_outcome["status"], "success")
+        runs = self.store.list_runs(job_id=job_id, limit=10)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["status"], "success")
 
     def test_skill_job_requires_an_installed_skill(self) -> None:
         job_id = self.store.create_job(

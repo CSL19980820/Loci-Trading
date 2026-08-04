@@ -17,6 +17,8 @@ export function useQuotesQuery(
     limit?: number
     start?: string
     end?: string
+    /** 默认有代码即拉取；个股工作台可按 tab 关闭 */
+    enabled?: boolean
   }> = {},
 ) {
   const query = useQuery({
@@ -27,7 +29,7 @@ export function useQuotesQuery(
         'market-quotes',
         c,
         opts.adjust ?? 'qfq',
-        opts.limit ?? 800,
+        opts.limit ?? 60,
         opts.start ?? '',
         opts.end ?? '',
       ] as const
@@ -38,22 +40,29 @@ export function useQuotesQuery(
       const opts = toValue(options)
       return getQuotes(c, {
         adjust: opts.adjust,
-        limit: opts.limit ?? 800,
+        limit: opts.limit ?? 60,
         start: opts.start,
         end: opts.end,
       })
     },
-    enabled: () => Boolean(toValue(code).trim()),
+    enabled: () => {
+      const c = toValue(code).trim()
+      if (!c) return false
+      const opts = toValue(options)
+      return opts.enabled !== false
+    },
     staleTime: 60_000,
   })
 
   const quote = computed(() => query.data.value ?? null)
+  const isError = computed(() => query.error.value !== null)
 
   return {
     quote,
     isPending: query.isPending,
     isLoading: query.isLoading,
     error: query.error,
+    isError,
     refetch: query.refetch,
     refresh: query.refetch,
   }

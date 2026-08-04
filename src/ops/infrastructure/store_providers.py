@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 import sqlite3
 
+from src.ops.infrastructure.model_catalog import normalize_models, present_provider_models
 from src.ops.infrastructure.store_helpers import dumps, loads, new_id
 
 
@@ -47,7 +48,7 @@ class OpsProvidersMixin:
                     payload.get("encrypted_key"),
                     str(payload.get("key_last4", "")),
                     str(payload.get("default_model", "")),
-                    dumps(payload.get("models", [])),
+                    dumps(normalize_models(payload.get("models", []))),
                     str(payload.get("models_synced_at", "")),
                     str(payload.get("proxy_url", "")),
                     1 if payload.get("is_active", True) else 0,
@@ -102,7 +103,9 @@ class OpsProvidersMixin:
     @staticmethod
     def _provider_row(row: sqlite3.Row, *, include_secret: bool = False) -> dict[str, Any]:
         data = dict(row)
-        data["models"] = loads(data.pop("models_json", "[]"), [])
+        presented = present_provider_models(loads(data.pop("models_json", "[]"), []))
+        data["model_catalog"] = presented["model_catalog"]
+        data["models"] = presented["models"]
         data["is_active"] = bool(data.get("is_active"))
         data["is_default"] = bool(data.get("is_default"))
         secret = data.pop("encrypted_key", None)

@@ -6,20 +6,18 @@ from src.strategy.application.audit import (
     audit_strategy,
     guard_strategy,
 )
+from src.strategy.application.catalog import all_strategies, describe_all, get
 from src.strategy.domain.base import (
     ENTRY_TIMINGS,
     SignalResult,
     StrategyEngine,
     StrategyError,
-    all_strategies,
-    describe_all,
-    get,
     merge_params,
     register,
 )
 from src.strategy.application.screener import ScreenResult, screen
 
-from src.strategy.application import lugaowen, qianlong  # noqa: F401
+from src.strategy.application import dip_reversal, qianlong, tail_resonance  # noqa: F401
 
 __all__ = [
     "ENTRY_TIMINGS",

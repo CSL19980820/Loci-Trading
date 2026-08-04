@@ -70,6 +70,14 @@ def _isolate_loci_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     except Exception:
         pass
 
+    # AkShare 目录在进程内缓存一份反射结果；跨用例复用会让注入的假目录串味。
+    try:
+        from src.market.infrastructure.akshare_tools import clear_catalog_cache
+
+        clear_catalog_cache()
+    except Exception:
+        pass
+
     yield data_root
 
     # monkeypatch 会还原环境变量；这里再尽力清临时树（Windows 下偶发文件锁则忽略）。

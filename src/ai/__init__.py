@@ -10,8 +10,22 @@ from src.ai.infrastructure.client import (
     list_models,
     validate,
 )
-from src.ai.infrastructure.crypto import CryptoError, MASTER_KEY_ENV, generate_master_key, mask_secret
-from src.ai.infrastructure.providers import refresh_models, resolve_config, save_provider
+from src.ai.infrastructure.crypto import (
+    CryptoError,
+    MASTER_KEY_ENV,
+    decrypt_secret,
+    encrypt_secret,
+    ensure_local_master_key,
+    generate_master_key,
+    mask_secret,
+)
+from src.ai.infrastructure.providers import (
+    get_model_entry,
+    refresh_models,
+    resolve_config,
+    save_provider,
+    update_provider_models,
+)
 
 __all__ = [
     "MASTER_KEY_ENV",
@@ -23,11 +37,16 @@ __all__ = [
     "ProviderConfig",
     "ToolCall",
     "chat",
+    "decrypt_secret",
+    "encrypt_secret",
+    "ensure_local_master_key",
     "generate_master_key",
+    "get_model_entry",
     "list_models",
     "mask_secret",
     "refresh_models",
     "resolve_config",
     "save_provider",
+    "update_provider_models",
     "validate",
 ]

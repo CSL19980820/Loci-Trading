@@ -13,6 +13,7 @@ from src.market.infrastructure.adapters.types import (
     DAILY_REQUIRED_COLUMNS,
     LANE_ADJUST_FACTOR,
     LANE_HIST_DAILY,
+    LANE_MINUTE,
     LANE_SPOT_BATCH,
     ProbeResult,
 )
@@ -21,13 +22,18 @@ from src.market.infrastructure.store import normalize_code, to_sina_symbol
 
 
 class SinaAdapter(MarketAdapter):
-    """新浪直连 —— hist_daily / spot_batch / adjust_factor。"""
+    """新浪直连 —— hist_daily / spot_batch / adjust_factor / minute_bars。"""
 
     meta = AdapterMeta(
         id="sina",
         label="新浪直连",
-        lanes=(LANE_HIST_DAILY, LANE_SPOT_BATCH, LANE_ADJUST_FACTOR),
-        description="一次拉全历史，自带流通股本与换手率（小数）；不经 akshare。",
+        lanes=(LANE_HIST_DAILY, LANE_SPOT_BATCH, LANE_ADJUST_FACTOR, LANE_MINUTE),
+        description=(
+            "一次拉全历史，自带流通股本与换手率（小数）；分钟线直连 quotes.sina.cn；"
+            "日 K / 复权不经 akshare。"
+        ),
+        # 取自 sina.HIST_URL / FACTOR_URL 的实际站点；现价另走 hq.sinajs.cn。
+        base_url="https://finance.sina.com.cn",
     )
 
     def __init__(self, source: SinaSource | None = None) -> None:
@@ -147,11 +153,11 @@ class SinaAdapter(MarketAdapter):
             ["code", "date", "open", "high", "low", "close", "volume", "amount"]
         ].reset_index(drop=True)
 
-    def probe(self, lane: str) -> ProbeResult:
+    def probe(self, lane: str, *, code: str = "600519") -> ProbeResult:
         """hist_daily：新浪接口一次就是全历史，探测仍走全量但只校验形状。"""
         if lane != LANE_HIST_DAILY:
             return super().probe(lane)
-        result = super().probe(lane)
+        result = super().probe(lane, code=code)
         if result.ok:
             result.extra = {**(result.extra or {}), "probe_window": "full"}
         return result
@@ -162,6 +168,33 @@ class SinaAdapter(MarketAdapter):
         except Exception as exc:
             raise AdapterError(
                 f"新浪复权因子失败：{type(exc).__name__}: {exc}"
+            ) from exc
+
+    def fetch_minute(
+        self,
+        code: str,
+        *,
+        period: str = "1",
+        days: int = 1,
+        trade_date: str | None = None,
+    ) -> pd.DataFrame:
+        """分钟 K（新浪 ``CN_MarketDataService.getKLineData``，不经 akshare）。"""
+        from src.market import sina
+
+        plain = normalize_code(code)
+        symbol = to_sina_symbol(plain)
+        try:
+            return sina.fetch_minute(
+                symbol,
+                period=period,
+                days=days,
+                trade_date=trade_date,
+            )
+        except sina.SinaFetchError as exc:
+            raise AdapterError(f"新浪分钟线 {plain} 失败：{exc}") from exc
+        except Exception as exc:
+            raise AdapterError(
+                f"新浪分钟线 {plain} 失败：{type(exc).__name__}: {exc}"
             ) from exc
 
     @staticmethod

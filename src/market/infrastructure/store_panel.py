@@ -119,10 +119,53 @@ class MarketPanelMixin:
 
     def _factor_panel(self, reference: pd.DataFrame, adjust: str) -> pd.DataFrame:
         """构造与面板同形的复权比例矩阵，一次性乘上去。"""
-        rows = self.conn.execute(
-            "SELECT code, trade_date, hfq_factor FROM adjust_factors ORDER BY code, trade_date"
-        ).fetchall()
         ratio = pd.DataFrame(1.0, index=reference.index, columns=reference.columns)
+        codes = list(dict.fromkeys(str(code) for code in reference.columns))
+        if reference.empty or not codes:
+            return ratio
+
+        first_date = str(reference.index[0])
+        last_date = str(reference.index[-1])
+        requested_values = ", ".join("(?)" for _ in codes)
+        # 只取足以把稀疏因子对齐到请求窗口的三部分：窗口起点前最后一条、
+        # 窗口内变化，以及完全没有较早因子时的首个后续值（保留原 bfill 语义）。
+        rows = self.conn.execute(
+            f"""
+            WITH requested(code) AS (VALUES {requested_values}),
+            anchor AS (
+                SELECT factors.code, MAX(factors.trade_date) AS trade_date
+                FROM adjust_factors AS factors
+                JOIN requested ON requested.code = factors.code
+                WHERE factors.trade_date <= ?
+                GROUP BY factors.code
+            ),
+            later AS (
+                SELECT factors.code, MIN(factors.trade_date) AS trade_date
+                FROM adjust_factors AS factors
+                JOIN requested ON requested.code = factors.code
+                WHERE factors.trade_date > ?
+                GROUP BY factors.code
+            )
+            SELECT factors.code AS code, factors.trade_date AS trade_date, factors.hfq_factor AS hfq_factor
+            FROM adjust_factors AS factors
+            JOIN anchor ON anchor.code = factors.code AND anchor.trade_date = factors.trade_date
+            UNION ALL
+            SELECT factors.code, factors.trade_date, factors.hfq_factor
+            FROM adjust_factors AS factors
+            JOIN requested ON requested.code = factors.code
+            WHERE factors.trade_date > ? AND factors.trade_date <= ?
+            UNION ALL
+            SELECT factors.code, factors.trade_date, factors.hfq_factor
+            FROM adjust_factors AS factors
+            JOIN later ON later.code = factors.code AND later.trade_date = factors.trade_date
+            WHERE NOT EXISTS (
+                SELECT 1 FROM adjust_factors AS known
+                WHERE known.code = factors.code AND known.trade_date <= ?
+            )
+            ORDER BY code, trade_date
+            """,
+            [*codes, first_date, last_date, first_date, last_date, last_date],
+        ).fetchall()
         if not rows:
             return ratio
         sparse = pd.DataFrame(

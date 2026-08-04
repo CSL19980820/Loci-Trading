@@ -10,9 +10,12 @@ import type {
   TradeRecord,
 } from '@/shared/types/palace'
 
+import { formatApiDetail } from '@/shared/lib/errors'
+
 const API_ROOT = '/api'
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504])
-const MAX_GET_RETRIES = 2
+/** 账本 SQLite 偶发锁竞争 → 503；多退几步再抛给 UI。 */
+const MAX_GET_RETRIES = 4
 
 export interface SessionStatus {
   authenticated: boolean
@@ -60,10 +63,11 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null)
-    const detail =
+    const rawDetail =
       typeof body === 'object' && body !== null && 'detail' in body
-        ? String((body as { detail: unknown }).detail)
-        : `请求失败（${response.status}）`
+        ? (body as { detail: unknown }).detail
+        : null
+    const detail = formatApiDetail(rawDetail, response.status)
     const error = new Error(detail) as Error & { status?: number; retryable?: boolean }
     error.status = response.status
     error.retryable = RETRYABLE_STATUS.has(response.status)
@@ -298,9 +302,15 @@ function compact<T extends object>(payload: T): Partial<T> {
   return out as Partial<T>
 }
 
-export function getCandidates(date?: string): Promise<Candidate[]> {
-  const query = date ? `?date=${encodeURIComponent(date)}` : ''
-  return request<Candidate[]>(`/candidates${query}`)
+export function getCandidates(
+  date?: string,
+  options: { include_backfill?: boolean } = {},
+): Promise<Candidate[]> {
+  const params = new URLSearchParams()
+  if (date) params.set('date', date)
+  if (options.include_backfill) params.set('include_backfill', 'true')
+  const query = params.toString()
+  return request<Candidate[]>(`/candidates${query ? `?${query}` : ''}`)
 }
 
 export function listCandidates(options: {
@@ -309,6 +319,8 @@ export function listCandidates(options: {
   start?: string
   end?: string
   limit?: number
+  /** 默认排除回填；审计时传 true */
+  include_backfill?: boolean
 } = {}): Promise<Candidate[]> {
   const params = new URLSearchParams()
   if (options.strategy) params.set('strategy', options.strategy)
@@ -316,6 +328,7 @@ export function listCandidates(options: {
   if (options.start) params.set('start', options.start)
   if (options.end) params.set('end', options.end)
   if (options.limit) params.set('limit', String(options.limit))
+  if (options.include_backfill) params.set('include_backfill', 'true')
   const query = params.toString()
   return request<Candidate[]>(`/candidates/list${query ? `?${query}` : ''}`)
 }

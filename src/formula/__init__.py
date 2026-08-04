@@ -1,4 +1,15 @@
 """公式 / 潜龙指标限界上下文。"""
+from src.formula.application.screen_formula import compile_screen_formula, evaluate_screen_formula
+from src.formula.domain.screen_formula_catalog import (
+    FORMULA_FUNCTIONS,
+    formula_fields_catalog,
+    formula_functions_catalog,
+    screen_skill_catalog,
+)
+from src.formula.domain.screen_formula_explain import (
+    build_formula_explanation,
+    build_manifest_explanation,
+)
 from src.formula.domain.board import (
     limit_ratio_for,
     limit_ratio_panel,
@@ -6,6 +17,21 @@ from src.formula.domain.board import (
     one_word_flags,
 )
 from src.formula.domain.chips import COST, WINNER, chip_cost_series, chip_winner_series
+from src.formula.domain.indicators import (
+    ATR,
+    BOLL_LOWER,
+    BOLL_MID,
+    BOLL_UPPER,
+    CCI,
+    MACD,
+    MACD_DEA,
+    MACD_DIF,
+    OBV,
+    ROC,
+    RSI,
+    TR,
+    WR,
+)
 from src.formula.domain.functions import (
     ABS,
     AVEDEV,
@@ -35,9 +61,23 @@ from src.formula.domain.functions import (
     ZTPRICE,
     weighted_ref_sum,
 )
+from src.formula.domain.screen_formula_types import (
+    CompiledScreenFormula,
+    FormulaCompileError,
+    FormulaDiagnostic,
+    FormulaEvaluationError,
+    FormulaEvaluationResult,
+    ScreenFormulaManifest,
+    ScreenFormulaParam,
+)
 
 __all__ = [
     "ABS",
+    "ATR",
+    "BOLL_LOWER",
+    "BOLL_MID",
+    "BOLL_UPPER",
+    "CCI",
     "COST",
     "WINNER",
     "chip_cost_series",
@@ -62,14 +102,37 @@ __all__ = [
     "IF",
     "LLV",
     "LLVBARS",
+    "MACD",
+    "MACD_DEA",
+    "MACD_DIF",
     "MA",
     "MAX",
     "MIN",
+    "OBV",
+    "ROC",
     "REF",
+    "RSI",
     "SMA",
     "STD",
     "SUM",
+    "TR",
     "WMA",
+    "WR",
     "ZTPRICE",
     "weighted_ref_sum",
+    "FORMULA_FUNCTIONS",
+    "formula_fields_catalog",
+    "formula_functions_catalog",
+    "screen_skill_catalog",
+    "build_formula_explanation",
+    "build_manifest_explanation",
+    "CompiledScreenFormula",
+    "FormulaCompileError",
+    "FormulaDiagnostic",
+    "FormulaEvaluationError",
+    "FormulaEvaluationResult",
+    "ScreenFormulaManifest",
+    "ScreenFormulaParam",
+    "compile_screen_formula",
+    "evaluate_screen_formula",
 ]

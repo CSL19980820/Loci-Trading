@@ -140,6 +140,9 @@ class EastmoneySource(QuoteSource):
                 "换手率": "turnover",
             }
         )
+        # 东财「成交量」为手，行情仓与新浪/腾讯统一为股。
+        if "volume" in out.columns:
+            out["volume"] = pd.to_numeric(out["volume"], errors="coerce") * 100.0
         # 东财「换手率」为百分数（5.0=5%）；行情仓 / COST 要小数（0.05）。
         # 转换写在 Source，sync 降级链与 Adapter 共用同一口径。
         if "turnover" in out.columns:
@@ -148,7 +151,7 @@ class EastmoneySource(QuoteSource):
 
 
 def fetch_instrument_list() -> pd.DataFrame:
-    """按交易所分别取上市证券列表，合并成 code/name/board/list_date。
+    """按交易所分别取上市证券列表，合并成 code/name/board/list_date/industry。
 
     刻意**不用** ``ak.stock_info_a_code_name()``：它内部依赖 py_mini_racer
     执行 JS，在本项目的多线程同步场景下会触发原生崩溃（不是 Python 异常，
@@ -174,6 +177,8 @@ def fetch_instrument_list() -> pd.DataFrame:
             return
         frame = raw.rename(columns=available)[list(available.values())].copy()
         frame["board"] = frame.get("board", board)
+        if "industry" not in frame.columns:
+            frame["industry"] = ""
         frames.append(frame)
 
     collect(
@@ -184,8 +189,14 @@ def fetch_instrument_list() -> pd.DataFrame:
     )
     collect(
         "深交所",
-        ak.stock_info_sz_name_code,
-        {"A股代码": "code", "A股简称": "name", "A股上市日期": "list_date", "板块": "board"},
+        lambda: ak.stock_info_sz_name_code(symbol="A股列表"),
+        {
+            "A股代码": "code",
+            "A股简称": "name",
+            "A股上市日期": "list_date",
+            "板块": "board",
+            "所属行业": "industry",
+        },
         "深交所",
     )
     collect(
@@ -203,7 +214,74 @@ def fetch_instrument_list() -> pd.DataFrame:
     merged = pd.concat(frames, ignore_index=True)
     merged["code"] = merged["code"].astype(str).str.strip().str.zfill(6)
     merged = merged[merged["code"].str.fullmatch(r"\d{6}")]
+    if "industry" not in merged.columns:
+        merged["industry"] = ""
+    merged["industry"] = merged["industry"].fillna("").map(_normalize_industry)
+    # 东财行业板块成分覆盖沪深（半导体/电力设备等），补全上交所等缺行业行
+    em_map = fetch_em_industry_map()
+    if em_map:
+        mapped = merged["code"].map(em_map)
+        merged["industry"] = mapped.where(mapped.notna() & (mapped != ""), merged["industry"])
     return merged.drop_duplicates(subset=["code"], keep="first").reset_index(drop=True)
+
+
+def _normalize_industry(value: object) -> str:
+    """深交所「J 金融业」→「金融业」；空值保底。"""
+    text = str(value or "").strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return ""
+    # 证监会门类前缀：单字母 + 空格
+    if len(text) >= 3 and text[0].isalpha() and text[1] == " ":
+        return text[2:].strip()
+    return text
+
+
+def fetch_em_industry_map() -> dict[str, str]:
+    """东财行业板块成分 → code→行业名（如半导体、电力设备）。失败返回空字典。"""
+    import os
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    if os.environ.get("LOCI_SKIP_EM_INDUSTRY", "").strip() in {"1", "true", "yes"}:
+        return {}
+    try:
+        ak = _import_akshare()
+        boards = ak.stock_board_industry_name_em()
+    except Exception as exc:
+        logger.warning("取东财行业板块列表失败：%s", exc)
+        return {}
+    if boards is None or boards.empty:
+        return {}
+    name_col = "板块名称" if "板块名称" in boards.columns else boards.columns[1]
+    names = [str(n).strip() for n in boards[name_col].tolist() if str(n).strip()]
+    out: dict[str, str] = {}
+
+    def one(name: str) -> dict[str, str]:
+        try:
+            cons = ak.stock_board_industry_cons_em(symbol=name)
+        except Exception:
+            return {}
+        if cons is None or cons.empty:
+            return {}
+        code_col = "代码" if "代码" in cons.columns else None
+        if not code_col:
+            return {}
+        local: dict[str, str] = {}
+        for raw in cons[code_col].tolist():
+            code = str(raw).strip().zfill(6)
+            if code.isdigit() and len(code) == 6:
+                local[code] = name
+        return local
+
+    workers = min(8, max(2, len(names) // 10 or 2))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(one, name) for name in names]
+        for fut in as_completed(futures):
+            try:
+                out.update(fut.result())
+            except Exception as exc:  # pragma: no cover
+                logger.debug("行业成分合并失败：%s", exc)
+    logger.info("东财行业映射 %s 只", len(out))
+    return out
 
 
 def default_sources() -> list[QuoteSource]:

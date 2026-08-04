@@ -31,4 +31,7 @@
 ## 相关
 
 - [bounded-contexts.md](bounded-contexts.md)
+- [screen-skill-tech-design.md](screen-skill-tech-design.md)（选股战法技能化 / 公式工坊设计）
+- [ai-assistant-backend-plan.md](ai-assistant-backend-plan.md)（全局 AI 助手后端实现计划）
+- [ai-assistant-frontend-design.md](ai-assistant-frontend-design.md)（悬浮球对话 UI 设计细则）
 - [ADR-001](../adr/ADR-001-server-ledger-and-sqlite.md)（已废止的公网部署决策）

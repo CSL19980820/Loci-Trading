@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+import hashlib
 from pathlib import Path
 import sqlite3
 
@@ -37,6 +38,7 @@ from src.market.infrastructure.store_codes import (
     normalize_code,
     to_sina_symbol,
 )
+from src.market.infrastructure.store_board_page import MarketBoardPageMixin
 from src.market.infrastructure.store_panel import MarketPanelMixin
 from src.market.infrastructure.store_rw import MarketRwMixin
 from src.market.infrastructure.store_schema import (
@@ -64,7 +66,7 @@ __all__ = [
 ]
 
 
-class MarketStore(MarketRwMixin, MarketPanelMixin):
+class MarketStore(MarketRwMixin, MarketBoardPageMixin, MarketPanelMixin):
     """行情仓连接。与 PalaceStore 一样，每个请求/任务持有独立连接。"""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
@@ -88,6 +90,32 @@ class MarketStore(MarketRwMixin, MarketPanelMixin):
     def close(self) -> None:
         self.conn.close()
 
+    def data_snapshot(self) -> dict[str, object]:
+        """返回可复现但不暴露本地路径的行情仓版本摘要。"""
+        quotes = self._time_series_snapshot(
+            "quotes_daily",
+            timestamp_column="fetched_at",
+        )
+        adjust_factors = self._time_series_snapshot(
+            "adjust_factors",
+            timestamp_column="fetched_at",
+        )
+        adjust_factors["content_digest"] = self._revision_digest("adjust_factors_revision")
+        instruments = self._instrument_snapshot()
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "rows": int(quotes["rows"]),
+            "last_date": str(quotes["last_date"]),
+            "fetched_at": str(quotes["fetched_at"]),
+            "quotes": quotes,
+            "adjust_factors": adjust_factors,
+            "instruments": instruments,
+        }
+        return {
+            **payload,
+            "market_revision": self._revision_digest("market_revision"),
+        }
+
     def __enter__(self) -> MarketStore:
         return self
 
@@ -110,8 +138,64 @@ class MarketStore(MarketRwMixin, MarketPanelMixin):
     def init_schema(self) -> None:
         with self._transaction() as cursor:
             cursor.executescript(_SCHEMA)
+            self._migrate_schema(cursor)
             cursor.execute(
                 "INSERT INTO meta(key, value, updated_at) VALUES('schema_version', ?, datetime('now'))"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (str(SCHEMA_VERSION),),
+            )
+            for key in (
+                "market_revision",
+                "quotes_revision",
+                "adjust_factors_revision",
+                "instruments_revision",
+            ):
+                cursor.execute(
+                    "INSERT INTO meta(key, value, updated_at) VALUES(?, '0', datetime('now'))"
+                    " ON CONFLICT(key) DO NOTHING",
+                    (key,),
+                )
+
+    def _time_series_snapshot(
+        self,
+        table: str,
+        *,
+        timestamp_column: str,
+        revision_key: str | None = None,
+    ) -> dict[str, object]:
+        row = self.conn.execute(
+            f"SELECT COUNT(*) AS rows, MAX(trade_date) AS last_date, "
+            f"MAX({timestamp_column}) AS last_updated_at FROM {table}"
+        ).fetchone()
+        snapshot = {
+            "rows": int(row["rows"] or 0),
+            "last_date": str(row["last_date"] or ""),
+            "fetched_at": str(row["last_updated_at"] or ""),
+        }
+        if revision_key is not None:
+            snapshot["content_digest"] = self._revision_digest(revision_key)
+        return snapshot
+
+    def _instrument_snapshot(self) -> dict[str, object]:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS rows, MAX(updated_at) AS last_updated_at FROM instruments"
+        ).fetchone()
+        return {
+            "rows": int(row["rows"] or 0),
+            "updated_at": str(row["last_updated_at"] or ""),
+            "content_digest": self._revision_digest("instruments_revision"),
+        }
+
+    def _revision_digest(self, key: str) -> str:
+        row = self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        revision = str(row["value"] if row else "0")
+        return hashlib.sha256(f"{key}:{revision}".encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _migrate_schema(cursor: sqlite3.Cursor) -> None:
+        """兼容旧库：补列（IF NOT EXISTS 语义用 pragma 判断）。"""
+        cols = {str(row[1]) for row in cursor.execute("PRAGMA table_info(instruments)")}
+        if "industry" not in cols:
+            cursor.execute(
+                "ALTER TABLE instruments ADD COLUMN industry TEXT NOT NULL DEFAULT ''"
             )

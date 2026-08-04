@@ -14,8 +14,8 @@
 
     # 定时任务：选股、回测、行情同步、技能模式，四类走同一套调度与留痕
     python ops.py job add 盘后同步 sync --cron "35 15 * * 1-5"
-    python ops.py job add 潜龙选股 screen --cron "26 9 * * 1-5" \
-        --config '{"strategy":"qianlong-auction"}'
+    python ops.py job add 潜龙选股 screen --cron "47 15 * * 1-5" \
+        --config '{"strategy":"qianlong-close"}'
     python ops.py job add 盘后简报 skill --cron "40 15 * * 1-5" \
         --config '{"skill":"dragon-return","provider":"openrouter","context":["screen"]}'
     python ops.py job run 盘后同步
@@ -152,7 +152,8 @@ def cmd_provider_list(args: argparse.Namespace) -> int:
         state = "" if item["is_active"] else "  [停用]"
         print(f"{item['name']:<18} {item['protocol']:<20} {item['base_url']}{state}")
         print(f"  密钥 {item['key_last4'] or '未设置'}   默认模型 {item['default_model'] or '—'}"
-              f"   模型数 {len(item['models'])}")
+              f"   模型数 {len(item.get('model_catalog') or item['models'])}"
+              f"   启用 {len(item['models'])}")
     return 0
 
 
@@ -160,13 +161,16 @@ def cmd_provider_models(args: argparse.Namespace) -> int:
     from src.ai.infrastructure.providers import refresh_models
 
     with _store(args) as store:
-        models = refresh_models(store, args.name)
-    if not models:
+        catalog = refresh_models(store, args.name)
+    if not catalog:
         print("该供应商未提供模型列表接口（例如 Anthropic 官方），请手动指定模型名。")
         return 0
-    print(f"共 {len(models)} 个模型：")
-    for model in models:
-        print(f"  {model}")
+    print(f"共 {len(catalog)} 个模型：")
+    for item in catalog:
+        flag = "" if item.get("enabled", True) else " [停用]"
+        ctx = item.get("context_window")
+        ctx_s = f"  ctx={ctx}" if ctx else ""
+        print(f"  {item['id']}{flag}{ctx_s}")
     return 0
 
 
@@ -184,7 +188,11 @@ def cmd_genkey(args: argparse.Namespace) -> int:
 
     print(f"{MASTER_KEY_ENV}={generate_master_key()}")
     print()
-    print("把这一行写进本机运行环境（例如 loci 数据目录旁的 .env，或系统环境变量）。", file=sys.stderr)
+    print(
+        "本机：重启 Loci 会自动写入 .palace_ai_master_key；"
+        "或把上一行写进环境变量 / .env。生产须进 docker-compose environment。",
+        file=sys.stderr,
+    )
     return 0
 
 

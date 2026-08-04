@@ -1,92 +1,89 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   CapabilityUnavailableError,
+  getJobs,
   getMarketCoverage,
+  getSkills,
   getStrategies,
-  runBacktest,
-  runScreen,
+  removeSkill,
   syncMarket,
 } from '@/shared/api/quant'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
-import StatCard from '@/shared/components/ui/StatCard.vue'
-import type { BacktestResult, MarketCoverage, ScreenResult, StrategyInfo } from '@/shared/types/quant'
+import PageTabs from '@/shared/components/ui/PageTabs.vue'
+import { confirmDangerous } from '@/shared/lib/confirm'
+import { toErrorMessage } from '@/shared/lib/errors'
+import type { MarketCoverage, Skill, StrategyInfo } from '@/shared/types/quant'
+import DataSourcePanel from '@/features/datasource/DataSourcePanel.vue'
+import MarketPanel from '@/features/marketplace/components/MarketPanel.vue'
+import JobsTab from '@/features/ops/components/JobsTab.vue'
 
-import QuantAnalysisPanel from './components/QuantAnalysisPanel.vue'
-import QuantResultsPanel from './components/QuantResultsPanel.vue'
+import QuantBacktestPanel from './components/QuantBacktestPanel.vue'
+import QuantSkillsPanel from './components/QuantSkillsPanel.vue'
 import QuantStrategiesPanel from './components/QuantStrategiesPanel.vue'
-import QuantStrategyConfigDialog from './components/QuantStrategyConfigDialog.vue'
-import QuantUniverseBar from './components/QuantUniverseBar.vue'
-import { useQuantAnalysis } from './composables/useQuantAnalysis'
-import { useQuantConfig } from './composables/useQuantConfig'
-import { useQuantUniverse } from './composables/useQuantUniverse'
 
-const activeTab = ref('strategies')
+type WorkshopTab = 'engines' | 'skills' | 'sources' | 'jobs' | 'market' | 'backtest'
+
+const route = useRoute()
+const router = useRouter()
+
+function parseTab(raw: unknown): WorkshopTab {
+  const value = String(raw || 'engines')
+  if (
+    value === 'skills'
+    || value === 'sources'
+    || value === 'jobs'
+    || value === 'market'
+    || value === 'backtest'
+  ) {
+    return value
+  }
+  return 'engines'
+}
+
+const activeTab = ref<WorkshopTab>(parseTab(route.query.tab))
+/** 运维旧链接会带 view=interfaces 直落「按接口」 */
+const sourceView = computed(() => String(route.query.view || ''))
+/** 数据源角标只数源家数，工具条数不参与统计 */
+const sourceCount = ref(0)
+const jobsEnabled = ref(0)
+const workshopTabs = computed(() => [
+  { name: 'engines', label: '战法', badge: strategies.value.length || undefined },
+  { name: 'skills', label: '技能', badge: skills.value.length || undefined },
+  { name: 'sources', label: '数据源', badge: sourceCount.value || undefined },
+  { name: 'jobs', label: '定时', badge: jobsEnabled.value || undefined },
+  { name: 'market', label: '市场' },
+  { name: 'backtest', label: '回测' },
+])
+
 const strategies = ref<StrategyInfo[]>([])
+const skills = ref<Skill[]>([])
 const coverage = ref<MarketCoverage | null>(null)
-const screenResult = ref<ScreenResult | null>(null)
-const backtestResult = ref<BacktestResult | null>(null)
 const busy = ref(false)
 const syncBusy = ref(false)
 const unavailable = ref('')
-
-const setUnavailable = (msg: string) => {
-  unavailable.value = msg
-}
-const setBusy = (v: boolean) => {
-  busy.value = v
-}
-
-const {
-  universePresets,
-  universeStats,
-  universePreset,
-  universeBoards,
-  excludeSt,
-  previewCount,
-  previewFunnelText,
-  currentUniverse,
-  applyPreset,
-  onBoardsChange,
-  onExcludeStChange,
-  previewPool: runPreviewPool,
-  loadUniverseMeta,
-} = useQuantUniverse()
-
-const {
-  compareResult,
-  optimizeResult,
-  optimizeExpanded,
-  optimizeRowsShown,
-  analysisBusy,
-  analysisLabel,
-  optimizeTarget,
-  analysisStart,
-  runCompare,
-  runOptimize,
-  restoreAnalysisResults,
-  clearAnalysisResults,
-} = useQuantAnalysis(setUnavailable)
-
-const {
-  configTarget,
-  configOpen,
-  strategyJobs,
-  llmProviders,
-  configForm,
-  selectedProviderModels,
-  configTitle,
-  openConfig,
-  saveConfig,
-  removeConfig,
-} = useQuantConfig(strategies, setBusy, setUnavailable)
+const jobsTab = ref<{ load: () => Promise<void> } | null>(null)
 
 const needsBootstrap = computed(() =>
   /行情仓是空的|没有可同步的标的|数据体检未通过|empty_store|请先刷新证券列表/i.test(unavailable.value),
 )
+
+watch(
+  () => route.query.tab,
+  (raw) => {
+    activeTab.value = parseTab(raw)
+  },
+)
+
+watch(activeTab, (tab) => {
+  const next = tab === 'engines' ? undefined : tab
+  if (parseTab(route.query.tab) === tab) return
+  void router.replace({ query: { ...route.query, tab: next } })
+  if (tab === 'jobs') void jobsTab.value?.load()
+})
 
 async function guard<T>(task: () => Promise<T>): Promise<T | null> {
   busy.value = true
@@ -108,41 +105,46 @@ async function guard<T>(task: () => Promise<T>): Promise<T | null> {
 
 async function reload(): Promise<void> {
   await guard(async () => {
-    const [list, cov] = await Promise.all([getStrategies(), getMarketCoverage()])
+    const [list, skillList, cov, jobList] = await Promise.all([
+      getStrategies(),
+      getSkills(),
+      getMarketCoverage(),
+      getJobs().catch(() => []),
+    ])
     strategies.value = list
+    skills.value = skillList
     coverage.value = cov
-    await loadUniverseMeta()
+    jobsEnabled.value = jobList.filter((j) => j.enabled).length
   })
 }
 
-async function previewPool(): Promise<void> {
-  await guard(() => runPreviewPool())
+function goScreen(kind: 'engine' | 'skill', slug: string): void {
+  void router.push({
+    path: '/screen-history',
+    query: { select: `${kind}:${slug}` },
+  })
 }
 
-async function screen(slug: string): Promise<void> {
-  backtestResult.value = null
-  const result = await guard(() => runScreen({ strategy: slug, universe: currentUniverse() }))
-  if (result) {
-    screenResult.value = result
-    activeTab.value = 'results'
-    ElMessage.success(`选股完成：${result.picks.length} 只 · ${result.trade_date}`)
+function goRecommendedSync(): void {
+  void router.push({ path: '/ops', query: { tab: 'system' }, hash: '#sys-sync' })
+}
+
+async function uninstallSkill(skill: Skill): Promise<void> {
+  if (
+    !(await confirmDangerous(
+      `确定卸载技能「${skill.name}」？选股台将不再列出它。`,
+      '卸载技能',
+      '卸载',
+    ))
+  ) {
+    return
   }
-}
-
-async function backtest(slug: string): Promise<void> {
-  screenResult.value = null
-  const result = await guard(() =>
-    runBacktest({
-      strategy: slug,
-      hold_days: 3,
-      stop_loss_pct: -6,
-      benchmark: '000300',
-      universe: currentUniverse(),
-    }),
-  )
-  if (result) {
-    backtestResult.value = result
-    activeTab.value = 'results'
+  try {
+    await removeSkill(skill.slug)
+    ElMessage.success(`已卸载 ${skill.name}`)
+    skills.value = skills.value.filter((row) => row.slug !== skill.slug)
+  } catch (caught: unknown) {
+    ElMessage.error(toErrorMessage(caught, '卸载失败'))
   }
 }
 
@@ -170,123 +172,87 @@ async function bootstrapMarket(): Promise<void> {
 }
 
 onMounted(() => {
-  restoreAnalysisResults()
   void reload()
 })
 </script>
 
 <template>
   <div class="page-fill">
-    <PageHeader
-      title="工坊"
-      :subtitle="
-        coverage
-          ? `${coverage.codes} 只 · ${coverage.first_date || '—'} ~ ${coverage.last_date || '—'}`
-          : undefined
-      "
+    <PageBusy overlay :busy="busy && !coverage && !strategies.length && !skills.length" />
+    <el-alert
+      v-if="unavailable"
+      :title="unavailable"
+      type="error"
+      show-icon
+      closable
+      class="mb"
+      @close="unavailable = ''"
     >
-      <el-button :disabled="busy" @click="reload">刷新</el-button>
-      <el-button type="primary" :loading="syncBusy" @click="bootstrapMarket">同步行情</el-button>
-    </PageHeader>
-
-    <div class="page-scroll quant-scroll quant-scroll--busy">
-      <PageBusy overlay :busy="busy && !coverage" />
-      <el-alert
-        v-if="unavailable"
-        :title="unavailable"
-        type="error"
-        show-icon
-        closable
-        class="mb"
-        @close="unavailable = ''"
-      >
-        <template v-if="needsBootstrap" #default>
-          <p class="hint">行情仓为空或过期时选股会被拒绝。先同步行情。</p>
-          <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket">同步行情</el-button>
-        </template>
-      </el-alert>
-
-      <el-alert
-        v-if="coverage && coverage.codes === 0"
-        type="warning"
-        show-icon
-        :closable="false"
-        class="mb"
-        title="行情仓为空：选股 / 回测都会失败"
-      >
+      <template v-if="needsBootstrap" #default>
+        <p class="hint">行情仓为空或过期时选股会被拒绝。先同步行情。</p>
         <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket">同步行情</el-button>
-      </el-alert>
+      </template>
+    </el-alert>
 
-      <section v-if="coverage" class="stat-strip cols-5" aria-label="行情仓">
-        <StatCard label="证券" :value="coverage.codes.toLocaleString('zh-CN')" />
-        <StatCard label="日线行数" :value="coverage.rows.toLocaleString('zh-CN')" />
-        <StatCard label="最新交易日" :value="coverage.last_date || '—'" />
-        <StatCard label="同步失败" :value="coverage.failed_codes" :tone="coverage.failed_codes ? 'down' : ''" />
-        <StatCard label="库体积" :value="`${(coverage.db_bytes / 1e6).toFixed(0)} MB`" />
-      </section>
+    <el-alert
+      v-if="coverage && coverage.codes === 0"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="mb"
+      title="行情仓为空：选股会失败"
+    >
+      <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket">同步行情</el-button>
+    </el-alert>
 
-      <QuantUniverseBar
-        v-model:universe-preset="universePreset"
-        v-model:universe-boards="universeBoards"
-        v-model:exclude-st="excludeSt"
-        :universe-presets="universePresets"
-        :universe-stats="universeStats"
-        :preview-count="previewCount"
-        :preview-funnel-text="previewFunnelText"
-        :busy="busy"
-        @apply-preset="applyPreset"
-        @boards-change="onBoardsChange"
-        @exclude-st-change="onExcludeStChange"
-        @preview-pool="previewPool"
-      />
+    <PageTabs v-model="activeTab" :items="workshopTabs" aria-label="工坊分区" />
 
-      <el-tabs v-model="activeTab" class="quant-tabs">
-        <el-tab-pane label="战法" name="strategies">
-          <QuantStrategiesPanel
-            :strategies="strategies"
-            @screen="screen"
-            @backtest="backtest"
-            @config="openConfig"
-          />
-        </el-tab-pane>
+    <div class="page-scroll workshop-scroll">
+      <div v-show="activeTab === 'engines'" class="page-pane">
+        <QuantStrategiesPanel
+          :strategies="strategies"
+          :loading="busy && !strategies.length"
+          @open-screen="goScreen('engine', $event)"
+        />
+      </div>
 
-        <el-tab-pane label="分析" name="analysis">
-          <QuantAnalysisPanel
-            :strategies="strategies"
-            :analysis-busy="analysisBusy"
-            :analysis-label="analysisLabel"
-            v-model:optimize-target="optimizeTarget"
-            v-model:analysis-start="analysisStart"
-            v-model:optimize-expanded="optimizeExpanded"
-            :compare-result="compareResult"
-            :optimize-result="optimizeResult"
-            :optimize-rows-shown="optimizeRowsShown"
-            @run-compare="runCompare"
-            @run-optimize="runOptimize"
-            @clear-analysis-results="clearAnalysisResults"
-          />
-        </el-tab-pane>
+      <div v-show="activeTab === 'skills'" class="page-pane">
+        <QuantSkillsPanel
+          :skills="skills"
+          :loading="busy && !skills.length"
+          @open-screen="goScreen('skill', $event)"
+          @remove="uninstallSkill"
+          @refresh="reload"
+        />
+      </div>
 
-        <el-tab-pane label="本次结果" name="results">
-          <QuantResultsPanel :screen-result="screenResult" :backtest-result="backtestResult" />
-        </el-tab-pane>
-      </el-tabs>
+      <div v-show="activeTab === 'sources'" class="page-pane sources-pane">
+        <DataSourcePanel
+          :initial-view="sourceView"
+          @count-changed="(count) => (sourceCount = count)"
+        />
+      </div>
+
+      <div v-show="activeTab === 'jobs'" class="page-pane jobs-pane">
+        <JobsTab
+          ref="jobsTab"
+          @enable-recommended-sync="goRecommendedSync"
+          @count-changed="(n) => (jobsEnabled = n)"
+        />
+      </div>
+
+      <div v-show="activeTab === 'market'" class="page-pane market-pane">
+        <MarketPanel embedded @catalog-changed="reload" />
+      </div>
+
+      <div v-show="activeTab === 'backtest'" class="page-pane backtest-pane">
+        <QuantBacktestPanel
+          :strategies="strategies"
+          :loading="busy && !strategies.length"
+        />
+      </div>
     </div>
   </div>
-
-  <QuantStrategyConfigDialog
-    v-model="configOpen"
-    :title="configTitle"
-    :config-target="configTarget"
-    :busy="busy"
-    :form="configForm"
-    :selected-provider-models="selectedProviderModels"
-    :llm-providers="llmProviders"
-    :strategy-jobs="strategyJobs"
-    @save="saveConfig"
-    @remove="removeConfig"
-    @closed="configTarget = ''"
-  />
 </template>
 
 <style scoped>
@@ -298,14 +264,24 @@ onMounted(() => {
   color: var(--muted);
   font-size: 0.88rem;
 }
-.quant-scroll {
-  padding-bottom: 0.5rem;
-}
-.quant-scroll--busy {
+.workshop-scroll {
+  padding-bottom: 0;
   position: relative;
-  min-height: 12rem;
+  min-height: 0;
 }
-.quant-tabs :deep(.el-tabs__header) {
-  margin-bottom: 0.55rem;
+.market-pane,
+.sources-pane,
+.jobs-pane,
+.backtest-pane {
+  padding: 0 0.35rem 0;
+}
+.jobs-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.jobs-pane :deep(.settings-panel) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 </style>

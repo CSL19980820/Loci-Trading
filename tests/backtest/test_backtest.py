@@ -119,6 +119,54 @@ class EntryTimingTests(unittest.TestCase):
         self.assertEqual(result.trades[0].signal_date, DATES[5])
         self.assertEqual(result.trades[0].entry_date, DATES[6])
 
+    def test_next_dip_uses_signal_day_limit_price_and_next_day_low(self) -> None:
+        """低吸价由 T 日确定，T+1 只负责判断是否触价。"""
+        panels = _flat_panels()
+        target = panels["close"] * 0.98
+        result = run_backtest(
+            _signal_on(5),
+            panels,
+            entry_timing="next_dip",
+            entry_price_panel=target,
+            config=BacktestConfig(
+                hold_days=1, stop_loss_pct=None, benchmark=None
+            ),
+        )
+        self.assertEqual(result.trades[0].entry_date, DATES[6])
+        self.assertAlmostEqual(result.trades[0].entry_price, 9.8)
+        self.assertEqual(result.trades[0].exit_date, DATES[7])
+
+    def test_next_dip_uses_open_when_next_day_opens_below_target(self) -> None:
+        panels = _flat_panels()
+        panels["open"].iloc[6, 0] = 9.6
+        panels["low"].iloc[6, 0] = 9.5
+        target = panels["close"] * 0.98
+        result = run_backtest(
+            _signal_on(5),
+            panels,
+            entry_timing="next_dip",
+            entry_price_panel=target,
+            config=BacktestConfig(
+                hold_days=1, stop_loss_pct=None, benchmark=None
+            ),
+        )
+        self.assertAlmostEqual(result.trades[0].entry_price, 9.6)
+
+    def test_next_dip_skips_when_next_day_never_touches_target(self) -> None:
+        panels = _flat_panels()
+        target = panels["close"] * 0.97
+        result = run_backtest(
+            _signal_on(5),
+            panels,
+            entry_timing="next_dip",
+            entry_price_panel=target,
+            config=BacktestConfig(
+                hold_days=1, stop_loss_pct=None, benchmark=None
+            ),
+        )
+        self.assertEqual(result.trades, [])
+        self.assertEqual(result.skipped["次日低吸未触价"], 1)
+
     def test_signal_at_the_very_end_has_no_entry_day(self) -> None:
         panels = _flat_panels()
         result = run_backtest(
@@ -220,12 +268,17 @@ class CostAndMetricTests(unittest.TestCase):
 
 class MetricsTests(unittest.TestCase):
     @staticmethod
-    def _trade(net: float, mfe: float = 5.0, mae: float = -3.0) -> Trade:
+    def _trade(
+        net: float,
+        mfe: float = 5.0,
+        mae: float = -3.0,
+        exit_reason: str = "hold_expired",
+    ) -> Trade:
         return Trade(
             code="600001", signal_date="2026-03-02", entry_date="2026-03-02",
             entry_price=10.0, exit_date="2026-03-05", exit_price=10.0, hold_days=3,
             gross_return_pct=net, net_return_pct=net, mae_pct=mae, mfe_pct=mfe,
-            exit_reason="hold_expired",
+            exit_reason=exit_reason,
         )
 
     def test_empty_input(self) -> None:
@@ -252,6 +305,16 @@ class MetricsTests(unittest.TestCase):
         metrics = compute_metrics([self._trade(2.0), self._trade(3.0)])
         self.assertEqual(metrics["profit_factor"], float("inf"))
         self.assertIsNone(metrics["avg_loss"])
+
+    def test_data_end_trades_are_excluded_from_performance_metrics(self) -> None:
+        metrics = compute_metrics(
+            [self._trade(2.0), self._trade(-20.0, exit_reason="data_end")]
+        )
+        self.assertEqual(metrics["trades"], 1)
+        self.assertEqual(metrics["data_end_trades"], 1)
+        self.assertEqual(metrics["wins"], 1)
+        self.assertAlmostEqual(metrics["avg_net_return"], 2.0)
+        self.assertNotIn("data_end", metrics["exit_reasons"])
 
 
 class SeparationOfConcernsTests(unittest.TestCase):

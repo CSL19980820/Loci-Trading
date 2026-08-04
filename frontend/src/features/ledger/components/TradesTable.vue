@@ -18,6 +18,12 @@ withDefaults(
 const emit = defineEmits<{
   'row-click': [row: TradeRecord]
 }>()
+
+function displayCost(row: TradeRecord): string {
+  const value = row.action === 'SELL' ? row.cost_before : row.cost_after
+  if (!value) return '—'
+  return value.toFixed(3)
+}
 </script>
 
 <template>
@@ -52,7 +58,10 @@ const emit = defineEmits<{
       <template #default="{ row }">{{ row.shares_after.toLocaleString('zh-CN') }}</template>
     </el-table-column>
     <el-table-column label="成本" align="right" width="90">
-      <template #default="{ row }">{{ row.cost_after ? row.cost_after.toFixed(3) : '—' }}</template>
+      <template #default="{ row }">
+        <!-- 卖出看卖出前成本；买/开仓看成交后成本。清仓 cost_after=0 勿显示成「无成本」。 -->
+        <span>{{ displayCost(row) }}</span>
+      </template>
     </el-table-column>
     <el-table-column label="已实现" align="right" width="110">
       <template #default="{ row }">

@@ -7,7 +7,7 @@ from typing import Any
 from src.ai.application.agent import format_tool_trace, messages_from_json, run_agent
 from src.ai.application.multi_agent import format_subagent_briefs, run_ammo_agents
 from src.ai.application.toolbus import build_toolbus
-from src.ops import skill_runs
+from src.ops import OpsError, skill_runs
 from src.ops.application.jobs import JobContext, JobError, _compose_prompt, _gather_context, skill_system_prefix
 
 logger = logging.getLogger(__name__)
@@ -44,13 +44,10 @@ def reply_skill_run(
     state = skill_runs.load_run(run_id)
     if state is None:
         raise JobError(f"找不到 run：{run_id}")
-    if state.get("status") != "waiting_user":
-        raise JobError(f"run 状态不是 waiting_user：{state.get('status')}")
-
-    skill_runs.append_event(run_id, {"type": "user_reply", "text": str(reply)[:500]})
-    state["status"] = "running"
-    state["pending_ask"] = {}
-    skill_runs.save_run(state)
+    claimed = skill_runs.claim_user_reply(run_id, reply)
+    if claimed is None:
+        current = skill_runs.load_run(run_id) or state
+        raise JobError(f"run 状态不是 waiting_user：{current.get('status')}")
 
     return drive_skill_run(
         run_id,
@@ -76,27 +73,28 @@ def drive_skill_run(
     state = skill_runs.load_run(run_id)
     if state is None:
         raise JobError(f"找不到 run：{run_id}")
-    if context.ops_store is None:
-        raise JobError("缺少运维库连接")
-
-    skill = resolve_skill(str(state["skill"]))
-    if skill is None:
-        raise JobError(f"未安装的技能：{state['skill']}")
-    if not skill.get("enabled", True):
-        raise JobError(f"技能 {state['skill']} 已停用")
-
-    cfg = dict(state.get("config") or {})
-    provider = resolve_config(
-        context.ops_store,
-        str(state["provider"]),
-        model=str(cfg.get("model") or ""),
-        master_key=context.master_key,
-    )
-
-    def on_event(event: dict[str, Any]) -> None:
-        skill_runs.append_event(run_id, event)
 
     try:
+        if context.ops_store is None:
+            raise JobError("缺少运维库连接")
+
+        skill = resolve_skill(str(state["skill"]))
+        if skill is None:
+            raise JobError(f"未安装的技能：{state['skill']}")
+        if not skill.get("enabled", True):
+            raise JobError(f"技能 {state['skill']} 已停用")
+
+        cfg = dict(state.get("config") or {})
+        provider = resolve_config(
+            context.ops_store,
+            str(state["provider"]),
+            model=str(cfg.get("model") or ""),
+            master_key=context.master_key,
+        )
+
+        def on_event(event: dict[str, Any]) -> None:
+            skill_runs.append_event(run_id, event)
+
         return _drive(
             state=state,
             skill=skill,
@@ -116,6 +114,8 @@ def drive_skill_run(
         state["error"] = str(exc)
         skill_runs.save_run(state)
         skill_runs.append_event(run_id, {"type": "error", "message": str(exc)})
+        if isinstance(exc, OpsError):
+            raise JobError(str(exc)) from exc
         raise
 
 

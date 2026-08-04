@@ -148,7 +148,7 @@ def audit_source(code: str, *, entry_timing: str, strategy: str = "") -> AuditRe
         return report
 
     if entry_timing != "open":
-        # next_open / close 用当日数据是合法的，静态层无话可说。
+        # next_open / next_dip / close 用当日数据是合法的，静态层无话可说。
         return report
 
     visitor = _IntradayVisitor()
@@ -162,7 +162,7 @@ def audit_source(code: str, *, entry_timing: str, strategy: str = "") -> AuditRe
                 "warn",
                 f"入场时点为 open（9:25 竞价）但直接使用了当日 {', '.join(fields)}——"
                 "集合竞价结束时这些数据尚未产生。若确实需要，应改用 "
-                "REF(字段, 1) 取昨日值，或把 entry_timing 改成 next_open",
+                "REF(字段, 1) 取昨日值，或把 entry_timing 改成 next_open/next_dip",
                 detail=detail,
             )
         )

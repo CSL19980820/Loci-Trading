@@ -5,6 +5,7 @@
 from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
 from hmac import compare_digest
+from ipaddress import ip_address
 from pathlib import Path
 import logging
 import os
@@ -22,6 +23,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from src.ledger import PalaceError, PalaceStore
 from src.ledger.api.router import build_ledger_router
 from src.shared.paths import PROJECT_ROOT, ensure_data_dir, palace_db
+from src.shared.webview_cache import purge_webview_http_cache_on_boot
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,60 @@ def _split_hosts(raw: str) -> list[str]:
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_loopback_client(request: Request) -> bool:
+    """首启豁免只给直接本机请求；经代理转发的一律要求认证。"""
+    if request.headers.get("forwarded") or request.headers.get("x-forwarded-for"):
+        return False
+    host = request.client.host if request.client else ""
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return host.lower() == "localhost"
+
+
+def _spawn_eod_catchup(
+    *,
+    ops_db: str | None,
+    market_db: str | None,
+    context_factory: Any,
+) -> None:
+    """后台补跑错过的盘后定点任务（不阻塞 API 启动）。"""
+    import threading
+
+    def _worker() -> None:
+        try:
+            from src.market import MarketStore
+            from src.market.application.session import build_session_status
+            from src.ops import OpsStore
+            from src.ops.application.eod_catchup import run_eod_catchup
+
+            with MarketStore(market_db) as market:
+                session = build_session_status(
+                    coverage=market.coverage(),
+                    trading_days=market.trading_days(),
+                )
+            last_day = str(session.get("last_trading_day") or "").strip()
+            if not last_day:
+                return
+            result = run_eod_catchup(
+                ops_store_factory=lambda: OpsStore(ops_db),
+                context_factory=context_factory,
+                last_trading_day=last_day,
+            )
+            if result.get("ran") or result.get("errors"):
+                logger.info(
+                    "盘后补跑 @%s：due=%s ran=%s errors=%s",
+                    last_day,
+                    result.get("due"),
+                    result.get("ran"),
+                    result.get("errors"),
+                )
+        except Exception as exc:  # noqa: BLE001 — 补跑失败不拖垮服务
+            logger.warning("盘后补跑跳过：%s", exc)
+
+    threading.Thread(target=_worker, name="eod-catchup", daemon=True).start()
 
 
 class LoginThrottle:
@@ -112,6 +168,23 @@ def create_app(
 ) -> FastAPI:
     """创建可测试的 FastAPI 实例；每个请求独立持有 SQLite 连接。"""
     ensure_data_dir()
+    try:
+        from src.ai import ensure_local_master_key
+
+        ensure_local_master_key()
+    except Exception:
+        logger.exception("本机 AI 主密钥准备失败（已忽略；保存 API Key 时仍会报错）")
+    try:
+        from src.app.screen_skills import refresh_screen_strategy_catalog
+
+        refresh_screen_strategy_catalog()
+    except Exception:
+        logger.exception("刷新 Screen Skill 战法目录失败（已忽略）")
+    # 打包桌面：uvicorn 拉起 app 时清 WebView HTTP 缓存（早于 load_url）
+    try:
+        purge_webview_http_cache_on_boot()
+    except Exception:
+        logger.exception("启动时清理 WebView 缓存失败（已忽略）")
     resolved_db = Path(db_path or os.environ.get("PALACE_DB") or DEFAULT_DB)
     runtime_environment = (environment or os.environ.get("PALACE_ENV") or "local").strip().lower()
     is_production = runtime_environment == "production"
@@ -143,14 +216,47 @@ def create_app(
     # 调度器实例存在这里，供关闭钩子与 /api/jobs/schedule 取用。
     scheduler_box: dict[str, Any] = {"instance": None}
 
+    def reload_scheduler() -> None:
+        scheduler = scheduler_box.get("instance")
+        if scheduler is not None:
+            scheduler.reload()
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         """进程内定时调度的启停。
 
-        显式开关而非默认开启：本地开发、跑测试、执行一次性脚本时都会创建
-        app，不该顺手把定时任务也跑起来——半夜多份重复的行情同步就是这么
-        来的。生产环境在 compose 里设 PALACE_ENABLE_SCHEDULER=1。
+        由入口显式开启（``loci.py`` / ``cli.serve`` 会 ``setdefault`` 为 1）；
+        pytest 与一次性脚本不设该变量，避免半夜多份重复同步。生产 compose
+        也可设 ``PALACE_ENABLE_SCHEDULER=1``。
         """
+        def _ensure_managed_jobs() -> None:
+            from src.ops import OpsStore
+
+            with OpsStore(os.environ.get("PALACE_OPS_DB") or None) as ops:
+                ops.ensure_managed_outcome_job()
+                try:
+                    sync_plan = ops.ensure_managed_market_sync_jobs()
+                    logger.info(
+                        "托管行情同步已确保：盘中=%s 日终=%s（新建 %s / 更新 %s）",
+                        sync_plan.get("enabled_intraday"),
+                        sync_plan.get("enabled_eod"),
+                        sync_plan.get("created"),
+                        sync_plan.get("updated"),
+                    )
+                except Exception as sync_exc:  # noqa: BLE001
+                    logger.warning("托管行情同步确保失败：%s", sync_exc)
+                try:
+                    screen_plan = ops.ensure_managed_screen_jobs()
+                    logger.info(
+                        "托管盘后选股已确保：%s 个战法 @%s（新建 %s / 更新 %s）",
+                        screen_plan.get("total"),
+                        screen_plan.get("cron"),
+                        screen_plan.get("created"),
+                        screen_plan.get("updated"),
+                    )
+                except Exception as screen_exc:  # noqa: BLE001
+                    logger.warning("托管盘后选股确保失败：%s", screen_exc)
+
         if _env_flag("PALACE_ENABLE_SCHEDULER"):
             try:
                 from src.ops import JobContext
@@ -163,14 +269,29 @@ def create_app(
                 )
                 scheduler.start()
                 scheduler_box["instance"] = scheduler
+                try:
+                    _ensure_managed_jobs()
+                except Exception as exc:  # noqa: BLE001 — 启动期兜底，不挡调度器
+                    logger.warning("托管任务确保失败：%s", exc)
                 plan = scheduler.reload()
                 logger.info("调度器已启动，装载 %s 个任务", plan["count"])
                 for rejected in plan["rejected"]:
                     logger.error(
                         "任务 %s 的 cron 非法：%s", rejected["name"], rejected["reason"]
                     )
+                _spawn_eod_catchup(
+                    ops_db=os.environ.get("PALACE_OPS_DB") or None,
+                    market_db=market_db,
+                    context_factory=lambda: JobContext(market_db=market_db),
+                )
             except ImportError as exc:
                 logger.warning("调度器依赖缺失（%s），定时任务未启动", exc.name)
+        else:
+            # 未开调度器时仍写入托管绑定，避免桌面端首次只开 API 时任务表为空
+            try:
+                _ensure_managed_jobs()
+            except Exception as jobs_exc:  # noqa: BLE001
+                logger.debug("托管任务预写跳过：%s", jobs_exc)
         try:
             yield
         finally:
@@ -240,6 +361,20 @@ def create_app(
         return response
 
     @app.middleware("http")
+    async def spa_cache_control(request: Request, call_next: Any) -> Any:
+        """index/路由壳禁止缓存；带 hash 的 /assets 可长期缓存。"""
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/api/"):
+            return response
+        if path.startswith("/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
+    @app.middleware("http")
     async def require_authenticated_access(request: Request, call_next: Any) -> Any:
         """线上仅开放登录页、健康检查及 Agent API；工作台路由需浏览器会话。"""
         if not is_production:
@@ -251,10 +386,16 @@ def create_app(
             "/api/auth/login",
             "/api/auth/logout",
             "/api/auth/session",
-            "/api/ops/data-location",
         }
         if path.startswith("/api/"):
-            if path not in public_api_paths and not (
+            is_public_api = path in public_api_paths
+            if path == "/api/ops/data-location":
+                # 首次向导需要在登录前读取并选择数据目录；配置完成后该响应
+                # 含本机安装、配置及数据库路径。仅本机首启可匿名，远端仍须认证。
+                from src.shared.paths import needs_setup
+
+                is_public_api = needs_setup() and _is_loopback_client(request)
+            if not is_public_api and not (
                 has_browser_session(request) or has_agent_token(request)
             ):
                 return JSONResponse(
@@ -298,11 +439,17 @@ def create_app(
         _: Request, exc: sqlite3.DatabaseError
     ) -> JSONResponse:
         logger.exception("sqlite database error: %s", exc)
-        return JSONResponse(status_code=503, content={"detail": "账本暂时不可用，请稍后重试"})
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "账本繁忙或文件被占用，请稍后重试"},
+        )
 
     @app.get("/api/health", tags=["system"])
     def health() -> dict[str, str]:
-        return {"status": "ok", "db": str(resolved_db)}
+        payload = {"status": "ok"}
+        if not is_production:
+            payload["db"] = str(resolved_db)
+        return payload
 
     def _throttle_key(request: Request) -> str:
         """限流按来源 IP 计。uvicorn 以 --proxy-headers 启动，
@@ -353,6 +500,7 @@ def create_app(
         build_ledger_router(
             write_dependency=require_write_access,
             get_store=get_store,
+            market_db=os.environ.get("PALACE_MARKET_DB") or None,
         )
     )
 
@@ -369,6 +517,20 @@ def create_app(
             ops_db=os.environ.get("PALACE_OPS_DB") or None,
             palace_db=str(resolved_db),
             scheduler_getter=lambda: scheduler_box["instance"],
+            setup_access_allowed=_is_loopback_client,
+        )
+    )
+
+    # 全局助手独立挂载：会话与后台运行使用 ops.db，业务工具仍只经各域公开 API。
+    from src.ai.api.assistant import build_assistant_router
+
+    app.include_router(
+        build_assistant_router(
+            write_dependency=require_write_access,
+            ops_db=os.environ.get("PALACE_OPS_DB") or None,
+            palace_db=str(resolved_db),
+            market_db=os.environ.get("PALACE_MARKET_DB") or None,
+            scheduler_reloader=reload_scheduler,
         )
     )
 
@@ -387,7 +549,13 @@ def create_app(
             requested = (resolved_dist / frontend_path).resolve()
             if frontend_path and requested.is_relative_to(resolved_dist) and requested.is_file():
                 return FileResponse(requested)
-            return FileResponse(resolved_dist / "index.html")
+            return FileResponse(
+                resolved_dist / "index.html",
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate",
+                    "Pragma": "no-cache",
+                },
+            )
     return app
 
 

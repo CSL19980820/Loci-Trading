@@ -6,7 +6,7 @@ import { ref, shallowRef } from 'vue'
 
 import { computeChartPrep, type ChartPrepInput, type ChartPrepResult } from './chartPrep'
 import type { IndicatorsWorkerApi } from './indicators.worker'
-import type { KPeriod, OhlcBar } from './indicators'
+import { resampleBars, type KPeriod, type OhlcBar } from './indicators'
 
 let remote: Remote<IndicatorsWorkerApi> | null = null
 let bootFailed = false
@@ -38,14 +38,10 @@ export async function prepChartOffthread(input: ChartPrepInput): Promise<ChartPr
 
 export async function resampleOffthread(bars: OhlcBar[], period: KPeriod): Promise<OhlcBar[]> {
   const api = await getApi()
-  if (!api) {
-    const { resampleBars } = await import('./indicators')
-    return resampleBars(bars, period)
-  }
+  if (!api) return resampleBars(bars, period)
   try {
     return await api.resampleBars(bars, period)
   } catch {
-    const { resampleBars } = await import('./indicators')
     return resampleBars(bars, period)
   }
 }

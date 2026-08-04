@@ -73,16 +73,24 @@ class MarketAdapter(ABC):
         raise AdapterError(f"{self.meta.id} 不支持 adjust_factor")
 
     def fetch_minute(
-        self, code: str, *, period: str = "1", days: int = 1
+        self,
+        code: str,
+        *,
+        period: str = "1",
+        days: int = 1,
+        trade_date: str | None = None,
     ) -> pd.DataFrame:
-        """分钟 K 线。默认不支持。"""
+        """分钟 K 线。默认不支持。
+
+        ``trade_date`` 为 ``YYYY-MM-DD`` 时只取该交易日（实时拉取，不落库）。
+        """
         raise AdapterError(f"{self.meta.id} 不支持 minute_bars")
 
     def fetch_capital_flow(self, code: str) -> pd.DataFrame:
         """个股资金流。默认不支持。"""
         raise AdapterError(f"{self.meta.id} 不支持 capital_flow")
 
-    def probe(self, lane: str) -> ProbeResult:
+    def probe(self, lane: str, *, code: str = "600519") -> ProbeResult:
         """连通探测：小样本取数 + RTT。
 
         子类可覆盖；默认按 lane 调对应 stub / fetch_daily。
@@ -109,11 +117,11 @@ class MarketAdapter(ABC):
         try:
             rows: int | None = None
             if lane == LANE_HIST_DAILY:
-                frame = self.fetch_daily("600519")
+                frame = self.fetch_daily(code)
                 self._assert_daily_shape(frame)
                 rows = int(len(frame))
             elif lane == LANE_SPOT_BATCH:
-                frame = self.fetch_spot_sample(["600519"])
+                frame = self.fetch_spot_sample([code])
                 rows = int(len(frame)) if frame is not None else 0
             elif lane == LANE_INSTRUMENTS:
                 frame = self.fetch_instruments()
@@ -121,17 +129,17 @@ class MarketAdapter(ABC):
                 if rows == 0:
                     raise AdapterError("证券列表为空")
             elif lane == LANE_ADJUST_FACTOR:
-                frame = self.fetch_adjust_factors("600519")
+                frame = self.fetch_adjust_factors(code)
                 rows = int(len(frame)) if frame is not None else 0
                 if rows == 0:
                     raise AdapterError("复权因子为空")
             elif lane == LANE_MINUTE:
-                frame = self.fetch_minute("600519", period="1", days=1)
+                frame = self.fetch_minute(code, period="1", days=1)
                 rows = int(len(frame)) if frame is not None else 0
                 if rows == 0:
                     raise AdapterError("分钟线为空")
             elif lane == LANE_CAPITAL_FLOW:
-                frame = self.fetch_capital_flow("600519")
+                frame = self.fetch_capital_flow(code)
                 rows = int(len(frame)) if frame is not None else 0
                 if rows == 0:
                     raise AdapterError("资金流为空")
@@ -176,4 +184,5 @@ class MarketAdapter(ABC):
             "label": self.meta.label,
             "lanes": list(self.meta.lanes),
             "description": self.meta.description,
+            "base_url": self.meta.base_url,
         }

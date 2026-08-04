@@ -5,13 +5,23 @@ import type {
   JobKind,
   JobRun,
   LanesCatalog,
+  LanePolicy,
+  LanePolicyPayload,
   LaneProbeResponse,
   LaneSpeedTestResponse,
+  AkshareCatalog,
+  AkshareCatalogProbeResult,
+  AkshareCatalogSource,
+  AkshareBatchProbeResult,
+  AkshareVersionInfo,
+  LlmModel,
   LlmProvider,
   MarketSyncSettings,
   McpServer,
   ScheduleStatus,
   Skill,
+  SkillJob,
+  SkillJobConfig,
   WecomSettings,
 } from '@/shared/types/quant'
 
@@ -32,6 +42,21 @@ export function installSkill(file: File): Promise<Skill> {
 
 export function removeSkill(slug: string): Promise<{ removed: boolean }> {
   return quantRequest(`/skills/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+}
+
+export function getSkillJob(slug: string): Promise<SkillJob> {
+  return quantRequest<SkillJob>(`/skills/${encodeURIComponent(slug)}/job`)
+}
+
+export function upsertSkillJob(slug: string, payload: SkillJobConfig): Promise<SkillJob> {
+  return quantRequest<SkillJob>(`/skills/${encodeURIComponent(slug)}/job`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function unbindSkillJob(slug: string): Promise<{ removed: boolean }> {
+  return quantRequest(`/skills/${encodeURIComponent(slug)}/job`, { method: 'DELETE' })
 }
 
 export interface SkillRunAsk {
@@ -142,10 +167,17 @@ export function runJob(id: string): Promise<{ run_id: string; status: string; er
   return quantRequest(`/jobs/${encodeURIComponent(id)}/run`, { method: 'POST' })
 }
 
-export function getJobRuns(options: { job_id?: string; status?: string; limit?: number } = {}): Promise<
+export function getJobRuns(options: { job_id?: string; run_id?: string; status?: string; limit?: number } = {}): Promise<
   JobRun[]
 > {
   return quantRequest<JobRun[]>(`/jobs/runs${query(options)}`)
+}
+
+export function batchDeleteJobRuns(ids: string[]): Promise<{ removed: number }> {
+  return quantRequest('/jobs/runs/batch-delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  })
 }
 
 export function getScheduleStatus(): Promise<ScheduleStatus> {
@@ -156,10 +188,13 @@ export function getWecomSettings(): Promise<WecomSettings> {
   return quantRequest('/ops/settings/wecom')
 }
 
-export function saveWecomSettings(url: string): Promise<WecomSettings> {
+export function saveWecomSettings(payload: {
+  url?: string | null
+  screen_template?: WecomSettings['screen_template']
+}): Promise<WecomSettings> {
   return quantRequest('/ops/settings/wecom', {
     method: 'PUT',
-    body: JSON.stringify({ url }),
+    body: JSON.stringify(payload),
   })
 }
 
@@ -226,6 +261,21 @@ export function createDesktopShortcut(): Promise<{
   return quantRequest('/ops/desktop-shortcut', { method: 'POST' })
 }
 
+export type DesktopPrefs = {
+  minimize_to_tray: boolean
+}
+
+export function getDesktopPrefs(): Promise<DesktopPrefs> {
+  return quantRequest('/ops/desktop-prefs')
+}
+
+export function saveDesktopPrefs(payload: Partial<DesktopPrefs>): Promise<DesktopPrefs> {
+  return quantRequest('/ops/desktop-prefs', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function fetchLanesCatalog(): Promise<LanesCatalog> {
   return quantRequest<LanesCatalog>('/ops/lanes')
 }
@@ -233,33 +283,95 @@ export function fetchLanesCatalog(): Promise<LanesCatalog> {
 export function probeLanes(
   lane?: string | null,
   adapterId?: string | null,
+  options: { code?: string; runs?: 1 | 2 | 3 } = {},
 ): Promise<LaneProbeResponse> {
+  const payload: { lane: string | null; code?: string; runs?: 1 | 2 | 3; adapter_id?: string } = {
+    lane: lane ?? null,
+    code: options.code,
+    runs: options.runs,
+  }
+  if (adapterId) payload.adapter_id = adapterId
   return quantRequest<LaneProbeResponse>('/ops/lanes/probe', {
     method: 'POST',
-    body: JSON.stringify({
-      lane: lane ?? null,
-      adapter_id: adapterId ?? null,
-    }),
+    body: JSON.stringify(payload),
   })
 }
 
 export function speedtestLane(
   lane: string,
   code = '600519',
+  runs?: 1 | 2 | 3,
 ): Promise<LaneSpeedTestResponse> {
   return quantRequest<LaneSpeedTestResponse>('/ops/lanes/speedtest', {
     method: 'POST',
-    body: JSON.stringify({ lane, code }),
+    body: JSON.stringify({ lane, code, runs }),
   })
 }
 
+export function saveLanePolicy(lane: string, payload: LanePolicyPayload): Promise<LanePolicy> {
+  return quantRequest(`/ops/lanes/${encodeURIComponent(lane)}/policy`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getAkshareCatalog(
+  filters: { q?: string; category?: string; source?: string } = {},
+): Promise<AkshareCatalog> {
+  const query = new URLSearchParams()
+  if (filters.q) query.set('q', filters.q)
+  if (filters.category) query.set('category', filters.category)
+  if (filters.source) query.set('source', filters.source)
+  const search = query.toString()
+  const suffix = search ? `?${search}` : ''
+  return quantRequest<AkshareCatalog>(`/market/akshare/catalog${suffix}`)
+}
+
+/** 只要每个来源挂了多少接口。整份目录几千条，货架列表不该为一个数字全量拉。 */
+export function getAkshareSources(): Promise<{
+  sources: AkshareCatalogSource[]
+  total?: number
+  akshare_version?: string
+}> {
+  return quantRequest('/market/akshare/sources')
+}
+
+export function getAkshareVersion(fetchLatest = true): Promise<AkshareVersionInfo> {
+  const suffix = fetchLatest ? '' : '?fetch_latest=false'
+  return quantRequest(`/market/akshare/version${suffix}`)
+}
+
+export function probeAkshareCatalog(
+  name: string,
+  params: Record<string, unknown>,
+): Promise<AkshareCatalogProbeResult> {
+  return quantRequest(`/market/akshare/catalog/${encodeURIComponent(name)}/probe`, {
+    method: 'POST',
+    body: JSON.stringify({ params }),
+  })
+}
+
+/** 一键/分页批量探测；不传 names 则按目录全量续跑。 */
+export function probeAkshareCatalogBatch(payload: {
+  names?: string[]
+  offset?: number
+  limit?: number
+}): Promise<AkshareBatchProbeResult> {
+  return quantRequest('/market/akshare/catalog/probe-batch', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** 不传 lane 改源总开关；传 lane 只改这家在该线路上的单个工具。 */
 export function patchLaneProvider(
   providerId: string,
   enabled: boolean,
-): Promise<{ id: string; label: string; enabled: boolean }> {
+  lane?: string,
+): Promise<{ id: string; label: string; enabled: boolean; disabled_lanes?: string[] }> {
   return quantRequest(`/ops/lanes/providers/${encodeURIComponent(providerId)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(lane ? { enabled, lane } : { enabled }),
   })
 }
 
@@ -291,8 +403,25 @@ export function setDefaultProvider(name: string): Promise<LlmProvider> {
   })
 }
 
-export function refreshProviderModels(name: string): Promise<{ models: string[]; count: number }> {
+export function refreshProviderModels(name: string): Promise<{
+  models: string[]
+  model_catalog: LlmModel[]
+  count: number
+}> {
   return quantRequest(`/providers/${encodeURIComponent(name)}/models`, { method: 'POST' })
+}
+
+export function updateProviderModels(
+  name: string,
+  payload: {
+    models: LlmModel[]
+    default_model?: string | null
+  },
+): Promise<LlmProvider> {
+  return quantRequest<LlmProvider>(`/providers/${encodeURIComponent(name)}/models`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
 }
 
 export function testProvider(name: string): Promise<{
@@ -317,7 +446,6 @@ export function saveMcpServer(payload: {
   name: string
   url: string
   token?: string
-  proxy_url?: string
   note?: string
   verify?: boolean
 }): Promise<McpServer> {
@@ -326,6 +454,25 @@ export function saveMcpServer(payload: {
 
 export function refreshMcpTools(name: string): Promise<{ tools: unknown[]; count: number }> {
   return quantRequest(`/mcp/${encodeURIComponent(name)}/refresh`, { method: 'POST' })
+}
+
+export type McpProbeResult = {
+  ok: boolean
+  scope: 'server'
+  rtt_ms: number
+  error?: string
+  tools_updated?: number
+  tool_count?: number
+  server_name?: string
+  server_version?: string
+  protocol_version?: string
+  sample_tools?: string[]
+}
+
+export function probeMcpServer(name: string): Promise<McpProbeResult> {
+  return quantRequest(`/mcp/${encodeURIComponent(name)}/probe`, {
+    method: 'POST',
+  })
 }
 
 export function toggleMcpServer(name: string, is_active: boolean): Promise<McpServer> {

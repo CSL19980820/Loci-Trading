@@ -22,3 +22,5 @@ app (组合根)
 | ai / intel | 配置/对话 | 产出权威数字 |
 
 产品名仍为 Loci / 潜龙记忆宫殿；代码包名 ledger 表示账本限界上下文。
+
+数据源路由的归属：`market` 负责 adapter 注册、同类 lane 路由与 AkShare 运行时能力目录；`ops` 只提供设置/测速 HTTP 工作台。用户的 lane 偏好写本机配置、由 market 在每次路由时读取，不能把测速结果或临时粘性写成行情/账本事实。AkShare 目录与单项试跑是按需能力检查，只有经 adapter 契约接入的字段才进入同步和 `market.db`。

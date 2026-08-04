@@ -5,7 +5,6 @@ import {
   Cpu,
   DataAnalysis,
   DataBoard,
-  Document,
   EditPen,
   Expand,
   Fold,
@@ -54,11 +53,11 @@ const navGroups: NavGroup[] = [
     label: '日常',
     icon: Collection,
     items: [
-      { path: '/', label: '总览', icon: Odometer },
-      { path: '/journal', label: '交割', icon: Notebook },
+      { path: '/', label: '盘面', icon: Odometer },
+      { path: '/ledger', label: '账本', icon: Notebook },
+      { path: '/journal', label: '交割', icon: EditPen },
       { path: '/pool', label: '候选池', icon: Opportunity },
       { path: '/reviews', label: '绩效', icon: Stamp },
-      { path: '/reviews/records', label: '手记', icon: Document },
       { path: '/winrate', label: '胜率', icon: TrendCharts },
     ],
   },
@@ -96,9 +95,6 @@ const openeds = computed(() => navGroups.map((g) => g.id))
 
 const active = computed(() => {
   if (route.path.startsWith('/archive')) return route.path
-  if (route.path === '/reviews/records' || route.path.startsWith('/reviews/records/')) {
-    return '/reviews/records'
-  }
   if (route.path.startsWith('/reviews')) return '/reviews'
   return route.path
 })
@@ -173,10 +169,10 @@ async function onHelpCommand(cmd: string): Promise<void> {
       <div v-if="!collapsed" class="tool-rail-label">工具</div>
 
       <el-dropdown trigger="click" class="tool-dropdown" @command="onRecord">
-        <button type="button" class="tool-row" :title="collapsed ? '记一笔' : undefined">
+        <el-button text class="tool-row" :title="collapsed ? '记一笔' : undefined">
           <el-icon><EditPen /></el-icon>
           <span v-if="!collapsed" class="tool-row-label">记一笔</span>
-        </button>
+        </el-button>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item
@@ -191,10 +187,10 @@ async function onHelpCommand(cmd: string): Promise<void> {
       </el-dropdown>
 
       <el-dropdown trigger="click" class="tool-dropdown" @command="onHelpCommand">
-        <button type="button" class="tool-row" :title="collapsed ? '帮助' : undefined">
+        <el-button text class="tool-row" :title="collapsed ? '帮助' : undefined">
           <el-icon><QuestionFilled /></el-icon>
           <span v-if="!collapsed" class="tool-row-label">帮助</span>
-        </button>
+        </el-button>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="shortcut">创建桌面快捷方式</el-dropdown-item>
@@ -204,18 +200,18 @@ async function onHelpCommand(cmd: string): Promise<void> {
         </template>
       </el-dropdown>
 
-      <button
-        type="button"
+      <el-button
+        text
         class="tool-row"
         :title="collapsed ? '主题' : undefined"
         @click="openTheme"
       >
         <el-icon><Brush /></el-icon>
         <span v-if="!collapsed" class="tool-row-label">主题</span>
-      </button>
+      </el-button>
 
-      <button
-        type="button"
+      <el-button
+        text
         class="tool-row"
         :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
         :title="collapsed ? '展开' : '收起侧栏'"
@@ -226,7 +222,7 @@ async function onHelpCommand(cmd: string): Promise<void> {
           <Fold v-else />
         </el-icon>
         <span v-if="!collapsed" class="tool-row-label">收起侧栏</span>
-      </button>
+      </el-button>
     </div>
   </aside>
 
@@ -389,7 +385,9 @@ async function onHelpCommand(cmd: string): Promise<void> {
 .side-menu :deep(.el-menu-item.is-active) {
   background: var(--seal-soft) !important;
   color: var(--seal-ink) !important;
-  box-shadow: inset 3px 0 0 var(--seal);
+  /* 选中只靠底色，不要左侧竖线 */
+  box-shadow: none !important;
+  border-left: 0 !important;
 }
 
 .tool-rail {
@@ -427,13 +425,14 @@ async function onHelpCommand(cmd: string): Promise<void> {
   width: auto;
 }
 
-.tool-row {
+.tool-row.el-button {
   box-sizing: border-box;
   width: 100%;
   height: 2.125rem;
   margin: 0;
   padding: 0 0.65rem;
-  display: flex;
+  display: inline-flex;
+  justify-content: flex-start;
   align-items: center;
   gap: 0.5rem;
   border: 0;
@@ -442,17 +441,18 @@ async function onHelpCommand(cmd: string): Promise<void> {
   color: var(--mist);
   font: inherit;
   font-size: 0.82rem;
-  cursor: pointer;
+  font-weight: 500;
   text-align: left;
 }
 
-.tool-rail--collapsed .tool-row {
+.tool-rail--collapsed .tool-row.el-button {
   width: 2.25rem;
   padding: 0;
   justify-content: center;
 }
 
-.tool-row:hover {
+.tool-row.el-button:hover,
+.tool-row.el-button:focus {
   color: var(--ink);
   background: var(--panel-2);
 }
@@ -460,6 +460,7 @@ async function onHelpCommand(cmd: string): Promise<void> {
 .tool-row .el-icon {
   font-size: 1rem;
   flex-shrink: 0;
+  margin: 0;
 }
 
 .tool-row-label {
@@ -534,7 +535,7 @@ async function onHelpCommand(cmd: string): Promise<void> {
 .side-menu-popup .el-menu--popup .el-menu-item.is-active {
   background: var(--seal-soft) !important;
   color: var(--seal-ink) !important;
-  box-shadow: inset 3px 0 0 var(--seal);
+  box-shadow: none !important;
   font-weight: 550;
 }
 

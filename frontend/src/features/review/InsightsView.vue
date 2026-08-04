@@ -1,333 +1,421 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 
-import { auditStrategy, getDecay, getMarketHealth, getOverlap, getStrategies } from '@/shared/api/quant'
+import HealthCheckList from '@/features/review/components/HealthCheckList.vue'
+import HealthScanProgress from '@/features/review/components/HealthScanProgress.vue'
+import HealthSealDial from '@/features/review/components/HealthSealDial.vue'
+import {
+  useHealthCheckup,
+  type HealthCheckRow,
+} from '@/features/review/composables/useHealthCheckup'
+import { getOverlap } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import Sheet from '@/shared/components/layout/Sheet.vue'
+import { toErrorMessage } from '@/shared/lib/errors'
+import { RefreshRight } from '@element-plus/icons-vue'
 
-const activeTab = ref('health')
-const busy = ref(false)
-const error = ref('')
-const health = ref<Record<string, any> | null>(null)
-const decay = ref<Record<string, any>[]>([])
-const overlap = ref<Record<string, any>[]>([])
-const audits = ref<Record<string, Record<string, any>>>({})
-const strategies = ref<{ slug: string; name: string; entry_timing: string }[]>([])
-const decayWindow = ref(20)
+type InsightTab = 'health' | 'overlap'
+
+const activeTab = ref<InsightTab>('health')
+const insightTabs = [
+  { name: 'health', label: '数据体检' },
+  { name: 'overlap', label: '信号重叠' },
+]
+
+const {
+  phase,
+  error: healthError,
+  report,
+  progress,
+  repairBusy,
+  score,
+  grade,
+  repairPlan,
+  canOneClickRepair,
+  hasRepairableIssues,
+  subtitle,
+  issueRows,
+  okRows,
+  pendingRows,
+  scan,
+  cancelScan,
+  repairAll,
+  repairFinding,
+} = useHealthCheckup()
+
+const overlapPending = ref(0)
+const busy = computed(() => overlapPending.value > 0)
+const overlapError = ref('')
+const overlap = ref<Record<string, unknown>[]>([])
 const overlapDays = ref(60)
+const loaded = reactive({ overlap: false })
+const selectedRepairIds = ref<string[]>([])
+let active = true
+let overlapVersion = 0
 
-const hasInitialData = computed(
-  () =>
-    health.value != null ||
-    decay.value.length > 0 ||
-    overlap.value.length > 0 ||
-    strategies.value.length > 0,
+const pageError = computed(() => healthError.value || overlapError.value)
+
+const hasOverlapData = computed(() => loaded.overlap)
+
+const showRepairActions = computed(
+  () => phase.value === 'result' || (phase.value === 'healthy' && hasRepairableIssues.value),
 )
 
-function decayRowClass({ row }: { row: Record<string, any> }): string {
-  if (row.signal === 'critical') return 'row-critical'
-  if (row.signal === 'warning') return 'row-warning'
-  return ''
+function clearPageError(): void {
+  healthError.value = ''
+  overlapError.value = ''
 }
 
-function overlapRowClass({ row }: { row: Record<string, any> }): string {
+function overlapRowClass({ row }: { row: Record<string, unknown>; rowIndex: number }): string {
   if (row.overlap_level === 'high') return 'row-critical'
   if (row.overlap_level === 'medium') return 'row-warning'
   return ''
 }
 
-async function safe(task: () => Promise<void>): Promise<void> {
-  busy.value = true
-  error.value = ''
+const overlapColumns: BasicTableColumn[] = [
+  { prop: 'strategy_a', label: '战法 A', minWidth: 100 },
+  { prop: 'strategy_b', label: '战法 B', minWidth: 100 },
+  { prop: 'avg_jaccard', label: '日均重合', align: 'right', minWidth: 100, slotName: 'jaccard' },
+  { prop: 'collision_days', label: '撞车日', align: 'right', minWidth: 80 },
+  { prop: 'days_compared', label: '可比日', align: 'right', minWidth: 80 },
+  { prop: 'top_shared_codes', label: '常撞代码', minWidth: 180, slotName: 'codes' },
+  { prop: 'overlap_level', label: '程度', align: 'right', minWidth: 80, slotName: 'level' },
+]
+
+const overlapRows = computed(() => overlap.value)
+
+async function loadOverlap(): Promise<void> {
+  const version = ++overlapVersion
+  overlapPending.value += 1
+  overlapError.value = ''
   try {
-    await task()
+    const rows = await getOverlap(overlapDays.value)
+    if (!active || version !== overlapVersion) return
+    overlap.value = rows
+    loaded.overlap = true
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : '请求失败'
+    if (!active || version !== overlapVersion) return
+    overlapError.value = toErrorMessage(e, '请求失败')
   } finally {
-    busy.value = false
+    if (active) overlapPending.value = Math.max(0, overlapPending.value - 1)
   }
 }
 
-async function loadDecay(): Promise<void> {
-  await safe(async () => {
-    decay.value = await getDecay({ window: decayWindow.value })
+/** 顶栏：体检页只留「取消扫描」；扫描入口只在主 CTA，避免双按钮。 */
+const showHeaderAction = computed(
+  () => activeTab.value === 'overlap' || phase.value === 'scanning',
+)
+
+const headerLabel = computed(() => {
+  if (activeTab.value === 'overlap') return '刷新'
+  return '取消扫描'
+})
+
+function onHeaderAction(): void {
+  if (activeTab.value === 'health') {
+    cancelScan()
+    return
+  }
+  void loadOverlap()
+}
+
+function onRepairRow(row: HealthCheckRow): void {
+  void repairFinding({
+    check: row.id,
+    remediation: row.remediation,
   })
 }
 
-async function loadOverlap(): Promise<void> {
-  await safe(async () => {
-    overlap.value = await getOverlap(overlapDays.value)
-  })
+function onRepairSelected(): void {
+  const ids = selectedRepairIds.value.length
+    ? selectedRepairIds.value
+    : issueRows.value.filter((r) => r.remediation).map((r) => r.id)
+  void repairAll(ids)
 }
 
-async function runAudit(slug: string): Promise<void> {
-  await safe(async () => {
-    const result = await auditStrategy(slug)
-    audits.value = { ...audits.value, [slug]: result }
-  })
-}
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === 'overlap' && !loaded.overlap) void loadOverlap()
+  },
+  { immediate: true },
+)
 
-async function reload(): Promise<void> {
-  await safe(async () => {
-    const results = await Promise.allSettled([
-      getMarketHealth(),
-      getDecay({ window: decayWindow.value }),
-      getOverlap(overlapDays.value),
-      getStrategies(),
-    ])
-    const [h, d, o, s] = results
-    if (h.status === 'fulfilled') health.value = h.value
-    if (d.status === 'fulfilled') decay.value = d.value
-    if (o.status === 'fulfilled') overlap.value = o.value
-    if (s.status === 'fulfilled') strategies.value = s.value
-    const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[]
-    if (failed.length) {
-      const msg = failed.map((r) => (r.reason instanceof Error ? r.reason.message : String(r.reason))).join('；')
-      error.value = failed.length === results.length ? msg : `部分加载失败：${msg}`
-    }
-  })
-}
-
-onMounted(reload)
+onUnmounted(() => {
+  active = false
+  overlapVersion += 1
+})
 </script>
 
 <template>
-  <div class="page-fill">
-  <PageHeader title="体检" subtitle="数据 · 衰减 · 重叠 · 前视审计">
-    <el-button :disabled="busy" @click="reload">刷新全部</el-button>
-  </PageHeader>
+  <div class="page-fill insights-page">
+    <el-alert
+      v-if="pageError"
+      :title="pageError"
+      type="error"
+      show-icon
+      closable
+      class="mb"
+      @close="clearPageError"
+    />
 
-  <el-alert v-if="error" :title="error" type="error" show-icon closable class="mb" @close="error = ''" />
+    <div class="insights-tabs-row">
+      <PageTabs v-model="activeTab" :items="insightTabs" :sticky="false" aria-label="体检分区" />
+      <el-button
+        v-if="showHeaderAction"
+        type="primary"
+        size="small"
+        :icon="RefreshRight"
+        :loading="activeTab === 'overlap' && busy"
+        :disabled="phase === 'repairing' || busy"
+        @click="onHeaderAction"
+      >
+        {{ headerLabel }}
+      </el-button>
+    </div>
 
-  <div class="page-scroll page-scroll--busy">
-  <PageBusy overlay :busy="busy && !hasInitialData" />
-  <el-tabs v-model="activeTab">
-    <el-tab-pane label="数据体检" name="health">
-      <Sheet title="数据体检">
-        <template #actions>
-          <span v-if="health" class="chip" :class="health.blocked ? 'chip-red' : 'chip-green'">
-            {{ health.blocked ? `${health.block_count} 项阻断` : `通过（${health.warn_count} 项提示）` }}
-          </span>
-        </template>
-        <template v-if="health">
-          <p :class="health.blocked ? 'form-error' : 'form-hint'">{{ health.reason }}</p>
-          <div v-if="health.findings?.length" class="finding-list">
-            <div
-              v-for="f in health.findings"
-              :key="f.check"
-              class="finding-row"
-              :class="`finding-${f.severity}`"
-            >
-              <span class="finding-badge">{{ f.severity }}</span>
-              <span>{{ f.message }}</span>
-            </div>
-          </div>
-        </template>
-        <PageBusy v-else-if="busy" label="正在体检…" />
-        <EmptyState v-else description="点「刷新全部」加载体检结果" :image-size="56" />
-      </Sheet>
-    </el-tab-pane>
+    <div class="page-scroll page-scroll--busy">
+      <PageBusy overlay :busy="busy && !hasOverlapData && activeTab === 'overlap'" />
 
-    <el-tab-pane label="策略衰减" name="decay">
-      <Sheet title="策略衰减监测">
-        <template #actions>
-          <span class="inline-label">近</span>
-          <el-input-number v-model="decayWindow" :min="5" :max="100" size="small" />
-          <span class="inline-label">笔</span>
-          <el-button size="small" :disabled="busy" @click="loadDecay">查询</el-button>
-        </template>
-        <el-table v-if="decay.length" :data="decay" size="small" :row-class-name="decayRowClass">
-          <el-table-column label="战法" prop="strategy_tag" min-width="120" />
-          <el-table-column label="历史胜率" align="right" width="110">
-            <template #default="{ row }">
-              {{ row.baseline_win_rate != null ? row.baseline_win_rate.toFixed(1) + '%' : '—' }}
+      <div v-show="activeTab === 'health'" class="health-pane page-pane">
+        <div class="health-hero">
+          <HealthSealDial :score="score" :grade="grade" :phase="phase" :subtitle="subtitle" />
+
+          <div class="health-cta">
+            <template v-if="phase === 'idle'">
+              <el-button type="primary" size="large" @click="scan">一键扫描</el-button>
+              <p class="health-cta__hint">约 7 项 · 不写库 · 只读行情仓</p>
             </template>
-          </el-table-column>
-          <el-table-column label="近期胜率" align="right" width="110">
-            <template #default="{ row }">
-              {{ row.recent_win_rate != null ? row.recent_win_rate.toFixed(1) + '%' : '—' }}
+
+            <template v-else-if="phase === 'scanning'">
+              <el-button size="large" @click="cancelScan">取消扫描</el-button>
             </template>
-          </el-table-column>
-          <el-table-column label="信号" align="right" width="100">
-            <template #default="{ row }">
-              <span
-                class="chip"
-                :class="row.signal === 'critical' ? 'chip-red' : row.signal === 'warning' ? 'chip-yellow' : 'chip-green'"
+
+            <template v-else-if="phase === 'repairing'">
+              <el-button type="primary" size="large" loading disabled>正在修复…</el-button>
+            </template>
+
+            <template v-else-if="phase === 'result' || showRepairActions">
+              <el-button
+                v-if="canOneClickRepair || hasRepairableIssues"
+                type="primary"
+                size="large"
+                :loading="repairBusy === '__all__'"
+                :disabled="!!repairBusy || !selectedRepairIds.length"
+                @click="onRepairSelected"
               >
-                {{ ({ ok: '正常', warning: '注意', critical: '衰减' } as Record<string, string>)[String(row.signal)] ?? row.signal }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="样本" align="right" width="100">
-            <template #default="{ row }">
-              <span class="dim">{{ row.recent_count }}/{{ row.baseline_count }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-        <EmptyState v-else description="无数据（需要有收益字段的复盘记录）" />
-      </Sheet>
-    </el-tab-pane>
-
-    <el-tab-pane label="战法重叠" name="overlap">
-      <Sheet title="战法重叠度">
-        <template #actions>
-          <span class="inline-label">近</span>
-          <el-input-number v-model="overlapDays" :min="10" :max="250" size="small" />
-          <span class="inline-label">交易日</span>
-          <el-button size="small" :disabled="busy" @click="loadOverlap">查询</el-button>
-        </template>
-        <el-table v-if="overlap.length" :data="overlap" size="small" :row-class-name="overlapRowClass">
-          <el-table-column label="战法 A" prop="strategy_a" min-width="100" />
-          <el-table-column label="战法 B" prop="strategy_b" min-width="100" />
-          <el-table-column label="平均重叠" align="right" width="110">
-            <template #default="{ row }">{{ (row.avg_jaccard * 100).toFixed(1) }}%</template>
-          </el-table-column>
-          <el-table-column label="比较天数" align="right" width="100" prop="days_compared" />
-          <el-table-column label="程度" align="right" width="90">
-            <template #default="{ row }">
-              <span
-                class="chip"
-                :class="row.overlap_level === 'high' ? 'chip-red' : row.overlap_level === 'medium' ? 'chip-yellow' : 'chip-green'"
-              >
-                {{ ({ low: '低', medium: '中', high: '高' } as Record<string, string>)[String(row.overlap_level)] ?? row.overlap_level }}
-              </span>
-            </template>
-          </el-table-column>
-        </el-table>
-        <EmptyState v-else description="无数据（需要有候选记录）" />
-        <p v-if="overlap.some((o) => o.overlap_level === 'high')" class="form-hint form-error">
-          高重叠战法持仓高度相关，建议合并或差异化参数。
-        </p>
-      </Sheet>
-    </el-tab-pane>
-
-    <el-tab-pane label="前视审计" name="audit">
-      <Sheet title="前视偏差审计">
-        <div v-if="strategies.length" class="audit-grid">
-          <div v-for="s in strategies" :key="s.slug" class="audit-card">
-            <div class="audit-card-head">
-              <strong>{{ s.name }}</strong>
-              <span class="dim tiny">{{ s.entry_timing }}</span>
-            </div>
-            <div v-if="!audits[s.slug]">
-              <el-button text type="primary" @click="runAudit(s.slug)">运行审计</el-button>
-            </div>
-            <div v-else>
-              <span class="chip" :class="audits[s.slug].failed ? 'chip-red' : 'chip-green'">
-                {{ audits[s.slug].failed ? '发现问题' : '通过' }}
-              </span>
-              <p v-if="audits[s.slug].findings?.length" class="audit-findings">
-                {{ audits[s.slug].findings.map((f: { message: string }) => f.message).join('；') }}
+                一键修复{{ selectedRepairIds.length ? `（${selectedRepairIds.length}）` : '' }}
+              </el-button>
+              <el-button size="large" :disabled="!!repairBusy" @click="scan">再次扫描</el-button>
+              <p v-if="repairPlan?.labels?.length" class="health-cta__hint">
+                合并动作：{{ repairPlan.labels.join(' · ') }}
               </p>
-            </div>
+              <p v-else-if="report" class="health-cta__hint mono">
+                上次 {{ report.checked_at || '—' }} · 交易日 {{ report.trade_date || '—' }}
+              </p>
+            </template>
+
+            <template v-else>
+              <el-button type="primary" size="large" @click="scan">再次扫描</el-button>
+              <p v-if="report" class="health-cta__hint mono">
+                上次 {{ report.checked_at || '—' }} · 交易日 {{ report.trade_date || '—' }}
+              </p>
+            </template>
           </div>
         </div>
-        <EmptyState v-else description="无战法注册" />
-      </Sheet>
-    </el-tab-pane>
-  </el-tabs>
-  </div>
+
+        <HealthScanProgress
+          v-if="progress"
+          :progress="progress"
+          :title="phase === 'scanning' ? '扫描进度' : phase === 'repairing' ? '修复进度' : undefined"
+        />
+
+        <HealthCheckList
+          v-if="phase === 'scanning' || phase === 'result' || phase === 'healthy' || phase === 'repairing'"
+          v-model:selected-ids="selectedRepairIds"
+          :issue-rows="issueRows"
+          :ok-rows="okRows"
+          :pending-rows="pendingRows"
+          :repair-busy="repairBusy"
+          :show-actions="showRepairActions"
+          @repair="onRepairRow"
+        />
+
+        <EmptyState
+          v-else-if="phase === 'idle'"
+          description="点「一键扫描」核对行情仓是否可安全选股"
+          :image-size="56"
+        />
+      </div>
+
+      <div v-show="activeTab === 'overlap'">
+        <Sheet title="选股信号重叠">
+          <template #actions>
+            <span class="inline-label">近</span>
+            <el-input-number v-model="overlapDays" :min="10" :max="250" size="small" />
+            <span class="inline-label">天</span>
+            <el-button size="small" :disabled="busy" @click="loadOverlap">查询</el-button>
+          </template>
+          <p class="form-hint overlap-intro">
+            看多套选股是否天天撞同一批票（假分散）。不算持仓风险——成交账本没有战法字段。
+            策略是否失效请看选股目录「近期胜率」。前视偏差由测试与生成链自动拦，不在本页。
+          </p>
+          <BasicTable
+            v-if="overlap.length"
+            :columns="overlapColumns"
+            :data-source="overlapRows"
+            :pagination="false"
+            :row-class-name="overlapRowClass"
+            :row-key="(row) => `${row.strategy_a}-${row.strategy_b}`"
+          >
+            <template #jaccard="{ row }">
+              {{ (Number(row.avg_jaccard) * 100).toFixed(1) }}%
+            </template>
+            <template #codes="{ row }">
+              <span
+                v-if="Array.isArray(row.top_shared_codes) && row.top_shared_codes.length"
+                class="mono codes"
+              >
+                {{ (row.top_shared_codes as string[]).slice(0, 6).join(' · ') }}
+                <span v-if="Number(row.shared_code_count) > 6" class="dim">
+                  +{{ Number(row.shared_code_count) - 6 }}
+                </span>
+              </span>
+              <span v-else class="dim">—</span>
+            </template>
+            <template #level="{ row }">
+              <span
+                class="chip"
+                :class="
+                  row.overlap_level === 'high'
+                    ? 'chip-red'
+                    : row.overlap_level === 'medium'
+                      ? 'chip-yellow'
+                      : 'chip-green'
+                "
+              >
+                {{
+                  ({ low: '低', medium: '中', high: '高' } as Record<string, string>)[
+                    String(row.overlap_level)
+                  ] ?? row.overlap_level
+                }}
+              </span>
+            </template>
+          </BasicTable>
+          <PageBusy v-else-if="busy" label="加载重叠度…" />
+          <EmptyState
+            v-else
+            description="无数据：需要至少两套战法的 core 候选记录（选股并落库后可见）"
+          />
+          <p
+            v-if="overlap.some((o) => o.overlap_level === 'high')"
+            class="form-hint form-error"
+          >
+            高重叠 = 信号源几乎相同；建议合并战法或拉开参数/宇宙，别当成分散。
+          </p>
+        </Sheet>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .mb {
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.55rem;
 }
+
+.insights-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+  padding-right: 0.85rem;
+}
+
+.insights-tabs-row :deep(.page-tabs) {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
 .page-scroll--busy {
   position: relative;
   min-height: 12rem;
 }
-.finding-list {
+
+.health-pane {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  margin-top: 0.65rem;
-  padding: 0.15rem 0.25rem 0.5rem;
-}
-.finding-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
   gap: 0.65rem;
-  align-items: start;
-  padding: 0.55rem 0.65rem;
+  padding: 0.15rem 0.25rem 0.85rem;
+}
+
+.health-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.65rem 0.85rem 0.35rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--sheet) 88%, #fff);
-  font-size: 0.86rem;
-  line-height: 1.45;
+  background: var(--sheet);
 }
-.finding-block {
-  border-color: color-mix(in srgb, var(--seal) 28%, var(--rule));
-  background: color-mix(in srgb, var(--seal-soft) 40%, var(--sheet));
+
+.health-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: 100%;
 }
-.finding-warn {
-  border-color: color-mix(in srgb, #c8a400 30%, var(--rule));
+
+.health-cta__hint {
+  margin: 0;
+  width: 100%;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--mist);
+  line-height: 1.4;
 }
-.finding-badge {
-  font-size: 0.68rem;
-  padding: 0.12rem 0.4rem;
-  border-radius: 3px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-  background: var(--mist);
-  color: #fff;
-  text-transform: uppercase;
-}
-.finding-block .finding-badge {
-  background: var(--seal);
-}
-.finding-warn .finding-badge {
-  background: #c8a400;
-}
+
 .chip-red {
   background: var(--seal) !important;
   color: #fff !important;
 }
+
 .chip-green {
   background: var(--lake) !important;
   color: #fff !important;
 }
+
 .chip-yellow {
   background: #c8a400 !important;
   color: #fff !important;
 }
+
 .inline-label {
   font-size: 0.82rem;
   color: var(--mist);
 }
-.audit-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
-  gap: 0.65rem;
-}
-.audit-card {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: 0.75rem 0.85rem;
-  background: var(--sheet);
-}
-.audit-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.4rem;
-}
-.tiny {
-  font-size: 0.7rem;
-}
-.audit-findings {
-  margin: 0.35rem 0 0;
-  font-size: 0.78rem;
-  color: var(--mist);
+
+.overlap-intro {
+  margin: 0 0 0.65rem;
   line-height: 1.45;
 }
+
+.codes {
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
 :deep(.row-critical) {
   background: rgba(196, 30, 58, 0.05);
 }
+
 :deep(.row-warning) {
   background: rgba(200, 164, 0, 0.06);
 }

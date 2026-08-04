@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import logging
+import re
 from typing import Any, Iterator
 
 import httpx2
@@ -82,11 +83,17 @@ class ProviderConfig:
     model: str = ""
     proxy_url: str = ""
     timeout: float = DEFAULT_TIMEOUT
+    context_window: int | None = None
+    max_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if self.protocol not in PROTOCOLS:
             raise LLMError(f"未知协议：{self.protocol}（可选 {list(PROTOCOLS)}）")
         self.base_url = self.base_url.rstrip("/")
+        if self.context_window is not None and self.context_window <= 0:
+            self.context_window = None
+        if self.max_output_tokens is not None and self.max_output_tokens <= 0:
+            self.max_output_tokens = None
 
 
 def _client(config: ProviderConfig) -> httpx2.Client:
@@ -96,14 +103,37 @@ def _client(config: ProviderConfig) -> httpx2.Client:
     return httpx2.Client(**kwargs)
 
 
-def _redact(text: str) -> str:
-    """确保错误信息里不会漏出密钥。上游偶尔会把请求头回显在报错里。"""
-    return text.replace("Bearer ", "Bearer ***")[:600]
+_BEARER = re.compile(r"(?i)(bearer\s+)[^\s,;\"'}]+")
+_SECRET_FIELD = re.compile(
+    r"(?ix)(?P<name>[\"']?\b(?:x-api-key|api[_-]?key|authorization|"
+    r"(?:access[_-]?)?token|secret|password)\b[\"']?)"
+    r"(?P<separator>\s*(?:=|:)\s*)(?P<quote>[\"']?)(?P<value>[^,\s&\"'}]+)(?P=quote)"
+)
 
 
-def _raise_for_status(response: Any, provider: str) -> dict[str, Any]:
+def redact_text(text: object, *, api_key: str = "") -> str:
+    """向 UI 或日志暴露上游文本前移除已知及常见格式的凭据。"""
+    value = str(text or "")
+    if api_key:
+        value = value.replace(api_key, "[REDACTED]")
+    value = _BEARER.sub(r"\1[REDACTED]", value)
+    value = _SECRET_FIELD.sub(
+        lambda match: (
+            f"{match.group('name')}{match.group('separator')}"
+            f"{match.group('quote')}[REDACTED]{match.group('quote')}"
+        ),
+        value,
+    )
+    return value[:600]
+
+
+def _redact(text: str, api_key: str = "") -> str:
+    return redact_text(text, api_key=api_key)
+
+
+def _raise_for_status(response: Any, config: ProviderConfig) -> dict[str, Any]:
     if response.status_code >= 400:
-        detail = _redact(response.text or "")
+        detail = _redact(response.text or "", config.api_key)
         hint = ""
         if response.status_code == 401:
             hint = "（API Key 无效或已过期）"
@@ -113,11 +143,13 @@ def _raise_for_status(response: Any, provider: str) -> dict[str, Any]:
             hint = "（触发限流，稍后再试）"
         elif response.status_code == 404:
             hint = "（Base URL 或模型名不对）"
-        raise LLMError(f"{provider} 返回 {response.status_code}{hint}：{detail}")
+        raise LLMError(f"{config.name} 返回 {response.status_code}{hint}：{detail}")
     try:
         return response.json()
     except Exception as exc:
-        raise LLMError(f"{provider} 返回的不是合法 JSON：{_redact(response.text or '')}") from exc
+        raise LLMError(
+            f"{config.name} 返回的不是合法 JSON：{_redact(response.text or '', config.api_key)}"
+        ) from exc
 
 
 # --------------------------------------------------------------------------
@@ -241,8 +273,10 @@ def _chat_openai(
                 json=body,
             )
         except Exception as exc:
-            raise LLMError(f"{config.name} 请求失败：{type(exc).__name__}: {exc}") from exc
-    data = _raise_for_status(response, config.name)
+            raise LLMError(
+                f"{config.name} 请求失败：{type(exc).__name__}: {_redact(str(exc), config.api_key)}"
+            ) from exc
+    data = _raise_for_status(response, config)
 
     choices = data.get("choices") or []
     if not choices:
@@ -345,8 +379,10 @@ def _chat_anthropic(
                 json=body,
             )
         except Exception as exc:
-            raise LLMError(f"{config.name} 请求失败：{type(exc).__name__}: {exc}") from exc
-    data = _raise_for_status(response, config.name)
+            raise LLMError(
+                f"{config.name} 请求失败：{type(exc).__name__}: {_redact(str(exc), config.api_key)}"
+            ) from exc
+    data = _raise_for_status(response, config)
 
     blocks = data.get("content") or []
     text = "".join(block.get("text", "") for block in blocks if block.get("type") == "text")
@@ -392,11 +428,12 @@ def validate(config: ProviderConfig) -> ChatResponse:
     return chat(probe, [ChatMessage(role="user", content="hi")], max_tokens=1, temperature=0.0)
 
 
-def list_models(config: ProviderConfig) -> list[str]:
-    """拉可用模型列表。
+def list_models(config: ProviderConfig) -> list[dict[str, Any]]:
+    """拉可用模型目录条目（至少含 id）。
 
     拉不到不算错误——Anthropic 官方就没有公开的列表接口。返回空列表让
     调用方降级为手填，而不是让整个保存流程失败。
+    若上游带 ``context_length`` / ``max_model_len`` 等字段则写入 context_window。
     """
     if config.protocol != "openai_compatible":
         return []
@@ -408,7 +445,7 @@ def list_models(config: ProviderConfig) -> list[str]:
                 timeout=LIST_MODELS_TIMEOUT,
             )
         except Exception as exc:
-            logger.info("拉取 %s 模型列表失败：%s", config.name, exc)
+            logger.info("拉取 %s 模型列表失败：%s", config.name, _redact(str(exc), config.api_key))
             return []
     if response.status_code >= 400:
         logger.info("拉取 %s 模型列表返回 %s", config.name, response.status_code)
@@ -420,9 +457,35 @@ def list_models(config: ProviderConfig) -> list[str]:
     items = data.get("data") if isinstance(data, dict) else data
     if not isinstance(items, list):
         return []
-    models = [
-        str(item.get("id"))
-        for item in items
-        if isinstance(item, dict) and item.get("id")
-    ]
-    return sorted(set(models))
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        mid = str(item["id"]).strip()
+        if not mid or mid in seen:
+            continue
+        seen.add(mid)
+        context = (
+            item.get("context_length")
+            or item.get("context_window")
+            or item.get("max_model_len")
+            or item.get("max_input_tokens")
+        )
+        max_out = item.get("max_output_tokens") or item.get("max_tokens")
+        name = item.get("name") or item.get("display_name") or ""
+        entry: dict[str, Any] = {"id": mid, "source": "discovered"}
+        if name:
+            entry["name"] = str(name)
+        try:
+            if context is not None and int(context) > 0:
+                entry["context_window"] = int(context)
+        except (TypeError, ValueError):
+            pass
+        try:
+            if max_out is not None and int(max_out) > 0:
+                entry["max_output_tokens"] = int(max_out)
+        except (TypeError, ValueError):
+            pass
+        out.append(entry)
+    return sorted(out, key=lambda row: str(row["id"]))

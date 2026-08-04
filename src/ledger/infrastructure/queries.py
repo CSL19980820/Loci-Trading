@@ -8,13 +8,152 @@ from src.ledger.infrastructure.store_types import normalize_date
 
 
 class QueryMixin:
+    def realized_pnl_between(
+        self,
+        start: str,
+        end: str,
+        *,
+        include_historical_baseline: bool = True,
+    ) -> float:
+        """闭区间 [start, end] 已实现盈亏；默认可排除潜龙累计基线。"""
+        start_on = normalize_date(start)
+        end_on = normalize_date(end)
+        position_value = self.conn.execute(
+            """
+            SELECT COALESCE(SUM(realized_pnl), 0) AS value FROM position_events
+            WHERE occurred_on >= ? AND occurred_on <= ?
+            """,
+            (start_on, end_on),
+        ).fetchone()["value"]
+        account_where = (
+            "kind = 'REALIZED_PNL_IMPORT' AND occurred_on >= ? AND occurred_on <= ?"
+        )
+        account_params: list[Any] = [start_on, end_on]
+        if not include_historical_baseline:
+            account_where += " AND source <> 'qianlong-skill-memory'"
+        account_value = self.conn.execute(
+            f"SELECT COALESCE(SUM(amount), 0) AS value FROM account_events WHERE {account_where}",
+            account_params,
+        ).fetchone()["value"]
+        return round(float(position_value) + float(account_value), 2)
+
+    def today_sells_payload(self, as_of: str | None = None) -> list[dict[str, Any]]:
+        """当日卖出明细（同花顺式：卖价对照卖出前成本）。"""
+        as_of = normalize_date(as_of)
+        rows = self.conn.execute(
+            """
+            SELECT id, occurred_on, created_at, code, name, shares, price,
+                   shares_after, cost_before, cost_after, realized_pnl,
+                   reason, source, correlation_id
+            FROM position_events
+            WHERE action = 'SELL' AND occurred_on = ?
+            ORDER BY created_at DESC, id DESC
+            """,
+            (as_of,),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            price = float(row["price"])
+            cost_before = float(row["cost_before"])
+            shares = int(row["shares"])
+            pnl_pct = (
+                round((price / cost_before - 1) * 100, 2) if cost_before > 0 else None
+            )
+            out.append(
+                {
+                    "id": str(row["id"]),
+                    "date": str(row["occurred_on"]),
+                    "created_at": str(row["created_at"]),
+                    "code": str(row["code"]),
+                    "name": str(row["name"]),
+                    "shares": shares,
+                    "price": price,
+                    "amount": round(shares * price, 2),
+                    "cost_before": cost_before,
+                    "cost_after": float(row["cost_after"]),
+                    "shares_after": int(row["shares_after"]),
+                    "realized_pnl": float(row["realized_pnl"]),
+                    "realized_pnl_pct": pnl_pct,
+                    "reason": str(row["reason"]),
+                    "source": str(row["source"]),
+                    "correlation_id": str(row["correlation_id"]),
+                }
+            )
+        return out
+
+    def month_pnl_curve(
+        self,
+        start: str,
+        end: str,
+        *,
+        include_historical_baseline: bool = False,
+    ) -> list[dict[str, Any]]:
+        """自然月内逐日累计已实现（从 0 起），供参考盈亏 sparkline。"""
+        from datetime import date, timedelta
+
+        start_on = normalize_date(start)
+        end_on = normalize_date(end)
+        trade_rows = self.conn.execute(
+            """
+            SELECT occurred_on, SUM(realized_pnl) AS day_pnl
+            FROM position_events
+            WHERE occurred_on >= ? AND occurred_on <= ?
+            GROUP BY occurred_on
+            """,
+            (start_on, end_on),
+        ).fetchall()
+        account_where = (
+            "kind = 'REALIZED_PNL_IMPORT' AND occurred_on >= ? AND occurred_on <= ?"
+        )
+        account_params: list[Any] = [start_on, end_on]
+        if not include_historical_baseline:
+            account_where += " AND source <> 'qianlong-skill-memory'"
+        import_rows = self.conn.execute(
+            f"""
+            SELECT occurred_on, SUM(amount) AS day_pnl
+            FROM account_events
+            WHERE {account_where}
+            GROUP BY occurred_on
+            """,
+            account_params,
+        ).fetchall()
+        day_map: dict[str, float] = {}
+        for row in trade_rows:
+            day_map[str(row["occurred_on"])] = day_map.get(str(row["occurred_on"]), 0.0) + float(
+                row["day_pnl"] or 0
+            )
+        for row in import_rows:
+            day_map[str(row["occurred_on"])] = day_map.get(str(row["occurred_on"]), 0.0) + float(
+                row["day_pnl"] or 0
+            )
+
+        d0 = date.fromisoformat(start_on)
+        d1 = date.fromisoformat(end_on)
+        if d1 < d0:
+            return []
+        cumulative = 0.0
+        curve: list[dict[str, Any]] = []
+        cur = d0
+        while cur <= d1:
+            key = cur.isoformat()
+            cumulative = round(cumulative + day_map.get(key, 0.0), 2)
+            curve.append({"date": key, "cumulative_pnl": cumulative})
+            cur += timedelta(days=1)
+        return curve
+
     def dashboard_payload(self, as_of: str | None = None) -> dict[str, Any]:
         """面向工作台的结构化看板数据；展示数值均来自账本而非估算行情。"""
         as_of = normalize_date(as_of)
         snapshot = self._latest_snapshot()
         positions = self.positions_payload()
         total_cost = round(sum(float(position["cost_value"]) for position in positions), 2)
+        cash_detail = self.broker_cash_detail()
+        cash = cash_detail["cash"]
+        # 快照里的 total_assets 只作历史锚点；有现金时前端用 现金+市值 作为券商总资产
         total_assets = float(snapshot["total_assets"]) if snapshot else None
+        if cash is not None and total_assets is not None:
+            # 无实时市值时，用成本占用估一个账面总资产（偏保守，不等于盯市）
+            total_assets = round(cash + total_cost, 2)
         reviews_count = int(self.conn.execute("SELECT COUNT(*) AS value FROM reviews").fetchone()["value"])
         historical_baseline = self.conn.execute(
             """
@@ -47,6 +186,18 @@ class QueryMixin:
         broker_cum = self.conn.execute(
             "SELECT COALESCE(SUM(broker_pnl), 0) AS value FROM daily_pnl_ledger"
         ).fetchone()
+        month_start = f"{as_of[:7]}-01"
+        month_realized = self.realized_pnl_between(
+            month_start, as_of, include_historical_baseline=False
+        )
+        # 同花顺式：本月已实现 / 当前账面总资产；无总资产时不编造比例
+        month_pct = (
+            round(month_realized / total_assets * 100, 2)
+            if total_assets and total_assets > 0
+            else None
+        )
+        month_curve = self.month_pnl_curve(month_start, as_of, include_historical_baseline=False)
+        today_sells = self.today_sells_payload(as_of)
         return {
             "as_of": as_of,
             "account": {
@@ -55,6 +206,9 @@ class QueryMixin:
                     as_of, include_historical_baseline=False
                 ),
                 "today_realized_note": "旧账仅导入累计盈亏基线；当日明细待补录" if today_is_baseline_only else f"截至 {as_of}",
+                "month_realized_pnl": month_realized,
+                "month_realized_pnl_pct": month_pct,
+                "month_realized_note": f"{as_of[:7]} 参考盈亏（已实现，不含潜龙累计基线）",
                 "broker_daily_pnl": None if broker_day is None else float(broker_day["broker_pnl"]),
                 "broker_daily_pnl_cumulative": round(float(broker_cum["value"] or 0), 4),
                 "broker_daily_note": (
@@ -64,11 +218,15 @@ class QueryMixin:
                 ),
                 "total_assets": total_assets,
                 "snapshot_date": str(snapshot["occurred_on"]) if snapshot else None,
-                "cash": float(snapshot["cash"]) if snapshot and snapshot["cash"] is not None else None,
+                "cash": cash,
+                "cash_base": cash_detail["cash_base"],
+                "cash_implied": cash_detail["cash_implied"],
                 "cost_exposure": total_cost,
                 "cost_exposure_pct": round(total_cost / total_assets * 100, 2) if total_assets else None,
             },
             "positions": positions,
+            "today_sells": today_sells,
+            "month_pnl_curve": month_curve,
             "candidates": candidates,
             "candidate_summary": self.candidate_day_summary(candidates),
             "plans": self.plans_payload(),
@@ -82,9 +240,7 @@ class QueryMixin:
         }
 
     def _latest_snapshot(self) -> sqlite3.Row | None:
-        return self.conn.execute(
-            "SELECT * FROM account_snapshots ORDER BY occurred_on DESC, created_at DESC LIMIT 1"
-        ).fetchone()
+        return self._latest_snapshot_row()
 
     def scorecard(self) -> dict[str, Any]:
         sells = self.conn.execute(
@@ -233,6 +389,8 @@ class QueryMixin:
                            ORDER BY created_at DESC, id DESC
                        ) AS rn
                 FROM candidate_reviews
+                WHERE IFNULL(source, '') NOT LIKE '%backfill%'
+                  AND IFNULL(source, '') NOT LIKE '%:history'
             ) ranked
             WHERE rn = 1
             GROUP BY decision
@@ -298,8 +456,12 @@ class QueryMixin:
         candidates = self.conn.execute(
             """
             SELECT pool_id, COUNT(*) AS total,
-                   SUM(CASE WHEN decision IN ('高确定性', '重点', '入选') THEN 1 ELSE 0 END) AS selected
-            FROM candidate_reviews WHERE occurred_on = ? GROUP BY pool_id ORDER BY pool_id
+                   SUM(CASE WHEN decision = '精选' THEN 1 ELSE 0 END) AS selected
+            FROM candidate_reviews
+            WHERE occurred_on = ?
+              AND IFNULL(source, '') NOT LIKE '%backfill%'
+              AND IFNULL(source, '') NOT LIKE '%:history'
+            GROUP BY pool_id ORDER BY pool_id
             """,
             (as_of,),
         ).fetchall()
@@ -331,7 +493,7 @@ class QueryMixin:
 
         lines.extend(["", "## 候选池与预案", ""])
         if candidates:
-            lines.extend(["| 候选池 | 总数 | 重点/入选 |", "|---|---:|---:|"])
+            lines.extend(["| 候选池 | 总数 | 精选 |", "|---|---:|---:|"])
             lines.extend(f"| {row['pool_id']} | {row['total']} | {row['selected']} |" for row in candidates)
         else:
             lines.append("- 当日尚未归档候选池。")

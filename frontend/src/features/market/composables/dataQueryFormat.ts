@@ -32,6 +32,12 @@ export function fmtAmount(v: number | null | undefined): string {
   return n.toFixed(0)
 }
 
+/** 库内换手为小数；展示为百分数。 */
+export function fmtTurnover(v: number | null | undefined): string {
+  if (v == null || Number.isNaN(Number(v))) return '—'
+  return `${(Number(v) * 100).toFixed(2)}%`
+}
+
 export function chgClass(pct: number | null | undefined): string {
   if (pct == null || Number.isNaN(Number(pct)) || Number(pct) === 0) return ''
   return Number(pct) > 0 ? 'is-up' : 'is-down'

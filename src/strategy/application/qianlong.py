@@ -1,18 +1,7 @@
-"""潜龙出海：把通达信选股公式忠实翻译成向量化信号。
+"""潜龙出海 V3：通达信云阳标准买点的活动向量化实现。
 
-源公式：潜龙出海通达信选股（9:25 竞价版 / 原版），已 port 为本模块信号函数。
-（盘后收盘宽松版）。两者形态条件相近但**入场时点完全不同**，因此注册成
-两个独立策略，而不是一个策略加个开关——混用会让回测结论失真。
-
-## 翻译中必须留神的三处
-
-1. **换手率单位。** 通达信的 ``HSL`` 是百分数（5 表示 5%），而行情仓里
-   ``turnover`` 存的是新浪口径的小数（0.05 表示 5%）。公式里"昨换手>=5"
-   若直接拿小数比，等于要求 500% 换手，永远选不出票。这里统一乘 100。
-2. **辰星线的怪异构造。** 原式跳过 ``REF(YTSL,19)`` 却纳入 ``REF(YTSL,20)``，
-   且分母 211 与权重和 210 不等。照抄，不"修正"——改它等于改策略。
-3. **前视偏差。** 9:25 版用到当日 OPEN，这在集合竞价结束时是已知的，
-   所以入场记为当日开盘；原版用到当日 CLOSE/LOW，只能次日开盘入场。
+旧版 ``qianlong-close`` 已归档到 ``application/backup/qianlong-legacy.py``，
+历史 V2 仅作为 V3 的条件来源留在版本记录中，不再单独注册到活动目录。
 """
 from __future__ import annotations
 
@@ -20,217 +9,268 @@ from typing import Any
 
 import pandas as pd
 
-from src.formula import ABS, BARSLAST, COUNT, MA, REF, weighted_ref_sum
-from src.strategy.domain.base import SignalResult, StrategyEngine, merge_params, register
+from src.formula import (
+    COUNT,
+    CROSS,
+    EXIST,
+    MA,
+    REF,
+    limit_ratio_panel,
+    limit_up_flags,
+    weighted_ref_sum,
+)
+from src.strategy.domain.base import SignalResult, merge_params, register
 
-#: 辰星线权重表：{REF 偏移: 权重}。offset 19 缺席是原式如此，不是笔误。
+# 辰星线原式跳过 REF(YTSL,19)，并使用分母 211；两处都必须原样保留。
 CHENXING_WEIGHTS: dict[int, float] = {offset: float(20 - offset) for offset in range(19)}
 CHENXING_WEIGHTS[20] = 1.0
 CHENXING_DIVISOR = 211.0
 
 
 def ytsl(panels: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """YTSL := (3*CLOSE + LOW + OPEN + HIGH) / 6"""
+    """YTSL := (3*CLOSE + LOW + OPEN + HIGH) / 6。"""
     return (3 * panels["close"] + panels["low"] + panels["open"] + panels["high"]) / 6
 
 
 def chenxing(panels: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """辰星线：当期权重最大的加权均线，照抄原式的跳项与分母。"""
+    """按通达信原式计算辰星线。"""
     return weighted_ref_sum(ytsl(panels), CHENXING_WEIGHTS, CHENXING_DIVISOR)
 
 
-def turnover_pct(panels: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """把行情仓的小数换手率换算成通达信 HSL 的百分数口径。"""
-    return panels["turnover"] * 100.0
+def select_one_per_day(
+    candidates: pd.DataFrame, strength: pd.DataFrame
+) -> pd.DataFrame:
+    """按当日强度保留一只候选，横截面并列时按代码列顺序稳定裁决。"""
+    scores = strength.where(candidates.fillna(False))
+    first_rank = scores.rank(axis=1, ascending=False, method="first")
+    return (candidates.fillna(False) & first_rank.eq(1)).fillna(False)
 
 
-class QianlongAuctionPicker:
-    """潜龙出海·9:25 竞价版。
-
-    当日开盘入场；竞价过滤见信号条件。
-
-    逻辑主线：昨日首次突破辰星线且形态干净（阳线、收在上沿、有振幅有实体、
-    不是横盘织布），量能换手落在特定区间，今日平开或小幅高开且不破辰星线。
-    """
-
-    slug = "qianlong-auction"
-    name = "潜龙出海·竞价版"
-    description = "昨日首破辰星线 + 量能换手区间 + 今日竞价不破线，9:25 可执行"
-    entry_timing = "open"
+class _QianlongCore:
+    """潜龙 V3 共用的核心突破条件，不单独作为公开战法注册。"""
 
     def default_params(self) -> dict[str, Any]:
         return {
-            "gain_min": 2.0,          # 昨日涨幅下限（%）
-            "gain_max": 8.0,          # 昨日涨幅上限（%）
-            "amplitude_min": 4.0,     # 昨日振幅下限（%），过滤横盘织布
-            "body_min": 2.0,          # 昨日实体下限（%）
-            "close_upper_ratio": 0.35,  # 昨收须落在昨日区间上沿 35% 内
-            "narrow_max": 2,          # 近 5 日窄幅天数上限
-            "vol_ratio_min": 1.5,     # 昨日量比下限
-            "vol_ratio_max": 3.5,     # 昨日量比上限
-            "turnover_min": 5.0,      # 昨日换手下限（%）
-            "turnover_max": 10.0,     # 昨日换手上限（%）
-            "turnover_vs_ma5": 1.2,   # 昨换手须高于 5 日均换手的倍数
-            "turnover_x_volratio_min": 9.0,  # 换手×量比的合力下限
-            "breakout_count_max": 2,  # 近 12 日突破次数上限，排除反复假突破
-            "open_low_ratio": 0.999,  # 今开不低于昨收的比例
-            "open_high_ratio": 1.03,  # 今开不高于昨收的比例
-            "open_vs_chenxing": 1.001,  # 今开须站在辰星线之上的比例
-        }
-
-    def required_fields(self) -> tuple[str, ...]:
-        return ("open", "high", "low", "close", "volume", "turnover")
-
-    def min_bars(self) -> int:
-        # 辰星线要 21 根，再往前 REF 2 根，量能要 5 日均再 REF 1 根，
-        # COUNT(...,12) 要 12 根；留足余量避免边界上算出半截指标。
-        return 40
-
-    def compute(
-        self, panels: dict[str, pd.DataFrame], params: dict[str, Any] | None = None
-    ) -> SignalResult:
-        p = merge_params(self, params)
-        close, open_, high, low = panels["close"], panels["open"], panels["high"], panels["low"]
-        volume = panels["volume"]
-        hsl = turnover_pct(panels)
-
-        white = chenxing(panels)              # 辰星线
-        yellow = MA(close, 26)                # 牵牛线
-
-        prev_close, prev_open = REF(close, 1), REF(open_, 1)
-        prev_high, prev_low = REF(high, 1), REF(low, 1)
-        prev_white, prev_yellow = REF(white, 1), REF(yellow, 1)
-        before_close, before_white = REF(close, 2), REF(white, 2)
-
-        # 当日突破：收盘上穿辰星线且收阳
-        breakout = (close > white) & (REF(close, 1) <= REF(white, 1)) & (close > open_)
-
-        prev_gain = (prev_close - before_close) / before_close * 100
-        shape_ok = (
-            REF(breakout, 1).fillna(False).astype(bool)
-            & (BARSLAST(breakout) == 1)
-            & (prev_close > prev_white)
-            & (before_close <= before_white)
-            & (prev_close > prev_open)
-            & (prev_close > prev_white)
-            & (prev_close > prev_yellow)
-            & (prev_gain >= p["gain_min"])
-            & (prev_gain <= p["gain_max"])
-        )
-
-        prev_amplitude = (prev_high - prev_low) / prev_close * 100
-        prev_body = ABS(prev_close - prev_open) / prev_close * 100
-        close_near_high = prev_close >= prev_high - (prev_high - prev_low) * p["close_upper_ratio"]
-        narrow_days = COUNT((REF(high, 1) - REF(low, 1)) / REF(close, 1) * 100 < 3, 5)
-        not_choppy = (
-            (prev_amplitude >= p["amplitude_min"])
-            & (prev_body >= p["body_min"])
-            & close_near_high
-            & (narrow_days <= p["narrow_max"])
-        )
-
-        prev_vol_ratio = REF(volume, 1) / REF(MA(volume, 5), 1)
-        prev_hsl = REF(hsl, 1)
-        hsl_ma5 = REF(MA(hsl, 5), 1)
-        volume_ok = (
-            (prev_vol_ratio >= p["vol_ratio_min"])
-            & (prev_vol_ratio <= p["vol_ratio_max"])
-            & (prev_hsl >= p["turnover_min"])
-            & (prev_hsl <= p["turnover_max"])
-            & (prev_hsl >= hsl_ma5 * p["turnover_vs_ma5"])
-            & (prev_hsl * prev_vol_ratio >= p["turnover_x_volratio_min"])
-            & (COUNT(breakout, 12) <= p["breakout_count_max"])
-        )
-
-        open_ok = (open_ >= prev_close * p["open_low_ratio"]) & (
-            open_ <= prev_close * p["open_high_ratio"]
-        )
-        open_above_white = open_ >= prev_white * p["open_vs_chenxing"]
-        tradable = high > low  # 一字板买不进，排除
-
-        signals = shape_ok & not_choppy & volume_ok & open_ok & open_above_white & tradable
-
-        return SignalResult(
-            signals=signals.fillna(False),
-            factors={
-                "辰星线": white,
-                "牵牛线": yellow,
-                "昨涨幅": prev_gain,
-                "昨振幅": prev_amplitude,
-                "昨实体": prev_body,
-                "昨量比": prev_vol_ratio,
-                "昨换手": prev_hsl,
-                "近5窄幅": narrow_days,
-                "形态OK": shape_ok,
-                "非织布": not_choppy,
-                "量能OK": volume_ok,
-                "竞价OK": open_ok & open_above_white,
-            },
-        )
-
-
-class QianlongCloseePicker:
-    """潜龙出海·原版（盘后收盘宽松）。
-
-    条件比竞价版松：只要昨日放量阳线首破辰星线并站稳，今日平开/高开、
-    不破线、白线向上即可。因为用到当日收盘与最低价，只能次日开盘入场。
-    """
-
-    slug = "qianlong-close"
-    name = "潜龙出海·原版"
-    description = "昨日放量突破并站稳 + 今日不破辰星线且白线向上，盘后选、次日开盘入"
-    entry_timing = "next_open"
-
-    def default_params(self) -> dict[str, Any]:
-        return {
-            "vol_boost": 1.2,        # 昨量须高于 5 日均量的倍数
-            "hold_ratio": 1.001,     # 昨收站稳辰星线的比例
-            "open_low_ratio": 0.995,
-            "open_high_ratio": 1.06,
-            "low_vs_white": 0.997,   # 今日最低不破辰星线的比例
+            "death_lookback": 15,
+            "below_window": 10,
+            "below_min": 3,
+            "price_min": 8.0,
+            "vol_boost": 1.3,
+            "hold_ratio": 1.002,
         }
 
     def required_fields(self) -> tuple[str, ...]:
         return ("open", "high", "low", "close", "volume")
 
     def min_bars(self) -> int:
-        return 30
+        # 辰星线需要 21 根，黄色线需要 26 根，EXIST(死叉,15) 再留出完整回看。
+        return 46
 
     def compute(
         self, panels: dict[str, pd.DataFrame], params: dict[str, Any] | None = None
     ) -> SignalResult:
         p = merge_params(self, params)
-        close, open_, high, low = panels["close"], panels["open"], panels["high"], panels["low"]
+        close, open_ = panels["close"], panels["open"]
         volume = panels["volume"]
 
         white = chenxing(panels)
+        yellow = MA(close, 26)
+        death_cross = CROSS(yellow, white)
+        had_death = EXIST(death_cross, int(p["death_lookback"]))
+        ran_below = COUNT(close < white, int(p["below_window"])) >= int(p["below_min"])
 
-        prev_bullish = REF(close, 1) > REF(open_, 1)
-        prev_breakout = (REF(close, 1) > REF(white, 1)) & (REF(close, 2) <= REF(white, 2))
-        prev_volume_up = REF(volume, 1) > REF(MA(volume, 5), 1) * p["vol_boost"]
-        prev_hold = REF(close, 1) >= REF(white, 1) * p["hold_ratio"]
-        broke_yesterday = prev_bullish & prev_breakout & prev_volume_up & prev_hold
-
-        open_ok = (open_ >= REF(close, 1) * p["open_low_ratio"]) & (
-            open_ <= REF(close, 1) * p["open_high_ratio"]
+        bullish = (close > open_) & (close >= float(p["price_min"]))
+        breakout = (close > white) & (REF(close, 1) <= REF(white, 1))
+        volume_up = volume > MA(volume, 5) * float(p["vol_boost"])
+        hold = close > white * float(p["hold_ratio"])
+        breakout_day = bullish & breakout & volume_up & hold
+        white_rising = white > REF(white, 1)
+        raw_close = panels.get("__raw_close")
+        if not isinstance(raw_close, pd.DataFrame):
+            raw_close = close
+        else:
+            raw_close = raw_close.reindex(index=close.index, columns=close.columns)
+        names = panels.get("__instrument_names__")
+        ratios = limit_ratio_panel(
+            raw_close,
+            names if isinstance(names, dict) else None,
         )
-        holds_white = (low >= white * p["low_vs_white"]) & (close >= white)
-        white_rising = white >= REF(white, 1)
-        tradable = high > low
-
-        signals = broke_yesterday & open_ok & holds_white & white_rising & tradable
+        # Use the prior bar's close only. Passing close as the high panel turns
+        # the shared sealed-limit predicate into an exact close-at-limit test.
+        at_limit_up = limit_up_flags(raw_close, raw_close, ratios, tolerance=1.0)
+        below_limit_up = raw_close.notna() & ~at_limit_up
+        base_signal = had_death & ran_below & breakout_day & white_rising
+        # CLOSE/REF(CLOSE,5)：选股输出与入库按此降序，最强排最前。
+        roc5 = close / REF(close, 5)
 
         return SignalResult(
-            signals=signals.fillna(False),
+            signals=(base_signal & below_limit_up).fillna(False),
             factors={
                 "辰星线": white,
-                "昨日突破": broke_yesterday,
-                "今开合理": open_ok,
-                "守住白线": holds_white,
+                "牵牛线": yellow,
+                "曾死叉": had_death,
+                "白线下运行": ran_below,
+                "突破日": breakout_day,
                 "白线向上": white_rising,
+                "非涨停价": below_limit_up,
+                "ROC5": roc5,
             },
         )
 
 
-register(QianlongAuctionPicker())
-register(QianlongCloseePicker())
+class QianlongCloseePickerV3(_QianlongCore):
+    """潜龙出海 V3：在历史 V2 核心突破形态上加入换手率过滤。"""
+
+    slug = "qianlong-close-v3"
+    name = "潜龙出海（V3）"
+    description = (
+        "V3：保留 V2 的 15 日死叉回看、收盘价≥8 元和放量突破，"
+        "新增 T 日换手率 2%-8% 与非涨停价过滤；盘后选股，次日按开盘情景执行"
+    )
+    entry_instructions = (
+        "T 日 14:50 后只保留未触及涨停价的候选，收盘后确认，T+1 执行：平开±1%优先按开盘价轻仓试仓；低开1%-3%只在不破辰星线、"
+        "开盘后承接稳定时分批买入；高开1%-3%不追开盘，回落至开盘价附近再观察；高开或低开≥3%跳过。"
+        "单票先试 1 层，跌破辰星线且收盘确认或相对买入价回撤 6% 失效，不补仓摊平。"
+    )
+    entry_timing = "next_open"
+    requires_raw_limit_price = True
+    #: 选股结果按 ROC5 降序输出（最高排最前）。
+    screen_rank_factor = "ROC5"
+    strategy_revision = "builtin:qianlong-close-v3"
+    version = "v3"
+    version_history = [
+        {
+            "version": "v1",
+            "status": "archived",
+            "source": "application/backup/qianlong-legacy.py",
+        },
+        {"version": "v2", "status": "archived", "source": "builtin:qianlong-close-v2"},
+        {"version": "v3", "status": "candidate", "source": "builtin"},
+    ]
+    backtest_metrics = {
+        "trades": 567,
+        "win_rate": 46.91,
+        "avg_net_return": 0.4923,
+        "profit_factor": 1.213,
+    }
+    backtest_config = {
+        "start": "2026-02-01",
+        "end": "2026-07-31",
+        "adjust": "qfq",
+        "hold_days": 3,
+        "stop_loss_pct": -6.0,
+        "take_profit_pct": None,
+        "benchmark": None,
+        "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
+    }
+    default_universe = {"preset": "default_a_share", "boards": ["main", "chi_next"]}
+
+    def default_params(self) -> dict[str, Any]:
+        return {
+            **super().default_params(),
+            "turnover_min": 0.02,
+            "turnover_max": 0.08,
+        }
+
+    def required_fields(self) -> tuple[str, ...]:
+        return (*super().required_fields(), "turnover")
+
+    def compute(
+        self, panels: dict[str, pd.DataFrame], params: dict[str, Any] | None = None
+    ) -> SignalResult:
+        p = merge_params(self, params)
+        core = super().compute(panels, params)
+        turnover = panels["turnover"].astype(float)
+        turnover_ok = (turnover >= float(p["turnover_min"])) & (
+            turnover < float(p["turnover_max"])
+        )
+        return SignalResult(
+            signals=(core.signals & turnover_ok).fillna(False),
+            factors={
+                **core.factors,
+                "换手率(%)": turnover * 100.0,
+                "换手2%-8%": turnover_ok,
+            },
+        )
+
+
+class QianlongTailPickerV1(QianlongCloseePickerV3):
+    """潜龙尾盘版：T 日收盘选股并只保留当日 ROC5 最强的一只。"""
+
+    slug = "qianlong-tail-v1"
+    name = "潜龙尾盘（V1）"
+    description = (
+        "尾盘版：潜龙突破条件 + 换手2%-8% + T 日非涨停价，"
+        "同日按 ROC5 最强只留一只，T 日收盘成交、T+1 退出"
+    )
+    entry_instructions = (
+        "14:50 后计算 T 日信号，先剔除按板块涨停价封住的个股，再按 ROC5（CLOSE/REF(CLOSE,5)）"
+        "从当日候选中只留一只；T 日按未复权收盘价理想化成交。T+1 最高价触及买入价+3%止盈，"
+        "最低价触及-6%止损，若两者同日触发先按止损，均未触发则 T+1 收盘卖出。"
+        "单票一次建仓，不补仓。"
+    )
+    entry_timing = "close"
+    execution_adjust = "none"
+    screen_rank_factor = "ROC5"
+    # 尾盘信号必须在收盘前落地；托管任务按该声明在 14:50 执行。
+    screen_schedule = {
+        "mode": "once",
+        "run_hour": 14,
+        "run_minute": 50,
+        "interval_minutes": 10,
+        "window_start_hour": 9,
+        "window_start_minute": 30,
+        "window_end_hour": 14,
+        "window_end_minute": 50,
+    }
+    screen_top_n = 1
+    strategy_revision = "builtin:qianlong-tail-v1"
+    version = "v1"
+    version_history = [
+        {"version": "v1", "status": "candidate", "source": "builtin"},
+    ]
+    backtest_metrics = {
+        "trades": 100,
+        "win_rate": 67.0,
+        "avg_net_return": 0.5366,
+        "profit_factor": 1.567,
+    }
+    backtest_config = {
+        "start": "2026-02-02",
+        "end": "2026-07-30",
+        "signal_adjust": "qfq",
+        "execution_adjust": "none",
+        "selection": "one_per_day:max(CLOSE/REF(CLOSE,5))",
+        "hold_days": 1,
+        "stop_loss_pct": -6.0,
+        "take_profit_pct": 3.0,
+        "commission_bps": 3.0,
+        "stamp_duty_bps": 10.0,
+        "slippage_bps": 5.0,
+        "benchmark": None,
+        "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
+    }
+
+    def default_params(self) -> dict[str, Any]:
+        params = super().default_params()
+        params["price_min"] = 10.0
+        return params
+
+    def compute(
+        self, panels: dict[str, pd.DataFrame], params: dict[str, Any] | None = None
+    ) -> SignalResult:
+        result = super().compute(panels, params)
+        strength = panels["close"] / REF(panels["close"], 5)
+        selected = select_one_per_day(result.signals, strength)
+        return SignalResult(
+            signals=selected,
+            factors={
+                **result.factors,
+                "ROC5": strength,
+                "每日首选": selected,
+            },
+        )
+
+
+register(QianlongCloseePickerV3())
+register(QianlongTailPickerV1())

@@ -10,6 +10,10 @@ from src.ledger.infrastructure.store_types import (
     PalaceError,
     _SCHEMA_READY,
     _dumps,
+    _normalize_decision,
+    _normalize_reason_text,
+    _normalize_rule_version,
+    _normalize_timing,
     _now,
     normalize_code,
 )
@@ -29,13 +33,21 @@ class SchemaMixin:
     def init_schema(self) -> None:
         resolved = str(self.db_path.resolve())
         if resolved in _SCHEMA_READY or self._schema_is_current():
-            # 即使版本一致也要跑迁移：ADD COLUMN 是幂等的，
-            # 但如果有人加了新列忘记 bump SCHEMA_VERSION，不跑迁移就会爆。
-            # 代价：每次首次连接多跑几条 ALTER TABLE，全部 try/except 跳过，微秒级。
+            # 当前版本只补结构迁移；候选事实的归一/回填属于一次性数据迁移，
+            # 不能在普通打开账本时再次改写历史。
             self._run_migrations()
+            self.conn.commit()
             _SCHEMA_READY.add(resolved)
             return
 
+        had_candidate_table = bool(
+            self.conn.execute(
+                """
+                SELECT 1 FROM sqlite_master
+                WHERE type = 'table' AND name = 'candidate_reviews'
+                """
+            ).fetchone()
+        )
         self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS meta (
@@ -84,6 +96,13 @@ class SchemaMixin:
             CREATE INDEX IF NOT EXISTS idx_position_events_code_date
                 ON position_events(code, occurred_on, created_at);
 
+            CREATE TABLE IF NOT EXISTS ledger_write_receipts (
+                idempotency_key TEXT PRIMARY KEY,
+                request_json TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS account_events (
                 id TEXT PRIMARY KEY,
                 occurred_on TEXT NOT NULL,
@@ -117,7 +136,10 @@ class SchemaMixin:
                 decision TEXT NOT NULL,
                 timing TEXT NOT NULL DEFAULT '',
                 reason TEXT NOT NULL,
-                rule_version TEXT NOT NULL DEFAULT 'qianlong-v1',
+                rule_version TEXT NOT NULL DEFAULT '潜龙',
+                strategy_slug TEXT NOT NULL DEFAULT '',
+                strategy_revision TEXT NOT NULL DEFAULT '',
+                effective_params_json TEXT NOT NULL DEFAULT '{}',
                 evidence_json TEXT NOT NULL DEFAULT '{}',
                 tier TEXT NOT NULL DEFAULT 'core',
                 source TEXT NOT NULL DEFAULT 'manual',
@@ -138,7 +160,7 @@ class SchemaMixin:
                 target_price REAL,
                 layers REAL,
                 invalidation TEXT NOT NULL DEFAULT '',
-                rule_version TEXT NOT NULL DEFAULT 'qianlong-v1',
+                rule_version TEXT NOT NULL DEFAULT '潜龙',
                 source TEXT NOT NULL DEFAULT 'manual',
                 supersedes_id TEXT,
                 note TEXT NOT NULL DEFAULT '',
@@ -151,7 +173,7 @@ class SchemaMixin:
                 reviewed_on TEXT NOT NULL,
                 entity_type TEXT NOT NULL CHECK (entity_type IN ('plan', 'candidate', 'trade')),
                 entity_id TEXT NOT NULL,
-                strategy_tag TEXT NOT NULL DEFAULT 'qianlong',
+                strategy_tag TEXT NOT NULL DEFAULT '潜龙',
                 outcome TEXT NOT NULL,
                 return_pct REAL,
                 max_favorable_pct REAL,
@@ -228,6 +250,10 @@ class SchemaMixin:
         )
         self._dedupe_candidate_reviews()
         self._run_migrations()
+        if had_candidate_table:
+            # 仅在旧库升级时执行一次历史数据迁移；当前版本重开不再触碰事实字段。
+            self._normalize_candidate_vocab()
+            self._retag_stale_screen_candidates()
         self._set_meta("schema_version", str(SCHEMA_VERSION))
         self.conn.commit()
         _SCHEMA_READY.add(str(self.db_path.resolve()))
@@ -295,12 +321,103 @@ class SchemaMixin:
                 updated_at TEXT NOT NULL
             )""",
             "CREATE INDEX IF NOT EXISTS idx_daily_pnl_date ON daily_pnl_ledger(occurred_on DESC)",
+            # v7: 公式战法运行可复现字段
+            "ALTER TABLE candidate_reviews ADD COLUMN strategy_slug TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE candidate_reviews ADD COLUMN strategy_revision TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE candidate_reviews ADD COLUMN effective_params_json TEXT NOT NULL DEFAULT '{}'",
+            "CREATE INDEX IF NOT EXISTS idx_candidates_strategy_slug ON candidate_reviews(strategy_slug, occurred_on DESC)",
+            # v9: 可重放的成交批次收据，避免 API / AI 重试重复记账
+            """CREATE TABLE IF NOT EXISTS ledger_write_receipts (
+                idempotency_key TEXT PRIMARY KEY,
+                request_json TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )""",
         ]
         for sql in migrations:
             try:
                 self.conn.execute(sql)
-            except Exception:
-                pass  # 列已存在或表已存在，跳过
+            except sqlite3.OperationalError as exc:
+                message = str(exc).lower()
+                if "duplicate column name" in message or "already exists" in message:
+                    continue
+                raise
+
+    def _retag_stale_screen_candidates(self) -> None:
+        """把「隔日写入却标成真选」的 API 选股行改标为回填。幂等。
+
+        仅触碰 ``api:screen*``（不含已含 backfill 的源）；手工 ``manual`` /
+        Job ``job:screen`` 不动。首页/复盘靠 source 排除回填即可一致。
+        """
+        try:
+            self.conn.execute(
+                """
+                UPDATE candidate_reviews
+                SET source = 'api:screen_backfill'
+                WHERE IFNULL(source, '') NOT LIKE '%backfill%'
+                  AND IFNULL(source, '') LIKE 'api:screen%'
+                  AND substr(
+                        REPLACE(IFNULL(created_at, ''), 'T', ' '), 1, 10
+                      ) <> occurred_on
+                """
+            )
+        except Exception:
+            pass
+
+    def _normalize_candidate_vocab(self) -> None:
+        """裁决/战法/时点/理由中文化归一。幂等。"""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, decision, timing, reason, rule_version FROM candidate_reviews"
+            ).fetchall()
+        except Exception:
+            return
+        for row in rows:
+            new_decision = _normalize_decision(str(row["decision"]))
+            new_timing = _normalize_timing(str(row["timing"]))
+            new_reason = _normalize_reason_text(str(row["reason"]))
+            new_rule = _normalize_rule_version(str(row["rule_version"]))
+            if (
+                new_decision == str(row["decision"])
+                and new_timing == str(row["timing"])
+                and new_reason == str(row["reason"])
+                and new_rule == str(row["rule_version"])
+            ):
+                continue
+            if new_decision not in ("精选", "落选", "观察"):
+                new_decision = "观察"
+            self.conn.execute(
+                """
+                UPDATE candidate_reviews
+                SET decision = ?, timing = ?, reason = ?, rule_version = ?
+                WHERE id = ?
+                """,
+                (new_decision, new_timing, new_reason, new_rule, str(row["id"])),
+            )
+        try:
+            plan_rows = self.conn.execute("SELECT id, rule_version FROM plans").fetchall()
+        except Exception:
+            plan_rows = []
+        for row in plan_rows:
+            new_rule = _normalize_rule_version(str(row["rule_version"]))
+            if new_rule != str(row["rule_version"]):
+                self.conn.execute(
+                    "UPDATE plans SET rule_version = ? WHERE id = ?",
+                    (new_rule, str(row["id"])),
+                )
+        try:
+            review_rows = self.conn.execute(
+                "SELECT id, strategy_tag FROM reviews"
+            ).fetchall()
+        except Exception:
+            review_rows = []
+        for row in review_rows:
+            new_tag = _normalize_rule_version(str(row["strategy_tag"]))
+            if new_tag != str(row["strategy_tag"]):
+                self.conn.execute(
+                    "UPDATE reviews SET strategy_tag = ? WHERE id = ?",
+                    (new_tag, str(row["id"])),
+                )
 
     def _dedupe_candidate_reviews(self) -> None:
         """清理历史重复：同日同池同标的只留最新一条。"""

@@ -72,14 +72,27 @@ async function confirmImport(): Promise<void> {
 <template>
   <el-dialog
     v-model="model"
-    title="导入潜龙 state"
+    title="导入潜龙快照"
     width="40rem"
     destroy-on-close
     @closed="reset"
   >
     <template v-if="step === 1">
-      <p class="hint">选择潜龙技能的 state.json，先预览再确认导入。</p>
-      <input ref="fileInput" type="file" accept=".json,application/json" @change="onFileChange" />
+      <p class="hint">选择潜龙技能的快照文件（JSON），先预览再确认导入。</p>
+      <div class="file-row">
+        <label class="upload-label">
+          <el-button type="primary" plain tag="span">选择 JSON 文件</el-button>
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".json,application/json"
+            hidden
+            @change="onFileChange"
+          />
+        </label>
+        <span v-if="selectedFile" class="file-name">{{ selectedFile.name }}</span>
+        <span v-else class="file-name muted">未选择文件</span>
+      </div>
       <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="mt" />
     </template>
 
@@ -136,6 +149,29 @@ async function confirmImport(): Promise<void> {
   margin: 0 0 0.75rem;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.upload-label {
+  display: inline-flex;
+  cursor: pointer;
+  margin: 0;
+}
+
+.file-name {
+  font-size: 0.88rem;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.file-name.muted {
+  color: var(--muted);
 }
 
 .summary {

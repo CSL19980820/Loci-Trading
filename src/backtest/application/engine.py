@@ -151,6 +151,7 @@ def run_backtest(
     panels: dict[str, pd.DataFrame],
     *,
     entry_timing: str,
+    entry_price_panel: pd.DataFrame | None = None,
     config: BacktestConfig | None = None,
     strategy_slug: str = "",
     benchmark_close: pd.Series | None = None,
@@ -190,9 +191,18 @@ def run_backtest(
     #   open      当日开盘（9:25 竞价筛出来的，开盘就能买）
     #   close     当日收盘（14:50 左右筛，收盘价成交）
     #   next_open 次日开盘（盘后筛，只能等下一个交易日）
+    #   next_dip 次日低吸（T 日生成目标价，T+1 触价才成交）
     # 把 close 拿 next_open 凑是错的：少等一天的同时还按错的价成交，
     # 回测收益会系统性偏离，且偏离方向不固定，事后无法校正。
-    if entry_timing == "next_open":
+    entry_price_a: np.ndarray | None = None
+    if entry_timing == "next_dip":
+        if entry_price_panel is None:
+            raise ValueError("entry_timing=next_dip 必须提供 entry_price_panel")
+        entry_price_a = entry_price_panel.reindex(
+            index=signals.index, columns=signals.columns
+        ).to_numpy(dtype=float)
+
+    if entry_timing in {"next_open", "next_dip"}:
         entry_offset, entry_at_close = 1, False
     elif entry_timing == "close":
         entry_offset, entry_at_close = 0, True
@@ -213,16 +223,33 @@ def run_backtest(
             skip("入场日超出数据范围")
             continue
 
-        entry_price = entry_prices[entry_idx, col]
-        if not np.isfinite(entry_price) or entry_price <= 0:
-            skip("入场日无行情（停牌或缺数据）")
-            continue
         if volume_a is not None and not volume_a[entry_idx, col] > 0:
             skip("入场日停牌")
             continue
         if one_word[entry_idx, col] and not cfg.allow_limit_up_entry:
             skip("入场日一字板买不进")
             continue
+
+        if entry_timing == "next_dip":
+            assert entry_price_a is not None
+            target_price = entry_price_a[row, col]
+            next_low = low_a[entry_idx, col]
+            next_open = open_a[entry_idx, col]
+            if not np.isfinite(target_price) or target_price <= 0:
+                skip("次日低吸价无效")
+                continue
+            if np.isfinite(next_open) and next_open <= target_price:
+                entry_price = next_open
+            elif np.isfinite(next_low) and next_low <= target_price:
+                entry_price = target_price
+            else:
+                skip("次日低吸未触价")
+                continue
+        else:
+            entry_price = entry_prices[entry_idx, col]
+            if not np.isfinite(entry_price) or entry_price <= 0:
+                skip("入场日无行情（停牌或缺数据）")
+                continue
 
         # T+1：最早在入场次日才能卖出。
         first_exit = entry_idx + max(1, cfg.hold_days)
@@ -239,7 +266,7 @@ def run_backtest(
             volume_a=volume_a,
             last_index=len(dates) - 1,
         )
-        if exit_idx is None:
+        if exit_idx is None or not np.isfinite(exit_price) or exit_price <= 0:
             skip("持有期内始终无法卖出")
             continue
 
@@ -380,15 +407,22 @@ def compute_metrics(trades: list[Trade]) -> dict[str, Any]:
     刻意同时给出绝对收益与市场调整后的超额：项目此前那份手工回测就
     发现过"观察档绝对 +0.3% 看着很差，市场调整后其实是 +1.9% 正超额"
     ——只看绝对收益会把择时问题误判成选股问题。
-    """
-    if not trades:
-        return {"trades": 0}
 
-    net = np.array([t.net_return_pct for t in trades], dtype=float)
-    gross = np.array([t.gross_return_pct for t in trades], dtype=float)
-    mae = np.array([t.mae_pct for t in trades], dtype=float)
-    mfe = np.array([t.mfe_pct for t in trades], dtype=float)
-    hold = np.array([t.hold_days for t in trades], dtype=float)
+    ``data_end`` 交易保留在结果明细中供审计，但未覆盖完整持有期，不能
+    混入收益、胜率或 MFE/MAE；数量通过 ``data_end_trades`` 单独披露。
+    """
+    evaluable = [trade for trade in trades if trade.exit_reason != "data_end"]
+    data_end_trades = len(trades) - len(evaluable)
+    if not evaluable:
+        if not data_end_trades:
+            return {"trades": 0}
+        return {"trades": 0, "data_end_trades": data_end_trades}
+
+    net = np.array([t.net_return_pct for t in evaluable], dtype=float)
+    gross = np.array([t.gross_return_pct for t in evaluable], dtype=float)
+    mae = np.array([t.mae_pct for t in evaluable], dtype=float)
+    mfe = np.array([t.mfe_pct for t in evaluable], dtype=float)
+    hold = np.array([t.hold_days for t in evaluable], dtype=float)
 
     wins = net[net > 0]
     losses = net[net <= 0]
@@ -400,10 +434,10 @@ def compute_metrics(trades: list[Trade]) -> dict[str, Any]:
     elif wins.size:
         profit_factor = float("inf")
 
-    alphas = [t.alpha_pct for t in trades if t.alpha_pct is not None]
+    alphas = [t.alpha_pct for t in evaluable if t.alpha_pct is not None]
 
     metrics: dict[str, Any] = {
-        "trades": len(trades),
+        "trades": len(evaluable),
         "win_rate": round(float(win_rate), 2),
         "wins": int(len(wins)),
         "losses": int(len(losses)),
@@ -419,7 +453,8 @@ def compute_metrics(trades: list[Trade]) -> dict[str, Any]:
         "avg_mfe": round(float(mfe.mean()), 4),
         "avg_mae": round(float(mae.mean()), 4),
         "avg_hold_days": round(float(hold.mean()), 2),
-        "exit_reasons": _count_by(trades, lambda t: t.exit_reason),
+        "exit_reasons": _count_by(evaluable, lambda t: t.exit_reason),
+        "data_end_trades": data_end_trades,
     }
 
     if alphas:
@@ -428,9 +463,9 @@ def compute_metrics(trades: list[Trade]) -> dict[str, Any]:
         metrics["alpha_win_rate"] = round(float((alpha_array > 0).mean() * 100), 2)
 
     # 小样本时给出提示，避免把 7 笔交易的均值当成结论。
-    if len(trades) < 30:
+    if len(evaluable) < 30:
         metrics["caution"] = (
-            f"样本仅 {len(trades)} 笔，统计量不稳定，不宜据此外推"
+            f"样本仅 {len(evaluable)} 笔，统计量不稳定，不宜据此外推"
         )
     return metrics
 

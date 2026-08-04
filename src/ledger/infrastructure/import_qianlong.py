@@ -76,53 +76,58 @@ class ImportQianlongMixin:
         """从已解析的潜龙 state 对象导入起始快照。"""
         if not isinstance(payload, dict):
             raise PalaceError("潜龙 state.json 必须是 JSON 对象")
-        if self.conn.execute("SELECT COUNT(*) AS value FROM position_events").fetchone()["value"]:
-            raise PalaceError("账本已有仓位事件；为避免重复导入，请使用新的数据库文件")
+        with self._transaction():
+            if self.conn.execute("SELECT COUNT(*) AS value FROM position_events").fetchone()["value"]:
+                raise PalaceError("账本已有仓位事件；为避免重复导入，请使用新的数据库文件")
 
-        imported_on = normalize_date(str(payload.get("updatedAt") or ""))
-        imported: list[str] = []
-        for item in self._qianlong_holdings_from_payload(payload):
-            result = self.record_trade(
-                action="OPENING",
-                code=item["code"],
-                name=item["name"],
-                shares=item["shares"],
-                price=item["cost"],
-                occurred_on=imported_on,
-                reason=item["note"] or "潜龙技能记忆导入",
-                source=source,
-                metadata={
-                    "imported_from": source_label,
-                    "legacy_layers": item.get("layers"),
-                    "buy_date": item.get("buy_date"),
-                },
-            )
-            imported.append(result["id"])
+            imported_on = normalize_date(str(payload.get("updatedAt") or ""))
+            imported: list[str] = []
+            for item in self._qianlong_holdings_from_payload(payload):
+                result = self.record_trade(
+                    action="OPENING",
+                    code=item["code"],
+                    name=item["name"],
+                    shares=item["shares"],
+                    price=item["cost"],
+                    occurred_on=imported_on,
+                    reason=item["note"] or "潜龙技能记忆导入",
+                    source=source,
+                    metadata={
+                        "imported_from": source_label,
+                        "legacy_layers": item.get("layers"),
+                        "buy_date": item.get("buy_date"),
+                    },
+                )
+                imported.append(result["id"])
 
-        realized = float(payload.get("realizedPnlCumulative") or 0)
-        if realized:
-            self.record_account_event(
-                kind="REALIZED_PNL_IMPORT",
-                amount=realized,
-                occurred_on=imported_on,
-                note="从潜龙技能记忆导入的累计已实现盈亏基线",
-                source=source,
-                metadata={"imported_from": source_label},
+            realized = float(payload.get("realizedPnlCumulative") or 0)
+            if realized:
+                self.record_account_event(
+                    kind="REALIZED_PNL_IMPORT",
+                    amount=realized,
+                    occurred_on=imported_on,
+                    note="从潜龙技能记忆导入的累计已实现盈亏基线",
+                    source=source,
+                    metadata={"imported_from": source_label},
+                )
+            assets = payload.get("totalAssets")
+            if assets is not None:
+                self.record_snapshot(
+                    total_assets=float(assets),
+                    occurred_on=imported_on,
+                    note=str(payload.get("totalAssetsNote") or "从潜龙技能记忆导入"),
+                    source=source,
+                )
+            self._set_meta(
+                "qianlong_state_import",
+                _dumps({"path": source_label, "date": imported_on, "events": imported}),
             )
-        assets = payload.get("totalAssets")
-        if assets is not None:
-            self.record_snapshot(
-                total_assets=float(assets),
-                occurred_on=imported_on,
-                note=str(payload.get("totalAssetsNote") or "从潜龙技能记忆导入"),
-                source=source,
-            )
-        self._set_meta(
-            "qianlong_state_import",
-            _dumps({"path": source_label, "date": imported_on, "events": imported}),
-        )
-        self.conn.commit()
-        return {"date": imported_on, "position_events": imported, "realized_pnl_baseline": realized, "total_assets": assets}
+            return {
+                "date": imported_on,
+                "position_events": imported,
+                "realized_pnl_baseline": realized,
+                "total_assets": assets,
+            }
 
     def import_qianlong_state(self, state_path: Path | str, source: str = "qianlong-skill-memory") -> dict[str, Any]:
         """从潜龙技能的 ``state.json`` 导入一个可审计的起始快照。

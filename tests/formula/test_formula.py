@@ -22,6 +22,8 @@ from src.formula import (
     LLV,
     LLVBARS,
     MA,
+    MAX,
+    MIN,
     REF,
     SMA,
     SUM,
@@ -86,6 +88,11 @@ class SemanticsTests(unittest.TestCase):
         series = pd.Series([1.0, 2.0, 3.0])
         pd.testing.assert_series_equal(REF(series, 0), series)
 
+    def test_ref_rejects_negative_periods(self) -> None:
+        """负偏移会读未来 K 线，公开 API 也必须和编译器一样拒绝。"""
+        with self.assertRaises(ValueError):
+            REF(pd.Series([1.0, 2.0, 3.0]), -1)
+
     def test_ma_returns_nan_before_window_is_full(self) -> None:
         series = pd.Series([1.0, 2.0, 3.0, 4.0])
         result = MA(series, 3)
@@ -136,6 +143,12 @@ class SemanticsTests(unittest.TestCase):
         self.assertEqual(result.iloc[2], 0.0)
         self.assertEqual(result.iloc[4], 2.0)
 
+    def test_extreme_bars_choose_the_nearest_equal_extreme(self) -> None:
+        highs = pd.Series([1.0, 3.0, 3.0, 2.0])
+        lows = pd.Series([3.0, 1.0, 1.0, 2.0])
+        self.assertEqual(HHVBARS(highs, 3).iloc[2], 0.0)
+        self.assertEqual(LLVBARS(lows, 3).iloc[2], 0.0)
+
     def test_filter_suppresses_repeats_within_the_window(self) -> None:
         condition = pd.Series([True, True, True, False, True, True])
         self.assertEqual(list(FILTER(condition, 2)), [True, False, False, False, True, False])
@@ -161,6 +174,9 @@ class SemanticsTests(unittest.TestCase):
         self.assertEqual(list(IF(condition, 1.0, 0.0)), [1.0, 0.0, 1.0])
         alt = pd.Series([10.0, 20.0, 30.0])
         self.assertEqual(list(IF(condition, alt, 0.0)), [10.0, 0.0, 30.0])
+        self.assertEqual(IF(True, 1.0, 0.0), 1.0)
+        self.assertEqual(MAX(1.0, 2.0), 2.0)
+        self.assertEqual(MIN(1.0, 2.0), 1.0)
 
     def test_abs(self) -> None:
         self.assertEqual(list(ABS(pd.Series([-1.0, 2.0, -3.0]))), [1.0, 2.0, 3.0])

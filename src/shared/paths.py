@@ -55,6 +55,36 @@ def default_data_dir() -> Path:
     return writable_root() / "data"
 
 
+def _resolve_data_path(raw: str) -> Path:
+    """解析数据目录；相对配置始终相对安装目录，而不是当前工作目录。"""
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = writable_root() / path
+    try:
+        return path.resolve()
+    except OSError:
+        return path.absolute()
+
+
+def _configured_data_dir(raw: str) -> Path:
+    """解析配置目录，并为移动后的便携包提供旧绝对路径兜底。"""
+    configured = _resolve_data_path(raw)
+    default = default_data_dir().resolve()
+    if configured == default:
+        return default
+
+    # loci.config.json 会随旧机器的安装目录一起被复制。若旧目录失效，或
+    # 只是启动时被创建出的空目录，而 exe 旁已有完整行情库，应优先使用便携库。
+    if (
+        market_db_size(default) >= MARKET_POPULATED_BYTES
+        and market_db_size(configured) < MARKET_POPULATED_BYTES
+    ):
+        return default
+    if not configured.is_dir():
+        return default
+    return configured
+
+
 def load_config() -> dict[str, Any]:
     path = config_path()
     if not path.is_file():
@@ -137,11 +167,11 @@ def data_dir() -> Path:
         or ""
     ).strip()
     if raw:
-        return Path(raw)
+        return _resolve_data_path(raw)
     cfg = load_config().get("data_dir")
     if isinstance(cfg, str) and cfg.strip():
-        return Path(cfg.strip())
-    return default_data_dir()
+        return _configured_data_dir(cfg.strip())
+    return default_data_dir().resolve()
 
 
 def palace_db() -> Path:
@@ -190,7 +220,14 @@ def needs_setup() -> bool:
 def apply_data_dir(path: str | Path, *, mark_setup_done: bool = True) -> Path:
     """写入配置中的 data_dir（不热切当前进程已打开的库）。"""
     resolved = Path(path).expanduser().resolve()
-    updates: dict[str, Any] = {"data_dir": str(resolved)}
+    try:
+        relative = resolved.relative_to(writable_root().resolve())
+    except (OSError, ValueError):
+        config_value = str(resolved)
+    else:
+        # 安装目录内的状态使用相对路径，复制便携包时不会把旧盘符带走。
+        config_value = relative.as_posix() or "."
+    updates: dict[str, Any] = {"data_dir": config_value}
     if mark_setup_done:
         updates["setup_done"] = True
     save_config(updates)

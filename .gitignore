@@ -36,6 +36,7 @@ data/
 .env
 .env.*
 !.env.example
+.palace_ai_master_key
 
 # 工具与编辑器缓存
 .codegraph/

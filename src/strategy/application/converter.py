@@ -72,7 +72,7 @@ class MyStrategyPicker:
     slug = "my-strategy"           # 全小写+连字符，唯一
     name = "我的策略"
     description = "策略描述"
-    entry_timing = "next_open"     # "open" 或 "next_open"
+    entry_timing = "next_open"     # "open"、"next_open" 或 "next_dip"
 
     def default_params(self) -> dict[str, Any]:
         return {"ma_period": 5}    # 可调参数及默认值
@@ -113,7 +113,7 @@ def build_convert_prompt(source: str, source_type: str, slug: str, name: str,
 ## 目标策略信息
 - slug: {slug}
 - name: {name}
-- entry_timing: {entry_timing}（open=当日开盘，next_open=次日开盘）
+- entry_timing: {entry_timing}（open=当日开盘，next_open=次日开盘，next_dip=次日低吸）
 
 {_FORMULA_CHEATSHEET}
 
@@ -271,7 +271,9 @@ except Exception as e:
         Path(tmp_path).unlink(missing_ok=True)
 
 
-def save_and_load(code: str, slug: str) -> dict[str, Any]:
+def save_and_load(
+    code: str, slug: str, *, ops_db: str | Path | None = None
+) -> dict[str, Any]:
     """把代码写入文件并热加载，返回结果。
 
     加载失败会删掉文件（避免留下损坏状态），并返回详细错误。
@@ -290,35 +292,8 @@ def save_and_load(code: str, slug: str) -> dict[str, Any]:
     if not resolved.is_relative_to(CUSTOM_DIR.resolve()):
         raise ValueError(f"路径穿越：{slug}")
 
-    target.write_text(code, encoding="utf-8")
-
-    # 热加载：如果模块已存在（重新生成）先从 sys.modules 删掉
-    module_name = f"src.strategy.infrastructure.custom.{slug.replace('-', '_')}"
-    sys.modules.pop(module_name, None)
-
-    try:
-        spec = importlib.util.spec_from_file_location(module_name, target)
-        if spec is None or spec.loader is None:
-            raise ImportError("无法创建 module spec")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)  # type: ignore[union-attr]
-    except Exception as exc:
-        # 加载失败，删掉文件避免留下损坏状态
-        target.unlink(missing_ok=True)
-        sys.modules.pop(module_name, None)
-        detail = traceback.format_exc(limit=5)
-        raise RuntimeError(f"策略加载失败：{exc}\n{detail}") from exc
-
-    # 检查注册是否成功
-    from src.strategy.domain.base import _REGISTRY
-    if slug not in _REGISTRY:
-        target.unlink(missing_ok=True)
-        sys.modules.pop(module_name, None)
-        raise RuntimeError(
-            f"文件加载成功但策略 '{slug}' 未在注册表中，"
-            "请确认代码末尾有 register(YourClass())"
-        )
+    previous_code = target.read_text(encoding="utf-8") if target.exists() else None
+    _replace_and_load_custom_strategy(target, slug, code)
 
     logger.info("自定义策略 %s 加载注册成功", slug)
     rel_path = str(target.relative_to(Path(__file__).parents[2]))
@@ -326,17 +301,97 @@ def save_and_load(code: str, slug: str) -> dict[str, Any]:
     # 版本历史（失败不影响主流程）
     try:
         from src.ops import OpsStore
-        with OpsStore(DEFAULT_OPS_DB) as ops:
+        with OpsStore(ops_db or DEFAULT_OPS_DB) as ops:
             version = ops.save_strategy_version(slug, code, file_path=rel_path)
         logger.info("策略版本 v%s 已保存", version)
     except Exception as exc:
-        logger.warning("保存版本历史失败（不影响注册）：%s", exc)
+        logger.exception("策略已加载，但版本历史保存失败（slug=%s）", slug)
+        if previous_code is None:
+            target.unlink(missing_ok=True)
+        else:
+            _replace_and_load_custom_strategy(target, slug, previous_code)
+        raise RuntimeError(f"策略版本历史保存失败：{exc}") from exc
 
+    from src.strategy.domain.base import _REGISTRY
+    engine = _REGISTRY[slug]
+    engine.source_kind = "custom"
+    engine.version = str(version)
+    engine.strategy_revision = f"custom:{slug}:v{version}"
     return {
         "slug": slug,
         "file": rel_path,
         "registered": True,
+        "version": str(version),
     }
+
+
+def restore_custom_strategy_version(
+    slug: str, version: int, *, ops_db: str | Path | None = None
+) -> dict[str, Any]:
+    """恢复指定代码版本；运行时加载成功后才原子切换 active 标记。"""
+    from src.ops import OpsError, OpsStore
+
+    with OpsStore(ops_db or DEFAULT_OPS_DB) as ops:
+        target_version = ops.get_strategy_version(slug, version)
+    if target_version is None:
+        raise OpsError(f"策略 {slug} 不存在版本 {version}")
+    code = str(target_version.get("code") or "")
+    if not code:
+        raise OpsError(f"策略 {slug} 版本 {version} 不包含可恢复代码")
+    target = CUSTOM_DIR / f"{slug}.py"
+    previous_code = target.read_text(encoding="utf-8") if target.exists() else None
+    _replace_and_load_custom_strategy(target, slug, code)
+    try:
+        with OpsStore(ops_db or DEFAULT_OPS_DB) as ops:
+            restored = ops.rollback_strategy_version(slug, version)
+    except Exception:
+        logger.exception("策略 %s 运行时已恢复，但 active 标记切换失败", slug)
+        if previous_code is None:
+            target.unlink(missing_ok=True)
+        else:
+            _replace_and_load_custom_strategy(target, slug, previous_code)
+        raise
+    from src.strategy.domain.base import _REGISTRY
+    engine = _REGISTRY[slug]
+    engine.source_kind = "custom"
+    engine.version = str(restored["version"])
+    engine.strategy_revision = f"custom:{slug}:v{restored['version']}"
+    return {
+        "slug": slug,
+        "version": str(restored["version"]),
+        "file": str(target.relative_to(Path(__file__).parents[2])),
+        "registered": True,
+    }
+
+
+def _replace_and_load_custom_strategy(target: Path, slug: str, code: str) -> None:
+    """先保留旧运行时引用；新代码不能注册时恢复原注册表与文件。"""
+    from src.strategy.domain.base import _REGISTRY
+
+    old_code = target.read_text(encoding="utf-8") if target.exists() else None
+    old_engine = _REGISTRY.pop(slug, None)
+    module_name = f"src.strategy.infrastructure.custom.{slug.replace('-', '_')}"
+    sys.modules.pop(module_name, None)
+    target.write_text(code, encoding="utf-8")
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, target)
+        if spec is None or spec.loader is None:
+            raise ImportError("无法创建 module spec")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        if slug not in _REGISTRY:
+            raise RuntimeError(f"文件加载成功但策略 '{slug}' 未在注册表中")
+    except Exception as exc:
+        sys.modules.pop(module_name, None)
+        if old_code is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_text(old_code, encoding="utf-8")
+        if old_engine is not None:
+            _REGISTRY[slug] = old_engine
+        detail = traceback.format_exc(limit=5)
+        raise RuntimeError(f"策略加载失败：{exc}\n{detail}") from exc
 
 
 def list_custom_strategies() -> list[dict[str, Any]]:

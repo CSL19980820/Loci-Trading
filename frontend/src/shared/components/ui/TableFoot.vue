@@ -23,7 +23,7 @@ const currentPage = defineModel<number>('page', { default: 1 })
       :total="total"
       layout="total, prev, pager, next"
       background
-      small
+      size="small"
     />
   </div>
 </template>

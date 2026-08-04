@@ -9,12 +9,26 @@ from src.shared.paths import ops_db as _default_ops_db
 
 DEFAULT_DB = _default_ops_db()
 
-#: 任务类型。每种对应 src/ops/jobs.py 里的一个执行器。
-JOB_KINDS = ("sync", "screen", "backtest", "compare", "optimize", "prune", "skill", "notify")
+#: 任务类型。每种对应 application/jobs 里的一个执行器。
+JOB_KINDS = (
+    "sync",
+    "screen",
+    "backtest",
+    "compare",
+    "optimize",
+    "prune",
+    "skill",
+    "notify",
+    "outcome",
+)
 
 #: 行情同步托管任务名（运维「行情同步」面板 upsert，勿改名）
 MANAGED_SYNC_INTRADAY = "行情盘中增量"
 MANAGED_SYNC_EOD = "行情日终重刷"
+
+#: 候选 T+N 自动跟踪（选出后 5 个交易日内盘后重算）
+MANAGED_OUTCOME_TRACK = "候选T+N跟踪"
+MANAGED_OUTCOME_CRON = "45 15 * * 1-5"
 
 #: 任务与执行状态。
 RUN_STATUSES = ("running", "success", "failed", "skipped")

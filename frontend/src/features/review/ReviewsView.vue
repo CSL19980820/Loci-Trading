@@ -3,11 +3,12 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import PageContainer from '@/shared/components/layout/PageContainer.vue'
 import RecordDialog from '@/shared/components/dialogs/RecordDialog.vue'
-import Sheet from '@/shared/components/layout/Sheet.vue'
 import Sparkline from '@/shared/components/charts/Sparkline.vue'
-import TableFoot from '@/shared/components/ui/TableFoot.vue'
 import { useClientPagination } from '@/shared/composables/useClientPagination'
 import { entityLabel, pct, toneClass } from '@/shared/lib/format'
 import { usePalaceStore } from '@/shared/stores/palace'
@@ -21,15 +22,36 @@ const { currentPage, pageSize, total, paginated: paginatedReviews } = useClientP
   15,
 )
 
-const withReturn = computed(() => store.reviews.filter((item) => item.return_pct !== null).length)
-const avgReturn = computed(() => {
-  const values = store.reviews.map((item) => item.return_pct).filter((value): value is number => value !== null)
-  if (!values.length) return null
-  return values.reduce((sum, value) => sum + value, 0) / values.length
-})
 const returnSeries = computed(
   () => store.reviews.map((item) => item.return_pct).filter((value): value is number => value !== null).reverse(),
 )
+
+const columns = ref<BasicTableColumn[]>([
+  { prop: 'date', label: '日期', width: 110 },
+  { prop: 'entity_type', label: '类型', width: 88, slotName: 'entity' },
+  { prop: 'outcome', label: '结果', minWidth: 160, showOverflowTooltip: true },
+  { prop: 'return_pct', label: '收益', width: 88, slotName: 'ret' },
+  { prop: 'mae_mfe', label: 'M / A', width: 120, slotName: 'maeMfe' },
+  {
+    prop: 'lesson',
+    label: '训 / 规',
+    minWidth: 200,
+    align: 'left',
+    headerAlign: 'left',
+    slotName: 'lesson',
+    showOverflowTooltip: true,
+  },
+])
+
+const tableRows = computed(() => paginatedReviews.value as unknown as Record<string, unknown>[])
+
+const listToolbar = computed<ListToolbarConfig>(() => ({
+  create: {
+    onClick: () => {
+      recordOpen.value = true
+    },
+  },
+}))
 
 function onSaved(): void {
   void store.loadRoute(route, true)
@@ -37,73 +59,85 @@ function onSaved(): void {
 </script>
 
 <template>
-  <PageHeader
-    title="手记"
-    :subtitle="`样本 ${withReturn} · 均 ${avgReturn === null ? '—' : `${avgReturn > 0 ? '+' : ''}${avgReturn.toFixed(1)}%`} · ${store.dashboard?.evolution.review_count ?? store.reviews.length}/${store.dashboard?.evolution.gate ?? 5}`"
-  >
-    <el-tag size="small" type="info">{{ store.reviews.length }}</el-tag>
-    <RouterLink to="/reviews"><el-button>复盘中心</el-button></RouterLink>
-    <el-button type="primary" @click="recordOpen = true">写复盘</el-button>
-  </PageHeader>
-
-  <Sheet v-if="returnSeries.length" title="收益示意" quiet margin>
-    <div class="chart-box compact-chart">
-      <Sparkline
-        :values="returnSeries"
-        :height="56"
-        :color="(returnSeries[returnSeries.length - 1] ?? 0) >= 0 ? 'var(--up)' : 'var(--down)'"
-        label="收益"
-      />
-    </div>
-  </Sheet>
-
-  <Sheet v-if="store.reviews.length">
-    <el-collapse>
-      <el-collapse-item v-for="item in paginatedReviews" :key="item.id" :name="item.id">
-        <template #title>
-          <div class="review-title">
-            <span class="mono dim">{{ item.date }}</span>
-            <el-tag size="small" type="info">{{ entityLabel(item.entity_type) }}</el-tag>
-            <strong class="clip-title">{{ item.outcome }}</strong>
-            <span class="mono" :class="toneClass(item.return_pct)">{{ pct(item.return_pct) }}</span>
-          </div>
-        </template>
-        <div class="memory-metrics mono">
-          <span class="dim">M{{ pct(item.max_favorable_pct) }}</span>
-          <span class="dim">A{{ pct(item.max_adverse_pct) }}</span>
+  <div class="page-fill">
+    <PageContainer>
+      <template v-if="returnSeries.length" #topExpand>
+        <div class="spark-wrap">
+          <Sparkline
+            :values="returnSeries"
+            :height="48"
+            :color="(returnSeries[returnSeries.length - 1] ?? 0) >= 0 ? 'var(--up)' : 'var(--down)'"
+            label="收益"
+          />
         </div>
-        <p v-if="item.lesson" class="reason"><b>训</b> {{ item.lesson }}</p>
-        <p v-if="item.next_rule" class="reason"><b>规</b> {{ item.next_rule }}</p>
-        <div class="memory-foot mono dim">{{ item.id }} · {{ item.entity_id }}</div>
-      </el-collapse-item>
-    </el-collapse>
-    <TableFoot v-model:page="currentPage" :total="total" :page-size="pageSize" />
-  </Sheet>
-  <EmptyState
-    v-else
-    description="还没有复盘"
-    reason="还没写过复盘"
-    eta="卖出或减仓后补记"
-  >
-    <el-button type="primary" @click="recordOpen = true">写复盘</el-button>
-  </EmptyState>
+      </template>
+      <template #main>
+        <BasicTable
+          v-if="store.reviews.length"
+          v-model:columns="columns"
+          :data-source="tableRows"
+          :pagination="{
+            currentPage,
+            pageSize,
+            total,
+            hideOnSinglePage: true,
+            layout: 'total, prev, pager, next',
+          }"
+          :toolbar-config="{ custom: true }"
+          stripe
+          row-key="id"
+          @current-change="(page) => { currentPage = page }"
+        >
+          <template #toolbarButtons>
+            <ListToolbar :config="listToolbar" />
+          </template>
+          <template #entity="{ row }">
+            <el-tag size="small" type="info">{{ entityLabel(String(row.entity_type)) }}</el-tag>
+          </template>
+          <template #ret="{ row }">
+            <span class="mono" :class="toneClass(row.return_pct as number | null)">
+              {{ pct(row.return_pct as number | null) }}
+            </span>
+          </template>
+          <template #maeMfe="{ row }">
+            <span class="mono dim">
+              M{{ pct(row.max_favorable_pct as number | null) }}
+              · A{{ pct(row.max_adverse_pct as number | null) }}
+            </span>
+          </template>
+          <template #lesson="{ row }">
+            <span v-if="row.lesson || row.next_rule" class="lesson-cell">
+              <template v-if="row.lesson">训 {{ row.lesson }}</template>
+              <template v-if="row.lesson && row.next_rule"> · </template>
+              <template v-if="row.next_rule">规 {{ row.next_rule }}</template>
+            </span>
+            <span v-else class="dim">—</span>
+          </template>
+        </BasicTable>
+        <PageBusy v-else-if="store.loading" label="加载复盘…" />
+        <EmptyState
+          v-else
+          description="还没有复盘记录"
+          reason="卖出或减仓后可补记一笔样本；后续会接 AI 复盘"
+          eta="点新增写入"
+        >
+          <el-button type="primary" @click="recordOpen = true">新增</el-button>
+        </EmptyState>
+      </template>
+    </PageContainer>
 
-  <RecordDialog v-model="recordOpen" kind="review" @saved="onSaved" />
+    <RecordDialog v-model="recordOpen" kind="review" @saved="onSaved" />
+  </div>
 </template>
 
 <style scoped>
-.review-title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 0.55rem;
-  padding-right: 0.5rem;
+.spark-wrap {
+  padding: 0.55rem 1rem 0.35rem;
+  border-bottom: 1px solid var(--rule);
 }
 
-.clip-title {
-  max-width: 16rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.lesson-cell {
+  font-size: 0.82rem;
+  color: var(--muted);
 }
 </style>

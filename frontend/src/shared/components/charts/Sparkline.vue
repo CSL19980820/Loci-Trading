@@ -8,12 +8,15 @@ const props = withDefaults(
     height?: number
     color?: string
     label?: string
+    /** 同花顺式：末端圆点 */
+    showEndDot?: boolean
   }>(),
   {
     width: 320,
     height: 96,
     color: '#dc2626',
     label: '图',
+    showEndDot: false,
   },
 )
 
@@ -24,7 +27,7 @@ const points = computed(() => {
   const min = Math.min(...props.values)
   const max = Math.max(...props.values)
   const span = max - min || 1
-  const pad = 4
+  const pad = props.showEndDot ? 6 : 4
   return props.values.map((value, index) => {
     const x =
       props.values.length === 1
@@ -33,6 +36,11 @@ const points = computed(() => {
     const y = props.height - pad - ((value - min) / span) * (props.height - pad * 2)
     return { x, y }
   })
+})
+
+const endPoint = computed(() => {
+  if (!points.value.length) return null
+  return points.value[points.value.length - 1]
 })
 
 const linePath = computed(() => {
@@ -71,6 +79,13 @@ const areaPath = computed(() => {
       stroke-width="1.6"
       stroke-linecap="round"
       stroke-linejoin="round"
+    />
+    <circle
+      v-if="showEndDot && endPoint"
+      :cx="endPoint.x"
+      :cy="endPoint.y"
+      r="3.2"
+      :fill="color"
     />
   </svg>
 </template>

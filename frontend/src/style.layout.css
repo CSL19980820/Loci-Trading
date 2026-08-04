@@ -1,0 +1,187 @@
+.main-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  width: 100%;
+  /* 仅左右留白作纸色沟槽；上下贴边，内容区自有底色 */
+  padding: 0 0.85rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+  background: var(--paper);
+}
+
+.page-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+}
+
+.page-host:has(> .page-fill) {
+  overflow: hidden;
+}
+
+/* 页内分区：PageTabs 吸顶；在 page-scroll 内贴顶 */
+.page-scroll .page-tabs--sticky {
+  --page-tabs-sticky-top: 0px;
+}
+
+/* 页面根：占满主区；纸色沟槽内的内容卡（底色异于 main-content） */
+.page-fill {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+/* 列表主区贴合内容卡，避免 Sheet 再套一层框 */
+.page-fill > .sheet.list-sheet,
+.page-fill > .page-container {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.page-fill > .filter-bar.sheet {
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+  margin-bottom: 0 !important;
+}
+
+.page-fill > .mb,
+.page-fill > .el-alert,
+.page-fill > .filter-bar,
+.page-fill > .page-tabs {
+  flex-shrink: 0;
+}
+
+.page-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  padding: 0.65rem 0.85rem;
+}
+
+/*
+ * 视口契约（强制）：
+ * - html/body/#app 禁止出现文档级滚动条；滚动只发生在 page-scroll / 表体 / 侧栏等内层。
+ * - 路由页根必须 page-fill，把主区高度吃满；禁止内容撑破视口再靠 page-host 当「浏览器滚动」。
+ * - 疏密：区块间距用 .mb / filter-bar / page-tabs 既有尺度；禁止大块空白垫高，也禁止把可读区压成窄条。
+ * - PageTabs：优先放在 page-scroll 外（与 Ops 一致）；短内容 Tab 面板加 .page-pane 让 Sheet 拉满剩余高度。
+ */
+.page-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-pane > .sheet {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-pane > .sheet > .sheet-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-pane .stat-strip,
+.page-pane .el-collapse,
+.page-pane .form-hint,
+.page-pane .form-error,
+.page-pane .brief,
+.page-pane .kv,
+.page-pane .chart-trust-row {
+  flex-shrink: 0;
+}
+
+.page-pane .chart-box {
+  flex: 1 1 auto;
+  min-height: 12rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-pane .chart-box .sparkline,
+.page-pane .chart-box .equity-line-chart {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 10rem;
+  height: 100%;
+}
+
+.filter-bar {
+  margin-bottom: 0.55rem !important;
+}
+
+.filter-bar .sheet-body {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.filter-bar .el-form-item {
+  margin-bottom: 0;
+}
+
+.mb {
+  margin-bottom: 0.65rem;
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.9rem;
+}
+
+.stat-strip.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stat-strip.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat-strip.cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.stat-strip.mini {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.hold-plan {
+  grid-template-columns: 1.4fr 0.9fr;
+}

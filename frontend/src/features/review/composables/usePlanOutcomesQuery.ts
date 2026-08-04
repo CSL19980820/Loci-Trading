@@ -3,15 +3,16 @@
  * 状态与触发结果以后端为准。
  */
 import { useQuery } from '@pinia/colada'
-import { computed } from 'vue'
+import { computed, type MaybeRefOrGetter, toValue } from 'vue'
 
 import { getPlanOutcomes } from '@/shared/api/quant'
 import type { PlanOutcome } from '@/shared/types/quant'
 
-export function usePlanOutcomesQuery() {
+export function usePlanOutcomesQuery(options: MaybeRefOrGetter<{ enabled?: boolean }> = {}) {
   const query = useQuery({
     key: () => ['review-plan-outcomes'] as const,
     query: (): Promise<PlanOutcome[]> => getPlanOutcomes(),
+    enabled: () => toValue(options).enabled !== false,
     staleTime: 60_000,
   })
 

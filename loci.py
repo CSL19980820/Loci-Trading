@@ -100,30 +100,71 @@ def pick_listen_port(host: str, preferred: int = 0) -> int:
         return int(sock.getsockname()[1])
 
 
-def _splash_html(message: str = "Loci 启动中") -> str:
-    """原生窗口首屏：不等服务就绪也能先看见转圈。"""
+def _splash_html(message: str = "启动中", *, phase: str = "enter") -> str:
+    """原生窗口首屏 / 关闭过渡：印章 + 字标 + 开账线（与 SPA boot-splash 同构）。
+
+    phase: enter | exit | error
+    """
     safe = (
         message.replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
     )
+    phase_key = phase if phase in {"enter", "exit", "error"} else "enter"
+    kickers = {"enter": "开账", "exit": "落笔", "error": "中断"}
+    kicker = kickers[phase_key]
+    body_class = f"phase-{phase_key}"
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Loci</title>
 <style>
-html,body{{margin:0;height:100%;background:#f6f3ee;color:#1c1917;
-font-family:"Segoe UI","Microsoft YaHei",sans-serif}}
-.wrap{{height:100%;display:flex;flex-direction:column;align-items:center;
-justify-content:center;gap:14px}}
-.mark{{width:40px;height:40px;border-radius:6px;background:#c41e3a;color:#fff;
-display:grid;place-items:center;font-weight:700;letter-spacing:.04em}}
-.spin{{width:22px;height:22px;border:2px solid #e7e0d6;border-top-color:#c41e3a;
-border-radius:50%;animation:r .75s linear infinite}}
-.hint{{font-size:13px;color:#78716c;letter-spacing:.06em}}
-@keyframes r{{to{{transform:rotate(360deg)}}}}
-</style></head><body><div class="wrap">
-<div class="mark">LC</div><div class="spin"></div>
-<div class="hint" id="h">{safe}</div></div></body></html>"""
+html,body{{margin:0;height:100%;color:#142033;
+font-family:"IBM Plex Sans","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif}}
+body{{display:grid;place-items:center;
+background:radial-gradient(ellipse 55% 40% at 50% 38%,rgba(196,30,58,.05),transparent 70%),#eef2f6}}
+.stage{{display:flex;flex-direction:column;align-items:center;gap:15px;
+width:min(14rem,72vw);animation:rise .42s ease-out both}}
+.mark{{position:relative;width:44px;height:44px;border-radius:6px;background:#c41e3a;
+color:#fff;display:grid;place-items:center;font-family:Georgia,"Noto Serif SC","Songti SC",serif;
+font-weight:700;letter-spacing:.03em;font-size:15px;
+box-shadow:inset 0 -2px 0 rgba(0,0,0,.12);animation:seal .5s ease-out both}}
+.mark::after{{content:"";position:absolute;inset:5px;border:1px solid rgba(255,255,255,.28);
+border-radius:3px;pointer-events:none}}
+.brand-block{{display:flex;flex-direction:column;align-items:center;gap:11px;width:100%}}
+.brand{{font-family:Georgia,"Noto Serif SC","Songti SC",serif;font-size:23px;font-weight:700;
+letter-spacing:.02em;line-height:1;color:#142033}}
+.tape{{position:relative;width:100%;height:1px;background:#d5dce6;overflow:hidden}}
+.tape-fill{{position:absolute;inset:0 auto 0 0;width:0;background:#c41e3a;
+animation:tape-in .7s cubic-bezier(.22,1,.36,1) .18s forwards}}
+.status{{display:flex;align-items:baseline;gap:7px;font-family:Consolas,"Cascadia Mono",
+"IBM Plex Mono",monospace;font-size:11px;font-weight:500;letter-spacing:.14em;color:#5b6b7c;
+animation:fade .45s ease .28s both}}
+.kicker{{color:#8a96a5}}.dot{{color:#c5ced9}}
+.phase-exit{{opacity:.92}}
+.phase-exit .stage{{animation:sink .5s ease both}}
+.phase-exit .tape-fill{{animation:tape-out .55s cubic-bezier(.4,0,.2,1) .05s forwards;width:72%}}
+.phase-error .tape-fill{{animation:none;width:42%;background:#5b6b7c}}
+.phase-error .status{{animation:none}}
+@keyframes rise{{from{{opacity:0;transform:translateY(6px)}}to{{opacity:1;transform:none}}}}
+@keyframes sink{{from{{opacity:1;transform:none}}to{{opacity:.85;transform:translateY(4px)}}}}
+@keyframes seal{{from{{opacity:0;transform:scale(.92)}}to{{opacity:1;transform:none}}}}
+@keyframes tape-in{{from{{width:0}}to{{width:72%}}}}
+@keyframes tape-out{{from{{width:72%}}to{{width:18%}}}}
+@keyframes fade{{from{{opacity:0}}to{{opacity:1}}}}
+@media (prefers-reduced-motion:reduce){{
+.stage,.mark,.status,.tape-fill{{animation:none!important}}
+.tape-fill{{width:72%}}.phase-exit .tape-fill{{width:28%}}.phase-error .tape-fill{{width:42%}}
+}}
+</style></head><body class="{body_class}"><div class="stage">
+<div class="mark" aria-hidden="true">LC</div>
+<div class="brand-block">
+<div class="brand">Loci</div>
+<div class="tape" aria-hidden="true"><div class="tape-fill"></div></div>
+</div>
+<div class="status" role="status">
+<span class="kicker">{kicker}</span><span class="dot" aria-hidden="true">·</span>
+<span id="h">{safe}</span>
+</div></div></body></html>"""
 
 
 def _bootstrap_running(base: str) -> bool:
@@ -162,51 +203,23 @@ def _wait_ready(url: str, timeout: float = 60.0) -> None:
 
 
 def _fetch_tape(base: str) -> dict:
-    with urllib.request.urlopen(f"{base}/api/market/live-tape", timeout=8) as resp:
+    # live 选路已优先 sina/tencent（通常 <1s）；略放宽以扛偶发抖动
+    with urllib.request.urlopen(f"{base}/api/market/live-tape", timeout=12) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _fmt_pct(value: Any) -> str:
-    try:
-        n = float(value)
-    except (TypeError, ValueError):
-        return "—"
-    sign = "+" if n > 0 else ""
-    return f"{sign}{n:.1f}%"
-
-
 def _format_tray_title(tape: dict[str, Any]) -> str:
-    """托盘悬停文案：指数一行 + 持仓多行（系统气泡不支持着色）。"""
-    indices = tape.get("indices") or []
-    positions = tape.get("positions") or []
-    bits: list[str] = []
-    for item in indices[:4]:
-        label = str(item.get("label") or item.get("name") or item.get("code") or "")
-        bits.append(f"{label}{_fmt_pct(item.get('pct'))}")
-    pos_ok = [p for p in positions if p.get("ok") and p.get("pnl_pct") is not None]
-    bag = ""
-    if pos_ok:
-        avg = sum(float(p["pnl_pct"]) for p in pos_ok) / len(pos_ok)
-        bag = _fmt_pct(avg)
-        bits.append(f"仓{bag}")
-    lines = [f"指数：{'，'.join(bits) if bits else '暂无'}"]
-    if pos_ok:
-        lines.append(f"持仓：总 {bag}")
-        for p in pos_ok[:8]:
-            name = str(p.get("name") or p.get("label") or p.get("code") or "")
-            if len(name) > 6:
-                name = name[:6]
-            lines.append(f"  {name} {_fmt_pct(p.get('pnl_pct'))}")
-    elif positions:
-        lines.append("持仓：行情暂不可用")
-    else:
-        lines.append("持仓：空仓")
-    return "\n".join(lines)[:500]
+    """托盘悬停文案：委托 market.live_tape（仓置顶 + 等宽排版）。"""
+    from src.market.infrastructure.live_tape import format_tray_title
+
+    return format_tray_title(tape)
 
 
 def run_server(host: str, port: int) -> None:
     try:
         log(f"server thread start host={host} port={port}")
+        # 桌面入口默认开调度器（盘后选股 / 行情同步）；可设 0 关闭
+        os.environ.setdefault("PALACE_ENABLE_SCHEDULER", "1")
         from src.shared.paths import ensure_data_dir, market_db, writable_root
 
         root = ensure_data_dir()
@@ -270,10 +283,17 @@ def start_tray(
     on_show: Callable[[], None],
     on_quit: Callable[[], None],
     on_open_browser: Callable[[], None] | None = None,
+    on_show_peek: Callable[[], None] | None = None,
     tooltip: str = "Loci",
 ) -> Any:
-    """右下角托盘：左键/「打开 Loci」唤回窗口；「退出」结束进程。"""
+    """右下角托盘：左键打开行情 Peek；菜单可回工作台；「退出」结束进程。"""
     import pystray
+
+    def peek_item(icon, item):  # noqa: ARG001
+        if on_show_peek is not None:
+            on_show_peek()
+        else:
+            on_show()
 
     def show_item(icon, item):  # noqa: ARG001
         on_show()
@@ -290,7 +310,8 @@ def start_tray(
             on_open_browser()
 
     items = [
-        pystray.MenuItem("打开 Loci", show_item, default=True),
+        pystray.MenuItem("行情", peek_item, default=True),
+        pystray.MenuItem("打开工作台", show_item),
         pystray.MenuItem("在浏览器中打开", browser_item) if on_open_browser else None,
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("退出", quit_item),
@@ -299,6 +320,7 @@ def start_tray(
     icon = pystray.Icon("Loci", _make_tray_image(), tooltip, menu)
 
     def refresh_loop() -> None:
+        last_ok_title = tooltip
         while True:
             try:
                 # 非交易日 / 盘后库已最新：不刷实时，只保留静态提示
@@ -315,9 +337,17 @@ def start_tray(
                     time.sleep(30)
                     continue
                 tape = _fetch_tape(base_url)
-                icon.title = _format_tray_title(tape) or tooltip
-            except Exception:
-                icon.title = "Loci · 行情暂不可用"
+                # Windows 托盘 tip ≤128；超长 pystray 会 ValueError
+                title = (_format_tray_title(tape) or tooltip)[:128]
+                icon.title = title
+                last_ok_title = title
+            except Exception as exc:
+                # 短暂超时/选路失败：保留上次成功文案，避免托盘一直「暂不可用」
+                log(f"tray tape refresh failed: {type(exc).__name__}: {exc}")
+                if last_ok_title and last_ok_title != tooltip:
+                    icon.title = last_ok_title[:128]
+                else:
+                    icon.title = "Loci · 行情暂不可用"
             time.sleep(5)
 
     threading.Thread(target=refresh_loop, name="loci-tray-tape", daemon=True).start()
@@ -359,13 +389,26 @@ def run_browser_shell(
         quit_flag.set()
         try:
             if tray_icon is not None:
-                tray_icon.stop()
+                tray_icon.title = "Loci · 正在退出"
         except Exception:
             pass
-        _force_exit(0)
+
+        def finish() -> None:
+            try:
+                if tray_icon is not None:
+                    tray_icon.stop()
+            except Exception:
+                pass
+            _force_exit(0)
+
+        # 给托盘提示一点可见时间，避免「点退出立刻消失」
+        threading.Timer(0.45, finish).start()
 
     def show_again() -> None:
         open_path()
+
+    def show_peek() -> None:
+        open_path("/peek")
 
     if not no_tray:
         tip = "Loci · 浏览器模式（右键可退出）"
@@ -377,6 +420,7 @@ def run_browser_shell(
                 on_show=show_again,
                 on_quit=quit_app,
                 on_open_browser=show_again,
+                on_show_peek=show_peek,
                 tooltip=tip,
             )
         except Exception:
@@ -413,9 +457,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--browser", action="store_true", help="只用系统浏览器")
     parser.add_argument("--no-window", action="store_true", help="只起服务")
     parser.add_argument("--no-tray", action="store_true", help="不启用托盘挂载")
+    parser.add_argument(
+        "--allow-multi",
+        action="store_true",
+        help="允许同时开多个实例（默认单实例，二次启动会前置已有窗口）",
+    )
     args = parser.parse_args(argv)
 
     log(f"boot frozen={getattr(sys, 'frozen', False)} argv={sys.argv!r}")
+
+    if not args.allow_multi and not args.no_window:
+        try:
+            from src.shared.single_instance import claim_or_focus
+
+            if not claim_or_focus(_writable_root()):
+                log("another instance is running → focused existing window, exit")
+                return 0
+        except Exception:
+            log("single-instance check failed:\n" + traceback.format_exc())
 
     try:
         port = pick_listen_port(args.host, args.port)
@@ -423,6 +482,12 @@ def main(argv: list[str] | None = None) -> int:
         alert(str(exc) + "\n请先关掉旧的 Loci 再开，或改用 --port 0。")
         return 2
     log(f"listen {args.host}:{port} (requested={args.port})")
+    try:
+        from src.shared.single_instance import update_port
+
+        update_port(_writable_root(), port)
+    except Exception:
+        pass
 
     server = threading.Thread(
         target=run_server,
@@ -448,11 +513,6 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             pass
         return 0
-
-    def open_in_browser(path: str = "") -> None:
-        import webbrowser
-
-        webbrowser.open(f"{url}{path}")
 
     if args.browser:
         try:
@@ -483,180 +543,26 @@ def main(argv: list[str] | None = None) -> int:
             reason="无桌面组件，浏览器模式",
         )
 
-    state: dict[str, Any] = {
-        "quitting": False,
-        "tray_ok": False,
-        "window": None,
-        "icon": None,
-        "ready": False,
-    }
+    from src.shared.desktop_shell import DesktopShellHooks, run_desktop_shell
 
-    def show_main() -> None:
-        window = state.get("window")
-        if window is None:
-            open_in_browser()
-            return
-        try:
-            window.show()
-            window.restore()
-            log("window restored from tray")
-        except Exception:
-            log("show_main failed:\n" + traceback.format_exc())
-            open_in_browser()
-
-    def quit_app(*, from_window_close: bool = False) -> None:
-        """统一退出：关窗/停托盘/强杀进程（×、Alt+F4 与托盘「退出」同路径）。"""
-        if state["quitting"]:
-            return
-        state["quitting"] = True
-        origin = "window-close" if from_window_close else "tray-menu"
-        log(f"quit requested via {origin}")
-        if not from_window_close:
-            window = state.get("window")
-            try:
-                if window is not None:
-                    window.destroy()
-            except Exception:
-                log("destroy failed:\n" + traceback.format_exc())
-        try:
-            icon = state.get("icon")
-            if icon is not None:
-                icon.stop()
-                log("tray stopped")
-        except Exception:
-            log("tray stop failed:\n" + traceback.format_exc())
-        # webview.start 未必立刻返回；定时强退避免残留 uvicorn
-        threading.Timer(0.8, lambda: _force_exit(0)).start()
-
-    def start_tray_once() -> None:
-        if args.no_tray or state["tray_ok"]:
-            return
-        state["tray_ok"] = True
-        try:
-            state["icon"] = start_tray(
-                base_url=url,
-                on_show=show_main,
-                on_quit=quit_app,
-                on_open_browser=lambda: open_in_browser(),
-            )
-        except Exception:
-            log("tray failed:\n" + traceback.format_exc())
-
-    def on_closing() -> bool:
-        # 补数进行中：提醒用户，确认后才退出
-        if _bootstrap_running(url):
-            try:
-                import ctypes
-
-                # MB_YESNO | MB_ICONWARNING
-                choice = ctypes.windll.user32.MessageBoxW(
-                    0,
-                    "行情补数还在进行中，现在退出会中断同步。\n确定要退出吗？",
-                    "Loci",
-                    0x34,
-                )
-                if choice != 6:  # IDYES
-                    log("quit cancelled — bootstrap still running")
-                    return False
-            except Exception:
-                log("bootstrap quit prompt failed:\n" + traceback.format_exc())
-        quit_app(from_window_close=True)
-        return True
-
-    try:
-        storage = _writable_root() / "data" / "webview"
-        storage.mkdir(parents=True, exist_ok=True)
-        os.environ.setdefault("WEBVIEW2_USER_DATA_FOLDER", str(storage))
-
-        # 先开窗转圈，服务就绪后再 load_url —— 体感更快
-        window = webview.create_window(
-            "Loci",
-            html=_splash_html("Loci 启动中"),
-            width=1280,
-            height=860,
-            min_size=(960, 640),
-        )
-        state["window"] = window
-
-        def navigate_when_ready() -> None:
-            try:
-                _wait_ready(f"{url}/api/health", timeout=90.0)
-                state["ready"] = True
-                log(f"server ready {url} → load_url")
-                window.load_url(url)
-            except Exception as exc:
-                log(f"navigate failed: {exc}")
-                try:
-                    window.load_html(
-                        _splash_html(f"启动失败：{exc}")
-                    )
-                except Exception:
-                    pass
-                alert(f"后台服务启动失败：\n{exc}\n\n详情见 data/loci-startup.log")
-
-        threading.Thread(
-            target=navigate_when_ready,
-            name="loci-navigate",
-            daemon=True,
-        ).start()
-
-        window.events.closing += on_closing
-        try:
-            window.events.minimized += lambda: log("window minimized → taskbar (tray stays)")
-            window.events.restored += lambda: log("window restored from taskbar")
-        except Exception:
-            pass
-        try:
-            window.events.shown += lambda: start_tray_once()
-        except Exception:
-            threading.Timer(1.5, start_tray_once).start()
-        start_tray_once()
-        log("tray init requested before webview.start()")
-
-        start_kwargs: dict[str, Any] = {"storage_path": str(storage)}
-        ico = _icon_ico()
-        if ico.is_file():
-            start_kwargs["icon"] = str(ico)
-
-        log(f"webview.start() kwargs={list(start_kwargs)}")
-        started_at = time.monotonic()
-        webview.start(**start_kwargs)
-        elapsed = time.monotonic() - started_at
-        log(f"webview exited after {elapsed:.1f}s quitting={state['quitting']}")
-        if state["quitting"]:
-            _force_exit(0)
-        if elapsed < 3.0:
-            alert(
-                "桌面窗口未能保持打开（可能缺少 WebView2）。\n"
-                "已改用系统浏览器，并挂到托盘——右键托盘图标选「退出」。"
-            )
-            try:
-                _wait_ready(f"{url}/api/health")
-            except Exception:
-                pass
-            return run_browser_shell(
-                url=url,
-                server=server,
-                no_tray=args.no_tray,
-                reason="浏览器模式（托盘可退出）",
-            )
-        return 0
-    except Exception:
-        log("webview failed:\n" + traceback.format_exc())
-        alert(
-            "桌面窗口打开失败，已改用系统浏览器。\n"
-            "已挂到托盘——右键托盘图标选「退出」即可关闭，不必开任务管理器。"
-        )
-        try:
-            _wait_ready(f"{url}/api/health")
-        except Exception:
-            pass
-        return run_browser_shell(
-            url=url,
-            server=server,
-            no_tray=args.no_tray,
-            reason="浏览器模式（托盘可退出）",
-        )
+    return run_desktop_shell(
+        webview=webview,
+        url=url,
+        server=server,
+        no_tray=args.no_tray,
+        hooks=DesktopShellHooks(
+            log=log,
+            alert=alert,
+            force_exit=_force_exit,
+            writable_root=_writable_root,
+            wait_ready=_wait_ready,
+            bootstrap_running=_bootstrap_running,
+            splash_html=_splash_html,
+            start_tray=start_tray,
+            icon_ico=_icon_ico,
+            run_browser_shell=run_browser_shell,
+        ),
+    )
 
 
 if __name__ == "__main__":

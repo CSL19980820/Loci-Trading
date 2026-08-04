@@ -31,19 +31,7 @@ def _events_path(run_id: str) -> Path:
     return skill_runs_dir() / f"{run_id}.events.jsonl"
 
 
-def save_run(state: dict[str, Any]) -> dict[str, Any]:
-    run_id = str(state["id"])
-    state["updated_at"] = _now()
-    path = _run_path(run_id)
-    tmp = path.with_suffix(".tmp")
-    with _lock:
-        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(path)
-    return state
-
-
-def load_run(run_id: str) -> dict[str, Any] | None:
-    path = _run_path(run_id)
+def _read_run_unlocked(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     try:
@@ -53,13 +41,50 @@ def load_run(run_id: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def append_event(run_id: str, event: dict[str, Any]) -> None:
+def _write_run_unlocked(state: dict[str, Any], path: Path) -> dict[str, Any]:
+    state["updated_at"] = _now()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+    return state
+
+
+def _append_event_unlocked(run_id: str, event: dict[str, Any]) -> None:
     payload = {"ts": _now(), **event}
     path = _events_path(run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def save_run(state: dict[str, Any]) -> dict[str, Any]:
+    run_id = str(state["id"])
+    path = _run_path(run_id)
     with _lock:
-        with open(path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        return _write_run_unlocked(state, path)
+
+
+def load_run(run_id: str) -> dict[str, Any] | None:
+    return _read_run_unlocked(_run_path(run_id))
+
+
+def append_event(run_id: str, event: dict[str, Any]) -> None:
+    with _lock:
+        _append_event_unlocked(run_id, event)
+
+
+def claim_user_reply(run_id: str, reply: str) -> dict[str, Any] | None:
+    """原子领取一次 waiting_user 回复；已被其他请求领取时返回 None。"""
+    path = _run_path(run_id)
+    with _lock:
+        state = _read_run_unlocked(path)
+        if state is None or state.get("status") != "waiting_user":
+            return None
+        state["status"] = "running"
+        state["pending_ask"] = {}
+        _write_run_unlocked(state, path)
+        _append_event_unlocked(run_id, {"type": "user_reply", "text": str(reply)[:500]})
+        return state
 
 
 def list_events(run_id: str, *, after: int = 0) -> list[dict[str, Any]]:

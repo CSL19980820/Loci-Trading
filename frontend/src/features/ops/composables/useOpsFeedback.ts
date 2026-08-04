@@ -14,8 +14,10 @@ export function createOpsFeedback(): OpsFeedback {
   const busy = ref(false)
   const notice = ref('')
   const errorText = ref('')
+  let pending = 0
 
   async function guard<T>(task: () => Promise<T>, done?: string): Promise<T | null> {
+    pending += 1
     busy.value = true
     errorText.value = ''
     notice.value = ''
@@ -32,7 +34,8 @@ export function createOpsFeedback(): OpsFeedback {
             : '请求失败'
       return null
     } finally {
-      busy.value = false
+      pending -= 1
+      busy.value = pending > 0
     }
   }
 
@@ -45,7 +48,7 @@ export function provideOpsFeedback(feedback: OpsFeedback = createOpsFeedback()):
 }
 
 export function useOpsFeedback(): OpsFeedback {
-  const feedback = inject(OPS_FEEDBACK_KEY)
-  if (!feedback) throw new Error('useOpsFeedback() requires provideOpsFeedback() in ancestor')
-  return feedback
+  // 旧版工坊页的部分子树没有祖先 provider；默认实例避免 Vue inject 警告，
+  // 有 provider 时仍保持页面级共享反馈状态。
+  return inject(OPS_FEEDBACK_KEY, createOpsFeedback, true)
 }

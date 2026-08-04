@@ -31,7 +31,7 @@ cd frontend; bun install; bun run typecheck; bun run test; bun run build
 
 CI（`.github/workflows/ci.yml`）：Python `pytest` + `lint-imports`；前端 `bun install` + `typecheck` + `test`；另跑 Playwright e2e（ubuntu + Chromium）。
 
-可选加速：`$env:LOCI_MARKET_DUCKDB='1'`（[ADR-002](docs/adr/ADR-002-duckdb-readonly-panel.md)）；`$env:LOCI_BACKTEST_FAST='1'`（回测旁路，失败/有细规则止损回退经典引擎）。行情详情 K 线默认 Lightweight Charts（`loci.market.useLwChart`，可关回 ECharts）。
+可选加速：`$env:LOCI_MARKET_DUCKDB='1'`（[ADR-002](docs/adr/ADR-002-duckdb-readonly-panel.md)）；`$env:LOCI_BACKTEST_FAST='1'`（回测旁路，失败/有细规则止损回退经典引擎）。行情详情为 ECharts 通达信式三窗（K/量/副图常驻）；日 K 约拉 320 根供 MA250，默认可视最近 60 根。
 
 前端 **bun**；后端仓库 `.venv`。不要编造另一套工具链。
 

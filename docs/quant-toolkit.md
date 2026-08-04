@@ -29,8 +29,8 @@ COUNT(close > ma20, 12)    # → (close > ma20).rolling(12).sum()
 
 ---
 
-选股默认股票池为「主板+创业板+科创板、剔除 ST、屏蔽北交所」。
-范围由 `src/market/universe.py` 与选股 API 契约约定。
+选股默认股票池为「主板+创业板+科创板、剔除 ST」；北交所默认不含，但可在自定义股票池中显式选择。
+范围由 `src/market/domain/universe.py` 与选股 API 契约约定。
 
 ## 1. 行情仓
 
@@ -77,7 +77,7 @@ python market.py sync --workers 4 --interval 0.15
 
 ```bash
 python market.py strategies                      # 已注册战法
-python market.py screen qianlong-auction         # 跑一次选股
+python market.py screen qianlong-close           # 跑一次选股
 python market.py bench                           # 性能实测
 ```
 
@@ -85,14 +85,10 @@ python market.py bench                           # 性能实测
 
 | slug | 战法 | 入场时点 | 实现 |
 |---|---|---|---|
-| `qianlong-auction` | 潜龙出海·竞价版 | 当日开盘 | `src/strategies/qianlong.py` |
-| `qianlong-close` | 潜龙出海·原版 | 次日开盘 | 同上 |
-| `lugw-sanwai` | 卢高文·三外有三 | 次日开盘 | `src/strategies/lugaowen.py` |
-| `lugw-tianyi` | 卢高文·天衣无缝 | 次日开盘 | 同上 |
-| `lugw-daoba` | 卢高文·倒拔杨柳 | 次日开盘 | 同上 |
-| `lugw-haidi` | 卢高文·海底捞月 | 次日开盘 | 同上 |
-| `lugw-fenshou` | 卢高文·分手快乐 | 次日开盘 | 同上 |
-| `lugw-chouma` | 卢高文·筹码峰突破 | 次日开盘 | 同上（依赖 `COST()`）|
+| `qianlong-close-v3` | 潜龙出海（V3） | 次日开盘 | 同上 |
+| `qianlong-tail-v1` | 潜龙尾盘（V1） | 尾盘收盘 | `src/strategy/application/qianlong.py` |
+| `sanyuan-tail-v1` | 三源尾盘共振 | 次日开盘 | `src/strategy/application/tail_resonance.py` |
+| `rsi30-dip` | RSI22 次日低吸 | 次日低吸 | `src/strategy/application/dip_reversal.py` |
 
 **入场时点是策略元数据的一部分，不是回测参数。** 同一套形态条件，
 "9:25 竞价筛、当日开盘买"和"盘后筛、次日开盘买"是两个完全不同的策略，
@@ -141,8 +137,8 @@ class MyPicker:
 ## 3. 回测
 
 ```bash
-python market.py backtest qianlong-auction --start 2025-01-01 --hold 3 --trades
-python market.py backtest qianlong-auction --start 2025-01-01 --hold 1 --target 5
+python market.py backtest qianlong-close --start 2025-01-01 --hold 3 --trades
+python market.py backtest qianlong-close --start 2025-01-01 --hold 1 --target 5
 ```
 
 ### A 股规则
@@ -165,7 +161,7 @@ python market.py backtest qianlong-auction --start 2025-01-01 --hold 1 --target 
 
 ### 一次真实结果
 
-跑潜龙出海竞价版，2025-01 至今。样本随行情仓扩大的变化本身就很说明问题：
+跑潜龙出海，2025-01 至今。样本随行情仓扩大的变化本身就很说明问题：
 
 | 样本 | 笔数 | 胜率 | 净收益均值 | MFE均值 | MAE均值 |
 |---|---|---|---|---|---|
@@ -372,7 +368,7 @@ python ops.py provider add --name anthropic --protocol anthropic \
 
 运维页也可配置：
 
-- **行情同步**：盘中增量（默认每 5 分钟，`*/5 9-14 * * 1-5`）+ 日终重刷（默认 16:00，`mode=today_refresh` 只刷当日 OHLC）。会自动维护「行情盘中增量」「行情日终重刷」两条托管任务。
+- **行情同步**：盘中增量（默认每 5 分钟，`*/5 9-14 * * 1-5`）+ 日终重刷（默认 **15:25**，`mode=today_refresh` 刷当日 OHLC 并刷新过期复权因子）。首次启动默认开启两条托管任务；`loci.py` / `cli.serve` 默认 `PALACE_ENABLE_SCHEDULER=1`。
 - **推送**：企业微信群机器人 Webhook；任务类型 `notify`（触价 / 日终简报 / 最近选股 / 同步失败），或其它任务勾选 `push_wecom`。
 - 调度需 `PALACE_ENABLE_SCHEDULER=1`。
 
@@ -383,19 +379,19 @@ python ops.py provider add --name anthropic --protocol anthropic \
 python ops.py job add 盘后同步 sync --cron "35 15 * * 1-5" \
     --config '{"workers":6}'
 
-# 竞价前选股
-python ops.py job add 潜龙选股 screen --cron "26 9 * * 1-5" \
-    --config '{"strategy":"qianlong-auction"}'
+# 盘后选股
+python ops.py job add 潜龙选股 screen --cron "47 15 * * 1-5" \
+    --config '{"strategy":"qianlong-close"}'
 
 # 周末回测复盘
 python ops.py job add 周度回测 backtest --cron "0 10 * * 6" \
-    --config '{"strategy":"qianlong-auction","start":"2025-01-01","hold_days":1}'
+    --config '{"strategy":"qianlong-close","start":"2025-01-01","hold_days":1}'
 
 # 盘后 AI 简报：技能包 + 供应商 + 真实数据上下文
 python ops.py job add 盘后简报 skill --cron "40 15 * * 1-5" \
     --config '{"skill":"qianlong-brief","provider":"openrouter",
                "context":["screen","market_coverage"],
-               "context_strategy":"qianlong-auction"}'
+               "context_strategy":"qianlong-close"}'
 
 python ops.py job list
 python ops.py job run 潜龙选股        # 立即执行一次
@@ -412,8 +408,7 @@ python ops.py job add "01 盘后同步行情" sync --cron "35 15 * * 1-5"     --
 
 # record_candidates 是关键：选股结果自动入候选池，T+N 后复盘引擎才有得验
 python ops.py job add "02 盘后选股·分手快乐" screen --cron "45 15 * * 1-5"     --config '{"strategy":"lugw-fenshou","record_candidates":true}'
-python ops.py job add "03 盘后选股·潜龙原版" screen --cron "47 15 * * 1-5"     --config '{"strategy":"qianlong-close","record_candidates":true}'
-python ops.py job add "04 竞价前选股·潜龙竞价" screen --cron "26 9 * * 1-5"     --config '{"strategy":"qianlong-auction","record_candidates":true}'
+python ops.py job add "03 盘后选股·潜龙出海" screen --cron "47 15 * * 1-5"     --config '{"strategy":"qianlong-close","record_candidates":true}'
 
 # 周末回顾：战法还有没有效、卖法要不要调
 python ops.py job add "05 周末战法对比" compare --cron "0 10 * * 6"     --config '{"start":"2025-01-01","holds":[1,3]}'
@@ -423,8 +418,7 @@ python ops.py job add "06 周末退出扫描" optimize --cron "30 10 * * 6"     
 python ops.py job add "07 每周清理执行历史" prune --cron "0 3 * * 0"     --config '{"keep_per_job":200}'
 ```
 
-时间安排的理由：15:35 同步（收盘后行情已出），15:45 起选股（同步已完成），
-9:26 跑竞价版（集合竞价 9:25 结束，开盘前还有 4 分钟）。
+时间安排的理由：15:35 同步（收盘后行情已出），15:45 起选股（同步已完成）。
 
 `record_candidates` 是整条回路的接头处：
 
@@ -494,9 +488,10 @@ GET/POST/DELETE      /api/providers
 
 - **样本与结论**：目前只同步了 400 只深市主板。任何回测结论在全市场
   多年数据上重跑之前都只是参考。
-- **`COST()` 筹码分布未实现**：卢高文六个涨停战法依赖它（换手率衰减的
-  筹码分布分位数）。现有 `calc_chip_distribution` 只是等宽分箱直方图，
-  语义相差很远，不能直接拿来复刻。
+- **`COST()` 筹码分布**：已在 `src.formula.domain.chips` 实现换手率衰减的
+  递推分布，并由卢高文筹码峰策略使用；Screen Formula 仍不直接暴露
+  `COST/WINNER`，因为它们依赖完整历史状态，后续需要在公式面板加载契约中
+  明确 `full_history` 后再开放，避免只用短窗口生成伪精确成本。
 - **「一箭穿心」源材料不在仓库里**：通达信原文与课程稿已从仓库移除；
   现有 Python 策略实现中均无命中。需要你提供公式文本才能复刻。
 - **akshare 上游不稳**：底层是爬公开网页接口，随时可能改版或限流封 IP。

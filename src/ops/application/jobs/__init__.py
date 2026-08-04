@@ -29,6 +29,7 @@ from src.ops.application.jobs.context import (
 )
 from src.ops.application.jobs.notify import execute_notify
 from src.ops.application.jobs.optimize import execute_optimize
+from src.ops.application.jobs.outcome import execute_outcome
 from src.ops.application.jobs.prune import execute_prune
 from src.ops.application.jobs.registry import EXECUTORS, run_job
 from src.ops.application.jobs.screen import execute_screen
@@ -53,6 +54,7 @@ __all__ = [
     "execute_compare",
     "execute_notify",
     "execute_optimize",
+    "execute_outcome",
     "execute_prune",
     "execute_screen",
     "execute_skill",

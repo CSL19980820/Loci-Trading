@@ -5,7 +5,7 @@ from src.shared.paths import market_db as _default_market_db
 
 DEFAULT_DB = _default_market_db()
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: 面板字段 -> quotes_daily 列名。价格类字段会按复权方式换算，量额类不换算。
 PRICE_FIELDS = ("open", "high", "low", "close")
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS instruments (
     name            TEXT NOT NULL DEFAULT '',
     market          TEXT NOT NULL DEFAULT '',
     board           TEXT NOT NULL DEFAULT '',
+    industry        TEXT NOT NULL DEFAULT '',
     instrument_type TEXT NOT NULL DEFAULT 'STOCK'
                     CHECK (instrument_type IN ('STOCK', 'INDEX')),
     list_date       TEXT NOT NULL DEFAULT '',

@@ -77,7 +77,18 @@ def limit_up_flags(
     prev_close = close.shift(1)
     # ZTPRICE 逐元素取比例，这里 ratios 是矩阵，直接算涨停价。
     limit_price = _round_half_up(prev_close * (1.0 + ratios), 2)
-    return (close >= limit_price * tolerance) & (close >= high)
+    sealed = pd.DataFrame(
+        np.isclose(
+            close.to_numpy(dtype=float),
+            high.to_numpy(dtype=float),
+            rtol=1e-9,
+            atol=1e-8,
+            equal_nan=False,
+        ),
+        index=close.index,
+        columns=close.columns,
+    )
+    return (close >= limit_price * tolerance) & sealed
 
 
 def one_word_flags(high: pd.DataFrame, low: pd.DataFrame) -> pd.DataFrame:

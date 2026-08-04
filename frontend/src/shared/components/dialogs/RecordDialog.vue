@@ -68,7 +68,7 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
         ],
       },
       { key: 'score', label: '评分', type: 'number', min: 0, max: 100, step: 1 },
-      { key: 'timing', label: '时点', type: 'text', placeholder: '竞价 / 尾盘' },
+      { key: 'timing', label: '时点', type: 'text', placeholder: '尾盘 / 低吸 / 平开 / 高开回踩 / 观望' },
       { key: 'pool_id', label: '池', type: 'text', placeholder: '默认按日期归池' },
       { key: 'occurred_on', label: '日期', type: 'date', default: today() },
       { key: 'reason', label: '理由', type: 'textarea', required: true, rows: 3 },
@@ -115,7 +115,7 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
   },
   review: {
     title: '写复盘',
-    hint: 'MFE / MAE 是持有期内的最大浮盈与最大浮亏。对象 ID 可后补。',
+    hint: '最高浮盈 / 最深浮亏看持有期内曾经到过的最好与最差；对象 ID 可后补。',
     fields: [
       {
         key: 'entity_type',
@@ -129,10 +129,10 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
         ],
       },
       { key: 'entity_id', label: '对象 ID（可选）', type: 'text', placeholder: 'TX-… / CA-… / PL-…' },
-      { key: 'strategy_tag', label: '战法', type: 'text', required: true, placeholder: '如 qianlong / lugw-sanwai' },
+      { key: 'strategy_tag', label: '战法', type: 'text', required: true, placeholder: '如 qianlong-close-v3 / lugw-haidi' },
       { key: 'return_pct', label: '收益 %', type: 'number', step: 0.01 },
-      { key: 'max_favorable_pct', label: 'MFE %', type: 'number', step: 0.01 },
-      { key: 'max_adverse_pct', label: 'MAE %', type: 'number', step: 0.01 },
+      { key: 'max_favorable_pct', label: '最高浮盈 %', type: 'number', step: 0.01 },
+      { key: 'max_adverse_pct', label: '最深浮亏 %', type: 'number', step: 0.01 },
       { key: 'reviewed_on', label: '日期', type: 'date', default: today() },
       { key: 'outcome', label: '结果', type: 'textarea', required: true, rows: 3 },
       { key: 'lesson', label: '教训', type: 'textarea', rows: 2 },
@@ -154,10 +154,9 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
   },
   snapshot: {
     title: '记资产快照',
-    hint: '总资产快照是持仓占比和真实资金曲线的锚点。',
     fields: [
-      { key: 'total_assets', label: '总资产', type: 'number', required: true, min: 0, step: 0.01 },
-      { key: 'cash', label: '可用现金', type: 'number', min: 0, step: 0.01 },
+      { key: 'total_assets', label: '总资产', type: 'number', required: true, min: 0, max: 1e12, step: 0.01 },
+      { key: 'cash', label: '可用现金', type: 'number', min: 0, max: 1e12, step: 0.01 },
       { key: 'occurred_on', label: '日期', type: 'date', default: today() },
       { key: 'note', label: '备注', type: 'textarea', rows: 2 },
     ],
@@ -263,7 +262,7 @@ async function submit(): Promise<void> {
   <el-dialog
     v-model="model"
     :title="schema.title"
-    width="36rem"
+    :width="width"
     destroy-on-close
     @closed="submitError = ''"
   >

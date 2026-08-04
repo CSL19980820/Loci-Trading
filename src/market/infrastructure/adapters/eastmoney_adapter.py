@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import time
 
 import pandas as pd
@@ -20,61 +20,67 @@ from src.market.infrastructure.adapters.types import (
     LANE_SPOT_BATCH,
     ProbeResult,
 )
+from src.market.domain.column_glossary import select_columns
 from src.market.infrastructure.sources import EastmoneySource, SourceError, _import_akshare
 from src.market.infrastructure.store import guess_market, normalize_code
 
 
+#: 以下四张表只从 ``column_glossary.CN_TO_EN`` 挑子集，中英对照不在此处二次维护。
 #: 仅用于「绕过 Source、直接吃 akshare 中文列」的兜底（单测 / 原始表）。
-_EASTMONEY_RENAME = {
-    "日期": "date",
-    "开盘": "open",
-    "最高": "high",
-    "最低": "low",
-    "收盘": "close",
-    "成交量": "volume",
-    "成交额": "amount",
-    "换手率": "turnover",
-}
+_EASTMONEY_RENAME = select_columns(
+    "日期",
+    "开盘",
+    "最高",
+    "最低",
+    "收盘",
+    "成交量",
+    "成交额",
+    "换手率",
+)
 
-_SPOT_RENAME = {
-    "代码": "code",
-    "名称": "name",
-    "今开": "open",
-    "最高": "high",
-    "最低": "low",
-    "最新价": "close",
-    "成交量": "volume",
-    "成交额": "amount",
-    "昨收": "prev_close",
-    "涨跌幅": "pct",
-    "涨跌额": "change",
-}
+_SPOT_RENAME = select_columns(
+    "代码",
+    "名称",
+    "今开",
+    "最高",
+    "最低",
+    "最新价",
+    "成交量",
+    "成交额",
+    "昨收",
+    "涨跌幅",
+    "涨跌额",
+)
 
-_MINUTE_RENAME = {
-    "时间": "datetime",
-    "开盘": "open",
-    "收盘": "close",
-    "最高": "high",
-    "最低": "low",
-    "成交量": "volume",
-    "成交额": "amount",
-    "均价": "avg_price",
-}
+_MINUTE_RENAME = select_columns(
+    "时间",
+    "开盘",
+    "收盘",
+    "最高",
+    "最低",
+    "成交量",
+    "成交额",
+    "均价",
+)
 
 _CAPITAL_FLOW_RENAME = {
-    "日期": "date",
-    "收盘价": "close",
+    **select_columns(
+        "日期",
+        "收盘价",
+        "主力净流入-净额",
+        "主力净流入-净占比",
+        "超大单净流入-净额",
+        "超大单净流入-净占比",
+        "大单净流入-净额",
+        "大单净流入-净占比",
+        "中单净流入-净额",
+        "中单净流入-净占比",
+        "小单净流入-净额",
+        "小单净流入-净占比",
+    ),
+    # 资金流表的历史归一名是 pct_chg，与现价表的 pct 撞了同一个中文名，
+    # 只能在此单独覆盖；改这里等于改入库列名，勿顺手统一。
     "涨跌幅": "pct_chg",
-    "主力净流入-净额": "main_net_inflow",
-    "主力净流入-净占比": "main_net_pct",
-    "超大单净流入-净额": "super_large_net_inflow",
-    "超大单净流入-净占比": "super_large_net_pct",
-    "大单净流入-净额": "large_net_inflow",
-    "大单净流入-净占比": "large_net_pct",
-    "中单净流入-净额": "medium_net_inflow",
-    "中单净流入-净占比": "medium_net_pct",
-    "小单净流入-净额": "small_net_inflow",
-    "小单净流入-净占比": "small_net_pct",
 }
 
 
@@ -91,9 +97,11 @@ class EastmoneyAdapter(MarketAdapter):
             LANE_CAPITAL_FLOW,
         ),
         description=(
-            "akshare 东财接口；换手率在 Source 层从百分数归一为小数；"
-            "现价走全市场表后按代码过滤。"
+            "日线/现价/资金流经 akshare；分钟线直连 push2his/push2delay；"
+            "成交量手→股、换手率百分数→小数在 Source/normalize 完成。"
         ),
+        # 东财公开站点，仅供人核对来源：实际请求路径是 akshare，本仓不直连该域名。
+        base_url="https://www.eastmoney.com",
     )
 
     def __init__(self, source: EastmoneySource | None = None) -> None:
@@ -206,28 +214,33 @@ class EastmoneyAdapter(MarketAdapter):
         return out
 
     def fetch_minute(
-        self, code: str, *, period: str = "1", days: int = 1
+        self,
+        code: str,
+        *,
+        period: str = "1",
+        days: int = 1,
+        trade_date: str | None = None,
     ) -> pd.DataFrame:
-        """分钟 K（东财 akshare ``stock_zh_a_hist_min_em``）。"""
+        """分钟 K（直连东财 push2his / push2delay，不经 akshare）。"""
+        from src.market.infrastructure.eastmoney_minute import (
+            EastmoneyMinuteError,
+            fetch_minute_bars,
+        )
+
         plain = normalize_code(code)
-        ak = _import_akshare()
-        end = datetime.now()
-        start = end - timedelta(days=max(1, days))
-        start_s = start.strftime("%Y-%m-%d %H:%M:%S")
-        end_s = end.strftime("%Y-%m-%d %H:%M:%S")
         try:
-            frame = ak.stock_zh_a_hist_min_em(
-                symbol=plain,
-                start_date=start_s,
-                end_date=end_s,
-                period=str(period),
-                adjust="",
+            return fetch_minute_bars(
+                plain,
+                period=period,
+                days=days,
+                trade_date=trade_date,
             )
+        except EastmoneyMinuteError as exc:
+            raise AdapterError(f"东财分钟线 {plain} 失败：{exc}") from exc
         except Exception as exc:
             raise AdapterError(
                 f"东财分钟线 {plain} 失败：{type(exc).__name__}: {exc}"
             ) from exc
-        return self._normalize_minute(frame)
 
     def fetch_capital_flow(self, code: str) -> pd.DataFrame:
         """个股资金流（主力/超大/大/中/小单净额）。"""
@@ -242,27 +255,27 @@ class EastmoneyAdapter(MarketAdapter):
             ) from exc
         return self._normalize_capital_flow(frame)
 
-    def probe(self, lane: str) -> ProbeResult:
+    def probe(self, lane: str, *, code: str = "600519") -> ProbeResult:
         """hist_daily 用近一年窗口；其余 lane 走小样本。"""
         if lane not in self.meta.lanes:
             return super().probe(lane)
 
         if lane == LANE_HIST_DAILY:
-            return self._probe_hist_daily()
+            return self._probe_hist_daily(code)
 
         started = time.perf_counter()
         try:
             rows: int | None = None
             extra: dict[str, object] = {}
             if lane == LANE_SPOT_BATCH:
-                frame = self.fetch_spot_sample(["600519"])
+                frame = self.fetch_spot_sample([code])
                 rows = int(len(frame))
             elif lane == LANE_MINUTE:
-                frame = self.fetch_minute("600519", period="1", days=1)
+                frame = self.fetch_minute(code, period="1", days=1)
                 rows = int(len(frame))
                 extra = {"period": "1", "days": 1}
             elif lane == LANE_CAPITAL_FLOW:
-                frame = self.fetch_capital_flow("600519")
+                frame = self.fetch_capital_flow(code)
                 rows = int(len(frame))
                 if rows == 0:
                     raise AdapterError("资金流为空")
@@ -287,13 +300,13 @@ class EastmoneyAdapter(MarketAdapter):
                 error=f"{type(exc).__name__}: {exc}",
             )
 
-    def _probe_hist_daily(self) -> ProbeResult:
+    def _probe_hist_daily(self, code: str) -> ProbeResult:
         started = time.perf_counter()
         try:
             end = date.today()
             start = end - timedelta(days=400)
             frame = self._source.fetch_daily(
-                "600519",
+                code,
                 start_date=start.strftime("%Y%m%d"),
                 end_date=end.strftime("%Y%m%d"),
             )
@@ -351,21 +364,6 @@ class EastmoneyAdapter(MarketAdapter):
         ].reset_index(drop=True)
 
     @classmethod
-    def _normalize_minute(cls, frame: pd.DataFrame) -> pd.DataFrame:
-        if frame is None or frame.empty:
-            raise AdapterError("东财分钟线为空")
-        out = frame.copy()
-        rename = {src: dst for src, dst in _MINUTE_RENAME.items() if src in out.columns}
-        if rename:
-            out = out.rename(columns=rename)
-        if "datetime" not in out.columns:
-            raise AdapterError("东财分钟线缺 datetime 列")
-        for col in ("open", "high", "low", "close", "volume", "amount", "avg_price"):
-            if col in out.columns:
-                out[col] = pd.to_numeric(out[col], errors="coerce")
-        return out.reset_index(drop=True)
-
-    @classmethod
     def _normalize_capital_flow(cls, frame: pd.DataFrame) -> pd.DataFrame:
         if frame is None or frame.empty:
             raise AdapterError("东财资金流为空")
@@ -387,14 +385,15 @@ class EastmoneyAdapter(MarketAdapter):
     def _normalize_daily(
         cls, frame: pd.DataFrame, *, turnover_as_percent: bool = True
     ) -> pd.DataFrame:
-        """列重命名 + 可选换手率百分数 → 小数。
+        """列重命名 + 成交量手→股 + 可选换手率百分数 → 小数。
 
         ``turnover_as_percent=True``：吃原始/中文列（单测、直接 ak 表）。
-        ``False``：Source 已归一，只做列校验与数值化。
+        ``False``：Source 已归一（量已是股、换手已是小数），只做列校验与数值化。
         """
         if frame is None or frame.empty:
             raise AdapterError("东财日线为空")
         out = frame.copy()
+        from_lots = "成交量" in out.columns
         rename = {src: dst for src, dst in _EASTMONEY_RENAME.items() if src in out.columns}
         if rename:
             out = out.rename(columns=rename)
@@ -405,6 +404,10 @@ class EastmoneyAdapter(MarketAdapter):
 
         for col in ("open", "high", "low", "close", "volume", "amount"):
             out[col] = pd.to_numeric(out[col], errors="coerce")
+
+        # 原始东财「成交量」为手；Source 路径已 ×100，勿再乘。
+        if from_lots and turnover_as_percent:
+            out["volume"] = out["volume"] * 100.0
 
         if "turnover" in out.columns:
             out["turnover"] = pd.to_numeric(out["turnover"], errors="coerce")

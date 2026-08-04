@@ -12,7 +12,14 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { ChartPrepResult } from '@/shared/lib/chartPrep'
+import {
+  DEFAULT_MA_PERIODS,
+  type IndicatorKind,
+  type KlineHoverPayload,
+} from '@/shared/lib/klineConfig'
 import type { KPeriod, OhlcBar } from '@/shared/lib/indicators'
+import { buildKlineOption } from '@/shared/lib/klineChartOption'
+import { resolveKlineDblclickIndex } from '@/shared/lib/klineDblclick'
 import { prepChartOffthread } from '@/shared/lib/useChartPrep'
 
 echarts.use([
@@ -27,7 +34,12 @@ echarts.use([
   CanvasRenderer,
 ])
 
-export type IndicatorKind = 'macd' | 'kdj' | 'none'
+export type KlineBarDblclickPayload = {
+  tradeDate: string
+  bar: OhlcBar
+  prevClose: number | null
+  index: number
+}
 
 const props = withDefaults(
   defineProps<{
@@ -35,405 +47,183 @@ const props = withDefaults(
     period?: KPeriod
     indicator?: IndicatorKind
     maPeriods?: number[]
+    /** 默认可见根数（数据更长时 dataZoom 只展示最近 N 根） */
+    visibleBars?: number
     title?: string
+    /** 涨跌停判定用 */
+    stockCode?: string
+    stockName?: string
+    /** 库内还有更早 K 线可加载 */
+    hasMoreHistory?: boolean
+    /** 锚定到该交易日（日 K） */
+    focusDate?: string
   }>(),
   {
     period: 'day',
     indicator: 'macd',
-    maPeriods: () => [5, 10, 20],
+    maPeriods: () => [...DEFAULT_MA_PERIODS],
+    visibleBars: 60,
     title: '',
+    stockCode: '',
+    stockName: '',
+    hasMoreHistory: false,
+    focusDate: '',
   },
 )
 
+const emit = defineEmits<{
+  hover: [KlineHoverPayload | null]
+  needHistory: []
+  barDblclick: [KlineBarDblclickPayload]
+}>()
+
 const rootEl = ref<HTMLElement | null>(null)
 const chartEl = ref<HTMLElement | null>(null)
-const hoverLine = ref('')
 let chart: echarts.ECharts | null = null
 let resizeObs: ResizeObserver | null = null
-/** dataZoom 可见区间，用于决定是否在 K 线上标收盘价 */
 let zoomStart = 0
 let zoomEnd = 100
 let latestPrep: ChartPrepResult | null = null
 let renderSeq = 0
+let historyEmitAt = 0
+let keepZoomNext = false
+/** code|date，避免换票但同日时不再锚定 */
+let lastFocusedKey = ''
+/** 轴指示器最新索引；双击空白处时用它对齐左侧锁定 K 线 */
+let lastHoverIndex = -1
+
+const LABEL_VISIBLE_MAX = 90
 
 const ariaLabel = computed(() => {
   const p = { day: '日K', week: '周K', month: '月K' }[props.period]
-  const ind = { macd: 'MACD', kdj: 'KDJ', none: '无副图' }[props.indicator]
+  const ind = { macd: 'MACD', kdj: 'KDJ' }[props.indicator]
   return `${p} · ${ind}`
 })
 
-const MA_COLORS = ['#c41e3a', '#2563eb', '#d97706', '#7c3aed']
-
-function fmtPx(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  return n.toFixed(2)
+function at(series: Array<number | null> | undefined, i: number): number | null {
+  if (!series) return null
+  const v = series[i]
+  return v == null || Number.isNaN(Number(v)) ? null : Number(v)
 }
 
-function fmtVol(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(1)}万`
-  return n.toFixed(0)
+function visibleCountOf(n: number): number {
+  return Math.max(1, Math.round((n * (zoomEnd - zoomStart)) / 100))
 }
 
-function fmtInd(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  return n.toFixed(3)
+function shouldShowBarLabels(n: number): boolean {
+  return n > 0 && visibleCountOf(n) <= LABEL_VISIBLE_MAX
+}
+
+function defaultZoom(n: number): { start: number; end: number } {
+  const vis = Math.max(20, props.visibleBars)
+  if (n <= vis) return { start: 0, end: 100 }
+  return { start: Math.max(0, 100 - (vis / n) * 100), end: 100 }
+}
+
+function zoomAroundIndex(idx: number, n: number): { start: number; end: number } {
+  const vis = Math.max(20, props.visibleBars)
+  if (n <= vis) return { start: 0, end: 100 }
+  const windowPct = (vis / n) * 100
+  const centerPct = n <= 1 ? 50 : (idx / (n - 1)) * 100
+  let start = centerPct - windowPct * 0.55
+  let end = start + windowPct
+  if (start < 0) {
+    start = 0
+    end = windowPct
+  }
+  if (end > 100) {
+    end = 100
+    start = Math.max(0, 100 - windowPct)
+  }
+  return { start, end }
+}
+
+function findFocusIndex(prep: ChartPrepResult): number {
+  const d = String(props.focusDate || '').trim()
+  if (!d || props.period !== 'day') return -1
+  const byDate = prep.dates.indexOf(d)
+  if (byDate >= 0) return byDate
+  return prep.seriesBars.findIndex((b) => String(b.trade_date || '').slice(0, 10) === d)
 }
 
 function buildOption(prep: ChartPrepResult) {
-  const { dates, candle, volumes: volRaw, maLines, seriesBars } = prep
-  const volumes = volRaw.map((v) => ({
-    value: v.value,
-    itemStyle: { color: v.up ? 'rgba(196,30,58,0.55)' : 'rgba(15,107,92,0.55)' },
-  }))
-  const n = dates.length
-  const visibleCount = Math.max(1, Math.round((n * (zoomEnd - zoomStart)) / 100))
-  const showBarLabels = visibleCount <= 48 && n > 0
-
-  const showInd = props.indicator !== 'none'
-  const grids = showInd
-    ? [
-        { left: 56, right: 16, top: 28, height: '46%' },
-        { left: 56, right: 16, top: '56%', height: '12%' },
-        { left: 56, right: 16, top: '72%', height: '16%' },
-      ]
-    : [
-        { left: 56, right: 16, top: 28, height: '62%' },
-        { left: 56, right: 16, top: '74%', height: '16%' },
-      ]
-
-  const xAxes = grids.map((_, idx) => ({
-    type: 'category' as const,
-    data: dates,
-    gridIndex: idx,
-    boundaryGap: true,
-    axisLine: { lineStyle: { color: '#c5ced9' } },
-    axisLabel: { show: idx === grids.length - 1, color: '#5b6b7c', fontSize: 11 },
-    axisTick: { show: false },
-    splitLine: { show: false },
-  }))
-
-  const yAxes: Record<string, unknown>[] = [
-    {
-      scale: true,
-      gridIndex: 0,
-      axisLabel: {
-        color: '#5b6b7c',
-        fontSize: 11,
-        formatter: (v: number) => fmtPx(v),
-      },
-      splitLine: { lineStyle: { color: '#e8edf3' } },
-    },
-    {
-      scale: true,
-      gridIndex: 1,
-      axisLabel: { show: false },
-      splitLine: { show: false },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-  ]
-  if (showInd) {
-    yAxes.push({
-      scale: true,
-      gridIndex: 2,
-      axisLabel: { color: '#5b6b7c', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#e8edf3' } },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    })
-  }
-
-  const lastIdx = n - 1
-  const lastClose = lastIdx >= 0 ? candle[lastIdx]?.[1] : null
-
-  const series: Record<string, unknown>[] = [
-    {
-      name: 'K线',
-      type: 'candlestick',
-      data: candle,
-      xAxisIndex: 0,
-      yAxisIndex: 0,
-      itemStyle: {
-        color: '#c41e3a',
-        color0: '#0f6b5c',
-        borderColor: '#c41e3a',
-        borderColor0: '#0f6b5c',
-      },
-      label: {
-        show: showBarLabels,
-        position: 'top',
-        distance: 2,
-        fontSize: 10,
-        color: '#5b6b7c',
-        formatter: (p: { data?: number[] }) => fmtPx(p.data?.[1]),
-      },
-      markPoint:
-        lastClose != null
-          ? {
-              symbol: 'pin',
-              symbolSize: 42,
-              data: [
-                {
-                  name: '收',
-                  coord: [dates[lastIdx], lastClose],
-                  value: lastClose,
-                  itemStyle: { color: '#c41e3a' },
-                  label: {
-                    formatter: () => fmtPx(lastClose),
-                    color: '#fff',
-                    fontSize: 10,
-                  },
-                },
-              ],
-            }
-          : undefined,
-    },
-    {
-      name: '成交量',
-      type: 'bar',
-      data: volumes,
-      xAxisIndex: 1,
-      yAxisIndex: 1,
-      barMaxWidth: 8,
-      tooltip: { valueFormatter: (v: number) => fmtVol(v) },
-    },
-  ]
-
-  props.maPeriods.forEach((period, idx) => {
-    const line = maLines.find((m) => m.period === period)
-    series.push({
-      name: `MA${period}`,
-      type: 'line',
-      data: line?.data ?? [],
-      xAxisIndex: 0,
-      yAxisIndex: 0,
-      showSymbol: false,
-      lineStyle: { width: 1.2, color: MA_COLORS[idx % MA_COLORS.length] },
-      emphasis: { disabled: true },
-      tooltip: { valueFormatter: (v: number) => fmtPx(v) },
-    })
+  return buildKlineOption({
+    prep,
+    indicator: props.indicator,
+    maPeriods: props.maPeriods,
+    showBarLabels: shouldShowBarLabels(prep.dates.length),
+    zoomStart,
+    zoomEnd,
+    stockCode: props.stockCode,
+    stockName: props.stockName,
   })
+}
 
-  if (props.indicator === 'macd' && prep.macd) {
-    const m = prep.macd
-    series.push(
-      {
-        name: 'DIF',
-        type: 'line',
-        data: m.dif,
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        showSymbol: false,
-        lineStyle: { width: 1.2, color: '#2563eb' },
-        tooltip: { valueFormatter: (v: number) => fmtInd(v) },
-      },
-      {
-        name: 'DEA',
-        type: 'line',
-        data: m.dea,
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        showSymbol: false,
-        lineStyle: { width: 1.2, color: '#d97706' },
-        tooltip: { valueFormatter: (v: number) => fmtInd(v) },
-      },
-      {
-        name: 'MACD',
-        type: 'bar',
-        data: m.hist.map((v) => ({
-          value: v,
-          itemStyle: {
-            color: v !== null && v >= 0 ? 'rgba(196,30,58,0.7)' : 'rgba(15,107,92,0.7)',
-          },
-        })),
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        barMaxWidth: 6,
-        tooltip: { valueFormatter: (v: number) => fmtInd(v) },
-      },
-    )
-  } else if (props.indicator === 'kdj' && prep.kdj) {
-    const k = prep.kdj
-    series.push(
-      {
-        name: 'K',
-        type: 'line',
-        data: k.k,
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        showSymbol: false,
-        lineStyle: { width: 1.2, color: '#2563eb' },
-        tooltip: { valueFormatter: (v: number) => fmtInd(v) },
-      },
-      {
-        name: 'D',
-        type: 'line',
-        data: k.d,
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        showSymbol: false,
-        lineStyle: { width: 1.2, color: '#d97706' },
-        tooltip: { valueFormatter: (v: number) => fmtInd(v) },
-      },
-      {
-        name: 'J',
-        type: 'line',
-        data: k.j,
-        xAxisIndex: 2,
-        yAxisIndex: 2,
-        showSymbol: false,
-        lineStyle: { width: 1.2, color: '#c41e3a' },
-        tooltip: { valueFormatter: (v: number) => fmtInd(v) },
-      },
-    )
-  }
-
-  const legendData = [
-    ...props.maPeriods.map((p) => `MA${p}`),
-    ...(props.indicator === 'macd' ? ['DIF', 'DEA', 'MACD'] : []),
-    ...(props.indicator === 'kdj' ? ['K', 'D', 'J'] : []),
-  ]
-
+function buildHover(dataIndex: number): KlineHoverPayload | null {
+  const prep = latestPrep
+  if (!prep?.seriesBars || dataIndex < 0 || dataIndex >= prep.seriesBars.length) return null
+  const bar = prep.seriesBars[dataIndex]
+  const prevClose = dataIndex > 0 ? Number(prep.seriesBars[dataIndex - 1].close ?? NaN) : null
   return {
-    animation: false,
-    backgroundColor: 'transparent',
-    legend: {
-      top: 2,
-      left: 56,
-      itemWidth: 12,
-      itemHeight: 8,
-      textStyle: { color: '#5b6b7c', fontSize: 11 },
-      data: legendData,
-    },
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'cross' },
-      backgroundColor: 'rgba(247,249,252,0.97)',
-      borderColor: '#d5dce6',
-      borderWidth: 1,
-      padding: [8, 10],
-      textStyle: { color: '#142033', fontSize: 12 },
-      extraCssText: 'box-shadow:0 4px 14px rgba(20,32,51,0.08);max-width:240px;',
-      formatter: (params: unknown) => {
-        const list = Array.isArray(params) ? params : [params]
-        if (!list.length) return ''
-        const idx = Number((list[0] as { dataIndex?: number }).dataIndex ?? -1)
-        if (idx < 0 || idx >= seriesBars.length) return ''
-        const bar = seriesBars[idx]
-        const open = Number(bar.open ?? 0)
-        const close = Number(bar.close ?? 0)
-        const high = Number(bar.high ?? 0)
-        const low = Number(bar.low ?? 0)
-        const prev = idx > 0 ? Number(seriesBars[idx - 1].close ?? 0) : open
-        const chg = prev ? ((close - prev) / prev) * 100 : 0
-        const chgColor = chg > 0 ? '#c41e3a' : chg < 0 ? '#0f6b5c' : '#5b6b7c'
-
-        const byName = new Map<string, number | null>()
-        for (const raw of list) {
-          const p = raw as { seriesName?: string; value?: unknown; data?: unknown }
-          const name = p.seriesName || ''
-          if (name === 'K线' || name === '成交量') continue
-          let v: unknown = p.value
-          if (v && typeof v === 'object' && 'value' in (v as object)) {
-            v = (v as { value: unknown }).value
-          }
-          byName.set(name, v == null || v === '-' ? null : Number(v))
+    bar,
+    prevClose: prevClose != null && Number.isFinite(prevClose) ? prevClose : null,
+    index: dataIndex,
+    ma: props.maPeriods.map((period) => ({
+      period,
+      value: at(prep.maLines.find((m) => m.period === period)?.data, dataIndex),
+    })),
+    volume: bar.volume == null ? null : Number(bar.volume),
+    volumeMa: prep.volumeMas.map((m) => ({
+      period: m.period,
+      value: at(m.data, dataIndex),
+    })),
+    macd: prep.macd
+      ? {
+          dif: at(prep.macd.dif, dataIndex),
+          dea: at(prep.macd.dea, dataIndex),
+          hist: at(prep.macd.hist, dataIndex),
         }
-
-        const rows: string[] = [
-          `<div style="font-weight:600;margin-bottom:6px">${bar.trade_date}</div>`,
-          `<div style="display:grid;grid-template-columns:3.2em 1fr;gap:2px 8px;font-variant-numeric:tabular-nums">`,
-          `<span style="color:#5b6b7c">开</span><span>${fmtPx(open)}</span>`,
-          `<span style="color:#5b6b7c">高</span><span>${fmtPx(high)}</span>`,
-          `<span style="color:#5b6b7c">低</span><span>${fmtPx(low)}</span>`,
-          `<span style="color:#5b6b7c">收</span><span style="color:${chgColor};font-weight:600">${fmtPx(close)}</span>`,
-          `<span style="color:#5b6b7c">涨跌</span><span style="color:${chgColor}">${chg > 0 ? '+' : ''}${chg.toFixed(2)}%</span>`,
-          `<span style="color:#5b6b7c">量</span><span>${fmtVol(bar.volume)}</span>`,
-        ]
-
-        for (const [name, val] of byName) {
-          if (val == null || Number.isNaN(val)) continue
-          const isMa = name.startsWith('MA')
-          rows.push(
-            `<span style="color:#5b6b7c">${name}</span><span>${isMa ? fmtPx(val) : fmtInd(val)}</span>`,
-          )
+      : null,
+    kdj: prep.kdj
+      ? {
+          k: at(prep.kdj.k, dataIndex),
+          d: at(prep.kdj.d, dataIndex),
+          j: at(prep.kdj.j, dataIndex),
         }
-        rows.push('</div>')
-        return rows.join('')
-      },
-    },
-    axisPointer: {
-      link: [{ xAxisIndex: 'all' }],
-      label: {
-        backgroundColor: '#5b6b7c',
-        formatter: (params: { axisDimension?: string; value?: unknown }) => {
-          if (params.axisDimension === 'y') return fmtPx(params.value)
-          return String(params.value ?? '')
-        },
-      },
-    },
-    grid: grids,
-    xAxis: xAxes,
-    yAxis: yAxes,
-    dataZoom: [
-      {
-        type: 'inside',
-        xAxisIndex: grids.map((_, i) => i),
-        start: zoomStart || (dates.length > 120 ? Math.max(0, 100 - (120 / dates.length) * 100) : 0),
-        end: zoomEnd || 100,
-      },
-      {
-        type: 'slider',
-        xAxisIndex: grids.map((_, i) => i),
-        height: 18,
-        bottom: 4,
-        borderColor: '#d5dce6',
-        fillerColor: 'rgba(196,30,58,0.12)',
-        handleStyle: { color: '#c41e3a' },
-        textStyle: { color: '#5b6b7c', fontSize: 10 },
-        start: zoomStart || (dates.length > 120 ? Math.max(0, 100 - (120 / dates.length) * 100) : 0),
-        end: zoomEnd || 100,
-      },
-    ],
-    series,
+      : null,
   }
 }
 
-function syncHoverStrip(dataIndex: number): void {
-  const seriesBars = latestPrep?.seriesBars
-  if (!seriesBars) {
-    hoverLine.value = ''
-    return
+function emitHover(dataIndex: number): void {
+  lastHoverIndex = dataIndex
+  emit('hover', buildHover(dataIndex))
+}
+
+function resolveAxisIndex(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value)
+  if (typeof value === 'string' && latestPrep) {
+    return latestPrep.dates.indexOf(value)
   }
-  const bar = seriesBars[dataIndex]
-  if (!bar) {
-    hoverLine.value = ''
-    return
-  }
-  const close = Number(bar.close ?? 0)
-  const open = Number(bar.open ?? 0)
-  const prev = dataIndex > 0 ? Number(seriesBars[dataIndex - 1].close ?? 0) : open
-  const chg = prev ? ((close - prev) / prev) * 100 : 0
-  hoverLine.value = [
-    bar.trade_date,
-    `开 ${fmtPx(bar.open)}`,
-    `高 ${fmtPx(bar.high)}`,
-    `低 ${fmtPx(bar.low)}`,
-    `收 ${fmtPx(bar.close)}`,
-    `量 ${fmtVol(bar.volume)}`,
-    `${chg > 0 ? '+' : ''}${chg.toFixed(2)}%`,
-  ].join('  ·  ')
+  return -1
+}
+
+function patchBarLabels(): void {
+  if (!chart || !latestPrep) return
+  const show = shouldShowBarLabels(latestPrep.dates.length)
+  chart.setOption(
+    {
+      series: [{ name: 'K线', label: { show } }],
+    },
+    { lazyUpdate: true },
+  )
 }
 
 function bindChartEvents(): void {
   if (!chart) return
   chart.off('datazoom')
   chart.off('updateAxisPointer')
+  chart.off('globalout')
+  chart.off('dblclick')
   chart.on('datazoom', (raw: unknown) => {
     const ev = raw as { start?: number; end?: number; batch?: Array<{ start?: number; end?: number }> }
     const batch = ev.batch?.[0]
@@ -441,16 +231,51 @@ function bindChartEvents(): void {
     const end = batch?.end ?? ev.end
     if (typeof start === 'number') zoomStart = start
     if (typeof end === 'number') zoomEnd = end
-    void render({ keepZoom: true })
+    patchBarLabels()
+    if (
+      props.hasMoreHistory &&
+      typeof start === 'number' &&
+      start <= 4 &&
+      Date.now() - historyEmitAt > 900
+    ) {
+      historyEmitAt = Date.now()
+      emit('needHistory')
+    }
   })
   chart.on('updateAxisPointer', (raw: unknown) => {
-    const ev = raw as { axesInfo?: Array<{ value?: number }> }
-    const idx = ev.axesInfo?.[0]?.value
-    if (typeof idx === 'number') syncHoverStrip(idx)
+    const ev = raw as { axesInfo?: Array<{ value?: unknown; axisDim?: string }> }
+    const xInfo = ev.axesInfo?.find((a) => a.axisDim === 'x') ?? ev.axesInfo?.[0]
+    const idx = resolveAxisIndex(xInfo?.value)
+    if (idx >= 0) emitHover(idx)
+  })
+  chart.on('globalout', () => {
+    if (latestPrep?.seriesBars.length) emitHover(latestPrep.seriesBars.length - 1)
+  })
+  chart.on('dblclick', (raw: unknown) => {
+    if (props.period !== 'day' || !latestPrep) return
+    const ev = raw as { dataIndex?: number; name?: string }
+    const idx = resolveKlineDblclickIndex({
+      dates: latestPrep.dates,
+      name: ev.name,
+      dataIndex: ev.dataIndex,
+      hoverIndex: lastHoverIndex,
+    })
+    if (idx < 0) return
+    const bar = latestPrep.seriesBars[idx]
+    if (!bar) return
+    const tradeDate = String(bar.trade_date || latestPrep.dates[idx] || '').slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tradeDate)) return
+    const prev = idx > 0 ? Number(latestPrep.seriesBars[idx - 1]?.close ?? NaN) : null
+    emit('barDblclick', {
+      tradeDate,
+      bar,
+      prevClose: prev != null && Number.isFinite(prev) ? prev : null,
+      index: idx,
+    })
   })
 }
 
-async function render(opts: { keepZoom?: boolean } = {}): Promise<void> {
+async function render(opts: { keepZoom?: boolean; prevBarCount?: number } = {}): Promise<void> {
   if (!chartEl.value) return
   if (!chart) {
     chart = echarts.init(chartEl.value, undefined, { renderer: 'canvas' })
@@ -458,8 +283,9 @@ async function render(opts: { keepZoom?: boolean } = {}): Promise<void> {
   }
   if (!props.bars.length) {
     chart.clear()
-    hoverLine.value = ''
     latestPrep = null
+    lastHoverIndex = -1
+    emit('hover', null)
     return
   }
   const my = ++renderSeq
@@ -471,13 +297,38 @@ async function render(opts: { keepZoom?: boolean } = {}): Promise<void> {
   })
   if (my !== renderSeq) return
   latestPrep = prep
-  if (!opts.keepZoom) {
-    const n = prep.dates.length
-    zoomStart = n > 120 ? Math.max(0, 100 - (120 / n) * 100) : 0
-    zoomEnd = 100
+  const focusIdx = findFocusIndex(prep)
+  const focusDate = String(props.focusDate || '').trim()
+  const focusKey = focusDate ? `${props.stockCode}|${focusDate}` : ''
+  const shouldFocus = focusIdx >= 0 && focusKey !== lastFocusedKey
+  const preserveZoom = keepZoomNext || opts.keepZoom
+  keepZoomNext = false
+  if (shouldFocus) {
+    const z = zoomAroundIndex(focusIdx, prep.dates.length)
+    zoomStart = z.start
+    zoomEnd = z.end
+    lastFocusedKey = focusKey
+  } else if (!preserveZoom) {
+    const z = defaultZoom(prep.dates.length)
+    zoomStart = z.start
+    zoomEnd = z.end
+  } else if (
+    opts.prevBarCount != null &&
+    opts.prevBarCount > 0 &&
+    prep.dates.length > opts.prevBarCount
+  ) {
+    const added = prep.dates.length - opts.prevBarCount
+    const shift = (added / prep.dates.length) * 100
+    zoomStart = Math.min(99, zoomStart * (opts.prevBarCount / prep.dates.length) + shift)
+    zoomEnd = Math.min(100, zoomEnd * (opts.prevBarCount / prep.dates.length) + shift)
+  }
+  if (focusDate && focusIdx < 0 && props.hasMoreHistory && Date.now() - historyEmitAt > 400) {
+    historyEmitAt = Date.now()
+    emit('needHistory')
   }
   chart.setOption(buildOption(prep) as echarts.EChartsCoreOption, { notMerge: true })
-  if (prep.seriesBars.length) syncHoverStrip(prep.seriesBars.length - 1)
+  if (focusIdx >= 0) emitHover(focusIdx)
+  else if (prep.seriesBars.length) emitHover(prep.seriesBars.length - 1)
 }
 
 onMounted(() => {
@@ -495,10 +346,29 @@ onBeforeUnmount(() => {
   chart = null
 })
 
+let prevBarLen = 0
 watch(
-  () => [props.bars, props.period, props.indicator, props.maPeriods] as const,
+  () =>
+    [
+      props.bars,
+      props.period,
+      props.indicator,
+      props.maPeriods,
+      props.visibleBars,
+      props.focusDate,
+    ] as const,
   () => {
-    void render()
+    const len = props.bars.length
+    const grew = len > prevBarLen && prevBarLen > 0
+    const prev = prevBarLen
+    prevBarLen = len
+    const nextFocusKey = props.focusDate
+      ? `${props.stockCode}|${String(props.focusDate).trim()}`
+      : ''
+    const focusChanged = nextFocusKey !== lastFocusedKey
+    void render(
+      grew && !focusChanged ? { keepZoom: true, prevBarCount: prev } : {},
+    )
   },
   { deep: true },
 )
@@ -506,7 +376,6 @@ watch(
 
 <template>
   <div class="kline-chart" ref="rootEl">
-    <div v-if="hoverLine" class="kline-chart__strip mono" aria-live="polite">{{ hoverLine }}</div>
     <div ref="chartEl" class="kline-chart__canvas" role="img" :aria-label="ariaLabel" />
   </div>
 </template>
@@ -514,31 +383,17 @@ watch(
 <style scoped>
 .kline-chart {
   width: 100%;
-  min-height: 420px;
-  height: min(62vh, 560px);
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-}
-
-.kline-chart__strip {
-  flex-shrink: 0;
-  font-size: 0.78rem;
-  color: var(--ink);
-  padding: 0.2rem 0.15rem;
-  white-space: nowrap;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--rule);
 }
 
 .kline-chart__canvas {
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 360px;
   width: 100%;
-}
-
-.mono {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
+  height: 100%;
 }
 </style>

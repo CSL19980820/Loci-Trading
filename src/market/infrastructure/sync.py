@@ -19,11 +19,11 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 import logging
 import threading
 import time
-from typing import Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import pandas as pd
 
@@ -34,6 +34,23 @@ logger = logging.getLogger(__name__)
 
 #: 复盘要与基准比，这三个是默认跟踪的宽基指数。
 DEFAULT_BENCHMARKS = ("000300", "000905", "000852")
+
+
+@dataclass
+class _SpotRefreshFlight:
+    """同一行情库、同一批标的的 spot 刷新单飞状态。"""
+
+    event: threading.Event = field(default_factory=threading.Event)
+    result: int = 0
+    error: Exception | None = None
+    completed_at: float = 0.0
+
+
+# 盘后多个选股任务会同时请求同一批全市场 spot。短 TTL 只用于复用同一轮
+# 刷新结果，不把实时行情变成长缓存；失败也要让等待者看到同一个失败结果。
+_SPOT_REFRESH_TTL_SECONDS = 30.0
+_SPOT_REFRESH_CONDITION = threading.Condition()
+_SPOT_REFRESH_FLIGHTS: dict[tuple[str, str, int, tuple[tuple[str, str], ...]], _SpotRefreshFlight] = {}
 
 
 @dataclass
@@ -95,6 +112,92 @@ def _fetch_daily_for_sync(
         raise SourceError(str(exc)) from exc
 
 
+#: 单票复权因子超过该天数未刷新则在 watermark 跳过路径上强制重拉
+_FACTOR_STALE_DAYS = 3
+
+
+def _factor_fetched_at(store: MarketStore, code: str) -> str:
+    row = store.conn.execute(
+        "SELECT MAX(fetched_at) FROM adjust_factors WHERE code = ?",
+        (normalize_code(code),),
+    ).fetchone()
+    return str(row[0] or "") if row else ""
+
+
+def _refresh_factors_if_stale(
+    store: MarketStore,
+    code: str,
+    *,
+    sources: Sequence[QuoteSource] | None,
+    limiter: _RateLimiter,
+    stale_days: int = _FACTOR_STALE_DAYS,
+) -> bool:
+    """因子缺失或 fetched_at 过旧则重拉；成功返回 True。"""
+    latest = _factor_fetched_at(store, code)
+    if latest:
+        try:
+            fetched = datetime.fromisoformat(latest.replace("Z", "+00:00"))
+            if fetched.tzinfo is not None:
+                fetched = fetched.astimezone(timezone.utc).replace(tzinfo=None)
+            age = (datetime.now(timezone.utc).replace(tzinfo=None) - fetched).total_seconds()
+            if age <= stale_days * 86400:
+                return False
+        except ValueError:
+            pass
+    got = _fetch_factors_for_sync(code, sources=sources, limiter=limiter)
+    if got is None:
+        return False
+    factors, factor_src = got
+    store.upsert_adjust_factors(code, factors, source=factor_src)
+    return True
+
+
+def refresh_adjust_factors(
+    store_factory: Callable[[], MarketStore],
+    codes: Sequence[str],
+    *,
+    sources: Sequence[QuoteSource] | None = None,
+    instrument_types: dict[str, str] | None = None,
+    workers: int = 4,
+    min_interval: float = 0.15,
+    stale_days: int = _FACTOR_STALE_DAYS,
+    progress: Callable[[int, int, str], None] | None = None,
+) -> int:
+    """只刷新复权因子（日终 today_refresh 用），不重拉历史日 K。"""
+    types = instrument_types or {}
+    limiter = _RateLimiter(min_interval)
+    refreshed = 0
+    lock = threading.Lock()
+    total = len(codes)
+
+    def worker(index_and_code: tuple[int, str]) -> None:
+        nonlocal refreshed
+        index, raw_code = index_and_code
+        code = normalize_code(raw_code)
+        if types.get(code, "STOCK") != "STOCK":
+            return
+        store = store_factory()
+        try:
+            if _refresh_factors_if_stale(
+                store, code, sources=sources, limiter=limiter, stale_days=stale_days
+            ):
+                with lock:
+                    refreshed += 1
+        except Exception as exc:
+            logger.debug("刷新 %s 复权因子失败：%s", code, exc)
+        finally:
+            store.close()
+            if progress:
+                with lock:
+                    progress(index + 1, total, code)
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        futures = [pool.submit(worker, item) for item in enumerate(codes)]
+        for future in as_completed(futures):
+            future.result()
+    return refreshed
+
+
 def _fetch_factors_for_sync(
     code: str,
     *,
@@ -152,6 +255,7 @@ def sync_instruments(
             "code": str(record.get("code", "")).zfill(6),
             "name": str(record.get("name", "")),
             "board": str(record.get("board", "")),
+            "industry": str(record.get("industry", "") or ""),
             "list_date": str(record.get("list_date", "") or ""),
             "instrument_type": "STOCK",
         }
@@ -210,15 +314,21 @@ def sync_quotes(
         code = normalize_code(raw_code)
         store = store_factory()
         try:
+            instrument_type = types.get(code, "STOCK")
             if not force:
                 mark = store.watermark(code)
                 if mark and mark["status"] == "ok" and str(mark["last_synced_at"])[:10] >= fresh_threshold:
+                    # 日 K 可跳过，但复权因子仍要按票刷新——否则 watermark
+                    # 跳过后除权事件永远进不了 adjust_factors。
+                    if with_factors and instrument_type == "STOCK":
+                        _refresh_factors_if_stale(
+                            store, code, sources=sources, limiter=limiter
+                        )
                     with lock:
                         report.skipped += 1
                     return
 
             limiter.wait()
-            instrument_type = types.get(code, "STOCK")
             frame, source_name = _fetch_daily_for_sync(
                 code, instrument_type=instrument_type, sources=sources
             )
@@ -231,8 +341,10 @@ def sync_quotes(
                     store.upsert_adjust_factors(code, factors, source=factor_src)
 
             last_date = ""
-            if "date" in frame.columns:
-                last_date = str(pd.to_datetime(frame["date"]).max().date())
+            # 兼容返回 trade_date 列名的源，避免静默写空 watermark
+            date_col = "date" if "date" in frame.columns else "trade_date"
+            if date_col in frame.columns:
+                last_date = str(pd.to_datetime(frame[date_col]).max().date())
             store.set_watermark(code, last_trade_date=last_date, status="ok", source=source_name)
             with lock:
                 report.succeeded += 1
@@ -276,78 +388,245 @@ def sync_quotes(
     return report
 
 
+def _live_quotes_to_spot_frame(
+    quotes: Sequence[Mapping[str, Any]],
+) -> pd.DataFrame:
+    """把已取到的富行情转换为 ``apply_today_spot`` 的最小字段集。"""
+    rows: list[dict[str, Any]] = []
+    for quote in quotes:
+        try:
+            close = float(quote["price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if close <= 0:
+            continue
+
+        def number(name: str, fallback: float) -> float:
+            try:
+                value = float(quote.get(name, fallback))
+            except (TypeError, ValueError):
+                return fallback
+            return value if pd.notna(value) else fallback
+
+        rows.append(
+            {
+                "code": str(quote.get("code") or ""),
+                "date": str(
+                    quote.get("trade_date")
+                    or quote.get("date")
+                    or date.today().isoformat()
+                )[:10],
+                "open": number("open", close),
+                "high": number("high", close),
+                "low": number("low", close),
+                "close": close,
+                "volume": number("volume", 0.0),
+                "amount": number("amount", 0.0),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "code",
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "amount",
+        ],
+    )
+
+
 def apply_today_spot(
     store: MarketStore,
     codes: Sequence[str],
     *,
     instrument_types: dict[str, str] | None = None,
     batch_size: int = 400,
+    live_quotes: Sequence[Mapping[str, Any]] | None = None,
+    raise_on_failure: bool = False,
 ) -> int:
     """用 spot_batch 线路把当日日 K 写入仓库。
 
     历史接口不含当日；盘中选股/面板要的就是这根未定型（或刚收盘）的 bar。
-    换手率用上一交易日流通股本估算，避免当日全员缺换手触发哨兵阻断。
+    同一进程里多个任务请求同一批标的时只执行一轮刷新，等待者复用结果。
+    ``raise_on_failure`` 给需要「刷新失败就不能选股」的调用方使用；兼容旧的
+    同步任务时，默认仍返回 0 并记录告警。
     """
-    from src.market.infrastructure.adapters import AdapterError, fetch_spot_routed
+    from src.market.infrastructure.adapters import AdapterError
 
     types = instrument_types or {}
     normalized = [normalize_code(code) for code in codes]
-    if not normalized:
+    if not normalized or not _is_current_trading_day(store):
         return 0
 
-    # 上一交易日股本：覆盖率里的 last_date 在写入今日之前仍是历史最新日。
-    prev_date = str(store.coverage().get("last_date") or "")
-    shares_by_code: dict[str, float] = {}
-    if prev_date:
-        for row in store.conn.execute(
-            "SELECT code, outstanding_share FROM quotes_daily "
-            "WHERE trade_date = ? AND outstanding_share IS NOT NULL",
-            (prev_date,),
-        ):
-            try:
-                shares_by_code[str(row[0])] = float(row[1])
-            except (TypeError, ValueError):
-                continue
+    if live_quotes is not None:
+        try:
+            return _apply_today_spot_once(
+                store,
+                normalized,
+                types,
+                batch_size=batch_size,
+                live_quotes=live_quotes,
+            )
+        except AdapterError as exc:
+            logger.warning("实时行情失败：%s", exc)
+            if raise_on_failure:
+                raise
+            return 0
+
+    key = _spot_refresh_key(store, normalized, types, batch_size)
+    flight, owner = _claim_spot_refresh(key)
+    if not owner:
+        if flight.error is not None and raise_on_failure:
+            raise flight.error
+        return flight.result
 
     try:
+        written = _apply_today_spot_once(
+            store,
+            normalized,
+            types,
+            batch_size=batch_size,
+            live_quotes=None,
+        )
+    except Exception as exc:
+        _complete_spot_refresh(flight, result=0, error=exc)
+        if isinstance(exc, AdapterError):
+            logger.warning("实时行情失败：%s", exc)
+            if not raise_on_failure:
+                return 0
+        raise
+    _complete_spot_refresh(flight, result=written, error=None)
+    return written
+
+
+def _is_current_trading_day(store: MarketStore) -> bool:
+    """交易日历未同步到今天时，工作日按日历末日之后的规则粗判。"""
+    today = date.today().isoformat()
+    days = store.trading_days()
+    if today in days:
+        return True
+    if not days:
+        return date.today().weekday() < 5
+    return today > max(days) and date.today().weekday() < 5
+
+
+def _spot_refresh_key(
+    store: MarketStore,
+    codes: Sequence[str],
+    instrument_types: Mapping[str, str],
+    batch_size: int,
+) -> tuple[str, str, int, tuple[tuple[str, str], ...]]:
+    pairs = tuple(sorted((code, str(instrument_types.get(code, ""))) for code in codes))
+    return (str(store.db_path.resolve()), date.today().isoformat(), batch_size, pairs)
+
+
+def _claim_spot_refresh(
+    key: tuple[str, str, int, tuple[tuple[str, str], ...]],
+) -> tuple[_SpotRefreshFlight, bool]:
+    with _SPOT_REFRESH_CONDITION:
+        current = _SPOT_REFRESH_FLIGHTS.get(key)
+        now = time.monotonic()
+        if current is not None and current.event.is_set():
+            if now - current.completed_at < _SPOT_REFRESH_TTL_SECONDS:
+                return current, False
+            current = None
+        if current is None:
+            current = _SpotRefreshFlight()
+            _SPOT_REFRESH_FLIGHTS[key] = current
+            return current, True
+    current.event.wait()
+    return current, False
+
+
+def _complete_spot_refresh(
+    flight: _SpotRefreshFlight,
+    *,
+    result: int,
+    error: Exception | None,
+) -> None:
+    with _SPOT_REFRESH_CONDITION:
+        flight.result = result
+        flight.error = error
+        flight.completed_at = time.monotonic()
+        flight.event.set()
+        _SPOT_REFRESH_CONDITION.notify_all()
+
+
+def _apply_today_spot_once(
+    store: MarketStore,
+    normalized: Sequence[str],
+    instrument_types: Mapping[str, str],
+    *,
+    batch_size: int,
+    live_quotes: Sequence[Mapping[str, Any]] | None,
+) -> int:
+    """执行一轮真实 spot 拉取；异常由外层按兼容/严格模式处理。"""
+    from src.market.infrastructure.adapters import AdapterError, fetch_spot_routed
+    from src.market.infrastructure.turnover_repair import (
+        backfill_missing_turnover,
+        load_shares_asof,
+    )
+
+    if live_quotes is None:
         spot, adapter_id = fetch_spot_routed(
             normalized,
-            instrument_types=types or None,
+            instrument_types=instrument_types or None,
             batch_size=batch_size,
         )
-    except AdapterError as exc:
-        logger.warning("实时行情失败：%s", exc)
-        return 0
+    else:
+        spot = _live_quotes_to_spot_frame(live_quotes)
+        adapter_id = "live"
 
+    if spot is None or spot.empty:
+        raise AdapterError("实时行情返回空数据")
+
+    trade_dates = sorted(
+        {str(pd.Timestamp(value).date()) for value in spot["date"].tolist()}
+    )
+    today = date.today().isoformat()
+    if today not in trade_dates:
+        raise AdapterError(f"实时行情日期落后，未返回 {today}")
+
+    shares_by_date = {d: load_shares_asof(store, d) for d in trade_dates}
     source_tag = f"{adapter_id}_spot"
-    written = 0
+    bars: list[dict[str, Any]] = []
     latest_by_code: dict[str, str] = {}
 
     for row in spot.itertuples(index=False):
         code = normalize_code(str(row.code))
-        trade_date = str(row.date)
-        shares = shares_by_code.get(code)
-        turnover = (float(row.volume) / shares) if shares and shares > 0 else None
-        frame = pd.DataFrame(
-            [
-                {
-                    "date": trade_date,
-                    "open": float(row.open),
-                    "high": float(row.high),
-                    "low": float(row.low),
-                    "close": float(row.close),
-                    "volume": float(row.volume),
-                    "amount": float(row.amount),
-                    "outstanding_share": shares,
-                    "turnover": turnover,
-                }
-            ]
+        trade_date = str(pd.Timestamp(row.date).date())
+        shares = shares_by_date.get(trade_date, {}).get(code)
+        volume = float(row.volume)
+        turnover = (volume / shares) if shares and shares > 0 else None
+        # 股本若误用手单位反推会小 100 倍，换手率可破 100%；宁可不写也不入库脏值。
+        if turnover is not None and turnover > 1.0:
+            shares = None
+            turnover = None
+        bars.append(
+            {
+                "code": code,
+                "date": trade_date,
+                "open": float(row.open),
+                "high": float(row.high),
+                "low": float(row.low),
+                "close": float(row.close),
+                "volume": volume,
+                "amount": float(row.amount),
+                "outstanding_share": shares,
+                "turnover": turnover,
+            }
         )
-        written += store.upsert_quotes(code, frame, source=source_tag)
         latest_by_code[code] = trade_date
 
-    for code, trade_date in latest_by_code.items():
-        store.set_watermark(
-            code, last_trade_date=trade_date, status="ok", source=source_tag
-        )
+    written = store.upsert_quote_bars(bars, source=source_tag) if bars else 0
+    if latest_by_code:
+        store.set_watermarks(latest_by_code.items(), status="ok", source=source_tag)
+
+    # 安全带：仍缺换手的当日行再 as-of 回填一次（跳过中间空股本日）。
+    if trade_dates:
+        backfill_missing_turnover(store, trade_dates=trade_dates)
     return written

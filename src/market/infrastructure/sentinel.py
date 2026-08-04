@@ -23,7 +23,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from src.market.infrastructure.store import MarketStore
@@ -32,7 +32,7 @@ from src.market.infrastructure.store import MarketStore
 DEFAULT_THRESHOLDS: dict[str, float] = {
     # 最新交易日的行情覆盖率下限。低于此值说明同步没跑完或大面积失败。
     "min_coverage_ratio": 0.90,
-    # 允许的最大数据滞后交易日数。0 = 必须有当天数据（盘后场景）。
+    # 仓内最新日相对墙钟应覆盖日的最大滞后。历史选股基准日本身不受此限。
     "max_stale_days": 3,
     # 换手率缺失比例上限。筹码类指标（COST/WINNER）完全依赖它。
     "max_turnover_missing_ratio": 0.05,
@@ -42,6 +42,29 @@ DEFAULT_THRESHOLDS: dict[str, float] = {
     "max_failed_codes": 50,
     # 单日成交额为 0 的比例上限（长期停牌之外不该有这么多）。
     "max_zero_amount_ratio": 0.10,
+}
+
+#: UI 扫描目录（与检查函数一一对应；空仓时只会出现 empty_store）。
+CHECK_CATALOG: tuple[dict[str, str], ...] = (
+    {"id": "empty_store", "label": "仓内是否有日 K", "group": "仓体"},
+    {"id": "staleness", "label": "最新日是否落后", "group": "时效"},
+    {"id": "coverage", "label": "当日覆盖率", "group": "覆盖"},
+    {"id": "turnover", "label": "换手率完整度", "group": "质量"},
+    {"id": "zero_amount", "label": "成交额异常比", "group": "质量"},
+    {"id": "factor_age", "label": "复权因子时效", "group": "因子"},
+    {"id": "failed_codes", "label": "同步失败标的", "group": "覆盖"},
+)
+
+#: 印鉴分扣分（仅展示；门禁仍看 ``blocked``）。
+SCORE_BLOCK_PENALTY = 25
+SCORE_WARN_PENALTY = 8
+
+#: 一键修复 action 优先级（数字越小越先合并）。
+_REPAIR_ACTION_PRIORITY: dict[str, int] = {
+    "bootstrap": 0,
+    "sync_factors": 1,
+    "sync": 2,
+    "repair_turnover": 3,
 }
 
 
@@ -62,7 +85,106 @@ class Finding:
             "message": self.message,
             "observed": self.observed,
             "threshold": self.threshold,
+            "remediation": remediation_for(self.check),
         }
+
+
+def remediation_for(check: str) -> dict[str, str] | None:
+    """体检项 → 前端可执行的修复动作（无动作返回 None）。"""
+    mapping = {
+        "empty_store": {
+            "action": "bootstrap",
+            "label": "初始化行情",
+            "hint": "空库需先全量或补齐历史日 K",
+        },
+        "staleness": {
+            "action": "sync",
+            "label": "同步行情",
+            "hint": "库内最新日落后，增量同步即可",
+        },
+        "coverage": {
+            "action": "sync",
+            "label": "补齐当日覆盖",
+            "hint": "覆盖率不足通常是同步没跑完，继续同步",
+        },
+        "turnover": {
+            "action": "repair_turnover",
+            "label": "回填换手率",
+            "hint": "用流通股本回填缺换手，不重拉 OHLC",
+        },
+        "zero_amount": {
+            "action": "sync",
+            "label": "重拉成交额",
+            "hint": "成交额异常多为源数据未就绪",
+        },
+        "factor_age": {
+            "action": "sync_factors",
+            "label": "刷新复权因子",
+            "hint": "复权因子过旧会导致前复权价漂移",
+        },
+        "failed_codes": {
+            "action": "sync",
+            "label": "重试失败标的",
+            "hint": "对失败代码再跑一轮同步",
+        },
+    }
+    return mapping.get(check)
+
+
+def seal_score(*, block_count: int, warn_count: int) -> int:
+    """印鉴分：100 起，block −25 / warn −8，夹到 0–100。"""
+    raw = 100 - SCORE_BLOCK_PENALTY * block_count - SCORE_WARN_PENALTY * warn_count
+    return max(0, min(100, int(raw)))
+
+
+def seal_grade(score: int) -> str:
+    """印鉴分档：优 / 良 / 中 / 差。"""
+    if score >= 90:
+        return "优"
+    if score >= 70:
+        return "良"
+    if score >= 50:
+        return "中"
+    return "差"
+
+
+def build_repair_plan(findings: list[Finding]) -> dict[str, Any]:
+    """把多条 finding 的 remediation 去重合并成一次可执行计划。
+
+    优先级：bootstrap > sync_factors > sync。含因子问题时 ``with_factors=True``。
+    """
+    by_action: dict[str, dict[str, str]] = {}
+    for item in findings:
+        if item.severity == "ok":
+            continue
+        rem = remediation_for(item.check)
+        if not rem:
+            continue
+        action = rem["action"]
+        if action not in by_action:
+            by_action[action] = rem
+
+    ordered = sorted(
+        by_action.values(),
+        key=lambda rem: _REPAIR_ACTION_PRIORITY.get(rem["action"], 99),
+    )
+    actions = [rem["action"] for rem in ordered]
+    # 凡要拉行情/因子的动作都带上复权因子；纯换手回填不必
+    with_factors = any(a in {"sync_factors", "bootstrap", "sync"} for a in actions)
+    primary = actions[0] if actions else None
+    return {
+        "actions": actions,
+        "primary_action": primary,
+        "with_factors": with_factors,
+        "needs_bootstrap": any(a in {"bootstrap", "sync", "sync_factors"} for a in actions),
+        "needs_turnover_repair": "repair_turnover" in actions,
+        "labels": [rem["label"] for rem in ordered],
+        "check_ids": [
+            item.check
+            for item in findings
+            if item.severity != "ok" and remediation_for(item.check)
+        ],
+    }
 
 
 @dataclass
@@ -92,6 +214,14 @@ class HealthReport:
             return f"数据体检通过（{count} 项提示）" if count else "数据体检通过"
         return "；".join(item.message for item in self.blockers)
 
+    @property
+    def score(self) -> int:
+        return seal_score(block_count=len(self.blockers), warn_count=len(self.warnings))
+
+    @property
+    def grade(self) -> str:
+        return seal_grade(self.score)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "trade_date": self.trade_date,
@@ -101,6 +231,10 @@ class HealthReport:
             "findings": [item.to_dict() for item in self.findings],
             "block_count": len(self.blockers),
             "warn_count": len(self.warnings),
+            "score": self.score,
+            "grade": self.grade,
+            "repair_plan": build_repair_plan(self.findings),
+            "catalog": [dict(row) for row in CHECK_CATALOG],
         }
 
 
@@ -117,8 +251,12 @@ def check_market_health(
     *,
     trade_date: str | None = None,
     thresholds: dict[str, float] | None = None,
+    include_ok: bool = False,
 ) -> HealthReport:
-    """对行情仓做一次体检。不抛异常，把结论交给调用方决定。"""
+    """对行情仓做一次体检。不抛异常，把结论交给调用方决定。
+
+    ``include_ok=True`` 时保留通过项，供体检页扫描回放；选股门禁默认 False。
+    """
     limits = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
     coverage = store.coverage()
     target = trade_date or str(coverage.get("last_date") or "")
@@ -143,17 +281,60 @@ def check_market_health(
     report.findings.append(_check_zero_amount(store, target, limits))
     report.findings.append(_check_factor_age(store, limits))
     report.findings.append(_check_failed_codes(coverage, limits))
-    # 只保留有话说的项；全 ok 的检查不必占版面。
-    report.findings = [item for item in report.findings if item.severity != "ok"]
+    if not include_ok:
+        # 只保留有话说的项；全 ok 的检查不必占版面。
+        report.findings = [item for item in report.findings if item.severity != "ok"]
     return report
 
 
-def _check_staleness(
-    store: MarketStore, coverage: dict[str, Any], target: str, limits: dict[str, float]
-) -> Finding:
-    """最新数据落后了多少个交易日。
+def _wall_clock_data_lag(last_date: str, days: list[str], *, now: datetime | None = None) -> int:
+    """仓内最新日相对「今天应覆盖的交易日」落后多少个交易日。
 
-    这是第一个要查的：数据本身是旧的，后面所有覆盖率都好看也没意义。
+    日历只含已入库日时，若末日已落后墙钟，用工作日差粗估（不计 A 股节假日）。
+    """
+    clock = now or datetime.now()
+    today = clock.date()
+    today_s = today.isoformat()
+    try:
+        last = date.fromisoformat(last_date)
+    except ValueError:
+        return 99
+    if last >= today:
+        return 0
+
+    after_close = (clock.hour * 60 + clock.minute) >= 15 * 60
+    if today_s in days and last_date in days:
+        expected = today_s
+        if not after_close:
+            idx = days.index(today_s)
+            expected = days[idx - 1] if idx > 0 else today_s
+        if last_date >= expected:
+            return 0
+        return days.index(expected) - days.index(last_date)
+
+    # 日历尚无今日（周末或日历过期）：按 Mon–Fri 粗估
+    end = today if after_close or today.weekday() >= 5 else today - timedelta(days=1)
+    lag = 0
+    cursor = last + timedelta(days=1)
+    while cursor <= end:
+        if cursor.weekday() < 5:
+            lag += 1
+        cursor += timedelta(days=1)
+    return lag
+
+
+def _check_staleness(
+    store: MarketStore,
+    coverage: dict[str, Any],
+    target: str,
+    limits: dict[str, float],
+    *,
+    now: datetime | None = None,
+) -> Finding:
+    """行情仓最新日是否过旧，以及是否覆盖选股基准日。
+
+    故意选历史基准日做复盘 ≠ 数据过期。过期只看仓内最新日相对墙钟，
+    不是「基准日距日历末日」——后者会误拦选股复盘。
     """
     last_date = str(coverage.get("last_date") or "")
     if not last_date:
@@ -168,13 +349,22 @@ def _check_staleness(
             observed=target,
         )
 
-    lag = len(days) - 1 - days.index(target)
+    if last_date < target:
+        return Finding(
+            "staleness",
+            "block",
+            f"行情最新日 {last_date} 尚未覆盖选股基准日 {target}",
+            observed=last_date,
+            threshold=target,
+        )
+
     allowed = int(limits["max_stale_days"])
+    lag = _wall_clock_data_lag(last_date, days, now=now)
     if lag > allowed:
         return Finding(
             "staleness",
             "block",
-            f"选股基准日 {target} 落后最新交易日 {lag} 个交易日（上限 {allowed}）",
+            f"行情最新日 {last_date} 落后当前 {lag} 个交易日（上限 {allowed}）",
             observed=lag,
             threshold=allowed,
         )
@@ -199,11 +389,17 @@ def _check_coverage(store: MarketStore, target: str, limits: dict[str, float]) -
     ratio = present / listed
     floor = float(limits["min_coverage_ratio"])
     if ratio < floor:
+        today = date.today().isoformat()
+        spot_hint = (
+            "；若目标日是今天，多半是盘中 spot 未写完（历史同步不含当日），请等 spot 刷完或重跑选股前刷新"
+            if target == today
+            else "，同步很可能没跑完"
+        )
         return Finding(
             "coverage",
             "block",
             f"{target} 行情覆盖率仅 {ratio:.1%}（{present}/{listed}，下限 {floor:.0%}）"
-            "，同步很可能没跑完",
+            f"{spot_hint}",
             observed=round(ratio, 4),
             threshold=floor,
         )
@@ -284,10 +480,13 @@ def _check_factor_age(store: MarketStore, limits: dict[str, float]) -> Finding:
         )
     latest = str(row["latest"] or "")
     try:
-        fetched = datetime.fromisoformat(latest.replace("Z", "+00:00")).replace(tzinfo=None)
+        fetched = datetime.fromisoformat(latest.replace("Z", "+00:00"))
+        if fetched.tzinfo is not None:
+            fetched = fetched.astimezone(timezone.utc).replace(tzinfo=None)
     except ValueError:
         return Finding("factor_age", "warn", f"无法解析复权因子更新时间：{latest!r}")
-    age_days = (datetime.now() - fetched).total_seconds() / 86400.0
+    # SQLite datetime('now') 写的是 UTC；用 UTC 墙钟比，避免东八区把因子误判旧 8 小时
+    age_days = (datetime.now(timezone.utc).replace(tzinfo=None) - fetched).total_seconds() / 86400.0
     ceiling = float(limits["max_factor_age_days"])
     if age_days > ceiling:
         return Finding(

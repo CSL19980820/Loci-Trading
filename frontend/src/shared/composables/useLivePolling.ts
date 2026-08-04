@@ -1,7 +1,7 @@
 import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 
 import { getMarketSession } from '@/shared/api/quant'
-import { isAshareLiveWindow, type MarketSession } from '@/shared/lib/marketSession'
+import type { MarketSession } from '@/shared/lib/marketSession'
 
 /**
  * 受交易日 / 15:00 闸门约束的轮询。
@@ -15,9 +15,11 @@ export function useLivePolling(opts: {
   enabled?: Ref<boolean> | (() => boolean)
 }) {
   const session = ref<MarketSession | null>(null)
-  const liveAllowed = ref(isAshareLiveWindow())
+  const liveAllowed = ref(false)
   let timer: number | undefined
   let sessionTimer: number | undefined
+  let tickRunning = false
+  let lifecycleGeneration = 0
 
   function enabled(): boolean {
     if (opts.enabled == null) return true
@@ -25,24 +27,39 @@ export function useLivePolling(opts: {
     return opts.enabled.value
   }
 
-  async function refreshSession(): Promise<void> {
+  async function refreshSession(generation = lifecycleGeneration): Promise<void> {
     try {
-      session.value = await getMarketSession()
+      const next = await getMarketSession()
+      if (generation !== lifecycleGeneration) return
+      session.value = next
       liveAllowed.value = Boolean(session.value.live_allowed)
     } catch {
-      // API 失败时退回本地钟点粗判
-      liveAllowed.value = isAshareLiveWindow()
+      if (generation !== lifecycleGeneration) return
+      // 会话接口是实时请求与后台落库的权威闸门；未知时宁可不拉远程行情。
+      liveAllowed.value = false
     }
   }
 
-  async function runTick(): Promise<void> {
+  async function runTick(options: { ignoreLiveGate?: boolean } = {}): Promise<void> {
     if (!enabled()) return
     if (document.hidden) return
-    if (!liveAllowed.value) return
-    await opts.tick()
+    if (!options.ignoreLiveGate && !liveAllowed.value) return
+    if (tickRunning) return
+    tickRunning = true
+    try {
+      await opts.tick()
+    } finally {
+      tickRunning = false
+    }
+  }
+
+  /** 首次展示可读取一次缓存行情；仍共享单飞保护，后续自动刷新继续受会话闸门约束。 */
+  async function refreshOnce(): Promise<void> {
+    await runTick({ ignoreLiveGate: true })
   }
 
   function stop(): void {
+    lifecycleGeneration += 1
     if (timer) {
       window.clearInterval(timer)
       timer = undefined
@@ -55,14 +72,17 @@ export function useLivePolling(opts: {
 
   function start(): void {
     stop()
-    void refreshSession().then(() => {
+    if (!enabled()) return
+    const generation = lifecycleGeneration
+    void refreshSession(generation).then(() => {
+      if (generation !== lifecycleGeneration) return
       void runTick()
     })
     timer = window.setInterval(() => {
       void runTick()
     }, opts.intervalMs)
     sessionTimer = window.setInterval(() => {
-      void refreshSession()
+      void refreshSession(generation)
     }, 60_000)
   }
 
@@ -74,5 +94,5 @@ export function useLivePolling(opts: {
     stop()
   })
 
-  return { session, liveAllowed, refreshSession, start, stop, runTick }
+  return { session, liveAllowed, refreshSession, refreshOnce, start, stop, runTick }
 }

@@ -11,6 +11,7 @@ export function kindLabel(kind: string): string {
       compare: '横向对比',
       optimize: '退出扫描',
       prune: '清理历史',
+      outcome: '候选T+N',
     }[kind] ?? kind
   )
 }
@@ -20,6 +21,17 @@ export function statusLabel(status: string): string {
     { success: '✓ 成功', failed: '✗ 失败', running: '… 运行中', skipped: '跳过' }[status] ??
     (status || '—')
   )
+}
+
+/** 触发方式中文标签 */
+export function triggerLabel(trigger: string): string {
+  const key = (trigger || '').trim().toLowerCase()
+  const map: Record<string, string> = {
+    schedule: '定时',
+    api: '接口',
+    manual: '手动',
+  }
+  return map[key] ?? (trigger || '—')
 }
 
 export function formatNext(value?: string | null): string {
@@ -66,6 +78,22 @@ export function formatRtt(ms: number | null | undefined): string {
   if (ms == null || Number.isNaN(ms)) return '—'
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)} s`
   return `${Math.round(ms)} ms`
+}
+
+/** 任务执行耗时：≥1s 忽略 ms，如 11h2min3s / 7min23s / 3s；不足 1s 用 ms */
+export function formatRunDuration(ms: number | null | undefined): string {
+  const n = Math.max(0, Math.round(Number(ms) || 0))
+  if (n < 1000) return `${n}ms`
+  let rem = Math.floor(n / 1000)
+  const h = Math.floor(rem / 3600)
+  rem %= 3600
+  const m = Math.floor(rem / 60)
+  const s = rem % 60
+  const parts: string[] = []
+  if (h) parts.push(`${h}h`)
+  if (m) parts.push(`${m}min`)
+  if (s || !parts.length) parts.push(`${s}s`)
+  return parts.join('')
 }
 
 export function formatThroughput(mb: number | null | undefined): string {

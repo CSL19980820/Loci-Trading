@@ -161,9 +161,9 @@ def build_toolbus(
             },
         ),
     ]
+    # 运行时内置工具始终挂载：ask_user / write_journal / dispatch_subagents
+    # 是技能循环的控制面，不参与 allowed_tools 白名单收窄。
     for bname, bdesc, bschema in builtins:
-        if allow_set and bname not in allow_set and bname not in {"ask_user", "write_journal", "dispatch_subagents"}:
-            continue
         if bname in handlers:
             continue
         schemas.append(_to_schema(protocol, bname, bdesc, bschema))

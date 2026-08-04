@@ -2,8 +2,8 @@
 root_package = src
 include_external_packages = True
 
-# 只拦「直接」深掏兄弟上下文 infrastructure；经 src.<ctx> 包根再导出不算违约。
-# 同上下文（api/application/domain/infrastructure）放进 allowed_importers。
+# Block direct imports of sibling infrastructure modules; package-root re-exports are allowed.
+# Keep same-context api/application/domain/infrastructure imports in allowed_importers.
 
 [importlinter:contract:protect-market-infra]
 name = Protect market.infrastructure

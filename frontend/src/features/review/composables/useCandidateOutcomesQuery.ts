@@ -13,10 +13,14 @@ export type CandidateOutcomesResult = {
   summary: CandidateSummary
 }
 
-export function useCandidateOutcomesQuery(limit: MaybeRefOrGetter<number> = 300) {
+export function useCandidateOutcomesQuery(
+  limit: MaybeRefOrGetter<number> = 300,
+  options: MaybeRefOrGetter<{ enabled?: boolean }> = {},
+) {
   const query = useQuery({
     key: () => ['review-candidate-outcomes', toValue(limit)] as const,
     query: (): Promise<CandidateOutcomesResult> => getCandidateOutcomes(toValue(limit)),
+    enabled: () => toValue(options).enabled !== false,
     staleTime: 60_000,
   })
 

@@ -50,23 +50,57 @@ export function entityLabel(type: string): string {
 /** 裁决口径统一成中文展示。 */
 export function decisionLabel(decision: string | null | undefined): string {
   if (!decision) return '—'
-  const key = decision.trim().toLowerCase()
-  return (
+  const raw = decision.trim()
+  const key = raw.toLowerCase()
+  const mapped =
     {
       select: '精选',
       selected: '精选',
       core: '精选',
-      buy: '买入',
+      buy: '精选',
+      买入: '精选',
+      高确定性: '精选',
+      值得做: '精选',
+      入选: '精选',
+      重点: '精选',
+      建仓: '精选',
       reject: '落选',
       rejected: '落选',
       drop: '落选',
+      exclude: '落选',
       剔除: '落选',
+      排除: '落选',
+      空仓: '落选',
       watch: '观察',
       hold: '观察',
-      hold_cash: '空仓观望',
-      partial: '部分参与',
-    }[key] ?? decision.trim()
-  )
+      hold_cash: '观察',
+      partial: '观察',
+      持仓: '观察',
+      持有: '观察',
+      观望: '观察',
+      空仓观望: '观察',
+      部分参与: '观察',
+      精选: '精选',
+      落选: '落选',
+      观察: '观察',
+    }[key] ??
+    {
+      买入: '精选',
+      高确定性: '精选',
+      值得做: '精选',
+      入选: '精选',
+      重点: '精选',
+      建仓: '精选',
+      剔除: '落选',
+      排除: '落选',
+      空仓: '落选',
+      持仓: '观察',
+      持有: '观察',
+      观望: '观察',
+      空仓观望: '观察',
+      部分参与: '观察',
+    }[raw]
+  return mapped ?? raw
 }
 
 export function toneClass(value: number | null | undefined): string {
@@ -119,38 +153,87 @@ export function severityLabel(value: string): string {
 }
 
 export function entryTimingLabel(value: string): string {
+  const raw = value.trim()
+  const key = raw.toLowerCase().replace(/\s+/g, '')
   return (
     {
       open: '当日开盘',
       close: '当日收盘',
       next_open: '次日开盘',
+      next_dip: '次日低吸',
       next_op: '次日开盘',
-      W: '尾盘',
       w: '尾盘',
+      尾盘: '尾盘',
+      禁w: '禁尾盘',
+      禁尾盘: '禁尾盘',
+      'd-flat': '平开',
+      d_flat: '平开',
+      flat: '平开',
+      平开: '平开',
+      'd-low': '低吸',
+      d_low: '低吸',
+      low: '低吸',
+      低吸: '低吸',
+      'd-high': '高开回踩',
+      d_high: '高开回踩',
+      high: '高开回踩',
+      高开回踩: '高开回踩',
+      hold: '持有',
+      持有: '持有',
+      watch: '观望',
+      观望: '观望',
+      auction: '竞价',
+      竞价: '竞价',
+      // 保留原大小写键（兼容未 lower 的直接查）
+      W: '尾盘',
       '禁W': '禁尾盘',
       'D-flat': '平开',
-      'd-flat': '平开',
-      flat: '平开',
-      hold: '持有',
-      '持有': '持有',
-      watch: '观望',
-      '观望': '观望',
-    }[value] ?? value
+      'D-low': '低吸',
+      'D-high': '高开回踩',
+    }[key] ??
+    {
+      W: '尾盘',
+      '禁W': '禁尾盘',
+      'D-flat': '平开',
+      'D-low': '低吸',
+      'D-high': '高开回踩',
+    }[raw] ??
+    raw
   )
 }
 
 /** 候选/历史里出现的战法 slug → 中文名（含旧别名）。 */
 const STRATEGY_LABELS: Record<string, string> = {
+  潜龙: '潜龙出海',
   qianlong: '潜龙出海',
-  'qianlong-v1': '潜龙出海·原版',
-  'qianlong-close': '潜龙出海·原版',
-  'qianlong-auction': '潜龙出海·竞价版',
-  'lugw-sanwai': '卢高文·三外有三',
-  'lugw-tianyi': '卢高文·天衣无缝',
-  'lugw-daoba': '卢高文·倒拔杨柳',
-  'lugw-haidi': '卢高文·海底捞月',
-  'lugw-fenshou': '卢高文·分手快乐',
-  'lugw-chouma': '卢高文·筹码峰突破',
+  'qianlong-v1': '潜龙出海',
+  'qianlong-close': '潜龙出海',
+  'qianlong-close-v2': '潜龙出海（优化版）',
+  'qianlong-close-v3': '潜龙出海（V3）',
+  'qianlong-tail-v1': '潜龙尾盘（V1）',
+  'sanyuan-tail-v1': '三源尾盘共振',
+  'qianlong-auction': '潜龙出海',
+  潜龙出海: '潜龙出海',
+  '潜龙出海·原版': '潜龙出海',
+  '潜龙出海·竞价版': '潜龙出海',
+  三外有三: '三外有三',
+  天衣无缝: '天衣无缝',
+  倒拔杨柳: '倒拔杨柳',
+  海底捞月: '海底捞月',
+  分手快乐: '分手快乐',
+  筹码峰突破: '筹码峰突破',
+  '卢高文·三外有三': '三外有三',
+  '卢高文·天衣无缝': '天衣无缝',
+  '卢高文·倒拔杨柳': '倒拔杨柳',
+  '卢高文·海底捞月': '海底捞月',
+  '卢高文·分手快乐': '分手快乐',
+  '卢高文·筹码峰突破': '筹码峰突破',
+  'lugw-sanwai': '三外有三',
+  'lugw-tianyi': '天衣无缝',
+  'lugw-daoba': '倒拔杨柳',
+  'lugw-haidi': '海底捞月',
+  'lugw-fenshou': '分手快乐',
+  'lugw-chouma': '筹码峰突破',
 }
 
 export function strategyLabel(slug: string | null | undefined, fallbackMap?: Map<string, string>): string {
@@ -158,8 +241,15 @@ export function strategyLabel(slug: string | null | undefined, fallbackMap?: Map
   if (fallbackMap?.has(slug)) return fallbackMap.get(slug) || slug
   if (STRATEGY_LABELS[slug]) return STRATEGY_LABELS[slug]
   // 潜龙旧版规则版本常见写法
-  if (slug.startsWith('qianlong')) return '潜龙出海'
-  if (slug.startsWith('lugw')) return '卢高文'
+  if (slug.startsWith('qianlong') || slug.includes('潜龙')) return '潜龙出海'
+  if (slug.startsWith('lugw') || slug.includes('卢高文')) {
+    if (slug.includes('sanwai') || slug.includes('三外')) return '三外有三'
+    if (slug.includes('haidi') || slug.includes('海底')) return '海底捞月'
+    if (slug.includes('chouma') || slug.includes('筹码')) return '筹码峰突破'
+    if (slug.includes('tianyi') || slug.includes('天衣')) return '天衣无缝'
+    if (slug.includes('daoba') || slug.includes('倒拔')) return '倒拔杨柳'
+    if (slug.includes('fenshou') || slug.includes('分手')) return '分手快乐'
+  }
   return slug
 }
 
@@ -169,6 +259,5 @@ export function timingLabel(value: string | null | undefined): string {
 }
 
 export function dialogWidth(): string {
-  if (typeof window !== 'undefined' && window.innerWidth <= 640) return '92vw'
-  return '36rem'
+  return 'min(36rem, 92vw)'
 }

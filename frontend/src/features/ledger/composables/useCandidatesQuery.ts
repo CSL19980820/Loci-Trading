@@ -26,7 +26,7 @@ export function useCandidatesQuery(filters: MaybeRefOrGetter<CandidatesFilter> =
         f.decision ?? '',
         f.start ?? '',
         f.end ?? '',
-        f.limit ?? 2000,
+        f.limit ?? 1000,
       ] as const
     },
     query: () => {
@@ -36,7 +36,7 @@ export function useCandidatesQuery(filters: MaybeRefOrGetter<CandidatesFilter> =
         decision: f.decision || undefined,
         start: f.start,
         end: f.end,
-        limit: f.limit ?? 2000,
+        limit: f.limit ?? 1000,
       })
     },
     staleTime: 30_000,

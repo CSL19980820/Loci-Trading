@@ -214,5 +214,16 @@ def round_trips(store: PalaceStore, *, code: str | None = None) -> list[RoundTri
             active.pop(current, None)
 
     trips.extend(active.values())
-    trips.sort(key=lambda item: (item.opened_on, item.code))
-    return trips
+    # 持有在前、了结在后；各自按时间倒序（开仓日 / 了结日）+ code 升序
+    open_sorted = sorted(
+        [trip for trip in trips if trip.is_open],
+        key=lambda item: (-int(item.opened_on.replace("-", "")), item.code),
+    )
+    closed_sorted = sorted(
+        [trip for trip in trips if not trip.is_open],
+        key=lambda item: (
+            -int((item.closed_on or item.opened_on).replace("-", "")),
+            item.code,
+        ),
+    )
+    return open_sorted + closed_sorted

@@ -3,7 +3,6 @@ import csv
 import io
 import json
 import logging
-import os
 from collections.abc import Callable, Generator
 from typing import Annotated, Any
 
@@ -31,6 +30,7 @@ def build_ledger_router(
     *,
     write_dependency: Callable[..., None],
     get_store: Callable[..., Generator[PalaceStore, None, None]],
+    market_db: str | None = None,
 ) -> APIRouter:
     """装配账本路由；写操作与 Store 依赖由组合根注入。
 
@@ -54,9 +54,16 @@ def build_ledger_router(
 
     @router.get("/api/candidates", tags=["candidates"])
     def candidates(
-        store: Store, date_value: str | None = Query(default=None, alias="date")
+        store: Store,
+        date_value: str | None = Query(default=None, alias="date"),
+        include_backfill: bool = Query(
+            default=False,
+            description="true 时含区间回填；默认排除",
+        ),
     ) -> list[dict[str, Any]]:
-        return store.candidates_payload(date_value)
+        return store.candidates_payload(
+            date_value, include_backfill=include_backfill
+        )
 
     @router.get("/api/candidates/list", tags=["candidates"])
     def candidates_list(
@@ -66,6 +73,10 @@ def build_ledger_router(
         start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
         end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
         limit: int = Query(default=200, ge=1, le=1000),
+        include_backfill: bool = Query(
+            default=False,
+            description="true 时含区间回填；默认排除",
+        ),
     ) -> list[dict[str, Any]]:
         """跨日期候选列表。按战法/裁决过滤，点进详情看单条。"""
         return store.candidates_list_payload(
@@ -74,6 +85,7 @@ def build_ledger_router(
             start=start,
             end=end,
             limit=limit,
+            include_backfill=include_backfill,
         )
 
     @router.get("/api/plans", tags=["plans"])
@@ -133,6 +145,7 @@ def build_ledger_router(
         start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
         end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
         limit: int = Query(default=10_000, ge=1, le=10_000),
+        include_backfill: bool = Query(default=False),
     ) -> Response:
         rows = store.candidates_list_payload(
             strategy=strategy,
@@ -140,6 +153,7 @@ def build_ledger_router(
             start=start,
             end=end,
             limit=limit,
+            include_backfill=include_backfill,
         )
         columns = [
             ("date", "日期"),
@@ -194,13 +208,12 @@ def build_ledger_router(
     def today_alerts(store: Store) -> list[dict[str, Any]]:
         from src.review.application.alerts import today_alerts_payload
 
-        market_path = os.environ.get("PALACE_MARKET_DB")
-        if not market_path:
+        if not market_db:
             return today_alerts_payload(store, None)
         try:
             from src.market import MarketStore
 
-            with MarketStore(market_path) as market:
+            with MarketStore(market_db) as market:
                 return today_alerts_payload(store, market)
         except Exception:
             logger.debug("行情库不可用，触价提醒降级为无报价", exc_info=True)
@@ -234,7 +247,9 @@ def build_ledger_router(
 
     @router.post("/api/trades", status_code=201, tags=["positions"])
     def create_trade(payload: TradeInput, store: Store, _: WriteAccess) -> dict[str, Any]:
-        return store.record_trade(**payload.model_dump())
+        values = payload.model_dump()
+        correlation_id = str(values.get("correlation_id") or "").strip()
+        return store.record_trades([values], idempotency_key=correlation_id)[0]
 
     @router.post("/api/candidates", status_code=201, tags=["candidates"])
     def create_candidate(

@@ -20,6 +20,9 @@ class ExchangeListAdapter(MarketAdapter):
         label="交易所列表",
         lanes=(LANE_INSTRUMENTS,),
         description="上交所/深交所/北交所上市证券列表（纯表格，不经 py_mini_racer）。",
+        # 实际请求路径是 akshare；三家交易所各有自己的站点，没有单一来源域名可填，
+        # 与其挑一个冒充全部，不如留空。
+        base_url="",
     )
 
     def fetch_daily(

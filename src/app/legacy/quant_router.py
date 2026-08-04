@@ -9,11 +9,6 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from src.app.legacy.quant_common import should_sync_today
-
-# 兼容旧测试导入
-_should_sync_today = should_sync_today
-
 
 def build_quant_router(
     *,
@@ -22,6 +17,7 @@ def build_quant_router(
     ops_db: str | None = None,
     palace_db: str | None = None,
     scheduler_getter=None,
+    setup_access_allowed=None,
 ) -> APIRouter:
     """构造聚合 router。依赖由 app.main 注入，便于测试时整体替换。"""
     from src.ai.api.router import build_ai_router
@@ -31,6 +27,7 @@ def build_quant_router(
     from src.ops.api.settings import build_ops_settings_router
     from src.ops.api.skills import build_skills_router
     from src.review.api.router import build_review_router
+    from src.app.screen_skills_api import build_screen_skills_router
     from src.strategy.api.convert import build_strategy_convert_router
     from src.strategy.api.router import build_strategy_router
 
@@ -95,9 +92,19 @@ def build_quant_router(
         )
     )
     router.include_router(
+        build_screen_skills_router(
+            write_dependency=write_dependency,
+            market_db=market_db,
+            ops_db=ops_db,
+            scheduler_getter=scheduler_getter,
+        )
+    )
+    router.include_router(
         build_review_router(market_db=market_db, palace_db=palace_db)
     )
-    router.include_router(build_skills_router(**common))
+    router.include_router(
+        build_skills_router(**common, scheduler_getter=scheduler_getter)
+    )
     router.include_router(
         build_jobs_router(**common, scheduler_getter=scheduler_getter)
     )
@@ -107,6 +114,7 @@ def build_quant_router(
             market_db=market_db,
             ops_db=ops_db,
             scheduler_getter=scheduler_getter,
+            setup_access_allowed=setup_access_allowed,
         )
     )
     router.include_router(

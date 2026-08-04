@@ -6,7 +6,7 @@
     python market.py sync --codes 600519,000001     只同步指定标的
     python market.py coverage                       看仓库现状
     python market.py strategies                     列出已注册战法
-    python market.py screen qianlong-auction        跑一次全市场选股
+    python market.py screen qianlong-close          跑一次全市场选股
     python market.py bench                          面板加载与选股性能实测
 
 设计上刻意让每个子命令都能单独重跑：同步有 watermark 断点，选股是纯函数，
@@ -205,6 +205,8 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         if "avg_alpha" in metrics:
             print(f"  相对基准超额均值 {metrics['avg_alpha']:+.2f}%   跑赢基准比例 {metrics['alpha_win_rate']:.1f}%")
         print(f"  退出原因 {metrics['exit_reasons']}")
+        if metrics.get("data_end_trades"):
+            print(f"  数据到头 {metrics['data_end_trades']} 笔未纳入绩效统计")
         print(f"  往返成本已扣 {result.config['commission_bps'] * 2 + result.config['stamp_duty_bps'] + result.config['slippage_bps'] * 2:.0f} bps")
         if metrics.get("caution"):
             print(f"  ⚠ {metrics['caution']}")
@@ -404,7 +406,7 @@ def build_parser() -> argparse.ArgumentParser:
     scr.set_defaults(func=cmd_screen)
 
     bench = sub.add_parser("bench", help="实测选股性能")
-    bench.add_argument("--strategy", default="qianlong-auction")
+    bench.add_argument("--strategy", default="qianlong-close")
     bench.set_defaults(func=cmd_bench)
 
     opt = sub.add_parser("optimize", help="扫描退出规则，找最优卖法")

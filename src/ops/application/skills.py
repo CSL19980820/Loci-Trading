@@ -33,6 +33,8 @@ import zipfile
 
 import yaml
 
+from src.ops.application.skill_files import atomic_replace_directory
+
 from src.shared.paths import skill_root
 
 #: 技能包安装根。每次调用再解析，避免 import 时 cwd/env 未就绪。
@@ -366,23 +368,22 @@ def install_skill(
     root = Path(skill_root or _skill_root_default())
     root.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
-
-    with tempfile.TemporaryDirectory(prefix="skill-install-") as tmp:
-        staging = Path(tmp) / "unpacked"
-        staging.mkdir()
+    with tempfile.TemporaryDirectory(prefix=".skill-stage-", dir=root) as tmp:
+        unpacked = Path(tmp) / "unpacked"
+        unpacked.mkdir()
 
         with zipfile.ZipFile(archive_path) as archive:
             entries = _reject_unsafe_entries(archive)
             for info in entries:
-                target = (staging / info.filename).resolve()
+                target = (unpacked / info.filename).resolve()
                 # 双保险：即便前面的审查有疏漏，这里也不会写出目标目录。
-                if not target.is_relative_to(staging.resolve()):
+                if not target.is_relative_to(unpacked.resolve()):
                     raise SkillError(f"解压路径逃逸，已拒绝：{info.filename}")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(info) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
 
-        manifest_path = _locate_skill_manifest(staging)
+        manifest_path = _locate_skill_manifest(unpacked)
         package_root = manifest_path.parent
         meta, instructions = parse_manifest(manifest_path.read_text(encoding="utf-8"))
 
@@ -401,15 +402,13 @@ def install_skill(
         if destination.exists():
             if not overwrite:
                 raise SkillError(f"技能 {slug} 已安装。要覆盖请显式指定 overwrite")
-            shutil.rmtree(destination)
-        shutil.move(str(package_root), str(destination))
+        atomic_replace_directory(package_root, destination)
 
         files = sorted(
             str(path.relative_to(destination)).replace("\\", "/")
             for path in destination.rglob("*")
             if path.is_file()
         )
-
     return SkillPackage(
         slug=slug,
         name=str(meta["name"]),

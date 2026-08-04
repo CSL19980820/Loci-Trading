@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { getDataLocation, saveDataLocation, type DataLocationInfo } from '@/shared/api/quant'
@@ -16,6 +16,11 @@ const discovered = ref<DataLocationInfo['discovered_dirs']>([])
 const error = ref('')
 const restartHint = ref('')
 let probedOk = false
+let probeToken = 0
+
+onUnmounted(() => {
+  probeToken += 1
+})
 
 function emitReady(info?: DataLocationInfo): void {
   window.dispatchEvent(
@@ -26,8 +31,10 @@ function emitReady(info?: DataLocationInfo): void {
 }
 
 async function probe(): Promise<void> {
+  const token = ++probeToken
   try {
     const info = await getDataLocation()
+    if (token !== probeToken) return
     probedOk = true
     defaultDir.value = info.default_dir
     installDir.value = info.install_dir || ''

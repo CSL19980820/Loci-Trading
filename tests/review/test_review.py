@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -109,7 +110,8 @@ class RoundTripTests(ReviewFixture):
 
         trips = round_trips(self.palace)
         self.assertEqual(len(trips), 2)
-        closed, still_open = trips[0], trips[1]
+        # 持有在前、了结在后
+        still_open, closed = trips[0], trips[1]
         self.assertEqual(closed.opened_on, DAYS[0])
         self.assertEqual(closed.closed_on, DAYS[4])
         self.assertFalse(closed.is_open)
@@ -140,7 +142,7 @@ class RoundTripTests(ReviewFixture):
 
 
 class AttributionTests(ReviewFixture):
-    def test_mae_and_mfe_cover_the_whole_holding_window(self) -> None:
+    def test_mae_and_mfe_cover_the_holding_window_after_entry(self) -> None:
         self._seed_market()
         self.palace.record_trade(action="BUY", code="600001", shares=1000, price=10.0,
                                  occurred_on=DAYS[0])
@@ -150,8 +152,21 @@ class AttributionTests(ReviewFixture):
         trip = attribute_round_trips(round_trips(self.palace), self.market)[0]
         # 区间最高 13.0（含 2% 上影 = 13.26），相对成本 10.0
         self.assertGreater(trip.mfe_pct, 30.0)
-        self.assertLess(trip.mae_pct, 0.0)
+        # 开仓日（DAYS[0] low=9.8）不计入 MAE：买入价是当日成交价，
+        # 买入前的最低价不构成持有期的不利偏移（这正是口径修复点）。
+        self.assertGreater(trip.mae_pct, 0.0)
         self.assertEqual(trip.hold_days, 7)
+
+    def test_mae_after_entry_uses_post_entry_lows(self) -> None:
+        """开仓后一路下跌的持仓，MAE 应如实为负且只取次日之后的最低价。"""
+        self._seed_market()
+        self.palace.record_trade(action="BUY", code="600002", shares=500, price=19.0,
+                                 occurred_on=DAYS[1])
+        self.palace.record_trade(action="SELL", code="600002", shares=500, price=15.0,
+                                 occurred_on=DAYS[6])
+        trip = attribute_round_trips(round_trips(self.palace), self.market)[0]
+        self.assertLess(trip.mae_pct, 0.0)
+        self.assertGreater(trip.mae_pct, -25.0)
 
     def test_detects_profit_give_back(self) -> None:
         """MFE 远高于最终收益 → 问题在退出纪律而不是选股。
@@ -167,7 +182,7 @@ class AttributionTests(ReviewFixture):
             attribute_round_trips(round_trips(self.palace), self.market)
         )
         self.assertGreater(summary["profit_give_back_pct"], 3)
-        self.assertIn("退出纪律", summary["hint"])
+        self.assertNotIn("hint", summary)
 
     def test_summary_groups_by_code_and_month(self) -> None:
         self._seed_market()
@@ -254,6 +269,53 @@ class EquityCurveTests(ReviewFixture):
         curve = build_equity_curve(self.palace, self.market, benchmarks=())
         self.assertIn("caution", curve.metrics)
 
+    def test_missing_last_day_close_is_carried_forward(self) -> None:
+        """末日缺收盘价时不得把市值打成 0（否则曲线断崖、浮亏虚胖）。"""
+        self._seed_market()
+        # 故意删掉最后两个交易日的行情，日历日仍在
+        self.market.conn.execute(
+            "DELETE FROM quotes_daily WHERE trade_date >= ?",
+            (DAYS[-2],),
+        )
+        self.market.conn.commit()
+        self.palace.record_trade(
+            action="BUY", code="600001", shares=1000, price=10.0, occurred_on=DAYS[0]
+        )
+        self.palace.record_snapshot(total_assets=20000.0, occurred_on=DAYS[5])
+        curve = build_equity_curve(self.palace, self.market, benchmarks=())
+        self.assertGreater(len(curve.points), 2)
+        # 递补后末日市值应接近有行情的倒数第二段，而不是塌成接近现金
+        last = curve.points[-1]
+        prior = next(p for p in reversed(curve.points) if p.trade_date < DAYS[-2])
+        self.assertAlmostEqual(last.holding_value, prior.holding_value, places=2)
+        self.assertIn("递补", curve.note)
+
+    def test_equity_curve_loads_cost_history_once(self) -> None:
+        """成本曲线不应按交易日重复查询 position_events。"""
+        self._seed_market()
+        self.palace.record_trade(
+            action="BUY", code="600001", shares=1000, price=10.0, occurred_on=DAYS[0]
+        )
+        self.palace.record_trade(
+            action="BUY", code="600001", shares=500, price=11.0, occurred_on=DAYS[3]
+        )
+        statements: list[str] = []
+        self.palace.conn.set_trace_callback(statements.append)
+        try:
+            curve = build_equity_curve(self.palace, self.market, benchmarks=())
+        finally:
+            self.palace.conn.set_trace_callback(None)
+
+        cost_queries = [
+            statement
+            for statement in statements
+            if "position_events" in statement
+            and "shares_after" in statement
+            and "cost_after" in statement
+        ]
+        self.assertEqual(len(cost_queries), 1)
+        self.assertGreater(len(curve.points), 2)
+
 
 class CandidateOutcomeTests(ReviewFixture):
     def test_evaluates_rejected_candidates_too(self) -> None:
@@ -322,6 +384,28 @@ class CandidateOutcomeTests(ReviewFixture):
 
 
 class PlanOutcomeTests(ReviewFixture):
+    def test_evaluates_plans_with_one_market_panel_load(self) -> None:
+        """多个预案不应为每一只标的重复发起日线查询。"""
+        self._seed_market()
+        self.palace.record_plan(
+            code="600001", title="上涨预案", scenario="跟随",
+            occurred_on=DAYS[0], stop_price=1.0, target_price=12.5,
+        )
+        self.palace.record_plan(
+            code="600002", title="下跌预案", scenario="防守",
+            occurred_on=DAYS[0], stop_price=19.0, target_price=99.0,
+        )
+
+        with (
+            patch.object(self.market, "history", wraps=self.market.history) as history,
+            patch.object(self.market, "load_panel", wraps=self.market.load_panel) as load_panel,
+        ):
+            results = evaluate_plans(self.palace, self.market)
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(history.call_count, 0)
+        self.assertEqual(load_panel.call_count, 1)
+
     def test_detects_stop_and_target_hits(self) -> None:
         self._seed_market()
         self.palace.record_plan(code="600001", title="突破跟随", scenario="站上均线",
@@ -340,6 +424,34 @@ class PlanOutcomeTests(ReviewFixture):
         self.palace.record_plan(code="600009", title="无行情", scenario="x",
                                 occurred_on=DAYS[0], stop_price=1.0)
         self.assertEqual(evaluate_plans(self.palace, self.market)[0]["status_final"], "no_data")
+
+    def test_plan_does_not_trigger_on_signal_day_intraday(self) -> None:
+        """盘后预案不吃当天盘中价：次日才进入观察，当天 low 破止损不算触发。"""
+        self._seed_market()
+        # DAYS[0] low = 9.8 < 10.0：若把当天计入，会误判止损触发
+        self.palace.record_plan(code="600001", title="次日观察", scenario="盘后制定",
+                                occurred_on=DAYS[0], stop_price=10.0, target_price=99.0)
+        result = evaluate_plans(self.palace, self.market)[0]
+        self.assertIsNone(result["stop_hit_on"])
+        self.assertEqual(result["status_final"], "observing")
+
+    def test_plan_window_has_an_upper_bound(self) -> None:
+        """超过 60 个交易日的长尾预案不再无限扫描，标记 window_expired。"""
+        long_days = [f"2026-01-{day:02d}" for day in range(1, 32)] + [f"2026-02-{day:02d}" for day in range(1, 29)] + [f"2026-03-{day:02d}" for day in range(1, 32)]
+        close = np.full(len(long_days), 50.0)
+        long_df = pd.DataFrame({
+            "date": long_days, "open": close, "high": close * 1.02, "low": close * 0.98,
+            "close": close, "volume": np.full(len(long_days), 1_000_000.0),
+            "amount": close * 1_000_000.0, "outstanding_share": np.full(len(long_days), 1e9),
+            "turnover": np.full(len(long_days), 0.001),
+        })
+        self.market.upsert_quotes("600001", long_df)
+        # 目标价极高永不可能触发；日历有 91 天 > 60 上限 → 应截断并标记
+        self.palace.record_plan(code="600001", title="长尾预案", scenario="等待",
+                                occurred_on=long_days[0], stop_price=1.0, target_price=99999.0)
+        result = evaluate_plans(self.palace, self.market)[0]
+        self.assertEqual(result["status_final"], "expired")
+        self.assertTrue(result["window_expired"])
 
 
 if __name__ == "__main__":

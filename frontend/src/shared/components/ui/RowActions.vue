@@ -60,8 +60,22 @@ function onMore(key: string): void {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.1rem;
+  gap: 0;
   flex-wrap: nowrap;
   white-space: nowrap;
+}
+
+.row-actions :deep(.el-button) {
+  margin: 0;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.row-actions :deep(.el-dropdown) {
+  margin-left: 0;
 }
 </style>

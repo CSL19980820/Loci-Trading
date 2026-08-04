@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -71,6 +72,7 @@ class StoreTests(unittest.TestCase):
                     "name": "贵州茅台",
                     "market": "SH",
                     "board": "main",
+                    "industry": "白酒",
                     "instrument_type": "STOCK",
                     "status": "normal",
                 },
@@ -79,22 +81,36 @@ class StoreTests(unittest.TestCase):
                     "name": "平安银行",
                     "market": "SZ",
                     "board": "main",
+                    "industry": "银行",
                     "instrument_type": "STOCK",
                     "status": "normal",
                 },
             ]
         )
         self.store.upsert_quotes("600519", _quotes(self.dates))
+        self.store.upsert_quotes(
+            "000001",
+            _quotes(self.dates, base=8.0).assign(turnover=0.05),
+        )
         total, rows = self.store.page_instruments(q="茅台", limit=10)
         self.assertEqual(total, 1)
         self.assertEqual(rows[0]["code"], "600519")
         page_total, page_rows = self.store.page_instruments(offset=0, limit=1)
         self.assertEqual(page_total, 2)
         self.assertEqual(len(page_rows), 1)
+        bank_total, bank_rows = self.store.page_instruments(industry="银行", limit=10)
+        self.assertEqual(bank_total, 1)
+        self.assertEqual(bank_rows[0]["code"], "000001")
+        by_turn_total, by_turn = self.store.page_instruments_by_turnover(
+            sort="turnover_desc", limit=10
+        )
+        self.assertEqual(by_turn_total, 2)
+        self.assertEqual(by_turn[0]["code"], "000001")
         latest = self.store.latest_bars(["600519", "000001"])
         self.assertEqual(latest["600519"]["trade_date"], "2026-01-08")
         self.assertIsNotNone(latest["600519"]["pct"])
-        self.assertNotIn("000001", latest)
+        self.assertIsNotNone(latest["600519"].get("turnover"))
+        self.assertAlmostEqual(float(latest["000001"]["turnover"]), 0.05)
 
     def test_upsert_overwrites_corrected_data(self) -> None:
         """数据源事后修正过的行必须被覆盖，而不是留着旧值。"""
@@ -105,10 +121,214 @@ class StoreTests(unittest.TestCase):
         history = self.store.history("600519", adjust="none")
         self.assertAlmostEqual(float(history.iloc[0]["close"]), 999.0)
 
+    def test_upsert_preserves_shares_when_incoming_null(self) -> None:
+        """spot / 无股本源带 NULL 时不得抹掉已有流通股本与换手率。"""
+        self.store.upsert_quotes("600519", _quotes(self.dates[:1]), source="hist")
+        wiped = pd.DataFrame(
+            [
+                {
+                    "date": self.dates[0],
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 12.5,
+                    "volume": 2_000_000.0,
+                    "amount": 20_000_000.0,
+                    "outstanding_share": None,
+                    "turnover": None,
+                }
+            ]
+        )
+        self.store.upsert_quotes("600519", wiped, source="sina_spot")
+        row = self.store.history("600519", adjust="none").iloc[0]
+        self.assertAlmostEqual(float(row["close"]), 12.5)
+        self.assertAlmostEqual(float(row["outstanding_share"]), 1e9)
+        self.assertAlmostEqual(float(row["turnover"]), 0.001)
+        self.assertEqual(str(row["source"]), "sina_spot")
+
+    def test_upsert_quote_bars_batch_keeps_per_code_rows(self) -> None:
+        """多票同日一批写入不得按 trade_date 全局去重掉其它代码。"""
+        day = "2026-08-04"
+        written = self.store.upsert_quote_bars(
+            [
+                {
+                    "code": "600519",
+                    "date": day,
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.5,
+                    "volume": 1e6,
+                    "amount": 1e7,
+                },
+                {
+                    "code": "000001",
+                    "date": day,
+                    "open": 8.0,
+                    "high": 8.5,
+                    "low": 7.5,
+                    "close": 8.2,
+                    "volume": 2e6,
+                    "amount": 1.6e7,
+                },
+                {
+                    "code": "600519",
+                    "date": day,
+                    "open": 10.0,
+                    "high": 11.2,
+                    "low": 9.0,
+                    "close": 11.0,
+                    "volume": 1.1e6,
+                    "amount": 1.2e7,
+                },
+            ],
+            source="sina_spot",
+        )
+        self.assertEqual(written, 2)
+        self.assertAlmostEqual(
+            float(self.store.history("600519", adjust="none").iloc[-1]["close"]),
+            11.0,
+        )
+        self.assertAlmostEqual(
+            float(self.store.history("000001", adjust="none").iloc[-1]["close"]),
+            8.2,
+        )
+        self.store.set_watermarks(
+            [("600519", day), ("000001", day)],
+            status="ok",
+            source="sina_spot",
+        )
+        self.assertEqual(self.store.watermark("000001")["last_trade_date"], day)
+
     def test_calendar_is_maintained_on_write(self) -> None:
         self.store.upsert_quotes("600519", _quotes(self.dates))
         self.store.upsert_quotes("000001", _quotes(self.dates[:2]))
         self.assertEqual(self.store.trading_days(), self.dates)
+
+    def test_coverage_refreshes_quote_row_count_after_same_day_append(self) -> None:
+        self.store.upsert_quotes("600519", _quotes(self.dates))
+        self.assertEqual(self.store.coverage()["rows"], len(self.dates))
+
+        self.store.upsert_quotes("000001", _quotes([self.dates[-1]], base=8.0))
+
+        self.assertEqual(self.store.coverage()["rows"], len(self.dates) + 1)
+
+    def test_coverage_rebuilds_legacy_quote_row_cache(self) -> None:
+        self.store.upsert_quotes("600519", _quotes(self.dates))
+        self.store.conn.execute(
+            "INSERT INTO meta(key, value, updated_at) VALUES(?, ?, datetime('now'))"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            ("quotes_daily_rows_v1", f"{self.dates[-1]}|999"),
+        )
+        self.store.conn.commit()
+
+        self.assertEqual(self.store.coverage()["rows"], len(self.dates))
+
+    def test_data_snapshot_tracks_market_content_without_exposing_path(self) -> None:
+        before = self.store.data_snapshot()
+        self.assertEqual(before["rows"], 0)
+        self.assertNotIn("db_path", before)
+        self.assertEqual(before["quotes"]["rows"], 0)
+        self.assertEqual(before["adjust_factors"]["rows"], 0)
+        self.assertEqual(before["instruments"]["rows"], 0)
+        self.store.upsert_quotes("600519", _quotes(self.dates), source="test")
+        after = self.store.data_snapshot()
+        self.assertEqual(after["rows"], len(self.dates))
+        self.assertEqual(after["last_date"], self.dates[-1])
+        self.assertEqual(after["quotes"]["rows"], len(self.dates))
+        self.assertEqual(after["quotes"]["last_date"], self.dates[-1])
+        self.assertNotEqual(before["market_revision"], after["market_revision"])
+
+    def test_data_snapshot_revision_changes_when_only_adjust_factors_change(self) -> None:
+        self.store.upsert_quotes("600519", _quotes(self.dates), source="test")
+        self.store.upsert_adjust_factors(
+            "600519",
+            pd.DataFrame({"date": ["2026-01-05"], "hfq_factor": [1.0]}),
+            source="factor-a",
+        )
+        before = self.store.data_snapshot()
+        self.store.upsert_adjust_factors(
+            "600519",
+            pd.DataFrame({"date": ["2026-01-05"], "hfq_factor": [1.5]}),
+            source="factor-b",
+        )
+        after = self.store.data_snapshot()
+        self.assertEqual(before["quotes"], after["quotes"])
+        self.assertEqual(before["instruments"], after["instruments"])
+        self.assertNotEqual(
+            before["adjust_factors"]["content_digest"],
+            after["adjust_factors"]["content_digest"],
+        )
+        self.assertNotEqual(before["market_revision"], after["market_revision"])
+
+    def test_data_snapshot_revision_changes_when_only_instrument_metadata_change(self) -> None:
+        self.store.upsert_instruments(
+            [
+                {
+                    "code": "600519",
+                    "name": "贵州茅台",
+                    "market": "SH",
+                    "board": "main",
+                    "industry": "白酒",
+                    "instrument_type": "STOCK",
+                    "status": "normal",
+                }
+            ]
+        )
+        before = self.store.data_snapshot()
+        self.store.upsert_instruments(
+            [
+                {
+                    "code": "600519",
+                    "name": "贵州茅台股份",
+                    "market": "SH",
+                    "board": "main",
+                    "industry": "高端白酒",
+                    "instrument_type": "STOCK",
+                    "status": "normal",
+                }
+            ]
+        )
+        after = self.store.data_snapshot()
+        self.assertEqual(before["quotes"], after["quotes"])
+        self.assertEqual(before["adjust_factors"], after["adjust_factors"])
+        self.assertNotEqual(
+            before["instruments"]["content_digest"],
+            after["instruments"]["content_digest"],
+        )
+        self.assertNotEqual(before["market_revision"], after["market_revision"])
+
+    def test_data_snapshot_revision_changes_when_quote_is_overwritten_in_same_timestamp(self) -> None:
+        self.store.upsert_quotes("600519", _quotes(self.dates), source="test")
+        before = self.store.data_snapshot()
+        fetched_at = self.store.conn.execute(
+            "SELECT fetched_at FROM quotes_daily WHERE code = '600519' LIMIT 1"
+        ).fetchone()[0]
+
+        fixed = _quotes(self.dates)
+        fixed.loc[0, "close"] = 999.0
+        self.store.upsert_quotes("600519", fixed, source="repair")
+        self.store.conn.execute(
+            "UPDATE quotes_daily SET fetched_at = ? WHERE code = '600519'",
+            (fetched_at,),
+        )
+        self.store.conn.commit()
+        after = self.store.data_snapshot()
+
+        self.assertEqual(before["fetched_at"], after["fetched_at"])
+        self.assertNotEqual(before["market_revision"], after["market_revision"])
+
+    def test_data_snapshot_does_not_scan_table_digests(self) -> None:
+        self.store.upsert_quotes("600519", _quotes(self.dates), source="test")
+        with mock.patch.object(
+            self.store, "_revision_digest", wraps=self.store._revision_digest
+        ) as revision_digest:
+            snapshot = self.store.data_snapshot()
+        self.assertTrue(snapshot["market_revision"])
+        self.assertEqual(
+            {call.args[0] for call in revision_digest.call_args_list},
+            {"market_revision", "adjust_factors_revision", "instruments_revision"},
+        )
 
     def test_shift_trading_days_skips_non_trading_gaps(self) -> None:
         """按自然日加减会跨过周末与长假，必须走交易日历。"""
@@ -252,6 +472,45 @@ class PanelTests(unittest.TestCase):
             panels["close"]["000001"].iloc[0], raw["close"]["000001"].iloc[0]
         )
 
+    def test_panel_factor_query_is_scoped_to_the_requested_window(self) -> None:
+        """窄窗单票回测不应把全市场全历史复权因子搬进 pandas。"""
+        start, end = self.dates[10], self.dates[15]
+        self.store.upsert_adjust_factors(
+            "600519",
+            pd.DataFrame(
+                {
+                    "date": [self.dates[0], self.dates[12], self.dates[-1]],
+                    "hfq_factor": [1.0, 2.0, 4.0],
+                }
+            ),
+        )
+        self.store.upsert_adjust_factors(
+            "000001",
+            pd.DataFrame({"date": self.dates, "hfq_factor": [1.0] * len(self.dates)}),
+        )
+        traced: list[str] = []
+        self.store.conn.set_trace_callback(traced.append)
+        try:
+            panels = self.store.load_panel(
+                fields=("close",),
+                codes=("600519",),
+                start=start,
+                end=end,
+                adjust="qfq",
+            )
+        finally:
+            self.store.conn.set_trace_callback(None)
+
+        history = self.store.history("600519", start=start, end=end, adjust="qfq")
+        np.testing.assert_allclose(
+            panels["close"]["600519"].to_numpy(dtype=float),
+            history["close"].to_numpy(dtype=float),
+        )
+        factor_sql = [sql for sql in traced if "adjust_factors" in sql]
+        self.assertEqual(len(factor_sql), 1)
+        self.assertIn("WITH requested(code)", factor_sql[0])
+        self.assertIn("JOIN requested", factor_sql[0])
+
     def test_rejects_unknown_field(self) -> None:
         with self.assertRaises(MarketError):
             self.store.load_panel(fields=("close", "not_a_field"))
@@ -265,139 +524,3 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class IncrementalSyncTests(unittest.TestCase):
-    """增量同步的跳过判据。判错就是每天静默地什么都不做。"""
-
-    def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory()
-        self.db = Path(self.temp.name) / "market.db"
-        self.store = MarketStore(self.db)
-
-    def tearDown(self) -> None:
-        self.store.close()
-        self.temp.cleanup()
-
-    def _sync(self, *, synced_on: str, stale_after_days: int | None = None) -> int:
-        """把 watermark 的同步时间改成指定日期，再看会不会被跳过。"""
-        from src.market.infrastructure.sync import sync_quotes
-
-        self.store.set_watermark("600519", last_trade_date="2026-03-01", status="ok")
-        self.store.conn.execute(
-            "UPDATE ingest_watermark SET last_synced_at = ? WHERE code = '600519'",
-            (f"{synced_on}T10:00:00+08:00",),
-        )
-        self.store.conn.commit()
-
-        calls: list[str] = []
-
-        class Recorder:
-            name = "recorder"
-
-            def fetch_daily(self, code, *, instrument_type="STOCK"):
-                calls.append(code)
-                return _quotes(["2026-03-02"])
-
-            def fetch_adjust_factors(self, code):
-                return pd.DataFrame(columns=["date", "hfq_factor"])
-
-        kwargs = {} if stale_after_days is None else {"stale_after_days": stale_after_days}
-        sync_quotes(
-            lambda: MarketStore(self.db), ["600519"],
-            sources=[Recorder()], workers=1, min_interval=0.0,
-            with_factors=False, with_today_spot=False, **kwargs,
-        )
-        return len(calls)
-
-    def test_skips_only_what_was_synced_today(self) -> None:
-        from datetime import date, timedelta
-
-        today = date.today().isoformat()
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
-
-        self.assertEqual(self._sync(synced_on=today), 0, "今天同步过的应跳过")
-        self.assertEqual(
-            self._sync(synced_on=yesterday), 1,
-            "昨天同步过的今天必须重新取——默认跳过它会让每日同步静默失效",
-        )
-
-    def test_force_ignores_the_watermark(self) -> None:
-        from datetime import date
-        from src.market.infrastructure.sync import sync_quotes
-
-        self.store.set_watermark("600519", status="ok")
-
-        calls: list[str] = []
-
-        class Recorder:
-            name = "recorder"
-
-            def fetch_daily(self, code, *, instrument_type="STOCK"):
-                calls.append(code)
-                return _quotes(["2026-03-02"])
-
-            def fetch_adjust_factors(self, code):
-                return pd.DataFrame(columns=["date", "hfq_factor"])
-
-        sync_quotes(
-            lambda: MarketStore(self.db), ["600519"], sources=[Recorder()],
-            workers=1, min_interval=0.0, force=True, with_factors=False,
-            with_today_spot=False,
-        )
-        self.assertEqual(len(calls), 1)
-
-
-class TodaySpotTests(unittest.TestCase):
-    """历史日 K 不含当日时，用实时行情补齐。"""
-
-    def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory()
-        self.db = Path(self.temp.name) / "market.db"
-        self.store = MarketStore(self.db)
-        self.store.upsert_quotes(
-            "600519",
-            _quotes(["2026-07-22", "2026-07-23", "2026-07-24"]),
-            source="hist",
-        )
-
-    def tearDown(self) -> None:
-        self.store.close()
-        self.temp.cleanup()
-
-    def test_apply_today_spot_appends_realtime_bar(self) -> None:
-        from datetime import date
-        from unittest.mock import patch
-
-        from src.market.infrastructure.sync import apply_today_spot
-
-        today = date.today()
-        fake = pd.DataFrame(
-            [
-                {
-                    "code": "600519",
-                    "date": today,
-                    "open": 10.0,
-                    "high": 11.0,
-                    "low": 9.5,
-                    "close": 10.5,
-                    "volume": 1_000_000.0,
-                    "amount": 10_000_000.0,
-                }
-            ]
-        )
-        with patch(
-            "src.market.infrastructure.adapters.fetch_spot_routed",
-            return_value=(fake, "sina"),
-        ):
-            written = apply_today_spot(self.store, ["600519"])
-
-        self.assertEqual(written, 1)
-        self.assertEqual(self.store.coverage()["last_date"], today.isoformat())
-        history = self.store.history("600519", adjust="none")
-        last = history.iloc[-1]
-        self.assertEqual(str(last["trade_date"]), today.isoformat())
-        self.assertAlmostEqual(float(last["close"]), 10.5)
-        # 换手率沿用上一交易日流通股本。
-        self.assertAlmostEqual(float(last["turnover"]), 1_000_000.0 / 1e9)
-        mark = self.store.watermark("600519")
-        self.assertEqual(mark["last_trade_date"], today.isoformat())
-        self.assertEqual(mark["source"], "sina_spot")

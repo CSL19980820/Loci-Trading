@@ -5,12 +5,17 @@
 所以没人触发止损，直到亏够了才意识到。
 
 这里用滚动窗口胜率 vs 历史基线做偏离检测。
+优先用精选候选的 T+5 收益序列；无候选时回退手工复盘。
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from src.ledger import PalaceStore
+
+if TYPE_CHECKING:
+    from src.market import MarketStore
 
 
 @dataclass
@@ -23,6 +28,7 @@ class StrategyDecayReport:
     note: str = ""
     recent_count: int = 0
     baseline_count: int = 0
+    source: str = "reviews"
 
     def to_dict(self) -> dict:
         return {
@@ -35,26 +41,20 @@ class StrategyDecayReport:
             "note": self.note,
             "recent_count": self.recent_count,
             "baseline_count": self.baseline_count,
+            "source": self.source,
         }
 
 
-def check_decay(
-    palace: PalaceStore,
+def _decay_from_returns(
     strategy_tag: str,
-    window: int = 20,
-    baseline_window: int = 100,
+    returns: list[float],
+    *,
+    window: int,
+    baseline_window: int,
+    source: str,
+    empty_note: str,
 ) -> StrategyDecayReport:
-    """单战法衰减检测。"""
-    rows = palace.conn.execute(
-        """
-        SELECT return_pct FROM reviews
-        WHERE return_pct IS NOT NULL AND strategy_tag = ?
-        ORDER BY reviewed_on ASC, created_at ASC
-        """,
-        (strategy_tag,),
-    ).fetchall()
-
-    total = len(rows)
+    total = len(returns)
     if total == 0:
         return StrategyDecayReport(
             strategy_tag=strategy_tag,
@@ -62,10 +62,9 @@ def check_decay(
             baseline_win_rate=None,
             recent_win_rate=None,
             decay_signal="ok",
-            note="暂无复盘收益数据",
+            note=empty_note,
+            source=source,
         )
-
-    returns = [float(r["return_pct"]) for r in rows]
 
     baseline_slice = returns[:baseline_window]
     recent_slice = returns[-window:]
@@ -104,6 +103,33 @@ def check_decay(
         note=note,
         recent_count=len(recent_slice),
         baseline_count=len(baseline_slice),
+        source=source,
+    )
+
+
+def check_decay(
+    palace: PalaceStore,
+    strategy_tag: str,
+    window: int = 20,
+    baseline_window: int = 100,
+) -> StrategyDecayReport:
+    """单战法衰减检测（手工复盘口径）。"""
+    rows = palace.conn.execute(
+        """
+        SELECT return_pct FROM reviews
+        WHERE return_pct IS NOT NULL AND strategy_tag = ?
+        ORDER BY reviewed_on ASC, created_at ASC
+        """,
+        (strategy_tag,),
+    ).fetchall()
+    returns = [float(r["return_pct"]) for r in rows]
+    return _decay_from_returns(
+        strategy_tag,
+        returns,
+        window=window,
+        baseline_window=baseline_window,
+        source="reviews",
+        empty_note="暂无复盘收益数据",
     )
 
 
@@ -111,10 +137,41 @@ def check_all_decay(
     palace: PalaceStore,
     window: int = 20,
     baseline_window: int = 100,
+    market: MarketStore | None = None,
 ) -> list[StrategyDecayReport]:
-    """全战法衰减扫描。"""
+    """全战法衰减扫描。有行情仓时优先用精选候选 T+5。"""
+    by_tag: dict[str, StrategyDecayReport] = {}
+
+    if market is not None:
+        from src.review.application.outcomes import evaluate_candidates
+
+        outcomes = evaluate_candidates(palace, market, limit=2000)
+        series: dict[str, list[tuple[str, float]]] = {}
+        for outcome in outcomes:
+            if not outcome.selected:
+                continue
+            value = outcome.returns.get(5)
+            if value is None:
+                continue
+            series.setdefault(outcome.strategy_tag(), []).append((outcome.base_date, value))
+        for tag, pairs in series.items():
+            pairs.sort(key=lambda item: item[0])
+            by_tag[tag] = _decay_from_returns(
+                tag,
+                [value for _, value in pairs],
+                window=window,
+                baseline_window=baseline_window,
+                source="candidates",
+                empty_note="暂无候选 T+5 样本",
+            )
+
     tags_rows = palace.conn.execute(
         "SELECT DISTINCT strategy_tag FROM reviews WHERE return_pct IS NOT NULL"
     ).fetchall()
-    tags = [r["strategy_tag"] for r in tags_rows]
-    return [check_decay(palace, tag, window, baseline_window) for tag in tags]
+    for row in tags_rows:
+        tag = str(row["strategy_tag"])
+        if tag in by_tag and by_tag[tag].total_records > 0:
+            continue
+        by_tag[tag] = check_decay(palace, tag, window, baseline_window)
+
+    return sorted(by_tag.values(), key=lambda r: (-r.total_records, r.strategy_tag))

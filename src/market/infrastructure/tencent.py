@@ -16,7 +16,10 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DAILY_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+#: web.ifzq.gtimg.cn 会被腾讯 WAF 拦成 501；走 QQ 财经反代。
+DAILY_URL = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get"
+#: 备用（部分网络反代也不稳时）。
+DAILY_URL_FALLBACK = "https://web.ifzq.gtimg.cn/appstock/app/kline/kline"
 SPOT_URL = "https://qt.gtimg.cn/q="
 #: gtimg 单次 URL 长度有限，批量宜 80~100。
 SPOT_BATCH_SIZE = 80
@@ -58,10 +61,15 @@ def _get(
     params: dict[str, str] | None = None,
     session: requests.Session | None = None,
 ) -> str:
-    caller = session or requests
+    from src.market.infrastructure.http_client import market_get, market_session
+
     try:
-        response = caller.get(
-            url, params=params, headers=HEADERS, timeout=DEFAULT_TIMEOUT
+        response = market_get(
+            url,
+            params=params,
+            headers=HEADERS,
+            timeout=DEFAULT_TIMEOUT,
+            session=session or market_session(),
         )
     except Exception as exc:
         raise TencentFetchError(f"请求失败：{type(exc).__name__}: {exc}") from exc
@@ -121,7 +129,19 @@ def _fetch_daily_page(
         raise TencentFetchError("symbol 为空")
     count = max(1, min(int(count), DAILY_PAGE_SIZE))
     param = f"{symbol},day,,{end_date},{count},"
-    text = _get(DAILY_URL, params={"param": param}, session=session)
+    last_error: Exception | None = None
+    for url in (DAILY_URL, DAILY_URL_FALLBACK):
+        try:
+            text = _get(url, params={"param": param}, session=session)
+            break
+        except TencentFetchError as exc:
+            last_error = exc
+            # WAF 501 / 网关错误才换备用；其它错误直接抛
+            if "501" not in str(exc) and "502" not in str(exc) and "503" not in str(exc):
+                raise
+    else:
+        assert last_error is not None
+        raise last_error
     try:
         payload = json.loads(text)
     except Exception as exc:
@@ -342,8 +362,10 @@ def fetch_live_hq(
     if not clean:
         return []
 
+    from src.market.infrastructure.http_client import market_session
+
     own_session = session is None
-    sess = session or requests.Session()
+    sess = session or market_session()
     if own_session:
         sess.headers.update(HEADERS)
 

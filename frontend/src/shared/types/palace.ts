@@ -83,19 +83,55 @@ export interface CandidateDaySummary {
   drops: SummaryCard[]
 }
 
+/** 当日卖出一行（dashboard.today_sells） */
+export interface TodaySell {
+  id: string
+  date: string
+  created_at: string
+  code: string
+  name: string
+  shares: number
+  price: number
+  amount: number
+  cost_before: number
+  cost_after: number
+  shares_after: number
+  realized_pnl: number
+  realized_pnl_pct: number | null
+  reason: string
+  source: string
+  correlation_id: string
+}
+
+export interface MonthPnlPoint {
+  date: string
+  cumulative_pnl: number
+}
+
 export interface Dashboard {
   as_of: string
   account: {
     realized_pnl: number
     today_realized_pnl: number | null
     today_realized_note: string
+    /** 当月已实现（不含潜龙累计基线） */
+    month_realized_pnl?: number
+    /** 本月已实现 / 账面总资产 */
+    month_realized_pnl_pct?: number | null
+    month_realized_note?: string
     total_assets: number | null
     snapshot_date: string | null
     cash: number | null
+    cash_base?: number | null
+    cash_implied?: boolean
     cost_exposure: number
     cost_exposure_pct: number | null
   }
   positions: Position[]
+  /** 当日卖出列表（同花顺式） */
+  today_sells?: TodaySell[]
+  /** 本月逐日累计已实现曲线 */
+  month_pnl_curve?: MonthPnlPoint[]
   candidates: Candidate[]
   candidate_summary: CandidateDaySummary
   plans: Plan[]

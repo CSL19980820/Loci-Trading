@@ -27,11 +27,37 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     不写候选池的话，复盘引擎的候选池验证永远没有数据可验，"当初否决的票
     后来涨了多少"这个最有价值的问题就问不出来。
     """
-    from src.strategy import screen
+    from src.strategy import get, screen
 
     slug = config.get("strategy")
     if not slug:
         raise JobError("screen 任务必须指定 strategy")
+
+    # 盘后选股前轻量刷当日 spot，避免吃到上午未定稿 OHLC。刷新失败必须阻断，
+    # 否则任务会拿上一交易日的 K 线生成一份看似成功的候选并推送出去。
+    spot_rows = 0
+    spot_requested = 0
+    if bool(config.get("refresh_spot", True)):
+        from src.market import apply_today_spot
+
+        try:
+            with context.market() as store:
+                instruments = store.list_instruments()
+                spot_codes = [item["code"] for item in instruments]
+                spot_types = {
+                    item["code"]: item["instrument_type"] for item in instruments
+                }
+            spot_requested = len(spot_codes)
+            if spot_codes:
+                with context.market() as store:
+                    spot_rows = apply_today_spot(
+                        store,
+                        spot_codes,
+                        instrument_types=spot_types or None,
+                        raise_on_failure=True,
+                    )
+        except Exception as exc:
+            raise JobError(f"选股前刷新当日行情失败，已阻断选股：{exc}") from exc
 
     with context.market() as store:
         result = screen(
@@ -45,6 +71,11 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
         names = {
             item["code"]: item["name"] for item in store.list_instruments(status="")
         } if config.get("record_candidates") else {}
+
+    try:
+        strategy_name = str(get(result.strategy_slug).name)
+    except Exception:
+        strategy_name = str(result.strategy_slug)
 
     # top_n=0 或未设置表示不限制，> 0 则只保留前 N 名。
     # 排名依据 ScreenResult.picks 的原始顺序：各战法自己按 score/信号强度排好了。
@@ -99,90 +130,65 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
 
     payload = {
         "strategy": result.strategy_slug,
+        "strategy_name": strategy_name,
+        "strategy_revision": getattr(result, "strategy_revision", ""),
         "trade_date": result.trade_date,
         "universe_size": result.universe_size,
         "entry_timing": result.entry_timing,
         "elapsed_seconds": round(result.elapsed_seconds, 3),
+        "params": getattr(result, "params", {}),
+        "effective_params": getattr(result, "effective_params", getattr(result, "params", {})),
         "pick_count": len(picks),
         "picks": picks,
         "top_n_applied": top_n if top_n > 0 else None,
         "universe": result.universe,
         "universe_funnel": result.universe_funnel,
+        "data_snapshot": result.data_snapshot,
+        "spot_refresh": {
+            "enabled": bool(config.get("refresh_spot", True)),
+            "requested": spot_requested,
+            "written": spot_rows,
+        },
     }
     if ai_pick_meta:
         payload.update(ai_pick_meta)
 
     if config.get("record_candidates"):
-        import copy
-        # _record_candidates gets ALL picks with tier annotation
-        tagged_result = copy.copy(result)
-        tagged_picks = [
-            {**p, "_tier": _tier(i)}
-            for i, p in enumerate(result.picks)
-        ]
-        tagged_result.picks = tagged_picks
-        payload["recorded"] = _record_candidates(tagged_result, config, context, names)
+        from src.strategy.application.persist import persist_screen_candidates
+
+        # tier → 裁决：core 才进「精选」胜率样本；reserve 挂观察、
+        # dropped 记落选，否则低置信票会污染「精选候选」口径。
+        _TIER_DECISION = {"core": "精选", "reserve": "观察", "dropped": "落选"}
+
+        class _Bag:
+            strategy_slug = result.strategy_slug
+            strategy_revision = getattr(result, "strategy_revision", "")
+            trade_date = result.trade_date
+            entry_timing = result.entry_timing
+            params = getattr(result, "params", {})
+            effective_params = getattr(result, "effective_params", getattr(result, "params", {}))
+            picks = [
+                {**p, "_tier": _tier(i), "_decision": _TIER_DECISION[_tier(i)]}
+                for i, p in enumerate(result.picks)
+            ]
+
+        payload["recorded"] = persist_screen_candidates(
+            _Bag(),
+            palace_db=context.palace_db or DEFAULT_PALACE_DB,
+            names=names,
+            pool_id=str(config.get("pool_id") or "") or None,
+            decision=str(config.get("decision") or "精选"),
+            source="job:screen",
+            top_n=0,
+        )
     return payload
 
 
-def _record_candidates(
-    result: Any, config: dict[str, Any], context: JobContext, names: dict[str, str]
-) -> dict[str, Any]:
-    """把选股结果写进候选池。
-
-    pool_id 默认用 "策略slug@日期"：同一天跑多个战法各自成池，复盘时能
-    按战法分开统计，而不是混成一锅。同池同标的重复写入会被账本的唯一
-    索引覆盖成最新一次，所以重跑任务是幂等的。
-    """
-    from src.ledger import PalaceError, PalaceStore
-
-    pool_id = str(config.get("pool_id") or f"{result.strategy_slug}@{result.trade_date}")
-    decision = str(config.get("decision") or "精选")
-    ai_reason = _strip_account_excuses(str(config.get("ai_reason") or ""))
-    written, failed = 0, []
-
-    with PalaceStore(context.palace_db or DEFAULT_PALACE_DB) as palace:
-        for pick in result.picks:
-            code = str(pick["code"])
-            try:
-                tier = str(pick.pop("_tier", "core"))
-                reason = _factor_reason(result.strategy_slug, pick.get("factors") or {})
-                if ai_reason and tier == "core":
-                    reason = f"{reason}；AI：{ai_reason}"[:500]
-                palace.record_candidate(
-                    code=code,
-                    name=names.get(code, ""),
-                    decision=decision,
-                    reason=reason,
-                    occurred_on=result.trade_date,
-                    pool_id=pool_id,
-                    timing=result.entry_timing,
-                    rule_version=result.strategy_slug,
-                    evidence=pick.get("factors") or {},
-                    tier=tier,
-                    source="job:screen",
-                )
-                written += 1
-            except PalaceError as exc:
-                # 单只写失败不该让整批作废——记下来，其余照常入池。
-                failed.append({"code": code, "error": str(exc)[:200]})
-
-    return {"pool_id": pool_id, "written": written, "failed": failed}
-
-
 def _factor_reason(slug: str, factors: dict[str, Any]) -> str:
-    """把关键因子压成一句人能读的理由。
+    """兼容旧测试/导入；实现已迁至 strategy.application.persist。"""
+    from src.strategy.application.persist import factor_reason
 
-    候选记录只留"某战法选中"是没用的——三个月后回看，你需要知道当时是
-    哪几个数字让它入选的。
-    """
-    parts = [
-        f"{key}={value:.2f}"
-        for key, value in factors.items()
-        if isinstance(value, (int, float)) and not isinstance(value, bool)
-    ]
-    body = "，".join(parts[:6]) or "（无数值因子）"
-    return f"{slug} 选中：{body}"[:500]
+    return factor_reason(slug, factors)
 
 
 _ACCOUNT_EXCUSE_RE = re.compile(

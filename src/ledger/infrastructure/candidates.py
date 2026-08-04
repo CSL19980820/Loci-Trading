@@ -6,13 +6,34 @@ from typing import Any
 from uuid import uuid4
 
 from src.ledger.infrastructure.store_types import (
+    CANONICAL_DECISIONS,
+    DEFAULT_RULE_VERSION,
     PalaceError,
     _dumps,
     _loads,
     _normalize_decision,
+    _normalize_reason_text,
+    _normalize_rule_version,
+    _normalize_timing,
     _now,
     normalize_code,
     normalize_date,
+)
+
+#: 排除区间回填 / 历史重放（不要求 created_at 同日）
+EXCLUDE_BACKFILL_SQL = (
+    "IFNULL(source, '') NOT LIKE '%backfill%'",
+    "IFNULL(source, '') NOT LIKE '%:history'",
+)
+# 旧版曾在启动时把过期 API 选股改写成 backfill；当前版本在读取时派生该口径，
+# 避免为了展示过滤而改写审计事实。手工补录的历史记录不受影响。
+EXCLUDE_STALE_API_SCREEN_SQL = (
+    "(IFNULL(source, '') NOT LIKE 'api:screen%' OR substr("
+    "REPLACE(IFNULL(created_at, ''), 'T', ' '), 1, 10) = occurred_on)"
+)
+#: 盘后真选：排除回填 + 写入日历日须等于选股日
+LIVE_CANDIDATE_SQL = EXCLUDE_BACKFILL_SQL + (
+    "substr(REPLACE(IFNULL(created_at, ''), 'T', ' '), 1, 10) = occurred_on",
 )
 
 
@@ -28,7 +49,10 @@ class CandidateMixin:
         pool_id: str = "",
         score: float | None = None,
         timing: str = "",
-        rule_version: str = "qianlong-v1",
+        rule_version: str = DEFAULT_RULE_VERSION,
+        strategy_slug: str = "",
+        strategy_revision: str = "",
+        effective_params: dict[str, Any] | None = None,
         evidence: dict[str, Any] | None = None,
         tier: str = "core",
         source: str = "manual",
@@ -38,16 +62,19 @@ class CandidateMixin:
         occurred_on = normalize_date(occurred_on)
         if not decision.strip() or not reason.strip():
             raise PalaceError("候选记录必须有裁决和理由")
-        if "满仓" in reason and any(
-            token in decision for token in ("落选", "排除", "放弃", "否决", "剔除", "reject")
-        ):
+        decision_value = _normalize_decision(decision.strip())
+        if decision_value not in CANONICAL_DECISIONS:
+            raise PalaceError("裁决必须是：精选 / 落选 / 观察")
+        if "满仓" in reason and decision_value == "落选":
             raise PalaceError("账户满仓不能作为拒绝理由；请按标的本身质量裁决")
         effective_pool = pool_id.strip() or f"POOL-{occurred_on}"
         name_value = name.strip() or code
-        decision_value = _normalize_decision(decision.strip())
-        reason_value = reason.strip()
-        timing_value = timing.strip()
-        rule_value = rule_version.strip() or "qianlong-v1"
+        reason_value = _normalize_reason_text(reason.strip())
+        timing_value = _normalize_timing(timing)
+        rule_value = _normalize_rule_version(rule_version)
+        strategy_slug_value = strategy_slug.strip() or rule_version.strip()
+        strategy_revision_value = strategy_revision.strip()
+        effective_params_json = _dumps(effective_params)
         source_value = source.strip() or "manual"
         tier_value = tier.strip() or "core"
         evidence_json = _dumps(evidence)
@@ -55,7 +82,9 @@ class CandidateMixin:
             self._upsert_stock(cursor, code, name_value)
             existing = cursor.execute(
                 """
-                SELECT id, name, score, decision, timing, reason, rule_version, evidence_json, tier, source
+                SELECT id, name, score, decision, timing, reason, rule_version,
+                       strategy_slug, strategy_revision, effective_params_json,
+                       evidence_json, tier, source
                 FROM candidate_reviews
                 WHERE occurred_on = ? AND pool_id = ? AND code = ?
                 """,
@@ -76,6 +105,9 @@ class CandidateMixin:
                     and str(existing["timing"]) == timing_value
                     and str(existing["reason"]) == reason_value
                     and str(existing["rule_version"]) == rule_value
+                    and str(existing["strategy_slug"]) == strategy_slug_value
+                    and str(existing["strategy_revision"]) == strategy_revision_value
+                    and str(existing["effective_params_json"]) == effective_params_json
                     and str(existing["evidence_json"]) == evidence_json
                     and str(existing["tier"]) == tier_value
                     and str(existing["source"]) == source_value
@@ -86,7 +118,9 @@ class CandidateMixin:
                     """
                     UPDATE candidate_reviews
                     SET name = ?, score = ?, decision = ?, timing = ?, reason = ?,
-                        rule_version = ?, evidence_json = ?, tier = ?, source = ?, created_at = ?
+                        rule_version = ?, strategy_slug = ?, strategy_revision = ?,
+                        effective_params_json = ?, evidence_json = ?, tier = ?, source = ?,
+                        created_at = ?
                     WHERE id = ?
                     """,
                     (
@@ -96,6 +130,9 @@ class CandidateMixin:
                         timing_value,
                         reason_value,
                         rule_value,
+                        strategy_slug_value,
+                        strategy_revision_value,
+                        effective_params_json,
                         evidence_json,
                         tier_value,
                         source_value,
@@ -110,8 +147,9 @@ class CandidateMixin:
                 """
                 INSERT INTO candidate_reviews(
                     id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                    rule_version, evidence_json, tier, source, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    rule_version, strategy_slug, strategy_revision, effective_params_json,
+                    evidence_json, tier, source, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     candidate_id,
@@ -124,6 +162,9 @@ class CandidateMixin:
                     timing_value,
                     reason_value,
                     rule_value,
+                    strategy_slug_value,
+                    strategy_revision_value,
+                    effective_params_json,
                     evidence_json,
                     tier_value,
                     source_value,
@@ -131,6 +172,15 @@ class CandidateMixin:
                 ),
             )
         return candidate_id
+
+    def record_candidates(self, candidates: list[dict[str, Any]]) -> list[str]:
+        """全量候选裁决要么全部落账，要么在失败时一起回滚。"""
+        if not isinstance(candidates, list) or not candidates or any(
+            not isinstance(item, dict) for item in candidates
+        ):
+            raise PalaceError("候选批次必须至少包含一条对象")
+        with self._transaction():
+            return [self.record_candidate(**dict(item)) for item in candidates]
 
     def delete_candidate(self, candidate_id: str) -> bool:
         """删除一条候选记录。"""
@@ -150,32 +200,73 @@ class CandidateMixin:
                 removed += cursor.rowcount
         return removed
 
-    def candidates_payload(self, occurred_on: str | None = None) -> list[dict[str, Any]]:
-        """读取候选池；未传日期时按最新候选日展示。同日同池同标的只返回最新一条。"""
+    def delete_candidates_for_pool(
+        self,
+        *,
+        occurred_on: str,
+        pool_id: str,
+        sources_like: str | None = None,
+    ) -> int:
+        """删除某日某池候选（重选全量替换 / 0 只清空）。
+
+        ``sources_like`` 非空时只删匹配源（如 ``%backfill%``），用于回填
+        不覆盖盘后真选。
+        """
+        day = normalize_date(occurred_on)
+        pool = pool_id.strip()
+        if not pool:
+            return 0
+        sql = "DELETE FROM candidate_reviews WHERE occurred_on = ? AND pool_id = ?"
+        params: list[Any] = [day, pool]
+        if sources_like:
+            sql += " AND source LIKE ?"
+            params.append(sources_like)
+        with self._transaction() as cursor:
+            cursor.execute(sql, params)
+            return int(cursor.rowcount)
+
+    def candidates_payload(
+        self,
+        occurred_on: str | None = None,
+        *,
+        include_backfill: bool = False,
+    ) -> list[dict[str, Any]]:
+        """读取候选池；未传日期时按最新候选日展示。同日同池同标的只返回最新一条。
+
+        默认排除回填源，避免看板把区间重放当成当日真选。
+        """
         target_date = normalize_date(occurred_on) if occurred_on else None
         if target_date is None:
             latest = self.conn.execute("SELECT MAX(occurred_on) AS value FROM candidate_reviews").fetchone()["value"]
             target_date = str(latest) if latest else None
         if not target_date:
             return []
+        day_clauses = ["occurred_on = ?"]
+        params: list[Any] = [target_date]
+        if not include_backfill:
+            day_clauses.extend(EXCLUDE_BACKFILL_SQL)
+            day_clauses.append(EXCLUDE_STALE_API_SCREEN_SQL)
+        day_where = " AND ".join(day_clauses)
         rows = self.conn.execute(
-            """
+            f"""
             SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                   rule_version, evidence_json, tier, source, created_at
+                   rule_version, strategy_slug, strategy_revision, effective_params_json,
+                   evidence_json, tier, source, created_at
             FROM (
                 SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                       rule_version, evidence_json, tier, source, created_at,
+                       rule_version, strategy_slug, strategy_revision, effective_params_json,
+                       evidence_json, tier, source, created_at,
                        ROW_NUMBER() OVER (
                            PARTITION BY pool_id, code
                            ORDER BY created_at DESC, id DESC
                        ) AS rn
                 FROM candidate_reviews
-                WHERE occurred_on = ?
+                WHERE {day_where}
             ) ranked
             WHERE rn = 1
             ORDER BY score DESC NULLS LAST, created_at ASC
             """,
-            (target_date,),
+            params,
         ).fetchall()
         return [
             {
@@ -186,9 +277,12 @@ class CandidateMixin:
                 "name": str(row["name"]),
                 "score": float(row["score"]) if row["score"] is not None else None,
                 "decision": _normalize_decision(str(row["decision"])),
-                "timing": str(row["timing"]),
-                "reason": str(row["reason"]),
-                "rule_version": str(row["rule_version"]),
+                "timing": _normalize_timing(str(row["timing"])),
+                "reason": _normalize_reason_text(str(row["reason"])),
+                "rule_version": _normalize_rule_version(str(row["rule_version"])),
+                "strategy_slug": str(row["strategy_slug"]),
+                "strategy_revision": str(row["strategy_revision"]),
+                "effective_params": _loads(str(row["effective_params_json"])),
                 "evidence": _loads(str(row["evidence_json"])),
                 "tier": str(row["tier"]),
                 "source": str(row["source"]),
@@ -205,16 +299,33 @@ class CandidateMixin:
         start: str | None = None,
         end: str | None = None,
         limit: int = 200,
+        include_backfill: bool = False,
     ) -> list[dict[str, Any]]:
-        """跨日期/战法的候选列表，供工作台列表页使用（不再按天侧栏）。"""
+        """跨日期/战法的候选列表，供工作台列表页使用（不再按天侧栏）。
+
+        默认排除回填源；审计回填时传 ``include_backfill=True``。
+        """
         clauses: list[str] = []
         params: list[Any] = []
+        if not include_backfill:
+            clauses.extend(EXCLUDE_BACKFILL_SQL)
+            clauses.append(EXCLUDE_STALE_API_SCREEN_SQL)
         if strategy and strategy.strip():
-            clauses.append("rule_version = ?")
-            params.append(strategy.strip())
+            raw = strategy.strip()
+            like = f"%{raw}%"
+            normalized = _normalize_rule_version(raw)
+            if normalized != raw:
+                # 输入旧 slug / 别名时，同时模糊匹配原文与归一后的中文战法名
+                clauses.append(
+                    "(strategy_slug LIKE ? OR rule_version LIKE ? OR rule_version LIKE ?)"
+                )
+                params.extend([like, like, f"%{normalized}%"])
+            else:
+                clauses.append("(strategy_slug LIKE ? OR rule_version LIKE ?)")
+                params.extend([like, like])
         if decision and decision.strip():
             clauses.append("decision = ?")
-            params.append(decision.strip())
+            params.append(_normalize_decision(decision.strip()))
         if start:
             clauses.append("occurred_on >= ?")
             params.append(normalize_date(start))
@@ -225,10 +336,12 @@ class CandidateMixin:
         rows = self.conn.execute(
             f"""
             SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                   rule_version, evidence_json, tier, source, created_at
+                   rule_version, strategy_slug, strategy_revision, effective_params_json,
+                   evidence_json, tier, source, created_at
             FROM (
                 SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                       rule_version, evidence_json, tier, source, created_at,
+                       rule_version, strategy_slug, strategy_revision, effective_params_json,
+                       evidence_json, tier, source, created_at,
                        ROW_NUMBER() OVER (
                            PARTITION BY occurred_on, pool_id, code
                            ORDER BY created_at DESC, id DESC
@@ -251,9 +364,12 @@ class CandidateMixin:
                 "name": str(row["name"]),
                 "score": float(row["score"]) if row["score"] is not None else None,
                 "decision": _normalize_decision(str(row["decision"])),
-                "timing": str(row["timing"]),
-                "reason": str(row["reason"]),
-                "rule_version": str(row["rule_version"]),
+                "timing": _normalize_timing(str(row["timing"])),
+                "reason": _normalize_reason_text(str(row["reason"])),
+                "rule_version": _normalize_rule_version(str(row["rule_version"])),
+                "strategy_slug": str(row["strategy_slug"]),
+                "strategy_revision": str(row["strategy_revision"]),
+                "effective_params": _loads(str(row["effective_params_json"])),
                 "evidence": _loads(str(row["evidence_json"])),
                 "tier": str(row["tier"]),
                 "source": str(row["source"]),
@@ -269,29 +385,38 @@ class CandidateMixin:
         start: str | None = None,
         end: str | None = None,
         limit: int = 200,
+        live_only: bool = True,
     ) -> list[dict[str, Any]]:
         """按战法（rule_version）查历史选股记录。
 
         每天、每标的取最新一条（同池同标的可能重跑），按日期倒序。
         用于前端"选股历史"页：按战法+日期区间浏览，不依赖账本的精选口径。
+
+        默认 ``live_only=True``：排除回填，且要求写入日=选股日（盘后真选）。
+        传 ``live_only=False`` 可含回填审计。
         """
-        params: list[Any] = [rule_version]
-        clauses = ["rule_version = ?"]
+        raw = rule_version.strip()
+        params: list[Any] = [raw, _normalize_rule_version(raw)]
+        clauses = ["(strategy_slug = ? OR rule_version = ?)"]
         if start:
             clauses.append("occurred_on >= ?")
             params.append(start)
         if end:
             clauses.append("occurred_on <= ?")
             params.append(end)
+        if live_only:
+            clauses.extend(LIVE_CANDIDATE_SQL)
         where = " AND ".join(clauses)
         params.append(int(limit))
         rows = self.conn.execute(
             f"""
             SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                   rule_version, evidence_json, source, created_at
+                   rule_version, strategy_slug, strategy_revision, effective_params_json,
+                   evidence_json, source, created_at
             FROM (
                 SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                       rule_version, evidence_json, source, created_at,
+                       rule_version, strategy_slug, strategy_revision, effective_params_json,
+                       evidence_json, source, created_at,
                        ROW_NUMBER() OVER (
                            PARTITION BY occurred_on, code
                            ORDER BY created_at DESC, id DESC
@@ -314,9 +439,12 @@ class CandidateMixin:
                 "name": str(row["name"]),
                 "score": float(row["score"]) if row["score"] is not None else None,
                 "decision": _normalize_decision(str(row["decision"])),
-                "timing": str(row["timing"]),
-                "reason": str(row["reason"]),
-                "rule_version": str(row["rule_version"]),
+                "timing": _normalize_timing(str(row["timing"])),
+                "reason": _normalize_reason_text(str(row["reason"])),
+                "rule_version": _normalize_rule_version(str(row["rule_version"])),
+                "strategy_slug": str(row["strategy_slug"]),
+                "strategy_revision": str(row["strategy_revision"]),
+                "effective_params": _loads(str(row["effective_params_json"])),
                 "evidence": _loads(str(row["evidence_json"])),
                 "source": str(row["source"]),
                 "created_at": str(row["created_at"]),
@@ -326,19 +454,8 @@ class CandidateMixin:
 
     @staticmethod
     def _is_selected_decision(decision: str) -> bool:
-        """精选口径：与 outcomes.POSITIVE_HINTS 对齐；观察/落选不算精选。"""
-        normalized = _normalize_decision(decision)
-        if normalized in ("观察", "落选", "空仓观望", "部分参与"):
-            return False
-        if normalized == "精选":
-            return True
-        rejected_tokens = ("落选", "排除", "放弃", "否决", "剔除", "过滤")
-        if any(token in normalized for token in rejected_tokens):
-            return False
-        if any(token in normalized.lower() for token in ("reject", "drop", "exclude")):
-            return False
-        positive_hints = ("买", "精选", "入选", "重点", "建仓", "参与")
-        return any(hint in normalized for hint in positive_hints)
+        """精选口径：裁决归一后仅「精选」算入选；观察/落选不算。"""
+        return _normalize_decision(decision) == "精选"
 
     def candidate_day_summary(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         """汇总当日候选：结构化条目，方便前端排版；正文只转述账本字段，不新增价位判断。"""
@@ -403,10 +520,12 @@ class CandidateMixin:
 
     def pool_dates_payload(self) -> list[dict[str, Any]]:
         """候选池按日汇总，便于复盘时跳转某日全量 vs 精选差异。"""
+        visible_where = " AND ".join((*EXCLUDE_BACKFILL_SQL, EXCLUDE_STALE_API_SCREEN_SQL))
         rows = self.conn.execute(
-            """
+            f"""
             SELECT occurred_on AS date, pool_id
             FROM candidate_reviews
+            WHERE {visible_where}
             GROUP BY occurred_on, pool_id
             ORDER BY occurred_on DESC, pool_id ASC
             """

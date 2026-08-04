@@ -13,10 +13,14 @@ export type RoundTripsResult = {
   summary: RoundTripSummary
 }
 
-export function useRoundTripsQuery(code: MaybeRefOrGetter<string | undefined> = undefined) {
+export function useRoundTripsQuery(
+  code: MaybeRefOrGetter<string | undefined> = undefined,
+  options: MaybeRefOrGetter<{ enabled?: boolean }> = {},
+) {
   const query = useQuery({
     key: () => ['review-trips', toValue(code) ?? ''] as const,
     query: (): Promise<RoundTripsResult> => getRoundTrips(toValue(code) || undefined),
+    enabled: () => toValue(options).enabled !== false,
     staleTime: 60_000,
   })
 

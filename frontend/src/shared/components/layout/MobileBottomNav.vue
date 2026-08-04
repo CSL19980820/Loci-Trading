@@ -2,6 +2,7 @@
 import {
   DataAnalysis,
   DataBoard,
+  EditPen,
   FolderOpened,
   Grid,
   Histogram,
@@ -27,14 +28,14 @@ const drawerOpen = ref(false)
 type NavItem = { path: string; label: string; icon: Component }
 
 const primaryTabs: NavItem[] = [
-  { path: '/', label: '总览', icon: Odometer },
-  { path: '/pool', label: '候选池', icon: Opportunity },
-  { path: '/journal', label: '交割', icon: Notebook },
+  { path: '/', label: '盘面', icon: Odometer },
+  { path: '/ledger', label: '账本', icon: Notebook },
+  { path: '/journal', label: '交割', icon: EditPen },
   { path: '/reviews', label: '绩效', icon: Stamp },
 ]
 
 const moreBaseItems: NavItem[] = [
-  { path: '/reviews/records', label: '手记', icon: Notebook },
+  { path: '/pool', label: '候选池', icon: Opportunity },
   { path: '/screen-history', label: '选股', icon: Search },
   { path: '/insights', label: '体检', icon: DataAnalysis },
   { path: '/winrate', label: '胜率', icon: TrendCharts },
@@ -62,7 +63,7 @@ const moreActive = computed(() => {
 function isPrimaryActive(path: string): boolean {
   if (path === '/') return route.path === '/'
   if (path === '/reviews') {
-    return route.path.startsWith('/reviews') && !route.path.startsWith('/reviews/records')
+    return route.path.startsWith('/reviews')
   }
   return route.path === path || route.path.startsWith(`${path}/`)
 }
@@ -85,8 +86,8 @@ function isMoreItemActive(path: string): boolean {
       <el-icon><component :is="tab.icon" /></el-icon>
       <span class="nav-label">{{ tab.label }}</span>
     </RouterLink>
-    <button
-      type="button"
+    <el-button
+      text
       class="nav-tab"
       :class="{ active: moreActive }"
       aria-label="更多导航"
@@ -94,7 +95,7 @@ function isMoreItemActive(path: string): boolean {
     >
       <el-icon><Grid /></el-icon>
       <span class="nav-label">更多</span>
-    </button>
+    </el-button>
   </nav>
 
   <el-drawer
@@ -149,20 +150,34 @@ function isMoreItemActive(path: string): boolean {
     justify-content: center;
     gap: 0.15rem;
     min-width: 0;
+    height: auto;
     padding: 0.35rem 0.15rem 0.25rem;
     border: 0;
+    border-radius: 0;
     background: transparent;
     color: var(--mist);
     font: inherit;
     font-size: 0.62rem;
+    font-weight: 500;
     line-height: 1.1;
     text-decoration: none;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
 
+  .nav-tab.el-button {
+    margin: 0;
+  }
+
+  .nav-tab.el-button:hover,
+  .nav-tab.el-button:focus {
+    background: transparent;
+    color: var(--mist);
+  }
+
   .nav-tab .el-icon {
     font-size: 1.25rem;
+    margin: 0;
   }
 
   .nav-label {
@@ -175,6 +190,12 @@ function isMoreItemActive(path: string): boolean {
   .nav-tab.active {
     color: var(--seal-ink);
     font-weight: 600;
+  }
+
+  .nav-tab.active.el-button:hover,
+  .nav-tab.active.el-button:focus {
+    color: var(--seal-ink);
+    background: transparent;
   }
 
   .nav-tab.active .el-icon {

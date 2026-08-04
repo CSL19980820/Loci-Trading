@@ -2,12 +2,20 @@
 
 Skills 在 frontmatter 声明 ``mcp_servers: [loci-market]`` 即可挂载工具，
 无需单独启动 HTTP MCP 进程。
+
+工具清单跟着「数据源」里的启停走：某条 lane 没有可用源，对应工具就不出现在
+清单里（免得模型拿到一个注定报错的工具）；勾上的 AkShare 接口则会追加进来。
 """
 from __future__ import annotations
 
 import json
 from typing import Any
 
+from src.intel.infrastructure.builtin_akshare_tools import (
+    call_akshare_tool,
+    is_akshare_tool,
+    list_akshare_tools,
+)
 from src.intel.infrastructure.mcp import McpTool
 
 BUILTIN_MCP_NAME = "loci-market"
@@ -15,6 +23,15 @@ BUILTIN_MCP_NAME = "loci-market"
 _MAX_QUOTE_CODES = 20
 _MAX_KLINE_ROWS = 60
 _MAX_INSTRUMENT_ROWS = 50
+
+#: 工具 → 它取数依赖的 lane。不在表里的工具（本地检索 / 元信息）始终可用。
+_LANE_BY_TOOL = {
+    "kline": "hist_daily",
+    "quote": "spot_batch",
+    "quotes": "spot_batch",
+    "minute": "minute_bars",
+    "capital_flow": "capital_flow",
+}
 
 
 def is_builtin_mcp_server(name: str) -> bool:
@@ -28,7 +45,27 @@ def _schema(props: dict[str, Any], *, required: list[str] | None = None) -> dict
     return out
 
 
+def _lane_has_source(lane: str) -> bool:
+    """该 lane 是否还有启用的源。判断本身出错时按「可用」处理，不误删工具。"""
+    try:
+        from src.market import enabled_adapter_ids
+
+        return bool(enabled_adapter_ids(lane))
+    except Exception:
+        return True
+
+
 def list_builtin_tools() -> list[McpTool]:
+    """当前生效的工具清单：可用 lane 的行情工具 + 已上桌的 AkShare 接口。"""
+    live = [
+        tool
+        for tool in _market_tools()
+        if tool.name not in _LANE_BY_TOOL or _lane_has_source(_LANE_BY_TOOL[tool.name])
+    ]
+    return live + list_akshare_tools(server=BUILTIN_MCP_NAME)
+
+
+def _market_tools() -> list[McpTool]:
     return [
         McpTool(
             name="kline",
@@ -87,7 +124,7 @@ def list_builtin_tools() -> list[McpTool]:
         ),
         McpTool(
             name="capital_flow",
-            description="个股主力资金流（东财）。返回近期净流入等字段摘要。",
+            description="个股主力资金流。按当前数据 lane 路由，返回近期净流入等字段摘要。",
             input_schema=_schema(
                 {
                     "code": {"type": "string", "description": "证券代码，如 600519"},
@@ -98,7 +135,7 @@ def list_builtin_tools() -> list[McpTool]:
         ),
         McpTool(
             name="minute",
-            description="个股分钟 K（东财）。period: 1/5/15/30/60，默认 1。",
+            description="个股分钟 K。按当前数据 lane 路由；period: 1/5/15/30/60，默认 1。",
             input_schema=_schema(
                 {
                     "code": {"type": "string", "description": "证券代码"},
@@ -121,7 +158,35 @@ def list_builtin_tools() -> list[McpTool]:
 
 
 def builtin_server_record() -> dict[str, Any]:
-    tools = list_builtin_tools()
+    """对外列表用。
+
+    ``tools``：当前模型可调用的生效清单（按 lane 启停过滤 + 已上桌 AkShare）。
+    ``tools_catalog``：UI 详情用——完整内置行情工具（标 available）+ 已上桌 AkShare，
+    避免详情弹窗只露出「碰巧有源」的那几条，漏掉我们支持的能力。
+    """
+    live = list_builtin_tools()
+    live_names = {tool.name for tool in live}
+    catalog: list[dict[str, Any]] = []
+    for tool in _market_tools():
+        catalog.append(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+                "group": "lane",
+                "available": tool.name in live_names,
+            }
+        )
+    for tool in list_akshare_tools(server=BUILTIN_MCP_NAME):
+        catalog.append(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+                "group": "akshare",
+                "available": True,
+            }
+        )
     return {
         "id": f"BUILTIN-{BUILTIN_MCP_NAME}",
         "name": BUILTIN_MCP_NAME,
@@ -132,8 +197,9 @@ def builtin_server_record() -> dict[str, Any]:
         "proxy_url": "",
         "tools": [
             {"name": t.name, "description": t.description, "input_schema": t.input_schema}
-            for t in tools
+            for t in live
         ],
+        "tools_catalog": catalog,
         "tools_synced_at": "",
         "is_active": True,
         "note": "Loci 内置行情",
@@ -287,14 +353,13 @@ def _tool_lanes_catalog(_args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_capital_flow(args: dict[str, Any]) -> dict[str, Any]:
-    from src.market import get_adapter, normalize_code
+    from src.market import fetch_capital_flow_routed, normalize_code
 
     code = normalize_code(str(args.get("code") or ""))
     if not code:
         return _result("缺少 code", is_error=True)
     try:
-        adapter = get_adapter("eastmoney")
-        frame = adapter.fetch_capital_flow(code)  # type: ignore[attr-defined]
+        frame, adapter_id = fetch_capital_flow_routed(code)
     except Exception as exc:
         return _result(f"capital_flow 失败：{type(exc).__name__}: {exc}", is_error=True)
     if frame is None or getattr(frame, "empty", True):
@@ -311,7 +376,7 @@ def _tool_capital_flow(args: dict[str, Any]) -> dict[str, Any]:
                     row[key] = str(value)
     return _result(
         json.dumps(
-            {"code": code, "source": "eastmoney", "rows": rows, "total": int(len(frame))},
+            {"code": code, "source": adapter_id, "rows": rows, "total": int(len(frame))},
             ensure_ascii=False,
             default=str,
         )
@@ -319,17 +384,18 @@ def _tool_capital_flow(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _tool_minute(args: dict[str, Any]) -> dict[str, Any]:
-    from src.market import get_adapter, normalize_code
+    from src.market import fetch_minute_routed, normalize_code
 
     code = normalize_code(str(args.get("code") or ""))
     if not code:
         return _result("缺少 code", is_error=True)
     period = str(args.get("period") or "1").strip() or "1"
+    if period not in {"1", "5", "15", "30", "60"}:
+        return _result(f"period 仅支持 1/5/15/30/60，收到 {period}", is_error=True)
     days = int(args.get("days") or 1)
     days = max(1, min(days, 5))
     try:
-        adapter = get_adapter("eastmoney")
-        frame = adapter.fetch_minute(code, period=period, days=days)  # type: ignore[attr-defined]
+        frame, adapter_id = fetch_minute_routed(code, period=period, days=days)
     except Exception as exc:
         return _result(f"minute 失败：{type(exc).__name__}: {exc}", is_error=True)
     if frame is None or getattr(frame, "empty", True):
@@ -349,7 +415,7 @@ def _tool_minute(args: dict[str, Any]) -> dict[str, Any]:
             {
                 "code": code,
                 "period": period,
-                "source": "eastmoney",
+                "source": adapter_id,
                 "rows": rows,
                 "total": int(len(frame)),
             },
@@ -378,6 +444,8 @@ def call_builtin_tool(
 ) -> dict[str, Any]:
     """与 McpClient.call_tool 相同返回形状。"""
     bare = _bare_tool_name(name, server)
+    if is_akshare_tool(bare):
+        return call_akshare_tool(bare, arguments)
     handler = _HANDLERS.get(bare)
     if handler is None:
         available = ", ".join(sorted(_HANDLERS))

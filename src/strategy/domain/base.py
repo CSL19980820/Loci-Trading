@@ -14,13 +14,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypedDict, runtime_checkable
 
 import pandas as pd
 
 
 class StrategyError(RuntimeError):
     """策略自身的可预期错误（参数非法、字段缺失等）。"""
+
+
+class StrategyInfo(TypedDict):
+    """策略目录对 API 的稳定描述；未知元数据必须显式为空。"""
+
+    slug: str
+    name: str
+    description: str
+    entry_instructions: str
+    entry_timing: str
+    required_fields: list[str]
+    min_bars: int
+    params: dict[str, Any]
+    version: str
+    version_history: list[dict[str, Any]]
+    backtest_metrics: dict[str, Any] | None
+    backtest_config: dict[str, Any] | None
 
 
 #: 入场时点约定。
@@ -31,7 +48,9 @@ class StrategyError(RuntimeError):
 #:            但用到当日**最高/最低**就仍属前视：那要等收盘才确定。
 #: - ``next_open`` 信号次日开盘成交。策略用到了当日收盘/最高/最低时最稳妥的
 #:            选择，也是盘后选股的默认口径。
-ENTRY_TIMINGS = ("open", "close", "next_open")
+#: - ``next_dip`` 信号日收盘后生成次日预挂价；T+1 开盘低于目标价按开盘成交，
+#:            否则 T+1 最低价触及目标价才成交。
+ENTRY_TIMINGS = ("open", "close", "next_open", "next_dip")
 
 
 @dataclass
@@ -45,12 +64,32 @@ class SignalResult:
     signals: pd.DataFrame
     factors: dict[str, pd.DataFrame] = field(default_factory=dict)
 
-    def picks_on(self, trade_date: str) -> list[str]:
-        """取某个交易日选中的代码。"""
+    def picks_on(self, trade_date: str, *, rank_by: str | None = None) -> list[str]:
+        """取某个交易日选中的代码。
+
+        ``rank_by`` 指定 factors 中的排序键时按该值**降序**（高分在前）；
+        缺键或非有限值时回退代码序，保证稳定可复现。
+        """
         if trade_date not in self.signals.index:
             return []
         row = self.signals.loc[trade_date]
-        return sorted(row.index[row.fillna(False).astype(bool)].tolist())
+        codes = [str(code) for code in row.index[row.fillna(False).astype(bool)].tolist()]
+        key = str(rank_by or "").strip()
+        panel = self.factors.get(key) if key else None
+        if panel is None or trade_date not in panel.index:
+            return sorted(codes)
+        scores = panel.loc[trade_date]
+
+        def sort_key(code: str) -> tuple[float, str]:
+            try:
+                value = float(scores[code])
+            except (KeyError, TypeError, ValueError):
+                return (float("inf"), code)
+            if value != value:  # NaN
+                return (float("inf"), code)
+            return (-value, code)
+
+        return sorted(codes, key=sort_key)
 
     def explain(self, trade_date: str, code: str) -> dict[str, Any]:
         """某只票在某天各个中间因子的取值，用于"为什么选中/为什么落选"。"""
@@ -113,17 +152,24 @@ def all_strategies() -> list[StrategyEngine]:
     return [_REGISTRY[slug] for slug in sorted(_REGISTRY)]
 
 
-def describe_all() -> list[dict[str, Any]]:
+def describe_all() -> list[StrategyInfo]:
     """给 API / 前端策略中心用的元数据列表。"""
     return [
         {
             "slug": engine.slug,
             "name": engine.name,
             "description": engine.description,
+            "entry_instructions": str(getattr(engine, "entry_instructions", "")),
             "entry_timing": engine.entry_timing,
             "required_fields": list(engine.required_fields()),
             "min_bars": engine.min_bars(),
             "params": engine.default_params(),
+            "version": str(getattr(engine, "version", getattr(
+                engine, "strategy_revision", f"builtin:{engine.slug}"
+            ))),
+            "version_history": list(getattr(engine, "version_history", [])),
+            "backtest_metrics": getattr(engine, "backtest_metrics", None),
+            "backtest_config": getattr(engine, "backtest_config", None),
         }
         for engine in all_strategies()
     ]
@@ -143,3 +189,24 @@ def merge_params(engine: StrategyEngine, params: dict[str, Any] | None) -> dict[
     merged = dict(defaults)
     merged.update(params)
     return merged
+
+
+def signal_history_bars(engine: StrategyEngine, *, extra_bars: int = 20) -> int:
+    """返回信号计算前应加载的历史根数。
+
+    ``min_bars`` 只表示指标达到最小可计算长度；递推指标还需要额外历史
+    稳定初始状态。策略可声明 ``warmup_bars``，让选股与回测共享同一口径。
+    """
+    baseline = engine.min_bars() + max(0, int(extra_bars))
+    configured = getattr(engine, "warmup_bars", None)
+    if configured is None:
+        return baseline
+    if isinstance(configured, bool):
+        raise StrategyError("策略 warmup_bars 必须是正整数")
+    try:
+        warmup = int(configured)
+    except (TypeError, ValueError) as exc:
+        raise StrategyError("策略 warmup_bars 必须是正整数") from exc
+    if warmup < engine.min_bars():
+        raise StrategyError("策略 warmup_bars 不能小于 min_bars")
+    return max(baseline, warmup)

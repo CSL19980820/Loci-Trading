@@ -116,6 +116,7 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     payload.update(
         {
             "skill": skill["slug"],
+            "skill_name": skill.get("name") or skill["slug"],
             "skill_version": skill["version"],
             "provider": provider.name,
             "context_used": sorted(context_blocks),
@@ -125,6 +126,14 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
             "subagents": subagent_meta,
         }
     )
+    # 若技能上下文里跑过选股，把 picks 挂到结果上，供企微 skills 模板使用
+    screen_block = context_blocks.get("screen")
+    if isinstance(screen_block, dict) and isinstance(screen_block.get("picks"), list):
+        payload["picks"] = screen_block["picks"]
+        if screen_block.get("strategy"):
+            payload["screen_strategy"] = screen_block["strategy"]
+        if screen_block.get("trade_date"):
+            payload["trade_date"] = screen_block["trade_date"]
     return payload
 
 

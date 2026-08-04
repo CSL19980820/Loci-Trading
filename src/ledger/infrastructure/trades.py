@@ -20,6 +20,33 @@ class TradeMixin:
     def _position_row(self, cursor: sqlite3.Cursor, code: str) -> sqlite3.Row | None:
         return cursor.execute("SELECT code, name, shares, cost, updated_on, note FROM holdings WHERE code = ?", (code,)).fetchone()
 
+    def record_trades(
+        self, trades: list[dict[str, Any]], *, idempotency_key: str = "",
+    ) -> list[dict[str, Any]]:
+        """在一个账本事务中写入多笔成交，并可按请求键安全重放。"""
+        if not isinstance(trades, list) or not trades or any(not isinstance(item, dict) for item in trades):
+            raise PalaceError("成交批次必须至少包含一笔对象")
+        rows = [dict(item) for item in trades]
+        request_json = _dumps(rows)
+        key = idempotency_key.strip()
+        with self._transaction() as cursor:
+            if key:
+                previous = cursor.execute(
+                    "SELECT request_json, result_json FROM ledger_write_receipts WHERE idempotency_key = ?",
+                    (key,),
+                ).fetchone()
+                if previous is not None:
+                    if str(previous["request_json"]) != request_json:
+                        raise PalaceError("幂等键已用于不同的成交请求")
+                    return json.loads(str(previous["result_json"]))
+            records = [self.record_trade(**row) for row in rows]
+            if key:
+                cursor.execute(
+                    "INSERT INTO ledger_write_receipts(idempotency_key,request_json,result_json,created_at) VALUES(?,?,?,?)",
+                    (key, request_json, _dumps(records), _now()),
+                )
+            return records
+
     def record_trade(
         self,
         *,
@@ -45,8 +72,16 @@ class TradeMixin:
             raise PalaceError("成交价不能为负数")
         occurred_on = normalize_date(occurred_on)
         event_id = f"TX-{uuid4().hex[:12].upper()}"
+        notional = round(shares * price, 2)
 
         with self._transaction() as cursor:
+            # 现金校验必须与成交写入处于同一 IMMEDIATE 事务，避免并发买入同时通过余额检查。
+            if action == "BUY":
+                available = self.broker_cash()
+                if available is not None and available + 1e-9 < notional:
+                    raise PalaceError(
+                        f"可用现金不足：买入约需 {notional:.2f} 元，当前现金 {available:.2f} 元"
+                    )
             current = self._position_row(cursor, code)
             shares_before = int(current["shares"]) if current else 0
             cost_before = float(current["cost"]) if current else 0.0
@@ -109,6 +144,124 @@ class TradeMixin:
             "cost_after": cost_after,
             "realized_pnl": realized_pnl,
         }
+
+    def _latest_snapshot_row(self) -> sqlite3.Row | None:
+        return self.conn.execute(
+            "SELECT * FROM account_snapshots ORDER BY occurred_on DESC, created_at DESC LIMIT 1"
+        ).fetchone()
+
+    def _cost_exposure_as_of(self, day: str, *, created_at: str | None = None) -> float:
+        """回放到某日（可选截止 created_at）的持仓成本占用。"""
+        if created_at:
+            rows = self.conn.execute(
+                """
+                SELECT code, shares_after, cost_after FROM position_events
+                WHERE occurred_on < ?
+                   OR (occurred_on = ? AND created_at <= ?)
+                ORDER BY occurred_on, created_at
+                """,
+                (day, day, created_at),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT code, shares_after, cost_after FROM position_events
+                WHERE occurred_on <= ?
+                ORDER BY occurred_on, created_at
+                """,
+                (day,),
+            ).fetchall()
+        last: dict[str, tuple[int, float]] = {}
+        for row in rows:
+            last[str(row["code"])] = (int(row["shares_after"]), float(row["cost_after"]))
+        return round(sum(shares * cost for shares, cost in last.values()), 2)
+
+    def _events_after_snapshot(
+        self, snap_date: str, snap_created: str
+    ) -> tuple[float, float, float]:
+        """快照之后：买入额、卖出额、出入金净额（券商现金滚动）。OPENING 不碰现金。"""
+        buy = float(
+            self.conn.execute(
+                """
+                SELECT COALESCE(SUM(shares * price), 0) AS value FROM position_events
+                WHERE action = 'BUY'
+                  AND (
+                    occurred_on > ?
+                    OR (occurred_on = ? AND created_at > ?)
+                  )
+                """,
+                (snap_date, snap_date, snap_created),
+            ).fetchone()["value"]
+            or 0
+        )
+        sell = float(
+            self.conn.execute(
+                """
+                SELECT COALESCE(SUM(shares * price), 0) AS value FROM position_events
+                WHERE action = 'SELL'
+                  AND (
+                    occurred_on > ?
+                    OR (occurred_on = ? AND created_at > ?)
+                  )
+                """,
+                (snap_date, snap_date, snap_created),
+            ).fetchone()["value"]
+            or 0
+        )
+        cashflow = float(
+            self.conn.execute(
+                """
+                SELECT COALESCE(SUM(amount), 0) AS value FROM account_events
+                WHERE kind = 'CASHFLOW'
+                  AND (
+                    occurred_on > ?
+                    OR (occurred_on = ? AND created_at > ?)
+                  )
+                """,
+                (snap_date, snap_date, snap_created),
+            ).fetchone()["value"]
+            or 0
+        )
+        return round(buy, 2), round(sell, 2), round(cashflow, 2)
+
+    def broker_cash_detail(self) -> dict[str, Any]:
+        """证券账户现金：快照锚点 + 之后买卖/出入金。总资产展示 = 现金 + 市值。"""
+        snapshot = self._latest_snapshot_row()
+        if snapshot is None:
+            return {
+                "cash": None,
+                "cash_base": None,
+                "snapshot_date": None,
+                "buy_after": 0.0,
+                "sell_after": 0.0,
+                "cashflow_after": 0.0,
+                "cash_implied": False,
+            }
+        snap_date = str(snapshot["occurred_on"])
+        snap_created = str(snapshot["created_at"])
+        implied = False
+        if snapshot["cash"] is not None:
+            cash_base = float(snapshot["cash"])
+        else:
+            # 旧快照未记现金：用「总资产 − 当时成本占用」估算锚点
+            cost_then = self._cost_exposure_as_of(snap_date, created_at=snap_created)
+            cash_base = round(max(0.0, float(snapshot["total_assets"]) - cost_then), 2)
+            implied = True
+        buy_after, sell_after, cashflow_after = self._events_after_snapshot(snap_date, snap_created)
+        cash = round(cash_base - buy_after + sell_after + cashflow_after, 2)
+        return {
+            "cash": cash,
+            "cash_base": cash_base,
+            "snapshot_date": snap_date,
+            "buy_after": buy_after,
+            "sell_after": sell_after,
+            "cashflow_after": cashflow_after,
+            "cash_implied": implied,
+        }
+
+    def broker_cash(self) -> float | None:
+        detail = self.broker_cash_detail()
+        return detail["cash"]
 
     def record_account_event(
         self,
@@ -250,8 +403,18 @@ class TradeMixin:
     ) -> str:
         if total_assets < 0:
             raise PalaceError("总资产不能为负数")
-        if cash is not None and cash < 0:
+        day = normalize_date(occurred_on)
+        # 未显式给现金时：按券商恒等式 现金 ≈ 总资产 − 当前成本占用
+        if cash is None:
+            cost = round(
+                sum(float(p.cost) * int(p.shares) for p in self.list_positions()),
+                2,
+            )
+            cash = round(max(0.0, float(total_assets) - cost), 2)
+        if cash < 0:
             raise PalaceError("现金不能为负数")
+        if cash - 1e-9 > total_assets:
+            raise PalaceError("现金不能大于总资产")
         snapshot_id = f"AS-{uuid4().hex[:12].upper()}"
         with self._transaction() as cursor:
             cursor.execute(
@@ -259,7 +422,7 @@ class TradeMixin:
                 INSERT INTO account_snapshots(id, occurred_on, total_assets, cash, note, source, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (snapshot_id, normalize_date(occurred_on), total_assets, cash, note.strip(), source.strip() or "manual", _now()),
+                (snapshot_id, day, total_assets, cash, note.strip(), source.strip() or "manual", _now()),
             )
         return snapshot_id
 
@@ -275,42 +438,64 @@ class TradeMixin:
         from datetime import date
 
         today = date.today().isoformat()
-        out: list[dict[str, Any]] = []
-        for position in self.list_positions():
-            today_buy = int(
-                self.conn.execute(
-                    """
-                    SELECT COALESCE(SUM(shares), 0) AS value FROM position_events
-                    WHERE code = ? AND action IN ('BUY', 'OPENING') AND occurred_on = ?
-                    """,
-                    (position.code, today),
-                ).fetchone()["value"]
-                or 0
+        positions = self.list_positions()
+        if not positions:
+            return []
+
+        codes = [position.code for position in positions]
+        placeholders = ",".join("?" for _ in codes)
+        today_buy_rows = self.conn.execute(
+            f"""
+            SELECT code, COALESCE(SUM(shares), 0) AS value FROM position_events
+            WHERE code IN ({placeholders})
+              AND action IN ('BUY', 'OPENING') AND occurred_on = ?
+            GROUP BY code
+            """,
+            [*codes, today],
+        ).fetchall()
+        today_buys = {
+            str(row["code"]): int(row["value"] or 0) for row in today_buy_rows
+        }
+
+        flat_rows = self.conn.execute(
+            f"""
+            SELECT code, occurred_on, rowid AS event_order FROM position_events
+            WHERE code IN ({placeholders}) AND shares_after = 0
+            ORDER BY code, event_order DESC
+            """,
+            codes,
+        ).fetchall()
+        last_flat_by_code: dict[str, int] = {}
+        for row in flat_rows:
+            last_flat_by_code.setdefault(str(row["code"]), int(row["event_order"]))
+
+        opening_rows = self.conn.execute(
+            f"""
+            SELECT code, occurred_on, rowid AS event_order FROM position_events
+            WHERE code IN ({placeholders}) AND action IN ('BUY', 'OPENING')
+            ORDER BY code, event_order
+            """,
+            codes,
+        ).fetchall()
+        opening_dates: dict[str, list[tuple[str, int]]] = {}
+        for row in opening_rows:
+            opening_dates.setdefault(str(row["code"]), []).append(
+                (str(row["occurred_on"]), int(row["event_order"]))
             )
-            # 当前这轮持仓起点：清仓（shares_after=0）之后的首笔买入；从未清仓则取历史首买
-            last_flat = self.conn.execute(
-                """
-                SELECT MAX(occurred_on) AS value FROM position_events
-                WHERE code = ? AND shares_after = 0
-                """,
-                (position.code,),
-            ).fetchone()["value"]
-            if last_flat:
-                first_open = self.conn.execute(
-                    """
-                    SELECT MIN(occurred_on) AS value FROM position_events
-                    WHERE code = ? AND action IN ('BUY', 'OPENING') AND occurred_on > ?
-                    """,
-                    (position.code, str(last_flat)),
-                ).fetchone()["value"]
-            else:
-                first_open = self.conn.execute(
-                    """
-                    SELECT MIN(occurred_on) AS value FROM position_events
-                    WHERE code = ? AND action IN ('BUY', 'OPENING')
-                    """,
-                    (position.code,),
-                ).fetchone()["value"]
+
+        out: list[dict[str, Any]] = []
+        for position in positions:
+            today_buy = today_buys.get(position.code, 0)
+            # 当前这轮持仓起点：清仓之后的首笔买入；行号解决同一秒/同一天的事件顺序。
+            last_flat_order = last_flat_by_code.get(position.code, 0)
+            first_open = next(
+                (
+                    occurred_on
+                    for occurred_on, event_order in opening_dates.get(position.code, [])
+                    if event_order > last_flat_order
+                ),
+                None,
+            )
             holding_days = 0
             if first_open:
                 try:

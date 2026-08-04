@@ -111,6 +111,25 @@ class ChipDistributionTests(unittest.TestCase):
         self.assertLess(panel["a"].iloc[-1], 3.0)
         self.assertGreater(panel["b"].iloc[-1], 1900.0)
 
+    def test_cost_at_date_does_not_depend_on_future_prices(self) -> None:
+        """某日的筹码成本不能因后续出现极端高价而改变。"""
+        index = pd.Index(DAYS[:5], name="trade_date")
+        high = pd.DataFrame({"000001": [10.5, 10.8, 11.0, 11.2, 100.0]}, index=index)
+        low = pd.DataFrame({"000001": [9.5, 9.8, 10.0, 10.2, 99.0]}, index=index)
+        close = pd.DataFrame({"000001": [10.0, 10.3, 10.5, 10.8, 99.5]}, index=index)
+        turnover = pd.DataFrame({"000001": [0.10] * 5}, index=index)
+
+        full = chip_cost_series(high, low, close, turnover, (15.0, 50.0, 85.0), bins=100)
+        prefix = chip_cost_series(
+            high.iloc[:4], low.iloc[:4], close.iloc[:4], turnover.iloc[:4],
+            (15.0, 50.0, 85.0), bins=100,
+        )
+        for percent in (15.0, 50.0, 85.0):
+            with self.subTest(percent=percent):
+                np.testing.assert_allclose(
+                    full[percent].iloc[3, 0], prefix[percent].iloc[3, 0], rtol=1e-12
+                )
+
 
 class BoardLimitTests(unittest.TestCase):
     """涨停判定是所有打板战法的地基，判错幅度整个战法就不成立。"""
@@ -167,6 +186,13 @@ class BoardLimitTests(unittest.TestCase):
         high = pd.DataFrame({"600519": [10.0, 11.0]}, index=index)
         flags = limit_up_flags(close, high, limit_ratio_panel(close))
         self.assertFalse(flags["600519"].iloc[1])
+
+    def test_limit_up_treats_float_equivalent_close_and_high_as_sealed(self) -> None:
+        index = pd.Index(DAYS[:2], name="trade_date")
+        close = pd.DataFrame({"600519": [0.3, 0.33]}, index=index)
+        high = pd.DataFrame({"600519": [0.3, 0.1 + 0.23]}, index=index)
+        flags = limit_up_flags(close, high, limit_ratio_panel(close))
+        self.assertTrue(flags["600519"].iloc[1])
 
     def test_half_up_rounding_matches_the_exchange(self) -> None:
         """交易所逢五进一；Python 的 round() 是银行家舍入，会差一分。"""
@@ -226,3 +252,24 @@ class MissingTurnoverTests(unittest.TestCase):
         close = pd.Series([10.0 + i for i in range(20)], index=index, dtype=float)
         turnover = pd.Series([np.nan] * 20, index=index, dtype=float)
         self.assertTrue(WINNER(close * 1.02, close * 0.98, close, turnover).isna().all())
+
+    def test_winner_with_nan_reference_price_is_unavailable_not_zero(self) -> None:
+        index = pd.Index(DAYS[:20], name="trade_date")
+        close = pd.Series([10.0 + i for i in range(20)], index=index, dtype=float)
+        turnover = pd.Series([0.05] * 20, index=index, dtype=float)
+        price = pd.Series([np.nan] * 20, index=index, dtype=float)
+
+        winner = WINNER(close * 1.02, close * 0.98, close, turnover, price)
+
+        self.assertTrue(winner.isna().all())
+
+    def test_missing_close_invalidates_old_costs_from_that_day_onward(self) -> None:
+        index = pd.Index(DAYS[:4], name="trade_date")
+        close = pd.Series([10.0, 11.0, np.nan, 13.0], index=index, dtype=float)
+        high = pd.Series([10.2, 11.2, 12.0, 13.2], index=index, dtype=float)
+        low = pd.Series([9.8, 10.8, 11.8, 12.8], index=index, dtype=float)
+        turnover = pd.Series([0.05] * 4, index=index, dtype=float)
+        cost = COST(high, low, close, turnover, 50.0)
+        self.assertTrue(cost.iloc[1] == cost.iloc[1])
+        self.assertTrue(np.isnan(cost.iloc[2]))
+        self.assertTrue(np.isnan(cost.iloc[3]))

@@ -24,12 +24,12 @@ withDefaults(
 <style scoped>
 .page-busy {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 0.65rem;
-  min-height: 8rem;
-  padding: 1.25rem;
+  min-height: 4.5rem;
+  padding: 1rem 1.25rem;
   color: var(--mist);
   font-size: 0.85rem;
 }

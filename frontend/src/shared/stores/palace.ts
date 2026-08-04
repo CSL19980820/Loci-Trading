@@ -12,6 +12,7 @@ import {
   getTimeline,
   getTrades,
 } from '@/shared/api/palace'
+import { toErrorMessage } from '@/shared/lib/errors'
 import type {
   Analytics,
   Dashboard,
@@ -33,7 +34,7 @@ async function settleValue<T>(promise: Promise<T>): Promise<{ ok: true; value: T
 }
 
 function errorMessage(caught: unknown, fallback: string): string {
-  return caught instanceof Error ? caught.message : fallback
+  return toErrorMessage(caught, fallback)
 }
 
 export const usePalaceStore = defineStore('palace', () => {
@@ -55,18 +56,137 @@ export const usePalaceStore = defineStore('palace', () => {
   let lastKey = ''
   let loadSeq = 0
 
+  /** 个股工作台按 tab 缓存：同代码切回已加载切片不再打接口。 */
+  let archiveCache = {
+    code: '',
+    trades: false,
+    timeline: false,
+    dashboard: false,
+  }
+
   const hasData = computed(() => dashboard.value !== null)
   const firstPosition = computed(() => dashboard.value?.positions[0] ?? null)
 
-  async function ensureDashboard(): Promise<void> {
-    dashboard.value = await getDashboard()
+  function resetArchiveCache(code = ''): void {
+    archiveCache = { code, trades: false, timeline: false, dashboard: false }
+  }
+
+  function archiveViewOf(route: RouteLocationNormalizedLoaded): 'quote' | 'trades' | 'candidates' {
+    const raw = String(route.query.view || 'quote')
+    if (raw === 'trades' || raw === 'candidates') return raw
+    return 'quote'
+  }
+
+  /** 按需拉取个股账本切片；force 仅用于写入后刷新。 */
+  async function ensureArchiveSlice(
+    code: string,
+    parts: Array<'trades' | 'timeline' | 'dashboard'>,
+    opts: { force?: boolean; isCurrent?: () => boolean } = {},
+  ): Promise<string[]> {
+    const normalized = code.trim()
+    if (!normalized) return []
+    const isCurrent = opts.isCurrent ?? (() => true)
+    if (!isCurrent()) return []
+    if (archiveCache.code !== normalized) {
+      selectedCode.value = normalized
+      selectedTimeline.value = []
+      resetArchiveCache(normalized)
+    }
+    const canCommit = () => isCurrent() && archiveCache.code === normalized && selectedCode.value === normalized
+    const force = opts.force === true
+    const need = parts.filter((part) => force || !archiveCache[part])
+    if (!need.length) return []
+
+    const failures: string[] = []
+    const tasks: Promise<void>[] = []
+
+    if (need.includes('timeline')) {
+      tasks.push(
+        (async () => {
+          const result = await settleValue(getTimeline(normalized))
+          if (result.ok) {
+            if (!canCommit()) return
+            selectedTimeline.value = result.value
+            archiveCache.timeline = true
+          } else {
+            failures.push(errorMessage(result.error, '时间线加载失败'))
+          }
+        })(),
+      )
+    }
+    if (need.includes('trades')) {
+      tasks.push(
+        (async () => {
+          const result = await settleValue(getTrades(normalized))
+          if (result.ok) {
+            if (!canCommit()) return
+            const others = trades.value.filter((item) => item.code !== normalized)
+            trades.value = [...result.value, ...others]
+            archiveCache.trades = true
+          } else {
+            failures.push(errorMessage(result.error, '成交加载失败'))
+          }
+        })(),
+      )
+    }
+    if (need.includes('dashboard')) {
+      tasks.push(
+        (async () => {
+          const result = await settleValue(getDashboard())
+          if (result.ok) {
+            if (!canCommit()) return
+            dashboard.value = result.value
+            archiveCache.dashboard = true
+          } else {
+            failures.push(errorMessage(result.error, '持仓摘要加载失败'))
+          }
+        })(),
+      )
+    }
+
+    await Promise.all(tasks)
+    return failures
+  }
+
+  function invalidateArchive(code?: string): void {
+    const next = (code ?? selectedCode.value).trim()
+    resetArchiveCache(next)
+    if (next && selectedCode.value === next) {
+      selectedTimeline.value = []
+    }
+  }
+
+  function archiveSlicesReady(route: RouteLocationNormalizedLoaded): boolean {
+    const code = String(route.params.code ?? '').trim()
+    if (!code || archiveCache.code !== code || selectedCode.value !== code) return false
+    const view = archiveViewOf(route)
+    if (view === 'quote') return true
+    if (view === 'candidates') return archiveCache.timeline
+    return archiveCache.trades && archiveCache.timeline && archiveCache.dashboard
   }
 
   /** 当前路由需要什么，就直接请求对应 API。没有本地账本缓存。 */
   async function loadRoute(route: RouteLocationNormalizedLoaded, force = false): Promise<void> {
     if (route.meta.public === true) return
 
-    const key = `${String(route.name)}:${String(route.params.code ?? '')}:${selectedPoolDate.value}:${selectedPoolId.value}`
+    const archiveView = route.name === 'archive' ? archiveViewOf(route) : ''
+    const key = `${String(route.name)}:${String(route.params.code ?? '')}:${archiveView}:${selectedPoolDate.value}:${selectedPoolId.value}`
+
+    // 个股工作台：行情不拉账本；已加载的交割/候选切回不打接口、不闪顶栏进度条。
+    // App 路由监听常带 force，不能靠 force 判定「必须重拉」。
+    if (route.name === 'archive') {
+      const code = String(route.params.code ?? '')
+      if (archiveCache.code !== code || selectedCode.value !== code) {
+        selectedCode.value = code
+        selectedTimeline.value = []
+        resetArchiveCache(code)
+      }
+      if (archiveView === 'quote' || archiveSlicesReady(route)) {
+        lastKey = key
+        return
+      }
+    }
+
     if (!force && inFlight && lastKey === key) return inFlight
 
     lastKey = key
@@ -78,15 +198,15 @@ export const usePalaceStore = defineStore('palace', () => {
       const failures: string[] = []
       try {
         switch (route.name) {
-          case 'dashboard': {
-            // 看板主数据必取；曲线/分布可降级，避免次要接口把整页打成 500 红条。
+          case 'ledger': {
+            // 账本主数据必取；曲线/分布可降级，避免次要接口把整页打成 500 红条。
             const [dashResult, analyticsResult] = await Promise.all([
               settleValue(getDashboard()),
               settleValue(getAnalytics()),
             ])
             if (seq !== loadSeq) return
             if (dashResult.ok) dashboard.value = dashResult.value
-            else failures.push(errorMessage(dashResult.error, '总览加载失败'))
+            else failures.push(errorMessage(dashResult.error, '账本加载失败'))
             if (analyticsResult.ok) analytics.value = analyticsResult.value
             else if (!dashResult.ok) {
               // 主数据也挂了才上报；仅 analytics 失败时静默降级
@@ -140,7 +260,10 @@ export const usePalaceStore = defineStore('palace', () => {
             }
             break
           }
-          case 'reviews': {
+          case 'reviews':
+            // 绩效中心自管 Colada 分区查询，不预拉账本 reviews/dashboard
+            break
+          case 'review-records': {
             const [reviewsResult, dashResult] = await Promise.all([
               settleValue(getReviews()),
               settleValue(getDashboard()),
@@ -154,33 +277,45 @@ export const usePalaceStore = defineStore('palace', () => {
           }
           case 'archive': {
             const code = String(route.params.code ?? '')
-            selectedCode.value = code
-            const [timelineResult, tradesResult, dashResult] = await Promise.all([
-              settleValue(getTimeline(code)),
-              settleValue(getTrades(code)),
-              settleValue(getDashboard()),
-            ])
-            if (seq !== loadSeq) return
-            if (timelineResult.ok) selectedTimeline.value = timelineResult.value
-            else failures.push(errorMessage(timelineResult.error, '时间线加载失败'))
-            if (tradesResult.ok) {
-              const others = trades.value.filter((item) => item.code !== code)
-              trades.value = [...tradesResult.value, ...others]
-            } else if (!timelineResult.ok) {
-              failures.push(errorMessage(tradesResult.error, '成交加载失败'))
+            const view = archiveViewOf(route)
+            if (archiveCache.code !== code || selectedCode.value !== code) {
+              selectedCode.value = code
+              selectedTimeline.value = []
+              resetArchiveCache(code)
             }
-            if (dashResult.ok) dashboard.value = dashResult.value
+            // 行情 tab 只看 market quotes，不预拉账本；交割/候选按需。
+            if (view === 'quote') break
+            if (view === 'candidates') {
+              failures.push(...(await ensureArchiveSlice(code, ['timeline'], { isCurrent: () => seq === loadSeq })))
+            } else {
+              failures.push(
+                ...(await ensureArchiveSlice(code, ['trades', 'timeline', 'dashboard'], { isCurrent: () => seq === loadSeq })),
+              )
+            }
+            if (seq !== loadSeq) return
             break
           }
-          default: {
-            const dashResult = await settleValue(getDashboard())
-            if (seq !== loadSeq) return
-            if (dashResult.ok) dashboard.value = dashResult.value
-            else failures.push(errorMessage(dashResult.error, '总览加载失败'))
-          }
+          default:
+            // ops / quant / insights / data-query 等由页面自管，不预拉 dashboard
+            break
         }
         if (seq === loadSeq) {
-          error.value = failures[0] ?? ''
+          // 已有可读数据时，刷新失败不再盖红条（避免偶发锁竞争刷屏）
+          const softOk =
+            (route.name === 'ledger' && dashboard.value) ||
+            (route.name === 'pulse') ||
+            (route.name === 'journal' && (trades.value.length > 0 || dashboard.value)) ||
+            (route.name === 'pool' && pools.value.length > 0) ||
+            (route.name === 'review-records' && (reviews.value.length > 0 || dashboard.value)) ||
+            (route.name === 'reviews') ||
+            (route.name === 'ops') ||
+            (route.name === 'quant') ||
+            (route.name === 'insights') ||
+            (route.name === 'data-query') ||
+            (route.name === 'screen-history') ||
+            (route.name === 'strategy-converter') ||
+            (route.name === 'winrate')
+          error.value = failures.length && !softOk ? (failures[0] ?? '') : ''
         }
       } catch (caught: unknown) {
         if (seq === loadSeq) {
@@ -217,8 +352,14 @@ export const usePalaceStore = defineStore('palace', () => {
     try {
       const result = await createTrade(payload)
       notice.value = `已写入 ${result.id}`
-      if (route) await loadRoute(route, true)
-      else {
+      if (route?.name === 'archive') {
+        const code = String(route.params.code ?? payload.code ?? '')
+        resetArchiveCache(code)
+        selectedCode.value = code
+        await ensureArchiveSlice(code, ['trades', 'timeline', 'dashboard'], { force: true })
+      } else if (route) {
+        await loadRoute(route, true)
+      } else {
         const [nextDashboard, nextTrades, nextAnalytics] = await Promise.all([
           getDashboard(),
           getTrades(),
@@ -260,6 +401,8 @@ export const usePalaceStore = defineStore('palace', () => {
     firstPosition,
     loadRoute,
     loadPoolDay,
+    ensureArchiveSlice,
+    invalidateArchive,
     addTrade,
     clearNotice,
     clearError,

@@ -1,30 +1,83 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 
+import { getMarketSession, getProviders } from '@/shared/api/quant'
+import { strategyLabel } from '@/shared/lib/format'
+import { useScreenRunStore } from '@/shared/stores/screenRun'
+import type { LlmProvider, ScreenResult } from '@/shared/types/quant'
+
+import ScreenCatalogRail from './components/ScreenCatalogRail.vue'
+import ScreenHistoryPanel from './components/ScreenHistoryPanel.vue'
+import ScreenRunPanel from './components/ScreenRunPanel.vue'
+import SkillDetailDialog from './components/SkillDetailDialog.vue'
+import StrategyDetailDialog from './components/StrategyDetailDialog.vue'
+import TradeDateRangeField from './components/TradeDateRangeField.vue'
 import {
-  CapabilityUnavailableError,
-  getScreenToday,
-  getStrategies,
-  syncMarket,
-} from '@/shared/api/quant'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
-import RecordDialog from '@/shared/components/dialogs/RecordDialog.vue'
-import Sheet from '@/shared/components/layout/Sheet.vue'
-import StockLink from '@/shared/components/ui/StockLink.vue'
-import TableFoot from '@/shared/components/ui/TableFoot.vue'
-import TradeDialog from '@/shared/components/dialogs/TradeDialog.vue'
-import { useClientPagination } from '@/shared/composables/useClientPagination'
-import { decisionLabel } from '@/shared/lib/format'
-import type { Pick, ScreenTodayResult, StrategyInfo } from '@/shared/types/quant'
-
+  clampTradeDateRange,
+  isValidTradeDateRange,
+  skillDateFromRange,
+  type TradeDateRange,
+} from './composables/tradeDateRange'
+import { useScreenCatalog } from './composables/useScreenCatalog'
 import { useScreenHistoryQuery } from './composables/useScreenHistoryQuery'
+import { useWorkbenchSkillRun } from './composables/useWorkbenchSkillRun'
 
-const strategies = ref<StrategyInfo[]>([])
-const selectedStrategy = ref('')
-const startDate = ref<string | undefined>()
-const endDate = ref<string | undefined>()
+const route = useRoute()
+const router = useRouter()
+
+const {
+  filtered,
+  selected,
+  selectedStrategy,
+  selectedSkill,
+  selectedId,
+  kindFilter,
+  loading: catalogLoading,
+  error: catalogError,
+  load: loadCatalog,
+  select,
+} = useScreenCatalog()
+
+const screenRun = useScreenRunStore()
+const {
+  snap,
+  running,
+  busyStrategy,
+  percent,
+  result: runResult,
+  lastError: screenLastError,
+} = storeToRefs(screenRun)
+
+const dateRange = ref<TradeDateRange | null>(null)
+const lastTradingDay = ref<string | null>(null)
+const recordCandidates = ref(true)
+const lastResult = ref<ScreenResult | null>(null)
+const runError = ref('')
+let syncingQuery = false
+
+const providers = ref<LlmProvider[]>([])
+const skillProvider = ref('')
+
+const historyOpen = ref(false)
+/** 入库历史默认只看盘后真选；打开后可含区间回填 */
+const historyIncludeBackfill = ref(false)
+const strategyDetailOpen = ref(false)
+const skillDetailOpen = ref(false)
+
+const {
+  skillBusy,
+  skillRun,
+  skillLog,
+  skillReply,
+  error: skillError,
+  reset: resetSkill,
+  start: startSkill,
+  reply: sendSkillReply,
+} = useWorkbenchSkillRun()
 
 const {
   history,
@@ -32,363 +85,486 @@ const {
   error: historyError,
   refetch: refetchHistory,
 } = useScreenHistoryQuery(() => ({
-  strategy: selectedStrategy.value,
-  start: startDate.value || undefined,
-  end: endDate.value || undefined,
+  strategy: selected.value?.kind === 'engine' ? selected.value.slug : selected.value?.slug || '',
   limit: 500,
+  live_only: !historyIncludeBackfill.value,
 }))
 
-const todayResult = ref<ScreenTodayResult | null>(null)
-const syncNote = ref('')
-const syncBusy = ref(false)
-const bootBusy = ref(false)
-const error = ref('')
-const busy = historyPending
-
-watch(historyError, (err) => {
-  if (err) {
-    error.value = err instanceof Error ? err.message : String(err)
-  }
-})
-
-const candidateOpen = ref(false)
-const tradeOpen = ref(false)
-const actionPreset = reactive({ code: '', name: '' })
-
-const {
-  currentPage: todayPage,
-  pageSize: todayPageSize,
-  total: todayTotal,
-  paginated: paginatedTodayPicks,
-  reset: resetTodayPage,
-} = useClientPagination(() => todayResult.value?.picks ?? [], 20)
-
-const historySubtitle = computed(() => {
-  if (!history.value) return selectedStrategy.value || undefined
-  return `${history.value.strategy} · ${history.value.total} 条`
-})
-
-const needsBootstrap = computed(
-  () =>
-    /行情仓是空的|没有可同步的标的|数据体检未通过|empty_store|请先刷新证券列表/i.test(
-      error.value,
-    ),
+const pageError = computed(
+  () => catalogError.value || runError.value || skillError.value || '',
 )
 
-const todayFactorKeys = computed(() => {
-  const keys = new Set<string>()
-  for (const pick of todayResult.value?.picks ?? []) {
-    for (const [key, value] of Object.entries(pick.factors)) {
-      if (typeof value === 'number') keys.add(key)
-    }
+const primaryLabel = computed(() => {
+  if (!selected.value) return '选股'
+  if (selected.value.kind === 'skill') {
+    return skillBusy.value ? '技能运行中' : '跑技能'
   }
-  return [...keys]
+  if (running.value && busyStrategy.value === selected.value.slug) {
+    return `选股中 ${percent.value}%`
+  }
+  if (running.value) return '其它选股进行中'
+  const days =
+    dateRange.value && dateRange.value[0] !== dateRange.value[1] ? '区间' : ''
+  return days ? '区间选股' : '选股'
 })
 
-function scoreTone(score: number | null): string {
-  if (score === null) return 'score-neutral'
-  if (score >= 80) return 'score-high'
-  if (score >= 60) return 'score-mid'
-  return 'score-low'
-}
+const primaryDisabled = computed(() => {
+  if (!selected.value) return true
+  if (dateRange.value && !isValidTradeDateRange(dateRange.value)) return true
+  if (selected.value.kind === 'skill') {
+    return !selected.value.enabled || skillBusy.value || !skillProvider.value
+  }
+  return running.value
+})
 
-function fmtNum(value: number | boolean | null | undefined): string {
-  if (value === null || value === undefined) return '—'
-  if (typeof value === 'boolean') return value ? '✓' : '—'
-  return Number(value).toFixed(2)
-}
+const detailDisabled = computed(() => !selected.value)
 
-function openCandidate(row: Pick): void {
-  actionPreset.code = row.code
-  candidateOpen.value = true
-}
+const historyTitle = computed(() => {
+  const name = selected.value?.name || '入库历史'
+  const n = history.value?.dates?.length ?? 0
+  if (n > 0) return `${name} · ${n} 次`
+  return name
+})
 
-function openTrade(row: Pick): void {
-  actionPreset.code = row.code
-  tradeOpen.value = true
-}
-
-function onCandidateSaved(): void {
-  ElMessage.success('候选已写入')
-}
-
-function onTradeSaved(): void {
-  ElMessage.success('成交已写入')
-}
-
-function onStrategyChange(): void {
-  todayResult.value = null
-  resetTodayPage()
-  error.value = ''
-}
-
-async function load(): Promise<void> {
-  if (!selectedStrategy.value) return
-  error.value = ''
+function readQueryState(): void {
+  syncingQuery = true
   try {
-    await refetchHistory()
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : '加载失败'
+    const selectQ = String(route.query.select || '')
+    if (selectQ) select(selectQ)
+
+    const kindQ = String(route.query.kind || '')
+    if (kindQ === 'engine' || kindQ === 'skill' || kindQ === 'all') {
+      kindFilter.value = kindQ
+    }
+
+    const from = String(route.query.from || '')
+    const to = String(route.query.to || '')
+    if (from && to) {
+      dateRange.value = clampTradeDateRange([from, to])
+    } else if (from) {
+      dateRange.value = clampTradeDateRange([from, from])
+    } else {
+      dateRange.value = null
+    }
+
+    if (route.query.record === '0') recordCandidates.value = false
+    else if (route.query.record === '1') recordCandidates.value = true
+  } finally {
+    syncingQuery = false
   }
 }
 
-async function loadToday(forceSync = false): Promise<void> {
-  if (!selectedStrategy.value) {
-    error.value = '请先选择一个战法'
+function pushQueryState(): void {
+  if (syncingQuery) return
+  const query: Record<string, string | undefined> = {}
+  for (const [key, value] of Object.entries(route.query)) {
+    if (key === 'select' || key === 'kind' || key === 'from' || key === 'to' || key === 'record') {
+      continue
+    }
+    const raw = Array.isArray(value) ? value[0] : value
+    if (raw != null && raw !== '') query[key] = String(raw)
+  }
+  query.select = selectedId.value || undefined
+  query.kind = kindFilter.value !== 'all' ? kindFilter.value : undefined
+  if (dateRange.value?.[0] && dateRange.value?.[1]) {
+    query.from = dateRange.value[0]
+    query.to = dateRange.value[1]
+  }
+  query.record = recordCandidates.value ? undefined : '0'
+
+  const same =
+    String(route.query.select || '') === String(query.select || '') &&
+    String(route.query.kind || '') === String(query.kind || '') &&
+    String(route.query.from || '') === String(query.from || '') &&
+    String(route.query.to || '') === String(query.to || '') &&
+    String(route.query.record || '') === String(query.record || '')
+  if (same) return
+
+  void router.replace({ path: route.path, query })
+}
+
+watch(selectedId, () => {
+  runError.value = ''
+  resetSkill()
+  lastResult.value = null
+  pushQueryState()
+})
+
+watch(kindFilter, () => {
+  pushQueryState()
+})
+
+watch(dateRange, () => {
+  pushQueryState()
+}, { deep: true })
+
+watch(recordCandidates, () => {
+  pushQueryState()
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    if (syncingQuery) return
+    readQueryState()
+  },
+)
+
+watch(
+  runResult,
+  (value) => {
+    if (value?.picks) lastResult.value = value
+  },
+  { immediate: true },
+)
+
+watch(running, (isRunning, wasRunning) => {
+  if (wasRunning && !isRunning && snap.value?.status === 'done') {
+    void refetchHistory()
+    void loadCatalog()
+  }
+})
+
+watch(historyError, (err) => {
+  if (err) runError.value = err instanceof Error ? err.message : String(err)
+})
+
+async function refreshAll(): Promise<void> {
+  await loadCatalog()
+  readQueryState()
+  if (selected.value?.kind === 'engine') void refetchHistory()
+  try {
+    const [providerList, session] = await Promise.all([
+      getProviders(),
+      getMarketSession().catch(() => null),
+    ])
+    providers.value = providerList
+    lastTradingDay.value = session?.last_trading_day || session?.coverage_last_date || null
+    if (!skillProvider.value) {
+      skillProvider.value =
+        providers.value.find((p) => p.is_default)?.name || providers.value[0]?.name || ''
+    }
+  } catch {
+    providers.value = []
+  }
+}
+
+async function runPrimary(): Promise<void> {
+  const target = selected.value
+  if (!target) return
+  if (dateRange.value && !isValidTradeDateRange(dateRange.value)) {
+    runError.value = '选股跨度不能超过一个月'
+    ElMessage.warning(runError.value)
     return
   }
-  syncBusy.value = true
-  syncNote.value = forceSync ? '正在同步今日行情并选股，请稍候…' : ''
-  error.value = ''
-  resetTodayPage()
-  try {
-    todayResult.value = await getScreenToday({
-      strategy: selectedStrategy.value,
-      force_sync: forceSync,
+  if (target.kind === 'skill') {
+    runError.value = ''
+    const ok = await startSkill({
+      slug: target.slug,
+      name: target.name,
+      provider: skillProvider.value,
+      date: skillDateFromRange(dateRange.value),
     })
-    syncNote.value = todayResult.value.sync_note
-      ? `行情同步：${todayResult.value.sync_note}`
-      : `选股完成 · ${todayResult.value.picks.length} 只 · ${todayResult.value.trade_date}`
-    ElMessage.success(`选股完成：${todayResult.value.picks.length} 只`)
-    await refetchHistory()
-  } catch (e: unknown) {
-    error.value =
-      e instanceof CapabilityUnavailableError
-        ? e.message
-        : e instanceof Error
-          ? e.message
-          : '请求失败'
-    syncNote.value = ''
-  } finally {
-    syncBusy.value = false
+    if (!ok && skillError.value) runError.value = skillError.value
+    return
   }
+  await runEngine(target.slug)
 }
 
-async function bootstrapMarket(): Promise<void> {
-  bootBusy.value = true
-  error.value = ''
-  try {
-    const report = await syncMarket({
-      refresh_instruments: true,
-      limit: 200,
-      workers: 6,
-      interval: 0.1,
-    })
-    ElMessage.success(
-      `初始化完成：成功 ${String(report.succeeded ?? 0)} / 跳过 ${String(report.skipped ?? 0)}`,
-    )
-    if (selectedStrategy.value) await loadToday(false)
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : '初始化失败'
-  } finally {
-    bootBusy.value = false
+async function runEngine(slug: string, override?: TradeDateRange | string): Promise<void> {
+  runError.value = ''
+  if (!screenRun.canStartEngine()) {
+    runError.value =
+      screenLastError.value ||
+      `选股进行中：${busyStrategy.value ? strategyLabel(busyStrategy.value) : '…'}，请等待结束`
+    ElMessage.warning(runError.value)
+    if (busyStrategy.value) select(`engine:${busyStrategy.value}`)
+    return
   }
+
+  let start: string | undefined
+  let end: string | undefined
+  if (typeof override === 'string' && override) {
+    start = override
+    end = override
+  } else if (Array.isArray(override)) {
+    start = override[0]
+    end = override[1]
+  } else if (dateRange.value) {
+    start = dateRange.value[0]
+    end = dateRange.value[1]
+  }
+
+  const payload =
+    start && end
+      ? start === end
+        ? { strategy: slug, date: start, record_candidates: recordCandidates.value }
+        : { strategy: slug, start, end, record_candidates: recordCandidates.value }
+      : { strategy: slug, record_candidates: recordCandidates.value }
+
+  const outcome = await screenRun.start(payload)
+  if (outcome === 'busy') {
+    runError.value = screenLastError.value || '已有选股任务在跑'
+    ElMessage.warning(runError.value)
+    return
+  }
+  if (outcome === 'error') {
+    runError.value = screenLastError.value || '启动选股失败'
+    return
+  }
+  ElMessage.info(start && end && start !== end ? '区间选股已在后台进行' : '选股已在后台进行，进度见跑道')
 }
 
-onMounted(async () => {
-  try {
-    strategies.value = await getStrategies()
-    if (strategies.value.length && !selectedStrategy.value) {
-      selectedStrategy.value = strategies.value[0].slug
+async function onRerun(date: string): Promise<void> {
+  dateRange.value = [date, date]
+  historyOpen.value = false
+  const target = selected.value
+  if (!target || target.kind !== 'engine') {
+    ElMessage.warning('请先选中战法再重跑')
+    return
+  }
+  await runEngine(target.slug, date)
+}
+
+function openDetail(): void {
+  const target = selected.value
+  if (!target) return
+  if (target.kind === 'engine') {
+    if (!selectedStrategy.value) {
+      ElMessage.warning('战法详情尚未加载完，请刷新后再试')
+      return
     }
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : '无法加载战法列表'
+    strategyDetailOpen.value = true
+    return
   }
+  if (!selectedSkill.value) {
+    ElMessage.warning('技能详情尚未加载完，请刷新后再试')
+    return
+  }
+  skillDetailOpen.value = true
+}
+
+function openHistory(): void {
+  if (selected.value?.kind === 'engine') void refetchHistory()
+  historyOpen.value = true
+}
+
+onMounted(() => {
+  void screenRun.hydrate()
+  void refreshAll()
 })
 </script>
 
 <template>
-  <PageHeader title="选股" :subtitle="historySubtitle">
-    <el-button :disabled="!selectedStrategy || busy" @click="load">刷新历史</el-button>
-    <el-button
-      type="primary"
-      :loading="syncBusy"
-      :disabled="!selectedStrategy"
-      @click="loadToday(true)"
-    >
-      今日选股
-    </el-button>
-  </PageHeader>
-
-  <el-alert
-    v-if="error"
-    :title="error"
-    type="error"
-    show-icon
-    closable
-    class="mb"
-    @close="error = ''"
-  >
-    <template v-if="needsBootstrap" #default>
-      <p class="hint">行情仓可能为空。可先初始化行情，或到「工坊」页同步。</p>
-      <el-button size="small" type="primary" :loading="bootBusy" @click="bootstrapMarket">
-        初始化行情
-      </el-button>
-    </template>
-  </el-alert>
-
-  <el-alert v-if="syncNote" :title="syncNote" type="success" show-icon closable class="mb" @close="syncNote = ''" />
-
-  <Sheet quiet class="filter-bar" padded>
-    <el-form inline class="filter-form">
-      <el-form-item label="战法">
+  <div class="page-fill screen-desk">
+    <header class="screen-desk__bar">
+      <div class="screen-desk__bar-left">
+        <TradeDateRangeField v-model="dateRange" :last-trading-day="lastTradingDay" />
+        <el-checkbox v-model="recordCandidates" :disabled="selected?.kind === 'skill'">
+          入库候选
+        </el-checkbox>
         <el-select
-          v-model="selectedStrategy"
-          placeholder="选择战法"
+          v-if="selected?.kind === 'skill'"
+          v-model="skillProvider"
+          placeholder="LLM"
+          size="small"
           filterable
-          style="width: 14rem"
-          @change="onStrategyChange"
+          style="width: 8.5rem"
         >
-          <el-option
-            v-for="s in strategies"
-            :key="s.slug"
-            :label="s.name"
-            :value="s.slug"
-          />
+          <el-option v-for="p in providers" :key="p.name" :label="p.name" :value="p.name" />
         </el-select>
-      </el-form-item>
-      <el-form-item label="起始">
-        <el-date-picker
-          v-model="startDate"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="不限"
-          @change="load"
-        />
-      </el-form-item>
-      <el-form-item label="截止">
-        <el-date-picker
-          v-model="endDate"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="不限"
-          @change="load"
-        />
-      </el-form-item>
-    </el-form>
-  </Sheet>
-
-  <Sheet
-    v-if="todayResult"
-    title="今日结果"
-    :chip="todayResult.picks.length"
-    margin
-  >
-    <template #actions>
-      <span class="mono dim">{{ todayResult.trade_date }}</span>
-      <span class="dim">
-        {{ todayResult.entry_timing === 'open' ? '当日开盘入场' : '次日开盘入场' }}
-      </span>
-    </template>
-    <p v-if="todayResult.synced && todayResult.sync_note" class="form-hint">✓ {{ todayResult.sync_note }}</p>
-    <template v-if="todayResult.picks.length">
-      <el-table :data="paginatedTodayPicks" size="small">
-        <el-table-column label="代码" min-width="120">
-          <template #default="{ row }">
-            <StockLink :code="row.code" />
-          </template>
-        </el-table-column>
-        <el-table-column label="开" align="right" width="90">
-          <template #default="{ row }">{{ fmtNum(row.open) }}</template>
-        </el-table-column>
-        <el-table-column label="收" align="right" width="90">
-          <template #default="{ row }">{{ fmtNum(row.close) }}</template>
-        </el-table-column>
-        <el-table-column
-          v-for="key in todayFactorKeys"
-          :key="key"
-          :label="key"
-          align="right"
-          min-width="90"
+      </div>
+      <div class="screen-desk__bar-spacer" />
+      <div class="screen-desk__bar-right">
+        <el-button :disabled="detailDisabled" @click="openDetail">详情</el-button>
+        <el-button :disabled="!selected" @click="openHistory">入库历史</el-button>
+        <el-button :icon="RefreshRight" :loading="catalogLoading" @click="refreshAll">
+          刷新
+        </el-button>
+        <el-button
+          type="primary"
+          :icon="VideoPlay"
+          :loading="selected?.kind === 'skill' && skillBusy"
+          :disabled="primaryDisabled"
+          @click="runPrimary"
         >
-          <template #default="{ row }">{{ fmtNum(row.factors[key]) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="148" align="center" fixed="right">
-          <template #default="{ row }">
-            <el-button text type="primary" size="small" @click.stop="openCandidate(row)">记候选</el-button>
-            <el-button text size="small" @click.stop="openTrade(row)">记成交</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <TableFoot v-model:page="todayPage" :total="todayTotal" :page-size="todayPageSize" />
-    </template>
-    <EmptyState v-else description="当日无标的满足条件" />
-  </Sheet>
+          {{ primaryLabel }}
+        </el-button>
+      </div>
+    </header>
 
-  <Sheet v-if="history && history.dates.length" title="历史" :chip="history.total" margin>
-    <el-collapse>
-      <el-collapse-item v-for="date in history.dates" :key="date" :name="date">
-        <template #title>
-          <span class="collapse-title">
-            <strong class="mono">{{ date }}</strong>
-            <el-tag size="small">{{ history.by_date[date].length }} 只</el-tag>
-          </span>
-        </template>
-        <ul class="rows">
-          <li v-for="item in history.by_date[date]" :key="item.id" class="cand">
-            <span class="score" :class="scoreTone(item.score)">{{ item.score ?? '—' }}</span>
-            <div class="grow">
-              <div class="row-main">
-                <StockLink :code="item.code" :name="item.name" />
-                <el-tag size="small" type="info">{{ decisionLabel(item.decision) }}</el-tag>
-                <span v-if="item.timing" class="dim">{{ item.timing }}</span>
-              </div>
-              <p class="reason">{{ item.reason }}</p>
-            </div>
-          </li>
-        </ul>
-      </el-collapse-item>
-    </el-collapse>
-  </Sheet>
+    <el-alert
+      v-if="pageError"
+      :title="pageError"
+      type="error"
+      show-icon
+      closable
+      class="screen-desk__alert"
+      @close="runError = ''"
+    />
 
-  <EmptyState
-    v-else-if="!busy && selectedStrategy && history"
-    description="该战法在此区间没有历史记录。可先跑今日选股，或在设置里开启选股任务。"
-  >
-    <el-button type="primary" :loading="syncBusy" @click="loadToday(true)">今日选股</el-button>
-  </EmptyState>
+    <div class="screen-desk__body">
+      <aside class="screen-desk__rail">
+        <ScreenCatalogRail
+          v-model:kind-filter="kindFilter"
+          :rows="filtered"
+          :selected-id="selectedId"
+          :loading="catalogLoading"
+          @select="select"
+        />
+      </aside>
 
-  <EmptyState v-else-if="!selectedStrategy" description="请先选择一个战法，再查看历史或触发选股。" />
+      <div class="screen-desk__main">
+        <ScreenRunPanel
+          :kind="selected?.kind ?? null"
+          :selected-name="selected?.name ?? ''"
+          :snap="snap"
+          :running="running"
+          :percent="percent"
+          :last-result="lastResult"
+          :skill-busy="skillBusy"
+          :skill-log="skillLog"
+          :skill-run="skillRun"
+          v-model:skill-reply="skillReply"
+          @reply="sendSkillReply"
+        />
+      </div>
+    </div>
 
-  <RecordDialog
-    v-model="candidateOpen"
-    kind="candidate"
-    :preset-code="actionPreset.code"
-    @saved="onCandidateSaved"
-  />
-  <TradeDialog
-    v-model="tradeOpen"
-    :preset-code="actionPreset.code"
-    @saved="onTradeSaved"
-  />
+    <el-dialog
+      v-model="historyOpen"
+      :title="historyTitle"
+      width="56rem"
+      top="6vh"
+      destroy-on-close
+      append-to-body
+      class="screen-history-dialog"
+    >
+      <div class="screen-history-toolbar mb">
+        <el-switch
+          v-model="historyIncludeBackfill"
+          inline-prompt
+          active-text="含回填"
+          inactive-text="仅真选"
+        />
+      </div>
+      <ScreenHistoryPanel
+        :capability-name="selected?.name ?? ''"
+        :history="history"
+        :loading="historyPending"
+        :running="running"
+        @rerun="onRerun"
+        @refresh="refetchHistory"
+      />
+    </el-dialog>
+
+    <StrategyDetailDialog v-model="strategyDetailOpen" :strategy="selectedStrategy" />
+    <SkillDetailDialog
+      v-model="skillDetailOpen"
+      :skill="selectedSkill"
+      @open-screen="skillDetailOpen = false"
+    />
+  </div>
 </template>
 
 <style scoped>
-.mb {
-  margin-bottom: 0.65rem;
+.screen-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 0;
 }
 
-.filter-form {
+.screen-history-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.screen-desk__bar {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.1rem;
+  border-bottom: 1px solid var(--rule);
+  min-height: 2.4rem;
+  overflow: visible;
+}
+
+.screen-desk__bar-left,
+.screen-desk__bar-right {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.15rem 0.35rem;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
-.filter-form :deep(.el-form-item) {
-  margin-bottom: 0;
-  margin-right: 0.75rem;
+.screen-desk__bar-spacer {
+  display: none;
 }
 
-.hint {
-  margin: 0.35rem 0 0.65rem;
-  color: var(--muted);
-  font-size: 0.88rem;
+.screen-desk__alert {
+  flex-shrink: 0;
+  margin: 0;
 }
 
-.collapse-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
+.screen-desk__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 0.55rem;
+  overflow: hidden;
+}
+
+.screen-desk__rail {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--sheet);
+}
+
+.screen-desk__main {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 900px) {
+  .screen-desk__body {
+    grid-template-columns: 1fr;
+  }
+
+  .screen-desk__rail {
+    max-height: 12rem;
+  }
+
+  .screen-desk__bar {
+    grid-template-columns: 1fr;
+  }
+
+  .screen-desk__bar-left {
+    width: 100%;
+  }
+
+  .screen-desk__bar-right {
+    justify-content: flex-start;
+  }
+}
+</style>
+
+<style>
+.screen-history-dialog.el-dialog {
+  max-width: 96vw;
+}
+
+.screen-history-dialog .el-dialog__body {
+  padding-top: 0.45rem;
+  padding-bottom: 0.85rem;
 }
 </style>

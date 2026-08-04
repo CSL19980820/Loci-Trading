@@ -5,17 +5,30 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import AppSidebar from '@/shared/components/layout/AppSidebar.vue'
+import AssistantHost from '@/features/ai/AssistantHost.vue'
 import MobileBottomNav from '@/shared/components/layout/MobileBottomNav.vue'
+import PageHost from '@/shared/components/layout/PageHost.vue'
+import ScreenRunChip from '@/shared/components/layout/ScreenRunChip.vue'
 import MarketBootstrapDialog from '@/shared/components/dialogs/MarketBootstrapDialog.vue'
 import RecordDialog, { type RecordKind } from '@/shared/components/dialogs/RecordDialog.vue'
 import TradeDialog from '@/shared/components/dialogs/TradeDialog.vue'
 import { useMarketSyncGate } from '@/shared/composables/useMarketSyncGate'
 import { usePalaceStore } from '@/shared/stores/palace'
+import { useScreenRunStore } from '@/shared/stores/screenRun'
 
 const store = usePalaceStore()
+const screenRun = useScreenRunStore()
 const route = useRoute()
-const { syncing, busyLabel } = useMarketSyncGate()
-const isPublicRoute = computed(() => route.meta.public === true)
+const { syncing, busyLabel, syncPercent } = useMarketSyncGate()
+/** pathname 兜底：第二 WebView 偶发路由名不是 peek 时仍走公开壳，避免底栏+启动中叠字 */
+const isPeekWindow =
+  typeof location !== 'undefined' && location.pathname.startsWith('/peek')
+const isPublicRoute = computed(
+  () => route.meta.public === true || route.name === 'peek' || isPeekWindow,
+)
+const archiveOpen = computed(() => route.name === 'archive')
+/** 档案蒙版 z-index=8000；打开档案时抬高 EP 弹层起点，避免记一笔/分时被盖住 */
+const epPopupZIndex = computed(() => (archiveOpen.value ? 8200 : 2000))
 const archivePath = computed(() =>
   store.firstPosition ? `/archive/${store.firstPosition.code}` : null,
 )
@@ -30,10 +43,16 @@ function openRecord(kind: RecordKind): void {
 }
 
 function onRecorded(): void {
+  if (route.name === 'archive') {
+    store.invalidateArchive(String(route.params.code ?? ''))
+  }
   void store.loadRoute(route, true)
 }
 
 function onTradeSaved(): void {
+  if (route.name === 'archive') {
+    store.invalidateArchive(String(route.params.code ?? ''))
+  }
   void store.loadRoute(route, true)
 }
 
@@ -88,6 +107,7 @@ onMounted(() => {
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('beforeunload', onQuitWhileSyncing)
   window.addEventListener('pagehide', onQuitWhileSyncing)
+  void screenRun.hydrate()
 })
 
 onUnmounted(() => {
@@ -113,20 +133,37 @@ function retryLoad(): void {
 
 <template>
   <RouterView v-if="isPublicRoute" />
-  <template v-else>
+  <el-config-provider v-else :z-index="epPopupZIndex">
     <a class="skip-link" href="#main-content">跳至主内容</a>
     <div class="app-shell app-shell--with-mobile-nav">
       <AppSidebar :archive-path="archivePath" @record="openRecord" />
 
       <section class="workspace">
-        <el-alert
-          v-if="syncing"
-          :title="busyLabel"
-          type="warning"
-          show-icon
-          :closable="false"
-          class="banner sync-banner"
-        />
+        <div v-if="syncing" class="sync-banner-wrap">
+          <el-alert
+            :title="busyLabel"
+            type="warning"
+            show-icon
+            :closable="false"
+            class="banner sync-banner"
+          />
+          <div
+            class="seal-meter"
+            :class="{
+              'seal-meter--done': syncPercent >= 100,
+            }"
+            aria-label="行情修复进度"
+          >
+            <div class="seal-meter__track">
+              <div
+                class="seal-meter__fill"
+                :style="{ width: `${Math.min(100, Math.max(0, syncPercent || 0))}%` }"
+              />
+            </div>
+            <span class="seal-meter__pct">{{ Math.round(syncPercent || 0) }}%</span>
+          </div>
+        </div>
+        <ScreenRunChip class="banner" />
         <el-progress
           v-if="store.loading"
           :percentage="100"
@@ -158,7 +195,9 @@ function retryLoad(): void {
         </el-alert>
         <main id="main-content" tabindex="-1" class="main-content">
           <div class="page-host">
-            <RouterView />
+            <RouterView v-slot="{ Component, route: rv }">
+              <PageHost :component="Component" :route="rv" />
+            </RouterView>
           </div>
         </main>
       </section>
@@ -185,5 +224,6 @@ function retryLoad(): void {
         </template>
       </el-dropdown>
     </div>
-  </template>
+    <AssistantHost />
+  </el-config-provider>
 </template>

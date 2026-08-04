@@ -34,7 +34,7 @@ class CandidateInput(WriteModel):
     pool_id: str = ""
     score: float | None = Field(default=None, ge=0, le=100)
     timing: str = ""
-    rule_version: str = "qianlong-v1"
+    rule_version: str = "潜龙"
     evidence: dict[str, Any] = Field(default_factory=dict)
     source: str = "web"
 
@@ -53,7 +53,7 @@ class PlanInput(WriteModel):
     target_price: float | None = Field(default=None, ge=0)
     layers: float | None = Field(default=None, gt=0, le=10)
     invalidation: str = ""
-    rule_version: str = "qianlong-v1"
+    rule_version: str = "潜龙"
     supersedes_id: str | None = None
     note: str = ""
     source: str = "web"
@@ -64,7 +64,7 @@ class ReviewInput(WriteModel):
     entity_id: str = Field(min_length=1)
     outcome: str = Field(min_length=1, max_length=500)
     reviewed_on: str | None = None
-    strategy_tag: str = "qianlong"
+    strategy_tag: str = "潜龙"
     return_pct: float | None = None
     max_favorable_pct: float | None = None
     max_adverse_pct: float | None = None

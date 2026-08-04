@@ -1,7 +1,7 @@
 """运维库 schema DDL 与进程内建表缓存。"""
 from __future__ import annotations
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS strategy_docs (
     market_cond     TEXT NOT NULL DEFAULT '',
     failure_modes   TEXT NOT NULL DEFAULT '',
     entry_timing    TEXT NOT NULL DEFAULT '',
+    entry_instructions TEXT NOT NULL DEFAULT '',
     exit_rules      TEXT NOT NULL DEFAULT '',
     version         TEXT NOT NULL DEFAULT '1',
     created_at      TEXT NOT NULL,
@@ -99,6 +100,17 @@ CREATE TABLE IF NOT EXISTS strategy_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_sv_slug ON strategy_versions(slug, version DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sv_slug_active ON strategy_versions(slug) WHERE is_active=1;
+
+-- 回测结果按策略版本存储，避免新代码覆盖旧版本的可复现实验结论。
+CREATE TABLE IF NOT EXISTS strategy_backtests (
+    slug          TEXT NOT NULL,
+    version       TEXT NOT NULL,
+    metrics_json  TEXT NOT NULL DEFAULT '{}',
+    config_json   TEXT NOT NULL DEFAULT '{}',
+    updated_at    TEXT NOT NULL,
+    PRIMARY KEY (slug, version)
+);
+CREATE INDEX IF NOT EXISTS idx_sb_slug_updated ON strategy_backtests(slug, updated_at DESC);
 """
 
 _SCHEMA_READY: set[str] = set()
@@ -114,11 +126,13 @@ _MIGRATIONS: list[str] = [
         market_cond     TEXT NOT NULL DEFAULT '',
         failure_modes   TEXT NOT NULL DEFAULT '',
         entry_timing    TEXT NOT NULL DEFAULT '',
+        entry_instructions TEXT NOT NULL DEFAULT '',
         exit_rules      TEXT NOT NULL DEFAULT '',
         version         TEXT NOT NULL DEFAULT '1',
         created_at      TEXT NOT NULL,
         updated_at      TEXT NOT NULL
     )""",
+    "ALTER TABLE strategy_docs ADD COLUMN entry_instructions TEXT NOT NULL DEFAULT ''",
     """CREATE TABLE IF NOT EXISTS strategy_versions (
         id          TEXT PRIMARY KEY,
         slug        TEXT NOT NULL,
@@ -130,6 +144,16 @@ _MIGRATIONS: list[str] = [
         is_active   INTEGER NOT NULL DEFAULT 1
     )""",
     "CREATE INDEX IF NOT EXISTS idx_sv_slug ON strategy_versions(slug, version DESC)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_sv_slug_active ON strategy_versions(slug) WHERE is_active=1",
+    """CREATE TABLE IF NOT EXISTS strategy_backtests (
+        slug          TEXT NOT NULL,
+        version       TEXT NOT NULL,
+        metrics_json  TEXT NOT NULL DEFAULT '{}',
+        config_json   TEXT NOT NULL DEFAULT '{}',
+        updated_at    TEXT NOT NULL,
+        PRIMARY KEY (slug, version)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_sb_slug_updated ON strategy_backtests(slug, updated_at DESC)",
     "ALTER TABLE llm_providers ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0",
     "DROP TABLE IF EXISTS skills",
     "DROP TABLE IF EXISTS mcp_servers",

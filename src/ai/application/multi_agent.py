@@ -207,11 +207,12 @@ def _run_llm_agent(
 def format_subagent_briefs(results: list[dict[str, Any]]) -> str:
     if not results:
         return ""
-    blocks = ["## 子 Agent 弹药（仅证据，非终裁）"]
+    blocks = ["## 子任务弹药（仅证据，非终裁）"]
     for row in results:
-        mark = "OK" if row.get("ok") else "FAIL"
+        mark = "成功" if row.get("ok") else "失败"
+        kind = {"cli": "命令行", "llm": "语言模型"}.get(str(row.get("kind") or ""), str(row.get("kind") or ""))
         blocks.append(
-            f"### [{mark}] {row.get('id')} ({row.get('kind')})\n"
+            f"### [{mark}] {row.get('id')}（{kind}）\n"
             f"{row.get('description') or ''}\n\n"
             f"{row.get('text') or '(无输出)'}"
         )

@@ -4,8 +4,9 @@
 #
 # 体积：排除 scipy（源码未用，却占 ~100MB）及测试/绘图等。
 # 启动：onedir 不每次解压到临时目录（onefile 才慢）。
+# 业务 src/ 松散打进 _internal/src，便于 -Mode app -SrcOnly 秒级覆盖。
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 block_cipher = None
 
@@ -24,6 +25,7 @@ except Exception:
     pass
 
 datas = [
+    ("src", "src"),
     ("frontend/dist", "frontend/dist"),
     ("assets/loci-icon.png", "assets"),
     ("assets/loci.ico", "assets"),
@@ -59,6 +61,23 @@ for pkg in ("uvicorn", "fastapi", "starlette", "webview", "pystray"):
     except Exception:
         pass
 
+# 新浪日线 JS 解密：必须打进 mini_racer.dll + icudtl.dat，否则打包后
+# LibNotFoundError: Native library or dependency not available
+try:
+    d, b, h = collect_all("py_mini_racer")
+    datas += d
+    binaries += b
+    hiddenimports += h
+except Exception:
+    pass
+
+# akshare 交易日历等静态资源（缺 calendar.json 时交易所列表会 FileNotFoundError）
+try:
+    datas += collect_data_files("akshare")
+except Exception:
+    pass
+
+# 仍收集子模块名供 Analysis 发现依赖；真正代码走 datas 松散 src/
 hiddenimports += collect_submodules("src")
 
 # 业务未直接 import scipy；pandas 也不依赖它运行本仓路径
@@ -92,6 +111,9 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# 勿打进 PYZ，运行时从 _MEIPASS/src 导入（可增量覆盖）
+a.pure = [entry for entry in a.pure if entry[0] != "src" and not entry[0].startswith("src.")]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

@@ -156,6 +156,9 @@ class OverlapTests(unittest.TestCase):
         top = reports[0]
         self.assertAlmostEqual(top.avg_jaccard, 1.0, places=3)
         self.assertEqual(top.overlap_level, "high")
+        self.assertEqual(top.collision_days, 1)
+        self.assertEqual(top.shared_code_count, 3)
+        self.assertEqual(set(top.top_shared_codes), {"000001", "000002", "000003"})
 
     def test_disjoint_picks_zero_overlap(self) -> None:
         day = "2026-06-01"
@@ -169,6 +172,27 @@ class OverlapTests(unittest.TestCase):
         top = reports[0]
         self.assertAlmostEqual(top.avg_jaccard, 0.0, places=3)
         self.assertEqual(top.overlap_level, "low")
+        self.assertEqual(top.collision_days, 0)
+        self.assertEqual(top.shared_code_count, 0)
+        self.assertEqual(top.top_shared_codes, [])
+
+    def test_partial_shared_codes_ranked_by_days(self) -> None:
+        for day, codes in (
+            ("2026-06-01", ("000001", "000002")),
+            ("2026-06-02", ("000001", "000003")),
+            ("2026-06-03", ("000001",)),
+        ):
+            for code in codes:
+                self._add_candidate(code, "alpha", day)
+                self._add_candidate(code, "beta", day)
+
+        reports = compute_overlap(self.store, days=90)
+        self.assertEqual(len(reports), 1)
+        top = reports[0]
+        self.assertEqual(top.collision_days, 3)
+        self.assertEqual(top.top_shared_codes[0], "000001")
+        self.assertIn("000002", top.top_shared_codes)
+        self.assertIn("000003", top.top_shared_codes)
 
     def test_no_strategies_returns_empty(self) -> None:
         reports = compute_overlap(self.store, days=90)

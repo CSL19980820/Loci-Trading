@@ -20,6 +20,8 @@ import sqlite3
 from src.ops.infrastructure.store_helpers import (
     DEFAULT_DB,
     JOB_KINDS,
+    MANAGED_OUTCOME_CRON,
+    MANAGED_OUTCOME_TRACK,
     MANAGED_SYNC_EOD,
     MANAGED_SYNC_INTRADAY,
     OpsError,
@@ -42,6 +44,8 @@ from src.ops.infrastructure.store_strategy import OpsStrategyMixin
 __all__ = [
     "DEFAULT_DB",
     "JOB_KINDS",
+    "MANAGED_OUTCOME_CRON",
+    "MANAGED_OUTCOME_TRACK",
     "MANAGED_SYNC_EOD",
     "MANAGED_SYNC_INTRADAY",
     "OpsError",
@@ -84,10 +88,10 @@ class OpsStore(OpsJobsMixin, OpsProvidersMixin, OpsStrategyMixin):
         self.close()
 
     @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Cursor]:
+    def _transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Cursor]:
         cursor = self.conn.cursor()
         try:
-            cursor.execute("BEGIN")
+            cursor.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
             yield cursor
             self.conn.commit()
         except Exception:
@@ -181,5 +185,8 @@ class OpsStore(OpsJobsMixin, OpsProvidersMixin, OpsStrategyMixin):
             try:
                 self.conn.execute(sql)
                 self.conn.commit()
-            except Exception:
-                pass  # 表/列/索引已存在，跳过
+            except sqlite3.OperationalError as exc:
+                message = str(exc).lower()
+                if "duplicate column name" in message or "already exists" in message:
+                    continue
+                raise

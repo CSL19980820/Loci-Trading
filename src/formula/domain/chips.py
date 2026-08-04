@@ -55,16 +55,17 @@ def _prepare(
     return (*arrays, single)
 
 
-def _bin_grid(
-    high: np.ndarray, low: np.ndarray, bins: int
+def _grid_from_bounds(
+    low: np.ndarray, high: np.ndarray, bins: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """按每只票自己的历史价格区间划分档位。
-
-    统一用一个全市场价格网格是不行的：2 元的票和 2000 元的票放在同一套
-    档位上，前者会全部挤进第一个档位，分位数完全失去意义。
-    """
-    lo = np.nanmin(low, axis=0)
-    hi = np.nanmax(high, axis=0)
+    """按截至当前日的每只票价格区间划分档位。"""
+    if bins <= 0:
+        raise ValueError("筹码档位数必须为正")
+    raw_lo = np.asarray(low, dtype=float)
+    raw_hi = np.asarray(high, dtype=float)
+    finite = np.isfinite(raw_lo) & np.isfinite(raw_hi)
+    lo = np.where(finite, raw_lo, 0.0)
+    hi = np.where(finite, raw_hi, 0.0)
     # 上下各留一点余量，避免最高价恰好落在最后一档边界上被丢掉。
     span = np.where(hi > lo, hi - lo, np.maximum(np.abs(hi), 1.0) * 0.01)
     lo = lo - span * 0.01
@@ -109,6 +110,28 @@ def _today_weights(
     return weights / np.where(total > 0, total, 1.0)[None, :]
 
 
+def _rebin_chips(
+    chips: np.ndarray,
+    centers: np.ndarray,
+    new_lo: np.ndarray,
+    new_width: np.ndarray,
+    changed: np.ndarray,
+) -> None:
+    """价格范围扩展时，把存量筹码映射到新的价格档位。"""
+    if not changed.any():
+        return
+    old_centers = centers[:, changed]
+    old_chips = chips[:, changed]
+    target = np.floor(
+        (old_centers - new_lo[changed][None, :]) / new_width[changed][None, :]
+    ).astype(int)
+    target = np.clip(target, 0, chips.shape[0] - 1)
+    remapped = np.zeros_like(old_chips)
+    column_index = np.broadcast_to(np.arange(target.shape[1]), target.shape)
+    np.add.at(remapped, (target.ravel(), column_index.ravel()), old_chips.ravel())
+    chips[:, changed] = remapped
+
+
 def _accumulate(
     high: np.ndarray,
     low: np.ndarray,
@@ -124,30 +147,70 @@ def _accumulate(
     （250 × 5509 × 100 × 8B ≈ 1.1 GB）。只留当前一层，需要什么当场算完。
     """
     rows, cols = close.shape
-    lo, width, centers = _bin_grid(high, low, bins)
     chips = np.zeros((bins, cols), dtype=float)
     started = np.zeros(cols, dtype=bool)
+    trusted = np.zeros(cols, dtype=bool)
+    initialized = np.zeros(cols, dtype=bool)
+    seen_low = np.full(cols, np.inf, dtype=float)
+    seen_high = np.full(cols, -np.inf, dtype=float)
+    lo = np.zeros(cols, dtype=float)
+    width = np.ones(cols, dtype=float)
+    centers = np.zeros((bins, cols), dtype=float)
 
     for t in range(rows):
         close_t = close[t]
-        valid = np.isfinite(close_t)
-        if valid.any():
-            high_t = np.where(np.isfinite(high[t]), high[t], close_t)
-            low_t = np.where(np.isfinite(low[t]), low[t], close_t)
+        finite_low = np.isfinite(low[t])
+        finite_high = np.isfinite(high[t])
+        seen_low = np.minimum(seen_low, np.where(finite_low, low[t], np.inf))
+        seen_high = np.maximum(seen_high, np.where(finite_high, high[t], -np.inf))
+        grid_ready = np.isfinite(seen_low) & np.isfinite(seen_high)
+        next_lo, next_width, next_centers = _grid_from_bounds(
+            seen_low, seen_high, bins
+        )
+        changed = grid_ready & (
+            ~initialized
+            | ~np.isclose(lo, next_lo, rtol=1e-12, atol=1e-12)
+            | ~np.isclose(width, next_width, rtol=1e-12, atol=1e-12)
+        )
+        _rebin_chips(chips, centers, next_lo, next_width, changed)
+        if changed.any():
+            lo[changed] = next_lo[changed]
+            width[changed] = next_width[changed]
+            centers[:, changed] = next_centers[:, changed]
+            initialized[changed] = True
+
+        observed = np.isfinite(close_t)
+        complete = (
+            observed
+            & finite_high
+            & finite_low
+            & np.isfinite(turnover[t])
+            & (turnover[t] >= 0)
+        )
+        if observed.any():
+            safe_close = np.nan_to_num(close_t, nan=0.0)
+            high_t = np.where(finite_high, high[t], safe_close)
+            low_t = np.where(finite_low, low[t], safe_close)
             high_t = np.maximum(high_t, low_t)
-            weights = _today_weights(centers, low_t, high_t, close_t)
+            weights = _today_weights(centers, low_t, high_t, safe_close)
+            weights = np.nan_to_num(weights, nan=0.0)
+            weights[:, ~observed] = 0.0
 
             rate = np.nan_to_num(turnover[t], nan=0.0)
             rate = np.clip(rate * decay, 0.0, 1.0)
             # 首个有效交易日：还没有存量筹码，全部按当日分布建立。
-            fresh = valid & ~started
+            fresh = complete & ~started
             effective = np.where(fresh, 1.0, rate)
-            effective = np.where(valid, effective, 0.0)
+            effective = np.where(complete, effective, 0.0)
 
             chips = chips * (1.0 - effective)[None, :] + weights * effective[None, :]
-            started |= valid
+            trusted |= fresh
+            started |= fresh
 
-        yield t, chips, centers, started
+        # 任何一天的 OHLC/换手率不完整，都不能把上一日的成本继续冒充当前值；
+        # 一旦中断，后续即使恢复数据也不重建旧状态，避免跨缺口产生伪精确结果。
+        trusted &= complete
+        yield t, chips, centers, started, trusted
 
 
 def chip_cost_series(
@@ -174,7 +237,7 @@ def chip_cost_series(
         np.nan_to_num(turnover_a, nan=0.0) > 0
     ).any(axis=0)
 
-    for t, chips, centers, started in _accumulate(
+    for t, chips, centers, started, trusted in _accumulate(
         high_a, low_a, close_a, turnover_a, bins=bins, decay=decay
     ):
         if not started.any():
@@ -186,10 +249,15 @@ def chip_cost_series(
         cumulative = np.cumsum(chips, axis=0) / np.where(usable, total, 1.0)[None, :]
         for percent, target in zip(percents, targets):
             # 第一个累计占比达到目标的档位价格。
-            index = np.argmax(cumulative >= target, axis=0)
-            reached = cumulative[index, np.arange(cols)] >= target
+            # 面板与单票路径的浮点归约顺序可能让恰好 50% 变成
+            # 0.4999999999999998；允许极小误差，避免两条路径选不同档位。
+            reached_mask = cumulative >= (target - 1e-12)
+            index = np.argmax(reached_mask, axis=0)
+            reached = reached_mask[index, np.arange(cols)]
             values = centers[index, np.arange(cols)]
-            out[percent][t] = np.where(usable & reached & usable_column, values, np.nan)
+            out[percent][t] = np.where(
+                usable & reached & usable_column & trusted, values, np.nan
+            )
 
     template = close if isinstance(close, pd.DataFrame) else None
     return {
@@ -220,7 +288,7 @@ def chip_winner_series(
         np.nan_to_num(turnover_a, nan=0.0) > 0
     ).any(axis=0)
 
-    for t, chips, centers, started in _accumulate(
+    for t, chips, centers, started, trusted in _accumulate(
         high_a, low_a, close_a, turnover_a, bins=bins, decay=decay
     ):
         if not started.any():
@@ -229,7 +297,9 @@ def chip_winner_series(
         usable = total > 1e-12
         below = np.where(centers <= reference[t][None, :], chips, 0.0).sum(axis=0)
         out[t] = np.where(
-            usable & usable_column, below / np.where(usable, total, 1.0) * 100.0, np.nan
+            usable & usable_column & trusted & np.isfinite(reference[t]),
+            below / np.where(usable, total, 1.0) * 100.0,
+            np.nan,
         )
 
     return _restore(out, close, close if isinstance(close, pd.DataFrame) else None, single)

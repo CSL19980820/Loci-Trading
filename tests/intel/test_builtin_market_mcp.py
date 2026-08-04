@@ -9,7 +9,12 @@ from unittest.mock import patch
 import pandas as pd
 
 from src.ai.application.toolbus import build_toolbus
-from src.intel.infrastructure.builtin_market_mcp import BUILTIN_MCP_NAME, call_builtin_tool
+from src.intel.infrastructure.builtin_market_mcp import (
+    BUILTIN_MCP_NAME,
+    _LANE_BY_TOOL,
+    call_builtin_tool,
+    list_builtin_tools,
+)
 from src.intel.infrastructure.registry import build_client, collect_tools, delete_server, list_effective_mcp_servers
 from src.ops.infrastructure.store import OpsError
 
@@ -34,6 +39,22 @@ class BuiltinMarketMcpTests(unittest.TestCase):
         self.assertTrue(builtin.get("is_active"))
         self.assertEqual(builtin.get("note"), "Loci 内置行情")
         self.assertGreater(len(builtin.get("tools") or []), 0)
+        catalog = builtin.get("tools_catalog") or []
+        self.assertGreaterEqual(len(catalog), len(_LANE_BY_TOOL))
+        lane_names = {row["name"] for row in catalog if row.get("group") == "lane"}
+        self.assertTrue(set(_LANE_BY_TOOL).issubset(lane_names))
+        for row in catalog:
+            if row.get("group") == "lane":
+                self.assertIn("available", row)
+
+    def test_probe_builtin_server(self) -> None:
+        from src.intel.infrastructure.registry import probe_mcp
+
+        server = probe_mcp(BUILTIN_MCP_NAME)
+        self.assertTrue(server["ok"])
+        self.assertEqual(server["scope"], "server")
+        self.assertGreater(server["tool_count"], 0)
+
 
     def test_user_mcp_json_same_name_is_overridden(self) -> None:
         self.mcp_path.write_text(
@@ -100,6 +121,33 @@ class BuiltinMarketMcpTests(unittest.TestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["quotes"][0]["code"], "600519")
 
+    def test_capital_flow_uses_market_routed_api_and_returns_actual_source(self) -> None:
+        frame = pd.DataFrame([{"date": "2026-07-30", "net_inflow": 123.0}])
+        with patch(
+            "src.market.fetch_capital_flow_routed",
+            return_value=(frame, "manual-provider"),
+        ) as routed:
+            result = call_builtin_tool("capital_flow", {"code": "600519"})
+        self.assertFalse(result["is_error"])
+        self.assertEqual(json.loads(result["text"])["source"], "manual-provider")
+        routed.assert_called_once_with("600519")
+
+    def test_minute_uses_market_routed_api_and_reports_unavailable_lane(self) -> None:
+        frame = pd.DataFrame([{"date": "2026-07-30 10:00", "close": 10.0}])
+        with patch(
+            "src.market.fetch_minute_routed",
+            return_value=(frame, "backup-provider"),
+        ) as routed:
+            result = call_builtin_tool("minute", {"code": "000001", "period": "5", "days": 2})
+        self.assertFalse(result["is_error"])
+        self.assertEqual(json.loads(result["text"])["source"], "backup-provider")
+        routed.assert_called_once_with("000001", period="5", days=2)
+
+        with patch("src.market.fetch_minute_routed", side_effect=RuntimeError("没有启用的 minute_bars 适配器")):
+            unavailable = call_builtin_tool("minute", {"code": "000001"})
+        self.assertTrue(unavailable["is_error"])
+        self.assertIn("minute 失败", unavailable["text"])
+
     def test_toolbus_mounts_builtin_mcp_tools(self) -> None:
         skill = {
             "install_path": str(Path(self.temp.name)),
@@ -118,6 +166,91 @@ class BuiltinMarketMcpTests(unittest.TestCase):
     def test_builtin_cannot_be_deleted(self) -> None:
         with self.assertRaises(OpsError):
             delete_server(BUILTIN_MCP_NAME)
+
+
+class ToolListFollowsDataSourceSwitchesTests(unittest.TestCase):
+    """工具清单要跟着数据源启停走：给模型一个注定报错的工具比不给更糟。"""
+
+    def test_lane_without_any_source_drops_its_tool(self) -> None:
+        def enabled(lane: str) -> list[str]:
+            return [] if lane == "minute_bars" else ["sina"]
+
+        with patch("src.market.enabled_adapter_ids", side_effect=enabled):
+            names = {tool.name for tool in list_builtin_tools()}
+        self.assertIn("kline", names)
+        self.assertNotIn("minute", names)
+        self.assertIn("akshare_call", names)
+
+    def test_every_gated_lane_is_a_real_lane(self) -> None:
+        from src.market import ALL_LANES
+
+        self.assertTrue(set(_LANE_BY_TOOL.values()) <= set(ALL_LANES))
+
+    def test_local_tools_survive_a_fully_stopped_registry(self) -> None:
+        """证券检索走本地 market.db，元信息工具也不依赖线路，不该被连带摘掉。"""
+        with patch("src.market.enabled_adapter_ids", return_value=[]):
+            names = {tool.name for tool in list_builtin_tools()}
+        self.assertEqual(names, {"instruments_search", "lanes_catalog", "akshare_call"})
+
+
+class AkshareCallToolTests(unittest.TestCase):
+    def test_akshare_call_is_always_listed(self) -> None:
+        tools = {tool.name: tool for tool in list_builtin_tools()}
+        self.assertIn("akshare_call", tools)
+        self.assertIn("name", tools["akshare_call"].input_schema["required"])
+
+    def test_call_routes_through_the_controlled_probe_with_more_rows(self) -> None:
+        summary = {
+            "rows": 240,
+            "columns": ["date", "close"],
+            "sample": [{"date": "2026-07-30", "close": 10.0}],
+            "truncated": True,
+            "elapsed_ms": 12.0,
+            "error": None,
+        }
+        with patch("src.market.probe_stock_capability", return_value=summary) as probe:
+            result = call_builtin_tool(
+                "akshare_call", {"name": "stock_zh_a_hist", "symbol": "600519"}
+            )
+
+        self.assertFalse(result["is_error"])
+        payload = json.loads(result["text"])
+        self.assertEqual(payload["capability"], "stock_zh_a_hist")
+        self.assertEqual(payload["rows"], 240)
+        self.assertTrue(payload["truncated"])
+        self.assertEqual(probe.call_args.args[0], "stock_zh_a_hist")
+        self.assertEqual(probe.call_args.args[1], {"symbol": "600519"})
+        self.assertGreater(probe.call_args.kwargs["max_sample_rows"], 5)
+
+    def test_legacy_ak_prefix_still_works(self) -> None:
+        summary = {
+            "rows": 1,
+            "columns": ["date"],
+            "sample": [{"date": "2026-07-30"}],
+            "truncated": False,
+            "elapsed_ms": 1.0,
+            "error": None,
+        }
+        with patch("src.market.probe_stock_capability", return_value=summary) as probe:
+            result = call_builtin_tool("ak_stock_zh_a_hist", {"symbol": "600519"})
+        self.assertFalse(result["is_error"])
+        self.assertEqual(probe.call_args.args[0], "stock_zh_a_hist")
+
+    def test_missing_name_is_refused_without_running(self) -> None:
+        with patch("src.market.probe_stock_capability") as probe:
+            result = call_builtin_tool("akshare_call", {})
+        self.assertTrue(result["is_error"])
+        self.assertIn("stock_*", result["text"])
+        probe.assert_not_called()
+
+    def test_upstream_failure_comes_back_as_a_tool_error(self) -> None:
+        failed = {"rows": None, "columns": [], "sample": [], "error": "HTTPError: 502"}
+        with patch("src.market.probe_stock_capability", return_value=failed):
+            result = call_builtin_tool(
+                "akshare_call", {"name": "stock_zh_a_hist"}
+            )
+        self.assertTrue(result["is_error"])
+        self.assertIn("502", result["text"])
 
 
 if __name__ == "__main__":

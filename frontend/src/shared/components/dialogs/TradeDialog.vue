@@ -74,7 +74,7 @@ async function submit(): Promise<void> {
   <el-dialog
     v-model="model"
     title="记成交"
-    width="36rem"
+    :width="width"
     destroy-on-close
     @closed="submitError = ''"
   >

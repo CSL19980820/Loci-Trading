@@ -13,6 +13,8 @@ export type ScreenHistoryFilter = {
   start?: string
   end?: string
   limit?: number
+  /** 默认 true；false=含回填 */
+  live_only?: boolean
 }
 
 export function useScreenHistoryQuery(filters: MaybeRefOrGetter<ScreenHistoryFilter>) {
@@ -25,6 +27,7 @@ export function useScreenHistoryQuery(filters: MaybeRefOrGetter<ScreenHistoryFil
         f.start ?? '',
         f.end ?? '',
         f.limit ?? 500,
+        f.live_only === false ? 'all' : 'live',
       ] as const
     },
     query: (): Promise<ScreenHistory | null> => {
@@ -36,6 +39,7 @@ export function useScreenHistoryQuery(filters: MaybeRefOrGetter<ScreenHistoryFil
         start: f.start || undefined,
         end: f.end || undefined,
         limit: f.limit ?? 500,
+        live_only: f.live_only !== false,
       })
     },
     enabled: () => Boolean(toValue(filters).strategy.trim()),

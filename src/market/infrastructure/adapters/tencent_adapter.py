@@ -27,6 +27,8 @@ class TencentAdapter(MarketAdapter):
         label="腾讯财经",
         lanes=(LANE_HIST_DAILY, LANE_SPOT_BATCH),
         description="qt.gtimg 现价 + ifzq 日 K；分页拼全历史，不经 akshare。",
+        # 取自 tencent.DAILY_URL 的实际站点；现价另走 qt.gtimg.cn。
+        base_url="https://proxy.finance.qq.com",
     )
 
     def fetch_daily(
@@ -147,14 +149,14 @@ class TencentAdapter(MarketAdapter):
             ["code", "date", "open", "high", "low", "close", "volume", "amount"]
         ].reset_index(drop=True)
 
-    def probe(self, lane: str) -> ProbeResult:
+    def probe(self, lane: str, *, code: str = "600519") -> ProbeResult:
         """hist_daily 用最近 30 根；spot 走小样本。"""
         if lane == LANE_HIST_DAILY and lane in self.meta.lanes:
             from src.market import tencent
 
             started = time.perf_counter()
             try:
-                symbol = to_sina_symbol("600519")
+                symbol = to_sina_symbol(code)
                 frame = tencent.fetch_daily_recent(symbol, count=30)
                 normalized = self._normalize_daily(frame)
                 self._assert_daily_shape(normalized)
@@ -176,7 +178,7 @@ class TencentAdapter(MarketAdapter):
                     rtt_ms=rtt,
                     error=f"{type(exc).__name__}: {exc}",
                 )
-        return super().probe(lane)
+        return super().probe(lane, code=code)
 
     @staticmethod
     def _normalize_daily(frame: pd.DataFrame) -> pd.DataFrame:

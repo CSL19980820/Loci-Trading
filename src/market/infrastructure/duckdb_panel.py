@@ -51,35 +51,6 @@ def read_quotes_flat_duckdb(
         return None
 
 
-def pivot_field_duckdb(flat: pd.DataFrame, field: str) -> pd.DataFrame | None:
-    """用 DuckDB 做单字段 pivot；失败返回 None。"""
-    if flat.empty or field not in flat.columns:
-        return None
-    try:
-        import duckdb
-    except ImportError:
-        return None
-    try:
-        duck = duckdb.connect(database=":memory:")
-        try:
-            duck.register("flat_bars", flat[["trade_date", "code", field]])
-            wide = duck.execute(
-                f"""
-                SELECT trade_date, code, "{field}" AS value
-                FROM flat_bars
-                """
-            ).df()
-        finally:
-            duck.close()
-    except Exception:
-        return None
-    if wide.empty:
-        return pd.DataFrame()
-    panel = wide.pivot(index="trade_date", columns="code", values="value")
-    panel.index = pd.Index(panel.index, name="trade_date")
-    return panel.sort_index()
-
-
 def _sqlite_file_path(conn: sqlite3.Connection) -> str | None:
     try:
         rows = conn.execute("PRAGMA database_list").fetchall()

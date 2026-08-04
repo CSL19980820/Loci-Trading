@@ -1,505 +1,596 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import {
+  ArrowLeft,
+  Check,
+  Delete,
+  FolderOpened,
+  Operation,
+  Setting,
+  VideoPlay,
+} from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   CapabilityUnavailableError,
-  convertStrategy,
-  deleteCustomStrategy,
-  generateSkillMd,
+  createScreenSkill,
+  deleteScreenSkill,
+  generateScreenSkill,
   getProviders,
-  listCustomStrategies,
-  saveConvertedStrategy,
+  getScreenSkill,
+  getScreenSkillCatalog,
+  getUniversePresets,
+  getUniverseStats,
+  previewScreenSkill,
+  updateScreenSkill,
 } from '@/shared/api/quant'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
-import Sheet from '@/shared/components/layout/Sheet.vue'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
-import { THINKING_OPTIONS } from '@/shared/lib/llm'
-import type { LlmProvider } from '@/shared/types/quant'
+import { toErrorMessage } from '@/shared/lib/errors'
+import { enabledModelOptions } from '@/shared/lib/llm'
+import type {
+  LlmProvider,
+  ScreenSkillCatalog,
+  ScreenSkillCatalogSnippet,
+  ScreenSkillGenerateRequest,
+  ScreenSkillPreviewResponse,
+  ScreenSkillRuntime,
+  UniversePreset,
+  UniverseStats,
+} from '@/shared/types/quant'
 
+import './StrategyConverterView.css'
+import ScreenAiCopilot from './components/ScreenAiCopilot.vue'
+import ScreenSkillImportDialog from './components/ScreenSkillImportDialog.vue'
+import ScreenSkillSettingsDrawer from './components/ScreenSkillSettingsDrawer.vue'
+import ScreenSkillTestReport from './components/ScreenSkillTestReport.vue'
+import ScreenWorkbenchCatalog from './components/ScreenWorkbenchCatalog.vue'
+import ScreenWorkbenchEditor from './components/ScreenWorkbenchEditor.vue'
+import {
+  blankLogicRow,
+  blankParamRow,
+  blankReferenceRow,
+  buildScreenSkillPayload,
+  buildScreenSkillReferences,
+  createEmptyScreenSkillDraft,
+  draftFromGeneratedSkill,
+  draftFromScreenSkill,
+  isCurrentSkillLoad,
+  type ScreenSkillDraftModel,
+  type ScreenSkillDraftSource,
+} from './composables/screenSkillDraft'
+import {
+  applyCatalogSnippet,
+  applyImportedSource,
+  buildAiRevisionInstruction,
+  SCREEN_FALLBACK_FIELDS,
+  SCREEN_RUNTIME_OPTIONS,
+  switchScreenSkillRuntime,
+} from './composables/screenSkillWorkbench'
+
+const route = useRoute()
+const router = useRouter()
+const editor = ref<{ insertText: (text: string) => void } | null>(null)
 const providers = ref<LlmProvider[]>([])
-const customStrategies = ref<{ slug: string; name: string; file: string }[]>([])
+const catalog = ref<ScreenSkillCatalog | null>(null)
+const universePresets = ref<UniversePreset[]>([])
+const universeStats = ref<UniverseStats | null>(null)
+const loading = ref(false)
+const catalogLoading = ref(false)
 const busy = ref(false)
+const previewBusy = ref(false)
 const error = ref('')
-const notice = ref('')
-const skillFormOpen = ref(false)
-const skillMdResult = ref('')
-const skillCollapse = ref<string[]>([])
+const conflict = ref('')
+const preview = ref<ScreenSkillPreviewResponse | null>(null)
+const settingsOpen = ref(false)
+const settingsTab = ref('strategy')
+const importOpen = ref(false)
+const mobileToolsOpen = ref(false)
+const mobileToolTab = ref('catalog')
+let latestSkillLoadToken = 0
 
-const contextHintOptions = [
-  { value: 'screen', label: '选股' },
-  { value: 'positions', label: '持仓' },
-  { value: 'market_coverage', label: '覆盖' },
-] as const
-
-const form = reactive({
-  slug: '',
-  name: '',
-  source_type: 'tdx' as 'tdx' | 'description',
-  source: '',
-  provider: '',
-  model: '',
-  thinking: '',
-  entry_timing: 'next_open' as 'open' | 'next_open',
+const draft = reactive(createEmptyScreenSkillDraft())
+const generationForm = reactive({ source: '', provider: '', model: '', thinking: '' })
+const previewForm = reactive({ tradeDate: '', codesText: '' })
+const isEditing = computed(() => Boolean(route.query.slug))
+const currentSlug = computed(() => String(route.query.slug ?? draft.slug).trim())
+const revisionChip = computed(() => draft.strategyRevision.slice(0, 12))
+const pageTitle = computed(() => draft.name.trim() || '未命名量化技能')
+const runtimeModel = computed<ScreenSkillRuntime>({
+  get: () => draft.runtime,
+  set: (runtime) => {
+    switchScreenSkillRuntime(draft, runtime)
+    preview.value = null
+  },
 })
-
-const skillForm = reactive({
-  slug: '',
-  name: '',
-  description: '',
-  provider: '',
-  model: '',
-  thinking: '',
-  context_hints: [] as string[],
+const providerModels = computed(() =>
+  enabledModelOptions(providers.value.find((item) => item.name === generationForm.provider)),
+)
+const referenceBuild = computed(() => buildScreenSkillReferences(draft))
+const referencesReady = computed(
+  () => referenceBuild.value.references.length > 0 && referenceBuild.value.errors.length === 0,
+)
+const fieldOptions = computed(() => {
+  if (!catalog.value?.fields.length) return SCREEN_FALLBACK_FIELDS
+  return catalog.value.fields.map((item) => ({
+    label: `${item.label} · ${item.name}`,
+    value: item.name,
+  }))
 })
-
-const convertProviderModels = computed(() => {
-  const hit = providers.value.find((item) => item.name === form.provider)
-  return hit?.models ?? []
-})
-
-const skillProviderModels = computed(() => {
-  const hit = providers.value.find((item) => item.name === skillForm.provider)
-  return hit?.models ?? []
-})
-
-const result = ref<{
-  status: string; code: string; slug: string;
-  issues?: string[]; error?: string; file?: string
-} | null>(null)
-
-const sourcePlaceholder = computed(() =>
-  form.source_type === 'tdx'
-    ? `{策略名称}
-YTSL:=(3*CLOSE+LOW+OPEN+HIGH)/6;
-MA5:=MA(CLOSE,5);
-...
-OUTPUT: 条件1 AND 条件2;`
-    : `描述选股逻辑，例如：
-1. 5日均线上穿20日均线（金叉）
-2. 成交量大于昨日1.5倍
-3. 今日不是涨停板
-4. 入场：次日开盘
-请尽量详细描述每个条件的数值范围。`,
+const requiredFields = computed(() =>
+  (preview.value?.derived?.required_fields ?? []).filter(
+    (field) => !draft.dataFields.includes(field),
+  ),
+)
+const formulaDialects = computed(() =>
+  (catalog.value?.dialects ?? [])
+    .filter((item) => item.runtime === 'formula')
+    .map((item) => ({ label: item.label, value: item.id })),
 )
 
-const statusLabel = computed(() => ({
-  ok: '✓ 成功注册',
-  preview: '预览（未保存）',
-  issues: '⚠ 有问题，请审核',
-  syntax_error: '语法错误',
-  load_error: '加载失败',
-})[result.value?.status ?? ''] ?? result.value?.status)
+function cloneDraft(source: ScreenSkillDraftModel): ScreenSkillDraftModel {
+  return {
+    ...source,
+    params: source.params.map((row) => ({ ...row })),
+    logic: source.logic.map((row) => ({ ...row })),
+    references: source.references.map((row) => ({ ...row })),
+    dataFields: [...source.dataFields],
+    boards: [...source.boards],
+  }
+}
 
-async function guard<T>(task: () => Promise<T>): Promise<T | null> {
-  busy.value = true
+function applyDraft(source: ScreenSkillDraftModel): void {
+  const next = cloneDraft(source)
+  Object.assign(draft, next)
+  draft.params = next.params
+  draft.logic = next.logic
+  draft.references = next.references
+  draft.dataFields = next.dataFields
+  draft.boards = next.boards
+}
+
+function parseLegacySource(raw: unknown): ScreenSkillDraftSource {
+  if (raw === 'description' || raw === 'tdx' || raw === 'ths' || raw === 'python') return raw
+  return 'blank'
+}
+
+function resetDraft(source: ScreenSkillDraftSource = 'blank'): void {
+  applyDraft(createEmptyScreenSkillDraft(source))
+  preview.value = null
   error.value = ''
-  notice.value = ''
+  conflict.value = ''
+  generationForm.source = ''
+  previewForm.tradeDate = ''
+  previewForm.codesText = ''
+}
+
+function parseCodes(): string[] | undefined {
+  const values = previewForm.codesText
+    .split(/[\n,，\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  return values.length ? [...new Set(values)] : undefined
+}
+
+function openSettings(tab = 'strategy'): void {
+  settingsTab.value = tab
+  settingsOpen.value = true
+}
+
+function openMobileTools(tab: 'catalog' | 'ai' | 'report'): void {
+  mobileToolTab.value = tab
+  mobileToolsOpen.value = true
+}
+
+async function loadProviders(): Promise<void> {
+  providers.value = await getProviders().catch(() => [])
+  if (!generationForm.provider && providers.value.length) {
+    generationForm.provider =
+      providers.value.find((item) => item.is_default)?.name || providers.value[0]!.name
+  }
+}
+
+async function loadCatalog(): Promise<void> {
+  catalogLoading.value = true
+  catalog.value = await getScreenSkillCatalog().catch(() => null)
+  catalogLoading.value = false
+}
+
+async function loadUniverseMeta(): Promise<void> {
+  universePresets.value = await getUniversePresets().catch(() => [])
+  universeStats.value = await getUniverseStats().catch(() => null)
+}
+
+async function loadCurrentSkill(slug: string): Promise<void> {
+  const token = ++latestSkillLoadToken
+  loading.value = true
+  error.value = ''
+  conflict.value = ''
+  try {
+    const detail = await getScreenSkill(slug)
+    if (!isCurrentSkillLoad(token, latestSkillLoadToken, slug, String(route.query.slug ?? '').trim())) return
+    applyDraft(draftFromScreenSkill(detail))
+    preview.value = null
+  } catch (caught: unknown) {
+    if (!isCurrentSkillLoad(token, latestSkillLoadToken, slug, String(route.query.slug ?? '').trim())) return
+    error.value = toErrorMessage(caught, `加载战法 ${slug} 失败`)
+  } finally {
+    if (token === latestSkillLoadToken) loading.value = false
+  }
+}
+
+async function syncFromRoute(): Promise<void> {
+  const slug = String(route.query.slug ?? '').trim()
+  if (slug) {
+    await loadCurrentSkill(slug)
+    return
+  }
+  latestSkillLoadToken += 1
+  loading.value = false
+  resetDraft(parseLegacySource(route.query.source))
+}
+
+async function startNew(): Promise<void> {
+  if (route.query.slug || route.query.source) await router.replace({ query: {} })
+  else resetDraft()
+}
+
+async function guard<T>(task: () => Promise<T>, previewTask = false): Promise<T | null> {
+  if (previewTask) previewBusy.value = true
+  else busy.value = true
+  error.value = ''
+  conflict.value = ''
   try {
     return await task()
-  } catch (e: unknown) {
+  } catch (caught: unknown) {
+    if ((caught as { status?: number }).status === 409) {
+      conflict.value = toErrorMessage(caught, '服务器版本已变化，请重新加载后再保存。')
+      return null
+    }
     error.value =
-      e instanceof CapabilityUnavailableError
-        ? e.message
-        : e instanceof Error
-          ? e.message
-          : '请求失败'
+      caught instanceof CapabilityUnavailableError
+        ? caught.message
+        : toErrorMessage(caught, previewTask ? '预览失败' : '操作失败')
     return null
   } finally {
-    busy.value = false
+    if (previewTask) previewBusy.value = false
+    else busy.value = false
   }
 }
 
-async function reload(): Promise<void> {
-  const [ps, cs] = await Promise.all([
-    getProviders().catch(() => []),
-    listCustomStrategies().catch(() => []),
-  ])
-  providers.value = ps
-  customStrategies.value = cs
+function builtPayload() {
+  const built = buildScreenSkillPayload(draft)
+  if (built.payload) return built.payload
+  preview.value = {
+    ok: false,
+    diagnostics: built.errors.map((message, index) => ({
+      code: `LOCAL_${index + 1}`,
+      severity: 'error',
+      message,
+    })),
+  }
+  error.value = built.errors[0] ?? '草稿不完整'
+  return null
 }
 
-async function doConvert(dryRun = false): Promise<void> {
-  result.value = null
-  const res = await guard(() =>
-    convertStrategy({
-      source: form.source,
-      source_type: form.source_type,
-      slug: form.slug,
-      name: form.name,
-      provider: form.provider,
-      model: form.model || undefined,
-      thinking: form.thinking || undefined,
-      entry_timing: form.entry_timing,
-      dry_run: dryRun === true,
-    }),
+async function handlePreview(withRun: boolean): Promise<void> {
+  const payload = builtPayload()
+  if (!payload) return
+  const result = await guard(
+    () =>
+      previewScreenSkill({
+        ...payload,
+        ...(withRun
+          ? { run: { trade_date: previewForm.tradeDate || undefined, codes: parseCodes() } }
+          : {}),
+      }),
+    true,
   )
-  if (res) {
-    result.value = res
-    if (res.status === 'ok') {
-      notice.value = `策略 ${res.slug} 已注册，可在工坊页使用`
-      await reload()
-    }
-  }
+  if (!result) return
+  preview.value = result
+  if (result.strategy_revision) draft.strategyRevision = result.strategy_revision
+  ElMessage.success(withRun ? '试跑完成' : '编译完成')
+  if (window.matchMedia('(max-width: 820px)').matches) openMobileTools('report')
 }
 
-async function saveAfterReview(): Promise<void> {
-  if (!result.value) return
-  const res = await guard(() =>
-    saveConvertedStrategy({ code: result.value!.code, slug: result.value!.slug }),
+async function handleGenerate(): Promise<void> {
+  if (!generationForm.source.trim()) {
+    error.value = '请先填写要生成或修改的策略要求。'
+    return
+  }
+  if (!referencesReady.value) {
+    error.value = referenceBuild.value.errors[0] ?? 'AI 编写前至少需要一条可追溯资料来源。'
+    openSettings('references')
+    return
+  }
+  const payload: ScreenSkillGenerateRequest = {
+    source_type: 'description',
+    source: buildAiRevisionInstruction(draft, generationForm.source),
+    slug: draft.slug || undefined,
+    name: draft.name || undefined,
+    description: draft.description || undefined,
+    entry_timing: draft.entryTiming,
+    runtime: draft.runtime,
+    dialect: draft.dialect,
+    entrypoint: draft.runtime === 'python' ? draft.entrypoint : undefined,
+    references: referenceBuild.value.references,
+    provider: generationForm.provider || undefined,
+    model: generationForm.model || undefined,
+    thinking: generationForm.thinking || undefined,
+  }
+  const result = await guard(() => generateScreenSkill(payload))
+  if (!result) return
+  applyDraft(draftFromGeneratedSkill(result, cloneDraft(draft)))
+  preview.value = {
+    ok: result.ok,
+    diagnostics: result.diagnostics,
+    derived: result.derived,
+    strategy_revision: result.strategy_revision,
+  }
+  generationForm.source = ''
+  ElMessage.success('AI 建议已应用到当前草稿')
+  await handlePreview(false)
+}
+
+async function handleSave(): Promise<void> {
+  const payload = builtPayload()
+  if (!payload) return
+  const result =
+    isEditing.value && draft.packageRevision
+      ? await guard(() =>
+          updateScreenSkill(currentSlug.value, {
+            ...payload,
+            expected_revision: draft.packageRevision,
+          }),
+        )
+      : await guard(() => createScreenSkill(payload))
+  if (!result) return
+  applyDraft(draftFromScreenSkill(result))
+  preview.value = null
+  ElMessage.success(isEditing.value ? '量化技能已更新' : '量化技能已保存')
+  await router.replace({ query: { slug: result.slug } })
+}
+
+async function handleDelete(): Promise<void> {
+  if (!currentSlug.value || !draft.packageRevision) return
+  const confirmed = await confirmDangerous(
+    `确定删除战法「${draft.name || currentSlug.value}」？会进入历史归档。`,
+    '删除战法',
+    '删除',
   )
-  if (res) {
-    result.value = { ...result.value, status: 'ok', ...res }
-    notice.value = `策略 ${res.slug} 已保存并注册`
-    await reload()
-  }
+  if (!confirmed) return
+  const removed = await guard(() => deleteScreenSkill(currentSlug.value, draft.packageRevision))
+  if (!removed) return
+  ElMessage.success('量化技能已删除')
+  await router.replace({ query: {} })
 }
 
-async function removeCustom(slug: string): Promise<void> {
-  await guard(() => deleteCustomStrategy(slug))
-  await reload()
-  notice.value = `已删除 ${slug}`
+function insertCatalogText(text: string): void {
+  editor.value?.insertText(text)
+  mobileToolsOpen.value = false
 }
 
-async function confirmRemove(slug: string): Promise<void> {
-  if (!(await confirmDangerous(`确定删除策略「${slug}」？此操作不可撤销。`, '删除确认', '删除'))) return
-  await removeCustom(slug)
+function applySnippet(snippet: ScreenSkillCatalogSnippet): void {
+  applyCatalogSnippet(draft, snippet)
+  preview.value = null
+  mobileToolsOpen.value = false
+  ElMessage.success(`已应用片段：${snippet.title}`)
 }
 
-async function doGenerateSkill(): Promise<void> {
-  skillMdResult.value = ''
-  const res = await guard(() =>
-    generateSkillMd({
-      description: skillForm.description,
-      slug: skillForm.slug,
-      name: skillForm.name,
-      provider: skillForm.provider,
-      model: skillForm.model || undefined,
-      thinking: skillForm.thinking || undefined,
-      context_hints: skillForm.context_hints,
-    }),
-  )
-  if (res) {
-    skillMdResult.value = res.skill_md
-    notice.value = 'SKILL.md 已生成，复制后打包成 zip 安装'
-  }
+function applyPreset(presetId: string): void {
+  const preset = universePresets.value.find((item) => item.id === presetId)
+  if (!preset) return
+  draft.universePreset = preset.id
+  draft.boards = [...preset.boards]
+  draft.excludeSt = preset.exclude_st
+  draft.excludeDelisting = preset.exclude_delisting
+  draft.excludeSuspended = preset.exclude_suspended
+  draft.minListDays = preset.min_list_days
 }
 
-async function copySkillMd(): Promise<void> {
-  await navigator.clipboard.writeText(skillMdResult.value)
-  notice.value = '已复制到剪贴板'
+function mergeRequiredFields(): void {
+  const missing = [...requiredFields.value]
+  draft.dataFields = [...new Set([...draft.dataFields, ...missing])]
+  if (missing.length) ElMessage.success('已补齐编译所需字段')
 }
 
-onMounted(reload)
+watch(
+  () => route.fullPath,
+  () => void syncFromRoute(),
+)
+
+onMounted(async () => {
+  await Promise.all([loadProviders(), loadCatalog(), loadUniverseMeta()])
+  await syncFromRoute()
+})
 </script>
 
 <template>
-  <PageHeader title="策稿" subtitle="通达信公式 / 文字描述 → 可注册 Python 策略" />
+  <div class="page-fill workbench-page">
+    <header class="workbench-bar">
+      <div class="workbench-identity">
+        <el-tooltip content="返回量化中心" placement="bottom">
+          <el-button text circle :icon="ArrowLeft" aria-label="返回量化中心" @click="router.push('/quant')" />
+        </el-tooltip>
+        <div class="workbench-name">
+          <strong>{{ pageTitle }}</strong>
+          <span>{{ draft.slug || '尚未命名 slug' }}</span>
+        </div>
+        <el-tag v-if="revisionChip" size="small" effect="plain">rev {{ revisionChip }}</el-tag>
+      </div>
 
-  <el-alert v-if="error" :title="error" type="error" show-icon closable class="mb" @close="error = ''" />
-  <el-alert v-if="notice" :title="notice" type="success" show-icon closable class="mb" @close="notice = ''" />
-
-  <Sheet
-    v-if="customStrategies.length"
-    title="已有自定义策略"
-    :chip="customStrategies.length"
-    margin
-  >
-    <el-table :data="customStrategies" size="small">
-      <el-table-column label="名称" min-width="140">
-        <template #default="{ row }">
-          <strong>{{ row.name }}</strong>
-        </template>
-      </el-table-column>
-      <el-table-column label="Slug" min-width="140">
-        <template #default="{ row }">
-          <span class="mono dim">{{ row.slug }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="文件" min-width="180">
-        <template #default="{ row }">
-          <span class="mono dim">{{ row.file }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" align="right" width="90" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" text type="danger" :disabled="busy" @click="confirmRemove(row.slug)">
-            删除
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-  </Sheet>
-
-  <Sheet title="新建策略" margin padded>
-    <el-form label-position="top" @submit.prevent="doConvert(false)">
-      <div class="form-grid">
-        <el-form-item label="Slug（英文+连字符）" required>
-          <el-input
-            v-model.trim="form.slug"
-            required
-            placeholder="my-golden-cross"
+      <div class="workbench-runtime">
+        <el-segmented v-model="runtimeModel" :options="SCREEN_RUNTIME_OPTIONS" size="small" />
+        <el-select v-if="draft.runtime === 'formula'" v-model="draft.dialect" size="small" aria-label="公式方言">
+          <el-option
+            v-for="item in formulaDialects.length ? formulaDialects : [{ label: 'Loci', value: 'loci' }, { label: '通达信', value: 'tdx' }, { label: '同花顺', value: 'ths' }]"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
           />
-        </el-form-item>
-        <el-form-item label="策略中文名" required>
-          <el-input v-model.trim="form.name" required placeholder="金叉选股" />
-        </el-form-item>
-        <el-form-item label="入场时点">
-          <el-select v-model="form.entry_timing" style="width: 100%">
-            <el-option label="次日开盘（用了当日收盘数据）" value="next_open" />
-            <el-option label="当日开盘（仅用集合竞价数据）" value="open" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="输入类型">
-          <el-select v-model="form.source_type" style="width: 100%">
-            <el-option label="通达信公式（.txt）" value="tdx" />
-            <el-option label="文字描述" value="description" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="LLM 供应商" required>
-          <el-select v-model="form.provider" required placeholder="选择供应商…" style="width: 100%">
-            <el-option
-              v-for="p in providers"
-              :key="p.name"
-              :label="p.is_default ? `${p.name}（默认）` : p.name"
-              :value="p.name"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="模型">
-          <el-select
-            v-model="form.model"
-            clearable
-            filterable
-            allow-create
-            default-first-option
-            placeholder="供应商默认"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="model in convertProviderModels"
-              :key="model"
-              :label="model"
-              :value="model"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="思考程度">
-          <el-select v-model="form.thinking" style="width: 100%">
-            <el-option
-              v-for="opt in THINKING_OPTIONS"
-              :key="opt.value || 'off'"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
+        </el-select>
+        <el-tag v-else size="small" type="success" effect="plain">完整 Python</el-tag>
       </div>
 
-      <el-form-item
-        :label="form.source_type === 'tdx' ? '通达信公式（粘贴 .txt 内容）' : '策略描述（越详细越好，写清楚每个条件）'"
-        required
-      >
-        <el-input
-          v-model="form.source"
-          type="textarea"
-          required
-          :rows="12"
-          :placeholder="sourcePlaceholder"
-        />
-      </el-form-item>
-
-      <div class="form-actions">
-        <el-button :disabled="busy" @click="doConvert(true)">预览代码（不保存）</el-button>
-        <el-button type="primary" native-type="submit" :loading="busy" :disabled="!form.provider">
-          {{ busy ? '转换中…' : '转换并注册' }}
-        </el-button>
+      <div class="workbench-actions">
+        <el-button :icon="FolderOpened" aria-label="导入量化技能" @click="importOpen = true">导入</el-button>
+        <el-button class="catalog-trigger" :icon="Operation" aria-label="打开函数库" @click="openMobileTools('catalog')">函数库</el-button>
+        <el-button class="ai-trigger" aria-label="打开 AI 助手" @click="openMobileTools('ai')">AI</el-button>
+        <el-button class="report-trigger" aria-label="打开测试报告" @click="openMobileTools('report')">报告</el-button>
+        <el-button :icon="Setting" aria-label="打开策略设置" @click="openSettings()">设置</el-button>
+        <el-button :icon="Check" :loading="previewBusy" aria-label="编译量化技能" @click="handlePreview(false)">编译</el-button>
+        <el-button :icon="VideoPlay" :loading="previewBusy" aria-label="试跑量化技能" @click="handlePreview(true)">试跑</el-button>
+        <el-button type="primary" :loading="busy" aria-label="保存量化技能" @click="handleSave">保存</el-button>
+        <el-dropdown trigger="click">
+          <el-button text circle :icon="Operation" aria-label="更多操作" />
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="startNew">新建技能</el-dropdown-item>
+              <el-dropdown-item
+                v-if="isEditing && draft.packageRevision"
+                divided
+                :icon="Delete"
+                @click="handleDelete"
+              >
+                删除当前技能
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
-      <p class="form-hint">
-        转换后 AI 生成 Python 代码，自动做语法检查 + 完整性验证后热加载注册，无需重启服务。
-        「预览」模式只生成代码供人工审核，不会写入文件。
-      </p>
-    </el-form>
-  </Sheet>
+    </header>
 
-  <Sheet v-if="result" title="生成结果" :chip="statusLabel" :muted-chip="result.status !== 'ok'" margin>
-    <template #actions>
-      <el-button
-        v-if="result.status === 'preview' || result.status === 'issues'"
-        type="primary"
-        :loading="busy"
-        @click="saveAfterReview"
-      >
-        确认保存并注册
-      </el-button>
-    </template>
-
-    <div v-if="result.issues?.length" class="issue-list">
-      <p class="form-error">⚠ 发现以下问题，请人工确认后再保存：</p>
-      <ul>
-        <li v-for="issue in result.issues" :key="issue" class="tone-down">{{ issue }}</li>
-      </ul>
-    </div>
-    <div v-if="result.error" class="form-error">{{ result.error }}</div>
-
-    <pre v-if="result.code" class="code-block"><code>{{ result.code }}</code></pre>
-
-    <p v-if="result.status === 'ok'" class="form-hint highlight-hint">
-      ✓ 策略 {{ result.slug }} 已注册，在工坊页可以直接选股和回测。
-    </p>
-  </Sheet>
-
-  <Sheet quiet margin padded>
-    <el-collapse v-model="skillCollapse">
-      <el-collapse-item name="skill">
-        <template #title>
-          <span class="skill-collapse-title">技能包生成</span>
+    <div v-if="error || conflict" class="workbench-flash">
+      <el-alert
+        v-if="error"
+        :title="error"
+        type="error"
+        show-icon
+        closable
+        @close="error = ''"
+      />
+      <el-alert v-if="conflict" :title="conflict" type="warning" show-icon :closable="false">
+        <template #default>
+          <el-button size="small" type="primary" @click="loadCurrentSkill(currentSlug)">重新加载</el-button>
         </template>
-        <p class="form-hint">用 LLM 根据用途描述生成 SKILL.md，可复制后打包安装到设置页。</p>
-        <el-button type="primary" link @click="skillFormOpen = true">展开技能包生成</el-button>
-      </el-collapse-item>
-    </el-collapse>
-  </Sheet>
-
-  <el-dialog v-model="skillFormOpen" title="AI 生成技能包说明" width="40rem" destroy-on-close>
-    <el-form label-position="top" @submit.prevent="doGenerateSkill">
-      <div class="form-grid">
-        <el-form-item label="Slug" required>
-          <el-input
-            v-model.trim="skillForm.slug"
-            required
-            placeholder="daily-screen-brief"
-          />
-        </el-form-item>
-        <el-form-item label="技能名" required>
-          <el-input v-model.trim="skillForm.name" required placeholder="每日选股简报" />
-        </el-form-item>
-        <el-form-item label="LLM 供应商" required>
-          <el-select v-model="skillForm.provider" required placeholder="选择供应商…" style="width: 100%">
-            <el-option v-for="p in providers" :key="p.name" :label="p.name" :value="p.name" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="模型">
-          <el-select
-            v-model="skillForm.model"
-            clearable
-            filterable
-            allow-create
-            default-first-option
-            placeholder="供应商默认"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="model in skillProviderModels"
-              :key="model"
-              :label="model"
-              :value="model"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="思考程度">
-          <el-select v-model="skillForm.thinking" style="width: 100%">
-            <el-option
-              v-for="opt in THINKING_OPTIONS"
-              :key="opt.value || 'off'"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </el-form-item>
-      </div>
-
-      <el-form-item label="用途描述（越详细越好）" required>
-        <el-input
-          v-model="skillForm.description"
-          type="textarea"
-          required
-          :rows="6"
-          placeholder="每天盘后，读取当天选股结果，简洁输出今日入选标的、理由摘要和主要风险点，格式要适合微信发送。"
-        />
-      </el-form-item>
-
-      <el-form-item label="需要哪些数据">
-        <el-checkbox-group v-model="skillForm.context_hints">
-          <el-checkbox
-            v-for="opt in contextHintOptions"
-            :key="opt.value"
-            :label="opt.value"
-          >
-            {{ opt.label }}
-          </el-checkbox>
-        </el-checkbox-group>
-      </el-form-item>
-
-      <div class="form-actions">
-        <el-button @click="skillFormOpen = false">关闭</el-button>
-        <el-button type="primary" native-type="submit" :loading="busy" :disabled="!skillForm.provider">
-          {{ busy ? '生成中…' : '生成 SKILL.md' }}
-        </el-button>
-      </div>
-    </el-form>
-
-    <div v-if="skillMdResult" class="skill-result">
-      <div class="skill-result-bar">
-        <h3>生成的 SKILL.md</h3>
-        <el-button size="small" @click="copySkillMd">复制</el-button>
-      </div>
-      <pre class="code-block"><code>{{ skillMdResult }}</code></pre>
-      <p class="form-hint">
-        将上方内容保存为 SKILL.md，打包成 zip（内含 SKILL.md），在设置页安装即可使用。
-      </p>
+      </el-alert>
     </div>
-  </el-dialog>
+
+    <main class="workbench-shell">
+      <aside class="workbench-pane catalog-pane">
+        <ScreenWorkbenchCatalog
+          :catalog="catalog"
+          :runtime="draft.runtime"
+          :loading="catalogLoading"
+          @insert-text="insertCatalogText"
+          @apply-snippet="applySnippet"
+        />
+      </aside>
+
+      <ScreenWorkbenchEditor ref="editor" :draft="draft" />
+
+      <aside class="workbench-pane copilot-pane">
+        <ScreenAiCopilot
+          v-model:instruction="generationForm.source"
+          v-model:provider="generationForm.provider"
+          v-model:model="generationForm.model"
+          v-model:thinking="generationForm.thinking"
+          :providers="providers"
+          :provider-models="providerModels"
+          :references-ready="referencesReady"
+          :busy="busy"
+          @generate="handleGenerate"
+        />
+        <el-button v-if="!referencesReady" text type="primary" @click="openSettings('references')">
+          管理资料来源
+        </el-button>
+      </aside>
+    </main>
+
+    <section class="report-dock">
+      <div class="report-dock__toolbar">
+        <strong>测试报告</strong>
+        <el-date-picker
+          v-model="previewForm.tradeDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          size="small"
+          placeholder="最新交易日"
+        />
+        <el-input
+          v-model="previewForm.codesText"
+          size="small"
+          clearable
+          placeholder="限定代码，逗号分隔"
+        />
+        <el-button class="report-trigger" size="small" @click="openMobileTools('report')">查看报告</el-button>
+      </div>
+      <div class="report-dock__body">
+        <ScreenSkillTestReport :preview="preview" />
+      </div>
+    </section>
+
+    <PageBusy overlay :busy="loading" label="加载量化技能…" />
+
+    <ScreenSkillSettingsDrawer
+      v-model="settingsOpen"
+      v-model:active-tab="settingsTab"
+      :draft="draft"
+      :field-options="fieldOptions"
+      :required-fields="requiredFields"
+      :presets="universePresets"
+      :stats="universeStats"
+      @add-logic="draft.logic.push(blankLogicRow())"
+      @remove-logic="draft.logic.length === 1 ? (draft.logic[0] = blankLogicRow()) : draft.logic.splice($event, 1)"
+      @add-reference="draft.references.push(blankReferenceRow())"
+      @remove-reference="draft.references.length === 1 ? (draft.references[0] = blankReferenceRow()) : draft.references.splice($event, 1)"
+      @add-param="draft.params.push(blankParamRow())"
+      @remove-param="draft.params.length === 1 ? (draft.params[0] = blankParamRow()) : draft.params.splice($event, 1)"
+      @apply-preset="applyPreset"
+      @merge-required-fields="mergeRequiredFields"
+      @runtime-change="runtimeModel = $event"
+    />
+
+    <ScreenSkillImportDialog
+      v-model="importOpen"
+      @apply="applyImportedSource(draft, $event); preview = null"
+    />
+
+    <el-drawer
+      v-model="mobileToolsOpen"
+      title="工作台工具"
+      direction="btt"
+      size="min(42rem, 86vh)"
+      class="mobile-tools"
+    >
+      <el-tabs v-model="mobileToolTab" class="mobile-tools__tabs">
+        <el-tab-pane label="函数与片段" name="catalog">
+          <ScreenWorkbenchCatalog
+            :catalog="catalog"
+            :runtime="draft.runtime"
+            :loading="catalogLoading"
+            @insert-text="insertCatalogText"
+            @apply-snippet="applySnippet"
+          />
+        </el-tab-pane>
+        <el-tab-pane label="AI 助手" name="ai">
+          <ScreenAiCopilot
+            v-model:instruction="generationForm.source"
+            v-model:provider="generationForm.provider"
+            v-model:model="generationForm.model"
+            v-model:thinking="generationForm.thinking"
+            :providers="providers"
+            :provider-models="providerModels"
+            :references-ready="referencesReady"
+            :busy="busy"
+            @generate="handleGenerate"
+          />
+        </el-tab-pane>
+        <el-tab-pane label="测试报告" name="report">
+          <ScreenSkillTestReport :preview="preview" />
+        </el-tab-pane>
+      </el-tabs>
+    </el-drawer>
+  </div>
 </template>
-
-<style scoped>
-.form-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.code-block {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px 16px;
-  overflow-x: auto;
-  font: 12px/1.6 var(--mono);
-  margin: 8px 0;
-  white-space: pre;
-}
-
-.issue-list {
-  padding: 8px 0;
-}
-
-.issue-list ul {
-  margin: 4px 0;
-  padding-left: 20px;
-}
-
-.skill-collapse-title {
-  font-weight: 600;
-}
-
-.skill-result {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.skill-result-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.skill-result-bar h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-</style>

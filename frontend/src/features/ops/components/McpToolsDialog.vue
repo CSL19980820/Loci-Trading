@@ -1,0 +1,368 @@
+<script setup lang="ts">
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+
+import { getMcpServers, probeMcpServer, type McpProbeResult } from '@/shared/api/quant'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { toErrorMessage } from '@/shared/lib/errors'
+import { dialogWidth } from '@/shared/lib/format'
+import type { McpServer, McpToolRow } from '@/shared/types/quant'
+
+type ProbeTone = 'idle' | 'ok' | 'warn' | 'bad' | 'busy'
+
+type ProbeCell = {
+  tone: ProbeTone
+  label: string
+  detail: string
+}
+
+const open = defineModel<boolean>({ required: true })
+
+const props = defineProps<{
+  server: McpServer | null
+}>()
+
+const emit = defineEmits<{ refreshed: [] }>()
+
+const live = ref<McpServer | null>(null)
+const probingServer = ref(false)
+const serverProbe = ref<ProbeCell | null>(null)
+let active = true
+let session = 0
+
+const current = computed(() => live.value ?? props.server)
+
+function catalogRows(server: McpServer | null): McpToolRow[] {
+  if (!server) return []
+  if (server.builtin && server.tools_catalog?.length) return server.tools_catalog
+  return server.tools
+}
+
+const isBuiltin = computed(() => Boolean(current.value?.builtin))
+const laneTools = computed(() =>
+  catalogRows(current.value).filter(
+    (t) => (t.group ?? 'lane') !== 'akshare' && !t.name.startsWith('ak_'),
+  ),
+)
+const akshareTools = computed(() =>
+  catalogRows(current.value).filter((t) => t.group === 'akshare' || t.name.startsWith('ak_')),
+)
+const flatTools = computed(() => catalogRows(current.value))
+
+function resetProbes(): void {
+  serverProbe.value = null
+}
+
+function isCurrent(version: number): boolean {
+  return active && open.value && version === session
+}
+
+async function syncLiveServer(visible: boolean): Promise<void> {
+  const version = ++session
+  if (!visible) {
+    live.value = null
+    probingServer.value = false
+    resetProbes()
+    return
+  }
+  resetProbes()
+  probingServer.value = false
+  live.value = props.server
+  const name = props.server?.name
+  if (name) {
+    try {
+      const rows = await getMcpServers()
+      if (isCurrent(version)) live.value = rows.find((r) => r.name === name) ?? props.server
+    } catch {
+      /* 用打开时的快照 */
+    }
+  }
+}
+
+watch([open, () => props.server?.name], ([visible]) => {
+  void syncLiveServer(visible)
+})
+
+function cellFromResult(result: McpProbeResult): ProbeCell {
+  if (!result.ok) {
+    return {
+      tone: 'bad',
+      label: '失败',
+      detail: result.error || '探测失败',
+    }
+  }
+  return {
+    tone: 'ok',
+    label: `通 ${result.rtt_ms}ms`,
+    detail: `工具 ${result.tool_count ?? result.tools_updated ?? 0} 个`,
+  }
+}
+
+function tagType(tone: ProbeTone): 'success' | 'warning' | 'danger' | 'info' {
+  if (tone === 'ok') return 'success'
+  if (tone === 'warn') return 'warning'
+  if (tone === 'bad') return 'danger'
+  return 'info'
+}
+
+async function probeServer(): Promise<void> {
+  const version = session
+  const name = current.value?.name
+  if (!name || probingServer.value || !isCurrent(version)) return
+  probingServer.value = true
+  serverProbe.value = { tone: 'busy', label: '探测中', detail: '' }
+  try {
+    const result = await probeMcpServer(name)
+    if (!isCurrent(version)) return
+    serverProbe.value = cellFromResult(result)
+    if (result.ok) {
+      ElMessage.success(`${name} 连通 · ${result.rtt_ms} ms · 工具 ${result.tool_count ?? 0}`)
+      const rows = await getMcpServers()
+      if (!isCurrent(version)) return
+      live.value = rows.find((r) => r.name === name) ?? live.value
+      emit('refreshed')
+    } else {
+      ElMessage.error(result.error || '整服探测失败')
+    }
+  } catch (caught: unknown) {
+    if (!isCurrent(version)) return
+    const msg = toErrorMessage(caught, '整服探测失败')
+    serverProbe.value = { tone: 'bad', label: '失败', detail: msg }
+    ElMessage.error(msg)
+  } finally {
+    if (isCurrent(version)) probingServer.value = false
+  }
+}
+
+onUnmounted(() => {
+  active = false
+  session += 1
+})
+</script>
+
+<template>
+  <el-dialog
+    v-model="open"
+    align-center
+    destroy-on-close
+    class="mcp-tools-dialog"
+    append-to-body
+    :width="dialogWidth()"
+  >
+    <template #header="{ titleId, titleClass }">
+      <div class="mcp-tools-head">
+        <h4 :id="titleId" :class="titleClass">
+          {{ current ? `工具 · ${current.name}` : '工具详情' }}
+        </h4>
+        <div class="mcp-tools-head__actions">
+          <el-tag
+            v-if="serverProbe"
+            size="small"
+            effect="light"
+            :type="tagType(serverProbe.tone)"
+            class="probe-tag"
+            :title="serverProbe.detail"
+          >
+            {{ serverProbe.label }}
+          </el-tag>
+          <el-button
+            size="small"
+            :loading="probingServer"
+            @click="probeServer"
+          >
+            测连通
+          </el-button>
+        </div>
+      </div>
+    </template>
+
+    <div class="mcp-tools-body">
+      <template v-if="isBuiltin">
+        <p class="mcp-detail-note">
+          内置行情能力目录：线路工具为 Loci 已支持的全部入口（无源时标「线路停用」）；AkShare
+          为已在数据源「按接口」上桌的接口。测连通只验证服务握手和工具发现，不执行工具。
+        </p>
+        <section class="mcp-detail-group">
+          <h4>线路工具 <b>{{ laneTools.length }}</b></h4>
+          <el-table
+            v-if="laneTools.length"
+            :data="laneTools"
+            size="small"
+            row-key="name"
+            class="mcp-tools-table"
+          >
+            <el-table-column label="工具" min-width="130">
+              <template #default="{ row }">
+                <span class="mono" :class="{ dim: row.available === false }">{{ row.name }}</span>
+                <el-tag
+                  v-if="row.available === false"
+                  size="small"
+                  type="info"
+                  effect="plain"
+                  class="avail-tag"
+                >
+                  线路停用
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="说明" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="desc">{{ row.description || '—' }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <EmptyState v-else description="暂无线路工具" />
+        </section>
+        <section class="mcp-detail-group">
+          <h4>AkShare 接口 <b>{{ akshareTools.length }}</b></h4>
+          <el-table
+            v-if="akshareTools.length"
+            :data="akshareTools"
+            size="small"
+            row-key="name"
+            class="mcp-tools-table"
+          >
+            <el-table-column label="工具" min-width="140">
+              <template #default="{ row }">
+                <span class="mono">{{ row.name }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="说明" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="desc">{{ row.description || '—' }}</span>
+              </template>
+            </el-table-column>
+          </el-table>
+          <EmptyState v-else description="还没有接口上桌；去工坊「数据源 → 按接口」勾选需要的" />
+        </section>
+      </template>
+
+      <template v-else>
+        <el-table
+          v-if="flatTools.length"
+          :data="flatTools"
+          size="small"
+          row-key="name"
+          class="mcp-tools-table"
+        >
+          <el-table-column label="工具" min-width="140">
+            <template #default="{ row }">
+              <span class="mono">{{ row.name }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="说明" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="desc">{{ row.description || '—' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <EmptyState v-else description="暂无工具" />
+      </template>
+    </div>
+  </el-dialog>
+</template>
+
+<style scoped>
+.mcp-tools-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  padding-right: 1.5rem;
+}
+
+.mcp-tools-head h4 {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-tools-head__actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.mcp-tools-body {
+  min-height: 0;
+}
+
+.mcp-detail-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.mcp-detail-group {
+  margin-bottom: 1rem;
+}
+
+.mcp-detail-group:last-child {
+  margin-bottom: 0;
+}
+
+.mcp-detail-group h4 {
+  margin: 0 0 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.mcp-detail-group h4 b {
+  margin-left: 0.25rem;
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--mist);
+}
+
+.desc,
+.dim {
+  color: var(--mist);
+}
+
+.avail-tag {
+  margin-left: 0.35rem;
+  vertical-align: middle;
+}
+
+.probe-tag {
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>
+
+<style>
+/* 弹层挂 append-to-body，scoped 盖不到；限制视口高度，滚动只在 body */
+.mcp-tools-dialog.el-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: min(85vh, 40rem);
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  overflow: hidden;
+}
+
+.mcp-tools-dialog .el-dialog__header {
+  flex-shrink: 0;
+  margin-right: 0;
+  padding-bottom: 0.65rem;
+}
+
+.mcp-tools-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-top: 0.35rem;
+}
+
+.mcp-tools-dialog .mcp-tools-table .cell {
+  line-height: 1.35;
+}
+</style>

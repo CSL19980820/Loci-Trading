@@ -11,6 +11,8 @@
     总资产(t) = 现金(t) + Σ 持股数(t) × 收盘价(t)
 
 需要三样东西：账本回放出的每日持仓、行情仓里的收盘价、以及现金推算。
+某日缺收盘价时用该标的**最近可用收盘**递补（避免市值断崖）；全程无行情的标的
+仍不计市值，并在 ``note`` 里写明。
 
 ## 现金怎么来
 
@@ -106,7 +108,9 @@ def _cash_flow_by_day(palace: PalaceStore) -> dict[str, float]:
     ):
         day = str(row["occurred_on"])
         amount = float(row["amount"] or 0)
-        delta = amount if str(row["action"]) == "SELL" else -amount
+        action = str(row["action"])
+        # OPENING 为已有持仓导入（trades 口径不碰现金），只算 BUY/SELL
+        delta = 0.0 if action == "OPENING" else (amount if action == "SELL" else -amount)
         out[day] = out.get(day, 0.0) + delta
     return out
 
@@ -149,6 +153,7 @@ def build_equity_curve(
 
     codes = sorted({code for snap in changes.values() for code in snap})
     closes = _close_lookup(market, codes, days[0], days[-1])
+    cost_values = _cost_values_by_day(palace, days)
 
     # 事件日之间持仓不变，这里把变化点前向填充到每个交易日。
     change_days = sorted(changes)
@@ -158,6 +163,8 @@ def build_equity_curve(
     realized_cum = 0.0
     cash_cum = 0.0
     missing_codes: set[str] = set()
+    carried_codes: set[str] = set()
+    last_close: dict[str, float] = {}
 
     for day in days:
         while cursor < len(change_days) and change_days[cursor] <= day:
@@ -167,14 +174,19 @@ def build_equity_curve(
         cash_cum += cash_flows.get(day, 0.0)
 
         holding_value = 0.0
-        cost_value = 0.0
         for code, shares in holdings.items():
             price = closes.get(code, {}).get(day)
+            if price is not None:
+                last_close[code] = price
+            else:
+                price = last_close.get(code)
+                if price is not None:
+                    carried_codes.add(code)
             if price is None:
                 missing_codes.add(code)
                 continue
             holding_value += shares * price
-        cost_value = _cost_value_on(palace, day)
+        cost_value = cost_values[day]
         points.append(
             EquityPoint(
                 trade_date=day,
@@ -196,32 +208,58 @@ def build_equity_curve(
     _attach_benchmarks(points, market, benchmarks, days)
 
     metrics = compute_curve_metrics(points)
+    if carried_codes:
+        note = (note + " " if note else "") + (
+            f"{len(carried_codes)} 只标的部分交易日缺收盘价，已用最近可用收盘递补："
+            f"{', '.join(sorted(carried_codes)[:5])}"
+            + ("…" if len(carried_codes) > 5 else "")
+        )
     if missing_codes:
         note = (note + " " if note else "") + (
-            f"{len(missing_codes)} 只标的在行情仓中缺数据，其市值未计入："
+            f"{len(missing_codes)} 只标的全程无行情，市值未计入（补齐行情后会恢复）："
             f"{', '.join(sorted(missing_codes)[:5])}"
+            + ("…" if len(missing_codes) > 5 else "")
         )
     return EquityCurve(points=points, metrics=metrics, confidence=confidence, note=note.strip())
 
 
-def _cost_value_on(palace: PalaceStore, day: str) -> float:
-    """当日收盘时的持仓成本合计。浮动盈亏 = 市值 − 成本。
+def _cost_values_by_day(palace: PalaceStore, days: list[str]) -> dict[str, float]:
+    """一次读取事件并增量计算每个交易日的持仓成本合计。
 
-    取每只票截至该日的最后一条事件。排序用 rowid 而非 created_at——
-    后者只到秒，同秒多笔会退化成按随机 UUID 排（见 replay._ordered_events）。
+    事件按发生日和 rowid 升序处理，等价于逐日取每只票的最后状态，
+    但避免对同一批 position_events 执行一次相关子查询。
     """
-    row = palace.conn.execute(
+    if not days:
+        return {}
+
+    rows = palace.conn.execute(
         """
-        SELECT SUM(shares_after * cost_after) AS cost_value FROM position_events e
-        WHERE e.rowid = (
-            SELECT x.rowid FROM position_events x
-            WHERE x.code = e.code AND x.occurred_on <= ?
-            ORDER BY x.occurred_on DESC, x.rowid DESC LIMIT 1
-        )
+        SELECT occurred_on, code, shares_after, cost_after
+        FROM position_events
+        WHERE occurred_on <= ?
+        ORDER BY occurred_on ASC, rowid ASC
         """,
-        (day,),
-    ).fetchone()
-    return float(row["cost_value"] or 0.0) if row else 0.0
+        (days[-1],),
+    )
+    latest: dict[str, float] = {}
+    values: dict[str, float] = {}
+    total = 0.0
+    day_index = 0
+    for row in rows:
+        event_day = str(row["occurred_on"])
+        while day_index < len(days) and days[day_index] < event_day:
+            values[days[day_index]] = total
+            day_index += 1
+
+        code = str(row["code"])
+        current = float(row["shares_after"] or 0) * float(row["cost_after"] or 0.0)
+        total += current - latest.get(code, 0.0)
+        latest[code] = current
+
+    while day_index < len(days):
+        values[days[day_index]] = total
+        day_index += 1
+    return values
 
 
 def _close_lookup(

@@ -1,39 +1,240 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+/**
+ * 个股工作台：行情 / 交割历史 / 候选历史。
+ * 默认行情；特殊入口可带 ?view=trades|candidates。按当前 tab 按需加载。
+ */
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
+import ArchiveBatchDock from '@/features/ledger/components/ArchiveBatchDock.vue'
+import ArchiveBatchRail from '@/features/ledger/components/ArchiveBatchRail.vue'
+import DataQueryDetailPanel from '@/features/market/components/DataQueryDetailPanel.vue'
+import { useQuotesQuery } from '@/features/market/composables/useQuotesQuery'
+import { chgClass, fmtPct } from '@/features/market/composables/dataQueryFormat'
+import StockTimeline from '@/features/ledger/components/StockTimeline.vue'
 import TradesTable from '@/features/ledger/components/TradesTable.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import { toErrorMessage } from '@/shared/lib/errors'
 import Sheet from '@/shared/components/layout/Sheet.vue'
-import StatCard from '@/shared/components/ui/StatCard.vue'
-import TradeDialog from '@/shared/components/dialogs/TradeDialog.vue'
-import { actionLabel, money, shortTime } from '@/shared/lib/format'
+import { money } from '@/shared/lib/format'
+import type { IndicatorKind } from '@/shared/lib/klineConfig'
+import type { KPeriod } from '@/shared/lib/indicators'
+import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
 import { usePalaceStore } from '@/shared/stores/palace'
-import type { TimelineEvent } from '@/shared/types/palace'
+
+import './ArchiveView.css'
+
+type StockView = 'quote' | 'trades' | 'candidates'
 
 const route = useRoute()
+const router = useRouter()
 const store = usePalaceStore()
-const tradeDialogOpen = ref(false)
-const code = computed(() => String(route.params.code ?? ''))
-const timeline = computed(() => (store.selectedCode === code.value ? store.selectedTimeline : []))
-const trades = computed(() => store.trades.filter((item) => item.code === code.value))
-const position = computed(() => store.dashboard?.positions.find((item) => item.code === code.value) ?? null)
-const stockName = computed(
-  () =>
-    position.value?.name
-    ?? trades.value[0]?.name
-    ?? store.trades.find((trade) => trade.code === code.value)?.name
-    ?? code.value,
-)
+const batch = useBatchBrowseStore()
 
-function typeLabel(type: TimelineEvent['type']): string {
-  return { trade: '成交', candidate: '候选', plan: '预案', review: '复盘' }[type] ?? type
+const code = computed(() => String(route.params.code ?? '').trim())
+const view = computed<StockView>(() => {
+  const raw = String(route.query.view || 'quote')
+  if (raw === 'quote' || raw === 'candidates' || raw === 'trades') return raw
+  return 'quote'
+})
+/** 从候选/选股/回测带入：锚定日 K 到该交易日 */
+const focusDate = computed(() => {
+  const d = String(route.query.date || '').trim()
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''
+})
+
+const viewItems: { name: StockView; label: string }[] = [
+  { name: 'quote', label: '行情' },
+  { name: 'trades', label: '交割' },
+  { name: 'candidates', label: '候选' },
+]
+
+/** 首次进入某 tab 才挂载面板，之后保留以免 K 线反复重绘。 */
+const visited = reactive({
+  quote: false,
+  trades: false,
+  candidates: false,
+})
+
+const adjust = ref<'qfq' | 'hfq' | 'none'>('qfq')
+const period = ref<KPeriod>('day')
+const indicator = ref<IndicatorKind>('macd')
+const quotesLimit = ref(320)
+const narrow = ref(false)
+const drawerOpen = ref(false)
+
+function quotesLimitFor(p: KPeriod): number {
+  if (p === 'week') return Math.max(800, quotesLimit.value)
+  if (p === 'month') return Math.max(1500, quotesLimit.value)
+  return quotesLimit.value
 }
 
-function eventLabel(event: TimelineEvent): string {
-  if (event.type === 'trade') return actionLabel(String(event.label))
-  return event.label
+const quotesEnabled = computed(() => Boolean(code.value))
+
+const { quote, refetch, isPending, isLoading, error: quoteError, isError: quoteFailed } = useQuotesQuery(code, () => ({
+  adjust: adjust.value,
+  limit: quotesLimitFor(period.value),
+  enabled: quotesEnabled.value,
+}))
+
+const quoteBusy = computed(() => view.value === 'quote' && (isPending.value || isLoading.value))
+const ledgerBusy = computed(
+  () => (view.value === 'trades' || view.value === 'candidates') && store.loading,
+)
+const quoteErrorText = computed(() =>
+  quoteFailed.value ? toErrorMessage(quoteError.value, '行情加载失败') : '',
+)
+const ledgerErrorText = computed(() =>
+  view.value !== 'quote' && !ledgerBusy.value ? store.error : '',
+)
+
+const timeline = computed(() => (store.selectedCode === code.value ? store.selectedTimeline : []))
+const trades = computed(() => store.trades.filter((item) => item.code === code.value))
+const candidates = computed(() => timeline.value.filter((e) => e.type === 'candidate'))
+const tradeEvents = computed(() => timeline.value.filter((e) => e.type === 'trade'))
+const position = computed(
+  () => store.dashboard?.positions.find((item) => item.code === code.value) ?? null,
+)
+const stockName = computed(
+  () =>
+    quote.value?.name ||
+    position.value?.name ||
+    trades.value[0]?.name ||
+    code.value,
+)
+
+const adjustLabel = computed(
+  () => ({ qfq: '前复权', hfq: '后复权', none: '不复权' })[adjust.value],
+)
+
+const lastClose = computed(() => {
+  const bars = quote.value?.bars
+  if (!bars?.length) return '—'
+  const c = bars[bars.length - 1]?.close
+  return c == null ? '—' : Number(c).toFixed(2)
+})
+
+const detailPct = computed(() => {
+  const bars = quote.value?.bars
+  if (!bars || bars.length < 2) return null
+  const a = Number(bars[bars.length - 2]?.close)
+  const b = Number(bars[bars.length - 1]?.close)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return null
+  return ((b - a) / a) * 100
+})
+
+const tabBadge = computed(() => ({
+  trades: visited.trades ? trades.value.length : null,
+  candidates: visited.candidates ? candidates.value.length : null,
+}))
+
+const boardTag = computed(() => {
+  const q = quote.value
+  if (!q) return ''
+  const label = String(q.board_label || '').trim()
+  if (label) return label
+  const raw = String(q.board || '').trim()
+  const map: Record<string, string> = {
+    main: '主板',
+    chi_next: '创业板',
+    star: '科创板',
+    bse: '北交所',
+    主板: '主板',
+    创业板: '创业板',
+    科创板: '科创板',
+    北交所: '北交所',
+  }
+  if (raw && map[raw]) return map[raw]
+  // 无元数据时按代码兜底
+  const c = code.value
+  if (c.startsWith('688') || c.startsWith('689')) return '科创板'
+  if (c.startsWith('300') || c.startsWith('301')) return '创业板'
+  if (/^[489]/.test(c) || c.startsWith('92')) return '北交所'
+  if (/^\d{6}$/.test(c)) return '主板'
+  return raw
+})
+
+const industryTag = computed(() => String(quote.value?.industry || '').trim())
+
+function setView(next: StockView): void {
+  void router.replace({
+    path: route.path,
+    query: { ...route.query, view: next === 'quote' ? undefined : next },
+  })
+}
+
+const hasBatch = computed(() => batch.active)
+const canPrev = computed(() => hasBatch.value && batch.index >= 1)
+const canNext = computed(
+  () => hasBatch.value && batch.index >= 0 && batch.index < batch.total - 1,
+)
+const showDock = computed(() => hasBatch.value && batch.dockOpen && !narrow.value)
+
+function goBack(): void {
+  if (hasBatch.value && batch.session?.sourcePath) {
+    void router.push(batch.session.sourcePath)
+    return
+  }
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+  void router.push('/')
+}
+
+function goBatchStep(delta: number): void {
+  const nextCode = batch.step(delta)
+  if (!nextCode) return
+  void router.replace({
+    path: `/archive/${nextCode}`,
+    query: { ...route.query },
+  })
+}
+
+function selectBatchCode(nextCode: string): void {
+  if (!nextCode || nextCode === code.value) return
+  batch.goTo(nextCode)
+  void router.replace({
+    path: `/archive/${nextCode}`,
+    query: { ...route.query },
+  })
+}
+
+function toggleDock(): void {
+  if (narrow.value) {
+    drawerOpen.value = !drawerOpen.value
+    return
+  }
+  batch.toggleDock()
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  return target.isContentEditable
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (isTypingTarget(event.target)) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    goBack()
+    return
+  }
+  if (!hasBatch.value) return
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    goBatchStep(-1)
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    goBatchStep(1)
+  }
+}
+
+function updateNarrow(): void {
+  narrow.value = window.matchMedia('(max-width: 959px)').matches
 }
 
 function fmtDays(days: number | null | undefined): string {
@@ -49,66 +250,251 @@ function positionAvailable(): number {
   return p.available_shares ?? Math.max(0, p.shares - todayBuy)
 }
 
-function summary(event: TimelineEvent): string {
-  const detail = event.detail
-  if (event.type === 'trade') {
-    const pnl = detail.realized_pnl
-    const pnlText = typeof pnl === 'number' && pnl !== 0 ? ` 盈亏${pnl > 0 ? '+' : ''}${pnl}` : ''
-    return `${detail.shares ?? '-'}@${detail.price ?? '-'} 余${detail.shares_after ?? '-'} 成本${detail.cost_after ?? '-'}${pnlText}${detail.reason ? ` · ${String(detail.reason)}` : ''}`
-  }
-  if (event.type === 'candidate') {
-    return `${detail.score ?? '—'} ${detail.timing ?? ''} ${detail.reason ?? ''}`.trim()
-  }
-  if (event.type === 'review') {
-    const parts = [
-      detail.return_pct != null ? `收益${detail.return_pct}%` : '',
-      detail.lesson ? `训：${String(detail.lesson)}` : '',
-      detail.next_rule ? `规：${String(detail.next_rule)}` : '',
-    ].filter(Boolean)
-    return parts.join(' · ') || String(event.label)
-  }
-  return `${detail.scenario ?? ''}${detail.invalidation ? ` · 失效 ${String(detail.invalidation)}` : ''}`
+function extendHistory(): void {
+  const q = quote.value
+  const total = q?.total_rows ?? 0
+  const rows = q?.rows ?? 0
+  if (!total || rows >= total) return
+  quotesLimit.value = Math.min(total, Math.max(quotesLimit.value, rows) + 240)
 }
+
+function retryLedger(): void {
+  void store.loadRoute(route, true)
+}
+
+function retryQuotes(): void {
+  void refetch()
+}
+
+function barHasFocusDate(q: NonNullable<typeof quote.value>, d: string): boolean {
+  return q.bars.some((b) => String(b.trade_date || '').slice(0, 10) === d)
+}
+
+watch(
+  () => [view.value, code.value] as const,
+  ([v, c]) => {
+    if (!c) return
+    visited[v] = true
+    if (v !== 'quote') {
+      // 账本切片由 palace.loadRoute 按 view 拉取；此处只标记访问
+      return
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => code.value,
+  (c) => {
+    visited.quote = view.value === 'quote'
+    visited.trades = view.value === 'trades'
+    visited.candidates = view.value === 'candidates'
+    if (c) batch.syncCode(c)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [quote.value, focusDate.value] as const,
+  ([q, d]) => {
+    if (!q || !d || period.value !== 'day') return
+    if (barHasFocusDate(q, d)) return
+    extendHistory()
+  },
+)
+
+watch(
+  () => [adjust.value, period.value, quotesLimit.value] as const,
+  () => {
+    if (view.value === 'quote' && code.value) void refetch()
+  },
+)
+
+onMounted(() => {
+  updateNarrow()
+  window.addEventListener('resize', updateNarrow)
+  window.addEventListener('keydown', onKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateNarrow)
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
-  <PageHeader :title="stockName" :subtitle="`${code} · ${trades.length} 笔 · ${timeline.length} 事`">
-    <RouterLink to="/journal"><el-button>← 交割</el-button></RouterLink>
-    <el-button @click="tradeDialogOpen = true">写入成交</el-button>
-  </PageHeader>
+  <div class="page-fill stock-workbench" :class="{ 'stock-workbench--batch': hasBatch }">
+    <header class="sw-top">
+      <div class="sw-id-row">
+        <el-button v-if="!hasBatch" size="small" class="sw-back" @click="goBack">返回</el-button>
+        <div class="sw-id">
+          <strong class="sw-name">{{ stockName }}</strong>
+          <span class="mono sw-code">{{ code }}</span>
+          <template v-if="quote">
+            <span class="mono sw-last" :class="chgClass(detailPct)">{{ lastClose }}</span>
+            <span class="mono sw-pct" :class="chgClass(detailPct)">{{ fmtPct(detailPct) }}</span>
+          </template>
+        </div>
+        <div v-if="boardTag || industryTag" class="sw-tags" aria-label="板块与行业">
+          <el-tag v-if="boardTag" size="small" effect="plain" type="info">{{ boardTag }}</el-tag>
+          <el-tag v-if="industryTag" size="small" effect="plain">{{ industryTag }}</el-tag>
+        </div>
+        <ArchiveBatchRail
+          v-if="hasBatch"
+          :position-label="batch.positionLabel"
+          :source="batch.session?.source || '本批'"
+          :can-prev="canPrev"
+          :can-next="canNext"
+          :dock-open="narrow ? drawerOpen : batch.dockOpen"
+          @prev="goBatchStep(-1)"
+          @next="goBatchStep(1)"
+          @return-batch="goBack"
+          @toggle-dock="toggleDock"
+        />
+      </div>
 
-  <section v-if="position" class="stat-strip mini">
-    <StatCard label="当前仓" :value="position.shares.toLocaleString('zh-CN')" />
-    <StatCard label="可卖" :value="positionAvailable().toLocaleString('zh-CN')" />
-    <StatCard label="成本" :value="position.cost.toFixed(3)" />
-    <StatCard label="成本金额" :value="money(position.cost_value)" />
-    <StatCard label="天数" :value="fmtDays(position.holding_days)" />
-  </section>
+      <nav class="sw-rail" aria-label="个股视图">
+        <el-button
+          v-for="item in viewItems"
+          :key="item.name"
+          native-type="button"
+          class="sw-rail__tab"
+          :class="{ 'is-active': view === item.name }"
+          :aria-current="view === item.name ? 'page' : undefined"
+          @click="setView(item.name)"
+        >
+          <span class="sw-rail__label">{{ item.label }}</span>
+          <span
+            v-if="item.name !== 'quote' && tabBadge[item.name] != null"
+            class="sw-rail__count mono"
+          >{{ tabBadge[item.name] }}</span>
+        </el-button>
+      </nav>
+    </header>
 
-  <Sheet title="历史交割" :chip="trades.length" margin>
-    <TradesTable v-if="trades.length" :trades="trades" />
-    <EmptyState v-else description="无交割记录">
-      <el-button type="primary" @click="tradeDialogOpen = true">写入成交</el-button>
-    </EmptyState>
-  </Sheet>
+    <div class="sw-split">
+      <ArchiveBatchDock
+        v-if="showDock"
+        mode="dock"
+        :source="batch.session?.source || '本批'"
+        :items="batch.items"
+        :active-code="code"
+        @select="selectBatchCode"
+      />
+      <ArchiveBatchDock
+        v-if="hasBatch && narrow"
+        mode="drawer"
+        :drawer-open="drawerOpen"
+        :source="batch.session?.source || '本批'"
+        :items="batch.items"
+        :active-code="code"
+        @update:drawer-open="drawerOpen = $event"
+        @select="selectBatchCode"
+      />
+      <div class="sw-split__main">
+        <div v-if="visited.quote" v-show="view === 'quote'" class="sw-body sw-body--quote">
+          <el-alert
+            v-if="quoteErrorText"
+            :title="quoteErrorText"
+            type="error"
+            show-icon
+            :closable="false"
+          >
+            <el-button size="small" @click="retryQuotes">重试</el-button>
+          </el-alert>
+          <DataQueryDetailPanel
+            v-else
+            embedded
+            :detail-code="code"
+            :detail-name="stockName"
+            :quote="quote"
+            :busy="quoteBusy"
+            v-model:period="period"
+            v-model:indicator="indicator"
+            v-model:adjust="adjust"
+            :adjust-label="adjustLabel"
+            :last-close="lastClose"
+            :detail-pct="detailPct"
+            :focus-date="focusDate"
+            @adjust-change="refetch"
+            @need-history="extendHistory"
+          />
+        </div>
 
-  <Sheet title="事件时间线" chip="新→旧">
-    <ol v-if="timeline.length" class="timeline pad-list">
-      <li v-for="event in timeline" :key="event.id" class="timeline-item" :class="`event-${event.type}`">
-        <span class="timeline-dot" aria-hidden="true" />
-        <article class="timeline-card">
-          <div class="timeline-heading">
-            <span class="mono">{{ event.date }}</span>
-            <span class="tag">{{ typeLabel(event.type) }}</span>
-            <strong>{{ eventLabel(event) }}</strong>
-          </div>
-          <p class="reason">{{ summary(event) }}</p>
-          <div class="memory-foot mono dim">{{ event.id }} · {{ shortTime(event.created_at) }}</div>
-        </article>
-      </li>
-    </ol>
-    <EmptyState v-else description="无事件" :image-size="64" />
-  </Sheet>
+        <div
+          v-if="visited.trades"
+          v-show="view === 'trades'"
+          class="sw-body page-scroll sw-body--ledger sw-pane--busy"
+        >
+          <PageBusy overlay :busy="ledgerBusy" label="加载交割…" />
+          <el-alert
+            v-if="ledgerErrorText"
+            :title="ledgerErrorText"
+            type="error"
+            show-icon
+            :closable="false"
+          >
+            <el-button size="small" @click="retryLedger">重试</el-button>
+          </el-alert>
+          <template v-else>
+          <section v-if="position" class="sw-pos" aria-label="持仓摘要">
+            <div class="sw-pos__cell">
+              <span class="sw-pos__label">当前仓</span>
+              <strong class="mono">{{ position.shares.toLocaleString('zh-CN') }}</strong>
+            </div>
+            <div class="sw-pos__cell">
+              <span class="sw-pos__label">可卖</span>
+              <strong class="mono">{{ positionAvailable().toLocaleString('zh-CN') }}</strong>
+            </div>
+            <div class="sw-pos__cell">
+              <span class="sw-pos__label">成本</span>
+              <strong class="mono">{{ position.cost.toFixed(3) }}</strong>
+            </div>
+            <div class="sw-pos__cell">
+              <span class="sw-pos__label">成本金额</span>
+              <strong class="mono">{{ money(position.cost_value) }}</strong>
+            </div>
+            <div class="sw-pos__cell">
+              <span class="sw-pos__label">持有</span>
+              <strong class="mono">{{ fmtDays(position.holding_days) }}</strong>
+            </div>
+          </section>
 
-  <TradeDialog v-model="tradeDialogOpen" :preset-code="code" :preset-name="stockName" />
+          <Sheet title="交割明细" :chip="trades.length" margin>
+            <TradesTable v-if="trades.length" :trades="trades" />
+            <EmptyState v-else description="尚无交割记录" :image-size="56" />
+          </Sheet>
+
+          <Sheet title="成交时间线" :chip="tradeEvents.length">
+            <StockTimeline v-if="tradeEvents.length" mode="trade" :events="tradeEvents" />
+            <EmptyState v-else description="无成交事件" :image-size="48" />
+          </Sheet>
+          </template>
+        </div>
+
+        <div
+          v-if="visited.candidates"
+          v-show="view === 'candidates'"
+          class="sw-body page-scroll sw-body--ledger sw-pane--busy"
+        >
+          <PageBusy overlay :busy="ledgerBusy" label="加载候选…" />
+          <el-alert
+            v-if="ledgerErrorText"
+            :title="ledgerErrorText"
+            type="error"
+            show-icon
+            :closable="false"
+          >
+            <el-button size="small" @click="retryLedger">重试</el-button>
+          </el-alert>
+          <Sheet v-else title="候选记录" :chip="candidates.length">
+            <StockTimeline v-if="candidates.length" mode="candidate" :events="candidates" />
+            <EmptyState v-else description="该标的尚无候选记录。可在选股页入库后查看。" :image-size="56">
+              <el-button size="small" @click="router.push('/screen-history')">去选股</el-button>
+            </EmptyState>
+          </Sheet>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>

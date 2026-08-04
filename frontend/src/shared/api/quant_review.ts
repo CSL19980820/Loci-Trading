@@ -22,11 +22,28 @@ export function getRoundTrips(code?: string) {
   }>(`/review/trips${query({ code })}`)
 }
 
-export function getCandidateOutcomes(limit = 300) {
+export function getCandidateOutcomes(
+  limit = 300,
+  options: {
+    window_days?: number
+    selected_only?: boolean
+    as_of?: string
+    benchmark?: string
+  } = {},
+) {
   return quantRequest<{
     outcomes: CandidateOutcome[]
     summary: CandidateSummary
-  }>(`/review/candidates${query({ limit })}`)
+  }>(
+    `/review/candidates${query({
+      limit,
+      window_days: options.window_days,
+      selected_only:
+        options.selected_only === undefined ? undefined : options.selected_only ? 1 : 0,
+      as_of: options.as_of,
+      benchmark: options.benchmark,
+    })}`,
+  )
 }
 
 export function getPlanOutcomes() {

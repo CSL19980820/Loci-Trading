@@ -26,6 +26,7 @@ from src.ledger.infrastructure.store_types import (
     _dumps,
     _loads,
     _normalize_decision,
+    _normalize_rule_version,
     _now,
     normalize_code,
     normalize_date,
@@ -43,6 +44,7 @@ __all__ = [
     "_dumps",
     "_loads",
     "_normalize_decision",
+    "_normalize_rule_version",
     "_now",
 ]
 
@@ -84,11 +86,24 @@ class PalaceStore(
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Cursor]:
         cursor = self.conn.cursor()
+        nested = self.conn.in_transaction
+        savepoint = f"palace_tx_{id(cursor)}"
+        started = False
         try:
-            cursor.execute("BEGIN")
+            cursor.execute(f"SAVEPOINT {savepoint}" if nested else "BEGIN IMMEDIATE")
+            started = True
             yield cursor
-        except Exception:
-            self.conn.rollback()
+        except BaseException:
+            if started and nested:
+                cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                cursor.execute(f"RELEASE SAVEPOINT {savepoint}")
+            elif started:
+                self.conn.rollback()
             raise
         else:
-            self.conn.commit()
+            if nested:
+                cursor.execute(f"RELEASE SAVEPOINT {savepoint}")
+            else:
+                self.conn.commit()
+        finally:
+            cursor.close()

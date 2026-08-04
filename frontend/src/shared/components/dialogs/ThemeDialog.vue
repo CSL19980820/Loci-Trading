@@ -17,10 +17,9 @@ const store = useThemeStore()
     <section class="theme-block">
       <h3>外观</h3>
       <div class="swatch-row">
-        <button
+        <el-button
           v-for="item in store.appearances"
           :key="item.id"
-          type="button"
           class="swatch"
           :class="{ 'swatch--on': store.appearanceId === item.id }"
           :style="{ '--sw': item.swatch }"
@@ -28,16 +27,15 @@ const store = useThemeStore()
         >
           <span class="swatch__chip" />
           {{ item.label }}
-        </button>
+        </el-button>
       </div>
     </section>
     <section class="theme-block">
       <h3>主色</h3>
       <div class="swatch-row">
-        <button
+        <el-button
           v-for="item in store.primaries"
           :key="item.id"
-          type="button"
           class="swatch"
           :class="{ 'swatch--on': store.primaryId === item.id }"
           :style="{ '--sw': item.color }"
@@ -45,7 +43,7 @@ const store = useThemeStore()
         >
           <span class="swatch__chip" />
           {{ item.label }}
-        </button>
+        </el-button>
       </div>
     </section>
   </el-dialog>
@@ -66,26 +64,29 @@ const store = useThemeStore()
   flex-wrap: wrap;
   gap: 0.45rem;
 }
-.swatch {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: 1px solid var(--rule);
-  background: var(--sheet);
-  color: var(--ink);
-  border-radius: var(--radius);
+.swatch.el-button {
+  --el-button-bg-color: var(--sheet);
+  --el-button-border-color: var(--rule);
+  --el-button-text-color: var(--ink);
+  --el-button-hover-bg-color: var(--sheet);
+  --el-button-hover-border-color: var(--seal);
+  --el-button-hover-text-color: var(--ink);
+  --el-button-active-bg-color: var(--sheet);
+  --el-button-active-border-color: var(--seal);
+  height: auto;
   padding: 0.35rem 0.55rem;
-  font: inherit;
   font-size: 0.82rem;
-  cursor: pointer;
+  font-weight: 500;
 }
-.swatch--on {
-  border-color: var(--seal);
+.swatch--on.el-button {
+  --el-button-border-color: var(--seal);
+  --el-button-hover-border-color: var(--seal);
   box-shadow: 0 0 0 1px var(--seal);
 }
 .swatch__chip {
   width: 0.85rem;
   height: 0.85rem;
+  margin-right: 0.4rem;
   border-radius: 999px;
   background: var(--sw);
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);

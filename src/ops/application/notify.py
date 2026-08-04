@@ -2,6 +2,9 @@
 
 只走 webhook，不接企业自建应用。推送失败由调用方决定是否吞掉——
 定时任务里推送不应拖垮主任务。
+
+企微出站**只发 text**（msgtype=text），不用 markdown。
+选股正文模板见 ``notify_screen_template``，可在系统推送联配置。
 """
 from __future__ import annotations
 
@@ -11,10 +14,38 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from src.ops.application.notify_screen_template import (
+    format_pct,
+    format_screen_picks_text,
+    load_screen_template,
+    normalize_screen_template,
+    preview_screen_template,
+    resolve_kind_tag,
+)
+
 logger = logging.getLogger(__name__)
 
 WECOM_WEBHOOK_PREFIX = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
-MAX_MARKDOWN_CHARS = 3500
+MAX_TEXT_CHARS = 2000
+
+__all__ = [
+    "NotifyError",
+    "format_alerts",
+    "format_digest",
+    "format_job_status",
+    "format_pct",
+    "format_screen_picks_text",
+    "format_screen_result",
+    "format_sync_report",
+    "load_screen_template",
+    "mask_wecom_webhook",
+    "normalize_screen_template",
+    "preview_screen_template",
+    "resolve_kind_tag",
+    "send_wecom_markdown",
+    "send_wecom_text",
+    "validate_wecom_webhook",
+]
 
 
 class NotifyError(RuntimeError):
@@ -45,22 +76,19 @@ def mask_wecom_webhook(url: str) -> str:
     return WECOM_WEBHOOK_PREFIX + "****" + key[-4:]
 
 
-def send_wecom_markdown(webhook_url: str, content: str) -> dict[str, Any]:
-    url = validate_wecom_webhook(webhook_url)
-    body = json.dumps(
-        {"msgtype": "markdown", "markdown": {"content": _clip(content)}},
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return _post(url, body)
-
-
 def send_wecom_text(webhook_url: str, content: str) -> dict[str, Any]:
+    """企微唯一出站通道：text。"""
     url = validate_wecom_webhook(webhook_url)
     body = json.dumps(
-        {"msgtype": "text", "text": {"content": _clip(content, 2000)}},
+        {"msgtype": "text", "text": {"content": _clip(content, MAX_TEXT_CHARS)}},
         ensure_ascii=False,
     ).encode("utf-8")
     return _post(url, body)
+
+
+def send_wecom_markdown(webhook_url: str, content: str) -> dict[str, Any]:
+    """兼容旧调用：内部仍转 text，避免误发 markdown。"""
+    return send_wecom_text(webhook_url, content)
 
 
 def _post(url: str, body: bytes) -> dict[str, Any]:
@@ -87,14 +115,21 @@ def _post(url: str, body: bytes) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {"ok": True}
 
 
-def _clip(text: str, limit: int = MAX_MARKDOWN_CHARS) -> str:
+def _clip(text: str, limit: int = MAX_TEXT_CHARS) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
         return text
     return text[: limit - 12] + "\n…(已截断)"
 
 
-# ---- 模板 -------------------------------------------------------------
+# ---- 其它推送模板 -----------------------------------------------------
+
+def format_screen_result(
+    result: dict[str, Any], *, template: dict[str, Any] | None = None
+) -> str:
+    """兼容旧名：默认按量化选股 text 模板。"""
+    return format_screen_picks_text(result, kind_tag="量化", template=template)
+
 
 def format_alerts(alerts: list[dict[str, Any]]) -> str:
     from src.review.application.alerts import ACTIONABLE_STATUSES
@@ -103,8 +138,8 @@ def format_alerts(alerts: list[dict[str, Any]]) -> str:
         item for item in alerts if str(item.get("status") or "") in ACTIONABLE_STATUSES
     ]
     if not actionable:
-        return "### 触价提醒\n今日暂无止损/目标触价。"
-    lines = [f"### 触价提醒（{len(actionable)}）"]
+        return "【触价提醒】\n今日暂无止损/目标触价。"
+    lines = [f"【触价提醒】共 {len(actionable)} 条"]
     labels = {
         "stop_hit": "触及止损",
         "target_hit": "触及目标",
@@ -118,7 +153,7 @@ def format_alerts(alerts: list[dict[str, Any]]) -> str:
         close = item.get("last_close")
         note = item.get("note") or ""
         close_text = f" 收盘 {close}" if close is not None else ""
-        lines.append(f"- **{name}** `{code}` · {status}{close_text}")
+        lines.append(f"{name} {code} · {status}{close_text}")
         if note:
             lines.append(f"  {note}")
     if len(actionable) > 12:
@@ -126,40 +161,19 @@ def format_alerts(alerts: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def format_screen_result(result: dict[str, Any]) -> str:
-    strategy = result.get("strategy") or "选股"
-    trade_date = result.get("trade_date") or ""
-    picks = result.get("picks") or []
-    lines = [f"### 选股结果 · {strategy}", f"日期 {trade_date} · 入选 {len(picks)}"]
-    reason = result.get("ai_reason") or result.get("reason")
-    if reason:
-        lines.append(f"> {reason}")
-    for pick in picks[:15]:
-        if not isinstance(pick, dict):
-            continue
-        name = pick.get("name") or ""
-        code = pick.get("code") or ""
-        score = pick.get("score")
-        score_text = f" · 分 {score}" if score is not None else ""
-        lines.append(f"- **{name or code}** `{code}`{score_text}")
-    if len(picks) > 15:
-        lines.append(f"…另有 {len(picks) - 15} 只")
-    return "\n".join(lines)
-
-
 def format_sync_report(result: dict[str, Any], *, job_name: str = "行情同步") -> str:
     failed = int(result.get("failed") or 0)
     lines = [
-        f"### {job_name}",
+        f"【{job_name}】",
         (
             f"成功 {result.get('succeeded', 0)} · 跳过 {result.get('skipped', 0)} · "
-            f"失败 **{failed}** · 写入 {result.get('rows_written', 0)} 行"
+            f"失败 {failed} · 写入 {result.get('rows_written', 0)} 行"
             f"（含当日 {result.get('spot_rows', 0)}）"
         ),
     ]
     failures = result.get("failures") or []
     for item in failures[:8]:
-        lines.append(f"- `{item}`" if not isinstance(item, dict) else f"- {item}")
+        lines.append(f"- {item}" if not isinstance(item, dict) else f"- {item}")
     return "\n".join(lines)
 
 
@@ -184,12 +198,12 @@ def format_digest(dashboard: dict[str, Any]) -> str:
         return f"{sign}{number:,.2f}"
 
     lines = [
-        "### 日终简报",
+        "【日终简报】",
         f"截至 {as_of}",
-        f"- 累计已实现 {money(realized)} · 当日 {money(today)}",
-        f"- 总资产 {money(assets)} · 持仓 {len(positions)} 只",
+        f"累计已实现 {money(realized)} · 当日 {money(today)}",
+        f"总资产 {money(assets)} · 持仓 {len(positions)} 只",
         (
-            f"- 候选精选 {summary.get('selected', '—')} · "
+            f"候选精选 {summary.get('selected', '—')} · "
             f"观察 {summary.get('watch', '—')} · 今日列表 {len(candidates)}"
         ),
     ]
@@ -197,7 +211,7 @@ def format_digest(dashboard: dict[str, Any]) -> str:
         if not isinstance(pos, dict):
             continue
         lines.append(
-            f"- {pos.get('name') or pos.get('code')} `{pos.get('code')}` "
+            f"{pos.get('name') or pos.get('code')} {pos.get('code')} "
             f"{pos.get('shares')} 股 @ {pos.get('cost')}"
         )
     return "\n".join(lines)
@@ -210,15 +224,87 @@ def format_job_status(
     status: str,
     error: str = "",
     result: dict[str, Any] | None = None,
+    template: dict[str, Any] | None = None,
 ) -> str:
     icon = "✓" if status == "success" else "✗"
-    lines = [f"### 任务{icon} {job_name}", f"类型 `{kind}` · 状态 **{status}**"]
+    kind_labels = {
+        "sync": "同步",
+        "screen": "选股",
+        "skill": "技能",
+        "notify": "推送",
+        "outcome": "跟踪",
+        "backtest": "回测",
+        "compare": "对比",
+        "optimize": "优化",
+        "prune": "清理",
+    }
+    status_labels = {
+        "success": "成功",
+        "failed": "失败",
+        "running": "运行中",
+        "skipped": "已跳过",
+    }
+    display_name = _display_job_name(job_name, kind)
+    lines = [
+        f"【任务{icon} {display_name}】",
+        f"类型 {kind_labels.get(kind, kind)} · 状态 {status_labels.get(status, status)}",
+    ]
     if error:
-        lines.append(f"> {error[:200]}")
+        lines.append(error[:200])
+    tpl = template
     if status == "success" and kind == "screen" and isinstance(result, dict):
-        return format_screen_result(result)
+        return format_screen_picks_text(
+            result,
+            kind_tag=resolve_kind_tag("quant", tpl),
+            title=_title_from_result(result, job_name),
+            template=tpl,
+        )
+    if status == "success" and kind == "skill" and isinstance(result, dict) and result.get("picks"):
+        return format_screen_picks_text(
+            result,
+            kind_tag=resolve_kind_tag("skills", tpl),
+            title=_title_from_result(result, job_name),
+            template=tpl,
+        )
     if status == "failed" and kind == "sync" and isinstance(result, dict):
         return format_sync_report(result, job_name=job_name)
     if status == "failed" and kind == "sync":
         lines.append("行情同步失败，请到运维「执行历史」查看详情。")
     return "\n".join(lines)
+
+
+def _display_job_name(job_name: str, kind: str) -> str:
+    """失败/空结果通知也不把内部任务 slug 直接发给用户。"""
+    raw = str(job_name or "").strip()
+    for prefix in ("screen:", "skill:"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix) :]
+            break
+    builtin_names = {
+        "qianlong-close-v3": "潜龙出海（V3）",
+        "qianlong-tail-v1": "潜龙尾盘（V1）",
+        "rsi30-dip": "RSI22 次日低吸",
+        "sanyuan-tail-v1": "三源尾盘共振",
+        "lugw-haidi": "海底捞月",
+    }
+    if raw in builtin_names:
+        return builtin_names[raw]
+    if kind == "screen":
+        return "选股"
+    if kind == "skill":
+        return "技能"
+    return raw or "任务"
+
+
+def _title_from_result(result: dict[str, Any], fallback: str) -> str:
+    raw = (
+        result.get("skill_name")
+        or result.get("strategy")
+        or result.get("skill")
+        or fallback
+        or "选股"
+    )
+    name = str(raw).strip()
+    if name.startswith("screen:"):
+        name = name[len("screen:") :]
+    return name

@@ -6,8 +6,10 @@ from typing import Any
 from uuid import uuid4
 
 from src.ledger.infrastructure.store_types import (
+    DEFAULT_RULE_VERSION,
     PalaceError,
     _loads,
+    _normalize_rule_version,
     _now,
     normalize_code,
     normalize_date,
@@ -27,7 +29,7 @@ class PlanReviewMixin:
         target_price: float | None = None,
         layers: float | None = None,
         invalidation: str = "",
-        rule_version: str = "qianlong-v1",
+        rule_version: str = DEFAULT_RULE_VERSION,
         source: str = "manual",
         supersedes_id: str | None = None,
         note: str = "",
@@ -49,7 +51,7 @@ class PlanReviewMixin:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (plan_id, normalize_date(occurred_on), code, title.strip(), scenario.strip(), entry_zone.strip(), stop_price,
-                 target_price, layers, invalidation.strip(), rule_version.strip() or "qianlong-v1", source.strip() or "manual",
+                 target_price, layers, invalidation.strip(), _normalize_rule_version(rule_version), source.strip() or "manual",
                  supersedes_id, note.strip(), _now()),
             )
         return plan_id
@@ -121,11 +123,11 @@ class PlanReviewMixin:
         ]
 
     def timeline_payload(self, code: str) -> list[dict[str, Any]]:
-        """提供单票事件流，保留原始 ID 供复盘对象精确关联。"""
+        """提供单票事件流，保留原始 ID 供复盘对象精确关联。
+
+        未入账本的代码（仅从行情点进来）返回空列表，不抛错——行情/档案工作台需要可打开。
+        """
         code = normalize_code(code)
-        exists = self.conn.execute("SELECT 1 FROM stocks WHERE code = ?", (code,)).fetchone()
-        if exists is None:
-            raise PalaceError(f"账本中不存在 {code}")
         position_events = self.conn.execute(
             """
             SELECT id, occurred_on, created_at, action, shares, price, shares_before, shares_after,
@@ -264,8 +266,7 @@ class PlanReviewMixin:
     def timeline_markdown(self, code: str) -> str:
         code = normalize_code(code)
         stock = self.conn.execute("SELECT name FROM stocks WHERE code = ?", (code,)).fetchone()
-        if stock is None:
-            raise PalaceError(f"账本中不存在 {code}")
+        title_name = str(stock["name"]) if stock is not None else code
         rows = self.conn.execute(
             """
             SELECT occurred_on AS event_date, created_at, '仓位事件' AS category, id,
@@ -287,7 +288,7 @@ class PlanReviewMixin:
             """,
             (code, code, code),
         ).fetchall()
-        lines = [f"# {stock['name']}（{code}）追溯时间线", "", "| 日期 | 类型 | ID | 事实/预案 |", "|---|---|---|---|"]
+        lines = [f"# {title_name}（{code}）追溯时间线", "", "| 日期 | 类型 | ID | 事实/预案 |", "|---|---|---|---|"]
         lines.extend(f"| {row['event_date']} | {row['category']} | {row['id']} | {row['detail']} |" for row in rows)
         if not rows:
             lines.append("| - | - | - | 尚无记录 |")

@@ -17,6 +17,17 @@ class MarketRwMixin:
     conn: sqlite3.Connection
     db_path: Any
 
+    @staticmethod
+    def _bump_revisions(cursor: sqlite3.Cursor, *scopes: str) -> None:
+        keys = ("market_revision", *(f"{scope}_revision" for scope in scopes))
+        for key in keys:
+            cursor.execute(
+                "INSERT INTO meta(key, value, updated_at) VALUES(?, '1', datetime('now'))"
+                " ON CONFLICT(key) DO UPDATE SET value = CAST(meta.value AS INTEGER) + 1,"
+                " updated_at = excluded.updated_at",
+                (key,),
+            )
+
     def upsert_instruments(self, rows: Iterable[dict[str, Any]]) -> int:
         payload = [
             (
@@ -24,6 +35,7 @@ class MarketRwMixin:
                 str(row.get("name", "")),
                 str(row.get("market", "")),
                 str(row.get("board", "")),
+                str(row.get("industry", "")),
                 str(row.get("instrument_type", "STOCK")),
                 str(row.get("list_date", "")),
                 str(row.get("delist_date", "")),
@@ -36,11 +48,13 @@ class MarketRwMixin:
         with self._transaction() as cursor:
             cursor.executemany(
                 """
-                INSERT INTO instruments(code, name, market, board, instrument_type,
+                INSERT INTO instruments(code, name, market, board, industry, instrument_type,
                                         list_date, delist_date, status, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 ON CONFLICT(code) DO UPDATE SET
                     name=excluded.name, market=excluded.market, board=excluded.board,
+                    industry=CASE WHEN excluded.industry <> '' THEN excluded.industry
+                                  ELSE instruments.industry END,
                     instrument_type=excluded.instrument_type,
                     list_date=CASE WHEN excluded.list_date <> '' THEN excluded.list_date
                                    ELSE instruments.list_date END,
@@ -49,6 +63,7 @@ class MarketRwMixin:
                 """,
                 payload,
             )
+            self._bump_revisions(cursor, "instruments")
         return len(payload)
 
     def upsert_quotes(self, code: str, frame: pd.DataFrame, *, source: str = "") -> int:
@@ -59,8 +74,62 @@ class MarketRwMixin:
         prepared = self._prepare_quote_frame(frame)
         payload = [
             (
-                row.trade_date,
-                code,
+                row.trade_date, code, row.open, row.high, row.low, row.close,
+                row.volume, row.amount, row.outstanding_share, row.turnover, source,
+            )
+            for row in prepared.itertuples(index=False)
+        ]
+        return self._write_quote_payload(payload)
+
+    def upsert_quote_bars(
+        self,
+        bars: Iterable[dict[str, Any]],
+        *,
+        source: str = "",
+    ) -> int:
+        """批量写入多只证券日 K（单事务）。每条需含 code 与 date/OHLCV。
+
+        全市场 spot 约五千行：必须一次 DataFrame 归一，禁止逐票建表（会慢到
+        中途覆盖率只剩个位数）。去重键是 (code, trade_date)。
+        """
+        records: list[dict[str, Any]] = []
+        for raw in bars:
+            try:
+                code = normalize_code(str(raw.get("code") or ""))
+            except MarketError:
+                continue
+            trade_date = raw.get("date") if raw.get("date") is not None else raw.get("trade_date")
+            if trade_date is None or trade_date == "":
+                continue
+            records.append(
+                {
+                    "code": code,
+                    "trade_date": trade_date,
+                    "open": raw.get("open"),
+                    "high": raw.get("high"),
+                    "low": raw.get("low"),
+                    "close": raw.get("close"),
+                    "volume": raw.get("volume"),
+                    "amount": raw.get("amount"),
+                    "outstanding_share": raw.get("outstanding_share"),
+                    "turnover": raw.get("turnover"),
+                }
+            )
+        if not records:
+            return 0
+        frame = pd.DataFrame(records)
+        frame["trade_date"] = pd.to_datetime(frame["trade_date"]).dt.strftime("%Y-%m-%d")
+        for column in PANEL_FIELDS:
+            if column not in frame.columns:
+                frame[column] = None
+        frame = frame[["code", "trade_date", *PANEL_FIELDS]].drop_duplicates(
+            subset=["code", "trade_date"], keep="last"
+        )
+        frame = frame.astype(object).where(pd.notna(frame), None)
+        payload = [
+            (
+                str(row.trade_date),
+                str(row.code),
                 row.open,
                 row.high,
                 row.low,
@@ -71,8 +140,13 @@ class MarketRwMixin:
                 row.turnover,
                 source,
             )
-            for row in prepared.itertuples(index=False)
+            for row in frame.itertuples(index=False)
         ]
+        return self._write_quote_payload(payload)
+
+    def _write_quote_payload(self, payload: list[tuple[Any, ...]]) -> int:
+        if not payload:
+            return 0
         with self._transaction() as cursor:
             cursor.executemany(
                 """
@@ -83,17 +157,56 @@ class MarketRwMixin:
                 ON CONFLICT(trade_date, code) DO UPDATE SET
                     open=excluded.open, high=excluded.high, low=excluded.low,
                     close=excluded.close, volume=excluded.volume, amount=excluded.amount,
-                    outstanding_share=excluded.outstanding_share,
-                    turnover=excluded.turnover, source=excluded.source,
+                    -- spot / 无股本源常带 NULL；禁止用空值抹掉已有换手与股本。
+                    outstanding_share=COALESCE(
+                        excluded.outstanding_share, quotes_daily.outstanding_share
+                    ),
+                    turnover=COALESCE(excluded.turnover, quotes_daily.turnover),
+                    source=excluded.source,
                     fetched_at=excluded.fetched_at
                 """,
                 payload,
             )
-            # 同一事务内维护日历，保证两张表不会出现"行情写进去了但日历没更新"。
             cursor.executemany(
                 "INSERT INTO trading_calendar(trade_date, updated_at)"
                 " VALUES(?, datetime('now')) ON CONFLICT(trade_date) DO NOTHING",
                 [(row[0],) for row in payload],
+            )
+            cursor.execute("DELETE FROM meta WHERE key = 'quotes_daily_rows_v1'")
+            self._bump_revisions(cursor, "quotes")
+        return len(payload)
+
+    def set_watermarks(
+        self,
+        rows: Iterable[tuple[str, str]],
+        *,
+        status: str = "ok",
+        source: str = "",
+        message: str = "",
+    ) -> int:
+        """批量更新 ingest_watermark（code, last_trade_date）。"""
+        payload = [
+            (normalize_code(code), trade_date, status, message[:500], source)
+            for code, trade_date in rows
+            if code and trade_date
+        ]
+        if not payload:
+            return 0
+        with self._transaction() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO ingest_watermark(code, last_trade_date, last_synced_at,
+                                             status, message, source)
+                VALUES(?, ?, datetime('now'), ?, ?, ?)
+                ON CONFLICT(code) DO UPDATE SET
+                    last_trade_date=CASE WHEN excluded.last_trade_date <> ''
+                                         THEN excluded.last_trade_date
+                                         ELSE ingest_watermark.last_trade_date END,
+                    last_synced_at=excluded.last_synced_at,
+                    status=excluded.status, message=excluded.message,
+                    source=excluded.source
+                """,
+                payload,
             )
         return len(payload)
 
@@ -153,6 +266,7 @@ class MarketRwMixin:
                 """,
                 payload,
             )
+            self._bump_revisions(cursor, "adjust_factors")
         return len(payload)
 
     def set_watermark(
@@ -200,40 +314,9 @@ class MarketRwMixin:
         sql += " ORDER BY code"
         return [dict(row) for row in self.conn.execute(sql, params)]
 
-    def page_instruments(
-        self,
-        *,
-        q: str = "",
-        instrument_type: str | None = "STOCK",
-        status: str = "normal",
-        offset: int = 0,
-        limit: int = 50,
-    ) -> tuple[int, list[dict[str, Any]]]:
-        """分页列出证券，供行情台列表。q 同时匹配代码与名称。"""
-        where = ["1=1"]
-        params: list[Any] = []
-        if instrument_type:
-            where.append("instrument_type = ?")
-            params.append(instrument_type)
-        if status:
-            where.append("status = ?")
-            params.append(status)
-        needle = q.strip()
-        if needle:
-            where.append("(code LIKE ? OR name LIKE ?)")
-            like = f"%{needle}%"
-            params.extend([like, like])
-        clause = " AND ".join(where)
-        total = int(
-            self.conn.execute(
-                f"SELECT COUNT(*) FROM instruments WHERE {clause}", params
-            ).fetchone()[0]
-        )
-        rows = self.conn.execute(
-            f"SELECT * FROM instruments WHERE {clause} ORDER BY code LIMIT ? OFFSET ?",
-            [*params, max(1, int(limit)), max(0, int(offset))],
-        ).fetchall()
-        return total, [dict(row) for row in rows]
+    #: 列表取最近两根日线时，先只扫日历近窗（走 code+date 索引），避免
+    #: 对每只票做全历史窗口函数（千万行库上可达数秒）。
+    _LATEST_BARS_LOOKBACK_DAYS = 20
 
     def latest_bars(self, codes: Sequence[str]) -> dict[str, dict[str, Any]]:
         """批量取每只证券最近两根日线，拼出现价/昨收（不复权）。"""
@@ -245,62 +328,195 @@ class MarketRwMixin:
                 continue
         if not normalized:
             return {}
-        placeholders = ",".join("?" * len(normalized))
-        sql = f"""
-            WITH ranked AS (
-                SELECT code, trade_date, open, high, low, close, volume, amount,
-                       ROW_NUMBER() OVER (PARTITION BY code ORDER BY trade_date DESC) AS rn
-                FROM quotes_daily
-                WHERE code IN ({placeholders})
+
+        days = [
+            str(row[0])
+            for row in self.conn.execute(
+                "SELECT trade_date FROM trading_calendar"
+                " ORDER BY trade_date DESC LIMIT ?",
+                (self._LATEST_BARS_LOOKBACK_DAYS,),
             )
-            SELECT a.code, a.trade_date, a.open, a.high, a.low, a.close,
-                   a.volume, a.amount, b.close AS prev_close
-            FROM ranked a
-            LEFT JOIN ranked b ON a.code = b.code AND b.rn = 2
-            WHERE a.rn = 1
-        """
+        ]
         out: dict[str, dict[str, Any]] = {}
-        for row in self.conn.execute(sql, normalized):
-            close = float(row["close"] or 0)
-            prev = float(row["prev_close"] or 0) if row["prev_close"] is not None else None
-            pct = None
-            change = None
-            if prev and prev > 0 and close > 0:
-                change = round(close - prev, 3)
-                pct = round(change / prev * 100, 2)
-            out[str(row["code"])] = {
-                "code": str(row["code"]),
-                "trade_date": str(row["trade_date"] or ""),
-                "open": row["open"],
-                "high": row["high"],
-                "low": row["low"],
-                "close": row["close"],
-                "volume": row["volume"],
-                "amount": row["amount"],
-                "prev_close": prev,
-                "change": change,
-                "pct": pct,
-            }
+        if days:
+            out.update(self._latest_bars_from_window(normalized, days))
+        missing = [code for code in normalized if code not in out]
+        if missing:
+            out.update(self._latest_bars_by_max(missing))
         return out
 
-    def coverage(self) -> dict[str, Any]:
-        """仓库现状概览，供健康检查与前端"数据新鲜度"展示。"""
-        row = self.conn.execute(
-            "SELECT COUNT(*) AS rows, COUNT(DISTINCT code) AS codes,"
-            " MIN(trade_date) AS first_date, MAX(trade_date) AS last_date FROM quotes_daily"
-        ).fetchone()
-        failed = self.conn.execute(
-            "SELECT COUNT(*) FROM ingest_watermark WHERE status <> 'ok'"
-        ).fetchone()[0]
+    def _latest_bars_from_window(
+        self, codes: Sequence[str], days: Sequence[str]
+    ) -> dict[str, dict[str, Any]]:
+        """日历近窗内按 code 取最近两根（ORDER BY date DESC，Python 侧截断）。"""
+        code_ph = ",".join("?" * len(codes))
+        day_ph = ",".join("?" * len(days))
+        sql = f"""
+            SELECT code, trade_date, open, high, low, close, volume, amount, turnover
+            FROM quotes_daily
+            WHERE code IN ({code_ph}) AND trade_date IN ({day_ph})
+            ORDER BY code ASC, trade_date DESC
+        """
+        buckets: dict[str, list[sqlite3.Row]] = {}
+        for row in self.conn.execute(sql, [*codes, *days]):
+            code = str(row["code"])
+            bucket = buckets.setdefault(code, [])
+            if len(bucket) < 2:
+                bucket.append(row)
         return {
-            "rows": int(row["rows"] or 0),
-            "codes": int(row["codes"] or 0),
-            "first_date": row["first_date"] or "",
-            "last_date": row["last_date"] or "",
-            "failed_codes": int(failed),
+            code: self._bar_payload(bars[0], bars[1] if len(bars) > 1 else None)
+            for code, bars in buckets.items()
+        }
+
+    def _latest_bars_by_max(self, codes: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """无日历近窗命中时的回退：MAX(trade_date) 联表（仍远快于全历史窗口函数）。"""
+        placeholders = ",".join("?" * len(codes))
+        sql = f"""
+            WITH last_dates AS (
+                SELECT code, MAX(trade_date) AS trade_date
+                FROM quotes_daily
+                WHERE code IN ({placeholders})
+                GROUP BY code
+            ),
+            prev_dates AS (
+                SELECT q.code, MAX(q.trade_date) AS trade_date
+                FROM quotes_daily q
+                INNER JOIN last_dates d
+                    ON q.code = d.code AND q.trade_date < d.trade_date
+                WHERE q.code IN ({placeholders})
+                GROUP BY q.code
+            )
+            SELECT a.code, a.trade_date, a.open, a.high, a.low, a.close,
+                   a.volume, a.amount, a.turnover, b.close AS prev_close
+            FROM quotes_daily a
+            INNER JOIN last_dates d ON a.code = d.code AND a.trade_date = d.trade_date
+            LEFT JOIN quotes_daily b
+                ON b.code = a.code
+               AND b.trade_date = (
+                    SELECT p.trade_date FROM prev_dates p WHERE p.code = a.code
+               )
+        """
+        out: dict[str, dict[str, Any]] = {}
+        for row in self.conn.execute(sql, [*codes, *codes]):
+            prev = float(row["prev_close"] or 0) if row["prev_close"] is not None else None
+            out[str(row["code"])] = self._bar_payload(row, prev_close=prev)
+        return out
+
+    @staticmethod
+    def _bar_payload(
+        latest: sqlite3.Row,
+        prev: sqlite3.Row | None = None,
+        *,
+        prev_close: float | None = None,
+    ) -> dict[str, Any]:
+        close = float(latest["close"] or 0)
+        if prev_close is None and prev is not None and prev["close"] is not None:
+            prev_close = float(prev["close"] or 0)
+        pct = None
+        change = None
+        if prev_close and prev_close > 0 and close > 0:
+            change = round(close - prev_close, 3)
+            pct = round(change / prev_close * 100, 2)
+        turnover = None
+        keys = latest.keys()
+        if "turnover" in keys and latest["turnover"] is not None:
+            turnover = float(latest["turnover"])
+        return {
+            "code": str(latest["code"]),
+            "trade_date": str(latest["trade_date"] or ""),
+            "open": latest["open"],
+            "high": latest["high"],
+            "low": latest["low"],
+            "close": latest["close"],
+            "volume": latest["volume"],
+            "amount": latest["amount"],
+            "turnover": turnover,
+            "prev_close": prev_close,
+            "change": change,
+            "pct": pct,
+        }
+
+    def coverage(self) -> dict[str, Any]:
+        """仓库现状概览，供健康检查与前端"数据新鲜度"展示。
+
+        日期走 trading_calendar、证券数走 instruments，避免对 quotes_daily
+        做全表 COUNT（千万行库上可达数秒）。行数用 meta 缓存，并绑定日历末日
+        与行情 revision；行情内容变化时会重算。
+        """
+        cal = self.conn.execute(
+            "SELECT MIN(trade_date) AS first_date, MAX(trade_date) AS last_date"
+            " FROM trading_calendar"
+        ).fetchone()
+        first_date = str(cal["first_date"] or "") if cal else ""
+        last_date = str(cal["last_date"] or "") if cal else ""
+        if not last_date:
+            # 老库尚未建日历：回退扫 quotes（慢，但只在异常路径）。
+            row = self.conn.execute(
+                "SELECT COUNT(*) AS rows, COUNT(DISTINCT code) AS codes,"
+                " MIN(trade_date) AS first_date, MAX(trade_date) AS last_date"
+                " FROM quotes_daily"
+            ).fetchone()
+            failed = self.conn.execute(
+                "SELECT COUNT(*) FROM ingest_watermark WHERE status <> 'ok'"
+            ).fetchone()[0]
+            return {
+                "rows": int(row["rows"] or 0),
+                "codes": int(row["codes"] or 0),
+                "first_date": row["first_date"] or "",
+                "last_date": row["last_date"] or "",
+                "failed_codes": int(failed),
+                "db_path": str(self.db_path),
+                "db_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
+            }
+
+        codes = int(self.conn.execute("SELECT COUNT(*) FROM instruments").fetchone()[0])
+        failed = int(
+            self.conn.execute(
+                "SELECT COUNT(*) FROM ingest_watermark WHERE status <> 'ok'"
+            ).fetchone()[0]
+        )
+        rows = self._cached_quote_row_count(last_date)
+        return {
+            "rows": rows,
+            "codes": codes,
+            "first_date": first_date,
+            "last_date": last_date,
+            "failed_codes": failed,
             "db_path": str(self.db_path),
             "db_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
         }
+
+    def _cached_quote_row_count(self, last_date: str) -> int:
+        """quotes_daily 行数：按日历末日与行情 revision 缓存，避免每次全表 COUNT。"""
+        revision_row = self.conn.execute(
+            "SELECT value FROM meta WHERE key = 'quotes_revision'"
+        ).fetchone()
+        revision = str(revision_row[0] if revision_row else "0")
+        cached = self.conn.execute(
+            "SELECT value FROM meta WHERE key = 'quotes_daily_rows_v1'"
+        ).fetchone()
+        if cached and cached[0]:
+            raw = str(cached[0])
+            parts = raw.split("|")
+            if len(parts) == 3:
+                stamp, cached_revision, count_s = parts
+                if stamp == last_date and cached_revision == revision:
+                    try:
+                        return int(count_s)
+                    except ValueError:
+                        pass
+        count = int(self.conn.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0])
+        with self._transaction() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO meta(key, value, updated_at)
+                VALUES('quotes_daily_rows_v1', ?, datetime('now'))
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value, updated_at = excluded.updated_at
+                """,
+                (f"{last_date}|{revision}|{count}",),
+            )
+        return count
 
     def trading_days(self, start: str | None = None, end: str | None = None) -> list[str]:
         """交易日列表。走日历小表，不扫 quotes_daily。"""

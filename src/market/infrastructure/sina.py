@@ -25,6 +25,7 @@ V8 isolate 来跑解密 JS。多线程并发下 V8 的地址空间初始化会�
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 import json
 import logging
 import threading
@@ -47,6 +48,12 @@ FACTOR_URL = "https://finance.sina.com.cn/realstock/company/{}/{}.js"
 #: 当日 OHLC 要从这里补——字段：开/昨收/现/高/低/.../量/额/.../日期/时间。
 SPOT_URL = "https://hq.sinajs.cn/list={}"
 SPOT_BATCH_SIZE = 400
+#: 分钟 K（JSONP）；``scale`` 为 1/5/15/30/60，``datalen`` 上限约 1970。
+MINUTE_URL = (
+    "https://quotes.sina.cn/cn/api/jsonp_v2.php/=/CN_MarketDataService.getKLineData"
+)
+MINUTE_PERIODS = frozenset({"1", "5", "15", "30", "60"})
+MINUTE_DATALEN = 1970
 
 HEADERS = {
     "User-Agent": (
@@ -80,16 +87,29 @@ def _decode_kline(payload: str) -> list[dict[str, Any]]:
                 from akshare.stock.cons import hk_js_decode
             except ImportError as exc:  # pragma: no cover - 依赖缺失路径
                 raise SinaFetchError(f"缺少解码依赖：{exc.name}") from exc
-            runtime = py_mini_racer.MiniRacer()
+            try:
+                runtime = py_mini_racer.MiniRacer()
+            except Exception as exc:  # LibNotFoundError：打包未带上 mini_racer.dll
+                raise SinaFetchError(
+                    "新浪日线解码库不可用（mini_racer 原生库缺失）。"
+                    "请重新全量打包 Loci（需包含 py_mini_racer）。"
+                    f" 原始错误：{type(exc).__name__}: {exc}"
+                ) from exc
             runtime.eval(hk_js_decode)
             _JS_RUNTIME = runtime
         return _JS_RUNTIME.call("d", payload)
 
 
 def _get(url: str, session: requests.Session | None = None) -> str:
-    caller = session or requests
+    from src.market.infrastructure.http_client import market_get, market_session
+
     try:
-        response = caller.get(url, headers=HEADERS, timeout=DEFAULT_TIMEOUT)
+        response = market_get(
+            url,
+            headers=HEADERS,
+            timeout=DEFAULT_TIMEOUT,
+            session=session or market_session(),
+        )
     except Exception as exc:
         raise SinaFetchError(f"请求失败：{type(exc).__name__}: {exc}") from exc
     if response.status_code != 200:
@@ -212,8 +232,10 @@ def fetch_live_hq(
     if not clean:
         return []
 
+    from src.market.infrastructure.http_client import market_session
+
     own_session = session is None
-    sess = session or requests.Session()
+    sess = session or market_session()
     if own_session:
         sess.headers.update(HEADERS)
 
@@ -332,6 +354,92 @@ def _attach_turnover(frame: pd.DataFrame, shares: pd.DataFrame) -> pd.DataFrame:
     # "换手率 >= 5" 这类阈值判断，把一只没有股本数据的票选出来。
     merged["turnover"] = (merged["volume"] / shares_value).where(shares_value > 0)
     return merged
+
+
+def fetch_minute(
+    symbol: str,
+    *,
+    period: str = "1",
+    days: int = 1,
+    trade_date: str | None = None,
+    session: requests.Session | None = None,
+) -> pd.DataFrame:
+    """取分钟 K（不复权）。
+
+    ``symbol`` 形如 ``sz301201``。返回列：
+    datetime/open/high/low/close/volume/amount/avg_price。
+    接口一次最多约 ``MINUTE_DATALEN`` 根；``trade_date`` / ``days`` 在本地裁剪。
+    """
+    from src.market.infrastructure.http_client import market_get, market_session
+
+    sym = str(symbol).strip().lower()
+    scale = str(period).strip()
+    if not sym:
+        raise SinaFetchError("分钟线缺少 symbol")
+    if scale not in MINUTE_PERIODS:
+        raise SinaFetchError(f"不支持的分钟周期：{period}")
+
+    try:
+        response = market_get(
+            MINUTE_URL,
+            params={
+                "symbol": sym,
+                "scale": scale,
+                "ma": "no",
+                "datalen": str(MINUTE_DATALEN),
+            },
+            headers=HEADERS,
+            timeout=DEFAULT_TIMEOUT,
+            session=session or market_session(),
+        )
+    except Exception as exc:
+        raise SinaFetchError(f"分钟线请求失败：{type(exc).__name__}: {exc}") from exc
+    if response.status_code != 200:
+        raise SinaFetchError(f"分钟线返回 {response.status_code}")
+
+    text = response.text or ""
+    try:
+        payload = json.loads(text.split("=(")[1].split(");")[0])
+    except (IndexError, ValueError, json.JSONDecodeError) as exc:
+        raise SinaFetchError(f"{sym} 分钟线 JSONP 解析失败") from exc
+    if not isinstance(payload, list) or not payload:
+        raise SinaFetchError(f"{sym} 分钟线为空")
+
+    frame = pd.DataFrame(payload)
+    if "day" not in frame.columns:
+        raise SinaFetchError(f"{sym} 分钟线缺 day 列")
+    out = frame.rename(columns={"day": "datetime"}).copy()
+    for col in ("open", "high", "low", "close", "volume", "amount"):
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+    # 新浪分钟量单位为股、额为元 → VWAP=额/量；偶发把「手」当量时约 100×，回正或置空。
+    volume = out["volume"] if "volume" in out.columns else 0.0
+    amount = out["amount"] if "amount" in out.columns else 0.0
+    close = out["close"] if "close" in out.columns else pd.Series(dtype=float)
+    raw_avg = (amount / volume).where(volume > 0)
+    ratio = raw_avg / close.replace(0, pd.NA)
+    scaled = raw_avg.where(~(ratio > 20), raw_avg / 100.0)
+    ratio2 = scaled / close.replace(0, pd.NA)
+    out["avg_price"] = scaled.where((ratio2 > 0.2) & (ratio2 < 5.0))
+
+    day = (trade_date or "").strip()[:10]
+    if day:
+        mask = out["datetime"].astype(str).str.startswith(day)
+        out = out.loc[mask].reset_index(drop=True)
+        if out.empty:
+            # 新浪单次约 1970 根（约近 9 个交易日），更早日期必然空。
+            raise SinaFetchError(
+                f"{sym} 在 {day} 无分钟线（新浪仅保留近约 9 个交易日）"
+            )
+        return out
+
+    end = datetime.now()
+    start = end - timedelta(days=max(1, int(days)))
+    stamps = pd.to_datetime(out["datetime"], errors="coerce")
+    out = out.loc[(stamps >= start) & (stamps <= end)].reset_index(drop=True)
+    if out.empty:
+        raise SinaFetchError(f"{sym} 分钟线窗口为空")
+    return out
 
 
 def fetch_hfq_factors(

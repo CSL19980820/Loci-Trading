@@ -30,6 +30,7 @@ type MonacoModule = typeof import('monaco-editor')
 let monacoMod: MonacoModule | null = null
 let themeObserver: MutationObserver | null = null
 let suppressModelEmit = false
+let mountGeneration = 0
 
 function isDarkAppearance(): boolean {
   const id = document.documentElement.getAttribute('data-appearance')
@@ -64,9 +65,11 @@ function applyLociTheme(monaco: MonacoModule): void {
 
 async function mountEditor(): Promise<void> {
   if (!host.value || editorRef.value) return
+  const generation = ++mountGeneration
   ensureMonacoEnv()
   await import('monaco-editor-css')
   monacoMod = await import('monaco-editor')
+  if (generation !== mountGeneration || !host.value) return
   applyLociTheme(monacoMod)
 
   const ed = monacoMod.editor.create(host.value, {
@@ -107,9 +110,12 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  mountGeneration += 1
   themeObserver?.disconnect()
   themeObserver = null
+  const model = editorRef.value?.getModel()
   editorRef.value?.dispose()
+  model?.dispose()
   editorRef.value = null
   monacoMod = null
 })
@@ -142,6 +148,29 @@ watch(
     editorRef.value?.updateOptions({ readOnly: Boolean(ro) })
   },
 )
+
+function insertText(text: string): void {
+  const editor = editorRef.value
+  const monaco = monacoMod
+  if (!editor || !monaco || !text) return
+  const selection = editor.getSelection()
+  const range = selection ?? new monaco.Range(1, 1, 1, 1)
+  editor.executeEdits('catalog-insert', [{ range, text, forceMoveMarkers: true }])
+  editor.focus()
+}
+
+function focusLine(line: number, column = 1): void {
+  const editor = editorRef.value
+  if (!editor) return
+  const model = editor.getModel()
+  const safeLine = Math.max(1, Math.min(Math.trunc(line), model?.getLineCount() ?? 1))
+  const safeColumn = Math.max(1, Math.trunc(column))
+  editor.setPosition({ lineNumber: safeLine, column: safeColumn })
+  editor.revealLineInCenterIfOutsideViewport(safeLine)
+  editor.focus()
+}
+
+defineExpose({ focusLine, insertText })
 </script>
 
 <template>

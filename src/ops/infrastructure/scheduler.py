@@ -15,12 +15,15 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from src.ops.application.jobs import JobContext, run_job
+from src.ops.application.trading_schedule import is_interval_run_allowed
 from src.ops.infrastructure.store import OpsStore
 
 logger = logging.getLogger(__name__)
@@ -37,8 +40,14 @@ class SchedulerError(RuntimeError):
     """调度配置错误。"""
 
 
-def validate_cron(expression: str) -> CronTrigger:
-    """校验 cron 表达式。写错的 cron 必须当场报错，不能等到它不触发。"""
+def validate_cron(
+    expression: str, *, timezone: str = "Asia/Shanghai"
+) -> CronTrigger:
+    """校验 cron 表达式。写错的 cron 必须当场报错，不能等到它不触发。
+
+    必须显式传入时区：``from_crontab`` 默认吃系统本地时区，服务器若不是
+    东八区，盘后 15:35 会漂到错误时刻。
+    """
     text = (expression or "").strip()
     if not text:
         raise SchedulerError("cron 表达式为空")
@@ -49,9 +58,54 @@ def validate_cron(expression: str) -> CronTrigger:
             " 例：'35 15 * * 1-5' 表示工作日 15:35"
         )
     try:
-        return CronTrigger.from_crontab(text)
+        return CronTrigger.from_crontab(text, timezone=timezone)
     except Exception as exc:
         raise SchedulerError(f"非法的 cron 表达式 {text!r}：{exc}") from exc
+
+
+def next_cron_fire_at(
+    expression: str,
+    *,
+    timezone: str = "Asia/Shanghai",
+    now: datetime | None = None,
+) -> str | None:
+    """根据 cron 推算下次触发（ISO）。调度器未启动时供 UI 展示。"""
+    trigger = validate_cron(expression, timezone=timezone)
+    clock = now or datetime.now(ZoneInfo(timezone))
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=ZoneInfo(timezone))
+    nxt = trigger.get_next_fire_time(previous_fire_time=None, now=clock)
+    return nxt.isoformat() if nxt is not None else None
+
+
+def preview_upcoming_jobs(
+    jobs: list[dict[str, Any]],
+    *,
+    timezone: str = "Asia/Shanghai",
+    live: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """为启用任务填 next_run_at：优先调度器实况，否则按 cron 推算。"""
+    live_map = live or {}
+    rows: list[dict[str, Any]] = []
+    for job in jobs:
+        cron = str(job.get("cron") or "").strip()
+        if not cron:
+            continue
+        hit = live_map.get(job["id"])
+        next_at = hit.get("next_run_at") if hit else None
+        if not next_at:
+            try:
+                next_at = next_cron_fire_at(cron, timezone=timezone)
+            except SchedulerError:
+                next_at = None
+        rows.append(
+            {
+                "id": job["id"],
+                "name": job.get("name") or "",
+                "next_run_at": next_at,
+            }
+        )
+    return rows
 
 
 class JobScheduler:
@@ -110,7 +164,7 @@ class JobScheduler:
                 if not job.get("cron"):
                     continue  # 没有 cron 的任务只能手动触发，不算错误
                 try:
-                    trigger = validate_cron(job["cron"])
+                    trigger = validate_cron(job["cron"], timezone=self.timezone)
                 except SchedulerError as exc:
                     # 一条写错的 cron 不该让其他任务也装不上。
                     rejected.append({"name": job["name"], "reason": str(exc)})
@@ -128,7 +182,7 @@ class JobScheduler:
 
         return {"loaded": loaded, "rejected": rejected, "count": len(loaded)}
 
-    def _run(self, job_id: str) -> None:
+    def _run(self, job_id: str, *, now: datetime | None = None) -> None:
         """调度线程里的执行入口。异常必须吞在这里。
 
         APScheduler 的 job 抛异常只会打日志，但我们要的是留在 job_runs 里
@@ -136,7 +190,17 @@ class JobScheduler:
         """
         try:
             with OpsStore(self.db_path) as store:
-                run_job(store, job_id, context=self._context_factory(), trigger="schedule")
+                job = store.get_job(job_id)
+                if job is None:
+                    logger.warning("调度任务 %s 已不存在，跳过本次触发", job_id)
+                    return
+                config = job.get("config")
+                schedule = config.get("schedule") if isinstance(config, dict) else None
+                clock = now or datetime.now(ZoneInfo(self.timezone))
+                if not is_interval_run_allowed(schedule, now=clock):
+                    logger.debug("任务 %s 当前不在 interval 执行窗口内，跳过", job.get("name"))
+                    return
+                run_job(store, job, context=self._context_factory(), trigger="schedule")
         except Exception:
             logger.exception("调度执行任务 %s 时发生未捕获异常", job_id)
 
@@ -152,6 +216,13 @@ class JobScheduler:
             }
             for job in self._scheduler.get_jobs()
         ]
+
+    def upcoming_for_jobs(
+        self, jobs: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """合并调度器实况与 cron 推算：未装载时仍给出下次触发。"""
+        live = {item["id"]: item for item in self.upcoming()}
+        return preview_upcoming_jobs(jobs, timezone=self.timezone, live=live)
 
     @property
     def running(self) -> bool:

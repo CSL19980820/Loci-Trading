@@ -60,13 +60,40 @@ def build_review_router(
     def review_candidates(
         limit: int = Query(default=300, ge=1, le=2000),
         benchmark: str | None = Query(default="000300", pattern=r"^\d{6}$"),
+        window_days: int | None = Query(
+            default=None,
+            ge=1,
+            le=60,
+            description="仅保留近 N 个交易日选出的候选（盘面近选跟踪用 5）",
+        ),
+        selected_only: bool = Query(
+            default=False,
+            description="仅精选；盘面近选跟踪传 true",
+        ),
+        as_of: str | None = Query(
+            default=None,
+            pattern=r"^\d{4}-\d{2}-\d{2}$",
+            description="观察日（交易日）；默认取行情日历末日",
+        ),
     ) -> dict[str, Any]:
         try:
-            from src.review import evaluate_candidates, summarize_candidates
+            from src.review import evaluate_candidates, filter_recent_outcomes, summarize_candidates
         except ImportError as exc:
             raise missing_dependency(exc) from exc
         with _palace() as palace, _market() as market:
             outcomes = evaluate_candidates(palace, market, limit=limit, benchmark=benchmark)
+            if window_days is not None:
+                calendar = market.trading_days()
+                anchor = as_of or (calendar[-1] if calendar else "")
+                outcomes = filter_recent_outcomes(
+                    outcomes,
+                    calendar,
+                    as_of=anchor,
+                    window_days=window_days,
+                    selected_only=selected_only,
+                )
+            elif selected_only:
+                outcomes = [row for row in outcomes if row.selected]
             return {
                 "outcomes": [outcome.to_dict() for outcome in outcomes],
                 "summary": summarize_candidates(outcomes),
@@ -80,6 +107,19 @@ def build_review_router(
             raise missing_dependency(exc) from exc
         with _palace() as palace, _market() as market:
             return evaluate_plans(palace, market)
+
+    @router.get("/api/review/drift", tags=["review"])
+    def review_drift(
+        strategy_tag: str = Query(default="", max_length=128),
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """回测-实盘偏离：计划（position_tracking）vs 真实成交（position_events）。"""
+        try:
+            from src.review import compute_drift
+        except ImportError as exc:
+            raise missing_dependency(exc) from exc
+        with _palace() as palace:
+            return compute_drift(palace, strategy_tag, limit=limit).to_dict()
 
     @router.get("/api/review/positions", tags=["review"])
     def review_positions(
@@ -104,9 +144,13 @@ def build_review_router(
 
     @router.get("/api/winrate/summary", tags=["review"])
     def winrate_summary() -> list[dict[str, Any]]:
-        """各战法综合胜率（全时段汇总）。首页滚动卡片用。"""
-        with _palace() as palace:
-            return palace.strategy_winrates()
+        """各战法胜率：精选候选 T+5 优先，手工复盘兜底。"""
+        try:
+            from src.review import strategy_winrate_summary
+        except ImportError as exc:
+            raise missing_dependency(exc) from exc
+        with _palace() as palace, _market() as market:
+            return strategy_winrate_summary(palace, market)
 
     @router.get("/api/winrate/trend", tags=["review"])
     def winrate_trend(

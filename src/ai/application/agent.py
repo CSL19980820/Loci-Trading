@@ -124,6 +124,7 @@ def run_agent(
     messages: list[ChatMessage] | None = None,
     allow_hitl: bool = False,
     on_event: EventCallback | None = None,
+    emit_terminal_event: bool = True,
 ) -> AgentResult:
     """跑 Agent 直到不再请求工具、撞刹车，或 HITL 暂停。
 
@@ -242,8 +243,13 @@ def run_agent(
     if stopped == "waiting_user" and not text:
         text = str(pending_ask.get("prompt") or "等待用户回复")
 
-    if on_event and stopped not in {"waiting_user"}:
-        on_event({"type": "done", "stopped_reason": stopped})
+    if emit_terminal_event and on_event and stopped not in {"waiting_user"}:
+        on_event({
+            "type": "done",
+            "stopped_reason": stopped,
+            "text": text,
+            "content": text,
+        })
 
     return AgentResult(
         text=text,

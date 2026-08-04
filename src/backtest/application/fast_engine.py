@@ -1,4 +1,4 @@
-"""可选加速回测旁路：优先 vectorbt，失败则 numpy 向量化入场对齐。
+"""可选加速回测旁路：numpy 向量化入场对齐。
 
 权威路径仍是 ``engine.run_backtest``（含一字板/T+1/止损止盈细规则）。
 本模块用于 ops Job 参数扫描：``LOCI_BACKTEST_FAST=1`` 时启用。
@@ -7,6 +7,7 @@
 - ``entry_timing`` 只能来自策略引擎，不可由 Job 覆盖。
 - 与经典引擎同一成本公式（``BacktestConfig.round_trip_cost_pct``）。
 - 不写 palace；不发明信号。
+- 有止损/止盈细规则时回退经典引擎（``run_backtest``）。
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from src.backtest.application.engine import (
     BacktestConfig,
     BacktestResult,
     Trade,
+    _tradable_exit,
     compute_metrics,
     run_backtest,
 )
@@ -36,22 +38,37 @@ def run_backtest_fast(
     panels: dict[str, pd.DataFrame],
     *,
     entry_timing: str,
+    entry_price_panel: pd.DataFrame | None = None,
     config: BacktestConfig | None = None,
     strategy_slug: str = "",
     benchmark_close: pd.Series | None = None,
 ) -> BacktestResult:
-    """加速路径；任一步失败回退经典 ``run_backtest``。"""
+    """加速路径；任一步失败回退经典 ``run_backtest``。
+
+    有止损/止盈细规则时直接回退经典引擎——numpy 批量路径不实现盘中触价。
+    """
     cfg = config or BacktestConfig()
+    if entry_timing == "next_dip":
+        return run_backtest(
+            signals,
+            panels,
+            entry_timing=entry_timing,
+            entry_price_panel=entry_price_panel,
+            config=cfg,
+            strategy_slug=strategy_slug,
+            benchmark_close=benchmark_close,
+        )
+    if cfg.stop_loss_pct is not None or cfg.take_profit_pct is not None:
+        return run_backtest(
+            signals,
+            panels,
+            entry_timing=entry_timing,
+            entry_price_panel=entry_price_panel,
+            config=cfg,
+            strategy_slug=strategy_slug,
+            benchmark_close=benchmark_close,
+        )
     try:
-        if _vectorbt_available():
-            return _run_with_vectorbt(
-                signals,
-                panels,
-                entry_timing=entry_timing,
-                config=cfg,
-                strategy_slug=strategy_slug,
-                benchmark_close=benchmark_close,
-            )
         return _run_numpy_batch(
             signals,
             panels,
@@ -69,15 +86,6 @@ def run_backtest_fast(
             strategy_slug=strategy_slug,
             benchmark_close=benchmark_close,
         )
-
-
-def _vectorbt_available() -> bool:
-    try:
-        import vectorbt  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
 
 
 def _entry_offset(entry_timing: str) -> tuple[int, bool]:
@@ -120,6 +128,7 @@ def _run_numpy_batch(
     close_a = panels["close"].to_numpy(dtype=float)
     high_a = panels["high"].to_numpy(dtype=float)
     low_a = panels["low"].to_numpy(dtype=float)
+    one_word = np.isclose(high_a, low_a) & np.isfinite(high_a)
     volume = panels.get("volume")
     volume_a = volume.to_numpy(dtype=float) if volume is not None else None
     dates = list(signals.index)
@@ -148,14 +157,31 @@ def _run_numpy_batch(
         if volume_a is not None and not volume_a[entry_idx, col] > 0:
             skip("入场日停牌")
             continue
-        if np.isclose(high_a[entry_idx, col], low_a[entry_idx, col]) and not config.allow_limit_up_entry:
+        if one_word[entry_idx, col] and not config.allow_limit_up_entry:
             skip("入场日一字板买不进")
             continue
-        exit_idx = min(entry_idx + hold, len(dates) - 1)
-        if exit_idx <= entry_idx:
-            skip("持有期内始终无法卖出")
-            continue
-        exit_price = close_a[exit_idx, col]
+        last_index = len(dates) - 1
+        planned_exit = entry_idx + hold
+        if planned_exit > last_index:
+            exit_idx = last_index
+            exit_price = close_a[exit_idx, col]
+            exit_reason = "data_end"
+        else:
+            exit_price, resolved = _tradable_exit(
+                col,
+                planned_exit,
+                None,
+                config,
+                close_a,
+                one_word,
+                volume_a,
+                last_index,
+            )
+            if resolved is None:
+                skip("持有期内始终无法卖出")
+                continue
+            exit_idx = resolved
+            exit_reason = "hold_expired"
         if not np.isfinite(exit_price) or exit_price <= 0:
             skip("持有期内始终无法卖出")
             continue
@@ -180,15 +206,15 @@ def _run_numpy_batch(
                 code=codes[col],
                 signal_date=str(dates[row]),
                 entry_date=str(dates[entry_idx]),
-                entry_price=float(price),
+                entry_price=round(float(price), 4),
                 exit_date=str(dates[exit_idx]),
-                exit_price=float(exit_price),
+                exit_price=round(float(exit_price), 4),
                 hold_days=int(exit_idx - entry_idx),
                 gross_return_pct=round(float(gross), 4),
                 net_return_pct=round(float(net), 4),
                 mae_pct=round(float(mae), 4),
                 mfe_pct=round(float(mfe), 4),
-                exit_reason="hold_expired",
+                exit_reason=exit_reason,
                 benchmark_return_pct=None if bench is None else round(float(bench), 4),
             )
         )
@@ -200,42 +226,9 @@ def _run_numpy_batch(
     return result
 
 
-def _run_with_vectorbt(
-    signals: pd.DataFrame,
-    panels: dict[str, pd.DataFrame],
-    *,
-    entry_timing: str,
-    config: BacktestConfig,
-    strategy_slug: str,
-    benchmark_close: pd.Series | None,
-) -> BacktestResult:
-    """vectorbt 仅用于固定持有期扫描；有止损止盈则回退经典引擎。"""
-    if config.stop_loss_pct is not None or config.take_profit_pct is not None:
-        return run_backtest(
-            signals,
-            panels,
-            entry_timing=entry_timing,
-            config=config,
-            strategy_slug=strategy_slug,
-            benchmark_close=benchmark_close,
-        )
-    # vectorbt 路径与 numpy_fast 共用成交假设，保证入口单一。
-    result = _run_numpy_batch(
-        signals,
-        panels,
-        entry_timing=entry_timing,
-        config=config,
-        strategy_slug=strategy_slug,
-        benchmark_close=benchmark_close,
-    )
-    result.config["engine"] = "vectorbt_aligned"
-    result.config["vectorbt"] = True
-    return result
-
-
 def describe_fast_backend() -> dict[str, Any]:
     return {
         "enabled": fast_backtest_enabled(),
-        "vectorbt": _vectorbt_available(),
+        "engine": "numpy_fast",
         "env": "LOCI_BACKTEST_FAST",
     }

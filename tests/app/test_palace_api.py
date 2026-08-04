@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -161,6 +162,13 @@ class PalaceApiTests(unittest.TestCase):
         prev_market = os.environ.get("PALACE_MARKET_DB")
         os.environ["PALACE_MARKET_DB"] = str(market_path)
         try:
+            # market_db 是构造期注入的：环境变量要先于 create_app 就位
+            self.client.close()
+            app = create_app(
+                Path(self.temp.name) / "palace.db",
+                Path(self.temp.name) / "no-static",
+            )
+            self.client = TestClient(app)
             self.client.post(
                 "/api/plans",
                 json={
@@ -254,11 +262,18 @@ class PalaceApiTests(unittest.TestCase):
         static_dir = Path(self.temp.name) / "dist"
         static_dir.mkdir()
         (static_dir / "index.html").write_text("<html><body>palace-ui</body></html>", encoding="utf-8")
+        assets = static_dir / "assets"
+        assets.mkdir()
+        (assets / "app.js").write_text("console.log(1)", encoding="utf-8")
         app = create_app(Path(self.temp.name) / "fallback.db", static_dir)
         with TestClient(app) as client:
             response = client.get("/archive/000722")
+            asset = client.get("/assets/app.js")
         self.assertEqual(response.status_code, 200)
         self.assertIn("palace-ui", response.text)
+        self.assertIn("no-store", response.headers.get("cache-control", ""))
+        self.assertEqual(asset.status_code, 200)
+        self.assertIn("immutable", asset.headers.get("cache-control", ""))
 
     def test_production_login_or_agent_token_protects_the_ledger(self) -> None:
         app = create_app(
@@ -309,6 +324,70 @@ class PalaceApiTests(unittest.TestCase):
         self.assertEqual(extra.status_code, 422)
         self.assertEqual(allowed_by_session.headers["x-content-type-options"], "nosniff")
         self.assertIn("frame-ancestors 'none'", allowed_by_session.headers["content-security-policy"])
+
+    def test_production_data_location_requires_auth_after_setup(self) -> None:
+        """首次向导完成后，数据与配置路径不能再匿名暴露。"""
+        app = self._production_app("data-location.db")
+        with patch("src.shared.paths.needs_setup", return_value=False):
+            with TestClient(app, base_url="https://testserver") as client:
+                response = client.get("/api/ops/data-location")
+                authenticated = client.get(
+                    "/api/ops/data-location",
+                    headers={"Authorization": "Bearer test-agent-token"},
+                )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(authenticated.status_code, 200)
+
+    def test_production_health_does_not_expose_database_path(self) -> None:
+        app = self._production_app("health.db")
+        with TestClient(app, base_url="https://testserver") as client:
+            response = client.get("/api/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_production_data_location_stays_public_during_initial_setup(self) -> None:
+        app = self._production_app("data-location-setup.db")
+        with patch("src.shared.paths.needs_setup", return_value=True):
+            with TestClient(
+                app,
+                base_url="https://testserver",
+                client=("127.0.0.1", 50000),
+            ) as client:
+                response = client.get("/api/ops/data-location")
+                proxied = client.get(
+                    "/api/ops/data-location",
+                    headers={"X-Forwarded-For": "198.51.100.19"},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(proxied.status_code, 401)
+
+    def test_production_data_location_rejects_remote_initial_setup(self) -> None:
+        """远端首次请求既不能读路径，也不能借首启写入目录。"""
+        app = self._production_app("data-location-remote.db")
+        target = Path(self.temp.name) / "remote-initial-data"
+        with patch("src.shared.paths.needs_setup", return_value=True):
+            with TestClient(
+                app,
+                base_url="https://testserver",
+                client=("198.51.100.19", 50000),
+            ) as client:
+                anonymous_read = client.get("/api/ops/data-location")
+                anonymous_write = client.post(
+                    "/api/ops/data-location",
+                    json={"data_dir": str(target), "setup_done": True},
+                )
+                authenticated_read = client.get(
+                    "/api/ops/data-location",
+                    headers={"Authorization": "Bearer test-agent-token"},
+                )
+
+        self.assertEqual(anonymous_read.status_code, 401)
+        self.assertEqual(anonymous_write.status_code, 401)
+        self.assertEqual(authenticated_read.status_code, 200)
+        self.assertFalse(target.exists())
 
     def _production_app(self, name: str, **overrides: object):
         kwargs: dict[str, object] = {

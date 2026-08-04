@@ -90,7 +90,7 @@ class FastEngineTests(unittest.TestCase):
             self.assertEqual(ct.entry_date, ft.entry_date)
             self.assertEqual(ct.exit_reason, ft.exit_reason)
             self.assertAlmostEqual(ct.net_return_pct, ft.net_return_pct, places=4)
-        self.assertIn(fast.config.get("engine"), {"numpy_fast", "vectorbt_aligned"})
+        self.assertEqual(fast.config.get("engine"), "numpy_fast")
 
     def test_close_entry_matches_classic_without_stops(self) -> None:
         panels = _panels()
@@ -106,6 +106,87 @@ class FastEngineTests(unittest.TestCase):
             fast.metrics["avg_net_return"],
             places=4,
         )
+
+    def test_next_dip_falls_back_to_classic_and_preserves_limit_fill(self) -> None:
+        panels = _panels(n=10, codes=["600001"])
+        signals = pd.DataFrame(False, index=panels["close"].index, columns=["600001"])
+        signals.iloc[1, 0] = True
+        panels["low"].iloc[2, 0] = panels["close"].iloc[1, 0] * 0.98
+        target = panels["close"] * 0.98
+        cfg = BacktestConfig(
+            hold_days=1, stop_loss_pct=None, take_profit_pct=None, benchmark=None
+        )
+
+        classic = run_backtest(
+            signals,
+            panels,
+            entry_timing="next_dip",
+            entry_price_panel=target,
+            config=cfg,
+            strategy_slug="t",
+        )
+        fast = run_backtest_fast(
+            signals,
+            panels,
+            entry_timing="next_dip",
+            entry_price_panel=target,
+            config=cfg,
+            strategy_slug="t",
+        )
+
+        self.assertEqual(len(classic.trades), 1)
+        self.assertEqual(len(fast.trades), 1)
+        self.assertAlmostEqual(classic.trades[0].entry_price, target.iloc[1, 0], places=4)
+        self.assertEqual(classic.trades, fast.trades)
+        self.assertNotEqual(fast.config.get("engine"), "numpy_fast")
+
+    def test_data_end_records_match_classic_without_stops(self) -> None:
+        panels = _panels(n=8, codes=["600001"])
+        signals = pd.DataFrame(False, index=panels["close"].index, columns=["600001"])
+        signals.iloc[-2, 0] = True
+        signals.iloc[-1, 0] = True
+        cfg = BacktestConfig(hold_days=3, stop_loss_pct=None, take_profit_pct=None, benchmark=None)
+
+        classic = run_backtest(signals, panels, entry_timing="open", config=cfg, strategy_slug="t")
+        fast = run_backtest_fast(signals, panels, entry_timing="open", config=cfg, strategy_slug="t")
+
+        self.assertEqual(len(classic.trades), len(fast.trades))
+        self.assertEqual(classic.metrics, fast.metrics)
+        self.assertEqual(
+            [trade.exit_reason for trade in classic.trades],
+            [trade.exit_reason for trade in fast.trades],
+        )
+
+    def test_invalid_data_end_close_is_skipped_consistently(self) -> None:
+        """数据到头不等于可以用缺失收盘价伪造一笔交易。"""
+        panels = _panels(n=5, codes=["600001"])
+        signals = pd.DataFrame(False, index=panels["close"].index, columns=["600001"])
+        signals.iloc[-1, 0] = True
+        panels["close"].iloc[-1, 0] = np.nan
+        cfg = BacktestConfig(hold_days=3, stop_loss_pct=None, take_profit_pct=None, benchmark=None)
+
+        classic = run_backtest(signals, panels, entry_timing="open", config=cfg, strategy_slug="t")
+        fast = run_backtest_fast(signals, panels, entry_timing="open", config=cfg, strategy_slug="t")
+
+        self.assertEqual(classic.trades, [])
+        self.assertEqual(fast.trades, [])
+        self.assertEqual(classic.skipped, {"持有期内始终无法卖出": 1})
+        self.assertEqual(classic.skipped, fast.skipped)
+        self.assertEqual(classic.metrics, fast.metrics)
+
+    def test_untradable_planned_exit_matches_classic_without_stops(self) -> None:
+        panels = _panels(n=9, codes=["600001"])
+        signals = pd.DataFrame(False, index=panels["close"].index, columns=["600001"])
+        signals.iloc[1, 0] = True
+        panels["volume"].iloc[3, 0] = 0.0
+        cfg = BacktestConfig(hold_days=2, stop_loss_pct=None, take_profit_pct=None, benchmark=None)
+
+        classic = run_backtest(signals, panels, entry_timing="open", config=cfg, strategy_slug="t")
+        fast = run_backtest_fast(signals, panels, entry_timing="open", config=cfg, strategy_slug="t")
+
+        self.assertEqual(classic.metrics, fast.metrics)
+        self.assertEqual(classic.trades[0].exit_date, fast.trades[0].exit_date)
+        self.assertAlmostEqual(classic.trades[0].exit_price, fast.trades[0].exit_price, places=4)
 
     def test_stop_loss_falls_back_to_classic(self) -> None:
         """有细规则止损时应回退经典——结果与直接 run_backtest 一致。"""
@@ -123,7 +204,7 @@ class FastEngineTests(unittest.TestCase):
             signals, panels, entry_timing="next_open", config=cfg, strategy_slug="t"
         )
 
-        self.assertNotIn(fast.config.get("engine"), {"numpy_fast", "vectorbt_aligned"})
+        self.assertNotEqual(fast.config.get("engine"), "numpy_fast")
         self.assertEqual(len(classic.trades), len(fast.trades))
         self.assertEqual(classic.metrics, fast.metrics)
         for ct, ft in zip(classic.trades, fast.trades):

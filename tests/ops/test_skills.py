@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from src.ops.application.skills import (
@@ -112,6 +113,14 @@ class InstallTests(unittest.TestCase):
         self._install({"SKILL.md": GOOD_MANIFEST})
         with self.assertRaises(SkillError):
             self._install({"SKILL.md": GOOD_MANIFEST}, overwrite=False)
+
+    def test_failed_replace_keeps_previous_content(self) -> None:
+        self._install({"SKILL.md": GOOD_MANIFEST, "old.md": "旧文件"})
+        with patch("src.ops.application.skill_files.shutil.move", side_effect=RuntimeError("move failed")):
+            with self.assertRaises(RuntimeError):
+                self._install({"SKILL.md": GOOD_MANIFEST, "new.md": "新文件"})
+        self.assertTrue((self.root / "dragon-return" / "old.md").exists())
+        self.assertFalse((self.root / "dragon-return" / "new.md").exists())
 
     def test_records_content_hash_for_provenance(self) -> None:
         package = self._install({"SKILL.md": GOOD_MANIFEST})

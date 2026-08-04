@@ -31,7 +31,9 @@ __all__ = [
 # --------------------------------------------------------------------------
 
 def REF(series: F, periods: int) -> F:
-    """REF(X, N)：N 个周期前的值。N=0 返回自身。"""
+    """REF(X, N)：N 个周期前的值。N=0 返回自身，不允许负偏移。"""
+    if isinstance(periods, bool) or not isinstance(periods, int) or periods < 0:
+        raise ValueError("REF 的周期必须是非负整数")
     if periods == 0:
         return series
     return series.shift(periods)
@@ -246,12 +248,19 @@ def BARSCOUNT(series: F) -> F:
 
 
 def HHVBARS(series: F, periods: int) -> F:
-    """HHVBARS(X, N)：N 周期内最高价距今的周期数，当日最高为 0。"""
+    """HHVBARS(X, N)：N 周期内最高价距今的周期数，当日最高为 0。
+
+    同一窗口内出现相同最高值时，取离当前最近的一根；这样当前值等于
+    窗口最高值时始终返回 0，与“距今”的定义一致。
+    """
     return _extreme_bars(series, periods, highest=True)
 
 
 def LLVBARS(series: F, periods: int) -> F:
-    """LLVBARS(X, N)：N 周期内最低价距今的周期数，当日最低为 0。"""
+    """LLVBARS(X, N)：N 周期内最低价距今的周期数，当日最低为 0。
+
+    同一窗口内出现相同最低值时，取离当前最近的一根。
+    """
     return _extreme_bars(series, periods, highest=False)
 
 
@@ -271,9 +280,11 @@ def _extreme_bars(series: F, periods: int, *, highest: bool) -> F:
             picker = np.nanargmax if highest else np.nanargmin
             allnan = np.all(np.isnan(windows), axis=2)
             safe = np.where(np.isnan(windows), -np.inf if highest else np.inf, windows)
-            index_in_window = picker(safe, axis=2).astype(float)
-            index_in_window[allnan] = np.nan
-        out[periods - 1 :] = (periods - 1) - index_in_window
+            # 反转时间方向后，argmax/argmin 的位置就是“距当前”的周期数，
+            # 也自然选择了相同最值中最近的一根。
+            distance = picker(safe[..., ::-1], axis=2).astype(float)
+            distance[allnan] = np.nan
+        out[periods - 1 :] = distance
     return _like(series, out[:, 0] if single else out)
 
 
@@ -286,17 +297,21 @@ def CROSS(fast: Frame, slow: Frame) -> Frame:
     return (fast > slow) & (REF(fast, 1) <= REF(slow, 1))
 
 
-def IF(condition: Frame, when_true: Frame | float, when_false: Frame | float) -> Frame:
-    """IF(COND, A, B)：逐元素三元选择。A/B 可以是常数或同形序列。"""
+def IF(
+    condition: Frame | float | bool,
+    when_true: Frame | float | bool,
+    when_false: Frame | float | bool,
+) -> Frame | float | bool:
+    """IF(COND, A, B)：逐元素三元选择，支持标量条件与标量分支。"""
     if not isinstance(condition, (pd.Series, pd.DataFrame)):
-        raise TypeError("IF 的条件必须是 Series 或 DataFrame")
+        return when_true if not pd.isna(condition) and bool(condition) else when_false
+
     mask = _to_float_flags(condition) > 0
     if isinstance(when_true, (pd.Series, pd.DataFrame)):
         return when_true.where(mask, when_false)
-    # 真值分支是常数：先铺成与条件同形，再让假值分支填进去。
-    filled = mask.astype(float)
-    filled[:] = float(when_true)
-    return filled.where(mask, when_false)
+    if isinstance(when_false, (pd.Series, pd.DataFrame)):
+        return when_false.where(~mask, when_true)
+    return _like(condition, np.where(mask, when_true, when_false))
 
 
 def ABS(series: Frame) -> Frame:
@@ -308,14 +323,18 @@ def MAX(left: Frame | float, right: Frame | float) -> Frame:
     """MAX(A, B)：逐元素取大。"""
     if isinstance(left, (pd.Series, pd.DataFrame)):
         return left.clip(lower=right) if not isinstance(right, (pd.Series, pd.DataFrame)) else left.where(left >= right, right)
-    return right.clip(lower=left)
+    if isinstance(right, (pd.Series, pd.DataFrame)):
+        return right.clip(lower=left)
+    return max(left, right)
 
 
 def MIN(left: Frame | float, right: Frame | float) -> Frame:
     """MIN(A, B)：逐元素取小。"""
     if isinstance(left, (pd.Series, pd.DataFrame)):
         return left.clip(upper=right) if not isinstance(right, (pd.Series, pd.DataFrame)) else left.where(left <= right, right)
-    return right.clip(upper=left)
+    if isinstance(right, (pd.Series, pd.DataFrame)):
+        return right.clip(upper=left)
+    return min(left, right)
 
 
 def ZTPRICE(prev_close: Frame, ratio: float = 0.1) -> Frame:

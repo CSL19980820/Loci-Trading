@@ -9,14 +9,27 @@ import { getEquityCurve } from '@/shared/api/quant_review'
 import type { EquityCurve } from '@/shared/types/quant'
 
 export function useEquityQuery(
-  options: MaybeRefOrGetter<{ start?: string; end?: string; benchmarks?: string }> = {},
+  options: MaybeRefOrGetter<{
+    start?: string
+    end?: string
+    benchmarks?: string
+    enabled?: boolean
+  }> = {},
 ) {
   const query = useQuery({
     key: () => {
       const opts = toValue(options)
       return ['review-equity', opts.start ?? '', opts.end ?? '', opts.benchmarks ?? ''] as const
     },
-    query: (): Promise<EquityCurve> => getEquityCurve(toValue(options)),
+    query: (): Promise<EquityCurve> => {
+      const opts = toValue(options)
+      return getEquityCurve({
+        start: opts.start,
+        end: opts.end,
+        benchmarks: opts.benchmarks,
+      })
+    },
+    enabled: () => toValue(options).enabled !== false,
     staleTime: 60_000,
   })
 

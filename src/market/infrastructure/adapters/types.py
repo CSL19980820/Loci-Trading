@@ -54,6 +54,8 @@ class AdapterMeta:
     label: str
     lanes: tuple[str, ...]
     description: str = ""
+    #: 数据来源站点/接口域名，仅供人核对来源，不参与请求。
+    base_url: str = ""
 
 
 @dataclass

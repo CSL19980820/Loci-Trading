@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from src.app.legacy.quant_common import (
     AiJudgmentCreate,
     ProviderCreate,
+    ProviderModelsUpdate,
     missing_dependency,
     ops_store,
     palace_store,
@@ -40,6 +41,7 @@ def build_ai_router(
     def save_provider_api(payload: ProviderCreate, _write: None = write_guard) -> dict[str, Any]:
         try:
             from src.ai.infrastructure.crypto import CryptoError
+            from src.ai.infrastructure.client import redact_text
             from src.ai.infrastructure.providers import save_provider
             from src.ops import OpsError
         except ImportError as exc:
@@ -56,7 +58,10 @@ def build_ai_router(
                     is_default=payload.is_default,
                 )
             except (OpsError, CryptoError) as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+                raise HTTPException(
+                    status_code=422,
+                    detail=redact_text(str(exc), api_key=payload.api_key),
+                ) from exc
 
     @router.post("/api/providers/{name}/default", tags=["llm"])
     def set_default_provider_api(name: str, _write: None = write_guard) -> dict[str, Any]:
@@ -70,23 +75,51 @@ def build_ai_router(
     def refresh_provider_models(name: str, _write: None = write_guard) -> dict[str, Any]:
         try:
             from src.ai.infrastructure.crypto import CryptoError
+            from src.ai.infrastructure.client import redact_text
             from src.ai.infrastructure.providers import refresh_models
             from src.ops import OpsError
         except ImportError as exc:
             raise missing_dependency(exc) from exc
         with _ops() as store:
             try:
-                models = refresh_models(store, name)
+                catalog = refresh_models(store, name)
+                record = store.get_provider(name)
             except (OpsError, CryptoError) as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"models": models, "count": len(models)}
+                raise HTTPException(status_code=422, detail=redact_text(str(exc))) from exc
+        return {
+            "models": (record or {}).get("models", []),
+            "model_catalog": catalog,
+            "count": len(catalog),
+        }
+
+    @router.put("/api/providers/{name}/models", tags=["llm"])
+    def update_provider_models_api(
+        name: str, payload: ProviderModelsUpdate, _write: None = write_guard
+    ) -> dict[str, Any]:
+        try:
+            from src.ai.infrastructure.client import redact_text
+            from src.ai.infrastructure.providers import update_provider_models
+            from src.ops import OpsError
+        except ImportError as exc:
+            raise missing_dependency(exc) from exc
+        with _ops() as store:
+            try:
+                return update_provider_models(
+                    store,
+                    name,
+                    models=[item.model_dump() for item in payload.models],
+                    default_model=payload.default_model,
+                )
+            except OpsError as exc:
+                status = 404 if "未配置" in str(exc) else 422
+                raise HTTPException(status_code=status, detail=redact_text(str(exc))) from exc
 
     @router.post("/api/providers/{name}/test", tags=["llm"])
     def test_provider_api(name: str, _write: None = write_guard) -> dict[str, Any]:
         """发一次最小请求验证供应商可用性，不回写配置。"""
         try:
             from src.ai import resolve_config
-            from src.ai.infrastructure.client import LLMError, validate
+            from src.ai.infrastructure.client import LLMError, redact_text, validate
             from src.ai.infrastructure.crypto import CryptoError
             from src.ops import OpsError
         except ImportError as exc:
@@ -95,18 +128,24 @@ def build_ai_router(
             try:
                 provider = resolve_config(store, name)
             except OpsError as exc:
-                raise HTTPException(status_code=404, detail=str(exc)) from exc
+                raise HTTPException(status_code=404, detail=redact_text(str(exc))) from exc
             except CryptoError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+                raise HTTPException(status_code=422, detail=redact_text(str(exc))) from exc
         started = time.monotonic()
         try:
             response = validate(provider)
         except LLMError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise HTTPException(
+                status_code=422,
+                detail=redact_text(str(exc), api_key=provider.api_key),
+            ) from exc
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"测试请求失败：{exc}") from exc
+            raise HTTPException(
+                status_code=400,
+                detail=redact_text(f"测试请求失败：{exc}", api_key=provider.api_key),
+            ) from exc
         latency_ms = int((time.monotonic() - started) * 1000)
-        preview = (response.text or "").strip()[:200]
+        preview = redact_text(response.text or "", api_key=provider.api_key).strip()[:200]
         return {
             "ok": True,
             "provider": provider.name,

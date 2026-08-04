@@ -75,7 +75,8 @@ class MultiAgentTests(unittest.TestCase):
         self.assertTrue(results[0]["ok"])
         self.assertIn("600519", results[0]["text"])
         briefs = format_subagent_briefs(results)
-        self.assertIn("子 Agent 弹药", briefs)
+        self.assertIn("子任务弹药", briefs)
+        self.assertIn("[成功]", briefs)
 
 
 class HitlTests(unittest.TestCase):

@@ -14,7 +14,7 @@
 | 语法 | **仅** `<script setup lang="ts">`，禁止 Options API |
 | 状态 | Pinia **setup store**（`defineStore(() => { ... })`），禁止 Vuex |
 | 路由 | Vue Router 4；路由表在 `shared/router` |
-| UI | Element Plus（已接入）；禁止再引入另一套组件库 |
+| UI | **Element Plus 强制**（已全局 `app.use`）；禁止再引入另一套组件库；能 EP 就 EP |
 | 代码编辑 | Ops 大段文本用 `features/ops/components/CodeEditor.vue`（Monaco）；勿另引 UI 库 |
 | 包管理 | **bun** |
 | 别名 | `@/` → `frontend/src/` |
@@ -117,10 +117,36 @@ const emit = defineEmits<{ refresh: [] }>()
 <!-- DON'T：组件里写死 /api/xxx 又算胜率又改路由 -->
 ```
 
-#### 与 Element Plus
+#### 与 Element Plus（强制优先，能用就用）
 
-- 业务封装 = **组合** `el-table` / `el-form` / `el-dialog`，不是 fork 其源码。
+本仓已全局注册 Element Plus。**交互控件禁止手写原生 HTML 冒充组件库**——装 EP 不是摆设。
+
+| 场景 | 必须用 | 禁止 |
+|---|---|---|
+| 按钮 / 图标按钮 | `el-button`（`type`/`plain`/`link`/`text`/`circle`） | `<button>` 自画样式当主操作 |
+| 表格 / 列表数据 | `el-table` / `el-table-v2` + `el-table-column` | `<table class="dense">` 业务表 |
+| 表单 | `el-form` + `el-form-item` | 裸 `<form>` + 自拼 label 行当主表单 |
+| 文本 / 数字 / 密码 | `el-input` / `el-input-number` | `<input>` / `<textarea>`（文件选择除外） |
+| 下拉 / 多选 | `el-select` / `el-checkbox` / `el-radio-group` / `el-switch` | `<select>` / 自绘勾选 |
+| 日期 | `el-date-picker` | 自绘日期框 |
+| 弹层 | `el-dialog` / `el-drawer` / `ElMessage` / `ElMessageBox` | 自造 modal 遮罩 |
+| 标签 / 提示 | `el-tag` / `el-tooltip` / `el-alert` / `el-empty` | 能 EP 却用裸 span 冒充 |
+| 分页 / 加载 | `el-pagination` / `v-loading` / `el-skeleton` | 自造页码条 |
+
+**允许保留原生的例外（写进注释说明 why）：**
+
+1. `type="file"` 隐藏文件选择（浏览器能力；可用 `el-upload` 包一层更佳）
+2. 无障碍跳转链 `a.skip-link`、纯路由 `RouterLink` 导航项（侧栏/底栏可继续用 link；**工具操作仍用 `el-button`**）
+3. 图表容器（ECharts / Lightweight Charts）内部 DOM
+4. Monaco `CodeEditor` 编辑区
+5. 极薄封装壳（如 `PageTabs`/`SegmentSwitch`）——**内部应优先 `el-segmented` / `el-radio-group` / `el-tabs`，禁止无限期留裸 `<button>`**
+
+**封装规矩：**
+
+- 业务封装 = **组合** `el-table` / `el-form` / `el-dialog`，不是 fork 其源码，也不是外包一层无行为的 `div`。
 - 表格列过多时：列定义可抽到同目录 `xxxColumns.ts`，不要把 30 列全堆在 template。
+- 样式跟主题：优先 EP 变量 + 本仓 CSS 变量；不要为躲 EP 再写一套 `.dense table` 业务表皮肤。
+- 改存量页：看到原生 `button`/`table`/`input`/`select`/`textarea` 且不在例外表 → **同批换成 EP**，不要「先不动」。
 
 ### 3.4 Composables
 
@@ -159,6 +185,20 @@ export const usePalaceStore = defineStore('palace', () => {
 - 列表 `v-for` 必须稳定 `:key`；慎用 `v-html`。
 - 保持 a11y 底线：`skip-link`、主内容 `id`、按钮有文案。
 
+### 3.7.1 视口与内容高度（硬约束）
+
+工作台不是落地页：**禁止文档级（浏览器）滚动条**。出现 `html`/`body` 滚动 = 布局错误。
+
+| 规则 | 做法 |
+|---|---|
+| 占满主区高度 | 路由页根用 `.page-fill`；壳已 `100dvh` + `overflow: hidden` |
+| 内层滚动 | 长内容进 `.page-scroll`，或表体 / `el-table-v2` 自管滚动 |
+| PageTabs | 优先放在 `.page-scroll` **外**（固定分区条）；有图/表可吃高度的面板加 `.page-pane`；短文案不要硬撑 Sheet |
+| 疏密 | 沿用 `.mb` / `filter-bar` / `page-tabs` 尺度；禁止靠超大 padding/min-height 撑空，也禁止把主内容挤成过窄条 |
+| 例外 | `LoginView` / `PeekView` 等非壳内页可自管；弹层滚动在 dialog 内 |
+
+自检：缩小窗口高度后，应只有内层出现滚动；页头 / PageTabs 不随内容滚出视口（除非刻意 sticky 在 scroll 内）。
+
 ### 3.8 命名
 
 | 类型 | 约定 | 例 |
@@ -178,10 +218,15 @@ export const usePalaceStore = defineStore('palace', () => {
 | 前端重算复盘指标当真相 | 调后端 review/winrate API |
 | 新建 `src/views` 旧路径 | 用 `features/<bc>` |
 | 引入另一 UI 库「更好看」 | 禁止；用 Element Plus + 现有 token |
+| 业务表用 `<table>`、主操作用 `<button>`、主输入用 `<input>` | 换成 `el-table` / `el-button` / `el-input` 等（见 §3.3.1） |
+| 为「好看」自绘一套控件皮肤躲过 EP | 用 EP 变体 + CSS 变量微调 |
 | Store 里塞仅一页用的临时 flag | 留在组件 |
 | 无 key 的 `v-for` | 补稳定 key |
 | 一次性业务块硬塞进 `shared/components` | 放 `features/<bc>/components` |
 | 封装组件挂载时偷请求全站数据 | props/事件交给父级或显式 `load()` |
+| 路由页无 `page-fill`，靠 `page-host`/body 出浏览器滚动条 | 根包 `page-fill`，滚动下沉到 `page-scroll`/表体 |
+| PageTabs 把整页撑出视口 | Tabs 固定在 scroll 外；面板用 `page-pane` |
+| 大块空白或内容挤成窄条 | 收紧/放开间距到既有 token，用 flex 吃满高度 |
 
 ## 5. 命令与自检
 
@@ -198,6 +243,8 @@ bun run build
 
 - [ ] `bun run typecheck` 通过
 - [ ] 路由 + `AppSidebar` / `MobileBottomNav` 入口一致
+- [ ] 无文档级滚动条；路由页用 `page-fill`，滚动在 `page-scroll`/表体内
+- [ ] 交互控件已用 Element Plus（按钮/表/表单/输入/选择/弹层）；无新增裸 `<button>`/`<table>`/`<input>` 业务控件（文件选择等例外除外）
 - [ ] 无超 600 行新文件；大页有拆分计划或已拆
 - [ ] 新 feature 目录有简短 `README.md`（职责一句话即可）
 - [ ] K 线重算走 `prepChartOffthread`（Worker）；只读列表优先 Colada，禁止前端造复盘数字

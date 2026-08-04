@@ -1,0 +1,254 @@
+/* 记忆宫殿 · 北窗账本台 */
+:root {
+  color-scheme: light;
+  --mobile-nav-h: 3.5rem;
+  --ink: #142033;
+  --paper: #eef2f6;
+  --sheet: #f7f9fc;
+  --rule: #d5dce6;
+  --seal: #c41e3a;
+  --seal-ink: #8f1529;
+  --seal-soft: #fce8ec;
+  --lake: #0f6b5c;
+  --lake-soft: #e6f4f1;
+  --mist: #5b6b7c;
+  --muted: #3d4d5f;
+  --up: var(--seal);
+  --down: var(--lake);
+  --blue: #2563eb;
+  --radius: 6px;
+  --shadow: 0 1px 2px rgba(20, 32, 51, 0.04);
+  --font-display: "Fraunces", "Noto Serif SC", "Songti SC", serif;
+  --font: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+  --mono: "IBM Plex Mono", "Cascadia Code", "SF Mono", ui-monospace, monospace;
+
+  /* legacy aliases used across views */
+  --bg: var(--paper);
+  --panel: var(--sheet);
+  --panel-2: #eef2f6;
+  --line: var(--rule);
+  --line-2: #c5ced9;
+  --text: var(--ink);
+  --dim: var(--mist);
+  --accent: var(--seal);
+  --accent-soft: var(--seal-soft);
+  --accent-text: var(--seal-ink);
+
+  --el-color-primary: #c41e3a;
+  --el-color-primary-light-3: #d64a5f;
+  --el-color-primary-light-5: #e57a8a;
+  --el-color-primary-light-7: #f0a8b3;
+  --el-color-primary-light-8: #f7cdd4;
+  --el-color-primary-light-9: #fce8ec;
+  --el-color-primary-dark-2: #8f1529;
+  --el-color-success: #0f6b5c;
+  --el-border-radius-base: 6px;
+  --el-font-family: var(--font);
+}
+
+/* ElDialog 默认 top：EP 自带 15vh；ConfigProvider.dialog 无 top 项。
+   显式 :top 会写内联 --el-dialog-margin-top 覆盖；align-center 用 margin:auto 不受影响。 */
+.el-dialog {
+  --el-dialog-margin-top: 5vh;
+  max-width: calc(100vw - 2rem);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  font: 400 15px/1.5 var(--font);
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+a {
+  color: inherit;
+}
+
+:where(a, button, input, textarea, select):focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 40;
+  top: 0.75rem;
+  left: 0.75rem;
+  transform: translateY(-200%);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  background: var(--seal);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.app-shell {
+  height: 100%;
+  height: 100dvh;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+/*
+ * 个股档案全屏蒙版：须盖过侧栏/底栏/FAB、进档前残留的 EP 弹层（≈2000）
+ * 与 ECharts body tooltip。档案内新弹层由 App 的 ConfigProvider 抬到 8200+。
+ */
+.archive-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg, #f6f4ef);
+  color: var(--ink, #1c1917);
+  isolation: isolate;
+}
+
+.archive-overlay > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.record-fab {
+  display: none;
+}
+
+@media (max-width: 980px) {
+  .record-fab {
+    display: block;
+    position: fixed;
+    right: 1rem;
+    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0) + 0.75rem);
+    z-index: 40;
+    box-shadow: var(--shadow);
+  }
+
+  .app-shell--with-mobile-nav {
+    padding-bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0));
+  }
+}
+
+.workspace {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.load-bar {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.load-bar .el-progress-bar__outer {
+  border-radius: 0;
+  background: transparent;
+}
+
+.banner {
+  margin: 0.55rem 0.85rem 0;
+  flex-shrink: 0;
+}
+
+.sync-banner-wrap {
+  flex-shrink: 0;
+  margin: 0.55rem 0.85rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sync-banner-wrap .banner {
+  margin: 0;
+}
+
+.sync-progress {
+  padding: 0 0.15rem;
+}
+
+/* 印鉴进度尺：细轨 + 印章红填充 + 等宽百分比（体检修复 / 顶栏共用） */
+.seal-meter {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.seal-meter__track {
+  height: 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rule) 80%, var(--paper));
+  overflow: hidden;
+}
+
+.seal-meter__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--seal);
+  transition: width 0.35s ease;
+}
+
+.seal-meter--done .seal-meter__fill {
+  background: var(--lake);
+}
+
+.seal-meter--err .seal-meter__fill {
+  background: var(--seal-ink);
+}
+
+.seal-meter__pct {
+  color: var(--mist);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seal-meter__fill {
+    transition: none;
+  }
+}

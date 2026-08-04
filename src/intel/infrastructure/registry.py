@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
+import time
 from typing import Any
 
 from src.intel.infrastructure.builtin_market_mcp import (
@@ -16,8 +17,9 @@ from src.intel.infrastructure.builtin_market_mcp import (
     is_builtin_mcp_server,
     list_builtin_tools,
 )
-from src.intel.infrastructure.mcp import McpClient, McpError, McpTool
+from src.intel.infrastructure.mcp import McpClient, McpError, McpTool, validate_mcp_url
 from src.intel.infrastructure.mcp_config import (
+    McpConfigError,
     delete_mcp_server_json,
     get_mcp_server_from_json,
     list_mcp_servers_from_json,
@@ -51,14 +53,24 @@ def save_server(
     name = name.strip()
     if not name:
         raise OpsError("server 名称不能为空")
+    if "__" in name:
+        raise OpsError("server 名称不允许包含 __")
     if is_builtin_mcp_server(name):
         raise OpsError(f"{BUILTIN_MCP_NAME} 为内置 server，不可通过 mcp.json 注册或覆盖")
-    url = url.strip().rstrip("/")
-    if not url.startswith(("http://", "https://")):
-        raise OpsError("URL 必须以 http:// 或 https:// 开头")
+    try:
+        url = validate_mcp_url(url)
+    except McpError as exc:
+        raise OpsError(str(exc)) from exc
+    if proxy_url.strip():
+        raise OpsError("MCP 不支持配置代理；请使用直连 HTTPS 服务")
 
-    existing = get_mcp_server_from_json(name)
-    plaintext = token.strip() if token else (existing.get("token") if existing else "")
+    try:
+        existing = get_mcp_server_from_json(
+            name, decrypt_secrets=verify and token is None
+        )
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
+    plaintext = token.strip() if token is not None else (existing.get("token") if existing else "")
     tools: list[dict[str, Any]] = list(existing.get("tools") or []) if existing else []
     synced_at = str(existing.get("tools_synced_at") or "") if existing else ""
 
@@ -72,22 +84,26 @@ def save_server(
         try:
             discovered = client.list_tools()
         except McpError as exc:
-            raise OpsError(f"MCP server 连接失败，未保存：{exc}") from exc
+            logger.warning("MCP server %s 保存校验失败：%s", name, exc)
+            raise OpsError("MCP server 连接校验失败，未保存") from exc
         tools = [
             {"name": t.name, "description": t.description, "input_schema": t.input_schema}
             for t in discovered
         ]
         synced_at = _now()
 
-    saved = upsert_mcp_server_json(
-        name=name,
-        url=url,
-        token=token,
-        proxy_url=proxy_url,
-        note=note,
-        tools=tools,
-        tools_synced_at=synced_at,
-    )
+    try:
+        saved = upsert_mcp_server_json(
+            name=name,
+            url=url,
+            token=token,
+            proxy_url=proxy_url,
+            note=note,
+            tools=tools,
+            tools_synced_at=synced_at,
+        )
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
     return _public(saved)
 
 
@@ -99,18 +115,22 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_client(name_or_id: str) -> McpClient | InProcessMcpClient:
+def build_client(name_or_id: str, *, allow_inactive: bool = False) -> McpClient | InProcessMcpClient:
     if is_builtin_mcp_server(name_or_id):
         return InProcessMcpClient()
-    record = get_mcp_server_from_json(name_or_id)
+    try:
+        record = get_mcp_server_from_json(name_or_id, decrypt_secrets=True)
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
     if record is None:
         raise OpsError(f"未注册的 MCP server：{name_or_id}（检查 data/mcp.json）")
-    if not record.get("is_active", True):
+    if not allow_inactive and not record.get("is_active", True):
         raise OpsError(f"MCP server {record['name']} 已停用（mcp.json）")
     return McpClient(
         name=record["name"],
         url=record["url"],
         token=str(record.get("token") or ""),
+        headers=record.get("headers") if isinstance(record.get("headers"), dict) else None,
         proxy_url=record.get("proxy_url", ""),
     )
 
@@ -122,16 +142,73 @@ def refresh_tools(name_or_id: str) -> list[dict[str, Any]]:
             {"name": t.name, "description": t.description, "input_schema": t.input_schema}
             for t in list_builtin_tools()
         ]
-    client = build_client(name_or_id)
-    record = get_mcp_server_from_json(name_or_id)
+    client = build_client(name_or_id, allow_inactive=True)
+    try:
+        record = get_mcp_server_from_json(name_or_id)
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
     if record is None:
         raise OpsError(f"未注册的 MCP server：{name_or_id}")
     tools = [
         {"name": t.name, "description": t.description, "input_schema": t.input_schema}
         for t in client.list_tools()
     ]
-    update_mcp_server_tools_json(record["name"], tools, tools_synced_at=_now())
+    try:
+        update_mcp_server_tools_json(record["name"], tools, tools_synced_at=_now())
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
     return tools
+
+
+def probe_mcp(name: str) -> dict[str, Any]:
+    """仅验证 MCP 服务级连通性，不执行第三方工具。"""
+    t0 = time.perf_counter()
+
+    def _ms() -> int:
+        return max(0, int((time.perf_counter() - t0) * 1000))
+
+    try:
+        client = build_client(name, allow_inactive=True)
+    except OpsError as exc:
+        return {"ok": False, "scope": "server", "rtt_ms": _ms(), "error": str(exc)}
+
+    try:
+        info = client.ping()
+    except McpError as exc:
+        logger.warning("MCP server %s 连通性探测失败：%s", name, exc)
+        return {
+            "ok": False,
+            "scope": "server",
+            "rtt_ms": _ms(),
+            "error": "MCP 服务暂不可用",
+        }
+
+    tools_updated = int(info.get("tool_count") or 0)
+    if not is_builtin_mcp_server(name):
+        try:
+            tools = refresh_tools(name)
+        except (McpError, OpsError) as exc:
+            logger.warning("MCP server %s 探测后刷新失败：%s", name, exc)
+            return {
+                "ok": False,
+                "scope": "server",
+                "rtt_ms": _ms(),
+                "error": "MCP 服务暂不可用",
+            }
+        tools_updated = len(tools)
+        info = {**info, "tool_count": tools_updated}
+
+    return {
+        "ok": True,
+        "scope": "server",
+        "rtt_ms": _ms(),
+        "tools_updated": tools_updated,
+        "server_name": str(info.get("server_name") or ""),
+        "server_version": str(info.get("server_version") or ""),
+        "protocol_version": str(info.get("protocol_version") or ""),
+        "tool_count": int(info.get("tool_count") or 0),
+        "sample_tools": list(info.get("sample_tools") or [])[:12],
+    }
 
 
 def set_server_active(name: str, active: bool) -> dict[str, Any]:
@@ -139,22 +216,28 @@ def set_server_active(name: str, active: bool) -> dict[str, Any]:
         raise OpsError(f"内置 MCP server {BUILTIN_MCP_NAME} 不可停用")
     try:
         return _public(set_mcp_server_active_json(name, active))
-    except KeyError as exc:
+    except (KeyError, McpConfigError) as exc:
         raise OpsError(f"未注册的 MCP server：{name}") from exc
 
 
 def delete_server(name: str) -> bool:
     if is_builtin_mcp_server(name):
         raise OpsError(f"内置 MCP server {BUILTIN_MCP_NAME} 不可删除")
-    return delete_mcp_server_json(name)
+    try:
+        return delete_mcp_server_json(name)
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
 
 
 def list_effective_mcp_servers(*, active_only: bool = True) -> list[dict[str, Any]]:
-    rows = [
-        row
-        for row in list_mcp_servers_from_json()
-        if row.get("name") != BUILTIN_MCP_NAME
-    ]
+    try:
+        rows = [
+            row
+            for row in list_mcp_servers_from_json()
+            if row.get("name") != BUILTIN_MCP_NAME
+        ]
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
     if active_only:
         rows = [row for row in rows if row.get("is_active", True)]
     builtin = _public(builtin_server_record())

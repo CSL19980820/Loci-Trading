@@ -1,0 +1,216 @@
+<script setup lang="ts">
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import {
+  GridComponent,
+  MarkLineComponent,
+  TooltipComponent,
+  DataZoomComponent,
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+
+import { money } from '@/shared/lib/format'
+
+echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, DataZoomComponent, CanvasRenderer])
+
+const props = defineProps<{
+  dates: string[]
+  values: number[]
+  color?: string
+  height?: number
+  /** 叠在图上的角标文案，如「最大回撤 -3.2%」 */
+  overlayText?: string
+  overlayTone?: 'up' | 'down' | ''
+}>()
+
+const chartEl = ref<HTMLElement | null>(null)
+let chart: echarts.ECharts | null = null
+let resizeObs: ResizeObserver | null = null
+
+function fmtMoney(v: number): string {
+  if (!Number.isFinite(v)) return '—'
+  const abs = Math.abs(v)
+  if (abs >= 1e6) return `${(v / 1e4).toFixed(1)}万`
+  return money(v)
+}
+
+function resolveChartColor(input: string | undefined, fallback: string): string {
+  const raw = (input || '').trim() || fallback
+  if (!raw.startsWith('var(')) return raw
+  const name = raw.slice(4, -1).trim()
+  const resolved = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return resolved || fallback
+}
+
+function buildOption(): echarts.EChartsCoreOption {
+  const values = props.values
+  const dates = props.dates
+  const color = resolveChartColor(props.color, '#16a34a')
+  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
+  const showAllLabels = values.length > 0 && values.length <= 40
+
+  return {
+    animationDuration: 280,
+    grid: { left: 8, right: 16, top: 28, bottom: values.length > 40 ? 48 : 28, containLabel: true },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (v: unknown) => (typeof v === 'number' ? money(v) : String(v ?? '—')),
+    },
+    dataZoom: values.length > 40
+      ? [{ type: 'inside', start: 0, end: 100 }, { type: 'slider', height: 18, bottom: 4 }]
+      : undefined,
+    xAxis: {
+      type: 'category',
+      data: dates,
+      boundaryGap: false,
+      axisLabel: {
+        color: '#8a8690',
+        fontSize: 11,
+        hideOverlap: true,
+        formatter: (v: string) => (v.length >= 10 ? v.slice(5) : v),
+      },
+      axisLine: { lineStyle: { color: '#ddd8e0' } },
+    },
+    yAxis: {
+      type: 'value',
+      scale: true,
+      axisLabel: {
+        color: '#8a8690',
+        fontSize: 11,
+        formatter: (v: number) => fmtMoney(v),
+      },
+      splitLine: { lineStyle: { color: '#eeeaf0', type: 'dashed' } },
+    },
+    series: [
+      {
+        type: 'line',
+        name: '总资产',
+        data: values,
+        smooth: 0.15,
+        showSymbol: true,
+        symbolSize: values.length <= 20 ? 8 : 5,
+        lineStyle: { width: 2, color },
+        itemStyle: { color },
+        areaStyle: { color: 'rgba(22, 163, 74, 0.10)' },
+        label: {
+          show: showAllLabels,
+          position: 'top',
+          fontSize: 10,
+          color: '#5c5660',
+          formatter: (p: { value?: number | string }) => fmtMoney(Number(p.value)),
+        },
+        labelLayout: { hideOverlap: true },
+        markLine: {
+          silent: true,
+          symbol: 'none',
+          label: {
+            formatter: () => `均线 ${fmtMoney(avg)}`,
+            position: 'insideEndTop',
+            color: '#8a8690',
+            fontSize: 11,
+          },
+          lineStyle: { type: 'dashed', color: '#a39aa8', width: 1 },
+          data: [{ yAxis: avg }],
+        },
+      },
+    ],
+  }
+}
+
+function render(): void {
+  if (!chartEl.value) return
+  if (!chart) {
+    chart = echarts.init(chartEl.value, undefined, { renderer: 'canvas' })
+  }
+  if (!props.values.length) {
+    chart.clear()
+    return
+  }
+  chart.setOption(buildOption(), { notMerge: true })
+}
+
+onMounted(() => {
+  render()
+  if (chartEl.value) {
+    resizeObs = new ResizeObserver(() => chart?.resize())
+    resizeObs.observe(chartEl.value)
+  }
+})
+
+onBeforeUnmount(() => {
+  resizeObs?.disconnect()
+  resizeObs = null
+  chart?.dispose()
+  chart = null
+})
+
+watch(() => [props.dates, props.values, props.color] as const, () => render(), { deep: true })
+</script>
+
+<template>
+  <div
+    class="equity-line-chart"
+    :class="{ 'equity-line-chart--fill': height == null }"
+    :style="height != null ? { height: `${height}px` } : undefined"
+  >
+    <div
+      v-if="overlayText"
+      class="equity-line-chart__overlay"
+      :class="{
+        'is-up': overlayTone === 'up',
+        'is-down': overlayTone === 'down',
+      }"
+    >
+      {{ overlayText }}
+    </div>
+    <div
+      ref="chartEl"
+      class="equity-line-chart__canvas"
+      role="img"
+      aria-label="盈亏走势"
+    />
+  </div>
+</template>
+
+<style scoped>
+.equity-line-chart {
+  position: relative;
+  width: 100%;
+  min-height: 12rem;
+}
+
+.equity-line-chart--fill {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 12rem;
+}
+
+.equity-line-chart__canvas {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+}
+
+.equity-line-chart__overlay {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.75rem;
+  z-index: 2;
+  pointer-events: none;
+  font: 600 0.82rem/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--mist);
+  background: color-mix(in srgb, var(--sheet) 82%, transparent);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.equity-line-chart__overlay.is-up {
+  color: var(--up);
+}
+
+.equity-line-chart__overlay.is-down {
+  color: var(--down);
+}
+</style>

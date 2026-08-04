@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 import threading
 from typing import Any, Literal
 
@@ -9,7 +10,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.app.legacy.quant_common import (
     AnalysisRequest,
-    BacktestRequest,
     ScreenRequest,
     StrategyDocUpsert,
     StrategyJobConfig,
@@ -33,6 +33,13 @@ def build_strategy_router(
 ) -> APIRouter:
     router = APIRouter()
     write_guard = Depends(write_dependency)
+    from src.strategy.api.version_router import build_strategy_version_router
+
+    router.include_router(
+        build_strategy_version_router(
+            write_dependency=write_dependency, market_db=market_db, ops_db=ops_db
+        )
+    )
 
     def _market():
         return market_store(market_db)
@@ -50,33 +57,51 @@ def build_strategy_router(
         if scheduler is not None and scheduler.running:
             scheduler.reload()
 
-    @router.get("/api/strategies", tags=["strategy"])
-    def list_strategies() -> list[dict[str, Any]]:
-        try:
-            from src.strategy import describe_all
-        except ImportError as exc:
-            raise missing_dependency(exc) from exc
-        return describe_all()
+    def _effective_screen_universe(
+        slug: str, requested: Any
+    ) -> dict[str, Any] | None:
+        """请求体优先；未传则用详情页保存到 ``screen:{slug}`` 的行情范围。"""
+        from src.ops.application.screen_job_config import resolve_screen_universe
+
+        raw = (
+            requested.model_dump(exclude_none=True)
+            if requested is not None and hasattr(requested, "model_dump")
+            else requested
+        )
+        with _ops() as store:
+            return resolve_screen_universe(slug, raw if isinstance(raw, dict) else None, store=store)
 
     @router.post("/api/strategies/screen", tags=["strategy"])
-    def run_screen(payload: ScreenRequest) -> dict[str, Any]:
+    def run_screen(payload: ScreenRequest, _write: None = write_guard) -> dict[str, Any]:
         try:
             from src.market import DataQualityError
             from src.strategy import screen
+            from src.strategy.application.persist import persist_screen_candidates
+            from src.strategy.application.screen_dates import resolve_screen_window
             from src.strategy.domain.base import StrategyError
         except ImportError as exc:
             raise missing_dependency(exc) from exc
+
+        win_start, win_end = resolve_screen_window(
+            date=payload.date, start=payload.start, end=payload.end
+        )
+        if win_start and win_end and win_start != win_end:
+            raise HTTPException(
+                status_code=400,
+                detail="多日选股请使用异步接口 POST /api/screen/run",
+            )
+        trade_date = win_end or payload.date
+        universe = _effective_screen_universe(payload.strategy, payload.universe)
+
         with _market() as store:
             try:
                 result = screen(
-                    store, payload.strategy, trade_date=payload.date,
+                    store, payload.strategy, trade_date=trade_date,
                     params=payload.params, codes=payload.codes,
-                    universe=payload.universe.model_dump(exclude_none=True) if payload.universe else None,
+                    universe=universe,
                     health_check=not payload.skip_health_check,
                 )
             except DataQualityError as exc:
-                # 422 而不是 500：这不是代码出错，是数据不合格。前端要能
-                # 原样展示体检报告，让人知道该去补哪份数据。
                 raise HTTPException(
                     status_code=422,
                     detail=f"数据体检未通过，已拒绝选股：{exc}",
@@ -84,55 +109,55 @@ def build_strategy_router(
                 ) from exc
             except StrategyError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {
+            names = {
+                item["code"]: item["name"] for item in store.list_instruments(status="")
+            } if payload.record_candidates else {}
+
+        body: dict[str, Any] = {
             "strategy": result.strategy_slug,
+            "strategy_revision": result.strategy_revision,
             "trade_date": result.trade_date,
             "entry_timing": result.entry_timing,
             "universe_size": result.universe_size,
             "elapsed_seconds": round(result.elapsed_seconds, 3),
             "params": result.params,
+            "effective_params": result.effective_params,
             "picks": result.picks,
             "health": result.health,
             "universe": result.universe,
             "universe_funnel": result.universe_funnel,
+            "data_snapshot": result.data_snapshot,
         }
-
-    @router.post("/api/backtest", tags=["strategy"])
-    def run_backtest_api(payload: BacktestRequest) -> dict[str, Any]:
-        try:
-            from src.backtest import BacktestConfig, backtest_strategy
-            from src.strategy.domain.base import StrategyError
-        except ImportError as exc:
-            raise missing_dependency(exc) from exc
-
-        config = BacktestConfig(
-            hold_days=payload.hold_days,
-            stop_loss_pct=payload.stop_loss_pct,
-            take_profit_pct=payload.take_profit_pct,
-            benchmark=payload.benchmark,
-        )
-        with _market() as store:
-            try:
-                result = backtest_strategy(
-                    store, payload.strategy, start=payload.start, end=payload.end,
-                    params=payload.params, config=config, codes=payload.codes,
-                    universe=payload.universe.model_dump(exclude_none=True) if payload.universe else None,
-                )
-            except StrategyError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-        body: dict[str, Any] = {
-            "strategy": result.strategy_slug,
-            "config": result.config,
-            "metrics": result.metrics,
-            "skipped": result.skipped,
-        }
-        if payload.include_trades:
-            body["trades"] = [
-                {**trade.__dict__, "alpha_pct": trade.alpha_pct} for trade in result.trades
-            ]
+        if payload.record_candidates:
+            body["recorded"] = persist_screen_candidates(
+                result,
+                palace_db=palace_db,
+                names=names,
+                pool_id=payload.pool_id,
+                top_n=payload.top_n,
+                source="api:screen",
+            )
         return body
 
+    @router.get("/api/screen/run", tags=["strategy"])
+    def screen_run_status() -> dict[str, Any]:
+        """即时选股进度（轮询）。"""
+        from src.strategy.application.screen_run import screen_run_snapshot
+
+        return screen_run_snapshot()
+
+    @router.post("/api/screen/run", tags=["strategy"], status_code=202)
+    def screen_run_start(payload: ScreenRequest, _write: None = write_guard) -> dict[str, Any]:
+        """后台选股：带阶段进度与日志；默认写入候选池。"""
+        from src.strategy.application.screen_run import start_screen_run_thread
+
+        opts = payload.model_dump()
+        opts["universe"] = _effective_screen_universe(payload.strategy, payload.universe)
+        return start_screen_run_thread(
+            opts,
+            market_factory=_market,
+            palace_db=palace_db,
+        )
     # ---- 分析任务（异步）---------------------------------------------
     # 横向对比与退出扫描都是分钟级的：对比 8 个战法 × 2 个持有期要跑 16 次
     # 全市场回测，扫描 48 组更久。同步返回必然被 Nginx 的 60s 超时掐断，
@@ -153,50 +178,83 @@ def build_strategy_router(
         if kind == "optimize" and not config.get("strategy"):
             raise HTTPException(status_code=422, detail="退出规则扫描必须指定 strategy")
 
-        store = _ops()
-        # 用固定名字的一次性任务：重复触发会复用同一条 job 记录，
-        # 执行历史仍然逐次留痕，不会积累一堆同类型的僵尸任务。
-        name = f"[即时] {kind}" + (f" {config['strategy']}" if config.get("strategy") else "")
-        job = store.get_job_by_name(name)
-        if job is None:
-            job_id = store.create_job(name=name, kind=kind, config=config, enabled=False)
-        else:
-            job_id = job["id"]
-            store.update_job(job_id, config=config)
-        job = store.get_job(job_id)
+        with _ops() as store:
+            # 用固定名字的一次性任务：重复触发会复用同一条 job 记录，
+            # 执行历史仍然逐次留痕，不会积累一堆同类型的僵尸任务。
+            name = f"[即时] {kind}" + (f" {config['strategy']}" if config.get("strategy") else "")
+            job = store.get_job_by_name(name)
+            if job is None:
+                job_id = store.create_job(name=name, kind=kind, config=config, enabled=False)
+            else:
+                job_id = job["id"]
+                store.update_job(job_id, config=config)
+            job = store.get_job(job_id)
+            if job is None:
+                raise HTTPException(status_code=500, detail="即时分析任务创建后无法读取")
+            # worker 只能使用本次请求的快照，不能按可变 job_id 延迟读取下一次请求的配置。
+            job_snapshot = deepcopy(job)
+            run_id = store.start_run(job_snapshot, trigger="api")
 
         def worker() -> None:
             # 独立连接：SQLite 连接不能跨线程共享。
             with OpsStore(ops_db) as own:
                 run_job(
-                    own, job_id,
+                    own,
+                    job_snapshot,
                     context=JobContext(market_db=market_db, ops_store=own, palace_db=palace_db),
                     trigger="api",
+                    run_id=run_id,
                 )
 
-        run_id = store.start_run(job or {"id": job_id, "name": name, "kind": kind}, trigger="api")
-        # start_run 只是占位，真正的记录由 run_job 自己写；把占位标成 skipped
-        # 免得它永远停在 running 状态污染历史。
-        store.finish_run(run_id, status="skipped", result={"note": "已转入后台执行"})
-        store.close()
-
-        threading.Thread(target=worker, name=f"analysis-{kind}", daemon=True).start()
+        try:
+            threading.Thread(target=worker, name=f"analysis-{kind}-{run_id}", daemon=True).start()
+        except Exception as exc:
+            message = f"后台分析启动失败：{type(exc).__name__}: {exc}"
+            logger.exception("即时分析任务 %s 无法启动", run_id)
+            try:
+                with _ops() as store:
+                    store.finish_run(run_id, status="failed", error=message)
+            except Exception:
+                logger.exception("即时分析任务 %s 启动失败后无法收敛运行记录", run_id)
+            raise HTTPException(status_code=503, detail=message) from exc
         return {
             "job_id": job_id,
+            "run_id": run_id,
             "kind": kind,
             "status": "started",
-            "poll": f"/api/jobs/runs?job_id={job_id}&limit=1",
+            "poll": f"/api/jobs/runs?job_id={job_id}&run_id={run_id}",
         }
 
     @router.get("/api/strategies/{slug}/job", tags=["strategy"])
     def get_strategy_job(slug: str) -> dict[str, Any]:
         """读取某战法绑定的定时选股 job；没有则返回空配置。"""
+        from src.ops.application.trading_schedule import preview_trading_runs
+
         job_name = f"screen:{slug}"
         with _ops() as store:
             job = store.get_job_by_name(job_name)
         if job is None:
-            return {"slug": slug, "bound": False}
-        return {"slug": slug, "bound": True, **job}
+            return {"slug": slug, "bound": False, "next_runs": []}
+        cfg = job.get("config") if isinstance(job.get("config"), dict) else {}
+        schedule = cfg.get("schedule") if isinstance(cfg.get("schedule"), dict) else {}
+        mode = str(schedule.get("mode") or "off")
+        next_runs: list[str] = []
+        if mode in {"once", "interval"}:
+            try:
+                next_runs = preview_trading_runs(
+                    mode,  # type: ignore[arg-type]
+                    run_hour=int(schedule.get("run_hour", 15)),
+                    run_minute=int(schedule.get("run_minute", 30)),
+                    interval_minutes=int(schedule.get("interval_minutes", 10)),
+                    window_start_hour=int(schedule.get("window_start_hour", 9)),
+                    window_start_minute=int(schedule.get("window_start_minute", 30)),
+                    window_end_hour=int(schedule.get("window_end_hour", 14)),
+                    window_end_minute=int(schedule.get("window_end_minute", 50)),
+                    limit=1 if mode == "once" else 5,
+                )
+            except Exception:
+                next_runs = []
+        return {"slug": slug, "bound": True, "next_runs": next_runs, **job}
 
     @router.put("/api/strategies/{slug}/job", tags=["strategy"])
     def upsert_strategy_job(
@@ -204,17 +262,21 @@ def build_strategy_router(
     ) -> dict[str, Any]:
         """给战法绑定（或更新）一条定时选股任务。
 
-        配置写进 job.config_json，execute_screen 已支持 top_n 和
-        record_candidates（= auto_review）。trading_days 用于回测范围，
-        不影响实时选股，留在 config 里供将来的自动验证任务消费。
+        配置写进 job.config_json，execute_screen 已支持 top_n、universe 和
+        record_candidates（= auto_review）。schedule_mode 非空时服务端合成 cron。
         """
         try:
             from src.ops import OpsError
             from src.ops import SchedulerError, validate_cron
+            from src.ops.application.trading_schedule import (
+                TradingScheduleError,
+                compose_trading_cron,
+                preview_trading_runs,
+                schedule_dict_from_payload,
+            )
         except ImportError as exc:
             raise missing_dependency(exc) from exc
 
-        # 先校验战法存在
         try:
             from src.strategy import get as get_strategy
         except ImportError as exc:
@@ -224,14 +286,42 @@ def build_strategy_router(
         except Exception as exc:
             raise HTTPException(status_code=404, detail=f"未知战法：{slug}") from exc
 
-        if payload.cron:
+        job_name = f"screen:{slug}"
+        # 关定时：剔除绑定，不留 enabled=false 尸位（工坊定时台只读展示绑定）
+        if payload.schedule_mode == "off":
+            with _ops() as store:
+                existing = store.get_job_by_name(job_name)
+                if existing is not None:
+                    store.delete_job(existing["id"])
+            _reload_scheduler()
+            return {"slug": slug, "bound": False, "next_runs": []}
+
+        cron = payload.cron.strip()
+        enabled = payload.enabled
+        schedule = schedule_dict_from_payload(payload)
+        if payload.schedule_mode is not None:
             try:
-                validate_cron(payload.cron)
+                cron = compose_trading_cron(
+                    payload.schedule_mode,
+                    run_hour=payload.run_hour,
+                    run_minute=payload.run_minute,
+                    interval_minutes=payload.interval_minutes,
+                    window_start_hour=payload.window_start_hour,
+                    window_start_minute=payload.window_start_minute,
+                    window_end_hour=payload.window_end_hour,
+                    window_end_minute=payload.window_end_minute,
+                )
+            except TradingScheduleError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            enabled = True
+
+        if cron:
+            try:
+                validate_cron(cron)
             except SchedulerError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        job_name = f"screen:{slug}"
-        config = {
+        config: dict[str, Any] = {
             "strategy": slug,
             "record_candidates": payload.auto_review,
             "top_n": payload.top_n,
@@ -242,27 +332,50 @@ def build_strategy_router(
             "model": payload.model.strip(),
             "thinking": payload.thinking.strip(),
             "use_ai_pick": payload.use_ai_pick,
+            "push_wecom": bool(payload.push_wecom),
+            "schedule": schedule,
         }
+        if payload.universe is not None:
+            config["universe"] = payload.universe.model_dump(exclude_none=True)
 
         with _ops() as store:
             existing = store.get_job_by_name(job_name)
             try:
                 if existing is None:
                     job_id = store.create_job(
-                        name=job_name, kind="screen",
-                        cron=payload.cron, config=config, enabled=payload.enabled,
+                        name=job_name,
+                        kind="screen",
+                        cron=cron,
+                        config=config,
+                        enabled=enabled,
                     )
                 else:
                     job_id = existing["id"]
                     store.update_job(
-                        job_id, cron=payload.cron, config=config, enabled=payload.enabled,
+                        job_id, cron=cron, config=config, enabled=enabled,
                     )
             except OpsError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
 
         _reload_scheduler()
-        return {"slug": slug, "bound": True, **(job or {})}
+        next_runs: list[str] = []
+        if schedule.get("mode") in {"once", "interval"}:
+            try:
+                next_runs = preview_trading_runs(
+                    schedule["mode"],
+                    run_hour=int(schedule["run_hour"]),
+                    run_minute=int(schedule["run_minute"]),
+                    interval_minutes=int(schedule["interval_minutes"]),
+                    window_start_hour=int(schedule["window_start_hour"]),
+                    window_start_minute=int(schedule["window_start_minute"]),
+                    window_end_hour=int(schedule["window_end_hour"]),
+                    window_end_minute=int(schedule["window_end_minute"]),
+                    limit=1 if schedule["mode"] == "once" else 5,
+                )
+            except TradingScheduleError:
+                next_runs = []
+        return {"slug": slug, "bound": True, "next_runs": next_runs, **(job or {})}
 
     @router.delete("/api/strategies/{slug}/job", tags=["strategy"])
     def unbind_strategy_job(slug: str, _write: None = write_guard) -> dict[str, bool]:
@@ -282,11 +395,15 @@ def build_strategy_router(
         start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
         end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
         limit: int = Query(default=200, ge=1, le=1000),
+        live_only: bool = Query(
+            default=True,
+            description="默认仅盘后/当日真选；false 时含区间回填（审计用）",
+        ),
     ) -> dict[str, Any]:
         """按战法查历史选股记录（从账本候选池读取）。"""
         with _palace() as palace:
             items = palace.candidates_by_strategy(
-                strategy, start=start, end=end, limit=limit
+                strategy, start=start, end=end, limit=limit, live_only=live_only
             )
         # 按日期分组，前端方便展示
         by_date: dict[str, list[dict]] = {}
@@ -303,22 +420,23 @@ def build_strategy_router(
     def screen_today(
         strategy: str = Query(min_length=1, max_length=64),
         force_sync: bool = Query(default=False),
+        date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+        record_candidates: bool = Query(default=True),
+        top_n: int = Query(default=0, ge=0, le=500),
+        _write: None = write_guard,
     ) -> dict[str, Any]:
-        """取当天最新选股结果（准实时）。
+        """取指定日（默认最近可交易日）选股结果；默认写入候选池。
 
-        工作流：先看行情仓最新日期，如果今天（或最近交易日）的行情已有
-        且本地 screen 可运行，就直接 screen；否则先触发一次轻量同步（
-        limit=200，空仓时先刷新证券列表）再 screen。
-        慢 1-2 分钟可接受。
+        工作流：可选轻量同步后再 screen。慢 1-2 分钟可接受。
         """
         try:
             from src.market import DataQualityError
             from src.strategy import screen as run_screen
+            from src.strategy.application.persist import persist_screen_candidates
             from src.strategy.domain.base import StrategyError
         except ImportError as exc:
             raise missing_dependency(exc) from exc
 
-        # 如果 force_sync 或行情仓数据陈旧 / 空仓，先做轻量同步
         synced = False
         sync_note = ""
         if force_sync or should_sync_today(market_db):
@@ -336,8 +454,6 @@ def build_strategy_router(
                         "interval": 0.1,
                         "with_factors": True,
                         "refresh_instruments": refresh_instruments,
-                        # 请求内不做全市场同步，避免 nginx 60s 超时；
-                        # 全量交给运维页 / 定时任务。
                         "limit": 200,
                     },
                     ctx,
@@ -355,7 +471,8 @@ def build_strategy_router(
                 result = run_screen(
                     store,
                     strategy,
-                    universe=None,  # 默认 default_a_share：剔 ST、无北交
+                    trade_date=date,
+                    universe=None,
                 )
             except DataQualityError as exc:
                 raise HTTPException(
@@ -365,19 +482,35 @@ def build_strategy_router(
                 ) from exc
             except StrategyError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
+            names = {
+                item["code"]: item["name"] for item in store.list_instruments(status="")
+            } if record_candidates else {}
 
-        return {
+        body: dict[str, Any] = {
             "strategy": result.strategy_slug,
+            "strategy_revision": result.strategy_revision,
             "trade_date": result.trade_date,
             "entry_timing": result.entry_timing,
             "universe_size": result.universe_size,
             "elapsed_seconds": round(result.elapsed_seconds, 3),
+            "params": result.params,
+            "effective_params": result.effective_params,
             "picks": result.picks,
             "universe": result.universe,
             "universe_funnel": result.universe_funnel,
+            "data_snapshot": result.data_snapshot,
             "synced": synced,
             "sync_note": sync_note,
         }
+        if record_candidates:
+            body["recorded"] = persist_screen_candidates(
+                result,
+                palace_db=palace_db,
+                names=names,
+                top_n=top_n,
+                source="api:screen_today",
+            )
+        return body
 
     @router.get("/api/strategies/{slug}/doc", tags=["strategy"])
     def get_strategy_doc(slug: str) -> dict[str, Any]:
@@ -399,12 +532,14 @@ def build_strategy_router(
             from src.review.application.decay import check_all_decay
         except ImportError as exc:
             raise missing_dependency(exc) from exc
-        with _palace() as palace:
-            return [r.to_dict() for r in check_all_decay(palace, window=window, baseline_window=baseline)]
+        with _palace() as palace, _market() as market:
+            return [r.to_dict() for r in check_all_decay(
+                palace, window=window, baseline_window=baseline, market=market
+            )]
 
     @router.get("/api/insights/overlap", tags=["insights"])
     def strategy_overlap(days: int = Query(default=60, ge=10, le=250)) -> list[dict[str, Any]]:
-        """战法两两 Jaccard 重叠度——发现隐性加杠杆。"""
+        """选股信号重叠：多战法同日撞车（Jaccard + 常撞代码）。不算持仓风险。"""
         try:
             from src.review.application.overlap import compute_overlap
         except ImportError as exc:

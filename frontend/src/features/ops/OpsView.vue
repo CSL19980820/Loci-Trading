@@ -1,102 +1,185 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { ElMessageBox } from 'element-plus'
 
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
-import type { LanesSummary, LlmProvider, ScheduleStatus } from '@/shared/types/quant'
-import DataDirTab from './components/DataDirTab.vue'
-import JobsTab from './components/JobsTab.vue'
-import LanesTab from './components/LanesTab.vue'
+import HeaderActions from '@/shared/components/layout/HeaderActions.vue'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import LlmTab from './components/LlmTab.vue'
-import MarketSyncTab from './components/MarketSyncTab.vue'
 import McpTab from './components/McpTab.vue'
-import NotifyTab from './components/NotifyTab.vue'
-import RunsTab from './components/RunsTab.vue'
-import SkillsTab from './components/SkillsTab.vue'
+import SettingsRail, {
+  type SettingsRailGroup,
+} from './components/SettingsRail.vue'
+import SystemTab from './components/SystemTab.vue'
 import { provideOpsFeedback } from './composables/useOpsFeedback'
+import {
+  type OpsTab,
+  useSettingsSummaries,
+} from './composables/useSettingsSummaries'
 
 type TabLoadable = { load: () => Promise<void> }
+type SystemTabExpose = TabLoadable & {
+  applyRecommendedSync: () => void
+  isDirty: () => boolean
+}
+
+const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system'])
+
+const SYSTEM_LEGACY: Record<string, string> = {
+  'data-dir': 'sys-location',
+  'market-sync': 'sys-sync',
+  notify: 'sys-notify',
+  appearance: 'sys-appearance',
+}
+
+function normalizeTab(raw: unknown): OpsTab {
+  const value = String(raw || 'mcp')
+  if (value in SYSTEM_LEGACY) return 'system'
+  return (TAB_NAMES.has(value) ? value : 'mcp') as OpsTab
+}
 
 const { busy, notice, errorText, guard } = provideOpsFeedback()
+const { summaries, refresh: refreshSummaries, refreshAppearanceLocal } =
+  useSettingsSummaries()
+const route = useRoute()
+const router = useRouter()
 
-const activeTab = ref('skills')
-const providers = ref<LlmProvider[]>([])
-const schedule = ref<ScheduleStatus | null>(null)
-const lanesSummary = ref<LanesSummary | null>(null)
+/** 旧 Tab 迁走：技能→市场；线路/AkShare→数据源；定时/执行历史→工坊定时；四联→系统 */
+const LEGACY_TAB_TARGETS: Record<string, { path: string; query: Record<string, string>; hash?: string }> = {
+  skills: { path: '/quant', query: { tab: 'market', shelf: 'installed', kind: 'skill' } },
+  lanes: { path: '/quant', query: { tab: 'sources' } },
+  akshare: { path: '/quant', query: { tab: 'sources', view: 'interfaces' } },
+  jobs: { path: '/quant', query: { tab: 'jobs' } },
+  runs: { path: '/quant', query: { tab: 'jobs', runs: '1' } },
+  'data-dir': { path: '/ops', query: { tab: 'system' }, hash: '#sys-location' },
+  'market-sync': { path: '/ops', query: { tab: 'system' }, hash: '#sys-sync' },
+  notify: { path: '/ops', query: { tab: 'system' }, hash: '#sys-notify' },
+  appearance: { path: '/ops', query: { tab: 'system' }, hash: '#sys-appearance' },
+}
 
-const skillsTab = ref<TabLoadable | null>(null)
+function redirectLegacyTab(raw: unknown): boolean {
+  const target = LEGACY_TAB_TARGETS[String(raw || '')]
+  if (!target) return false
+  void router.replace(target)
+  return true
+}
+
+redirectLegacyTab(route.query.tab)
+
+const activeTab = ref<OpsTab>(normalizeTab(route.query.tab))
+const visited = reactive<Record<OpsTab, boolean>>({
+  mcp: false,
+  llm: false,
+  system: false,
+})
+visited[activeTab.value] = true
+
+const railGroups = computed((): SettingsRailGroup[] => [
+  {
+    title: '模型与工具',
+    items: [
+      { name: 'mcp', label: 'MCP', ...summaries.mcp },
+      { name: 'llm', label: 'LLM', ...summaries.llm },
+    ],
+  },
+  {
+    title: '本机',
+    items: [{ name: 'system', label: '系统', ...summaries.system }],
+  },
+])
+
+const mobileTabs = computed(() =>
+  railGroups.value.flatMap((g) => g.items.map((i) => ({ name: i.name, label: i.label }))),
+)
+
 const mcpTab = ref<TabLoadable | null>(null)
 const llmTab = ref<TabLoadable | null>(null)
-const dataDirTab = ref<TabLoadable | null>(null)
-const marketSyncTab = ref<(TabLoadable & { enableRecommendedSync: () => Promise<void> }) | null>(
-  null,
-)
-const lanesTab = ref<TabLoadable | null>(null)
-const notifyTab = ref<TabLoadable | null>(null)
-const jobsTab = ref<TabLoadable | null>(null)
-const runsTab = ref<TabLoadable | null>(null)
+const systemTab = ref<SystemTabExpose | null>(null)
 
-const headerSubtitle = computed(() => {
-  if (activeTab.value === 'lanes' && lanesSummary.value) {
-    const s = lanesSummary.value
-    const total = s.ok + s.degraded + s.down
-    if (total > 0) return `线路 · 通 ${s.ok} / 降级 ${s.degraded} / 断 ${s.down}`
+function tabLoader(tab: OpsTab): TabLoadable | null {
+  const map: Record<OpsTab, { value: TabLoadable | null }> = {
+    mcp: mcpTab,
+    llm: llmTab,
+    system: systemTab,
   }
-  if (!schedule.value) return undefined
-  return schedule.value.running
-    ? `调度运行中 · ${schedule.value.jobs.length} 个任务`
-    : '调度未启用'
-})
-
-function onProvidersLoaded(list: LlmProvider[]): void {
-  providers.value = list
+  return map[tab].value
 }
 
-function onScheduleChanged(value: ScheduleStatus | null): void {
-  schedule.value = value
+function systemIsDirty(): boolean {
+  return Boolean(systemTab.value?.isDirty())
 }
 
-function onLanesSummaryChanged(value: LanesSummary | null): void {
-  lanesSummary.value = value
+async function confirmLeaveDirty(): Promise<boolean> {
+  if (!visited.system || !systemIsDirty()) return true
+  try {
+    await ElMessageBox.confirm('系统页有未保存改动，离开将丢失。', '未保存', {
+      confirmButtonText: '离开',
+      cancelButtonText: '留下',
+      type: 'warning',
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function loadActiveTab(): Promise<void> {
+  visited[activeTab.value] = true
+  await nextTick()
+  await tabLoader(activeTab.value)?.load()
+  if (activeTab.value === 'system' && route.hash) {
+    await nextTick()
+    document.getElementById(route.hash.slice(1))?.scrollIntoView({ block: 'start' })
+  }
 }
 
 async function reload(): Promise<void> {
   await guard(async () => {
-    await Promise.all([
-      skillsTab.value?.load(),
-      mcpTab.value?.load(),
-      llmTab.value?.load(),
-      dataDirTab.value?.load(),
-      marketSyncTab.value?.load(),
-      lanesTab.value?.load(),
-      notifyTab.value?.load(),
-      jobsTab.value?.load(),
-      runsTab.value?.load(),
-    ])
+    await loadActiveTab()
+    await refreshSummaries()
   })
 }
 
-async function enableRecommendedSync(): Promise<void> {
-  activeTab.value = 'market-sync'
-  await marketSyncTab.value?.enableRecommendedSync()
-  await jobsTab.value?.load()
+function onAppearanceChanged(): void {
+  refreshAppearanceLocal()
 }
 
-async function onJobsChanged(): Promise<void> {
-  await jobsTab.value?.load()
-}
+watch(activeTab, async (tab, prev) => {
+  if (prev === 'system' && tab !== 'system' && !(await confirmLeaveDirty())) {
+    activeTab.value = 'system'
+    return
+  }
+  const next = { ...route.query, tab: tab === 'mcp' ? undefined : tab }
+  void router.replace({ query: next, hash: tab === 'system' ? route.hash : '' })
+  void reload()
+})
 
-async function onRunsChanged(): Promise<void> {
-  await runsTab.value?.load()
-}
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (redirectLegacyTab(tab)) return
+    const next = normalizeTab(tab)
+    if (next !== activeTab.value) activeTab.value = next
+  },
+)
 
-onMounted(reload)
+onBeforeRouteLeave(async (_to, _from, next) => {
+  if (await confirmLeaveDirty()) next()
+  else next(false)
+})
+
+onMounted(() => {
+  void reload()
+})
 </script>
 
 <template>
-  <div class="page-fill">
-    <PageHeader title="设置" :subtitle="headerSubtitle">
-      <el-button :disabled="busy" @click="reload">刷新</el-button>
-    </PageHeader>
+  <div class="page-fill ops-desk">
+    <header class="ops-hero">
+      <strong>设置</strong>
+      <HeaderActions :actions="[{ key: 'reload', label: '刷新', disabled: busy, onClick: reload }]" />
+    </header>
 
     <el-alert
       v-if="notice"
@@ -104,7 +187,7 @@ onMounted(reload)
       type="success"
       show-icon
       closable
-      class="mb"
+      class="ops-alert"
       @close="notice = ''"
     />
     <el-alert
@@ -113,45 +196,136 @@ onMounted(reload)
       type="error"
       show-icon
       closable
-      class="mb"
+      class="ops-alert"
       @close="errorText = ''"
     />
 
-    <div class="page-scroll">
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="技能包" name="skills">
-          <SkillsTab ref="skillsTab" :providers="providers" />
-        </el-tab-pane>
-        <el-tab-pane label="MCP" name="mcp">
-          <McpTab ref="mcpTab" />
-        </el-tab-pane>
-        <el-tab-pane label="LLM" name="llm">
-          <LlmTab ref="llmTab" @providers-loaded="onProvidersLoaded" />
-        </el-tab-pane>
-        <el-tab-pane label="数据目录" name="data-dir">
-          <DataDirTab ref="dataDirTab" />
-        </el-tab-pane>
-        <el-tab-pane label="行情同步" name="market-sync">
-          <MarketSyncTab ref="marketSyncTab" @jobs-changed="onJobsChanged" />
-        </el-tab-pane>
-        <el-tab-pane label="线路" name="lanes">
-          <LanesTab ref="lanesTab" @summary-changed="onLanesSummaryChanged" />
-        </el-tab-pane>
-        <el-tab-pane label="推送" name="notify">
-          <NotifyTab ref="notifyTab" />
-        </el-tab-pane>
-        <el-tab-pane label="定时任务" name="jobs">
-          <JobsTab
-            ref="jobsTab"
-            @schedule-changed="onScheduleChanged"
-            @enable-recommended-sync="enableRecommendedSync"
-            @runs-changed="onRunsChanged"
+    <div class="ops-mobile-tabs">
+      <PageTabs
+        v-model="activeTab"
+        :items="mobileTabs"
+        dense
+        :sticky="false"
+        aria-label="设置分区"
+      />
+    </div>
+
+    <div class="ops-layout">
+      <SettingsRail
+        v-model="activeTab"
+        class="ops-rail"
+        :groups="railGroups"
+      />
+
+      <div
+        class="ops-body page-pane"
+        role="tabpanel"
+        :aria-label="railGroups.flatMap((g) => g.items).find((i) => i.name === activeTab)?.label || '设置'"
+      >
+        <PageBusy overlay :busy="busy" label="加载设置…" />
+        <div v-if="visited.mcp" v-show="activeTab === 'mcp'" class="ops-pane">
+          <McpTab ref="mcpTab" @changed="refreshSummaries" />
+        </div>
+        <div v-if="visited.llm" v-show="activeTab === 'llm'" class="ops-pane">
+          <LlmTab ref="llmTab" @changed="refreshSummaries" />
+        </div>
+        <div v-if="visited.system" v-show="activeTab === 'system'" class="ops-pane">
+          <SystemTab
+            ref="systemTab"
+            @jobs-changed="refreshSummaries"
+            @changed="() => { refreshSummaries(); onAppearanceChanged() }"
           />
-        </el-tab-pane>
-        <el-tab-pane label="执行历史" name="runs">
-          <RunsTab ref="runsTab" @go-jobs="activeTab = 'jobs'" />
-        </el-tab-pane>
-      </el-tabs>
+        </div>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.ops-desk {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ops-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.ops-hero strong {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.ops-alert {
+  margin: 0.55rem 0.85rem 0;
+  flex-shrink: 0;
+}
+
+.ops-mobile-tabs {
+  display: none;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.ops-mobile-tabs :deep(.page-tabs) {
+  margin-bottom: 0;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.ops-layout {
+  display: grid;
+  grid-template-columns: 12rem minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ops-rail {
+  min-height: 0;
+}
+
+.ops-body {
+  position: relative;
+  min-height: 12rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ops-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.ops-pane :deep(.settings-panel) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .ops-rail {
+    display: none;
+  }
+
+  .ops-mobile-tabs {
+    display: block;
+  }
+
+  .ops-layout {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

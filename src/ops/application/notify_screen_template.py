@@ -1,0 +1,252 @@
+"""企微选股 text 模板：预设、规范化、渲染。
+
+占位符（仅替换花括号变量，不做表达式）：
+- 标题区：{title} {kind} {date}
+- 个股行：{name} {code} {pct}
+- 更多行：{n}
+"""
+from __future__ import annotations
+
+from typing import Any, Literal
+
+ScreenKindTag = Literal["量化", "技能"]
+PresetId = Literal["default", "compact", "with_date", "custom"]
+
+PLACEHOLDERS_HEADER = ("{title}", "{kind}", "{date}")
+PLACEHOLDERS_PICK = ("{name}", "{code}", "{pct}")
+
+DEFAULT_TEMPLATE: dict[str, Any] = {
+    "preset": "default",
+    "header": "【{title}】-{kind}",
+    "intro": "",
+    "pick": "📌 {name} {code} {pct}",
+    "pick_no_pct": "📌 {name} {code}",
+    "empty": "📭 暂无符合条件的标的",
+    "more": "…另有 {n} 只",
+    "quant_tag": "量化",
+    "skills_tag": "技能",
+    "max_picks": 30,
+}
+
+PRESETS: dict[str, dict[str, Any]] = {
+    "default": {
+        "header": "【{title}】-{kind}",
+        "intro": "",
+        "pick": "📌 {name} {code} {pct}",
+        "pick_no_pct": "📌 {name} {code}",
+        "empty": "📭 暂无符合条件的标的",
+        "more": "…另有 {n} 只",
+    },
+    "compact": {
+        "header": "【{title}】-{kind}",
+        "intro": "",
+        "pick": "📌 {name} {code} {pct}",
+        "pick_no_pct": "📌 {name} {code}",
+        "empty": "📭 暂无符合条件的标的",
+        "more": "…另有 {n} 只",
+    },
+    "with_date": {
+        "header": "【{title}】-{kind}",
+        "intro": "📅 {date}",
+        "pick": "📌 {name} {code} {pct}",
+        "pick_no_pct": "📌 {name} {code}",
+        "empty": "📭 暂无符合条件的标的",
+        "more": "…另有 {n} 只",
+    },
+}
+
+_SAMPLE_RESULT: dict[str, Any] = {
+    "strategy": "潜龙拐点",
+    "trade_date": "2026-07-30",
+    "picks": [
+        {"code": "300105", "name": "龙星科技", "pct_chg": 1.5},
+        {"code": "600018", "name": "上港集团", "pct_chg": 5},
+        {"code": "000001", "name": "平安银行"},
+    ],
+}
+
+
+def default_screen_template() -> dict[str, Any]:
+    return dict(DEFAULT_TEMPLATE)
+
+
+def normalize_screen_template(raw: Any) -> dict[str, Any]:
+    """合并用户配置与默认值；非 custom 预设强制套用文案字段。"""
+    base = default_screen_template()
+    if not isinstance(raw, dict):
+        return base
+    out = {**base, **{k: raw[k] for k in base if k in raw}}
+    preset = str(out.get("preset") or "default").strip()
+    if preset not in PRESETS and preset != "custom":
+        preset = "default"
+    out["preset"] = preset
+    try:
+        max_picks = int(out.get("max_picks") or 30)
+    except (TypeError, ValueError):
+        max_picks = 30
+    out["max_picks"] = max(1, min(50, max_picks))
+    for key in ("header", "intro", "pick", "pick_no_pct", "empty", "more", "quant_tag", "skills_tag"):
+        out[key] = str(out.get(key) if out.get(key) is not None else base[key])
+    if not out["header"].strip():
+        out["header"] = str(base["header"])
+    if not out["pick"].strip():
+        out["pick"] = str(base["pick"])
+    if not out["pick_no_pct"].strip():
+        out["pick_no_pct"] = str(base["pick_no_pct"])
+    if not out["quant_tag"].strip():
+        out["quant_tag"] = "量化"
+    if not out["skills_tag"].strip() or out["skills_tag"].strip().lower() == "skills":
+        out["skills_tag"] = "技能"
+    if preset in PRESETS:
+        out.update(PRESETS[preset])
+    return out
+
+
+def resolve_kind_tag(kind: str, template: dict[str, Any] | None = None) -> str:
+    tpl = normalize_screen_template(template)
+    key = str(kind or "").strip().lower()
+    if key in {"skills", "skill"}:
+        return str(tpl["skills_tag"])
+    return str(tpl["quant_tag"])
+
+
+def format_pct(value: Any) -> str:
+    """格式化为 +1.5% / +5% / -2.3%。"""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if abs(number - round(number)) < 1e-9:
+        return f"{number:+.0f}%"
+    text = f"{number:+.2f}".rstrip("0").rstrip(".")
+    return f"{text}%"
+
+
+def format_screen_picks_text(
+    result: dict[str, Any],
+    *,
+    kind_tag: str = "量化",
+    title: str | None = None,
+    template: dict[str, Any] | None = None,
+) -> str:
+    """按配置渲染选股企微正文（纯 text）。"""
+    tpl = normalize_screen_template(template)
+    name = _resolve_title(result, title)
+    trade_date = str(result.get("trade_date") or "").strip()
+    kind = str(kind_tag or tpl["quant_tag"]).strip() or str(tpl["quant_tag"])
+    if kind.lower() == "skills":
+        kind = str(tpl["skills_tag"])
+    picks = result.get("picks") or []
+    max_picks = int(tpl["max_picks"])
+
+    lines: list[str] = []
+    header = _fill(
+        str(tpl["header"]),
+        {"title": name, "kind": kind, "date": trade_date or "—"},
+    ).strip()
+    if header:
+        lines.append(header)
+    intro = _fill(
+        str(tpl["intro"]),
+        {"title": name, "kind": kind, "date": trade_date or "—"},
+    ).rstrip()
+    if intro:
+        lines.append(intro)
+
+    rendered = 0
+    for pick in picks:
+        if not isinstance(pick, dict):
+            continue
+        code = str(pick.get("code") or "").strip()
+        if not code:
+            continue
+        stock_name = str(pick.get("name") or code).strip() or code
+        pct = _pick_pct(pick)
+        pct_text = format_pct(pct) if pct is not None else ""
+        row_tpl = str(tpl["pick"] if pct_text else tpl["pick_no_pct"])
+        # pick 模板含 {pct} 但无涨跌幅时回退无涨跌幅行
+        if not pct_text and "{pct}" in row_tpl:
+            row_tpl = str(tpl["pick_no_pct"])
+        row = _fill(
+            row_tpl,
+            {"name": stock_name, "code": code, "pct": pct_text},
+        ).strip()
+        if row:
+            lines.append(row)
+        rendered += 1
+        if rendered >= max_picks:
+            break
+
+    if rendered == 0:
+        empty = str(tpl["empty"]).strip()
+        if empty:
+            lines.append(empty)
+    elif len(picks) > rendered:
+        more = _fill(str(tpl["more"]), {"n": str(len(picks) - rendered)}).strip()
+        if more:
+            lines.append(more)
+    return "\n".join(lines)
+
+
+def preview_screen_template(
+    template: dict[str, Any] | None = None,
+    *,
+    kind: Literal["quant", "skills"] = "quant",
+) -> str:
+    """系统设置页用的即时预览。"""
+    tpl = normalize_screen_template(template)
+    tag = resolve_kind_tag(kind, tpl)
+    return format_screen_picks_text(_SAMPLE_RESULT, kind_tag=tag, template=tpl)
+
+
+def load_screen_template(store: Any) -> dict[str, Any]:
+    raw = {}
+    if store is not None:
+        try:
+            raw = store.get_setting("wecom_screen_template", {}) or {}
+        except Exception:
+            raw = {}
+    return normalize_screen_template(raw)
+
+
+def _resolve_title(result: dict[str, Any], title: str | None) -> str:
+    name = (title or "").strip()
+    if not name:
+        raw = (
+            result.get("skill_name")
+            or result.get("strategy")
+            or result.get("skill")
+            or result.get("name")
+            or "选股"
+        )
+        name = str(raw).strip()
+    if name.startswith("screen:"):
+        name = name[len("screen:") :]
+    # 定时任务通常只保存 slug；通知标题必须展示用户能识别的中文名。
+    builtin_names = {
+        "qianlong-close-v3": "潜龙出海（V3）",
+        "qianlong-tail-v1": "潜龙尾盘（V1）",
+        "lugw-haidi": "海底捞月",
+        "rsi30-dip": "RSI22 次日低吸",
+        "sanyuan-tail-v1": "三源尾盘共振",
+    }
+    name = builtin_names.get(name, name)
+    return name or "选股"
+
+
+def _pick_pct(pick: dict[str, Any]) -> float | None:
+    for key in ("pct_chg", "change_pct", "pct", "percent"):
+        if pick.get(key) is None:
+            continue
+        try:
+            return float(pick[key])
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _fill(pattern: str, values: dict[str, str]) -> str:
+    text = pattern or ""
+    for key, value in values.items():
+        text = text.replace("{" + key + "}", value)
+    return text

@@ -78,6 +78,23 @@ class TrackingMixin:
                 (closed_status, exit_price, actual_return, reason.strip(), _now(), tracking_id),
             )
 
+    def find_tracking(
+        self,
+        *,
+        strategy_tag: str,
+        pool_id: str,
+        code: str,
+        signal_date: str,
+    ) -> dict[str, Any] | None:
+        """按计划键查跟踪记录（幂等键：战法 + 池 + 标的 + 信号日）。"""
+        code = normalize_code(code)
+        row = self.conn.execute(
+            "SELECT * FROM position_tracking"
+            " WHERE strategy_tag = ? AND pool_id = ? AND code = ? AND signal_date = ?",
+            (strategy_tag.strip(), pool_id.strip(), code, normalize_date(signal_date)),
+        ).fetchone()
+        return dict(row) if row else None
+
     def list_active_tracking(self, strategy_tag: str | None = None) -> list[dict]:
         """列出所有活跃跟踪（用于每日更新价格）。"""
         if strategy_tag:

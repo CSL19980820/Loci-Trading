@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import socket
 import tempfile
 import unittest
 from unittest.mock import patch
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+import httpx2
 
 from src.ai.application.agent import (
     AgentResult,
@@ -13,9 +19,18 @@ from src.ai.application.agent import (
     make_mcp_executor,
     run_agent,
 )
+from src.ai.infrastructure.crypto import MASTER_KEY_ENV, generate_master_key
 from src.ai.infrastructure.client import ChatResponse, ProviderConfig, ToolCall
-from src.intel.infrastructure.mcp import McpClient, McpError, McpTool, _parse_response
-from src.intel.infrastructure.registry import build_client, collect_tools, save_server
+from src.intel.infrastructure.mcp import (
+    MAX_TOOL_SCHEMA_BYTES,
+    MAX_RESPONSE_BYTES,
+    McpClient,
+    McpError,
+    McpTool,
+    _parse_response,
+    validate_mcp_url,
+)
+from src.intel.infrastructure.registry import build_client, collect_tools, probe_mcp, save_server
 from src.ops.infrastructure.store import OpsError
 
 
@@ -68,10 +83,19 @@ class ToolSchemaTests(unittest.TestCase):
             {"type": "object", "properties": {}},
         )
 
+    def test_reserved_separator_cannot_appear_in_server_or_tool_name(self) -> None:
+        with self.assertRaisesRegex(McpError, "不允许包含 __"):
+            McpTool(name="bad__tool", description="x", server="demo")
+        with self.assertRaisesRegex(McpError, "不允许包含 __"):
+            McpTool(name="tool", description="x", server="bad__server")
+
 
 class McpClientTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = McpClient(name="demo", url="https://example.com/mcp", token="t")
+        # 除握手顺序专测外，其余测试只关心目标 RPC，避免 initialize 占掉 mock 返回值。
+        self.client._initialized = True
+        self.client._initialize_result = {"serverInfo": {"name": "demo"}}
 
     def _rpc_returns(self, payloads: list[dict]):
         return patch.object(self.client, "_rpc", side_effect=payloads)
@@ -109,6 +133,123 @@ class McpClientTests(unittest.TestCase):
         with self._rpc_returns([payload]):
             self.assertTrue(self.client.call_tool("x", {})["is_error"])
 
+    def test_initializes_once_before_tool_discovery_and_call(self) -> None:
+        calls: list[str] = []
+        self.client._initialized = False
+        self.client._initialize_result = {}
+
+        def rpc(method: str, _params=None) -> dict:
+            calls.append(method)
+            if method == "initialize":
+                return {"serverInfo": {"name": "demo"}}
+            if method == "tools/list":
+                return {"tools": []}
+            return {"content": []}
+
+        with patch.object(self.client, "_rpc", side_effect=rpc), patch.object(self.client, "_notify"):
+            self.client.list_tools()
+            self.client.call_tool("demo__kline", {})
+
+        self.assertEqual(calls, ["initialize", "tools/list", "tools/call"])
+
+    def test_repeated_pagination_cursor_fails_fast(self) -> None:
+        calls = 0
+
+        def rpc(_method: str, _params=None) -> dict:
+            nonlocal calls
+            calls += 1
+            if calls > 2:
+                raise AssertionError("重复游标没有终止请求")
+            return {"tools": [], "nextCursor": "same"}
+
+        with patch.object(self.client, "_rpc", side_effect=rpc), self.assertRaisesRegex(McpError, "重复"):
+            self.client.list_tools()
+        self.assertEqual(calls, 2)
+
+    def test_client_disables_environment_proxy_configuration(self) -> None:
+        with patch("src.intel.infrastructure.mcp.validate_mcp_url"), patch(
+            "src.intel.infrastructure.mcp.httpx2.Client"
+        ) as client_cls:
+            self.client._client()
+        self.assertFalse(client_cls.call_args.kwargs.get("trust_env", True))
+        self.assertFalse(client_cls.call_args.kwargs.get("follow_redirects", True))
+
+    def test_response_body_has_a_hard_byte_cap(self) -> None:
+        transport = httpx2.MockTransport(
+            lambda _request: httpx2.Response(200, content=b"x" * (MAX_RESPONSE_BYTES + 1))
+        )
+        with patch.object(
+            self.client,
+            "_client",
+            return_value=httpx2.Client(transport=transport),
+        ):
+            with self.assertRaisesRegex(McpError, "响应过大"):
+                self.client._rpc("initialize")
+
+    def test_external_error_body_is_never_exposed(self) -> None:
+        secret = "mcp-super-secret"
+        transport = httpx2.MockTransport(
+            lambda _request: httpx2.Response(
+                500,
+                content=f"Authorization: Bearer {secret}".encode(),
+            )
+        )
+        with patch.object(
+            self.client,
+            "_client",
+            return_value=httpx2.Client(transport=transport),
+        ):
+            with self.assertRaises(McpError) as ctx:
+                self.client._rpc("initialize")
+        self.assertIn("500", str(ctx.exception))
+        self.assertNotIn(secret, str(ctx.exception))
+
+    def test_json_rpc_error_body_is_never_exposed(self) -> None:
+        secret = "mcp-jsonrpc-secret"
+        transport = httpx2.MockTransport(
+            lambda _request: httpx2.Response(
+                200,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32000, "message": f"token={secret}"},
+                },
+            )
+        )
+        with patch.object(
+            self.client,
+            "_client",
+            return_value=httpx2.Client(transport=transport),
+        ):
+            with self.assertRaises(McpError) as ctx:
+                self.client._rpc("initialize")
+        self.assertIn("MCP 协议错误", str(ctx.exception))
+        self.assertNotIn(secret, str(ctx.exception))
+
+    def test_rejects_an_oversized_tool_schema(self) -> None:
+        oversized = {"type": "object", "description": "x" * (MAX_TOOL_SCHEMA_BYTES + 1)}
+        with self._rpc_returns([{"tools": [{"name": "oversized", "inputSchema": oversized}]}]):
+            with self.assertRaisesRegex(McpError, "inputSchema 超过"):
+                self.client.list_tools()
+
+
+class McpUrlValidationTests(unittest.TestCase):
+    def test_allowlisted_loopback_http_resolves_with_default_http_port(self) -> None:
+        with patch.dict(os.environ, {"PALACE_MCP_LOOPBACK_HTTP_HOSTS": "localhost"}), patch(
+            "src.intel.infrastructure.mcp.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))],
+        ) as resolve:
+            self.assertEqual(validate_mcp_url("http://localhost/mcp", resolve=True), "http://localhost/mcp")
+
+        self.assertEqual(resolve.call_args.args[1], 80)
+
+    def test_dns_private_address_is_rejected_even_for_https_hostnames(self) -> None:
+        with patch(
+            "src.intel.infrastructure.mcp.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.8", 443))],
+        ), self.assertRaisesRegex(McpError, "解析到了内网"):
+            validate_mcp_url("https://looks-public.example/mcp", resolve=True)
+
 
 class RegistryTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -116,8 +257,11 @@ class RegistryTests(unittest.TestCase):
         self.mcp_path = Path(self.temp.name) / "mcp.json"
         self._path_patch = patch("src.intel.infrastructure.mcp_config.mcp_json_path", return_value=self.mcp_path)
         self._path_patch.start()
+        self._key_patch = patch.dict(os.environ, {MASTER_KEY_ENV: generate_master_key()})
+        self._key_patch.start()
 
     def tearDown(self) -> None:
+        self._key_patch.stop()
         self._path_patch.stop()
         self.temp.cleanup()
 
@@ -131,23 +275,75 @@ class RegistryTests(unittest.TestCase):
         params.update(overrides)
         return save_server(**params)
 
-    def test_token_is_stored_in_mcp_json_and_masked_in_api(self) -> None:
+    def test_token_is_encrypted_in_mcp_json_and_masked_in_api(self) -> None:
         record = self._save()
         self.assertTrue(str(record["token_last4"]).endswith("1234"))
         self.assertNotIn("token", record)
         self.assertTrue(record["has_token"])
         raw = json.loads(self.mcp_path.read_text(encoding="utf-8"))
-        auth = raw["mcpServers"]["wudao"]["headers"]["Authorization"]
-        self.assertEqual(auth, "Bearer lb_secret_1234")
+        cfg = raw["mcpServers"]["wudao"]
+        self.assertIn("encrypted_token", cfg)
+        self.assertNotIn("token", cfg)
+        self.assertNotIn("headers", cfg)
+        self.assertNotIn("lb_secret_1234", self.mcp_path.read_text(encoding="utf-8"))
+
+    def test_corrupt_config_is_not_silently_replaced(self) -> None:
+        original = "{not valid json"
+        self.mcp_path.write_text(original, encoding="utf-8")
+
+        with self.assertRaisesRegex(OpsError, "格式错误"):
+            self._save()
+
+        self.assertEqual(self.mcp_path.read_text(encoding="utf-8"), original)
 
     def test_client_is_rebuilt_with_the_token(self) -> None:
         self._save()
         client = build_client("wudao")
         self.assertEqual(client.token, "lb_secret_1234")
 
+    def test_client_preserves_custom_auth_headers_from_cursor_config(self) -> None:
+        self.mcp_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "custom": {
+                            "url": "https://example.com/mcp",
+                            "headers": {"X-API-Key": "custom-secret", "Authorization": "Basic abc"},
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        client = build_client("custom")
+
+        self.assertEqual(client.token, "")
+        self.assertEqual(client._headers()["X-API-Key"], "custom-secret")
+        self.assertEqual(client._headers()["Authorization"], "Basic abc")
+
     def test_url_must_be_http(self) -> None:
         with self.assertRaises(OpsError):
             self._save(url="ftp://example.com")
+
+    def test_rejects_insecure_or_internal_mcp_destinations(self) -> None:
+        for url in (
+            "http://example.com/mcp",
+            "https://127.0.0.1/mcp",
+            "https://10.0.0.8/mcp",
+            "https://[::1]/mcp",
+            "https://trusted.example@evil.example/mcp",
+        ):
+            with self.subTest(url=url), self.assertRaises(OpsError):
+                self._save(url=url)
+
+    def test_rejects_configured_proxy(self) -> None:
+        with self.assertRaises(OpsError):
+            self._save(proxy_url="http://proxy.example:8080")
+
+    def test_short_token_is_not_exposed_by_masking(self) -> None:
+        record = self._save(token="abc")
+        self.assertEqual(record["token_last4"], "****")
 
     def test_updating_without_a_token_keeps_the_existing_one(self) -> None:
         self._save()
@@ -185,6 +381,54 @@ class RegistryTests(unittest.TestCase):
         )
         tools, _ = collect_tools(server_names=["off"])
         self.assertEqual(tools, [])
+
+    def test_probe_returns_failure_when_refresh_after_ping_fails(self) -> None:
+        self._save()
+
+        class Client:
+            @staticmethod
+            def ping() -> dict:
+                return {"tool_count": 1}
+
+        with patch("src.intel.infrastructure.registry.build_client", return_value=Client()), patch(
+            "src.intel.infrastructure.registry.refresh_tools", side_effect=McpError("refresh timeout")
+        ):
+            result = probe_mcp("wudao")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"], "MCP 服务暂不可用")
+
+
+class McpApiErrorTests(unittest.TestCase):
+    def test_refresh_maps_external_failure_to_503(self) -> None:
+        from src.intel.api.router import build_intel_router
+
+        app = FastAPI()
+        app.include_router(build_intel_router(write_dependency=lambda: None))
+        with patch("src.intel.infrastructure.registry.refresh_tools", side_effect=McpError("network timeout")), TestClient(
+            app, raise_server_exceptions=False
+        ) as client:
+            response = client.post("/api/mcp/demo/refresh")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "MCP 服务暂不可用")
+
+    def test_probe_rejects_tool_payload_without_invoking_external_tool(self) -> None:
+        from src.intel.api.router import build_intel_router
+
+        app = FastAPI()
+        app.include_router(build_intel_router(write_dependency=lambda: None))
+        with patch("src.intel.infrastructure.registry.probe_mcp") as probe, TestClient(
+            app,
+            raise_server_exceptions=False,
+        ) as client:
+            response = client.post(
+                "/api/mcp/demo/probe",
+                json={"tool": "delete_everything", "arguments": {"force": True}},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        probe.assert_not_called()
 
 
 class AgentLoopTests(unittest.TestCase):

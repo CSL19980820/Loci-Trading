@@ -1,15 +1,15 @@
-"""选股股票池（Universe）：板块范围 + ST 等横切过滤。
+"""选股股票池（Universe）：板块、行业、上市状态等横切过滤。
 
-战法只声明形态；范围在 screen/backtest 入口统一应用。
-北交所可归类为 bse，但永不进入选股产品面（产品确认 2026-07-28）。
+战法只声明形态；范围在 screen/backtest 入口统一应用。默认股票池不含北交所，
+但本地高级用户可以显式选择 ``bse``，不在领域层设置不可绕过的产品限制。
 """
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
-ALLOWED_BOARDS: frozenset[str] = frozenset({"main", "chi_next", "star"})
+ALLOWED_BOARDS: frozenset[str] = frozenset({"main", "chi_next", "star", "bse"})
 BOARD_LABELS: dict[str, str] = {
     "main": "主板",
     "chi_next": "创业板",
@@ -22,7 +22,7 @@ DEFAULT_BOARDS: tuple[str, ...] = ("main", "chi_next", "star")
 
 
 class UniverseError(ValueError):
-    """股票池规格非法（含试图纳入北交所）。"""
+    """股票池规格非法。"""
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,8 @@ class UniverseSpec:
     exclude_delisting: bool | None = None
     exclude_suspended: bool | None = None
     min_list_days: int | None = None
+    industries_include: tuple[str, ...] | None = None
+    industries_exclude: tuple[str, ...] | None = None
     codes_include: tuple[str, ...] | None = None
     codes_exclude: tuple[str, ...] | None = None
 
@@ -45,6 +47,7 @@ class UniverseFunnel:
     after_st: int = 0
     after_status: int = 0
     after_list_days: int = 0
+    after_industry: int = 0
     panel_columns: int = 0
     signals_true: int = 0
 
@@ -79,6 +82,11 @@ PRESETS: dict[str, dict[str, Any]] = {
     "all_listed_boards": {
         **_PRESET_BASE,
         "label": "主板+创业+科创（仍无北交）",
+    },
+    "all_a_share": {
+        **_PRESET_BASE,
+        "boards": ["main", "chi_next", "star", "bse"],
+        "label": "全部 A 股板块",
     },
     "include_st": {
         **_PRESET_BASE,
@@ -151,6 +159,8 @@ def parse_universe(
         boards = raw.get("boards")
         include = raw.get("codes_include")
         exclude = raw.get("codes_exclude")
+        industries_include = raw.get("industries_include")
+        industries_exclude = raw.get("industries_exclude")
         spec = UniverseSpec(
             preset=raw.get("preset", "default_a_share"),
             boards=tuple(boards) if boards is not None else None,
@@ -158,6 +168,12 @@ def parse_universe(
             exclude_delisting=raw.get("exclude_delisting"),
             exclude_suspended=raw.get("exclude_suspended"),
             min_list_days=raw.get("min_list_days"),
+            industries_include=(
+                tuple(industries_include) if industries_include is not None else None
+            ),
+            industries_exclude=(
+                tuple(industries_exclude) if industries_exclude is not None else None
+            ),
             codes_include=tuple(include) if include is not None else None,
             codes_exclude=tuple(exclude) if exclude is not None else None,
         )
@@ -170,6 +186,8 @@ def parse_universe(
             exclude_delisting=spec.exclude_delisting,
             exclude_suspended=spec.exclude_suspended,
             min_list_days=spec.min_list_days,
+            industries_include=spec.industries_include,
+            industries_exclude=spec.industries_exclude,
             codes_include=include,
             codes_exclude=spec.codes_exclude,
         )
@@ -177,7 +195,7 @@ def parse_universe(
 
 
 def expand_spec(spec: UniverseSpec) -> dict[str, Any]:
-    """展开预设并校验：禁止 bse。"""
+    """展开预设并校验。"""
     preset_name = spec.preset or "default_a_share"
     if preset_name == "custom":
         base = {**_PRESET_BASE}
@@ -187,8 +205,6 @@ def expand_spec(spec: UniverseSpec) -> dict[str, Any]:
         raise UniverseError(f"未知股票池预设：{preset_name}")
 
     boards = list(spec.boards) if spec.boards is not None else list(base["boards"])
-    _reject_bse(boards)
-
     unknown = [b for b in boards if b not in ALLOWED_BOARDS]
     if unknown:
         raise UniverseError(f"不支持的板块：{unknown}（允许 {sorted(ALLOWED_BOARDS)}）")
@@ -216,6 +232,16 @@ def expand_spec(spec: UniverseSpec) -> dict[str, Any]:
             if spec.min_list_days is None
             else int(spec.min_list_days)
         ),
+        "industries_include": (
+            [str(item).strip() for item in spec.industries_include if str(item).strip()]
+            if spec.industries_include
+            else None
+        ),
+        "industries_exclude": (
+            [str(item).strip() for item in spec.industries_exclude if str(item).strip()]
+            if spec.industries_exclude
+            else None
+        ),
         "codes_include": (
             [str(c).zfill(6) for c in spec.codes_include] if spec.codes_include else None
         ),
@@ -223,11 +249,6 @@ def expand_spec(spec: UniverseSpec) -> dict[str, Any]:
             [str(c).zfill(6) for c in spec.codes_exclude] if spec.codes_exclude else None
         ),
     }
-
-
-def _reject_bse(boards: Iterable[str]) -> None:
-    if any(str(b).lower() == "bse" for b in boards):
-        raise UniverseError("北交所已屏蔽，不可纳入选股股票池")
 
 
 def _list_age_days(list_date: str, as_of: str | None) -> int | None:
@@ -267,7 +288,9 @@ def resolve_universe(
     meta: dict[str, dict[str, Any]] = {}
     kept: list[str] = []
 
-    after_board = after_st = after_status = after_list = 0
+    after_board = after_st = after_status = after_list = after_industry = 0
+    industries_include = set(final["industries_include"] or [])
+    industries_exclude = set(final["industries_exclude"] or [])
 
     for row in rows:
         code = str(row.get("code", "")).zfill(6)
@@ -299,6 +322,13 @@ def resolve_universe(
                 continue
         after_list += 1
 
+        industry = str(row.get("industry") or "").strip()
+        if industries_include and industry not in industries_include:
+            continue
+        if industries_exclude and industry in industries_exclude:
+            continue
+        after_industry += 1
+
         if include and code not in include:
             continue
         if exclude and code in exclude:
@@ -311,12 +341,14 @@ def resolve_universe(
             "board_label": board_label(bucket),
             "is_st": st,
             "status": status,
+            "industry": industry,
         }
 
     funnel.after_board = after_board
     funnel.after_st = after_st
     funnel.after_status = after_status
     funnel.after_list_days = after_list
+    funnel.after_industry = after_industry
 
     # include 里有 instruments 没有的代码时，仍按代码归类补进（调试单票）
     if include:
@@ -324,7 +356,7 @@ def resolve_universe(
             if code in meta:
                 continue
             bucket = classify_board(code)
-            if bucket == "bse" or bucket not in board_set:
+            if bucket not in board_set:
                 continue
             if code in exclude:
                 continue
@@ -335,6 +367,7 @@ def resolve_universe(
                 "board_label": board_label(bucket),
                 "is_st": False,
                 "status": "normal",
+                "industry": "",
             }
 
     return ResolvedUniverse(codes=sorted(set(kept)), meta=meta, spec=final, funnel=funnel)
@@ -356,7 +389,7 @@ def universe_stats(store: Any) -> dict[str, Any]:
         "by_board": by_board,
         "st_count": st_count,
         "selectable_default": selectable,  # 含 ST；实际入池还要剔 ST
-        "bse_blocked": True,
+        "bse_blocked": False,
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
