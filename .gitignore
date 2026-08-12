@@ -17,6 +17,7 @@ frontend/package-lock.json
 
 # 运行产物
 output/
+artifacts/
 *.log
 Loci.exe
 Loci/
@@ -38,11 +39,15 @@ data/
 !.env.example
 .palace_ai_master_key
 
+# 本机私密记忆 / 主机备注（禁止进仓、禁止上传）
+.local/
+
 # 工具与编辑器缓存
 .codegraph/
 .omo/
-.omx/
 .tmp/
+.audit_tmp/
+.codex-tmp/
 .idea/
 .vscode/
 .pytest_cache/
