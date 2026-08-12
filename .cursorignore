@@ -1,0 +1,23 @@
+# 排除在 AI 检索之外的目录。与 .gitignore 分开：这里管的是「agent 会不会读到」，
+# 不是「会不会进版本库」。
+#
+# 为什么必须排 Loci/：里面有 957 个 src 副本（含 AGENTS.md、各模块 README）。
+# git 忽略它，但 rg / Glob / 全仓检索不会——agent 搜 AGENTS.md 会拿到 4 个结果，
+# 其中一个是旧构建里的过期规范，照着它改就是错的。
+
+# 构建与部署产物
+Loci/
+build/
+dist/
+output/
+
+# 本机临时目录（审计探针、外部 agent 工作区）
+.audit_tmp/
+.codex-tmp/
+.tmp/
+
+# 工具缓存
+.import_linter_cache/
+.pytest_cache/
+.ruff_cache/
+.codegraph/
