@@ -13,14 +13,37 @@
   --lake-soft: #e6f4f1;
   --mist: #5b6b7c;
   --muted: #3d4d5f;
-  --up: var(--seal);
-  --down: var(--lake);
-  --blue: #2563eb;
+  /*
+   * 涨跌/状态色刻意不挂靠 --seal：主色可被 data-primary 换成湖绿/靛蓝/琥珀，
+   * 若涨跌跟着主色走，选「湖绿」主色时涨与跌会同为绿色。红涨绿跌是硬语义，不随主题变。
+   */
+  --up: #c41e3a;
+  --up-soft: #fce8ec;
+  --down: #0f6b5c;
+  --down-soft: #e6f4f1;
+  --success: var(--down);
+  --success-soft: var(--down-soft);
+  --loss: var(--up);
+  --warn: #b45309;
+  --warn-soft: #fdf1dc;
+  --info: #2563eb;
+  --info-soft: #e8f0fe;
+  --blue: var(--info);
   --radius: 6px;
   --shadow: 0 1px 2px rgba(20, 32, 51, 0.04);
   --font-display: "Fraunces", "Noto Serif SC", "Songti SC", serif;
   --font: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   --mono: "IBM Plex Mono", "Cascadia Code", "SF Mono", ui-monospace, monospace;
+  /* 误写别名收口：仓内曾有 --font-mono / --font-sans 引用，未定义会静默丢字体 */
+  --font-mono: var(--mono);
+  --font-sans: var(--font);
+
+  /* 字阶：页头衬线标题 → 区块标题 → 正文 → 辅助 → 印记 */
+  --fs-hero: 1.45rem;
+  --fs-title: 1.05rem;
+  --fs-body: 0.9rem;
+  --fs-aux: 0.8rem;
+  --fs-kicker: 0.7rem;
 
   /* legacy aliases used across views */
   --bg: var(--paper);
@@ -34,14 +57,7 @@
   --accent-soft: var(--seal-soft);
   --accent-text: var(--seal-ink);
 
-  --el-color-primary: #c41e3a;
-  --el-color-primary-light-3: #d64a5f;
-  --el-color-primary-light-5: #e57a8a;
-  --el-color-primary-light-7: #f0a8b3;
-  --el-color-primary-light-8: #f7cdd4;
-  --el-color-primary-light-9: #fce8ec;
-  --el-color-primary-dark-2: #8f1529;
-  --el-color-success: #0f6b5c;
+  /* EP 主色梯度由 --seal 派生，定义见 style.theme.css */
   --el-border-radius-base: 6px;
   --el-font-family: var(--font);
 }
@@ -51,6 +67,44 @@
 .el-dialog {
   --el-dialog-margin-top: 5vh;
   max-width: calc(100vw - 2rem);
+}
+
+/*
+ * 弹窗 chrome 统一在这里管，不要每个弹窗自绘一套头。
+ * 此前全仓 34 个弹窗只有「初始化行情」有衬线标题，其余吃 EP 默认无衬线字，
+ * 于是「记成交」和「初始化」看着像两个产品。
+ */
+.el-dialog__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-title);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.el-dialog__header {
+  margin-right: 0;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.el-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.55rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* 破坏性/次要操作放最左，与「取消/主操作」拉开距离，避免占了取消位被误点 */
+.el-dialog__footer > .is-leading {
+  margin-right: auto;
+}
+
+/* MessageBox 正文按原文换行：快捷键清单等多行文案此前会被塌成一行 */
+.el-message-box__message {
+  white-space: pre-line;
 }
 
 * {

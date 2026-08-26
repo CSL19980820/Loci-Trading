@@ -1,0 +1,1423 @@
+{
+  "window": [
+    "2021-01-04",
+    "2026-08-12"
+  ],
+  "trading_days": 1359,
+  "costs_bps": {
+    "commission": 3.0,
+    "stamp_duty": 5.0,
+    "slippage": 10.0
+  },
+  "note": "live engines untouched; ranking/pool masks only",
+  "engines": [
+    {
+      "slug": "qianlong-close-v3",
+      "name": "潜龙出海（V3.1）",
+      "hold_days": 3,
+      "sleeve_days": 4,
+      "stop_loss_pct": -7.0,
+      "variants": {
+        "live_roc5_top2": {
+          "trades": 1021,
+          "win_rate": 47.6,
+          "payoff_ratio": 1.166,
+          "avg_net": 0.1376,
+          "median": -0.31,
+          "portfolio": {
+            "sleeve_days": 4,
+            "portfolio_return_pct": 5.3928,
+            "max_drawdown_pct": -34.026,
+            "occupancy_pct": 43.19,
+            "signal_days": 587,
+            "filled_trades": 1021,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 101.2957
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 98.6654
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 87.5169
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 87.2616
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 74.1016
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 105.3928
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 197,
+              "win_rate": 50.25,
+              "avg": 0.1174
+            },
+            "2022": {
+              "n": 161,
+              "win_rate": 45.96,
+              "avg": -0.3122
+            },
+            "2023": {
+              "n": 179,
+              "win_rate": 46.37,
+              "avg": -0.3018
+            },
+            "2024": {
+              "n": 140,
+              "win_rate": 44.29,
+              "avg": 0.6345
+            },
+            "2025": {
+              "n": 244,
+              "win_rate": 43.85,
+              "avg": -0.3071
+            },
+            "2026": {
+              "n": 100,
+              "win_rate": 61.0,
+              "avg": 2.0781
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.1655,
+            "late_2024_2026": 0.8018,
+            "oos_2021_2025": -0.0338,
+            "negative_years_2021_2025": [
+              "2022",
+              "2023",
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日停牌": 1,
+            "入场日一字板买不进": 1
+          },
+          "pool": {
+            "signal_days": 590,
+            "avg_names": 1.739,
+            "max_names": 2
+          }
+        },
+        "eligible_all": {
+          "trades": 2372,
+          "win_rate": 47.6,
+          "payoff_ratio": 1.255,
+          "avg_net": 0.2938,
+          "median": -0.2961,
+          "portfolio": {
+            "sleeve_days": 4,
+            "portfolio_return_pct": 18.489,
+            "max_drawdown_pct": -29.412,
+            "occupancy_pct": 43.19,
+            "signal_days": 587,
+            "filled_trades": 2372,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 103.6285
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 103.5841
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 96.7143
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 95.4075
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 90.843
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 118.489
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 373,
+              "win_rate": 46.65,
+              "avg": 0.0701
+            },
+            "2022": {
+              "n": 348,
+              "win_rate": 45.4,
+              "avg": -0.0993
+            },
+            "2023": {
+              "n": 397,
+              "win_rate": 50.38,
+              "avg": 0.2754
+            },
+            "2024": {
+              "n": 320,
+              "win_rate": 50.94,
+              "avg": 1.1961
+            },
+            "2025": {
+              "n": 699,
+              "win_rate": 43.2,
+              "avg": -0.0859
+            },
+            "2026": {
+              "n": 235,
+              "win_rate": 56.17,
+              "avg": 1.1625
+            }
+          },
+          "gate": {
+            "early_2021_2023": 0.0821,
+            "late_2024_2026": 0.7576,
+            "oos_2021_2025": 0.2713,
+            "negative_years_2021_2025": [
+              "2022",
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": true
+          },
+          "skipped": {
+            "入场日停牌": 1,
+            "入场日一字板买不进": 1
+          },
+          "pool": {
+            "signal_days": 590,
+            "avg_names": 4.039,
+            "max_names": 29
+          }
+        },
+        "eligible_top2_pct_chg": {
+          "trades": 1021,
+          "win_rate": 45.45,
+          "payoff_ratio": 1.233,
+          "avg_net": 0.0661,
+          "median": -0.649,
+          "portfolio": {
+            "sleeve_days": 4,
+            "portfolio_return_pct": 6.2867,
+            "max_drawdown_pct": -34.9413,
+            "occupancy_pct": 43.19,
+            "signal_days": 587,
+            "filled_trades": 1021,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 102.3082
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 92.8563
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 88.475
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 95.5328
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 77.621
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 106.2867
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 197,
+              "win_rate": 48.73,
+              "avg": 0.1398
+            },
+            "2022": {
+              "n": 161,
+              "win_rate": 42.86,
+              "avg": -0.5708
+            },
+            "2023": {
+              "n": 179,
+              "win_rate": 46.37,
+              "avg": -0.1282
+            },
+            "2024": {
+              "n": 140,
+              "win_rate": 44.29,
+              "avg": 1.199
+            },
+            "2025": {
+              "n": 244,
+              "win_rate": 38.93,
+              "avg": -0.6186
+            },
+            "2026": {
+              "n": 100,
+              "win_rate": 59.0,
+              "avg": 1.379
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.1864,
+            "late_2024_2026": 0.6531,
+            "oos_2021_2025": 0.0042,
+            "negative_years_2021_2025": [
+              "2022",
+              "2023",
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日停牌": 1,
+            "入场日一字板买不进": 1
+          },
+          "pool": {
+            "signal_days": 590,
+            "avg_names": 1.739,
+            "max_names": 2
+          }
+        },
+        "eligible_top2_pct_band_1_5": {
+          "trades": 587,
+          "win_rate": 47.02,
+          "payoff_ratio": 1.34,
+          "avg_net": 0.3644,
+          "median": -0.31,
+          "portfolio": {
+            "sleeve_days": 4,
+            "portfolio_return_pct": 16.3048,
+            "max_drawdown_pct": -27.8882,
+            "occupancy_pct": 27.67,
+            "signal_days": 376,
+            "filled_trades": 587,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 109.261
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 114.2966
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 105.3177
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 107.8942
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 100.1807
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 116.3048
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 88,
+              "win_rate": 46.59,
+              "avg": 0.4452
+            },
+            "2022": {
+              "n": 78,
+              "win_rate": 53.85,
+              "avg": 0.4088
+            },
+            "2023": {
+              "n": 107,
+              "win_rate": 51.4,
+              "avg": 0.1098
+            },
+            "2024": {
+              "n": 81,
+              "win_rate": 45.68,
+              "avg": 1.0164
+            },
+            "2025": {
+              "n": 179,
+              "win_rate": 42.46,
+              "avg": -0.221
+            },
+            "2026": {
+              "n": 54,
+              "win_rate": 46.3,
+              "avg": 1.6353
+            }
+          },
+          "gate": {
+            "early_2021_2023": 0.3213,
+            "late_2024_2026": 0.8102,
+            "oos_2021_2025": 0.3518,
+            "negative_years_2021_2025": [
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": true
+          },
+          "skipped": {},
+          "pool": {
+            "signal_days": 378,
+            "avg_names": 1.558,
+            "max_names": 2
+          }
+        },
+        "eligible_top2_least_ext": {
+          "trades": 1021,
+          "win_rate": 47.7,
+          "payoff_ratio": 1.31,
+          "avg_net": 0.4127,
+          "median": -0.2234,
+          "portfolio": {
+            "sleeve_days": 4,
+            "portfolio_return_pct": 81.9594,
+            "max_drawdown_pct": -30.7208,
+            "occupancy_pct": 43.19,
+            "signal_days": 587,
+            "filled_trades": 1021,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 111.1869
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 125.1743
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 119.0642
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 115.5231
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 133.0282
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 181.9594
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 197,
+              "win_rate": 49.75,
+              "avg": 0.467
+            },
+            "2022": {
+              "n": 161,
+              "win_rate": 50.93,
+              "avg": 0.4276
+            },
+            "2023": {
+              "n": 179,
+              "win_rate": 46.37,
+              "avg": -0.1179
+            },
+            "2024": {
+              "n": 140,
+              "win_rate": 44.29,
+              "avg": 0.3123
+            },
+            "2025": {
+              "n": 244,
+              "win_rate": 43.03,
+              "avg": 0.2746
+            },
+            "2026": {
+              "n": 100,
+              "win_rate": 57.0,
+              "avg": 1.7092
+            }
+          },
+          "gate": {
+            "early_2021_2023": 0.2589,
+            "late_2024_2026": 0.7654,
+            "oos_2021_2025": 0.2727,
+            "negative_years_2021_2025": [
+              "2023"
+            ],
+            "pass_yearly": false,
+            "pass_split": true
+          },
+          "skipped": {
+            "入场日停牌": 1,
+            "入场日一字板买不进": 1
+          },
+          "pool": {
+            "signal_days": 590,
+            "avg_names": 1.739,
+            "max_names": 2
+          }
+        },
+        "core_no_to_top2_roc5": {
+          "trades": 1313,
+          "win_rate": 44.55,
+          "payoff_ratio": 1.351,
+          "avg_net": 0.2152,
+          "median": -0.8341,
+          "portfolio": {
+            "sleeve_days": 4,
+            "portfolio_return_pct": 2.2346,
+            "max_drawdown_pct": -40.3379,
+            "occupancy_pct": 50.04,
+            "signal_days": 680,
+            "filled_trades": 1313,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 131.0255
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 104.3427
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 105.9183
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 102.2745
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 88.8529
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 102.2346
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 260,
+              "win_rate": 51.54,
+              "avg": 0.8746
+            },
+            "2022": {
+              "n": 226,
+              "win_rate": 41.15,
+              "avg": -0.6534
+            },
+            "2023": {
+              "n": 224,
+              "win_rate": 45.09,
+              "avg": 0.1875
+            },
+            "2024": {
+              "n": 195,
+              "win_rate": 42.05,
+              "avg": 0.5303
+            },
+            "2025": {
+              "n": 271,
+              "win_rate": 38.75,
+              "avg": -0.3426
+            },
+            "2026": {
+              "n": 137,
+              "win_rate": 51.09,
+              "avg": 1.097
+            }
+          },
+          "gate": {
+            "early_2021_2023": 0.1362,
+            "late_2024_2026": 0.4282,
+            "oos_2021_2025": 0.1193,
+            "negative_years_2021_2025": [
+              "2022",
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": true
+          },
+          "skipped": {
+            "入场日一字板买不进": 1
+          },
+          "pool": {
+            "signal_days": 682,
+            "avg_names": 1.933,
+            "max_names": 2
+          }
+        },
+        "core_no_to_top2_least_ext": {
+          "trades": 1314,
+          "win_rate": 47.79,
+          "payoff_ratio": 1.133,
+          "avg_net": 0.074,
+          "median": -0.225,
+          "portfolio": {
+            "sleeve_days": 4,
+            "portfolio_return_pct": -3.3052,
+            "max_drawdown_pct": -44.1781,
+            "occupancy_pct": 50.04,
+            "signal_days": 680,
+            "filled_trades": 1314,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 112.7022
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 95.6991
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 89.7397
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 73.972
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 86.3264
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 96.6948
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 261,
+              "win_rate": 49.04,
+              "avg": 0.1489
+            },
+            "2022": {
+              "n": 225,
+              "win_rate": 44.89,
+              "avg": -0.3331
+            },
+            "2023": {
+              "n": 224,
+              "win_rate": 45.54,
+              "avg": -0.2687
+            },
+            "2024": {
+              "n": 194,
+              "win_rate": 45.88,
+              "avg": -0.2851
+            },
+            "2025": {
+              "n": 273,
+              "win_rate": 47.62,
+              "avg": 0.3679
+            },
+            "2026": {
+              "n": 137,
+              "win_rate": 56.93,
+              "avg": 1.0827
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.151,
+            "late_2024_2026": 0.3885,
+            "oos_2021_2025": -0.074,
+            "negative_years_2021_2025": [
+              "2022",
+              "2023",
+              "2024"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {},
+          "pool": {
+            "signal_days": 682,
+            "avg_names": 1.933,
+            "max_names": 2
+          }
+        }
+      }
+    },
+    {
+      "slug": "sanyuan-tail-v1",
+      "name": "三源尾盘共振",
+      "hold_days": 1,
+      "sleeve_days": 2,
+      "stop_loss_pct": null,
+      "variants": {
+        "live_score_top2": {
+          "trades": 1611,
+          "win_rate": 45.07,
+          "payoff_ratio": 1.288,
+          "avg_net": 0.1691,
+          "median": -1.2189,
+          "portfolio": {
+            "sleeve_days": 2,
+            "portfolio_return_pct": -2.527,
+            "max_drawdown_pct": -71.7287,
+            "occupancy_pct": 59.82,
+            "signal_days": 813,
+            "filled_trades": 1611,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 184.6966
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 101.1153
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 105.9803
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 99.5674
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 65.9721
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 97.473
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 311,
+              "win_rate": 48.55,
+              "avg": 0.9722
+            },
+            "2022": {
+              "n": 284,
+              "win_rate": 40.14,
+              "avg": -0.7009
+            },
+            "2023": {
+              "n": 278,
+              "win_rate": 42.09,
+              "avg": -0.4989
+            },
+            "2024": {
+              "n": 269,
+              "win_rate": 47.96,
+              "avg": 0.6269
+            },
+            "2025": {
+              "n": 303,
+              "win_rate": 41.58,
+              "avg": -0.2306
+            },
+            "2026": {
+              "n": 166,
+              "win_rate": 53.61,
+              "avg": 1.259
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.0759,
+            "late_2024_2026": 0.5518,
+            "oos_2021_2025": 0.0337,
+            "negative_years_2021_2025": [
+              "2022",
+              "2023",
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日一字板买不进": 13,
+            "入场日停牌": 2,
+            "入场日超出数据范围": 2
+          },
+          "pool": {
+            "signal_days": 814,
+            "avg_names": 2.0,
+            "max_names": 2
+          }
+        },
+        "eligible_all": {
+          "trades": 280724,
+          "win_rate": 46.45,
+          "payoff_ratio": 1.193,
+          "avg_net": 0.0472,
+          "median": -0.2851,
+          "portfolio": {
+            "sleeve_days": 2,
+            "portfolio_return_pct": -29.5608,
+            "max_drawdown_pct": -38.6971,
+            "occupancy_pct": 59.82,
+            "signal_days": 813,
+            "filled_trades": 280724,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 99.3785
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 89.4374
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 74.002
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 76.4169
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 75.7217
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 70.4392
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 41075,
+              "win_rate": 46.32,
+              "avg": 0.0368
+            },
+            "2022": {
+              "n": 46630,
+              "win_rate": 46.03,
+              "avg": -0.133
+            },
+            "2023": {
+              "n": 47476,
+              "win_rate": 42.99,
+              "avg": -0.1683
+            },
+            "2024": {
+              "n": 55455,
+              "win_rate": 48.28,
+              "avg": 0.3101
+            },
+            "2025": {
+              "n": 58359,
+              "win_rate": 47.23,
+              "avg": 0.1378
+            },
+            "2026": {
+              "n": 31729,
+              "win_rate": 47.78,
+              "avg": 0.0219
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.0882,
+            "late_2024_2026": 0.1566,
+            "oos_2021_2025": 0.0367,
+            "negative_years_2021_2025": [
+              "2022",
+              "2023"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日一字板买不进": 421,
+            "入场日停牌": 95,
+            "入场日超出数据范围": 365
+          },
+          "pool": {
+            "signal_days": 814,
+            "avg_names": 345.952,
+            "max_names": 1772
+          }
+        },
+        "eligible_top2_pct_chg": {
+          "trades": 1612,
+          "win_rate": 43.61,
+          "payoff_ratio": 1.177,
+          "avg_net": -0.269,
+          "median": -1.1879,
+          "portfolio": {
+            "sleeve_days": 2,
+            "portfolio_return_pct": -84.0003,
+            "max_drawdown_pct": -90.3126,
+            "occupancy_pct": 59.82,
+            "signal_days": 813,
+            "filled_trades": 1612,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 71.0387
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 34.4692
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 25.1078
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 20.177
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 17.1608
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 15.9997
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 311,
+              "win_rate": 43.41,
+              "avg": -0.245
+            },
+            "2022": {
+              "n": 283,
+              "win_rate": 39.58,
+              "avg": -0.8736
+            },
+            "2023": {
+              "n": 278,
+              "win_rate": 46.4,
+              "avg": -0.3803
+            },
+            "2024": {
+              "n": 269,
+              "win_rate": 46.1,
+              "avg": 0.1252
+            },
+            "2025": {
+              "n": 305,
+              "win_rate": 41.31,
+              "avg": -0.0907
+            },
+            "2026": {
+              "n": 166,
+              "win_rate": 46.39,
+              "avg": -0.0628
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.4996,
+            "late_2024_2026": -0.0094,
+            "oos_2021_2025": -0.2929,
+            "negative_years_2021_2025": [
+              "2021",
+              "2022",
+              "2023",
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日一字板买不进": 13,
+            "入场日停牌": 1,
+            "入场日超出数据范围": 2
+          },
+          "pool": {
+            "signal_days": 814,
+            "avg_names": 2.0,
+            "max_names": 2
+          }
+        },
+        "eligible_top2_pct_band_1_5": {
+          "trades": 1609,
+          "win_rate": 45.49,
+          "payoff_ratio": 1.183,
+          "avg_net": -0.0234,
+          "median": -0.3886,
+          "portfolio": {
+            "sleeve_days": 2,
+            "portfolio_return_pct": -29.8377,
+            "max_drawdown_pct": -52.0445,
+            "occupancy_pct": 59.82,
+            "signal_days": 813,
+            "filled_trades": 1609,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 97.0239
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 78.4873
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 67.2935
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 81.4761
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 104.3393
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 70.1623
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 306,
+              "win_rate": 46.73,
+              "avg": -0.0209
+            },
+            "2022": {
+              "n": 286,
+              "win_rate": 40.91,
+              "avg": -0.2614
+            },
+            "2023": {
+              "n": 277,
+              "win_rate": 44.4,
+              "avg": -0.1045
+            },
+            "2024": {
+              "n": 270,
+              "win_rate": 50.74,
+              "avg": 0.3228
+            },
+            "2025": {
+              "n": 305,
+              "win_rate": 47.54,
+              "avg": 0.3662
+            },
+            "2026": {
+              "n": 165,
+              "win_rate": 40.61,
+              "avg": -0.7663
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.1289,
+            "late_2024_2026": -0.0258,
+            "oos_2021_2025": 0.0604,
+            "negative_years_2021_2025": [
+              "2021",
+              "2022",
+              "2023"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日停牌": 5,
+            "入场日一字板买不进": 11,
+            "入场日超出数据范围": 2
+          },
+          "pool": {
+            "signal_days": 814,
+            "avg_names": 1.999,
+            "max_names": 2
+          }
+        },
+        "eligible_top2_clv_asc": {
+          "trades": 1624,
+          "win_rate": 44.15,
+          "payoff_ratio": 1.209,
+          "avg_net": -0.0695,
+          "median": -0.4926,
+          "portfolio": {
+            "sleeve_days": 2,
+            "portfolio_return_pct": -39.9481,
+            "max_drawdown_pct": -62.8253,
+            "occupancy_pct": 59.82,
+            "signal_days": 813,
+            "filled_trades": 1624,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 125.0445
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 102.2016
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 66.7433
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 57.0533
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 59.1707
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 60.0519
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 312,
+              "win_rate": 47.76,
+              "avg": 0.3524
+            },
+            "2022": {
+              "n": 287,
+              "win_rate": 40.77,
+              "avg": -0.1983
+            },
+            "2023": {
+              "n": 278,
+              "win_rate": 40.65,
+              "avg": -0.5814
+            },
+            "2024": {
+              "n": 274,
+              "win_rate": 43.07,
+              "avg": -0.154
+            },
+            "2025": {
+              "n": 305,
+              "win_rate": 46.23,
+              "avg": 0.1086
+            },
+            "2026": {
+              "n": 168,
+              "win_rate": 47.02,
+              "avg": 0.0288
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.1424,
+            "late_2024_2026": -0.0055,
+            "oos_2021_2025": -0.0945,
+            "negative_years_2021_2025": [
+              "2022",
+              "2023",
+              "2024"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日一字板买不进": 2,
+            "入场日超出数据范围": 2
+          },
+          "pool": {
+            "signal_days": 814,
+            "avg_names": 2.0,
+            "max_names": 2
+          }
+        },
+        "double_yin_all": {
+          "trades": 38962,
+          "win_rate": 44.42,
+          "payoff_ratio": 1.218,
+          "avg_net": -0.0398,
+          "median": -0.4188,
+          "portfolio": {
+            "sleeve_days": 2,
+            "portfolio_return_pct": -35.564,
+            "max_drawdown_pct": -42.6189,
+            "occupancy_pct": 58.65,
+            "signal_days": 797,
+            "filled_trades": 38962,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 93.7936
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 80.8362
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 76.6789
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 86.6565
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 74.9062
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 64.436
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 6053,
+              "win_rate": 45.66,
+              "avg": 0.0369
+            },
+            "2022": {
+              "n": 6533,
+              "win_rate": 40.88,
+              "avg": -0.495
+            },
+            "2023": {
+              "n": 6746,
+              "win_rate": 45.03,
+              "avg": 0.0157
+            },
+            "2024": {
+              "n": 6816,
+              "win_rate": 45.58,
+              "avg": 0.2021
+            },
+            "2025": {
+              "n": 7843,
+              "win_rate": 45.2,
+              "avg": 0.09
+            },
+            "2026": {
+              "n": 4971,
+              "win_rate": 43.89,
+              "avg": -0.1465
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.1475,
+            "late_2024_2026": 0.0485,
+            "oos_2021_2025": -0.0301,
+            "negative_years_2021_2025": [
+              "2022"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日停牌": 9,
+            "入场日一字板买不进": 33,
+            "入场日超出数据范围": 63
+          },
+          "pool": {
+            "signal_days": 798,
+            "avg_names": 48.956,
+            "max_names": 421
+          }
+        },
+        "double_yin_top2_pct_chg": {
+          "trades": 1569,
+          "win_rate": 44.55,
+          "payoff_ratio": 1.208,
+          "avg_net": -0.0706,
+          "median": -0.8273,
+          "portfolio": {
+            "sleeve_days": 2,
+            "portfolio_return_pct": -27.8757,
+            "max_drawdown_pct": -55.5394,
+            "occupancy_pct": 58.65,
+            "signal_days": 797,
+            "filled_trades": 1569,
+            "year_end_nav": [
+              {
+                "year": "2021",
+                "date": "2021-12-31",
+                "nav": 106.948
+              },
+              {
+                "year": "2022",
+                "date": "2022-12-30",
+                "nav": 71.6538
+              },
+              {
+                "year": "2023",
+                "date": "2023-12-29",
+                "nav": 94.4735
+              },
+              {
+                "year": "2024",
+                "date": "2024-12-31",
+                "nav": 98.0477
+              },
+              {
+                "year": "2025",
+                "date": "2025-12-31",
+                "nav": 65.5948
+              },
+              {
+                "year": "2026",
+                "date": "2026-08-12",
+                "nav": 72.1243
+              }
+            ]
+          },
+          "years": {
+            "2021": {
+              "n": 308,
+              "win_rate": 44.48,
+              "avg": 0.1866
+            },
+            "2022": {
+              "n": 278,
+              "win_rate": 42.45,
+              "avg": -0.6632
+            },
+            "2023": {
+              "n": 273,
+              "win_rate": 47.99,
+              "avg": 0.3883
+            },
+            "2024": {
+              "n": 254,
+              "win_rate": 44.88,
+              "avg": 0.2044
+            },
+            "2025": {
+              "n": 296,
+              "win_rate": 44.59,
+              "avg": -0.382
+            },
+            "2026": {
+              "n": 160,
+              "win_rate": 41.88,
+              "avg": -0.1796
+            }
+          },
+          "gate": {
+            "early_2021_2023": -0.0294,
+            "late_2024_2026": -0.1191,
+            "oos_2021_2025": -0.0532,
+            "negative_years_2021_2025": [
+              "2022",
+              "2025"
+            ],
+            "pass_yearly": false,
+            "pass_split": false
+          },
+          "skipped": {
+            "入场日一字板买不进": 7,
+            "入场日停牌": 1,
+            "入场日超出数据范围": 2
+          },
+          "pool": {
+            "signal_days": 798,
+            "avg_names": 1.979,
+            "max_names": 2
+          }
+        }
+      }
+    }
+  ]
+}

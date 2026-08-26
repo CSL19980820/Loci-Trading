@@ -1,24 +1,32 @@
-"""全局助手的静态工具面。
+"""全局助手的系统工具面。
 
-这里刻意不复用 Skill ToolBus：没有 CLI、动态 MCP、shell、文件、URL 或 SQL。
+默认挂载：账本/行情/策略/运维/记忆 + ask_user（HITL）+ web_search/web_fetch + 活跃 MCP。
+仍禁止 shell、任意文件、raw SQL、券商下单；URL 仅允许 web_* 与 MCP 工具。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
+import logging
 import re
 from threading import Thread
 from time import monotonic
 from typing import Any, Callable
 
-from src.ai.domain.assistant import AssistantError, validate_qianlong_decisions
-
-
-ToolResult = dict[str, Any]
+from src.ai.application.system_tool_result import ToolResult, ok as _ok
+from src.ai.application.tool_schema import tool_schema
+from src.ai.domain.assistant import AssistantError
+from src.shared.observability import (
+    correlation_scope,
+    current as current_observation,
+    event as observation_event,
+    new_id,
+    span as observation_span,
+)
 GrantIssuer = Callable[[str, str, dict[str, Any]], dict[str, Any] | None]
 GrantConsumer = Callable[[str, str, str, dict[str, Any]], str]
 GrantCompleter = Callable[[str, dict[str, Any], str], None]
 EventCallback = Callable[[dict[str, Any]], None]
+logger = logging.getLogger(__name__)
 
 _FORBIDDEN = re.compile(
     r"(sql|shell|command|file|path|url|endpoint|proxy|api.?key|secret|password|credential|authorization|(?:^|[_-])(?:access|refresh|bearer)?[_-]?token(?:$|[_-])|broker[ _-]?order|order)",
@@ -31,12 +39,10 @@ class ToolSpec:
     parameters: dict[str, Any]
     write: bool
     handler: Callable[[dict[str, Any]], ToolResult]
-
-
-def _schema(name: str, description: str, parameters: dict[str, Any], protocol: str) -> dict[str, Any]:
-    if protocol == "anthropic":
-        return {"name": name, "description": description, "input_schema": parameters}
-    return {"type": "function", "function": {"name": name, "description": description, "parameters": parameters}}
+    #: web_search / web_fetch / MCP 等可携带 URL 参数
+    allow_urls: bool = False
+    #: 可选的执行预算；不配置时由底层 client 或业务用例自行控制。
+    timeout_seconds: float | None = None
 
 
 def _object(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
@@ -46,17 +52,103 @@ def _object(properties: dict[str, Any], required: list[str] | None = None) -> di
     return result
 
 
-def _safe(value: Any) -> None:
+def _normalize_ask_questions(raw: Any) -> list[dict[str, Any]]:
+    """Normalize ask_user.questions[]; empty/invalid entries dropped."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw[:8]:
+        if not isinstance(item, dict):
+            continue
+        qid = str(item.get("id") or "").strip()
+        prompt = str(item.get("prompt") or "").strip()
+        if not qid or not prompt:
+            continue
+        row: dict[str, Any] = {"id": qid[:64], "prompt": prompt[:2000]}
+        opts = item.get("options")
+        if isinstance(opts, list):
+            cleaned = [str(o).strip() for o in opts if str(o).strip()][:12]
+            if cleaned:
+                row["options"] = cleaned
+        if item.get("allow_free_text") is True:
+            row["allow_free_text"] = True
+        out.append(row)
+    return out
+
+
+def _safe(value: Any, *, allow_urls: bool = False) -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             if _FORBIDDEN.search(str(key)):
+                # url 键在 allow_urls 工具上放行
+                if allow_urls and re.fullmatch(r"urls?|endpoint|link", str(key), re.I):
+                    _safe(item, allow_urls=True)
+                    continue
                 raise AssistantError("工具参数不得包含凭据、URL、文件、命令或 SQL")
-            _safe(item)
+            _safe(item, allow_urls=allow_urls)
     elif isinstance(value, list):
         for item in value:
-            _safe(item)
+            _safe(item, allow_urls=allow_urls)
     elif isinstance(value, str) and ("http://" in value.lower() or "https://" in value.lower()):
-        raise AssistantError("工具参数不得包含 URL")
+        if not allow_urls:
+            raise AssistantError("工具参数不得包含 URL")
+
+
+def _validate_schema(value: Any, schema: dict[str, Any], *, path: str = "arguments") -> None:
+    """执行工具入口所需的最小 JSON Schema 校验。
+
+    这里不引入 jsonschema 依赖，只覆盖 MCP/内置工具实际用到的 object、
+    array、string、number、boolean 约束；未知 schema 关键字保持向后兼容。
+    """
+    expected = schema.get("type")
+    if expected == "object":
+        if not isinstance(value, dict):
+            raise AssistantError(f"{path} 必须是对象")
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        required = schema.get("required") if isinstance(schema.get("required"), list) else []
+        missing = [str(key) for key in required if key not in value]
+        if missing:
+            raise AssistantError(f"{path} 缺少必填参数：{', '.join(missing)}")
+        if schema.get("additionalProperties") is False:
+            unknown = [str(key) for key in value if key not in properties]
+            if unknown:
+                raise AssistantError(f"{path} 包含未声明参数：{', '.join(unknown[:8])}")
+        for key, item in value.items():
+            child = properties.get(key)
+            if isinstance(child, dict):
+                _validate_schema(item, child, path=f"{path}.{key}")
+        return
+    if expected == "array":
+        if not isinstance(value, list):
+            raise AssistantError(f"{path} 必须是数组")
+        if "minItems" in schema and len(value) < int(schema["minItems"]):
+            raise AssistantError(f"{path} 数量不能少于 {schema['minItems']}")
+        if "maxItems" in schema and len(value) > int(schema["maxItems"]):
+            raise AssistantError(f"{path} 数量不能超过 {schema['maxItems']}")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value[:512]):
+                _validate_schema(item, item_schema, path=f"{path}[{index}]")
+        return
+    if expected == "string":
+        if not isinstance(value, str):
+            raise AssistantError(f"{path} 必须是字符串")
+        if "minLength" in schema and len(value) < int(schema["minLength"]):
+            raise AssistantError(f"{path} 长度不足")
+        if "maxLength" in schema and len(value) > int(schema["maxLength"]):
+            raise AssistantError(f"{path} 长度超过上限")
+        pattern = schema.get("pattern")
+        if pattern and re.fullmatch(str(pattern), value) is None:
+            raise AssistantError(f"{path} 格式不合法")
+        return
+    if expected == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
+        raise AssistantError(f"{path} 必须是整数")
+    if expected == "number" and (
+        not isinstance(value, (int, float)) or isinstance(value, bool)
+    ):
+        raise AssistantError(f"{path} 必须是数字")
+    if expected == "boolean" and not isinstance(value, bool):
+        raise AssistantError(f"{path} 必须是布尔值")
 
 
 class SystemToolBus:
@@ -67,26 +159,76 @@ class SystemToolBus:
         protocol: str = "openai_compatible", grant_issuer: GrantIssuer | None = None,
         grant_consumer: GrantConsumer | None = None, grant_completer: GrantCompleter | None = None,
         on_event: EventCallback | None = None, scheduler_reloader: Callable[[], None] | None = None,
-        read_only: bool = False,
+        read_only: bool = False, attach_mcp: bool = True,
+        allow_tools: set[str] | frozenset[str] | None = None,
+        tool_timeout_seconds: float | None = None,
     ) -> None:
         self.palace_db, self.market_db, self.ops_db = palace_db, market_db, ops_db
         self.protocol = protocol
         self.grant_issuer, self.grant_consumer = grant_issuer, grant_consumer
         self.grant_completer, self.on_event, self._last_grant_id = grant_completer, on_event, ""
         self._scheduler_reloader = scheduler_reloader
+        try:
+            parsed_timeout = float(tool_timeout_seconds) if tool_timeout_seconds is not None else 0.0
+        except (TypeError, ValueError):
+            parsed_timeout = 0.0
+        self._tool_timeout_seconds = parsed_timeout if parsed_timeout > 0 else None
         self._background_threads: list[Thread] = []
         self._candidate_pool_snapshots: dict[tuple[str, str], frozenset[str]] = {}
         self._candidate_pool_evidence: dict[tuple[str, str], frozenset[str]] = {}
         self._read_only = read_only
+        self._mcp_attached = 0
+        self._mcp_routing: dict[str, str] = {}
         specs = self._register()
-        self._specs = {name: spec for name, spec in specs.items() if not read_only or not spec.write}
+        # MCP 一律只读；注册后再滤一次写工具即可（避免双重过滤）。
+        # 只读子 Agent 传 attach_mcp=False，避免重复扫 mcp.json / 建客户端。
+        # allow_tools：角色化子 Agent 白名单（在 MCP/只读过滤之后再裁）。
+        self._specs = dict(specs)
+        if attach_mcp:
+            from src.ai.application.system_toolbus_mcp import mount_default_mcp
+
+            mount_default_mcp(self)
+        if read_only:
+            self._specs = {name: spec for name, spec in self._specs.items() if not spec.write}
+        if allow_tools is not None:
+            allow = {str(name).strip() for name in allow_tools if str(name).strip()}
+            self._specs = {name: spec for name, spec in self._specs.items() if name in allow}
 
     @property
     def schemas(self) -> list[dict[str, Any]]:
-        return [_schema(spec.name, spec.description, spec.parameters, self.protocol) for spec in self._specs.values()]
+        return [
+            tool_schema(self.protocol, spec.name, spec.description, spec.parameters)
+            for spec in self._specs.values()
+        ]
 
     def catalog(self) -> list[dict[str, Any]]:
-        return [{"name": item.name, "description": item.description, "risk": "write" if item.write else "read"} for item in self._specs.values()]
+        """前端上下文用量用：含 schema_tokens / mcp tags，贴近真实 tools JSON 体积。"""
+        import json
+
+        from src.ai.application.context_usage import estimate_tokens
+
+        routing = getattr(self, "_mcp_routing", {}) or {}
+        out: list[dict[str, Any]] = []
+        for item in self._specs.values():
+            schema_blob = json.dumps(
+                {
+                    "name": item.name,
+                    "description": item.description,
+                    "parameters": item.parameters,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            row: dict[str, Any] = {
+                "name": item.name,
+                "description": item.description,
+                "risk": "write" if item.write else "read",
+                "schema_tokens": estimate_tokens(schema_blob),
+            }
+            if item.name in routing or "__" in item.name:
+                row["tags"] = ["mcp", "dynamic"]
+            out.append(row)
+        return out
 
     def executor(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         spec = self._specs.get(name)
@@ -94,15 +236,37 @@ class SystemToolBus:
             return {"text": "未注册的系统工具", "is_error": True}
         if not isinstance(arguments, dict):
             return {"text": "工具参数必须是对象", "is_error": True}
+        receipt_id = new_id("tool")
+        started = monotonic()
+        timeout_seconds = spec.timeout_seconds or self._tool_timeout_seconds
+        inherited = current_observation()
+        result: ToolResult
+        deferred = False
         try:
             self._last_grant_id = ""
-            _safe(arguments)
+            if self._read_only and spec.write:
+                raise AssistantError("只读助手无权执行写工具")
+            _validate_schema(arguments, spec.parameters)
+            _safe(arguments, allow_urls=spec.allow_urls)
             if self.on_event:
-                self.on_event({"type": "tool_start", "name": name, "arguments": arguments})
-            result = spec.handler(arguments)
+                self.on_event(
+                    {
+                        "type": "tool_start",
+                        "name": name,
+                        "arguments": arguments,
+                        "tool_receipt_id": receipt_id,
+                    }
+                )
+            with observation_span(
+                "system_tool.invoke",
+                trace_id=inherited.trace_id,
+                run_id=inherited.run_id,
+                job_id=inherited.job_id,
+                tool_receipt_id=receipt_id,
+                labels={"component": "system_toolbus", "operation": "invoke"},
+            ):
+                result = spec.handler(arguments)
             deferred = bool(result.pop("_grant_deferred", False))
-            if spec.write and self._last_grant_id and not deferred:
-                self._finalize_grant(self._last_grant_id, result.get("structured", {}))
         except AssistantError as exc:
             if spec.write and self._last_grant_id:
                 self._finalize_grant(self._last_grant_id, {"error": str(exc)}, status="failed")
@@ -115,8 +279,53 @@ class SystemToolBus:
                     status="failed",
                 )
             result = {"text": f"系统工具失败：{type(exc).__name__}: {exc}", "is_error": True}
+        elapsed_ms = max(0, int((monotonic() - started) * 1000))
+        timed_out = timeout_seconds is not None and elapsed_ms > int(timeout_seconds * 1000)
+        if timed_out:
+            if spec.write and self._last_grant_id:
+                self._finalize_grant(
+                    self._last_grant_id,
+                    {"error": f"工具超过 timeout={timeout_seconds:g}s"},
+                    status="failed",
+                )
+            result = {
+                "text": f"工具超时（>{timeout_seconds:g}s）",
+                "is_error": True,
+                "meta": {"timeout": True},
+            }
+        elif spec.write and self._last_grant_id and not deferred:
+            self._finalize_grant(self._last_grant_id, result.get("structured", {}))
+        meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
+        result["meta"] = {**meta, "tool_receipt_id": receipt_id}
+        result["tool_receipt_id"] = receipt_id
+        with correlation_scope(
+            trace_id=inherited.trace_id,
+            run_id=inherited.run_id,
+            job_id=inherited.job_id,
+            tool_receipt_id=receipt_id,
+        ):
+            observation_event(
+                logger,
+                logging.INFO if not result.get("is_error") else logging.WARNING,
+                "system_tool_invocation",
+                fields={
+                    "operation": "invoke",
+                    "outcome": "error" if result.get("is_error") else "ok",
+                },
+            )
         if self.on_event:
-            self.on_event({"type": "tool_end", "name": name, "ok": not result.get("is_error"), "preview": str(result.get("text", ""))[:400]})
+            from src.ai.application.system_toolbus_preview import tool_event_preview
+
+            self.on_event(
+                {
+                    "type": "tool_end",
+                    "name": name,
+                    "ok": not result.get("is_error"),
+                    "preview": tool_event_preview(name, result),
+                    "elapsed_ms": elapsed_ms,
+                    "tool_receipt_id": receipt_id,
+                }
+            )
         return result
 
     def _grant(self, action: str, target: str, parameters: dict[str, Any]) -> str:
@@ -134,9 +343,14 @@ class SystemToolBus:
         if self.grant_completer is not None:
             self.grant_completer(grant_id, result, status)
 
-    def _artifact(self, kind: str, title: str, data: dict[str, Any]) -> None:
+    def _artifact(
+        self, kind: str, title: str, data: dict[str, Any], *, status: str = "ready",
+    ) -> None:
         if self.on_event:
-            self.on_event({"type": "artifact", "kind": kind, "title": title, "data": data})
+            payload: dict[str, Any] = {
+                "type": "artifact", "kind": kind, "title": title, "data": data, "status": status,
+            }
+            self.on_event(payload)
 
     def wait_for_background_tasks(
         self,
@@ -175,28 +389,49 @@ class SystemToolBus:
         read = False
         write = True
         specs = {
-            "ledger_dashboard": ToolSpec("ledger_dashboard", "读取账本仪表盘。", _object({}), read, self._ledger_dashboard),
-            "ledger_positions": ToolSpec("ledger_positions", "读取当前持仓。", _object({}), read, self._ledger_positions),
-            "ledger_trades": ToolSpec("ledger_trades", "查询成交记录。", _object({"code": {"type": "string", "pattern": "^\\d{6}$"}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}), read, self._ledger_trades),
-            "ledger_record_trade": ToolSpec("ledger_record_trade", "记录成交；不执行券商下单。", _object({"action": {"type": "string", "enum": ["BUY", "SELL"]}, "code": {"type": "string", "pattern": "^\\d{6}$"}, "shares": {"type": "integer", "minimum": 1}, "price": {"type": "number", "minimum": 0}, "occurred_on": {"type": "string"}, "name": {"type": "string"}, "reason": {"type": "string"}}, ["action", "code", "shares", "price"]), write, self._ledger_record_trade),
-            "ledger_adjust_positions": ToolSpec(
-                "ledger_adjust_positions", "一次记录用户口述的多笔买卖，并自动调整持仓、交割与余票成本。",
-                _object({"trades": {"type": "array", "minItems": 1, "maxItems": 40, "items": _object({"action": {"type": "string", "enum": ["BUY", "SELL"]}, "code": {"type": "string", "pattern": "^\\d{6}$"}, "shares": {"type": "integer", "minimum": 1}, "price": {"type": "number", "minimum": 0}, "occurred_on": {"type": "string"}, "name": {"type": "string"}, "reason": {"type": "string"}}, ["action", "code", "shares", "price"])}}, ["trades"]),
-                write, self._ledger_adjust_positions,
+            "ask_user": ToolSpec(
+                "ask_user",
+                "需要用户抉择时必须调用：单题用 prompt + options；多题用 questions"
+                "[{id,prompt,options?,allow_free_text?}]，用户一次提交全部答案。",
+                _object(
+                    {
+                        "prompt": {"type": "string", "minLength": 1, "maxLength": 2000},
+                        "options": {
+                            "type": "array",
+                            "maxItems": 12,
+                            "items": {"type": "string", "minLength": 1, "maxLength": 80},
+                        },
+                        "questions": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 8,
+                            "items": _object(
+                                {
+                                    "id": {"type": "string", "minLength": 1, "maxLength": 64},
+                                    "prompt": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 2000,
+                                    },
+                                    "options": {
+                                        "type": "array",
+                                        "maxItems": 12,
+                                        "items": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 80,
+                                        },
+                                    },
+                                    "allow_free_text": {"type": "boolean"},
+                                },
+                                ["id", "prompt"],
+                            ),
+                        },
+                    },
+                ),
+                read,
+                self._ask_user,
             ),
-            "ledger_record_cashflow": ToolSpec("ledger_record_cashflow", "记录账户出入金，不计入交易盈亏。", _object({"amount": {"type": "number"}, "occurred_on": {"type": "string"}, "note": {"type": "string"}}, ["amount"]), write, self._ledger_record_cashflow),
-            "ledger_record_daily_pnl": ToolSpec("ledger_record_daily_pnl", "写入或修正券商口径当日盈亏。", _object({"broker_pnl": {"type": "number"}, "market_pnl": {"type": "number"}, "occurred_on": {"type": "string"}, "note": {"type": "string"}}, ["broker_pnl"]), write, self._ledger_record_daily_pnl),
-            "ledger_record_snapshot": ToolSpec("ledger_record_snapshot", "记录账户总资产和可选现金快照。", _object({"total_assets": {"type": "number", "minimum": 0}, "cash": {"type": "number", "minimum": 0}, "occurred_on": {"type": "string"}, "note": {"type": "string"}}, ["total_assets"]), write, self._ledger_record_snapshot),
-            "ledger_upsert_candidate": ToolSpec("ledger_upsert_candidate", "新增或更新一条候选裁决。", _object({"code": {"type": "string", "pattern": "^\\d{6}$"}, "name": {"type": "string"}, "decision": {"type": "string", "enum": ["精选", "观察", "落选"]}, "reason": {"type": "string", "minLength": 1}, "occurred_on": {"type": "string"}, "pool_id": {"type": "string"}, "score": {"type": "number"}, "timing": {"type": "string"}, "invalidation": {"type": "string"}}, ["code", "decision", "reason"]), write, self._ledger_upsert_candidate),
-            "ledger_delete_candidate": ToolSpec("ledger_delete_candidate", "删除一条候选裁决。", _object({"candidate_id": {"type": "string", "minLength": 1}}, ["candidate_id"]), write, self._ledger_delete_candidate),
-            "ledger_delete_candidate_pool": ToolSpec("ledger_delete_candidate_pool", "删除指定日期和候选池的全部候选。", _object({"occurred_on": {"type": "string"}, "pool_id": {"type": "string", "minLength": 1}}, ["occurred_on", "pool_id"]), write, self._ledger_delete_candidate_pool),
-            "ledger_record_plan": ToolSpec("ledger_record_plan", "新增一条交易预案。", _object({"code": {"type": "string", "pattern": "^\\d{6}$"}, "title": {"type": "string", "minLength": 1}, "scenario": {"type": "string", "minLength": 1}, "occurred_on": {"type": "string"}, "entry_zone": {"type": "string"}, "stop_price": {"type": "number"}, "target_price": {"type": "number"}, "layers": {"type": "number", "exclusiveMinimum": 0}, "invalidation": {"type": "string"}, "note": {"type": "string"}}, ["code", "title", "scenario"]), write, self._ledger_record_plan),
-            "ledger_record_review": ToolSpec("ledger_record_review", "新增一条候选、预案或成交复盘。", _object({"entity_type": {"type": "string", "enum": ["candidate", "plan", "trade"]}, "entity_id": {"type": "string", "minLength": 1}, "outcome": {"type": "string", "minLength": 1}, "reviewed_on": {"type": "string"}, "strategy_tag": {"type": "string"}, "return_pct": {"type": "number"}, "max_favorable_pct": {"type": "number"}, "max_adverse_pct": {"type": "number"}, "lesson": {"type": "string"}, "next_rule": {"type": "string"}}, ["entity_type", "entity_id", "outcome"]), write, self._ledger_record_review),
-            "qianlong_candidate_pool": ToolSpec("qianlong_candidate_pool", "读取潜龙候选池。", _object({"occurred_on": {"type": "string"}, "pool_id": {"type": "string"}}), read, self._qianlong_pool),
-            "qianlong_pool_evidence": ToolSpec("qianlong_pool_evidence", "读取潜龙整池的本机日 K 摘要，供从 6-10 只中精选 0-2 只。", _object({"occurred_on": {"type": "string"}, "pool_id": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 10}}, ["occurred_on"]), read, self._qianlong_pool_evidence),
-            "qianlong_commit": ToolSpec("qianlong_commit", "整池提交潜龙 6-10 只、0-2 精选及三档裁决。", _object({"occurred_on": {"type": "string"}, "pool_id": {"type": "string"}, "decisions": {"type": "array", "minItems": 6, "maxItems": 10, "items": {"type": "object"}}}, ["occurred_on", "decisions"]), write, self._qianlong_commit),
-            "market_kline": ToolSpec("market_kline", "读取单票日 K。", _object({"code": {"type": "string", "pattern": "^\\d{6}$"}, "start": {"type": "string"}, "end": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 240}}, ["code"]), read, self._market_kline),
-            "market_search": ToolSpec("market_search", "按代码或名称搜索标的。", _object({"query": {"type": "string", "minLength": 1, "maxLength": 32}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, ["query"]), read, self._market_search),
             "strategy_catalog": ToolSpec("strategy_catalog", "读取内置策略目录。", _object({}), read, self._strategy_catalog),
             "strategy_screen": ToolSpec(
                 "strategy_screen",
@@ -218,353 +453,57 @@ class SystemToolBus:
                 read,
                 self._strategy_screen,
             ),
-            "system_tool_catalog": ToolSpec("system_tool_catalog", "读取静态系统工具目录；动态 MCP 已禁用。", _object({}), read, self._tool_catalog),
+            "system_tool_catalog": ToolSpec(
+                "system_tool_catalog",
+                "读取系统工具目录（含默认挂载的 MCP 与 web_search）。",
+                _object({}),
+                read,
+                self._tool_catalog,
+            ),
         }
+        specs.update(_ledger_specs(self))
+        specs.update(_qianlong_specs(self))
+        specs.update(_market_specs(self))
+        specs.update(_research_specs(self))
         specs.update(_ops_specs(self))
+        specs.update(_memory_specs(self))
+        from src.ai.application.system_toolbus_web import web_specs
+
+        specs.update(web_specs(self))
         return specs
 
-    def _ledger_dashboard(self, _: dict[str, Any]) -> ToolResult:
-        from src.ledger import PalaceStore
-        with PalaceStore(self.palace_db) as store:
-            data = store.dashboard_payload()
-        return _ok(data)
-
-    def _ledger_positions(self, _: dict[str, Any]) -> ToolResult:
-        from src.ledger import PalaceStore
-        with PalaceStore(self.palace_db) as store:
-            return _ok(store.positions_payload())
-
-    def _ledger_trades(self, args: dict[str, Any]) -> ToolResult:
-        from src.ledger import PalaceStore
-        with PalaceStore(self.palace_db) as store:
-            return _ok(store.trades_payload(code=args.get("code"), limit=int(args.get("limit", 100))))
-
-    def _ledger_record_trade(self, args: dict[str, Any]) -> ToolResult:
-        values = {key: args[key] for key in ("action", "code", "shares", "price")}
-        values.update(
-            {
-                key: args[key]
-                for key in ("occurred_on", "name", "reason")
-                if key in args and str(args[key]).strip()
+    def _ask_user(self, arguments: dict[str, Any]) -> ToolResult:
+        """Cursor/Hermes 式交互问答：暂停主环，等用户回复后再开下一轮。"""
+        questions = _normalize_ask_questions(arguments.get("questions"))
+        prompt = str(arguments.get("prompt") or "").strip()
+        raw_options = arguments.get("options") or []
+        if not isinstance(raw_options, list):
+            raw_options = [raw_options]
+        options = [str(item).strip() for item in raw_options if str(item).strip()][:12]
+        if not questions and not prompt:
+            return {
+                "text": "ask_user 需要 prompt 或 questions",
+                "is_error": True,
+                "meta": {},
             }
-        )
-        values["action"] = str(values["action"]).upper()
-        values["code"] = str(values["code"])
-        values["shares"] = int(values["shares"])
-        values["price"] = float(values["price"])
-        key = self._grant("ledger.record_trade", str(values.get("name") or values["code"]), values)
-        from src.ledger import PalaceStore
-        with PalaceStore(self.palace_db) as store:
-            result = store.record_trades(
-                [{**values, "source": "ai_assistant", "correlation_id": key, "metadata": {"source": "ai_assistant", "idempotency_key": key}}],
-                idempotency_key=key,
-            )[0]
-        return _ok(result)
-
-    def _ledger_adjust_positions(self, args: dict[str, Any]) -> ToolResult:
-        raw_trades = args.get("trades")
-        if not isinstance(raw_trades, list) or not raw_trades:
-            raise AssistantError("持仓调整至少需要一笔成交")
-        trades: list[dict[str, Any]] = []
-        for item in raw_trades:
-            if not isinstance(item, dict):
-                raise AssistantError("每笔成交必须是对象")
-            action = str(item.get("action") or "").upper()
-            code = str(item.get("code") or "").strip()
-            shares = int(item.get("shares") or 0)
-            price = float(item.get("price") or 0)
-            if action not in {"BUY", "SELL"} or not re.fullmatch(r"\d{6}", code):
-                raise AssistantError("成交必须包含 BUY/SELL 和 6 位代码")
-            if shares <= 0 or price < 0:
-                raise AssistantError("成交股数必须大于 0，价格不能为负数")
-            trade = {"action": action, "code": code, "shares": shares, "price": price}
-            for key in ("occurred_on", "name", "reason"):
-                if item.get(key) is not None and str(item[key]).strip():
-                    trade[key] = str(item[key]).strip()
-            trades.append(trade)
-        grant = self._grant("ledger.adjust_positions", "持仓调整", {"trades": trades})
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            positions = {
-                str(row["code"]): int(row["shares"])
-                for row in store.positions_payload()
+        if questions:
+            summary = prompt or str(questions[0].get("prompt") or "请确认下一步")
+            ask: dict[str, Any] = {
+                "prompt": summary,
+                "options": options,
+                "questions": questions,
             }
-            cash = store.broker_cash()
-            for trade in trades:
-                code, shares = str(trade["code"]), int(trade["shares"])
-                notional = shares * float(trade["price"])
-                if trade["action"] == "SELL":
-                    if shares > positions.get(code, 0):
-                        raise AssistantError(f"{code} 卖出 {shares} 股超过当前持仓")
-                    positions[code] = positions.get(code, 0) - shares
-                    if cash is not None:
-                        cash += notional
-                else:
-                    if cash is not None and cash + 1e-9 < notional:
-                        raise AssistantError(f"买入 {code} 所需资金超过当前可用现金")
-                    positions[code] = positions.get(code, 0) + shares
-                    if cash is not None:
-                        cash -= notional
-            records = store.record_trades(
-                [
-                    {
-                        **trade,
-                        "source": "ai_assistant",
-                        "correlation_id": grant,
-                        "metadata": {"source": "ai_assistant", "idempotency_key": grant},
-                    }
-                    for trade in trades
-                ],
-                idempotency_key=grant,
-            )
-        return _ok({"records": records, "count": len(records)})
-
-    def _ledger_record_cashflow(self, args: dict[str, Any]) -> ToolResult:
-        values = {"amount": float(args["amount"])}
-        for key in ("occurred_on", "note"):
-            if args.get(key) is not None and str(args[key]).strip():
-                values[key] = str(args[key]).strip()
-        grant = self._grant("ledger.record_cashflow", "账户出入金", values)
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            event_id = store.record_account_event(
-                kind="CASHFLOW",
-                **values,
-                source="ai_assistant",
-                metadata={"source": "ai_assistant", "idempotency_key": grant},
-            )
-        return _ok({"id": event_id, **values})
-
-    def _ledger_record_daily_pnl(self, args: dict[str, Any]) -> ToolResult:
-        values = {"broker_pnl": float(args["broker_pnl"])}
-        for key in ("market_pnl", "occurred_on", "note"):
-            if args.get(key) is not None and str(args[key]).strip():
-                values[key] = float(args[key]) if key == "market_pnl" else str(args[key]).strip()
-        grant = self._grant("ledger.record_daily_pnl", "当日盈亏", values)
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            result = store.record_daily_pnl(
-                **values,
-                source="ai_assistant",
-                metadata={"source": "ai_assistant", "idempotency_key": grant},
-            )
-        return _ok(result)
-
-    def _ledger_record_snapshot(self, args: dict[str, Any]) -> ToolResult:
-        values = {"total_assets": float(args["total_assets"])}
-        for key in ("cash", "occurred_on", "note"):
-            if args.get(key) is not None and str(args[key]).strip():
-                values[key] = float(args[key]) if key == "cash" else str(args[key]).strip()
-        grant = self._grant("ledger.record_snapshot", "账户资产", values)
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            snapshot_id = store.record_snapshot(**values, source="ai_assistant")
-        return _ok({"id": snapshot_id, **values, "idempotency_key": grant})
-
-    def _ledger_upsert_candidate(self, args: dict[str, Any]) -> ToolResult:
-        values = {
-            "code": str(args["code"]),
-            "name": str(args.get("name") or ""),
-            "decision": str(args["decision"]),
-            "reason": str(args["reason"]),
+        else:
+            ask = {"prompt": prompt or "请确认下一步", "options": options}
+        return {
+            "text": str(ask["prompt"]),
+            "is_error": False,
+            "meta": {
+                "pause": True,
+                "needs_hitl": True,
+                "ask": ask,
+            },
         }
-        for key in ("occurred_on", "pool_id", "timing"):
-            if args.get(key) is not None and str(args[key]).strip():
-                values[key] = str(args[key]).strip()
-        if args.get("score") is not None:
-            values["score"] = float(args["score"])
-        invalidation = str(args.get("invalidation") or "").strip()
-        if invalidation:
-            values["evidence"] = {"invalidation": invalidation}
-        values["tier"] = {"精选": "selected", "观察": "watch", "落选": "reject"}[values["decision"]]
-        grant = self._grant("ledger.upsert_candidate", values["code"], values)
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            candidate_id = store.record_candidate(
-                **values,
-                rule_version="潜龙" if "潜龙" in values.get("reason", "") else "manual",
-                source="ai_assistant",
-            )
-        self._artifact("candidate_verdict", "候选裁决", {"candidates": [{**values, "id": candidate_id}]})
-        return _ok({"id": candidate_id, **values, "idempotency_key": grant})
-
-    def _ledger_delete_candidate(self, args: dict[str, Any]) -> ToolResult:
-        candidate_id = str(args["candidate_id"]).strip()
-        grant = self._grant("ledger.delete_candidate", candidate_id, {"candidate_id": candidate_id})
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            removed = store.delete_candidate(candidate_id)
-        if not removed:
-            raise AssistantError("候选不存在")
-        return _ok({"candidate_id": candidate_id, "removed": True, "idempotency_key": grant})
-
-    def _ledger_delete_candidate_pool(self, args: dict[str, Any]) -> ToolResult:
-        values = {"occurred_on": str(args["occurred_on"]), "pool_id": str(args["pool_id"])}
-        grant = self._grant("ledger.delete_candidate_pool", values["pool_id"], values)
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            removed = store.delete_candidates_for_pool(**values)
-        return _ok({**values, "removed": removed, "idempotency_key": grant})
-
-    def _ledger_record_plan(self, args: dict[str, Any]) -> ToolResult:
-        values = {key: str(args[key]).strip() for key in ("code", "title", "scenario")}
-        for key in ("occurred_on", "entry_zone", "invalidation", "note"):
-            if args.get(key) is not None and str(args[key]).strip():
-                values[key] = str(args[key]).strip()
-        for key in ("stop_price", "target_price", "layers"):
-            if args.get(key) is not None:
-                values[key] = float(args[key])
-        grant = self._grant("ledger.record_plan", values["code"], values)
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            plan_id = store.record_plan(**values, source="ai_assistant")
-        return _ok({"id": plan_id, **values, "idempotency_key": grant})
-
-    def _ledger_record_review(self, args: dict[str, Any]) -> ToolResult:
-        values = {key: str(args[key]).strip() for key in ("entity_type", "entity_id", "outcome")}
-        for key in ("reviewed_on", "strategy_tag", "lesson", "next_rule"):
-            if args.get(key) is not None and str(args[key]).strip():
-                values[key] = str(args[key]).strip()
-        for key in ("return_pct", "max_favorable_pct", "max_adverse_pct"):
-            if args.get(key) is not None:
-                values[key] = float(args[key])
-        grant = self._grant("ledger.record_review", values["entity_id"], values)
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            review_id = store.record_review(**values, source="ai_assistant")
-        return _ok({"id": review_id, **values, "idempotency_key": grant})
-
-    def _qianlong_pool(self, args: dict[str, Any]) -> ToolResult:
-        from src.ledger import PalaceStore
-        with PalaceStore(self.palace_db) as store:
-            rows = store.candidates_payload(args.get("occurred_on"))
-        pool_id = str(args.get("pool_id") or "")
-        if pool_id:
-            rows = [row for row in rows if row.get("pool_id") == pool_id]
-        if rows and args.get("occurred_on"):
-            pools = {str(row.get("pool_id") or "") for row in rows}
-            if len(pools) == 1:
-                self._candidate_pool_snapshots[(str(args["occurred_on"]), pools.pop())] = frozenset(
-                    str(row.get("code") or "") for row in rows
-                )
-        self._artifact("candidate_verdict", "潜龙候选裁决", {"candidates": rows})
-        return _ok(rows)
-
-    def _qianlong_pool_evidence(self, args: dict[str, Any]) -> ToolResult:
-        day = str(args["occurred_on"])
-        pool_id = str(args.get("pool_id") or "")
-        limit = int(args.get("limit", 10))
-        from src.ledger import PalaceStore
-        from src.market import MarketStore
-
-        with PalaceStore(self.palace_db) as palace:
-            candidates = palace.candidates_payload(day)
-        if pool_id:
-            candidates = [row for row in candidates if row.get("pool_id") == pool_id]
-        candidates = candidates[:limit]
-        if candidates:
-            effective_pool = pool_id or str(candidates[0].get("pool_id") or "")
-            pools = {str(row.get("pool_id") or "") for row in candidates}
-            if len(pools) == 1:
-                self._candidate_pool_evidence[(day, effective_pool)] = frozenset(
-                    str(row.get("code") or "") for row in candidates
-                )
-        evidence: list[dict[str, Any]] = []
-        with MarketStore(self.market_db) as market:
-            for candidate in candidates:
-                code = str(candidate.get("code") or "")
-                frame = market.history(code, end=day, adjust="qfq").tail(60)
-                rows = frame.to_dict("records") if not frame.empty else []
-                closes = [float(row["close"]) for row in rows if row.get("close") is not None]
-                volumes = [float(row["volume"]) for row in rows if row.get("volume") is not None]
-                last = closes[-1] if closes else None
-                prev = closes[-2] if len(closes) > 1 else None
-                ma5 = round(sum(closes[-5:]) / min(5, len(closes)), 4) if closes else None
-                ma20 = round(sum(closes[-20:]) / min(20, len(closes)), 4) if closes else None
-                recent_volume = volumes[-1] if volumes else None
-                prior_volumes = volumes[-6:-1]
-                evidence.append(
-                    {
-                        **candidate,
-                        "close": last,
-                        "pct_chg": round((last / prev - 1) * 100, 2)
-                        if last is not None and prev not in (None, 0) else None,
-                        "ma5": ma5,
-                        "ma20": ma20,
-                        "ma5_gap_pct": round((last / ma5 - 1) * 100, 2)
-                        if last is not None and ma5 not in (None, 0) else None,
-                        "ma20_gap_pct": round((last / ma20 - 1) * 100, 2)
-                        if last is not None and ma20 not in (None, 0) else None,
-                        "volume_ratio": round(recent_volume / (sum(prior_volumes) / len(prior_volumes)), 2)
-                        if recent_volume is not None and prior_volumes and sum(prior_volumes) else None,
-                    }
-                )
-        self._artifact("candidate_verdict", f"{day} 潜龙候选证据", {"candidates": evidence})
-        return _ok({"occurred_on": day, "pool_id": pool_id, "candidates": evidence})
-
-    def _qianlong_commit(self, args: dict[str, Any]) -> ToolResult:
-        rows = validate_qianlong_decisions(args.get("decisions"))
-        day, pool_id = str(args["occurred_on"]), str(args.get("pool_id") or "")
-        from src.ledger import PalaceStore
-
-        with PalaceStore(self.palace_db) as store:
-            existing = store.candidates_payload(day)
-            pools = {str(item.get("pool_id") or "") for item in existing}
-            if not pool_id:
-                if len(pools) != 1:
-                    raise AssistantError("请明确要精炼的潜龙候选池")
-                pool_id = pools.pop()
-            existing = [item for item in existing if item.get("pool_id") == pool_id]
-            expected = {str(item.get("code") or "") for item in existing}
-            submitted = {str(item["code"]) for item in rows}
-            if not expected:
-                raise AssistantError("候选池为空；请先录入 6-10 只候选再做潜龙精选")
-            if submitted != expected:
-                missing = sorted(expected - submitted)
-                extra = sorted(submitted - expected)
-                raise AssistantError(f"提交必须覆盖候选池全部代码；缺少 {missing}，多出 {extra}")
-            snapshot_key = (day, pool_id)
-            if (
-                self._candidate_pool_snapshots.get(snapshot_key) != frozenset(expected)
-                or self._candidate_pool_evidence.get(snapshot_key) != frozenset(expected)
-            ):
-                raise AssistantError("提交前必须先读取该候选池及其本机日 K 证据")
-        canonical = {"occurred_on": day, "pool_id": pool_id, "decisions": rows}
-        key = self._grant("qianlong.commit_pool", pool_id or "潜龙候选池", canonical)
-        from src.ai.application.system_toolbus_ledger import commit_qianlong_candidates
-
-        ids = commit_qianlong_candidates(
-            palace_db=self.palace_db, rows=rows, day=day, pool_id=pool_id, idempotency_key=key,
-        )
-        result = {"ids": ids, "pool_size": len(ids), "selected": sum(row["decision"] == "精选" for row in rows)}
-        self._artifact("candidate_verdict", "潜龙候选裁决", {"candidates": rows})
-        return _ok(result)
-
-    def _market_kline(self, args: dict[str, Any]) -> ToolResult:
-        from src.market import MarketStore
-        with MarketStore(self.market_db) as store:
-            frame = store.history(str(args["code"]), start=args.get("start"), end=args.get("end"), adjust="qfq")
-        fields = ["trade_date", "open", "high", "low", "close", "volume", "amount", "turnover"]
-        rows = [{key: _json_value(row.get(key)) for key in fields if key in row} for row in frame.tail(int(args.get("limit", 120))).to_dict("records")]
-        self._artifact("qianlong_kline", f"{args['code']} 日 K", {"bars": rows})
-        return _ok(rows)
-
-    def _market_search(self, args: dict[str, Any]) -> ToolResult:
-        needle, limit = str(args["query"]).strip().lower(), int(args.get("limit", 30))
-        from src.market import MarketStore
-        with MarketStore(self.market_db) as store:
-            rows = store.list_instruments()
-        selected = [{key: row.get(key, "") for key in ("code", "name", "market", "board", "industry", "status")} for row in rows if needle in str(row.get("code", "")).lower() or needle in str(row.get("name", "")).lower()]
-        return _ok(selected[:limit])
 
     def _strategy_catalog(self, _: dict[str, Any]) -> ToolResult:
         from src.strategy import describe_all
@@ -576,21 +515,51 @@ class SystemToolBus:
         return run_strategy_screen(self, args)
 
     def _tool_catalog(self, _: dict[str, Any]) -> ToolResult:
-        return _ok({"tools": self.catalog(), "dynamic_mcp": "disabled", "skill_cli": "disabled"})
+        return _ok(
+            {
+                "tools": self.catalog(),
+                "dynamic_mcp": "mounted" if getattr(self, "_mcp_attached", 0) else "empty",
+                "mcp_tool_count": int(getattr(self, "_mcp_attached", 0) or 0),
+                "web_tools": ["web_search", "web_fetch"],
+                "skill_cli": "slash_prompt",
+            }
+        )
 
 
-def _json_value(value: Any) -> Any:
-    return value.item() if hasattr(value, "item") else value
+def _qianlong_specs(owner: SystemToolBus) -> dict[str, ToolSpec]:
+    from src.ai.application.system_toolbus_qianlong import build_qianlong_tool_specs
+
+    return build_qianlong_tool_specs(owner)
 
 
-def _ok(data: Any) -> ToolResult:
-    return {"text": json.dumps(data, ensure_ascii=False, default=str)[:12000], "structured": data, "is_error": False}
+def _ledger_specs(owner: SystemToolBus) -> dict[str, ToolSpec]:
+    from src.ai.application.system_toolbus_ledger import build_ledger_tool_specs
+
+    return build_ledger_tool_specs(owner)
 
 
 def _ops_specs(owner: SystemToolBus) -> dict[str, ToolSpec]:
     from src.ai.application.system_toolbus_ops import build_ops_tool_specs
 
     return build_ops_tool_specs(owner)
+
+
+def _market_specs(owner: SystemToolBus) -> dict[str, ToolSpec]:
+    from src.ai.application.system_toolbus_market import build_market_tool_specs
+
+    return build_market_tool_specs(owner)
+
+
+def _research_specs(owner: SystemToolBus) -> dict[str, ToolSpec]:
+    from src.ai.application.system_toolbus_research import build_research_tool_specs
+
+    return build_research_tool_specs(owner)
+
+
+def _memory_specs(owner: SystemToolBus) -> dict[str, ToolSpec]:
+    from src.ai.application.system_toolbus_memory import build_memory_tool_specs
+
+    return build_memory_tool_specs(owner)
 
 
 def build_system_toolbus(**kwargs: Any) -> SystemToolBus:

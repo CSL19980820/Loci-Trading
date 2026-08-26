@@ -200,6 +200,79 @@ class ExitRuleTests(unittest.TestCase):
         )
         self.assertEqual(result.trades[0].exit_reason, "take_profit")
 
+    def test_stop_loss_fills_at_the_open_when_the_day_gaps_below_the_stop(self) -> None:
+        """跳空低开穿过止损位时只能按开盘价出。
+
+        "当日最低跌破止损价"只说明能成交，不代表成交得到止损价上。按止损价
+        记账等于给回测注水，而且偏差全落在最差的那批交易上，最大回撤与盈亏比
+        会一起失真。
+        """
+        prices = [10.0] * len(DATES)
+        prices[6] = 9.0  # 开=收=9.0，直接跳空到止损价 9.4 下方
+        panels = _flat_panels(close={"600001": prices})
+        result = run_backtest(
+            _signal_on(5), panels, entry_timing="open",
+            config=BacktestConfig(hold_days=5, stop_loss_pct=-6.0, benchmark=None),
+        )
+        trade = result.trades[0]
+        self.assertEqual(trade.exit_reason, "stop_loss")
+        self.assertAlmostEqual(trade.exit_price, 9.0, places=4)
+
+    def test_stop_loss_fills_at_the_stop_when_the_day_only_dips_intraday(self) -> None:
+        """高开后盘中回落触及止损，才是真的成交在止损价上。"""
+        panels = _flat_panels()
+        panels["low"].iloc[6, 0] = 9.0  # 开盘 10.0 仍在止损价上方
+        result = run_backtest(
+            _signal_on(5), panels, entry_timing="open",
+            config=BacktestConfig(hold_days=5, stop_loss_pct=-6.0, benchmark=None),
+        )
+        trade = result.trades[0]
+        self.assertEqual(trade.exit_reason, "stop_loss")
+        self.assertAlmostEqual(trade.exit_price, 9.4, places=4)
+
+    def test_take_profit_fills_at_the_open_when_the_day_gaps_above_the_target(self) -> None:
+        """跳空高开越过止盈价，实际卖得到更高的开盘价。"""
+        prices = [10.0] * len(DATES)
+        prices[6] = 12.0
+        panels = _flat_panels(close={"600001": prices})
+        result = run_backtest(
+            _signal_on(5), panels, entry_timing="open",
+            config=BacktestConfig(
+                hold_days=5, stop_loss_pct=None, take_profit_pct=8.0, benchmark=None
+            ),
+        )
+        trade = result.trades[0]
+        self.assertEqual(trade.exit_reason, "take_profit")
+        self.assertAlmostEqual(trade.exit_price, 12.0, places=4)
+
+    def test_one_word_limit_up_does_not_defer_the_exit(self) -> None:
+        """一字涨停价上有买盘，卖得掉。
+
+        顺延到下一个交易日按收盘结算会系统性低估打板类策略——一字涨停的
+        次日经常高开回落。
+        """
+        panels = _flat_panels()
+        for field in ("open", "high", "low", "close"):
+            panels[field].iloc[8, 0] = 11.0  # 前收 10.0 → 一字涨停
+        result = run_backtest(
+            _signal_on(5), panels, entry_timing="open",
+            config=BacktestConfig(hold_days=3, stop_loss_pct=None, benchmark=None),
+        )
+        trade = result.trades[0]
+        self.assertEqual(trade.exit_date, DATES[8], "一字涨停被误判成卖不出")
+        self.assertAlmostEqual(trade.exit_price, 11.0, places=4)
+
+    def test_one_word_limit_down_still_defers_the_exit(self) -> None:
+        """一字跌停挂单卖不掉，必须顺延——这条原规则不能被上一条改坏。"""
+        panels = _flat_panels()
+        for field in ("open", "high", "low", "close"):
+            panels[field].iloc[8, 0] = 9.0  # 前收 10.0 → 一字跌停
+        result = run_backtest(
+            _signal_on(5), panels, entry_timing="open",
+            config=BacktestConfig(hold_days=3, stop_loss_pct=None, benchmark=None),
+        )
+        self.assertEqual(result.trades[0].exit_date, DATES[9])
+
     def test_running_out_of_data_is_not_counted_as_a_normal_exit(self) -> None:
         """数据到头必须单独标记，混进"到期了结"会污染统计。"""
         panels = _flat_panels()

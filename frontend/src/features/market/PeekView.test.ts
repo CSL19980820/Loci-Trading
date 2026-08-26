@@ -34,13 +34,31 @@ describe('PeekView request lifecycle', () => {
     delete (window as unknown as { pywebview?: unknown }).pywebview
     delete document.documentElement.dataset.peekPhase
     delete document.documentElement.dataset.peekEdge
+    document.getElementById('boot-splash')?.remove()
     stubViewport(1024, 768)
+  })
+
+  it('leaves boot splash dismissal to the shared startup lifecycle', async () => {
+    const splash = document.createElement('div')
+    splash.id = 'boot-splash'
+    document.body.appendChild(splash)
+    api.getLiveTape.mockResolvedValue({
+      indices: [],
+      as_of: '2026-08-01 10:00:00',
+      error: '',
+      title: 'Loci · 行情',
+    })
+
+    const wrapper = mount(PeekView)
+    await flushPromises()
+
+    expect(splash.isConnected).toBe(true)
+    wrapper.unmount()
   })
 
   it('does not let a pending initial quote update the document title after unmount', async () => {
     const pending = deferred<{
       indices: []
-      positions: []
       as_of: string
       error: string
       title: string
@@ -54,7 +72,6 @@ describe('PeekView request lifecycle', () => {
     wrapper.unmount()
     pending.resolve({
       indices: [],
-      positions: [],
       as_of: '2026-08-01 10:00:00',
       error: '',
       title: 'stale-quote',
@@ -69,7 +86,6 @@ describe('PeekView request lifecycle', () => {
     stubViewport(340, 340)
     api.getLiveTape.mockResolvedValue({
       indices: [{ code: '000001', label: '上证', pct: -0.5, price: 3000 }],
-      positions: [],
       as_of: '2026-08-01 10:00:00',
       error: '',
       title: 'Loci · 行情',
@@ -97,7 +113,6 @@ describe('PeekView request lifecycle', () => {
     stubViewport(22, 22)
     api.getLiveTape.mockResolvedValue({
       indices: [],
-      positions: [],
       as_of: '2026-08-01 10:00:00',
       error: '',
       title: 'Loci · 行情',
@@ -125,7 +140,6 @@ describe('PeekView request lifecycle', () => {
     stubViewport(22, 22)
     api.getLiveTape.mockResolvedValue({
       indices: [],
-      positions: [],
       as_of: '2026-08-01 10:00:00',
       error: '',
       title: 'Loci · 行情',

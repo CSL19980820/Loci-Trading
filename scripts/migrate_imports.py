@@ -11,7 +11,7 @@ REPLACEMENTS: list[tuple[str, str]] = [
     # strategies → strategy layers
     ("src.strategies.converter", "src.strategy.application.converter"),
     ("src.strategies.screener", "src.strategy.application.screener"),
-    ("src.strategies.lugaowen", "src.strategy.application.lugaowen"),
+    ("src.strategies.lugaowen", "src.strategy.application.backup.lugaowen-legacy"),
     ("src.strategies.qianlong", "src.strategy.application.qianlong"),
     ("src.strategies.audit", "src.strategy.application.audit"),
     ("src.strategies.base", "src.strategy.domain.base"),

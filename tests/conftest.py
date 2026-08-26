@@ -16,9 +16,11 @@ import pytest
 # 测试期间可能污染进程环境的键；结束后必须还原。
 _ENV_KEYS = (
     "LOCI_DATA_DIR",
+    "LOCI_CONFIG_JSON",
     "PALACE_DATA_DIR",
     "PALACE_DB",
     "PALACE_MARKET_DB",
+    "PALACE_MARKET_HOT_DB",
     "PALACE_OPS_DB",
     "PALACE_SKILL_ROOT",
     "PALACE_MCP_JSON",
@@ -31,6 +33,32 @@ _ENV_KEYS = (
     "PALACE_SESSION_SECRET",
     "PALACE_INSECURE_HTTP",
     "PALACE_ALLOWED_HOSTS",
+    "LOCI_OBSERVABILITY",
+    "LOCI_OBSERVABILITY_OTEL",
+    "LOCI_OBSERVABILITY_EXPOSE",
+    "LOCI_MARKET_DUCKDB",
+    "LOCI_MARKET_POLARS",
+    "LOCI_RESEARCH_POLARS",
+    "LOCI_MCP_TOOL_TIMEOUT_SEC",
+    # 行情主源（通达信）与线路并发的运行时开关：开发机导出过就会让
+    # 同步测试在「另一套服务器名单 / 另一档并发」上跑绿。
+    "LOCI_TDX_SERVERS",
+    "LOCI_ADAPTER_CONCURRENCY",
+    "LOCI_CROSS_CHECK_EVERY",
+    "LOCI_EM_INDUSTRY_TTL_DAYS",
+    "LOCI_SKIP_EM_INDUSTRY",
+    "LOCI_MARKET_WRITE_WAIT_SEC",
+    # 下面这些漏掉过：开发机导出过就会让整套测试在「另一条实现」上跑绿。
+    # LOCI_BACKTEST_FAST 会让回测套走旁路引擎，
+    # LOCI_PAPER_ALLOW_BYPASS_GATES 会让闸门测试在闸门已被绕过的状态下通过。
+    "LOCI_BACKTEST_FAST",
+    "LOCI_PAPER_ALLOW_BYPASS_GATES",
+    "LOCI_SKIP_EM_INDUSTRY",
+    "LOCI_SKIP_WEBVIEW_CACHE_PURGE",
+    "LOCI_PURGE_WEBVIEW_CACHE",
+    "LOCI_WEBVIEW_DISABLE_GPU",
+    "PALACE_WRITE_TOKEN_ISSUED_AT",
+    "PALACE_STATIC_DIR",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -48,8 +76,13 @@ def _isolate_loci_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv(key, raising=False)
 
     monkeypatch.setenv("LOCI_DATA_DIR", str(data_root))
+    # loci.config.json 里存着 data_dir 与线路策略。不隔离它，测试既会读到开发机
+    # 的真实配置（同一套用例在不同机器上结论不同），也可能被一次忘了 mock 的
+    # save_config 改写掉用户的数据目录。
+    monkeypatch.setenv("LOCI_CONFIG_JSON", str(tmp_path / "loci.config.json"))
     monkeypatch.setenv("PALACE_DB", str(data_root / "palace.db"))
     monkeypatch.setenv("PALACE_MARKET_DB", str(data_root / "market.db"))
+    monkeypatch.setenv("PALACE_MARKET_HOT_DB", str(data_root / "market_hot.db"))
     monkeypatch.setenv("PALACE_OPS_DB", str(data_root / "ops.db"))
     monkeypatch.setenv("PALACE_SKILL_ROOT", str(data_root / "skills"))
     monkeypatch.setenv("PALACE_MCP_JSON", str(data_root / "mcp.json"))
@@ -78,7 +111,26 @@ def _isolate_loci_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     except Exception:
         pass
 
+    # Screen skill 引擎注册表同样是模块级全局：某个用例注册的自定义 slug 会跟着
+    # 进程流进下一个测试模块（tests/app 建的 python-screen 曾被 tests/strategy
+    # 的目录断言看到）。快照 + 还原，让结果不依赖模块执行顺序。
+    try:
+        from src.strategy.application import catalog as strategy_catalog
+
+        screen_engines = list(strategy_catalog._SCREEN_ENGINES.values())
+        screen_metadata = dict(strategy_catalog._SCREEN_METADATA)
+    except Exception:
+        strategy_catalog = None
+
     yield data_root
+
+    if strategy_catalog is not None:
+        try:
+            strategy_catalog.replace_screen_engines(
+                screen_engines, metadata_by_slug=screen_metadata
+            )
+        except Exception:
+            pass
 
     # monkeypatch 会还原环境变量；这里再尽力清临时树（Windows 下偶发文件锁则忽略）。
     try:

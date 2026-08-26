@@ -39,12 +39,26 @@ class SingleInstanceTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             write_instance(lock_path(root), pid=111)
-            with (
-                mock.patch("src.shared.single_instance.acquire_mutex", return_value=False),
-                mock.patch("src.shared.single_instance.focus_pid_windows", return_value=True) as focus,
+            with mock.patch(
+                "src.shared.single_instance.acquire_mutex", return_value=False
             ):
-                self.assertFalse(claim_or_focus(root))
-            focus.assert_called_once_with(111)
+                with mock.patch(
+                    "src.shared.single_instance.pid_alive", return_value=True
+                ):
+                    with mock.patch(
+                        "src.shared.single_instance.focus_pid_windows",
+                        return_value=True,
+                    ) as focus:
+                        self.assertFalse(claim_or_focus(root))
+                        focus.assert_called_once_with(111)
+
+    def test_mutex_names_differ_by_install_root(self) -> None:
+        from src.shared.single_instance import mutex_name_for
+
+        a = mutex_name_for(Path("E:/entertainment_software/Loci"))
+        b = mutex_name_for(Path("E:/my_space/stock-analyzer"))
+        self.assertNotEqual(a, b)
+        self.assertTrue(a.startswith("Local\\LociDesktopSingleInstance_"))
 
 
 if __name__ == "__main__":

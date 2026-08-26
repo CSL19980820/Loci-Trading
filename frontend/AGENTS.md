@@ -14,10 +14,48 @@
 | 语法 | **仅** `<script setup lang="ts">`，禁止 Options API |
 | 状态 | Pinia **setup store**（`defineStore(() => { ... })`），禁止 Vuex |
 | 路由 | Vue Router 4；路由表在 `shared/router` |
-| UI | **Element Plus 强制**（已全局 `app.use`）；禁止再引入另一套组件库；能 EP 就 EP |
+| UI | **Element Plus 强制**（**按需注册**，见 §1.1）；禁止再引入另一套组件库；能 EP 就 EP |
+| UI 例外 | `vue-element-plus-x` 仅限助手层，由 [ADR-006](../docs/adr/ADR-006-assistant-rich-render-and-streaming.md) 决策 4 授权；业务页保持 Element Plus |
+| 图表 | ECharts 6（`echarts/core` + 按需 `use()`，勿全量引） |
+| 只读查询 | `@pinia/colada`（`use*Query.ts`），只读列表优先走它 |
+| 样式 | 本仓 CSS 变量六层体系（`style.*.css`）。Tailwind 4 已装但**只有 `PulseView.vue` 在用**，新代码不要扩大它的使用面 |
 | 代码编辑 | Ops 大段文本用 `features/ops/components/CodeEditor.vue`（Monaco）；勿另引 UI 库 |
 | 包管理 | **bun** |
 | 别名 | `@/` → `frontend/src/` |
+
+### 1.1 Element Plus 按需注册（写模板不用改习惯，写测试要注意）
+
+`main.ts` **不再** `app.use(ElementPlus)`。`shared/plugins/element.ts` 只调
+`provideGlobalConfig({ locale: zhCn, size: 'default' }, app, true)`——那正是全量安装里
+配置的那一半；组件与指令由 `vite.config.ts` 的
+`unplugin-vue-components` + `ElementPlusResolver` 在**模板编译期**逐个 import。
+
+| 场景 | 怎么做 |
+|---|---|
+| 模板里用 `<el-xxx>` / `v-loading` | **照旧直接写**，不要手动 `import`；resolver 会补 |
+| 命令式 `ElMessage` / `ElMessageBox` | 照旧 `import { ElMessage } from 'element-plus'` |
+| 测试里 mock `element-plus` | **必须 partial mock**（`importOriginal` 展开 `...actual`），整包替换会让模板里的 `ElDialog`/`ElTabPane` 全变 `undefined` |
+| 测试里挂载含 EP 的组件 | 不需要 `global.plugins: [ElementPlus]`；resolver 在 vitest 下同样生效 |
+| 新用一个没用过的 EP 组件 | 直接写标签即可；`shared/plugins/elementOnDemand.test.ts` 会校验它在 `element-plus` 里真实存在 |
+
+**CSS 仍是全量**（`element-plus/dist/index.css`）：按需 CSS 省的是 gzip 后约 8 KB，
+但漏一个命令式入口的样式就是线上白板，收益/风险不成比例。别改成 `importStyle: 'css'`。
+
+### 1.2 分包（`vite.config.ts` 的 `manualChunks`）
+
+`build.rollupOptions.output.manualChunks` 只给**首屏必然加载**的依赖建组
+（`vendor-element-plus`、`vendor-vue`）。三条硬规矩：
+
+1. **不要给纯异步依赖建组**（`vue-element-plus-x`、`marked`/`dompurify` 这类）。
+   实测 rolldown 会把这种组和首屏组合并成一个 chunk，反而把 270 KB 助手 UI
+   拽回首屏。让它们自然留在各自的异步分片里。
+2. **不要合并 monaco / echarts 的语言与图表模块**。它们已经是按需 import 的小分片，
+   粗粒度合并会让 CodeEditor 一次拉全部语言。
+3. 只在**壳上挂着、但多数会话用不到**的重组件（如 `AssistantHost`）用
+   `defineAsyncComponent(() => import(...))`，不要静态 import 进 `App.vue`。
+
+改完 `manualChunks` 或 EP 注册方式，**必须**跑一次 `bun run build` 并对比首屏体积：
+`bun scripts/dist-stats.mjs dist`（打印 `index.html` 入口 + modulepreload + stylesheet 的 raw/gzip 合计）。
 
 ## 2. 目录
 
@@ -30,7 +68,8 @@ frontend/src/
     stores/           # 跨页 Pinia
     types/            # 与后端契约
     router/
-  features/<bc>/      # ledger | market | review | strategy | ops — 页面与本域小组件
+  features/<bc>/      # ai | datasource | ledger | market | marketplace | ops | research | review | strategy
+         # ledger 自 2026-08 只剩候选池 / 个股档案 / 登录：持仓与成交已整体下线
   App.vue · main.ts · style.css
 ```
 
@@ -69,6 +108,8 @@ import { computed, ref } from 'vue'
 | 优先 `ref`；大列表/重对象用 `shallowRef` | 滥用深层 `reactive` 再整体替换导致丢代理 |
 | 派生用 `computed` | 在 template 里重算昂贵逻辑 |
 | 副作用用 `watch` / `watchEffect`，并清理 | 无清理的 `setInterval` / 事件监听 |
+| 监听器**注册与移除必须无条件对称** | `onMounted` / `onUnmounted` 两端各包一层 `if (props.x)`——prop 中途一变就永久泄漏（真出过：`BasicTable` 的 resize） |
+| 长轮询函数必须收 `signal?: AbortSignal`，循环头与 sleep 都检查 | 裸 `await new Promise(r => setTimeout(r, ms))`——组件卸载后它照样 resolve，循环跑满超时上限（真出过：`awaitJobResult` 最多空转 15 分钟） |
 | `async/await` | `.then()` 链 |
 | props 类型：`defineProps<{...}>()` | 无类型 props / Options API `props:` |
 
@@ -88,9 +129,9 @@ import { computed, ref } from 'vue'
 
 | 放这里 | 条件（需同时满足或明显倾向） |
 |---|---|
-| `shared/components/ui` | 无业务语义：纯展示/交互原子（`NumText`、`EmptyState`、`StatCard`、`RowActions`） |
+| `shared/components/ui` | 无业务语义：纯展示/交互原子（`EmptyState`、`StatCard`、`RowActions`） |
 | `shared/components/layout` | 壳层：侧栏、页头、底栏、Sheet、LiveTape |
-| `shared/components/dialogs` | **≥2 个 feature 会打开**的同一对话框（成交/记一笔/主题…） |
+| `shared/components/dialogs` | **≥2 个 feature 会打开**的同一对话框（记一笔/主题…） |
 | `shared/components/charts` | 通用图：K 线、Sparkline；不绑单一业务页 |
 | `features/<bc>/components` | 只服务该 bc：筛选条、业务表格列、本页 Tab 子块 |
 | **不要封装** | 只用一次、且拆开会变成「传 15 个 props 的空壳」→ 留在 View 内局部即可 |
@@ -119,7 +160,8 @@ const emit = defineEmits<{ refresh: [] }>()
 
 #### 与 Element Plus（强制优先，能用就用）
 
-本仓已全局注册 Element Plus。**交互控件禁止手写原生 HTML 冒充组件库**——装 EP 不是摆设。
+Element Plus 已**按需注册**（§1.1，模板照常写 `<el-xxx>`，无需手动 import）。
+**交互控件禁止手写原生 HTML 冒充组件库**——装 EP 不是摆设。
 
 | 场景 | 必须用 | 禁止 |
 |---|---|---|
@@ -160,9 +202,9 @@ const emit = defineEmits<{ refresh: [] }>()
 ```ts
 // DO — setup store
 export const usePalaceStore = defineStore('palace', () => {
-  const trades = ref<TradeRecord[]>([])
+  const reviews = ref<ReviewRecord[]>([])
   async function load() { /* ... */ }
-  return { trades, load }
+  return { reviews, load }
 })
 
 // DON'T — Options store / Vuex
@@ -176,11 +218,16 @@ export const usePalaceStore = defineStore('palace', () => {
 - 所有请求走 `shared/api/palace.ts` 或 `quant.ts`。
 - 类型与后端字段对齐，放 `shared/types/`；改字段必须前后端一起改。
 - **禁止**前端自行发明「总资产 / 胜率」口径。
+- **长轮询/重试要可取消**：任何 `for(;;)` + sleep 的等待函数（如 `awaitJobResult`）
+  必须接 `signal?: AbortSignal`，循环头检查一次、sleep 用 `abortableSleep`
+  （`shared/api/quant_client.ts`）再检查一次；请求本身把 signal 传进
+  `quantRequest(path, { signal })`（`palace.ts` 的 signal 管道已经通了）。
+  调用方在 `onUnmounted` 里 `controller.abort()`。
 
 ### 3.7 模板与 UI
 
 - 空态：`EmptyState`（原因 + 下一步）。
-- 数字：`NumText` / `shared/lib/format`；涨跌色用现有 tone class。
+- 数字：`shared/lib/format` 的 `pct` / `signedPct` / `price` / `money` / `compactNumber`；涨跌色用现有 tone class。**不要在 feature 里另写一份格式化**——此前 `fmtPct` 被手抄了 9 份、`fmtPrice` 5 份，精度和正负号口径已经开始分叉。
 - 样式：CSS 变量（`style.css`）；少写魔法色值。
 - 列表 `v-for` 必须稳定 `:key`；慎用 `v-html`。
 - 保持 a11y 底线：`skip-link`、主内容 `id`、按钮有文案。
@@ -206,7 +253,7 @@ export const usePalaceStore = defineStore('palace', () => {
 | 组件文件 | PascalCase | `PoolView.vue` |
 | composable | `use` + Pascal | `usePoolFilters.ts` |
 | 普通 ts | camelCase | `format.ts` |
-| 类型/接口 | PascalCase | `TradeRecord` |
+| 类型/接口 | PascalCase | `ReviewRecord` |
 
 ## 4. 反模式表（Agent 自查）
 
@@ -216,6 +263,7 @@ export const usePalaceStore = defineStore('palace', () => {
 | 在 View 里堆 800 行模板+逻辑 | 拆子组件 / composable |
 | 组件内 `fetch('/api/...')` 裸调 | 走 `shared/api` |
 | 前端重算复盘指标当真相 | 调后端 review/winrate API |
+| 调用已下线的持仓/成交端点（`/dashboard` `/positions` `/trades` `/analytics` `/scorecard` `/cashflows` `/snapshots` `/import/qianlong/*` `/review/{equity,trips,positions,drift}`） | 这些端点 2026-08 已删；前端不留封装、不留空壳 UI |
 | 新建 `src/views` 旧路径 | 用 `features/<bc>` |
 | 引入另一 UI 库「更好看」 | 禁止；用 Element Plus + 现有 token |
 | 业务表用 `<table>`、主操作用 `<button>`、主输入用 `<input>` | 换成 `el-table` / `el-button` / `el-input` 等（见 §3.3.1） |
@@ -224,9 +272,14 @@ export const usePalaceStore = defineStore('palace', () => {
 | 无 key 的 `v-for` | 补稳定 key |
 | 一次性业务块硬塞进 `shared/components` | 放 `features/<bc>/components` |
 | 封装组件挂载时偷请求全站数据 | props/事件交给父级或显式 `load()` |
-| 路由页无 `page-fill`，靠 `page-host`/body 出浏览器滚动条 | 根包 `page-fill`，滚动下沉到 `page-scroll`/表体 |
+| 路由页无 `page-fill`，靠 `page-host`/body 出浏览器滚动条 | 含 `.page-fill`（根或浅层壳均可；host 用 `:has(.page-fill)`），滚动下沉到 `page-scroll`/表体 |
 | PageTabs 把整页撑出视口 | Tabs 固定在 scroll 外；面板用 `page-pane` |
 | 大块空白或内容挤成窄条 | 收紧/放开间距到既有 token，用 flex 吃满高度 |
+| 监听器只在 `if (props.x)` 成立时注册/移除 | 两端都无条件调用，判空放进 handler 自身 |
+| 轮询函数没有 `signal`，或 sleep 用裸 `setTimeout` | 加 `signal?: AbortSignal` + `abortableSleep`，调用方 `onUnmounted` 里 abort |
+| 壳上静态 import 一棵多数人用不到的重组件 | `defineAsyncComponent(() => import(...))` |
+| 测试里 `vi.mock('element-plus', () => ({ ... }))` 整包替换 | 用 `importOriginal` 展开 `...actual` 再覆盖（EP 已按需注册，见 §1.1） |
+| 给纯异步依赖建 `manualChunks` 组 | 只给首屏依赖建组，异步依赖留在自己的分片里（见 §1.2） |
 
 ## 5. 命令与自检
 
@@ -248,3 +301,6 @@ bun run build
 - [ ] 无超 600 行新文件；大页有拆分计划或已拆
 - [ ] 新 feature 目录有简短 `README.md`（职责一句话即可）
 - [ ] K 线重算走 `prepChartOffthread`（Worker）；只读列表优先 Colada，禁止前端造复盘数字
+- [ ] `bun run test` 通过
+- [ ] 动了 `manualChunks` / EP 注册方式 / 壳上组件 import：`bun run build` 通过，并用 `bun scripts/dist-stats.mjs dist` 对比首屏体积没变差
+- [ ] 新增的事件监听器、定时器、轮询循环都有对称清理 / `AbortSignal` 出口

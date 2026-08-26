@@ -1,46 +1,17 @@
-"""数据线路适配器层单测 —— 不打真网。"""
+"""腾讯 / 新浪适配器：分页、批量诚实性与现货成交量单位。
+
+东财用例在 `test_adapters_eastmoney.py`。
+"""
 from __future__ import annotations
 
-import time
-from concurrent.futures import ThreadPoolExecutor
-import threading
 import unittest
 from typing import Any
 from unittest import mock
 
 import pandas as pd
 
-from src.market.infrastructure.adapters.base import AdapterError, MarketAdapter
-from src.market.infrastructure.adapters.eastmoney_adapter import EastmoneyAdapter
-from src.market.infrastructure.adapters.registry import (
-    adapters_for_lane,
-    all_adapters,
-    enabled_adapter_ids,
-    get_adapter,
-    list_catalog,
-    reset_registry,
-)
-from src.market.infrastructure.adapters.router import (
-    clear_sticky,
-    fetch_capital_flow_routed,
-    fetch_daily_best,
-    fetch_daily_routed,
-    fetch_live_quotes_routed,
-    fetch_minute_routed,
-    fetch_spot_routed,
-    probe_lane,
-)
-from src.market.infrastructure.adapters.sina_adapter import SinaAdapter
 from src.market.infrastructure.adapters.tencent_adapter import TencentAdapter
-from src.market.infrastructure.adapters.types import (
-    AdapterMeta,
-    LANE_CAPITAL_FLOW,
-    LANE_HIST_DAILY,
-    LANE_INSTRUMENTS,
-    LANE_MINUTE,
-    LANE_SPOT_BATCH,
-    ProbeResult,
-)
+from src.market.infrastructure.adapters.types import LANE_HIST_DAILY
 
 
 def _daily_frame(n: int = 3, *, turnover: float = 0.05) -> pd.DataFrame:
@@ -88,6 +59,149 @@ def _tencent_spot_line(
     fields[36] = f"{lots:.0f}"
     fields[37] = f"{amount / 10000:.0f}"
     return f'v_{symbol}="' + "~".join(fields) + '";'
+
+
+def _tencent_daily_row(day: str) -> list[str]:
+    return [day, "10.00", "10.50", "11.00", "9.00", "100"]
+
+
+def _tencent_daily_payload(symbol: str, rows: list[list[Any]]) -> str:
+    import json
+
+    return json.dumps({"code": 0, "data": {symbol: {"day": rows}}})
+
+
+class TencentPagingTests(unittest.TestCase):
+    """全历史分页：截断 = 静默丢历史，死循环 = 同步永远跑不完。"""
+
+    def test_paging_does_not_stop_because_a_page_had_unparsable_rows(self) -> None:
+        from src.market import tencent
+
+        page_one = [
+            _tencent_daily_row("2026-01-05"),
+            ["2026-01-06", "脏行"],  # 源侧脏行：解析要丢，但这一页仍是满的
+            _tencent_daily_row("2026-01-07"),
+            _tencent_daily_row("2026-01-08"),
+        ]
+        page_two = [_tencent_daily_row("2026-01-01"), _tencent_daily_row("2026-01-02")]
+        calls: list[str] = []
+
+        def fake_get(url: str, *, params: Any = None, session: Any = None) -> str:
+            calls.append(str((params or {}).get("param", "")))
+            rows = page_one if len(calls) == 1 else page_two
+            return _tencent_daily_payload("sh600519", rows)
+
+        with mock.patch.object(tencent, "DAILY_PAGE_SIZE", 4), mock.patch(
+            "src.market.infrastructure.tencent._get", side_effect=fake_get
+        ):
+            frame = tencent.fetch_daily("sh600519")
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(frame), 5)
+        self.assertEqual(str(frame["date"].min()), "2026-01-01")
+
+    def test_paging_stops_when_the_source_ignores_the_end_date(self) -> None:
+        from src.market import tencent
+
+        page = [_tencent_daily_row("2026-01-05"), _tencent_daily_row("2026-01-06")]
+        calls: list[str] = []
+
+        def fake_get(url: str, *, params: Any = None, session: Any = None) -> str:
+            calls.append(str((params or {}).get("param", "")))
+            if len(calls) > 5:
+                raise AssertionError("翻页没有终止条件，会一直拿同一页")
+            return _tencent_daily_payload("sh600519", page)
+
+        with mock.patch.object(tencent, "DAILY_PAGE_SIZE", 2), mock.patch(
+            "src.market.infrastructure.tencent._get", side_effect=fake_get
+        ):
+            frame = tencent.fetch_daily("sh600519")
+
+        self.assertLessEqual(len(calls), 2)
+        self.assertEqual(len(frame), 2)
+
+
+class LiveBatchHonestyTests(unittest.TestCase):
+    """全批失败必须报网络原因，别返回空表让上层说成「行情为空」。"""
+
+    def test_tencent_live_raises_the_real_cause_when_every_batch_fails(self) -> None:
+        from src.market import tencent
+
+        with mock.patch(
+            "src.market.infrastructure.tencent._get",
+            side_effect=tencent.TencentFetchError("请求失败：ReadTimeout"),
+        ):
+            with self.assertRaisesRegex(tencent.TencentFetchError, "ReadTimeout"):
+                tencent.fetch_live_hq(["sh600519"])
+
+    def test_sina_live_raises_the_real_cause_when_every_batch_fails(self) -> None:
+        from src.market import sina
+
+        with mock.patch(
+            "src.market.infrastructure.sina._get",
+            side_effect=sina.SinaFetchError("返回 456"),
+        ):
+            with self.assertRaisesRegex(sina.SinaFetchError, "456"):
+                sina.fetch_live_hq(["sz000001"])
+
+    def test_partial_batch_failure_still_returns_what_arrived(self) -> None:
+        from src.market import tencent
+
+        calls: list[int] = []
+
+        def flaky(url: str, *, session: Any = None) -> str:
+            calls.append(1)
+            if len(calls) == 1:
+                raise tencent.TencentFetchError("请求失败：ReadTimeout")
+            return _tencent_spot_line()
+
+        with mock.patch.object(tencent, "SPOT_BATCH_SIZE", 1), mock.patch(
+            "src.market.infrastructure.tencent._get", side_effect=flaky
+        ):
+            rows = tencent.fetch_live_hq(["sh600519", "sz000001"])
+
+        self.assertEqual(len(rows), 1)
+
+
+class SinaSpotTests(unittest.TestCase):
+    @staticmethod
+    def _line(*, price: float, volume: float, amount: float) -> str:
+        fields = [""] * 34
+        fields[0] = "平安银行"
+        fields[1] = "11.000"
+        fields[2] = "11.200"
+        fields[3] = f"{price:.3f}"
+        fields[4] = "11.300"
+        fields[5] = "10.900"
+        fields[8] = f"{volume:.0f}"
+        fields[9] = f"{amount:.3f}"
+        fields[30] = "2026-07-28"
+        fields[31] = "15:00:00"
+        return 'var hq_str_sz000001="' + ",".join(fields) + '";'
+
+    def test_zero_trade_row_is_not_written_as_a_bar(self) -> None:
+        """停牌只回昨收、零成交；当成当日 K 线会凭空多出一个交易日。"""
+        from src.market import sina
+
+        with mock.patch(
+            "src.market.infrastructure.sina._get",
+            return_value=self._line(price=11.2, volume=0.0, amount=0.0),
+        ):
+            frame = sina.fetch_spot(["sz000001"])
+
+        self.assertTrue(frame.empty)
+
+    def test_traded_row_still_becomes_a_bar(self) -> None:
+        from src.market import sina
+
+        with mock.patch(
+            "src.market.infrastructure.sina._get",
+            return_value=self._line(price=11.2, volume=1000.0, amount=11200.0),
+        ):
+            frame = sina.fetch_spot(["sz000001"])
+
+        self.assertEqual(len(frame), 1)
+        self.assertAlmostEqual(float(frame.iloc[0]["volume"]), 1000.0)
 
 
 class TencentModuleTests(unittest.TestCase):
@@ -155,6 +269,20 @@ class TencentModuleTests(unittest.TestCase):
         self.assertTrue(result.ok)
         fetch.assert_called_once_with("sz000001", count=30)
 
+    def test_spot_line_without_any_trade_is_not_a_bar(self) -> None:
+        """停牌只有昨收、零成交：写进日线表就是凭空多出一个交易日。"""
+        from src.market import tencent
+
+        self.assertIsNone(
+            tencent._parse_spot_row(_tencent_spot_line(lots=0.0, amount=0.0))
+        )
+        # 有成交的正常行不受影响
+        self.assertIsNotNone(tencent._parse_spot_row(_tencent_spot_line()))
+
+    def test_declares_its_amount_as_an_estimate(self) -> None:
+        """腾讯日 K 没有成交额，close×volume 只是估算，必须自报。"""
+        self.assertIn("amount", TencentAdapter.meta.estimated_fields)
+
     def test_adapter_fetch_spot_mocked(self) -> None:
         adapter = TencentAdapter()
         spot = pd.DataFrame(
@@ -176,272 +304,55 @@ class TencentModuleTests(unittest.TestCase):
         self.assertEqual(frame.iloc[0]["code"], "600519")
 
 
-def _spot_em_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "代码": "600519",
-                "名称": "贵州茅台",
-                "最新价": 1800.0,
-                "今开": 1790.0,
-                "最高": 1810.0,
-                "最低": 1785.0,
-                "昨收": 1795.0,
-                "成交量": 10000.0,
-                "成交额": 1.8e7,
-                "涨跌幅": 0.28,
-                "涨跌额": 5.0,
-            },
-            {
-                "代码": "000001",
-                "名称": "平安银行",
-                "最新价": 10.5,
-                "今开": 10.4,
-                "最高": 10.6,
-                "最低": 10.3,
-                "昨收": 10.4,
-                "成交量": 500000.0,
-                "成交额": 5.25e6,
-                "涨跌幅": 0.96,
-                "涨跌额": 0.1,
-            },
-        ]
-    )
+class TencentSpotVolumeUnitTests(unittest.TestCase):
+    """现价成交量单位：与日 K 同口径，科创板源侧已是「股」。
 
+    夹具 ``fixtures/tencent/qt_spot_boards.txt`` 是 2026-08-11 盘中录制的真实
+    ``qt.gtimg.cn`` 报文。判据不看板块表，而看物理自洽：``成交额 ≈ 成交量 × 现价``。
+    多乘 100 会让这个比值掉到 0.01。
+    """
 
-class EastmoneySpotMinuteCapitalTests(unittest.TestCase):
-    def tearDown(self) -> None:
-        reset_registry()
+    @staticmethod
+    def _lines() -> list[str]:
+        from pathlib import Path
 
-    def test_fetch_spot_filters_codes(self) -> None:
-        adapter = EastmoneyAdapter()
-        with mock.patch.object(
-            adapter, "_fetch_spot_em", return_value=_spot_em_frame()
-        ):
-            out = adapter.fetch_spot(["600519", "999999"])
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out.iloc[0]["code"], "600519")
-        for col in ("open", "high", "low", "close", "volume", "amount", "date"):
-            self.assertIn(col, out.columns)
+        raw = (
+            Path(__file__).parent / "fixtures" / "tencent" / "qt_spot_boards.txt"
+        ).read_text(encoding="utf-8")
+        return [chunk for chunk in raw.split(";") if "~" in chunk]
 
-    def test_fetch_live_quotes_rich_fields(self) -> None:
-        adapter = EastmoneyAdapter()
-        with mock.patch.object(
-            adapter, "_fetch_spot_em", return_value=_spot_em_frame()
-        ):
-            rows = adapter.fetch_live_quotes(["600519"])
-        self.assertEqual(len(rows), 1)
-        row = rows[0]
-        self.assertEqual(row["code"], "600519")
-        self.assertEqual(row["name"], "贵州茅台")
-        self.assertEqual(row["price"], 1800.0)
-        self.assertEqual(row["prev_close"], 1795.0)
-        self.assertEqual(row["source"], "eastmoney")
+    def test_spot_volume_is_consistent_with_amount_on_every_board(self) -> None:
+        from src.market import tencent
 
-    def test_fetch_minute_normalizes(self) -> None:
-        raw = pd.DataFrame(
-            {
-                "datetime": ["2026-07-28 09:31:00", "2026-07-28 09:32:00"],
-                "open": [10.0, 10.1],
-                "close": [10.05, 10.2],
-                "high": [10.1, 10.25],
-                "low": [9.95, 10.05],
-                "volume": [1000.0, 1200.0],
-                "amount": [10050.0, 12240.0],
-                "avg_price": [10.02, 10.15],
-            }
-        )
-        adapter = EastmoneyAdapter()
-        with mock.patch(
-            "src.market.infrastructure.eastmoney_minute.fetch_minute_bars",
-            return_value=raw,
-        ) as mocked:
-            out = adapter.fetch_minute("600519", period="1", days=1)
-        mocked.assert_called_once_with(
-            "600519", period="1", days=1, trade_date=None
-        )
-        self.assertEqual(len(out), 2)
-        self.assertIn("datetime", out.columns)
-        self.assertAlmostEqual(float(out["close"].iloc[0]), 10.05)
+        seen: set[str] = set()
+        for line in self._lines():
+            row = tencent._parse_spot_row(line)
+            assert row is not None, line[:40]
+            seen.add(row["symbol"])
+            implied = row["amount"] / (row["volume"] * row["close"])
+            self.assertAlmostEqual(implied, 1.0, delta=0.05, msg=row["symbol"])
+        self.assertIn("sh688981", seen)  # 科创板必须在样本里
+        self.assertIn("sh600519", seen)
 
-    def test_fetch_minute_trade_date_window(self) -> None:
-        raw = pd.DataFrame(
-            {
-                "datetime": ["2026-07-28 09:31:00"],
-                "open": [10.0],
-                "close": [10.05],
-                "high": [10.1],
-                "low": [9.95],
-                "volume": [1000.0],
-                "amount": [10050.0],
-                "avg_price": [10.02],
-            }
-        )
-        adapter = EastmoneyAdapter()
-        with mock.patch(
-            "src.market.infrastructure.eastmoney_minute.fetch_minute_bars",
-            return_value=raw,
-        ) as mocked:
-            out = adapter.fetch_minute(
-                "600519", period="1", trade_date="2026-07-28"
-            )
-        mocked.assert_called_once_with(
-            "600519", period="1", days=1, trade_date="2026-07-28"
-        )
-        self.assertEqual(len(out), 1)
-        self.assertTrue(str(out["datetime"].iloc[0]).startswith("2026-07-28"))
+    def test_live_volume_uses_the_same_scale(self) -> None:
+        from src.market import tencent
 
-    def test_sina_fetch_minute_trade_date(self) -> None:
-        raw = pd.DataFrame(
-            {
-                "datetime": ["2026-07-28 09:31:00", "2026-07-29 09:31:00"],
-                "open": [10.0, 11.0],
-                "high": [10.1, 11.2],
-                "low": [9.9, 10.9],
-                "close": [10.05, 11.1],
-                "volume": [1000.0, 1200.0],
-                "amount": [10050.0, 13320.0],
-                "avg_price": [10.05, 11.1],
-            }
-        )
-        adapter = SinaAdapter()
-        with mock.patch(
-            "src.market.sina.fetch_minute", return_value=raw.iloc[:1].copy()
-        ) as mocked:
-            out = adapter.fetch_minute(
-                "301201", period="1", trade_date="2026-07-28"
-            )
-        mocked.assert_called_once_with(
-            "sz301201", period="1", days=1, trade_date="2026-07-28"
-        )
-        self.assertEqual(len(out), 1)
-        self.assertTrue(str(out["datetime"].iloc[0]).startswith("2026-07-28"))
+        for line in self._lines():
+            row = tencent._parse_live_row(line)
+            assert row is not None, line[:40]
+            implied = row["amount"] / (row["volume"] * row["price"])
+            self.assertAlmostEqual(implied, 1.0, delta=0.05, msg=row["symbol"])
 
-    def test_minute_route_falls_back_to_sina(self) -> None:
-        """东财分钟线挂掉时，应落到新浪备源。"""
+    def test_star_board_is_not_multiplied_by_a_hundred(self) -> None:
+        from src.market import tencent
 
-        class EmFail(MarketAdapter):
-            meta = AdapterMeta(
-                id="eastmoney",
-                label="东财",
-                lanes=(LANE_MINUTE,),
-            )
-
-            def fetch_daily(self, code: str, *, instrument_type: str = "STOCK") -> pd.DataFrame:
-                raise AdapterError("unused")
-
-            def fetch_minute(
-                self,
-                code: str,
-                *,
-                period: str = "1",
-                days: int = 1,
-                trade_date: str | None = None,
-            ) -> pd.DataFrame:
-                raise AdapterError("东财断连")
-
-        class SinaOk(MarketAdapter):
-            meta = AdapterMeta(
-                id="sina",
-                label="新浪",
-                lanes=(LANE_MINUTE,),
-            )
-
-            def fetch_daily(self, code: str, *, instrument_type: str = "STOCK") -> pd.DataFrame:
-                raise AdapterError("unused")
-
-            def fetch_minute(
-                self,
-                code: str,
-                *,
-                period: str = "1",
-                days: int = 1,
-                trade_date: str | None = None,
-            ) -> pd.DataFrame:
-                return pd.DataFrame(
-                    {
-                        "datetime": ["2026-07-31 09:31:00"],
-                        "open": [27.5],
-                        "high": [27.6],
-                        "low": [27.4],
-                        "close": [27.55],
-                        "volume": [1000.0],
-                        "amount": [27550.0],
-                        "avg_price": [27.55],
-                    }
-                )
-
-        reset_registry([EmFail(), SinaOk()])
-        frame, source = fetch_minute_routed("301201", period="1", days=1)
-        self.assertEqual(source, "sina")
-        self.assertEqual(len(frame), 1)
-
-    def test_fetch_capital_flow_normalizes(self) -> None:
-        raw = pd.DataFrame(
-            {
-                "日期": ["2026-07-25", "2026-07-28"],
-                "收盘价": [10.0, 10.5],
-                "涨跌幅": [1.0, 5.0],
-                "主力净流入-净额": [1e6, 2e6],
-                "主力净流入-净占比": [5.0, 8.0],
-            }
-        )
-        adapter = EastmoneyAdapter()
-        with mock.patch(
-            "src.market.infrastructure.adapters.eastmoney_adapter._import_akshare"
-        ) as mocked:
-            mocked.return_value.stock_individual_fund_flow.return_value = raw
-            out = adapter.fetch_capital_flow("600519")
-        self.assertEqual(len(out), 2)
-        self.assertIn("date", out.columns)
-        self.assertIn("main_net_inflow", out.columns)
-        self.assertAlmostEqual(float(out["main_net_inflow"].iloc[1]), 2e6)
-
-    def test_probe_spot_batch_mocked(self) -> None:
-        adapter = EastmoneyAdapter()
-        with mock.patch.object(
-            adapter, "_fetch_spot_em", return_value=_spot_em_frame()
-        ):
-            result = adapter.probe(LANE_SPOT_BATCH)
-        self.assertTrue(result.ok)
-        self.assertEqual(result.lane, LANE_SPOT_BATCH)
-        self.assertEqual(result.rows, 1)
-
-    def test_probe_minute_and_capital_mocked(self) -> None:
-        adapter = EastmoneyAdapter()
-        minute_raw = pd.DataFrame(
-            {
-                "datetime": ["2026-07-28 09:31:00"],
-                "open": [10.0],
-                "close": [10.05],
-                "high": [10.1],
-                "low": [9.95],
-                "volume": [1000.0],
-                "amount": [10050.0],
-                "avg_price": [10.05],
-            }
-        )
-        capital_raw = pd.DataFrame(
-            {
-                "日期": ["2026-07-28"],
-                "收盘价": [10.5],
-                "涨跌幅": [5.0],
-                "主力净流入-净额": [2e6],
-                "主力净流入-净占比": [8.0],
-            }
-        )
-        with mock.patch(
-            "src.market.infrastructure.eastmoney_minute.fetch_minute_bars",
-            return_value=minute_raw,
-        ), mock.patch(
-            "src.market.infrastructure.adapters.eastmoney_adapter._import_akshare"
-        ) as mocked:
-            mocked.return_value.stock_individual_fund_flow.return_value = capital_raw
-            min_result = adapter.probe(LANE_MINUTE)
-            cap_result = adapter.probe(LANE_CAPITAL_FLOW)
-        self.assertTrue(min_result.ok)
-        self.assertTrue(cap_result.ok)
-
-
-if __name__ == "__main__":
-    unittest.main()
+        rows = {
+            row["symbol"]: row
+            for row in (tencent._parse_spot_row(line) for line in self._lines())
+            if row
+        }
+        star = rows["sh688981"]
+        main = rows["sh600519"]
+        # 源侧第 36 列：科创板是股，主板是手
+        self.assertAlmostEqual(star["volume"], 37_175_996.0)
+        self.assertAlmostEqual(main["volume"], 27_073.0 * 100.0)

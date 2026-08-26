@@ -24,6 +24,12 @@ _CACHE_RELATIVE = (
     "EBWebView/Default/Service Worker/CacheStorage",
     "EBWebView/Default/Service Worker/ScriptCache",
     "EBWebView/Default/Service Worker/Database",
+    # WebView2 实际把部分 GPU/组件缓存放在 EBWebView 根下（非 Default/）
+    "EBWebView/GPUCache",
+    "EBWebView/GrShaderCache",
+    "EBWebView/ShaderCache",
+    "EBWebView/GraphiteDawnCache",
+    "EBWebView/component_crx_cache",
     "EBWebView/Component Crx Cache",
 )
 

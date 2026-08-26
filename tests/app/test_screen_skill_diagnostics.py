@@ -1,5 +1,5 @@
-from src.app.screen_skill_models import ScreenSkillPreviewRequest
-from src.app.screen_skills import _data_field_diagnostics, preview_screen_skill
+from src.strategy.api.screen_skill_schemas import ScreenSkillPreviewRequest
+from src.strategy.application.screen_skills import _data_field_diagnostics, preview_screen_skill
 
 
 class _Engine:

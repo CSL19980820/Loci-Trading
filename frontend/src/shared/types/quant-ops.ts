@@ -7,7 +7,6 @@ export interface Skill {
   source_filename: string
   content_sha256: string
   allowed_tools: string[]
-  default_cron: string
   metadata: Record<string, unknown>
   enabled: boolean
   installed_at?: string
@@ -30,6 +29,14 @@ export type JobKind =
   | 'prune'
   | 'skill'
   | 'notify'
+  | 'outcome'
+  | 'hot_rebuild'
+  | 'data_quality'
+  | 'intel_fetch'
+  | 'skill_watch'
+  | 'alert_scan'
+  | 'strategy_monitor'
+  | 'paper_eod'
 export type RunStatus = 'running' | 'success' | 'failed' | 'skipped'
 
 export interface Job {
@@ -80,7 +87,13 @@ export interface WecomScreenTemplate {
   intro: string
   pick: string
   pick_no_pct: string
+  skill_pick: string
+  skill_pick_no_pct: string
   empty: string
+  formal_empty: string
+  watch_header: string
+  watch_pick: string
+  watch_pick_no_pct: string
   more: string
   quant_tag: string
   skills_tag: string
@@ -118,6 +131,11 @@ export interface LaneProvider {
   disabled_lanes?: string[]
   /** 数据来源站点，仅供人核对出处，不是我们直接请求的地址 */
   base_url?: string
+  /** adapter=行情适配器；mcp=外部情报 MCP（启停走运维 MCP 页） */
+  kind?: 'adapter' | 'mcp'
+  mcp_name?: string
+  expires_at?: string
+  has_token?: boolean
 }
 
 export type LanePolicyMode = 'auto' | 'manual'

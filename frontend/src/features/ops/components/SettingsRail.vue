@@ -76,17 +76,19 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
             )
           "
         >
-          <span
-            class="settings-rail__mark"
-            :class="`settings-rail__mark--${item.state || 'idle'}`"
-            aria-hidden="true"
-          />
-          <span class="settings-rail__label">{{ item.label }}</span>
-          <span
-            v-if="item.tail"
-            class="settings-rail__tail"
-            :class="{ 'is-bad': item.state === 'bad' }"
-          >{{ item.tail }}</span>
+          <span class="settings-rail__row">
+            <span
+              class="settings-rail__mark"
+              :class="`settings-rail__mark--${item.state || 'idle'}`"
+              aria-hidden="true"
+            />
+            <span class="settings-rail__label">{{ item.label }}</span>
+            <span
+              v-if="item.tail"
+              class="settings-rail__tail"
+              :class="{ 'is-bad': item.state === 'bad' }"
+            >{{ item.tail }}</span>
+          </span>
         </el-button>
       </div>
     </div>
@@ -125,9 +127,6 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 }
 
 .settings-rail__item {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
   width: 100%;
   margin: 0;
   padding: 0.4rem 0.75rem;
@@ -158,23 +157,35 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
   font-weight: 650;
 }
 
+/* EP 会再包一层，gap 要落在内部 row 上，否则字和摘要黏成一团 */
+.settings-rail__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-width: 0;
+}
+
 .settings-rail__mark {
   width: 0.45rem;
   height: 0.45rem;
   flex-shrink: 0;
-  border-radius: 1px;
-  border: 1px solid var(--rule);
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--seal) 45%, var(--rule));
   background: transparent;
 }
 
+/* 正常态是安静的绿实点：此前 ok 用印章红且常驻闪烁，一进设置就像在报警 */
 .settings-rail__mark--ok {
   border: none;
-  background: var(--lake);
+  background: var(--success);
 }
 
+/* 只有异常才闪 */
 .settings-rail__mark--bad {
   border: none;
-  background: var(--seal-ink);
+  background: var(--loss);
+  animation: settings-rail-mark-blink 1s ease-in-out infinite;
 }
 
 .settings-rail__mark--idle {
@@ -191,6 +202,7 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 
 .settings-rail__tail {
   flex-shrink: 0;
+  margin-left: 0.25rem;
   font-family: var(--mono);
   font-size: 0.68rem;
   color: var(--mist);
@@ -198,6 +210,24 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 }
 
 .settings-rail__tail.is-bad {
-  color: var(--seal-ink);
+  color: var(--loss);
+}
+
+@keyframes settings-rail-mark-blink {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--loss) 40%, transparent);
+  }
+  50% {
+    opacity: 0.4;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--loss) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-rail__mark--bad {
+    animation: none;
+  }
 }
 </style>

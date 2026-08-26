@@ -8,7 +8,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.app.legacy.quant_common import LaneProviderPatch
+from src.ops.api.schemas import LaneProviderPatch
 
 
 class _LaneRequest(BaseModel):
@@ -52,6 +52,118 @@ _LANE_REQUIRED: dict[str, bool] = {
     "capital_flow": False,
     "intel_mcp": False,
 }
+
+
+#: 悟道只保留一张 MCP 牌（规范名 ``wudao``；旧键仅作标签回退）。
+_MCP_PROVIDER_LABELS: dict[str, str] = {
+    "wudao": "悟道",
+    "wudao-a-stock": "悟道",
+    "wudao-mcp": "悟道",
+}
+
+
+def _mcp_provider_label(name: str) -> str:
+    return _MCP_PROVIDER_LABELS.get(name, name)
+
+
+def _mcp_intel_providers() -> list[dict[str, Any]]:
+    """把已配置的 MCP 情报源映射成数据源目录项（lane=intel_mcp）。"""
+    try:
+        from src.intel import (
+            BUILTIN_MCP_NAME,
+            is_resident_wudao_server,
+            list_mcp_servers_from_json,
+            migrate_wudao_server_name,
+        )
+    except ImportError:
+        return []
+    migrate_wudao_server_name()
+    rows: list[dict[str, Any]] = []
+    seen_wudao = False
+    for item in list_mcp_servers_from_json():
+        name = str(item.get("name") or "").strip()
+        if not name or name == BUILTIN_MCP_NAME:
+            continue
+        if is_resident_wudao_server(name):
+            if seen_wudao:
+                continue
+            seen_wudao = True
+            name = "wudao"
+        usable = bool(item.get("is_usable", False))
+        active = bool(item.get("is_active", True))
+        skip = str(item.get("skip_reason") or "").strip()
+        tool_count = len(item.get("tools") or [])
+        note = str(item.get("note") or "").strip()
+        if name in _MCP_PROVIDER_LABELS:
+            desc_parts = [
+                "唯一悟道 MCP：情报工具 + 可选日 K（运维页开「日 K 优先」）"
+            ]
+            if note and "本地配置" not in note:
+                desc_parts.insert(0, note)
+        else:
+            desc_parts = [note or "外部 MCP 情报（涨停梯队/题材/龙虎榜等）"]
+        if skip and not usable:
+            desc_parts.append(f"当前：{skip}")
+        elif tool_count:
+            desc_parts.append(f"已发现 {tool_count} 个工具")
+        rows.append(
+            {
+                "id": f"mcp:{name}",
+                "label": _mcp_provider_label(name),
+                "lanes": ["intel_mcp"],
+                "description": " · ".join(desc_parts),
+                "base_url": str(item.get("url") or ""),
+                "kind": "mcp",
+                "mcp_name": name,
+                "enabled": active and usable,
+                "disabled_lanes": [] if active and usable else ["intel_mcp"],
+                "expires_at": str(item.get("expires_at") or ""),
+                "has_token": bool(item.get("has_token")),
+            }
+        )
+    return rows
+
+
+def _probe_mcp_provider(adapter_id: str, *, code: str, runs: int) -> dict[str, Any]:
+    """MCP 情报源不是 MarketAdapter，走轻量握手，不能丢给 get_adapter。"""
+    from src.intel import probe_mcp
+
+    name = adapter_id.removeprefix("mcp:").strip()
+    if not name:
+        raise HTTPException(status_code=404, detail=f"未知接入：{adapter_id}")
+    label = _mcp_provider_label(name)
+    rounds: list[dict[str, Any]] = []
+    for run in range(1, runs + 1):
+        # 数据源页探测：不刷新工具目录，避免 list_tools 双倍往返卡死 UI
+        hit = probe_mcp(name, refresh=False)
+        rounds.append(
+            {
+                "adapter_id": adapter_id,
+                "lane": "intel_mcp",
+                "ok": bool(hit.get("ok")),
+                "rtt_ms": hit.get("rtt_ms"),
+                "rows": hit.get("tool_count"),
+                "error": str(hit.get("error") or ""),
+                "unsupported": False,
+                "label": label,
+                "run": run,
+            }
+        )
+    last = dict(rounds[-1])
+    rtt = _median_value(rounds, "rtt_ms")
+    last.update(
+        ok=any(bool(row.get("ok")) for row in rounds),
+        rtt_ms=round(rtt, 2) if rtt is not None else last.get("rtt_ms"),
+        median_rtt_ms=round(rtt, 2) if rtt is not None else None,
+        failed_runs=sum(not bool(row.get("ok")) for row in rounds),
+        rounds=rounds,
+    )
+    return {
+        "code": code,
+        "runs": runs,
+        "results": [last],
+        "rounds": rounds,
+    }
 
 
 def _lane_code(value: str | None) -> str:
@@ -106,17 +218,26 @@ def build_data_sources_router(*, write_dependency) -> APIRouter:
             providers.append(
                 {
                     **entry,
+                    "kind": "adapter",
                     "enabled": provider_master_enabled(provider_id, config=config),
                     "disabled_lanes": provider_disabled_lanes(provider_id, config=config),
                 }
             )
+        providers.extend(_mcp_intel_providers())
+        intel_effective = [
+            str(item["id"]) for item in providers if "intel_mcp" in (item.get("lanes") or [])
+        ]
         lanes = [
             {
                 "id": lane_id,
                 "label": _LANE_LABELS.get(lane_id, lane_id),
                 "required": _LANE_REQUIRED.get(lane_id, False),
                 "policy": lane_route_policy(lane_id, config=config),
-                "effective_provider_ids": enabled_adapter_ids(lane_id, config=config),
+                "effective_provider_ids": (
+                    intel_effective
+                    if lane_id == "intel_mcp"
+                    else enabled_adapter_ids(lane_id, config=config)
+                ),
             }
             for lane_id in ALL_LANES
         ]
@@ -153,7 +274,12 @@ def build_data_sources_router(*, write_dependency) -> APIRouter:
             str(entry.get("id")): str(entry.get("label") or entry.get("id"))
             for entry in list_catalog()
         }
+        for entry in _mcp_intel_providers():
+            label_by_id[str(entry["id"])] = str(entry.get("label") or entry["id"])
         only_id = (payload.adapter_id or "").strip() or None
+        code = _lane_code(payload.code)
+        if only_id and only_id.startswith("mcp:"):
+            return _probe_mcp_provider(only_id, code=code, runs=payload.runs)
         if only_id:
             try:
                 get_adapter(only_id)
@@ -170,8 +296,6 @@ def build_data_sources_router(*, write_dependency) -> APIRouter:
         lane_ids = [target] if target else list(ALL_LANES)
         if target and target not in ALL_LANES:
             raise HTTPException(status_code=400, detail=f"未知类目：{target}")
-
-        code = _lane_code(payload.code)
         rounds_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
         all_rounds: list[dict[str, Any]] = []
         for lane_id in lane_ids:

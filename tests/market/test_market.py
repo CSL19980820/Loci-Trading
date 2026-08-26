@@ -88,6 +88,9 @@ class StoreTests(unittest.TestCase):
             ]
         )
         self.store.upsert_quotes("600519", _quotes(self.dates))
+        # 000001 的 turnover 列被数据源写成 0.05，与同一行的量额自相矛盾：
+        # 0.05 换手意味着成交 8.6×1e9×0.05=4.3 亿，而这一行记的成交额只有
+        # 1000 万（差 43 倍）。读侧口径以成交额为准，不采信这种脏列。
         self.store.upsert_quotes(
             "000001",
             _quotes(self.dates, base=8.0).assign(turnover=0.05),
@@ -110,12 +113,32 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(latest["600519"]["trade_date"], "2026-01-08")
         self.assertIsNotNone(latest["600519"]["pct"])
         self.assertIsNotNone(latest["600519"].get("turnover"))
-        self.assertAlmostEqual(float(latest["000001"]["turnover"]), 0.05)
+        # 换手率口径 = 成交额/(收盘×流通股本)，与 page_instruments_by_turnover
+        # 的排序表达式、spot 入库与 backfill 写入的值是同一个公式。
+        self.assertAlmostEqual(
+            float(latest["000001"]["turnover"]), 10_000_000.0 / (8.6 * 1e9)
+        )
+
+    def test_latest_bars_turnover_falls_back_to_the_stored_column(self) -> None:
+        """没有流通股本时才用源给的 turnover——兜底不能一起丢掉。"""
+        frame = _quotes(self.dates).assign(outstanding_share=None, turnover=0.05)
+        self.store.upsert_quotes("600519", frame, source="eastmoney")
+
+        latest = self.store.latest_bars(["600519"])
+
+        self.assertAlmostEqual(float(latest["600519"]["turnover"]), 0.05)
 
     def test_upsert_overwrites_corrected_data(self) -> None:
-        """数据源事后修正过的行必须被覆盖，而不是留着旧值。"""
+        """数据源事后修正过的行必须被覆盖，而不是留着旧值。
+
+        修正后的 OHLC 须自洽；非法行会被 ``partition_valid_ohlc_rows`` 丢弃，
+        不能靠「只改 close」验证覆盖语义。
+        """
         self.store.upsert_quotes("600519", _quotes(self.dates), source="a")
         fixed = _quotes(self.dates)
+        fixed.loc[0, "open"] = 990.0
+        fixed.loc[0, "high"] = 1005.0
+        fixed.loc[0, "low"] = 980.0
         fixed.loc[0, "close"] = 999.0
         self.store.upsert_quotes("600519", fixed, source="b")
         history = self.store.history("600519", adjust="none")
@@ -129,7 +152,7 @@ class StoreTests(unittest.TestCase):
                 {
                     "date": self.dates[0],
                     "open": 10.0,
-                    "high": 11.0,
+                    "high": 13.0,
                     "low": 9.0,
                     "close": 12.5,
                     "volume": 2_000_000.0,
@@ -351,6 +374,18 @@ class StoreTests(unittest.TestCase):
         self.store.conn.commit()
         self.assertEqual(self.store.trading_days(), self.dates)
 
+    def test_trading_days_filtered_miss_does_not_rebuild(self) -> None:
+        """热库常见：日历有今日、尚无下一交易日。带 start 的空结果不得全表重建。"""
+        self.store.upsert_quotes("600519", _quotes(self.dates))
+        before = self.store.conn.execute(
+            "SELECT COUNT(*) FROM trading_calendar"
+        ).fetchone()[0]
+        self.assertEqual(self.store.trading_days(start="2099-01-01"), [])
+        after = self.store.conn.execute(
+            "SELECT COUNT(*) FROM trading_calendar"
+        ).fetchone()[0]
+        self.assertEqual(after, before)
+
     def test_watermark_tracks_failures(self) -> None:
         self.store.set_watermark("600519", last_trade_date="2026-01-08", status="ok")
         self.store.set_watermark("000001", status="failed", message="接口超时")
@@ -363,6 +398,38 @@ class StoreTests(unittest.TestCase):
         self.store.set_watermark("600519", last_trade_date="2026-01-08", status="ok")
         self.store.set_watermark("600519", status="failed", message="限流")
         self.assertEqual(self.store.watermark("600519")["last_trade_date"], "2026-01-08")
+
+    def test_write_transaction_takes_the_write_lock_up_front(self) -> None:
+        """写事务必须 BEGIN IMMEDIATE，否则 busy_timeout 形同虚设。
+
+        WAL 下 ``BEGIN``（DEFERRED）先读后写时，若别的连接在中间提交过，
+        升级写锁会立刻拿到 SQLITE_BUSY——这类快照失效**不会**走 busy_timeout
+        重试，四个同步 worker 会随机抛 "database is locked"。
+        """
+        import sqlite3
+
+        other = MarketStore(self.db)
+        other.conn.execute("PRAGMA busy_timeout=200")
+        try:
+            with self.store._transaction() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()
+                with self.assertRaises(sqlite3.OperationalError):
+                    other.conn.execute(
+                        "INSERT INTO meta(key, value, updated_at)"
+                        " VALUES('probe', '1', datetime('now'))"
+                    )
+                    other.conn.commit()
+                cursor.execute(
+                    "INSERT INTO meta(key, value, updated_at)"
+                    " VALUES('ours', '1', datetime('now'))"
+                )
+        finally:
+            other.conn.rollback()
+            other.close()
+        row = self.store.conn.execute(
+            "SELECT value FROM meta WHERE key = 'ours'"
+        ).fetchone()
+        self.assertEqual(str(row[0]), "1")
 
 
 class AdjustmentTests(unittest.TestCase):
@@ -436,7 +503,9 @@ class PanelTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_panel_shape_is_dates_by_codes(self) -> None:
-        panels = self.store.load_panel(fields=("close", "volume"), adjust="none")
+        panels = self.store.load_panel(
+            fields=("close", "volume"), start=self.dates[0], adjust="none"
+        )
         close = panels["close"]
         self.assertEqual(list(close.index), self.dates)
         self.assertEqual(sorted(close.columns), ["000001", "300750", "600519"])
@@ -444,13 +513,15 @@ class PanelTests(unittest.TestCase):
 
     def test_min_bars_drops_recently_listed_names(self) -> None:
         """K 线不够长的票留在池子里只会让指标全空，污染筛选结果。"""
-        panels = self.store.load_panel(fields=("close",), adjust="none", min_bars=10)
+        panels = self.store.load_panel(
+            fields=("close",), start=self.dates[0], adjust="none", min_bars=10
+        )
         self.assertNotIn("300750", panels["close"].columns)
         self.assertIn("600519", panels["close"].columns)
 
     def test_panel_matches_single_stock_history(self) -> None:
         """面板与单票查询必须给出同一组数字，否则两条路径会分叉。"""
-        panels = self.store.load_panel(fields=("close",), adjust="none")
+        panels = self.store.load_panel(fields=("close",), start=self.dates[0], adjust="none")
         history = self.store.history("600519", adjust="none")
         np.testing.assert_allclose(
             panels["close"]["600519"].to_numpy(dtype=float),
@@ -462,8 +533,8 @@ class PanelTests(unittest.TestCase):
             "600519",
             pd.DataFrame({"date": [self.dates[0], self.dates[10]], "hfq_factor": [1.0, 2.0]}),
         )
-        panels = self.store.load_panel(fields=("close",), adjust="qfq")
-        raw = self.store.load_panel(fields=("close",), adjust="none")
+        panels = self.store.load_panel(fields=("close",), start=self.dates[0], adjust="qfq")
+        raw = self.store.load_panel(fields=("close",), start=self.dates[0], adjust="none")
         # 有因子的票被折算，没有因子的票原样。
         self.assertAlmostEqual(
             panels["close"]["600519"].iloc[0], raw["close"]["600519"].iloc[0] / 2

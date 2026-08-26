@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 import threading
 from datetime import date
 from typing import Any, Callable
@@ -99,6 +100,7 @@ def _result_body(result: Any, recorded: dict[str, Any] | None) -> dict[str, Any]
         "params": result.params,
         "effective_params": result.effective_params,
         "picks": result.picks,
+        "watch_picks": list(getattr(result, "watch_picks", None) or []),
         "health": result.health,
         "universe": result.universe,
         "universe_funnel": result.universe_funnel,
@@ -112,8 +114,14 @@ def execute_screen_run(
     *,
     market_factory: Callable[[], Any],
     palace_db: str | None,
+    hot_db: str | None = None,
 ) -> None:
-    """后台线程入口：选股 + 可选入库，全程写进度快照。"""
+    """后台线程入口：选股 + 可选入库，全程写进度快照。
+
+    hot_db 非空时：日历计算与 spot 刷新写全量库（market_factory），随后把
+    最近交易日镜像进热库，选股只读热库（近 700 交易日窗口）；策略声明
+    ``requires_full_history`` 或未配置热库时回退全量库。
+    """
     try:
         from src.market import DataQualityError
         from src.strategy import screen
@@ -137,6 +145,17 @@ def execute_screen_run(
         health_check = not bool(opts.get("skip_health_check"))
         refresh_spot = bool(opts.get("refresh_spot", True))
 
+        # 策略声明 requires_full_history（如递推/长窗口公式）时必须读全量库；
+        # 否则默认读滚动热库（近 700 交易日窗口），与全量写库物理隔离。
+        try:
+            from src.strategy import get as _get_strategy
+
+            needs_full = bool(
+                getattr(_get_strategy(str(opts["strategy"])), "requires_full_history", False)
+            )
+        except Exception:
+            needs_full = False
+
         screen_run_update(
             phase="calendar",
             percent=4,
@@ -145,12 +164,12 @@ def execute_screen_run(
             log_line=f"▸ 窗口 {label}",
         )
 
-        with market_factory() as store:
+        with ExitStack() as stack, market_factory() as full:
             if win_start and win_end:
-                days = store.trading_days(start=win_start, end=win_end)
+                days = full.trading_days(start=win_start, end=win_end)
                 # 休市点「今日」会得到空窗口：回落到窗口末日之前最近交易日。
                 if not days and win_start == win_end:
-                    prior = store.trading_days(end=win_end)
+                    prior = full.trading_days(end=win_end)
                     if prior:
                         days = [prior[-1]]
                         screen_run_update(
@@ -158,7 +177,7 @@ def execute_screen_run(
                             message=f"改用最近交易日 {days[0]}",
                         )
             else:
-                latest = store.trading_days()
+                latest = full.trading_days()
                 days = [latest[-1]] if latest else []
 
             if not days:
@@ -169,13 +188,16 @@ def execute_screen_run(
                 )
                 return
 
-            # 与 job:screen 对齐：窗口含「今天」时先刷当日 spot，再做覆盖率门禁。
-            # 历史日 K 不含当日；不刷 spot 时盘中覆盖率常只有个位数，体检直接阻断。
+            # 与 job:screen 对齐：窗口含今天时保证「今日日 K 可用」。
+            # 覆盖已达标则跳过 spot，避免与盘后同步抢写把选股打死。
             today = date.today().isoformat()
             if refresh_spot and today in days:
-                from src.market import apply_today_spot
+                from src.market.application.screen_spot import (
+                    ScreenSpotError,
+                    ensure_today_quotes_for_screen,
+                )
 
-                instruments = store.list_instruments()
+                instruments = full.list_instruments()
                 spot_codes = [item["code"] for item in instruments]
                 spot_types = {
                     item["code"]: item["instrument_type"] for item in instruments
@@ -183,22 +205,27 @@ def execute_screen_run(
                 screen_run_update(
                     phase="spot",
                     percent=5,
-                    message="刷新当日行情…",
-                    log_line=f"↻ 刷新当日 spot（{len(spot_codes)} 只）",
+                    message="检查当日行情…",
+                    log_line=f"↻ 准备当日行情（{len(spot_codes)} 只）",
                 )
                 try:
-                    written = (
-                        apply_today_spot(
-                            store,
-                            spot_codes,
-                            instrument_types=spot_types or None,
-                            raise_on_failure=True,
-                        )
-                        if spot_codes
-                        else 0
+                    ensured = ensure_today_quotes_for_screen(
+                        full,
+                        spot_codes,
+                        instrument_types=spot_types or None,
                     )
+                except ScreenSpotError as exc:
+                    msg = str(exc)
+                    screen_run_update(
+                        status="error",
+                        phase="error",
+                        message=msg,
+                        error=msg,
+                        log_line=f"✗ {msg}",
+                    )
+                    return
                 except Exception as exc:
-                    msg = f"选股前刷新当日行情失败，已阻断选股：{exc}"
+                    msg = f"选股前准备当日行情失败，已阻断选股：{exc}"
                     screen_run_update(
                         status="error",
                         phase="error",
@@ -208,10 +235,33 @@ def execute_screen_run(
                     )
                     return
                 screen_run_update(
-                    log_line=f"✓ 当日 spot 写入 {written} 行",
-                    message=f"当日行情已刷新 · {written} 行",
+                    log_line=f"✓ {ensured.get('message') or '当日行情就绪'}",
+                    message=str(ensured.get("message") or "当日行情就绪"),
                     percent=7,
                 )
+
+            # 选股读滚动热库（近 700 交易日窗口），与全量写库物理隔离；写操作
+            # （apply_today_spot）只碰全量库。策略要求全历史或未配置热库时回退
+            # 全量库。镜像失败不阻断：热库缺当日由哨兵/重建任务兜底。
+            store = full
+            if hot_db and not needs_full:
+                from src.market import hot_unusable_reason, mirror_recent_to_hot, open_market_hot
+
+                try:
+                    hot = open_market_hot(hot_db)
+                    stack.enter_context(hot)
+                    mirror_recent_to_hot(full, hot)
+                    reason = hot_unusable_reason(full, hot)
+                    if reason:
+                        screen_run_update(log_line=f"⚠ {reason}，回退全量库")
+                        store = full
+                    else:
+                        store = hot
+                except Exception as exc:
+                    screen_run_update(
+                        log_line=f"⚠ 镜像热库失败，回退全量库：{exc}",
+                    )
+                    store = full
 
             # 区间内各日共享同一行情仓版本；每次 screen 都重新扫描快照会把
             # O(区间天数 × 全库) 的审计开销叠加到选股热路径。
@@ -295,11 +345,16 @@ def execute_screen_run(
 
                 elapsed_total += float(result.elapsed_seconds or 0)
                 pick_n = len(result.picks)
+                watch_n = len(getattr(result, "watch_picks", None) or [])
                 screen_run_update(
                     percent=base + span * 0.88,
-                    message=f"[{index}/{total_days}] {day} · {pick_n} 只",
+                    message=(
+                        f"[{index}/{total_days}] {day} · 正式 {pick_n} 只"
+                        f" · 观察 {watch_n} 只"
+                    ),
                     log_line=(
-                        f"✓ [{index}/{total_days}] {day} 选出 {pick_n} 只"
+                        f"✓ [{index}/{total_days}] {day} 正式 {pick_n} 只"
+                        f" · 观察 {watch_n} 只"
                         f"（宇宙 {result.universe_size}）"
                     ),
                 )
@@ -341,6 +396,7 @@ def execute_screen_run(
                     {
                         "trade_date": day,
                         "picks": pick_n,
+                        "watch_picks": watch_n,
                         "universe_size": result.universe_size,
                         "elapsed_seconds": round(float(result.elapsed_seconds or 0), 3),
                         "recorded": recorded,
@@ -401,6 +457,7 @@ def start_screen_run_thread(
     *,
     market_factory: Callable[[], Any],
     palace_db: str | None,
+    hot_db: str | None = None,
 ) -> dict[str, Any]:
     """尝试启动；若已在跑则返回当前快照。"""
     try:
@@ -429,6 +486,7 @@ def start_screen_run_thread(
                 "opts": opts,
                 "market_factory": market_factory,
                 "palace_db": palace_db,
+                "hot_db": hot_db,
             },
             name="loci-screen-run",
             daemon=True,

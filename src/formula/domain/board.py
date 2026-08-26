@@ -17,6 +17,8 @@
 """
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -26,7 +28,13 @@ LIMIT_30 = 0.30  # 北交所
 LIMIT_ST = 0.05  # ST / *ST
 LIMIT_DEFAULT = 0.10  # 主板
 
-__all__ = ["limit_ratio_for", "limit_ratio_panel", "limit_up_flags", "one_word_flags"]
+__all__ = [
+    "limit_ratio_for",
+    "limit_ratio_panel",
+    "limit_up_flags",
+    "limit_up_price",
+    "one_word_flags",
+]
 
 
 def limit_ratio_for(code: str, name: str = "") -> float:
@@ -59,6 +67,17 @@ def limit_ratio_panel(
     return pd.DataFrame(
         [row.to_numpy()] * len(close.index), index=close.index, columns=close.columns
     )
+
+
+def limit_up_price(prev_close: Any, ratio: Any) -> Any:
+    """涨停价：前收 × (1 + 板块比例)，逢五进一到分。标量与 ndarray 通吃。
+
+    这是 ``_round_half_up`` 的标量/数组版本，供 DataFrame 之外的调用方复用。
+    漏掉 ``+1e-9`` 会让一批票的涨停价差一分钱——见 ``_round_half_up`` 的说明。
+    """
+    values = np.asarray(prev_close, dtype=float) * (1.0 + np.asarray(ratio, dtype=float))
+    rounded = np.floor(values * 100.0 + 0.5 + 1e-9) / 100.0
+    return float(rounded) if rounded.ndim == 0 else rounded
 
 
 def limit_up_flags(

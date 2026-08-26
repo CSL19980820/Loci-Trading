@@ -1,73 +1,99 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { ElMessage } from 'element-plus'
+
 import {
-  cancelAiRun,
+  compactAiSession,
   createAiSession,
   deleteAiSession,
-  getAiRun,
-  getAiRunEvents,
+  getAiProfile,
   getAiSession,
   getAiTools,
-  listAiSessions,
-  sendAiMessage,
-  streamAiRunEvents,
+  listAiMemories,
 } from '@/shared/api/ai_assistant'
 import { toErrorMessage } from '@/shared/lib/errors'
-import type { AiAgentProgress, AiMessage, AiProviderProfile, AiRun, AiRunEvent, AiSessionDetail, AiSessionSummary } from '@/shared/types/ai_assistant'
-import { applyAiRunEvent, beginAssistantTurn } from './assistantRunState'
+import type {
+  AiAgentProgress,
+  AiAssistantProfile,
+  AiMemoryItem,
+  AiMessage,
+  AiProviderProfile,
+  AiRun,
+  AiSessionDetail,
+  AiSessionSummary,
+  AiToolsCatalog,
+} from '@/shared/types/ai_assistant'
+import {
+  archiveAiSession,
+  batchAiSessionAction,
+  deleteAiSessionsWithConfirm,
+  refreshAiSessionLists,
+  restoreAiSession,
+} from './assistantSessionActions'
 import { mergeSessionMessages } from './assistantSessionMerge'
+import { useAssistantHostRun } from './useAssistantHostRun'
 import AssistantFloatBall from './components/AssistantFloatBall.vue'
 import AssistantPanel from './components/AssistantPanel.vue'
+import AssistantSettingsDialog from './components/AssistantSettingsDialog.vue'
+import type { ThinkingLevel } from './components/AssistantRuntimeBar.vue'
+import type { TaskPlanStep } from './assistantTaskModel'
 
 type SessionWithRun = AiSessionDetail & { active_run?: AiRun | null }
-type FinishStatus = 'cancelled' | 'done' | 'error'
+
+const THINKING_KEY = 'loci.assistant.thinking'
+const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
 
 const open = ref(false)
 const router = useRouter()
 const loading = ref(false)
 const error = ref('')
 const sessions = ref<AiSessionSummary[]>([])
+const archivedSessions = ref<AiSessionSummary[]>([])
+const railTab = ref<'active' | 'archived'>('active')
+const settingsOpen = ref(false)
 const active = ref<AiSessionDetail | null>(null)
-const messages = ref<AiMessage[]>([])
+// shallowRef：长会话下不必为每条消息及其 tool_receipts / artifacts 建响应式代理。
+// 前提是所有更新都换新数组、且改单条消息前先复制（见 assistantRunState 的
+// cloneAssistantForMutation）。往 messages.value[i] 上原地赋值不会触发渲染。
+const messages = shallowRef<AiMessage[]>([])
 const agents = ref<AiAgentProgress[]>([])
+const planSteps = ref<TaskPlanStep[]>([])
 const run = ref<AiRun | null>(null)
 const providerReady = ref(false)
 const providers = ref<AiProviderProfile[]>([])
+const toolsCatalog = ref<AiToolsCatalog | null>(null)
+const profile = ref<AiAssistantProfile | null>(null)
+const memories = ref<AiMemoryItem[]>([])
 const provider = ref('')
 const model = ref('')
+const thinking = ref<ThinkingLevel>('medium')
 const dispatching = ref(false)
 let selectionVersion = 0
 let selectingSessionId: string | null = null
 let sessionsVersion = 0
-let pollVersion = 0
-let streamAbort: AbortController | null = null
 let disposed = false
 
 function isActiveRun(): boolean { return run.value?.status === 'running' }
 function isWaitingUser(): boolean { return run.value?.status === 'waiting_user' }
 function isBusy(): boolean { return dispatching.value || isActiveRun() }
 function isSessionLocked(): boolean { return isBusy() || isWaitingUser() }
-function isTerminal(status: AiRun['status']): boolean {
-  return status === 'done' || status === 'cancelled' || status === 'error' || status === 'idle' || status === 'archived' || status === 'waiting_user'
-}
 
 const selectedProvider = computed(() => providers.value.find((item) => item.name === provider.value))
 const models = computed(() => selectedProvider.value?.models ?? [])
 
+function normalizeThinking(value: string | null | undefined): ThinkingLevel {
+  return THINKING_LEVELS.includes(value as ThinkingLevel) ? (value as ThinkingLevel) : 'medium'
+}
+
+function chooseThinking(next: ThinkingLevel): void {
+  thinking.value = normalizeThinking(next)
+  localStorage.setItem(THINKING_KEY, thinking.value)
+}
+
 function selectionIsCurrent(version: number): boolean {
   return !disposed && version === selectionVersion
-}
-
-function runIsCurrent(runId: string, version: number): boolean {
-  return !disposed && version === pollVersion && run.value?.id === runId
-}
-
-function abortActiveStream(): void {
-  pollVersion += 1
-  streamAbort?.abort()
-  streamAbort = null
 }
 
 async function syncSessionMessages(sessionId: string): Promise<void> {
@@ -86,12 +112,29 @@ async function syncSessionMessages(sessionId: string): Promise<void> {
 async function loadCatalog(): Promise<void> {
   const catalog = await getAiTools()
   if (disposed) return
+  toolsCatalog.value = catalog
   providers.value = catalog.providers ?? []
   providerReady.value = catalog.provider_configured !== false
   if (!providers.value.some((item) => item.name === provider.value)) {
     chooseProvider(providers.value.find((item) => item.is_default)?.name ?? providers.value[0]?.name ?? '')
   } else if (!models.value.includes(model.value)) {
     model.value = selectedProvider.value?.default_model ?? models.value[0] ?? ''
+  }
+}
+
+async function loadContextSources(): Promise<void> {
+  try {
+    const [nextProfile, nextMemories] = await Promise.all([
+      getAiProfile(),
+      listAiMemories(),
+    ])
+    if (disposed) return
+    profile.value = nextProfile
+    memories.value = nextMemories
+  } catch {
+    if (disposed) return
+    profile.value = null
+    memories.value = []
   }
 }
 
@@ -105,45 +148,20 @@ function chooseModel(next: string): void {
   model.value = models.value.includes(next) ? next : selectedProvider.value?.default_model ?? ''
 }
 
-async function loadSessions(): Promise<void> {
-  const version = ++sessionsVersion
-  const rows = await listAiSessions()
-  if (!disposed && version === sessionsVersion) sessions.value = rows
+function chooseProviderAndModel(nextProvider: string, nextModel: string): void {
+  const selected = providers.value.find((item) => item.name === nextProvider)
+  provider.value = selected?.name ?? ''
+  const available = selected?.models ?? []
+  model.value = available.includes(nextModel)
+    ? nextModel
+    : selected?.default_model ?? available[0] ?? ''
 }
 
-function restoreActiveRun(detail: SessionWithRun): void {
-  const activeRun = detail.active_run ?? null
-  const waiting = detail.status === 'waiting_user' || activeRun?.status === 'waiting_user'
-  if (waiting) {
-    if (!activeRun?.id) {
-      run.value = null
-      error.value = '会话在等待回复，但缺少有效运行；请新建对话或联系运维。'
-      return
-    }
-    run.value = { ...activeRun, status: 'waiting_user' }
-    return
-  }
-  if (activeRun?.status === 'running') {
-    if (run.value?.id === activeRun.id && isActiveRun()) return
-    run.value = activeRun
-    const hasStreamingAssistant = messages.value.some((message) => message.role === 'assistant' && message.status === 'streaming')
-    if (!hasStreamingAssistant) {
-      messages.value = [
-        ...messages.value,
-        {
-          id: `local-assistant-resume-${activeRun.id}`,
-          role: 'assistant',
-          content: '',
-          status: 'streaming',
-          tool_receipts: [],
-        },
-      ]
-    }
-    // Replay from the start so tool/artifact events rebuild UI; do not skip via latest cursor.
-    void consumeRun({ ...activeRun, cursor: undefined })
-    return
-  }
-  run.value = null
+async function loadSessions(): Promise<void> {
+  await refreshAiSessionLists(sessions, archivedSessions, {
+    bump: () => ++sessionsVersion,
+    isCurrent: (version) => !disposed && version === sessionsVersion,
+  })
 }
 
 async function openAssistant(): Promise<void> {
@@ -153,7 +171,7 @@ async function openAssistant(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    await Promise.all([loadCatalog(), loadSessions()])
+    await Promise.all([loadCatalog(), loadSessions(), loadContextSources()])
     if (disposed) return
     if (!active.value && sessions.value[0]) {
       await selectSession(sessions.value[0].id)
@@ -174,7 +192,7 @@ async function selectSession(id: string): Promise<void> {
   }
   if (isSessionLocked() && active.value?.id === id) return
   if (active.value?.id !== id && !isSessionLocked()) {
-    abortActiveStream()
+    hostRun.abortActiveStream()
     run.value = null
   }
   const version = ++selectionVersion
@@ -187,9 +205,10 @@ async function selectSession(id: string): Promise<void> {
     active.value = detail
     messages.value = detail.messages ?? []
     agents.value = []
+    planSteps.value = []
     if (detail.provider) chooseProvider(detail.provider)
     if (detail.model) chooseModel(detail.model)
-    restoreActiveRun(detail)
+    hostRun.restoreActiveRun(detail, isActiveRun)
   } catch (caught) {
     if (selectionIsCurrent(version)) error.value = toErrorMessage(caught, '加载会话失败')
   } finally {
@@ -202,6 +221,16 @@ async function selectSession(id: string): Promise<void> {
 
 async function createSession(options: { fromSend?: boolean } = {}): Promise<AiSessionDetail | null> {
   if (isActiveRun() || isWaitingUser() || (dispatching.value && !options.fromSend)) return null
+  // Reuse the current empty draft so 「新建」不会堆出一串「新对话」.
+  if (active.value && !messages.value.length) return active.value
+  const draftSummary = sessions.value.find((session) => {
+    const title = (session.title || '').trim()
+    return !title || title === '新对话'
+  })
+  if (draftSummary && draftSummary.id !== active.value?.id) {
+    await selectSession(draftSummary.id)
+    if (active.value?.id === draftSummary.id && !messages.value.length) return active.value
+  }
   const version = ++selectionVersion
   selectingSessionId = null
   loading.value = true
@@ -212,11 +241,12 @@ async function createSession(options: { fromSend?: boolean } = {}): Promise<AiSe
       void loadSessions().catch(() => undefined)
       return null
     }
-    abortActiveStream()
+    hostRun.abortActiveStream()
     run.value = null
     active.value = detail
     messages.value = detail.messages ?? []
     agents.value = []
+    planSteps.value = []
     sessionsVersion += 1
     sessions.value = [detail, ...sessions.value.filter((session) => session.id !== detail.id)]
     return detail
@@ -228,217 +258,139 @@ async function createSession(options: { fromSend?: boolean } = {}): Promise<AiSe
   }
 }
 
-async function removeSession(id: string): Promise<void> {
+const hostRun = useAssistantHostRun({
+  disposed: () => disposed,
+  selectionVersion: () => selectionVersion,
+  active,
+  messages,
+  agents,
+  planSteps,
+  run,
+  error,
+  dispatching,
+  provider,
+  model,
+  thinking,
+  providerReady,
+  sessions,
+  createSession,
+  syncSessionMessages,
+  loadSessions,
+})
+
+async function onSlashCommand(slug: string): Promise<void> {
+  if (slug !== 'compact') return
+  const sessionId = active.value?.id
+  if (!sessionId) {
+    ElMessage.warning('请先打开或新建对话')
+    return
+  }
+  if (isSessionLocked()) {
+    ElMessage.warning('会话占用中，请先结束或取消本轮再压缩')
+    return
+  }
+  try {
+    const result = await compactAiSession(sessionId)
+    const notice = (result.message || '').trim() || '已压缩较早对话（库内原文仍在）'
+    const after = Number(result.tokens_after)
+    const msgs = messages.value
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      const row = msgs[i]
+      if (row?.role !== 'assistant') continue
+      const next = {
+        ...row,
+        warnings: [...(row.warnings ?? []), notice],
+        ...(after > 0 ? { context_feed_tokens: after } : {}),
+      }
+      messages.value = [...msgs.slice(0, i), next, ...msgs.slice(i + 1)]
+      break
+    }
+    ElMessage.success(notice)
+  } catch (caught) {
+    ElMessage.error(toErrorMessage(caught, '压缩失败'))
+  }
+}
+
+/** Drop empty drafts when leaving the assistant; landed sessions (有消息) keep. */
+async function discardEmptyDraftOnClose(): Promise<void> {
   if (isSessionLocked()) return
+  const draft = active.value
+  if (!draft || messages.value.length > 0) return
+  const id = draft.id
+  clearIfActive(id)
+  sessions.value = sessions.value.filter((session) => session.id !== id)
+  try {
+    await deleteAiSession(id)
+  } catch {
+    /* best-effort prune; list refresh on next open */
+  }
+}
+
+function clearIfActive(id: string): void {
   if (selectingSessionId === id || (!selectingSessionId && active.value?.id === id)) {
     selectionVersion += 1
     selectingSessionId = null
     loading.value = false
-    abortActiveStream()
+    hostRun.abortActiveStream()
     run.value = null
   }
+  if (active.value?.id === id) {
+    active.value = null
+    messages.value = []
+    agents.value = []
+  }
+}
+
+async function removeSession(id: string): Promise<void> {
+  if (isSessionLocked()) return
   sessionsVersion += 1
-  try {
-    await deleteAiSession(id)
-    if (disposed) return
-    sessions.value = sessions.value.filter((session) => session.id !== id)
-    if (active.value?.id === id) {
-      active.value = null
-      messages.value = []
-      agents.value = []
-    }
-  } catch (caught) {
-    error.value = toErrorMessage(caught, '删除会话失败')
-  }
+  await deleteAiSessionsWithConfirm({
+    ids: [id],
+    sessions,
+    archivedSessions,
+    clearIfActive,
+    setError: (message) => { error.value = message },
+    disposed: () => disposed,
+    reload: loadSessions,
+  })
 }
 
-function applyEvent(event: AiRunEvent, runId?: string): void {
-  const next = applyAiRunEvent({ messages: messages.value, agents: agents.value }, event)
-  messages.value = next.messages
-  agents.value = next.agents
-  if (event.type === 'waiting_user') {
-    pauseForUser(runId)
-    return
-  }
-  if (event.type === 'done' || event.type === 'error' || event.type === 'cancelled') {
-    finishRun(event.type === 'error' ? 'error' : event.type === 'cancelled' ? 'cancelled' : 'done', runId)
-  }
+async function archiveSession(id: string): Promise<void> {
+  if (isSessionLocked()) return
+  sessionsVersion += 1
+  await archiveAiSession({
+    id,
+    clearIfActive,
+    setError: (message) => { error.value = message },
+    disposed: () => disposed,
+    reload: loadSessions,
+  })
 }
 
-function pauseForUser(runId?: string): void {
-  if (!run.value || (runId && run.value.id !== runId)) return
-  run.value = { ...run.value, status: 'waiting_user' }
-  streamAbort?.abort()
-  streamAbort = null
-  void loadSessions().catch(() => undefined)
+async function restoreSession(id: string): Promise<void> {
+  if (isSessionLocked()) return
+  sessionsVersion += 1
+  await restoreAiSession({
+    id,
+    railTab,
+    setError: (message) => { error.value = message },
+    disposed: () => disposed,
+    reload: loadSessions,
+  })
 }
 
-function finishRun(status: FinishStatus, runId?: string): void {
-  if (!run.value || (runId && run.value.id !== runId)) return
-  const sessionId = run.value.session_id
-  run.value = { ...run.value, status }
-  const index = [...messages.value].map((message) => message.role).lastIndexOf('assistant')
-  if (index >= 0) {
-    const message = messages.value[index]
-    const messageStatus = status === 'error' ? 'error' : status === 'cancelled' ? 'cancelled' : 'done'
-    const fallback = status === 'error' ? '助手运行失败' : status === 'cancelled' ? '已中止' : ''
-    messages.value = messages.value.map((item, current) => current === index
-      ? { ...message, status: messageStatus, content: message.content || fallback }
-      : item)
-  }
-  streamAbort?.abort()
-  streamAbort = null
-  void loadSessions().catch(() => undefined)
-  if (active.value?.id === sessionId) void syncSessionMessages(sessionId)
-}
-
-function settleRunStatus(status: AiRun['status'], runId: string): void {
-  if (status === 'waiting_user') {
-    pauseForUser(runId)
-    return
-  }
-  if (status === 'done' || status === 'cancelled' || status === 'error') {
-    finishRun(status, runId)
-    return
-  }
-  if (isTerminal(status)) finishRun('done', runId)
-}
-
-function adoptRunSnapshot(latest: AiRun, runId: string): void {
-  if (!run.value || run.value.id !== runId) return
-  const localStatus = run.value.status
-  if (isTerminal(localStatus) && !isTerminal(latest.status)) return
-  run.value = latest
-  if (isTerminal(latest.status)) settleRunStatus(latest.status, runId)
-}
-
-async function consumeRun(nextRun: AiRun): Promise<void> {
-  const version = ++pollVersion
-  let after = nextRun.cursor
-  const seenEventIds = new Set<string>()
-  streamAbort = new AbortController()
-
-  function applyNext(event: AiRunEvent): void {
-    const id = event.id == null ? '' : String(event.id)
-    if (id) {
-      after = id
-      if (seenEventIds.has(id)) return
-      seenEventIds.add(id)
-      if (seenEventIds.size > 500) {
-        const oldest = seenEventIds.values().next().value
-        if (oldest) seenEventIds.delete(oldest)
-      }
-    }
-    applyEvent(event, nextRun.id)
-  }
-
-  function shouldContinue(): boolean {
-    return runIsCurrent(nextRun.id, version) && !isTerminal(run.value?.status ?? 'error')
-  }
-
-  try {
-    const streamed = await streamAiRunEvents(nextRun.id, after, (event) => {
-      if (!runIsCurrent(nextRun.id, version)) return
-      applyNext(event)
-    }, streamAbort.signal)
-    if (!shouldContinue()) return
-    if (streamed) {
-      const latest = await getAiRun(nextRun.id)
-      if (!shouldContinue()) return
-      if (!runIsCurrent(nextRun.id, version) || latest.id !== run.value?.id) return
-      adoptRunSnapshot(latest, nextRun.id)
-      return
-    }
-  } catch {
-    if (!shouldContinue()) return
-  }
-
-  let failures = 0
-  while (shouldContinue()) {
-    try {
-      const page = await getAiRunEvents(nextRun.id, after)
-      for (const event of page.events) {
-        if (!shouldContinue()) return
-        applyNext(event)
-      }
-      after = page.after ?? after
-      if (!shouldContinue()) return
-      const latest = await getAiRun(nextRun.id)
-      if (!runIsCurrent(nextRun.id, version) || latest.id !== run.value?.id) return
-      adoptRunSnapshot(latest, nextRun.id)
-      if (!shouldContinue()) return
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 750))
-      failures = 0
-    } catch {
-      if (!shouldContinue()) return
-      try {
-        const latest = await getAiRun(nextRun.id)
-        if (!runIsCurrent(nextRun.id, version) || latest.id !== run.value?.id) return
-        adoptRunSnapshot(latest, nextRun.id)
-        if (!shouldContinue()) return
-      } catch {
-        if (!shouldContinue()) return
-      }
-      const retryAfter = Math.min(750 * 2 ** failures, 6_000)
-      failures += 1
-      await new Promise<void>((resolve) => window.setTimeout(resolve, retryAfter))
-    }
-  }
-}
-
-async function send(content: string): Promise<void> {
-  const prompt = content.trim()
-  if (!prompt || isBusy() || !providerReady.value || disposed) return
-  dispatching.value = true
-  try {
-    const session = active.value ?? await createSession({ fromSend: true })
-    if (!session || disposed) return
-    const intent = selectionVersion
-    error.value = ''
-    const started = beginAssistantTurn(messages.value, prompt)
-    messages.value = started.messages
-    agents.value = started.agents
-    const response = await sendAiMessage(session.id, prompt, { provider: provider.value, model: model.value })
-    if (disposed || intent !== selectionVersion || active.value?.id !== session.id) return
-    const nextRun: AiRun = { id: response.run_id, session_id: session.id, status: 'running', provider: provider.value, model: model.value }
-    run.value = nextRun
-    void consumeRun(nextRun)
-  } catch (caught) {
-    if (disposed) return
-    error.value = toErrorMessage(caught, '发送消息失败')
-    const index = [...messages.value].map((message) => message.role).lastIndexOf('assistant')
-    if (index >= 0) {
-      const assistant = messages.value[index]
-      messages.value = messages.value.map((item, current) => current === index
-        ? { ...assistant, status: 'error', content: assistant.content || '发送失败' }
-        : item)
-    }
-  } finally {
-    if (!disposed) dispatching.value = false
-  }
-}
-
-async function cancel(): Promise<void> {
-  const currentRun = run.value
-  if (!currentRun || (!isActiveRun() && !isWaitingUser())) return
-  if (!currentRun.id || currentRun.id.startsWith('waiting-') || currentRun.id.startsWith('local-')) {
-    error.value = '无法取消：缺少有效运行'
-    return
-  }
-  try {
-    const cancelled = await cancelAiRun(currentRun.id)
-    if (!run.value || run.value.id !== currentRun.id) return
-    if (run.value.status === 'done' || run.value.status === 'error' || run.value.status === 'cancelled') return
-    const status: FinishStatus = cancelled.status === 'error'
-      ? 'error'
-      : cancelled.status === 'done'
-        ? 'done'
-        : 'cancelled'
-    finishRun(status, currentRun.id)
-  } catch (caught) {
-    if (run.value && (run.value.status === 'done' || run.value.status === 'error' || run.value.status === 'cancelled')) return
-    error.value = toErrorMessage(caught, '中止运行失败')
-  }
+async function batchSessions(payload: { action: 'archive' | 'unarchive' | 'delete'; ids: string[] }): Promise<void> {
+  if (isSessionLocked() || !payload.ids.length) return
+  sessionsVersion += 1
+  await batchAiSessionAction({
+    ...payload,
+    sessions,
+    archivedSessions,
+    clearIfActive,
+    setError: (message) => { error.value = message },
+    disposed: () => disposed,
+    reload: loadSessions,
+  })
 }
 
 function configureProviders(): void {
@@ -451,18 +403,38 @@ function onShortcut(event: KeyboardEvent): void {
     event.preventDefault()
     void openAssistant()
   }
-  if (event.key === 'Escape' && open.value) open.value = false
+  // 设置等子弹窗自己会吃掉 Esc；这里再关一次会把助手一起收走
+  if (event.key === 'Escape' && open.value && !document.querySelector('.el-overlay')) {
+    open.value = false
+  }
 }
 
-watch(open, (visible) => { if (visible && !disposed) void openAssistant() })
-onMounted(() => window.addEventListener('keydown', onShortcut))
+watch(open, (visible) => {
+  if (visible && !disposed) void openAssistant()
+  else if (!visible && !disposed) void discardEmptyDraftOnClose()
+})
+
+watch(settingsOpen, (visible, wasVisible) => {
+  // 设置关闭后刷新 profile/memories，上下文用量条立刻对齐
+  if (wasVisible && !visible && !disposed) void loadContextSources()
+})
+
+function onExternalOpen(): void {
+  void openAssistant()
+}
+
+onMounted(() => {
+  thinking.value = normalizeThinking(localStorage.getItem(THINKING_KEY))
+  window.addEventListener('keydown', onShortcut)
+  window.addEventListener('loci:assistant-open', onExternalOpen)
+})
 onUnmounted(() => {
   disposed = true
   selectionVersion += 1
   sessionsVersion += 1
-  pollVersion += 1
-  streamAbort?.abort()
+  hostRun.disposeRun()
   window.removeEventListener('keydown', onShortcut)
+  window.removeEventListener('loci:assistant-open', onExternalOpen)
 })
 </script>
 
@@ -472,9 +444,12 @@ onUnmounted(() => {
     :open="open"
     :title="active?.title"
     :sessions="sessions"
+    :archived-sessions="archivedSessions"
+    :rail-tab="railTab"
     :active-id="active?.id"
     :messages="messages"
     :agents="agents"
+    :plan-steps="planSteps"
     :loading="loading"
     :busy="isBusy()"
     :waiting-user="isWaitingUser()"
@@ -482,16 +457,28 @@ onUnmounted(() => {
     :providers="providers"
     :provider="provider"
     :model="model"
-    :models="models"
+    :thinking="thinking"
     :error="error"
+    :profile="profile"
+    :memories="memories"
+    :tools-catalog="toolsCatalog"
+    :observed-input-tokens="run?.input_tokens ?? null"
     @close="open = false"
     @create="createSession"
     @select="selectSession"
     @remove="removeSession"
-    @send="send"
-    @cancel="cancel"
-    @provider="chooseProvider"
-    @model="chooseModel"
+    @archive="archiveSession"
+    @restore="restoreSession"
+    @batch="batchSessions"
+    @update:rail-tab="railTab = $event"
+    @settings="settingsOpen = true"
+    @send="hostRun.send"
+    @cancel="() => hostRun.cancel(isActiveRun, isWaitingUser)"
+    @clear-error="error = ''"
+    @runtime-select="(payload) => chooseProviderAndModel(payload.provider, payload.model)"
+    @thinking="chooseThinking"
     @configure="configureProviders"
+    @slash-command="onSlashCommand"
   />
+  <AssistantSettingsDialog v-model:open="settingsOpen" />
 </template>

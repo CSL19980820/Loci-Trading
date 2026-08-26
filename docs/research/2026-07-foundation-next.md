@@ -7,7 +7,7 @@
 | 项 | 状态 | 入口 / 开关 |
 |---|---|---|
 | Lw K 线 | **默认开** | `loci.market.useLwChart`（从未写过 key 时为 `true`；已有偏好不覆盖） |
-| Pool `el-table-v2` + Colada quotes / candidates | 已上 | `useQuotesQuery` / `useCandidatesQuery` |
+| Pool / Job 历史虚拟表 + Colada quotes / candidates | 已上（2026-08 对齐） | `BasicTable` 的 `virtualized` → Element Plus `el-table-v2`；Colada 见 `useQuotesQuery` / `useCandidatesQuery` |
 | Colada 只读扩面 | 已上 | equity / trips / outcomes / screen history / jobs / runs |
 | DuckDB `load_panel` 旁路 + ADR-002 | 默认关 | `LOCI_MARKET_DUCKDB=1`；对照测见下 |
 | 回测加速旁路 | 默认关 | `LOCI_BACKTEST_FAST=1`；对照测见下 |
@@ -17,7 +17,9 @@
 | `lint-imports` | 9 合约 | 本地 + CI |
 | Vitest + Playwright | 已上 | `bun run test` / `test:e2e`；CI 含 e2e job |
 | rolldown-vite 试构建 | 并行 | `bun run build:rolldown` |
-| GitHub Actions CI | 已上 | `.github/workflows/ci.yml`（python / frontend / e2e） |
+| GitHub Actions CI | 已上 | `.github/workflows/ci.yml`（python / frontend / e2e；2026-08 另有基线/ruff/uv/供应链报告 job） |
+| Opt-in 可观测性 | 默认关 | `LOCI_OBSERVABILITY` / `_OTEL` / `_EXPOSE`；见 [ADR-010](../adr/ADR-010-2026-08-baseline-observability-virtual-table.md) |
+| Polars 只读面板/研究旁路 | 默认关 | `LOCI_MARKET_POLARS=1` / `LOCI_RESEARCH_POLARS=1`；对照 `tests/benchmarks/polars_benchmark.py`；Phase 2 证据见 [2026-08-phase2-evidence.md](2026-08-phase2-evidence.md)（小样本 pandas 仍更快，不默认开） |
 
 ## Lw K 线默认开
 
@@ -38,7 +40,8 @@
 ## 更远可选（非本轮）
 
 - Taskiq（仅 ops 真排队时）
-- Polars 面板实验（与 DuckDB 二选一）
+- Polars/DuckDB 在更大真实窗口上再验后才谈默认化（旁路已在；证据见 phase2）
+- 前端包体：Monaco worker / 高对比主题更懒加载（见 phase2 chunk 表）
 - Lw 副图能力对齐 ECharts
 - StrategyConverter 大段编辑是否也上 Monaco
 

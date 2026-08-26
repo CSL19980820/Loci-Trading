@@ -154,12 +154,11 @@ class ProviderDefaultModelValidationTests(unittest.TestCase):
             }
         )
 
-        with patch("src.ai.infrastructure.providers.decrypt_secret", return_value="test-key"):
-            for requested in ("", "model-a"):
-                with self.subTest(requested=requested):
-                    config = resolve_config(self.store, "catalog-provider", model=requested)
-                    self.assertEqual(config.model, "model-b")
-                    self.assertEqual(config.context_window, 8192)
+        for requested in ("", "model-a"):
+            with self.subTest(requested=requested):
+                config = resolve_config(self.store, "catalog-provider", model=requested)
+                self.assertEqual(config.model, "model-b")
+                self.assertEqual(config.context_window, 8192)
 
         resolved_entry = get_model_entry(self.store, "catalog-provider")
         assert resolved_entry is not None
@@ -187,9 +186,7 @@ class ProviderDefaultModelValidationTests(unittest.TestCase):
             }
         )
 
-        with patch("src.ai.infrastructure.providers.decrypt_secret", return_value="test-key"), self.assertRaisesRegex(
-            OpsError, "没有可用的启用模型"
-        ):
+        with self.assertRaisesRegex(OpsError, "没有可用的启用模型"):
             resolve_config(self.store, "catalog-provider", model="model-a")
 
 

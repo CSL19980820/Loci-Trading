@@ -91,15 +91,16 @@ export type LaneRow = {
 export type BusyKey = string
 
 /** AkShare 目录里的上游 id → 中文名。认不出的直接显示 id，不猜。 */
-const INTERFACE_SOURCE_LABEL: Record<string, string> = {
-  akshare: 'AkShare 自有',
-  baidu: '百度股市通',
-  eastmoney: '东方财富',
-  sina: '新浪财经',
-  tencent: '腾讯财经',
-  tonghuashun: '同花顺',
-  xueqiu: '雪球',
-}
+  const INTERFACE_SOURCE_LABEL: Record<string, string> = {
+    akshare: 'AkShare 自有',
+    baidu: '百度股市通',
+    baostock: '证券宝',
+    eastmoney: '东方财富',
+    sina: '新浪财经',
+    tencent: '腾讯财经',
+    tonghuashun: '同花顺',
+    xueqiu: '雪球',
+  }
 
 function cellKey(providerId: string, lane: string): string {
   return `${providerId}:${lane}`
@@ -326,14 +327,28 @@ export function useDataSources() {
   }
 
   async function probeSource(providerId: string): Promise<void> {
-    const target = validCode()
-    if (!target) return
-    const label = providers.value.find((row) => row.id === providerId)?.label ?? providerId
+    const isMcp = providerId.startsWith('mcp:')
+    // MCP 情报探测只握手，不依赖样例代码；行情源仍要 6 位代码
+    let target = '600519'
+    if (!isMcp) {
+      const code = validCode()
+      if (!code) return
+      target = code
+    }
+    const label =
+      providers.value.find((row) => row.id === providerId)?.label ?? providerId
     const response = await guard(`source:${providerId}`, () =>
-      probeLanes(null, providerId, { code: target, runs: runs.value }),
+      probeLanes(null, providerId, { code: target, runs: isMcp ? 1 : runs.value }),
     )
     if (!response) return
     const count = absorb(response, 'probe')
+    if (isMcp) {
+      const hit = response.results?.[0]
+      notice.value = hit
+        ? `${label}：${hit.ok ? '连通正常' : '连通失败'}${hit.rtt_ms != null ? ` · ${Math.round(Number(hit.rtt_ms))}ms` : ''}`
+        : `${label}：无探测结果`
+      return
+    }
     notice.value = count ? `${label}：已测 ${count} 个工具` : `${label} 没有可测的工具`
   }
 
@@ -352,12 +367,18 @@ export function useDataSources() {
   async function probeAll(): Promise<void> {
     const target = validCode()
     if (!target) return
-    const response = await guard('all', () =>
-      probeLanes(null, null, { code: target, runs: runs.value }),
-    )
-    if (!response) return
-    const count = absorb(response, 'probe')
-    notice.value = count ? `全量探测完成：${count} 条读数` : '没有启用的源可探测'
+    // 按线路逐个探测并即时回填，避免一次巨型请求堵死 UI；单线路后端另有墙钟超时。
+    const response = await guard('all', async () => {
+      let total = 0
+      for (const row of laneRows.value) {
+        if (!row.sources.some((item) => item.enabled)) continue
+        const part = await probeLanes(row.lane, null, { code: target, runs: runs.value })
+        total += absorb(part, 'probe', row.lane)
+      }
+      return total
+    })
+    if (response == null) return
+    notice.value = response ? `全量探测完成：${response} 条读数` : '没有启用的源可探测'
   }
 
   async function downloadTest(lane: string): Promise<void> {
@@ -372,6 +393,10 @@ export function useDataSources() {
   }
 
   async function toggleSource(providerId: string, enabled: boolean): Promise<void> {
+    if (providerId.startsWith('mcp:')) {
+      notice.value = '外部 MCP 情报请在运维 → MCP 页配置 Key 与到期日'
+      return
+    }
     const label = providers.value.find((row) => row.id === providerId)?.label ?? providerId
     const saved = await guard(`toggle:${providerId}`, () => patchLaneProvider(providerId, enabled))
     if (!saved) return
@@ -380,6 +405,10 @@ export function useDataSources() {
   }
 
   async function toggleTool(providerId: string, lane: string, enabled: boolean): Promise<void> {
+    if (providerId.startsWith('mcp:')) {
+      notice.value = '外部 MCP 情报请在运维 → MCP 页配置 Key 与到期日'
+      return
+    }
     const provider = providers.value.find((row) => row.id === providerId)
     const label = provider?.label ?? providerId
     const laneName = laneLabel.value.get(lane) ?? lane

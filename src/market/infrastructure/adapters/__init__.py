@@ -1,11 +1,17 @@
 """数据线路适配器包。
 
-把「可接入 API」做成代码注册表；字段转换只写在各 Adapter 内。
+把「可接入 API」做成代码注册表；字段转换走共享管线
+（``domain/source_contract`` + ``infrastructure/pipeline``）。
 日常同步默认走 ``fetch_daily_routed``（粘性竞速）。
 """
 from __future__ import annotations
 
-from src.market.infrastructure.adapters.base import AdapterError, MarketAdapter
+from src.market.infrastructure.adapters.base import (
+    AdapterError,
+    MarketAdapter,
+    window_start_date,
+)
+from src.market.infrastructure.adapters.baostock_adapter import BaostockAdapter
 from src.market.infrastructure.adapters.eastmoney_adapter import EastmoneyAdapter
 from src.market.infrastructure.adapters.exchange_list_adapter import ExchangeListAdapter
 from src.market.infrastructure.adapters.registry import (
@@ -43,20 +49,30 @@ from src.market.infrastructure.adapters.types import (
     ALL_LANES,
     AdapterMeta,
     LANE_ADJUST_FACTOR,
+    LANE_AUCTION_SNAPSHOT,
+    LANE_BROKEN_LIMIT_UP,
     LANE_CAPITAL_FLOW,
     LANE_HIST_DAILY,
     LANE_INSTRUMENTS,
     LANE_INTEL_MCP,
+    LANE_LIMIT_UP_POOL,
+    LANE_MARKET_EMOTION,
     LANE_MINUTE,
     LANE_SPOT_BATCH,
+    LANE_THEME_BOARD,
+    LANE_THEME_MEMBERS,
     ProbeResult,
     SpeedTestResult,
+    TAPE_LANES,
 )
 
 __all__ = [
     "ALL_LANES",
     "AdapterError",
     "AdapterMeta",
+    "BaostockAdapter",
+    "LANE_AUCTION_SNAPSHOT",
+    "LANE_BROKEN_LIMIT_UP",
     "EastmoneyAdapter",
     "ExchangeListAdapter",
     "LANE_ADJUST_FACTOR",
@@ -64,13 +80,18 @@ __all__ = [
     "LANE_HIST_DAILY",
     "LANE_INSTRUMENTS",
     "LANE_INTEL_MCP",
+    "LANE_LIMIT_UP_POOL",
+    "LANE_MARKET_EMOTION",
     "LANE_MINUTE",
     "LANE_SPOT_BATCH",
+    "LANE_THEME_BOARD",
+    "LANE_THEME_MEMBERS",
     "MarketAdapter",
     "ProbeResult",
     "STICKY_TTL_SEC",
     "SinaAdapter",
     "SpeedTestResult",
+    "TAPE_LANES",
     "TdxAdapter",
     "TencentAdapter",
     "adapters_for_lane",
@@ -96,6 +117,7 @@ __all__ = [
     "provider_master_enabled",
     "reset_registry",
     "speedtest_daily",
+    "window_start_date",
 ]
 
 # 行情域名遇系统代理 ProxyError 时自动直连重试（akshare 东财等）

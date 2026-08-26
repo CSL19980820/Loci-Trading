@@ -56,7 +56,6 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
         context.ops_store,
         str(provider_name),
         model=str(config.get("model", "")),
-        master_key=context.master_key,
     )
 
     context_blocks = _gather_context(config, context)
@@ -77,6 +76,9 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
             provider=provider,
             protocol=provider.protocol,
             arguments=ammo_args,
+            trace_id=context.trace_id,
+            run_id=context.run_id,
+            job_id=context.job_id,
         )
         subagent_meta = [
             {"id": row.get("id"), "ok": row.get("ok"), "kind": row.get("kind")} for row in ammo
@@ -91,6 +93,9 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
             provider=provider,
             protocol=provider.protocol,
             arguments=arguments,
+            trace_id=context.trace_id,
+            run_id=context.run_id,
+            job_id=context.job_id,
         )
 
     tool_schemas, executor = _resolve_tools(
@@ -167,6 +172,9 @@ def _resolve_tools(
         allow=list(allow) if allow else None,
         hitl_enabled=False,
         run_subagents=run_subagents,
+        trace_id=context.trace_id,
+        run_id=context.run_id,
+        job_id=context.job_id,
     )
     if bus is None:
         return None, None
@@ -200,15 +208,6 @@ def _gather_context(config: dict[str, Any], context: JobContext) -> dict[str, An
                 blocks["screen"] = execute_screen({"strategy": strategy}, context)
             except Exception as exc:
                 blocks["screen"] = f"未取得真实数据：{type(exc).__name__}: {exc}"
-
-    if "positions" in wanted:
-        try:
-            from src.ledger import PalaceStore
-
-            with PalaceStore(context.palace_db or DEFAULT_PALACE_DB) as palace:
-                blocks["positions"] = palace.positions_payload()
-        except Exception as exc:
-            blocks["positions"] = f"未取得真实数据：{type(exc).__name__}: {exc}"
 
     return blocks
 

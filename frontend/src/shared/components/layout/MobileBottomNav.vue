@@ -2,12 +2,9 @@
 import {
   DataAnalysis,
   DataBoard,
-  EditPen,
-  FolderOpened,
   Grid,
   Histogram,
   MagicStick,
-  Notebook,
   Odometer,
   Opportunity,
   Search,
@@ -15,50 +12,35 @@ import {
   Stamp,
   TrendCharts,
 } from '@element-plus/icons-vue'
-import { computed, ref, type Component } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
-const props = defineProps<{
-  archivePath?: string | null
-}>()
+import { navMenuItem, type NavMenuItem } from '@/shared/lib/navLabels'
 
 const route = useRoute()
 const drawerOpen = ref(false)
 
-type NavItem = { path: string; label: string; icon: Component }
-
-const primaryTabs: NavItem[] = [
-  { path: '/', label: '盘面', icon: Odometer },
-  { path: '/ledger', label: '账本', icon: Notebook },
-  { path: '/journal', label: '交割', icon: EditPen },
-  { path: '/reviews', label: '绩效', icon: Stamp },
+const primaryTabs: NavMenuItem[] = [
+  navMenuItem('pulse', Odometer),
+  navMenuItem('pool', Opportunity),
+  navMenuItem('reviews', Stamp),
 ]
 
-const moreBaseItems: NavItem[] = [
-  { path: '/pool', label: '候选池', icon: Opportunity },
-  { path: '/screen-history', label: '选股', icon: Search },
-  { path: '/insights', label: '体检', icon: DataAnalysis },
-  { path: '/winrate', label: '胜率', icon: TrendCharts },
-  { path: '/quant', label: '工坊', icon: Histogram },
-  { path: '/data', label: '行情', icon: DataBoard },
-  { path: '/strategy-converter', label: '策稿', icon: MagicStick },
-  { path: '/ops', label: '设置', icon: Setting },
+const moreItems: NavMenuItem[] = [
+  navMenuItem('screen-history', Search),
+  navMenuItem('insights', DataAnalysis),
+  navMenuItem('winrate', TrendCharts),
+  navMenuItem('quant', Histogram),
+  navMenuItem('data-query', DataBoard),
+  navMenuItem('strategy-converter', MagicStick),
+  navMenuItem('ops', Setting),
 ]
 
-const moreItems = computed(() => {
-  const items = [...moreBaseItems]
-  if (props.archivePath) {
-    items.push({ path: props.archivePath, label: '档案', icon: FolderOpened })
-  }
-  return items
-})
+const morePaths = moreItems.map((item) => item.path)
 
-const morePaths = computed(() => moreItems.value.map((item) => item.path))
-
-const moreActive = computed(() => {
-  if (route.path.startsWith('/archive')) return true
-  return morePaths.value.some((path) => route.path === path || route.path.startsWith(`${path}/`))
-})
+const moreActive = computed(() =>
+  morePaths.some((path) => route.path === path || route.path.startsWith(`${path}/`)),
+)
 
 function isPrimaryActive(path: string): boolean {
   if (path === '/') return route.path === '/'
@@ -69,7 +51,6 @@ function isPrimaryActive(path: string): boolean {
 }
 
 function isMoreItemActive(path: string): boolean {
-  if (path.startsWith('/archive')) return route.path.startsWith('/archive')
   return route.path === path || route.path.startsWith(`${path}/`)
 }
 </script>
@@ -127,7 +108,11 @@ function isMoreItemActive(path: string): boolean {
   display: none;
 }
 
-@media (max-width: 768px) {
+/*
+ * 断点必须与侧栏的隐藏点（AppSidebar 980px）一致。此前底栏卡在 768px，
+ * 769–980px 之间侧栏已隐藏、底栏还没出现，平板竖屏与桌面半屏完全没有跨页入口。
+ */
+@media (max-width: 980px) {
   .mobile-bottom-nav {
     display: flex;
     position: fixed;
@@ -241,7 +226,7 @@ function isMoreItemActive(path: string): boolean {
 </style>
 
 <style>
-@media (max-width: 768px) {
+@media (max-width: 980px) {
   .mobile-more-drawer.el-drawer {
     max-height: 70vh;
   }

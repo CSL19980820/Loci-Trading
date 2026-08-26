@@ -1,0 +1,153 @@
+/*
+ * 主题：data-appearance（明暗底色）× data-primary（品牌主色）
+ * 唯一定义处。此前 style.components.css 与 style.tail.css 各存一份逐字副本，
+ * 改前者会被后者静默覆盖，故收口到本文件。
+ *
+ * 边界：主题只换「底色 + 品牌主色」，不换涨跌语义色（--up/--down 固定红涨绿跌，见 style.base.css）。
+ */
+
+/* —— 外观 —— */
+html[data-appearance='paper'] {
+  --paper: #f4f1ea;
+  --sheet: #fbf8f2;
+  --panel-2: #efebe3;
+  --rule: #ddd4c6;
+  --ink: #1c1917;
+  --mist: #78716c;
+  --warn-soft: #f6ecd8;
+  --info-soft: #e7edf7;
+}
+
+html[data-appearance='night'],
+html[data-appearance='ink'] {
+  color-scheme: dark;
+  --ink: #e8eef6;
+  --paper: #121820;
+  --sheet: #1a222d;
+  --panel: #1a222d;
+  --panel-2: #222b38;
+  --bg: var(--paper);
+  --rule: #2c3645;
+  --line: var(--rule);
+  --line-2: #3a4658;
+  --mist: #8b9aab;
+  --muted: #b7c3d1;
+  /* --seal-ink / --seal-soft 的深色档见文件末尾的派生块（放那里才不会被主色块覆盖） */
+  --lake: #3fa88f;
+  --lake-soft: color-mix(in srgb, var(--lake) 24%, transparent);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+
+  /* 深色底下浅色徽章会糊成白块：软色一律改为低透明度覆盖层 */
+  --up: #f2647c;
+  --up-soft: rgba(196, 30, 58, 0.2);
+  --down: #3fa88f;
+  --down-soft: rgba(15, 107, 92, 0.22);
+  --warn: #e0a33c;
+  --warn-soft: rgba(217, 119, 6, 0.2);
+  --info: #6b9bf5;
+  --info-soft: rgba(37, 99, 235, 0.2);
+}
+
+html[data-appearance='ink'] {
+  --paper: #0d1117;
+  --sheet: #161b22;
+  --panel-2: #1c2330;
+  --rule: #30363d;
+}
+
+/*
+ * Element Plus 深色：官方 dark/css-vars 由 main.ts 静态引入，靠 html.dark 生效。
+ * 这里把 EP 变量重新指回本仓 token，避免出现「EP 自带深灰 + 账本台深蓝」两套底色。
+ */
+html.dark {
+  --el-bg-color: var(--sheet);
+  --el-bg-color-page: var(--paper);
+  --el-bg-color-overlay: var(--sheet);
+  --el-fill-color-blank: var(--sheet);
+  --el-fill-color: var(--panel-2);
+  --el-fill-color-light: var(--panel-2);
+  --el-fill-color-lighter: var(--sheet);
+  --el-fill-color-extra-light: var(--sheet);
+  --el-text-color-primary: var(--ink);
+  --el-text-color-regular: var(--muted);
+  --el-text-color-secondary: var(--mist);
+  --el-text-color-placeholder: var(--mist);
+  --el-border-color: var(--rule);
+  --el-border-color-light: var(--rule);
+  --el-border-color-lighter: var(--rule);
+  --el-border-color-extra-light: var(--rule);
+  --el-border-color-dark: var(--line-2);
+  --el-mask-color: rgba(9, 13, 19, 0.72);
+}
+
+/*
+ * —— 主色 ——
+ * 这里只换 --seal 一个值。--seal-ink / --seal-soft 一律由它派生（见下方派生块），
+ * 否则主色块与外观块同权重、且排在后面，会把深色档的对比度修正整个覆盖掉：
+ * 深色 + 湖绿时 --seal-ink 会退回 #0a4f44，压在深底上几乎读不出来。
+ */
+html[data-primary='lake'] {
+  --seal: #0f6b5c;
+}
+
+html[data-primary='blue'] {
+  --seal: #2563eb;
+}
+
+html[data-primary='amber'] {
+  --seal: #d97706;
+}
+
+/* 主色的「文字态」与「浅底态」：浅色档压深、深色档提亮，与外观解耦互不覆盖 */
+:root,
+html[data-primary] {
+  --seal-ink: color-mix(in srgb, var(--seal) 72%, #000);
+  --seal-soft: color-mix(in srgb, var(--seal) 12%, #fff);
+}
+
+/*
+ * 助手「墨盘」品牌符号：浮球 / 空态图标 / 会话轨共用一枚深色圆盘。
+ * 此前三处各自硬编码 #12161c，深色主题下与 --paper(#121820) 的 RGB 差只有 (0,2,4)，
+ * 等于隐形——而浮球是助手唯一入口。
+ */
+:root {
+  --ai-disc-face: color-mix(in srgb, #12161c 88%, var(--seal) 12%);
+  --ai-disc-ribbon: #e8eef2;
+  --ai-disc-edge: color-mix(in srgb, #fff 14%, transparent);
+}
+
+html[data-appearance='night'],
+html[data-appearance='ink'] {
+  --seal-ink: color-mix(in srgb, var(--seal) 45%, #fff);
+  --seal-soft: color-mix(in srgb, var(--seal) 22%, transparent);
+  /* 深底上墨盘要反过来提亮，否则整枚球糊进背景 */
+  --ai-disc-face: color-mix(in srgb, var(--sheet) 62%, var(--seal) 38%);
+  --ai-disc-ribbon: var(--ink);
+  --ai-disc-edge: color-mix(in srgb, #fff 26%, transparent);
+}
+
+/*
+ * EP 主色梯度统一由 --seal 派生：此前只换了 --el-color-primary 本色，
+ * hover / 浅底 / focus 光晕仍停在朱红梯度上，换主色后会红绿混搭。
+ */
+:root,
+html[data-primary] {
+  --el-color-primary: var(--seal);
+  --el-color-primary-light-3: color-mix(in srgb, var(--seal) 70%, #fff);
+  --el-color-primary-light-5: color-mix(in srgb, var(--seal) 50%, #fff);
+  --el-color-primary-light-7: color-mix(in srgb, var(--seal) 30%, #fff);
+  --el-color-primary-light-8: color-mix(in srgb, var(--seal) 20%, #fff);
+  --el-color-primary-light-9: var(--seal-soft);
+  --el-color-primary-dark-2: var(--seal-ink);
+  --el-color-success: var(--success);
+  --el-color-danger: var(--loss);
+  --el-color-warning: var(--warn);
+}
+
+html[data-appearance='night'],
+html[data-appearance='ink'] {
+  --el-color-primary-light-3: color-mix(in srgb, var(--seal) 70%, #000);
+  --el-color-primary-light-5: color-mix(in srgb, var(--seal) 50%, #000);
+  --el-color-primary-light-7: color-mix(in srgb, var(--seal) 32%, #000);
+  --el-color-primary-light-8: color-mix(in srgb, var(--seal) 24%, #000);
+}

@@ -103,41 +103,6 @@
   color: #92400e;
 }
 
-/* 曲线信任标签 */
-.trust-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.12rem 0.45rem;
-  border-radius: 4px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-
-.trust-chip-anchored {
-  background: #e6f4f1;
-  color: var(--lake);
-}
-
-.trust-chip-estimated {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.trust-chip-none {
-  background: #eef2f6;
-  color: var(--mist);
-}
-
-.chart-trust-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-  margin-bottom: 0.45rem;
-}
-
 .default-tag {
   margin-left: 0.35rem;
   font-size: 0.72rem;
@@ -225,69 +190,7 @@ a:hover {
   opacity: 0.9;
 }
 
-/* —— 主题：data-appearance × data-primary —— */
-html[data-appearance='paper'] {
-  --paper: #f4f1ea;
-  --sheet: #fbf8f2;
-  --panel-2: #efebe3;
-  --rule: #ddd4c6;
-  --ink: #1c1917;
-  --mist: #78716c;
-}
-
-html[data-appearance='night'],
-html[data-appearance='ink'] {
-  color-scheme: dark;
-  --ink: #e8eef6;
-  --paper: #121820;
-  --sheet: #1a222d;
-  --panel: #1a222d;
-  --panel-2: #222b38;
-  --bg: var(--paper);
-  --rule: #2c3645;
-  --line: var(--rule);
-  --line-2: #3a4658;
-  --mist: #8b9aab;
-  --muted: #b7c3d1;
-  --seal-soft: rgba(196, 30, 58, 0.18);
-  --lake-soft: rgba(15, 107, 92, 0.2);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --el-bg-color: var(--sheet);
-  --el-bg-color-overlay: var(--sheet);
-  --el-fill-color-blank: var(--sheet);
-  --el-text-color-primary: var(--ink);
-  --el-text-color-regular: var(--muted);
-  --el-border-color: var(--rule);
-}
-
-html[data-appearance='ink'] {
-  --paper: #0d1117;
-  --sheet: #161b22;
-  --panel-2: #1c2330;
-  --rule: #30363d;
-}
-
-html[data-primary='lake'] {
-  --seal: #0f6b5c;
-  --seal-ink: #0a4f44;
-  --seal-soft: #e6f4f1;
-  --el-color-primary: #0f6b5c;
-}
-
-html[data-primary='blue'] {
-  --seal: #2563eb;
-  --seal-ink: #1d4ed8;
-  --seal-soft: #dbeafe;
-  --el-color-primary: #2563eb;
-}
-
-html[data-primary='amber'] {
-  --seal: #d97706;
-  --seal-ink: #b45309;
-  --seal-soft: #fef3c7;
-  --el-color-primary: #d97706;
-}
-
+/* 主题（data-appearance × data-primary）统一定义在 style.theme.css，此处不再重复 */
 
 .table-wrap {
   overflow-x: auto;

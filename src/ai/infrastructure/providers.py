@@ -1,12 +1,12 @@
-"""供应商配置的增删改查：把明文 Key 加密落库，再在调用前解回内存。
+"""供应商配置的增删改查：API Key 明文落 ops.db（本机自用，与 MCP token 同口径）。
 
-明文 Key 的生命周期被压到最短：进来 → 校验 → 加密 → 落库，此后只有
-真正要发请求的那一刻才解密成局部变量。任何列表/详情接口都只回末四位。
-模型目录（启用、上下文、输出上限）经 ops.model_catalog 规范化后落 models_json。
+列表/详情接口只回末四位，永不回传完整 Key。旧 AES 密文在启动时尽量迁成明文；
+解不开的保留，调用时提示用户在运维页重录。模型目录经 ops.model_catalog 规范化。
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from src.shared.clock import utc_now as _now
 from typing import Any
 
 from src.ai.infrastructure.client import (
@@ -16,7 +16,7 @@ from src.ai.infrastructure.client import (
     list_models as fetch_models,
     validate as probe_provider,
 )
-from src.ai.infrastructure.crypto import decrypt_secret, encrypt_secret, mask_secret
+from src.ai.infrastructure.crypto import mask_secret
 from src.ops import (
     OpsError,
     OpsStore,
@@ -28,8 +28,65 @@ from src.ops import (
 )
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+def _is_plain_api_key_blob(text: str) -> bool:
+    """新写入为 UTF-8 可打印 ASCII。"""
+    if not text or "\x00" in text:
+        return False
+    return all(32 <= ord(ch) < 127 for ch in text)
+
+
+def encode_provider_secret(plaintext: str) -> bytes:
+    text = plaintext.strip()
+    if not text:
+        raise OpsError("API Key 不能为空")
+    return text.encode("utf-8")
+
+
+def decode_provider_secret(blob: bytes | memoryview | None, *, aad: str = "") -> str:
+    """读出供应商 Key（明文）。旧 AES 密文一律视为失效。"""
+    _ = aad
+    if blob is None:
+        raise OpsError("该供应商没有已保存的 API Key，请提供")
+    raw = bytes(blob)
+    if not raw:
+        raise OpsError("该供应商没有已保存的 API Key，请提供")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise OpsError(
+            "无法读取已保存的 API Key（旧加密格式已废弃）。请在运维页重新录入。"
+        ) from exc
+    if not _is_plain_api_key_blob(text):
+        raise OpsError(
+            "无法读取已保存的 API Key（旧加密格式已废弃）。请在运维页重新录入。"
+        )
+    return text
+
+
+def migrate_encrypted_llm_keys(store: OpsStore | None = None) -> int:
+    """清掉非明文的旧 ``encrypted_key``（废弃主密钥密文），迫使运维页重录。"""
+    own = False
+    if store is None:
+        store = OpsStore()
+        own = True
+    changed = 0
+    try:
+        # 存储读写走 ops 的公开方法；本域只负责判断「这是不是废弃的旧密文」。
+        for provider_id, raw in store.list_provider_key_blobs():
+            if not raw:
+                continue
+            try:
+                as_text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                as_text = None
+            if as_text is not None and _is_plain_api_key_blob(as_text):
+                continue
+            store.clear_provider_key(provider_id)
+            changed += 1
+    finally:
+        if own:
+            store.close()
+    return changed
 
 
 def _catalog_from_record(record: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -81,7 +138,6 @@ def save_provider(
     validate: bool = True,
     discover_models: bool = True,
     is_default: bool = False,
-    master_key: str | None = None,
 ) -> dict[str, Any]:
     """新增或更新一个供应商。
 
@@ -101,16 +157,19 @@ def save_provider(
     existing = store.get_provider(name, include_secret=True)
     provider_id = existing["id"] if existing else new_id("LLM")
 
-    encrypted: bytes | None = None
+    stored_key: bytes | None = None
     last4 = ""
     if api_key:
-        # AAD 绑定 provider_id：密文被搬到另一行会直接解不开。
-        encrypted = encrypt_secret(api_key.strip(), aad=provider_id, master_key=master_key)
+        stored_key = encode_provider_secret(api_key)
         last4 = mask_secret(api_key.strip())
     elif not existing:
         raise OpsError("新建供应商必须提供 API Key")
 
-    plaintext = api_key.strip() if api_key else _decrypt_existing(existing, master_key)
+    plaintext = (
+        api_key.strip()
+        if api_key
+        else decode_provider_secret(existing.get("encrypted_key") if existing else None, aad=provider_id)
+    )
 
     validated_at = existing.get("validated_at", "") if existing else ""
     catalog = _catalog_from_record(existing)
@@ -152,7 +211,7 @@ def save_provider(
             "name": name,
             "protocol": protocol,
             "base_url": base_url,
-            "encrypted_key": encrypted,
+            "encrypted_key": stored_key,
             "key_last4": last4,
             "default_model": model,
             "models": catalog,
@@ -172,20 +231,11 @@ def save_provider(
     return saved
 
 
-def _decrypt_existing(existing: dict[str, Any] | None, master_key: str | None) -> str:
-    if not existing or not existing.get("encrypted_key"):
-        raise OpsError("该供应商没有已保存的 API Key，请提供")
-    return decrypt_secret(
-        existing["encrypted_key"], aad=existing["id"], master_key=master_key
-    )
-
-
 def resolve_config(
     store: OpsStore,
     name_or_id: str = "",
     *,
     model: str = "",
-    master_key: str | None = None,
     timeout: float | None = None,
 ) -> ProviderConfig:
     """取出可直接发起调用的配置。明文密钥只存在于返回值里，用完即弃。
@@ -209,9 +259,7 @@ def resolve_config(
 
     catalog = _catalog_from_record(record)
     chosen, entry = _resolve_runtime_model(record, catalog, model)
-    plaintext = decrypt_secret(
-        record["encrypted_key"], aad=record["id"], master_key=master_key
-    )
+    plaintext = decode_provider_secret(record["encrypted_key"], aad=record["id"])
     config = ProviderConfig(
         name=record["name"],
         protocol=record["protocol"],
@@ -286,11 +334,9 @@ def update_provider_models(
     return saved
 
 
-def refresh_models(
-    store: OpsStore, name_or_id: str, *, master_key: str | None = None
-) -> list[dict[str, Any]]:
+def refresh_models(store: OpsStore, name_or_id: str) -> list[dict[str, Any]]:
     """重新拉取模型并合并进目录。供应商上新模型后不必删了重配。"""
-    config = resolve_config(store, name_or_id, master_key=master_key)
+    config = resolve_config(store, name_or_id)
     discovered = fetch_models(config)
     record = store.get_provider(name_or_id)
     if record is None:

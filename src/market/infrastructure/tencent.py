@@ -1,7 +1,9 @@
 """直接对接腾讯财经公开 HTTP 接口。
 
-日线走 ``web.ifzq.gtimg.cn``（JSON，单次最多 640 根，需分页拼全历史）；
-现价 / live 走 ``qt.gtimg.cn``（~ 分隔文本）。符号与新浪相同：``sh600519``。
+日线优先 QQ 财经反代 ``proxy.finance.qq.com``（JSON，单次最多 640 根，需分页）；
+直连 ``web.ifzq.gtimg.cn`` 常被 WAF 拦成 501 或握手超时，只作快败备源。
+近窗再不行才走 ``data.gtimg.cn`` flashdata。现价 / live 走 ``qt.gtimg.cn``。
+符号与新浪相同：``sh600519``。
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ from datetime import date, timedelta
 import json
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
 import requests
@@ -18,8 +21,20 @@ logger = logging.getLogger(__name__)
 
 #: web.ifzq.gtimg.cn 会被腾讯 WAF 拦成 501；走 QQ 财经反代。
 DAILY_URL = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get"
-#: 备用（部分网络反代也不稳时）。
+#: 同一反代主机的不复权 path；主 path 被 WAF/5xx 时不必换域名。
+DAILY_URL_PROXY_KLINE = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/kline/kline"
+#: 直连 ifzq。主机经常握手超时，必须快败，不能按 6s×2 死磕。
 DAILY_URL_FALLBACK = "https://web.ifzq.gtimg.cn/appstock/app/kline/kline"
+DAILY_IFZQ_URLS: tuple[str, ...] = (
+    DAILY_URL,
+    DAILY_URL_PROXY_KLINE,
+    DAILY_URL_FALLBACK,
+)
+FLASHDATA_LATEST_TMPL = "https://data.gtimg.cn/flashdata/hushen/latest/daily/{symbol}.js"
+#: flashdata 各板块都是「手」；ifzq 日 K 对科创板已经是股。
+FLASHDATA_LOT_SCALE = 100.0
+#: 直连 ifzq 的握手上限。WAF/黑洞时 6s 重试只会拖死盘中增量。
+IFZQ_CONNECT_TIMEOUT = 2.0
 SPOT_URL = "https://qt.gtimg.cn/q="
 #: gtimg 单次 URL 长度有限，批量宜 80~100。
 SPOT_BATCH_SIZE = 80
@@ -55,22 +70,52 @@ def _decode_text(response: requests.Response) -> str:
     return response.content.decode("utf-8", errors="replace")
 
 
+def _url_host(url: str) -> str:
+    return (urlparse(url).hostname or "").lower()
+
+
+def _is_direct_ifzq(url: str) -> bool:
+    return "ifzq.gtimg.cn" in _url_host(url)
+
+
+def _is_connect_failure(exc: BaseException) -> bool:
+    text = str(exc)
+    return any(
+        token in text
+        for token in (
+            "ConnectTimeout",
+            "ConnectTimeoutError",
+            "ConnectionError",
+            "Connection refused",
+            "NewConnectionError",
+            "NameResolutionError",
+        )
+    )
+
+
 def _get(
     url: str,
     *,
     params: dict[str, str] | None = None,
     session: requests.Session | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    connect_timeout: float | None = None,
+    retries: int | None = None,
 ) -> str:
     from src.market.infrastructure.http_client import market_get, market_session
 
+    kwargs: dict[str, Any] = {
+        "params": params,
+        "headers": HEADERS,
+        "timeout": timeout,
+        "session": session or market_session(),
+    }
+    if connect_timeout is not None:
+        kwargs["connect_timeout"] = connect_timeout
+    if retries is not None:
+        kwargs["retries"] = retries
     try:
-        response = market_get(
-            url,
-            params=params,
-            headers=HEADERS,
-            timeout=DEFAULT_TIMEOUT,
-            session=session or market_session(),
-        )
+        response = market_get(url, **kwargs)
     except Exception as exc:
         raise TencentFetchError(f"请求失败：{type(exc).__name__}: {exc}") from exc
     if response.status_code != 200:
@@ -78,7 +123,32 @@ def _get(
     return _decode_text(response)
 
 
-def _parse_daily_rows(raw_rows: list[list[Any]]) -> pd.DataFrame:
+def volume_scale(symbol: str) -> float:
+    """腾讯成交量 → 股 的换算系数；单位按板块而异，不能一刀切当「手」。
+
+    实测 2026-08-11：日 K ``day`` 末根的成交量与现价接口第 36 列**逐票完全相等**，
+    两个接口是同一口径。用现价第 35 列的成交额除以现价反推真实股数：
+    主板 / 创业板 / 北交所 / ETF / 指数比值约 100（源侧是「手」），
+    科创板（688/689）比值约 1（源侧已经是「股」），再 ×100 会把成交量与隐含换手率
+    整整放大 100 倍。
+    """
+    from src.market.domain.universe import classify_board
+
+    code = str(symbol).strip().lower()
+    for prefix in ("sh", "sz", "bj"):
+        if code.startswith(prefix):
+            code = code[len(prefix) :]
+            break
+    return 1.0 if classify_board(code) == "star" else 100.0
+
+
+#: 旧名：这套系数原本只用在日 K 上，现价接口同口径后沿用同一函数。
+daily_volume_scale = volume_scale
+
+
+def _parse_daily_rows(
+    raw_rows: list[list[Any]], *, volume_scale: float = 100.0
+) -> pd.DataFrame:
     """腾讯日 K 行：[date, open, close, high, low, volume(, 分红dict)]。"""
     rows: list[dict[str, Any]] = []
     for item in raw_rows:
@@ -89,14 +159,17 @@ def _parse_daily_rows(raw_rows: list[list[Any]]) -> pd.DataFrame:
             close = float(item[2])
             high = float(item[3])
             low = float(item[4])
-            volume_lots = float(item[5])
+            volume_src = float(item[5])
         except (TypeError, ValueError):
             continue
         trade_date = pd.to_datetime(str(item[0]), errors="coerce")
         if pd.isna(trade_date):
             continue
-        # 成交量单位为「手」，与新浪「股」对齐。
-        volume = volume_lots * 100.0
+        # 统一成「股」与新浪对齐；缩放系数按板块由 volume_scale 决定。
+        volume = volume_src * volume_scale
+        # 腾讯日 K 不返回成交额，用收盘价估；与真实 VWAP 成交额有偏差，
+        # 因此 TencentAdapter.meta 把 amount 自报为 estimated_fields，
+        # 多源合并时任何源生成交额都能顶掉它。
         amount = close * volume
         rows.append(
             {
@@ -116,30 +189,124 @@ def _parse_daily_rows(raw_rows: list[list[Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _day_rows_from_block(block: object) -> list[Any]:
+    """不复权 ``day`` 优先；个别 fqkline 只给 qfqday/hfqday 时再降级。"""
+    if not isinstance(block, dict):
+        return []
+    for key in ("day", "qfqday", "hfqday"):
+        rows = block.get(key)
+        if isinstance(rows, list) and rows:
+            return rows
+    return []
+
+
+def _parse_flashdata(text: str) -> pd.DataFrame:
+    """腾讯 flashdata：``YYMMDD open close high low volume``，量单位为手。"""
+    cleaned = text.strip()
+    if "start=" in cleaned[:80] or cleaned.startswith("daily_"):
+        _, _, rest = cleaned.partition("=")
+        if rest:
+            cleaned = rest.strip().strip(";").strip("'").strip('"')
+    cleaned = cleaned.replace("\\n", "\n")
+    rows: list[dict[str, Any]] = []
+    for line in cleaned.splitlines():
+        line = line.strip().strip("'").strip()
+        if not line or line.startswith("start"):
+            continue
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        stamp = parts[0]
+        if len(stamp) == 6 and stamp.isdigit():
+            year = 1900 + int(stamp[:2]) if int(stamp[:2]) >= 90 else 2000 + int(stamp[:2])
+            raw_date = f"{year:04d}{stamp[2:]}"
+        elif len(stamp) == 8 and stamp.isdigit():
+            raw_date = stamp
+        else:
+            continue
+        trade_date = pd.to_datetime(raw_date, format="%Y%m%d", errors="coerce")
+        if pd.isna(trade_date):
+            continue
+        try:
+            open_ = float(parts[1])
+            close = float(parts[2])
+            high = float(parts[3])
+            low = float(parts[4])
+            volume = float(parts[5]) * FLASHDATA_LOT_SCALE
+        except (TypeError, ValueError):
+            continue
+        rows.append(
+            {
+                "date": trade_date.date(),
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+                "amount": close * volume,
+            }
+        )
+    if not rows:
+        return pd.DataFrame(
+            columns=["date", "open", "high", "low", "close", "volume", "amount"]
+        )
+    return pd.DataFrame(rows)
+
+
+def _fetch_flashdata_latest(
+    symbol: str, *, count: int, session: requests.Session | None = None
+) -> tuple[pd.DataFrame, int]:
+    text = _get(FLASHDATA_LATEST_TMPL.format(symbol=symbol), session=session)
+    frame = _parse_flashdata(text)
+    if frame.empty:
+        raise TencentFetchError(f"{symbol} flashdata 为空")
+    frame = frame.sort_values("date").reset_index(drop=True)
+    if count and len(frame) > count:
+        frame = frame.tail(int(count)).reset_index(drop=True)
+    return frame, int(len(frame))
+
+
 def _fetch_daily_page(
     symbol: str,
     *,
     end_date: str = "",
     count: int = DAILY_PAGE_SIZE,
     session: requests.Session | None = None,
-) -> pd.DataFrame:
-    """拉一页不复权日 K。``end_date`` 为空表示截至最新。"""
+) -> tuple[pd.DataFrame, int]:
+    """拉一页不复权日 K，返回 (归一表, 源侧原始行数)。
+
+    原始行数要单独回报：解析会丢掉脏行，拿 ``len(frame)`` 判断「这是最后
+    一页」会把更早的历史整段截断。``end_date`` 为空表示截至最新。
+    """
     symbol = str(symbol).strip().lower()
     if not symbol:
         raise TencentFetchError("symbol 为空")
     count = max(1, min(int(count), DAILY_PAGE_SIZE))
     param = f"{symbol},day,,{end_date},{count},"
     last_error: Exception | None = None
-    for url in (DAILY_URL, DAILY_URL_FALLBACK):
+    text: str | None = None
+    dead_hosts: set[str] = set()
+    for url in DAILY_IFZQ_URLS:
+        host = _url_host(url)
+        if host in dead_hosts:
+            continue
         try:
-            text = _get(url, params={"param": param}, session=session)
+            extra: dict[str, Any] = {}
+            if _is_direct_ifzq(url):
+                extra = {"connect_timeout": IFZQ_CONNECT_TIMEOUT, "retries": 0}
+            text = _get(url, params={"param": param}, session=session, **extra)
             break
         except TencentFetchError as exc:
             last_error = exc
-            # WAF 501 / 网关错误才换备用；其它错误直接抛
-            if "501" not in str(exc) and "502" not in str(exc) and "503" not in str(exc):
-                raise
-    else:
+            # 握手都失败时同 host 另一条 path 不会突然通，换 CDN 比再等 12s 有用。
+            if _is_connect_failure(exc) and host:
+                dead_hosts.add(host)
+    if text is None:
+        if not end_date:
+            try:
+                return _fetch_flashdata_latest(symbol, count=count, session=session)
+            except TencentFetchError as exc:
+                last_error = exc
         assert last_error is not None
         raise last_error
     try:
@@ -149,10 +316,11 @@ def _fetch_daily_page(
     if not isinstance(payload, dict) or payload.get("code") not in (0, "0", None):
         raise TencentFetchError(f"{symbol} 接口返回异常")
     block = (payload.get("data") or {}).get(symbol) or {}
-    day_rows = block.get("day") or []
-    if not isinstance(day_rows, list):
+    day_rows = _day_rows_from_block(block)
+    if not day_rows:
         raise TencentFetchError(f"{symbol} 无 day 字段")
-    return _parse_daily_rows(day_rows)
+    frame = _parse_daily_rows(day_rows, volume_scale=volume_scale(symbol))
+    return frame, len(day_rows)
 
 
 def fetch_daily(
@@ -166,16 +334,20 @@ def fetch_daily(
     symbol = str(symbol).strip().lower()
     pages: list[pd.DataFrame] = []
     end_date = ""
+    previous_earliest: date | None = None
     while True:
-        chunk = _fetch_daily_page(symbol, end_date=end_date, session=session)
-        if chunk.empty:
+        chunk, raw_rows = _fetch_daily_page(symbol, end_date=end_date, session=session)
+        if not chunk.empty:
+            pages.append(chunk)
+        if raw_rows < DAILY_PAGE_SIZE:
             break
-        pages.append(chunk)
-        if len(chunk) < DAILY_PAGE_SIZE:
-            break
-        earliest = chunk["date"].min()
+        earliest = chunk["date"].min() if not chunk.empty else None
         if not isinstance(earliest, date):
             break
+        if previous_earliest is not None and earliest >= previous_earliest:
+            # 源忽略了 end_date（只回最新一页），再翻下去就是无限循环。
+            break
+        previous_earliest = earliest
         end_date = (earliest - timedelta(days=1)).strftime("%Y-%m-%d")
 
     if not pages:
@@ -197,7 +369,7 @@ def fetch_daily_recent(
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
     """探测 / 小窗口：只拉最近 ``count`` 根（<=640）。"""
-    frame = _fetch_daily_page(symbol, count=count, session=session)
+    frame, _raw_rows = _fetch_daily_page(symbol, count=count, session=session)
     if frame.empty:
         raise TencentFetchError(f"{symbol} 近期日线为空")
     return frame.reset_index(drop=True)
@@ -238,14 +410,18 @@ def _spot_amount(fields: Sequence[str]) -> float:
     return 0.0
 
 
-def _spot_volume_shares(fields: Sequence[str]) -> float:
-    """成交量：36 列为手，×100 变股。"""
+def _spot_volume_shares(fields: Sequence[str], symbol: str) -> float | None:
+    """成交量 → 股；解析不出来返回 ``None``。第 36 列与日 K 同口径，系数按板块取。
+
+    以前失败回 0.0，与「集合竞价还没成交」（源侧确实是 "0"）无法区分：一根
+    量为 0 却有成交额的当日 bar 会被当成真实零成交，量比 / 换手 / 放量形态全错。
+    """
     if len(fields) <= 36:
-        return 0.0
+        return None
     try:
-        return float(fields[36]) * 100.0
+        return float(fields[36]) * volume_scale(symbol)
     except ValueError:
-        return 0.0
+        return None
 
 
 def _parse_spot_row(line: str) -> dict[str, Any] | None:
@@ -269,8 +445,14 @@ def _parse_spot_row(line: str) -> dict[str, Any] | None:
         high = max(open_, close)
     if low <= 0:
         low = min(open_, close) if open_ > 0 else close
-    volume = _spot_volume_shares(fields)
+    volume = _spot_volume_shares(fields, symbol)
     amount = _spot_amount(fields)
+    if volume is None:
+        return None  # 量字段读不出来时不落 bar，宁缺勿假
+    # 停牌 / 尚未成交的票只回昨收，量额皆 0。这条通道产出的是**当日日 K**，
+    # 零成交却落一根 bar，等于凭空给这只票多记一个交易日（live 通道不受此限）。
+    if volume <= 0 and amount <= 0:
+        return None
     stamp = str(fields[30]) if len(fields) > 30 else ""
     trade_date = pd.to_datetime(stamp[:8], format="%Y%m%d", errors="coerce")
     if pd.isna(trade_date):
@@ -321,7 +503,8 @@ def _parse_live_row(line: str) -> dict[str, Any] | None:
         price = float(fields[3])
         high = float(fields[33])
         low = float(fields[34])
-        volume = _spot_volume_shares(fields)
+        # live 只上屏、不落库：量读不出来时留 0 保住报价行，不会污染日 K。
+        volume = _spot_volume_shares(fields, symbol) or 0.0
         amount = _spot_amount(fields)
         change = float(fields[31]) if len(fields) > 31 else price - prev
         pct = float(fields[32]) if len(fields) > 32 else (
@@ -370,12 +553,16 @@ def fetch_live_hq(
         sess.headers.update(HEADERS)
 
     out: list[dict[str, Any]] = []
+    failures: list[str] = []
+    batches = 0
     try:
         for start in range(0, len(clean), SPOT_BATCH_SIZE):
             batch = clean[start : start + SPOT_BATCH_SIZE]
+            batches += 1
             try:
                 text = _get(SPOT_URL + ",".join(batch), session=sess)
             except TencentFetchError as exc:
+                failures.append(str(exc))
                 logger.warning("腾讯 live 批次失败：%s", exc)
                 continue
             for chunk in text.split(";"):
@@ -385,4 +572,7 @@ def fetch_live_hq(
     finally:
         if own_session:
             sess.close()
+    if batches and len(failures) == batches:
+        # 全批失败还返回空表，上层只会报「行情为空」，把真正的网络原因吞掉。
+        raise TencentFetchError(f"live {batches} 批全部失败 -> {failures[-1]}")
     return out

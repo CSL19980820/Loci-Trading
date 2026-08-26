@@ -100,8 +100,10 @@ class _QianlongCore:
         at_limit_up = limit_up_flags(raw_close, raw_close, ratios, tolerance=1.0)
         below_limit_up = raw_close.notna() & ~at_limit_up
         base_signal = had_death & ran_below & breakout_day & white_rising
-        # CLOSE/REF(CLOSE,5)：选股输出与入库按此降序，最强排最前。
+        # CLOSE/REF(CLOSE,5) 仅作归因；V3.2 横截面排序改用白线贴近度。
         roc5 = close / REF(close, 5)
+        extension = (close / white - 1.0).where(white != 0)
+        closeness = (white / close).where(close != 0)
 
         return SignalResult(
             signals=(base_signal & below_limit_up).fillna(False),
@@ -114,30 +116,38 @@ class _QianlongCore:
                 "白线向上": white_rising,
                 "非涨停价": below_limit_up,
                 "ROC5": roc5,
+                "辰星线延伸": extension,
+                "白线贴近度": closeness,
             },
         )
 
 
 class QianlongCloseePickerV3(_QianlongCore):
-    """潜龙出海 V3：在历史 V2 核心突破形态上加入换手率过滤。"""
+    """潜龙出海 V3.2：核心突破 + 换手 3.5%-8% + 弱市空仓 + 每日白线贴近度 Top2。"""
 
     slug = "qianlong-close-v3"
-    name = "潜龙出海（V3）"
+    name = "潜龙出海（V3.2）"
     description = (
-        "V3：保留 V2 的 15 日死叉回看、收盘价≥8 元和放量突破，"
-        "新增 T 日换手率 2%-8% 与非涨停价过滤；盘后选股，次日按开盘情景执行"
+        "V3.2：V2 核心突破 + T 日换手 3.5%-8% + 非涨停价；"
+        "上涨家数<45% 整日空仓，否则按刚站上辰星线取 Top2；"
+        "次日开盘买入，持有 3 日，止损 -7%"
     )
     entry_instructions = (
-        "T 日 14:50 后只保留未触及涨停价的候选，收盘后确认，T+1 执行：平开±1%优先按开盘价轻仓试仓；低开1%-3%只在不破辰星线、"
-        "开盘后承接稳定时分批买入；高开1%-3%不追开盘，回落至开盘价附近再观察；高开或低开≥3%跳过。"
-        "单票先试 1 层，跌破辰星线且收盘确认或相对买入价回撤 6% 失效，不补仓摊平。"
+        "T 日收盘后选出：潜龙核心突破成立、未触及涨停价、换手率 3.5%≤turnover<8%；"
+        "若当日市场上涨家数占比 <45%，整日空仓；"
+        "否则按白线贴近度（辰星线/CLOSE）降序最多保留 2 只，即刚站上白线、延伸最小的票。"
+        "T+1 按开盘价买入（一字涨停买不进则跳过）；"
+        "成交后持有 3 个交易日，期间跌破入场价 7% 止损，否则到期收盘卖出。"
+        "不看分时分批、不补仓。"
     )
     entry_timing = "next_open"
     requires_raw_limit_price = True
-    #: 选股结果按 ROC5 降序输出（最高排最前）。
-    screen_rank_factor = "ROC5"
-    strategy_revision = "builtin:qianlong-close-v3"
-    version = "v3"
+    screen_rank_factor = "白线贴近度"
+    screen_top_n = 2
+    screen_hold_days = 3
+    screen_stop_loss_pct = -7.0
+    strategy_revision = "builtin:qianlong-close-v3.2"
+    version = "v3.2"
     version_history = [
         {
             "version": "v1",
@@ -145,31 +155,55 @@ class QianlongCloseePickerV3(_QianlongCore):
             "source": "application/backup/qianlong-legacy.py",
         },
         {"version": "v2", "status": "archived", "source": "builtin:qianlong-close-v2"},
-        {"version": "v3", "status": "candidate", "source": "builtin"},
+        {"version": "v3", "status": "archived", "source": "builtin:qianlong-close-v3"},
+        {"version": "v3.1", "status": "archived", "source": "builtin:qianlong-close-v3.1"},
+        {"version": "v3.2", "status": "active", "source": "builtin"},
     ]
-    backtest_metrics = {
-        "trades": 567,
-        "win_rate": 46.91,
-        "avg_net_return": 0.4923,
-        "profit_factor": 1.213,
+    backtest_metrics: dict[str, Any] | None = {
+        "trades": 1021,
+        "win_rate": 47.7,
+        "avg_net_return": 0.4127,
+        "median_net_return": -0.2234,
+        "payoff_ratio": 1.31,
+        "completed_trades": 1021,
+        "portfolio_return_pct": 81.9594,
+        "max_drawdown_pct": -30.7208,
+        "occupancy_pct": 43.19,
     }
     backtest_config = {
-        "start": "2026-02-01",
-        "end": "2026-07-31",
+        "start": "2021-01-04",
+        "end": "2026-08-12",
         "adjust": "qfq",
         "hold_days": 3,
-        "stop_loss_pct": -6.0,
+        "stop_loss_pct": -7.0,
         "take_profit_pct": None,
+        "commission_bps": 3.0,
+        "stamp_duty_bps": 5.0,
+        "slippage_bps": 10.0,
         "benchmark": None,
+        "portfolio_model": "overlapping_equal_weight_sleeves",
+        "portfolio_return_pct": 81.9594,
+        "max_drawdown_pct": -30.7208,
+        "occupancy_pct": 43.19,
+        "completed_trades": 1021,
+        "signal_days": 587,
+        "weak_breadth_skip": 0.45,
+        "turnover_min": 0.035,
+        "turnover_max": 0.08,
+        "screen_top_n": 2,
+        "screen_rank_factor": "白线贴近度",
         "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
+        "note": "V3.2 排序改为辰星线延伸升序；数字来自 2021-01-04~2026-08-12 全样本对照，不是 2026 半年窗。",
     }
     default_universe = {"preset": "default_a_share", "boards": ["main", "chi_next"]}
 
     def default_params(self) -> dict[str, Any]:
         return {
             **super().default_params(),
-            "turnover_min": 0.02,
+            "turnover_min": 0.035,
             "turnover_max": 0.08,
+            "weak_breadth_skip": 0.45,
+            "top_n": 2,
         }
 
     def required_fields(self) -> tuple[str, ...]:
@@ -180,97 +214,59 @@ class QianlongCloseePickerV3(_QianlongCore):
     ) -> SignalResult:
         p = merge_params(self, params)
         core = super().compute(panels, params)
+        close = panels["close"]
         turnover = panels["turnover"].astype(float)
         turnover_ok = (turnover >= float(p["turnover_min"])) & (
             turnover < float(p["turnover_max"])
         )
+        eligible = (core.signals & turnover_ok).fillna(False)
+
+        previous_close = REF(close, 1)
+        valid_close = close.notna() & previous_close.notna()
+        advancing = (close > previous_close) & valid_close
+        valid_count = valid_close.sum(axis=1)
+        breadth = advancing.sum(axis=1).div(valid_count.where(valid_count > 0))
+        breadth_panel = pd.DataFrame(
+            {code: breadth for code in close.columns}, index=close.index
+        )
+        weak_skip = p.get("weak_breadth_skip")
+        if weak_skip is None:
+            market_ok = pd.DataFrame(True, index=close.index, columns=close.columns)
+        else:
+            market_ok = breadth_panel.ge(float(weak_skip)).fillna(False)
+        tradable = (eligible & market_ok).fillna(False)
+
+        closeness = core.factors["白线贴近度"]
+        top_n = int(p.get("top_n") or 0)
+        if top_n > 0:
+            rank = closeness.where(tradable).rank(
+                axis=1, ascending=False, method="first"
+            )
+            selected = (tradable & rank.le(top_n)).fillna(False)
+            watch_rank = closeness.where(eligible & ~market_ok).rank(
+                axis=1, ascending=False, method="first"
+            )
+            watch_selected = (
+                eligible & ~market_ok & watch_rank.le(top_n)
+            ).fillna(False)
+        else:
+            selected = tradable
+            watch_selected = (eligible & ~market_ok).fillna(False)
+
         return SignalResult(
-            signals=(core.signals & turnover_ok).fillna(False),
+            signals=selected,
+            watch_signals=watch_selected,
             factors={
                 **core.factors,
                 "换手率(%)": turnover * 100.0,
-                "换手2%-8%": turnover_ok,
-            },
-        )
-
-
-class QianlongTailPickerV1(QianlongCloseePickerV3):
-    """潜龙尾盘版：T 日收盘选股并只保留当日 ROC5 最强的一只。"""
-
-    slug = "qianlong-tail-v1"
-    name = "潜龙尾盘（V1）"
-    description = (
-        "尾盘版：潜龙突破条件 + 换手2%-8% + T 日非涨停价，"
-        "同日按 ROC5 最强只留一只，T 日收盘成交、T+1 退出"
-    )
-    entry_instructions = (
-        "14:50 后计算 T 日信号，先剔除按板块涨停价封住的个股，再按 ROC5（CLOSE/REF(CLOSE,5)）"
-        "从当日候选中只留一只；T 日按未复权收盘价理想化成交。T+1 最高价触及买入价+3%止盈，"
-        "最低价触及-6%止损，若两者同日触发先按止损，均未触发则 T+1 收盘卖出。"
-        "单票一次建仓，不补仓。"
-    )
-    entry_timing = "close"
-    execution_adjust = "none"
-    screen_rank_factor = "ROC5"
-    # 尾盘信号必须在收盘前落地；托管任务按该声明在 14:50 执行。
-    screen_schedule = {
-        "mode": "once",
-        "run_hour": 14,
-        "run_minute": 50,
-        "interval_minutes": 10,
-        "window_start_hour": 9,
-        "window_start_minute": 30,
-        "window_end_hour": 14,
-        "window_end_minute": 50,
-    }
-    screen_top_n = 1
-    strategy_revision = "builtin:qianlong-tail-v1"
-    version = "v1"
-    version_history = [
-        {"version": "v1", "status": "candidate", "source": "builtin"},
-    ]
-    backtest_metrics = {
-        "trades": 100,
-        "win_rate": 67.0,
-        "avg_net_return": 0.5366,
-        "profit_factor": 1.567,
-    }
-    backtest_config = {
-        "start": "2026-02-02",
-        "end": "2026-07-30",
-        "signal_adjust": "qfq",
-        "execution_adjust": "none",
-        "selection": "one_per_day:max(CLOSE/REF(CLOSE,5))",
-        "hold_days": 1,
-        "stop_loss_pct": -6.0,
-        "take_profit_pct": 3.0,
-        "commission_bps": 3.0,
-        "stamp_duty_bps": 10.0,
-        "slippage_bps": 5.0,
-        "benchmark": None,
-        "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
-    }
-
-    def default_params(self) -> dict[str, Any]:
-        params = super().default_params()
-        params["price_min"] = 10.0
-        return params
-
-    def compute(
-        self, panels: dict[str, pd.DataFrame], params: dict[str, Any] | None = None
-    ) -> SignalResult:
-        result = super().compute(panels, params)
-        strength = panels["close"] / REF(panels["close"], 5)
-        selected = select_one_per_day(result.signals, strength)
-        return SignalResult(
-            signals=selected,
-            factors={
-                **result.factors,
-                "ROC5": strength,
-                "每日首选": selected,
+                "换手过滤": turnover_ok,
+                "条件候选": eligible,
+                "市场上涨家数占比": breadth_panel,
+                "弱市可交易": market_ok,
+                "每日前二": selected,
+                "弱市低吸观察": watch_selected,
             },
         )
 
 
 register(QianlongCloseePickerV3())
-register(QianlongTailPickerV1())

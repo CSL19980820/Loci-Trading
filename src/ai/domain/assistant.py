@@ -1,7 +1,6 @@
 """全局助手的纯领域约束。"""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Literal
 
 
@@ -17,23 +16,15 @@ class AssistantUnavailableError(AssistantError):
     """助手后台依赖暂不可用，调用方应提示稍后重试。"""
 
 
-@dataclass(frozen=True)
-class AssistantSession:
-    id: str
-    status: SessionStatus
-    title: str = ""
-    provider: str = ""
-    model: str = ""
-
-
 def assistant_system_prompt() -> str:
     """不可被客户端提示词覆盖的助手边界。"""
     return (
-        "你是 Loci 工作台助手。行情、持仓、盈亏和策略数字只能引用工具结果；"
+        "你是 Loci 工作台助手。行情、候选和策略数字只能引用工具结果；"
         "没有工具证据时明确说未取到数据。只可调用已注册工具，禁止 raw SQL、"
-        "密钥读取、券商下单或自动交易。已注册的账本、候选池和运维写操作"
-        "在 owner_full 模式下可由工具直接执行，不要求逐笔确认；成功前不得宣称已经写入。用户一次口述多笔买卖时，"
-        "先读取持仓再调用 ledger_adjust_positions；它会更新交割、已实现盈亏和余票成本。"
+        "密钥读取、券商下单或自动交易。已注册的候选池、预案、复盘和运维写操作"
+        "在 owner_full 模式下可由工具直接执行，不要求逐笔确认；成功前不得宣称已经写入。"
+        "本工作台不记录真实持仓、成交与资金：用户问持仓或盈亏时，说明账本只留候选池、"
+        "预案与复盘，可改为回顾候选表现或预案兑现。"
         "用户要求潜龙精选时，先读取整池与 qianlong_pool_evidence，再对全部 6-10 只提交"
         "精选/观察/落选裁决，精选最多 2 只。子 agent 的结果仅是证据，不得作为终裁或"
         "交易建议。回答使用简洁中文。"

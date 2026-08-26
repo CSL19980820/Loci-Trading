@@ -5,12 +5,14 @@ import { CapabilityUnavailableError, getWinRateSummary, getWinRateTrend } from '
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import HeaderActions from '@/shared/components/layout/HeaderActions.vue'
+import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
+import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import Sheet from '@/shared/components/layout/Sheet.vue'
 import {
   sampleBadgeLabel,
   sampleConfidence,
   winRateDisplayTone,
+  winRateStatTone,
   winRateText,
 } from '@/shared/lib/winrate'
 import type { WinRateSummary, WinRateTrendPoint } from '@/shared/types/quant'
@@ -34,19 +36,60 @@ function toggleTag(tag: string): void {
 }
 
 const trendRows = computed(() => {
-  const periods = [...new Set(chartData.value.map((p) => p.period))].sort()
-  return periods.map((period) => {
-    const byTag: Record<string, WinRateTrendPoint> = {}
-    for (const point of chartData.value) {
-      if (point.period === period && activeTags.value.has(point.strategy_tag)) {
-        byTag[point.strategy_tag] = point
-      }
+  // 单趟分组：按周粒度跑几年时周期数上百，逐周期全扫点集会退化成 O(周期×点)。
+  const byPeriod = new Map<string, Record<string, WinRateTrendPoint>>()
+  for (const point of chartData.value) {
+    let byTag = byPeriod.get(point.period)
+    if (!byTag) {
+      byTag = {}
+      byPeriod.set(point.period, byTag)
     }
-    return { period, byTag } as Record<string, unknown>
-  }).reverse()
+    if (activeTags.value.has(point.strategy_tag)) byTag[point.strategy_tag] = point
+  }
+  return [...byPeriod.keys()]
+    .sort()
+    .map((period) => ({ period, byTag: byPeriod.get(period)! }) as Record<string, unknown>)
+    .reverse()
 })
 
 const summaryRows = computed(() => summary.value as unknown as Record<string, unknown>[])
+
+/** 页头读数：由主表已加载行汇总（wins/total 与行内胜率同口径），不另发请求 */
+const overallSamples = computed(() =>
+  summary.value.reduce((acc, row) => acc + (Number(row.total) || 0), 0),
+)
+
+const overallWinRate = computed(() => {
+  if (!overallSamples.value) return null
+  const wins = summary.value.reduce((acc, row) => acc + (Number(row.wins) || 0), 0)
+  return Math.round((wins / overallSamples.value) * 1000) / 10
+})
+
+const overallAvgReturn = computed(() => {
+  let weight = 0
+  let acc = 0
+  for (const row of summary.value) {
+    const n = Number(row.total) || 0
+    if (typeof row.avg_return === 'number' && n > 0) {
+      acc += row.avg_return * n
+      weight += n
+    }
+  }
+  return weight > 0 ? acc / weight : null
+})
+
+const overallWinRateTone = computed(() => winRateStatTone(overallWinRate.value, overallSamples.value))
+
+const overallAvgTone = computed(() => {
+  if (overallAvgReturn.value == null) return ''
+  return overallAvgReturn.value >= 0 ? 'up' : 'down'
+})
+
+const overallAvgText = computed(() =>
+  overallAvgReturn.value == null
+    ? '—'
+    : `${overallAvgReturn.value >= 0 ? '+' : ''}${overallAvgReturn.value.toFixed(2)}%`,
+)
 
 const summaryColumns: BasicTableColumn[] = [
   { prop: 'strategy_tag', label: '战法', minWidth: 120, slotName: 'tag' },
@@ -163,15 +206,21 @@ onUnmounted(() => {
 
 <template>
   <div class="page-fill">
-  <div class="winrate-toolbar">
-    <el-select v-model="granularity" size="small" style="width: 7rem" @change="refreshTrend">
-      <el-option label="按月" value="month" />
-      <el-option label="按周" value="week" />
-    </el-select>
-    <HeaderActions
-      :actions="[{ key: 'reload', label: '刷新', disabled: busy, onClick: reload }]"
-    />
-  </div>
+  <PageHeader
+    title="胜率统计"
+    note="胜率 = 精选候选 T+5 口径（另列 T+1/T+3），无候选样本时回退手工复盘；样本少于 5 仅供参考"
+  >
+    <template #stats>
+      <HeaderStat label="综合胜率" lead :tone="overallWinRateTone">
+        {{ winRateText(overallWinRate) }}
+      </HeaderStat>
+      <HeaderStat label="样本数" :value="overallSamples || '—'" />
+      <HeaderStat label="T+5 均收益" :tone="overallAvgTone">{{ overallAvgText }}</HeaderStat>
+    </template>
+    <template #actions>
+      <el-button size="small" :disabled="busy" @click="reload">刷新</el-button>
+    </template>
+  </PageHeader>
 
   <div class="page-scroll">
   <el-alert v-if="error" :title="error" type="error" show-icon closable class="mb" @close="error = ''" />
@@ -239,6 +288,15 @@ onUnmounted(() => {
 
   <Sheet title="分周期明细（复盘样本）">
     <template #actions>
+      <el-select
+        v-model="granularity"
+        size="small"
+        class="granularity-select"
+        @change="refreshTrend"
+      >
+        <el-option label="按月" value="month" />
+        <el-option label="按周" value="week" />
+      </el-select>
       <el-check-tag
         v-for="tag in allTags"
         :key="tag"
@@ -286,21 +344,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.winrate-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
+.granularity-select {
+  width: 7rem;
   flex-shrink: 0;
-  padding: 0.45rem 0.85rem;
 }
 
 .mb {
   margin-bottom: 0.65rem;
-}
-
-.source-copy strong {
-  font-weight: 650;
-  color: var(--ink);
 }
 </style>

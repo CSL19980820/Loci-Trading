@@ -85,6 +85,26 @@ class LanesApiTests(unittest.TestCase):
         response = self.client.post("/api/ops/lanes/probe", json={"lane": "nope"})
         self.assertEqual(response.status_code, 400)
 
+    def test_probe_mcp_provider_uses_probe_mcp_not_adapter(self) -> None:
+        """悟道等 MCP 情报源 id 形如 mcp:wudao，不能丢给 get_adapter。"""
+        fake = {"ok": True, "scope": "server", "rtt_ms": 42, "tool_count": 12}
+        with patch(
+            "src.intel.probe_mcp",
+            return_value=fake,
+        ) as mocked:
+            body = self.client.post(
+                "/api/ops/lanes/probe",
+                json={"adapter_id": "mcp:wudao", "runs": 1},
+            ).json()
+        mocked.assert_called_once_with("wudao", refresh=False)
+        self.assertEqual(len(body["results"]), 1)
+        row = body["results"][0]
+        self.assertEqual(row["adapter_id"], "mcp:wudao")
+        self.assertEqual(row["lane"], "intel_mcp")
+        self.assertTrue(row["ok"])
+        self.assertEqual(row["label"], "悟道")
+        self.assertEqual(row["rows"], 12)
+
     def test_probe_and_speedtest_require_router_access(self) -> None:
         """即使被其他组合根挂载，外部探测也不能绕过访问控制。"""
 
@@ -267,6 +287,8 @@ class LanesApiTests(unittest.TestCase):
                     "sina": {"enabled": False},
                     "eastmoney": {"enabled": False},
                     "tencent": {"enabled": False},
+                    "baostock": {"enabled": False},
+                    "tdx": {"enabled": False},
                 }
             },
         ):
@@ -328,6 +350,8 @@ class LanesApiTests(unittest.TestCase):
                 call("spot_batch"),
                 call("adjust_factor"),
                 call("minute_bars"),
+                # 新浪现在也是 capital_flow 的回退源，停用它要一并清这条 lane。
+                call("capital_flow"),
             ],
         )
 

@@ -14,7 +14,7 @@ agents:
     kind: llm
     instructions: 只收集≤截止时刻新闻要点，不锁票、不给买入价
     max_rounds: 3
-    mcp_servers: [wudao-a-stock]
+    mcp_servers: [wudao]
 ```
 """
 from __future__ import annotations
@@ -39,6 +39,9 @@ def run_ammo_agents(
     arguments: dict[str, Any] | None = None,
     on_event: EventCallback | None = None,
     max_workers: int = 4,
+    trace_id: str | None = None,
+    run_id: str | None = None,
+    job_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """并行跑 ``role=ammo``（默认全部 agents）子任务，返回摘要列表。"""
     specs = [
@@ -73,7 +76,16 @@ def run_ammo_agents(
                         "text": "子 agent 需要 LLM provider，但未配置",
                     }
                 else:
-                    result = _run_llm_agent(skill, spec, provider, protocol, arguments or {})
+                    result = _run_llm_agent(
+                        skill,
+                        spec,
+                        provider,
+                        protocol,
+                        arguments or {},
+                        trace_id=trace_id,
+                        run_id=run_id,
+                        job_id=job_id,
+                    )
             else:
                 result = {"id": agent_id, "ok": False, "text": f"未知子 agent kind: {kind}"}
         except Exception as exc:
@@ -146,6 +158,10 @@ def _run_llm_agent(
     provider: ProviderConfig,
     protocol: str,
     arguments: dict[str, Any],
+    *,
+    trace_id: str | None = None,
+    run_id: str | None = None,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     from src.ai.application.agent import run_agent
     from src.ai.application.toolbus import build_toolbus
@@ -175,6 +191,9 @@ def _run_llm_agent(
         mcp_server_names=list(sub_skill.get("mcp_servers") or []) or None,
         allow=list(sub_skill.get("allowed_tools") or []) or None,
         hitl_enabled=False,
+        trace_id=trace_id,
+        run_id=run_id,
+        job_id=job_id,
     )
     user = (
         "请按你的职责收集证据并简要汇报。禁止终裁买谁。"
@@ -190,6 +209,7 @@ def _run_llm_agent(
         max_rounds=int(spec.get("max_rounds") or 3),
         max_tokens=int(spec.get("max_tokens") or 2048),
         allow_hitl=False,
+        emit_terminal_event=False,
     )
     text = result.text or ""
     if len(text) > 8000:

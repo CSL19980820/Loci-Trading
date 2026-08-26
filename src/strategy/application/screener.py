@@ -16,8 +16,8 @@ from typing import Any
 
 import pandas as pd
 
-from src.market import MarketStore
-from src.market.domain.universe import (
+from src.market import (
+    MarketStore,
     ResolvedUniverse,
     UniverseError,
     enrich_picks,
@@ -45,6 +45,7 @@ class ScreenResult:
     trade_date: str
     strategy_revision: str = ""
     picks: list[dict[str, Any]] = field(default_factory=list)
+    watch_picks: list[dict[str, Any]] = field(default_factory=list)
     universe_size: int = 0
     elapsed_seconds: float = 0.0
     params: dict[str, Any] = field(default_factory=dict)
@@ -59,7 +60,8 @@ class ScreenResult:
 
     def summary(self) -> str:
         return (
-            f"[{self.strategy_slug}] {self.trade_date} 选出 {len(self.picks)} 只"
+            f"[{self.strategy_slug}] {self.trade_date} 选出 {len(self.picks)} 只，"
+            f"低吸观察 {len(self.watch_picks)} 只"
             f"（候选池 {self.universe_size} 只，耗时 {self.elapsed_seconds:.2f}s，"
             f"入场={self.entry_timing}）"
         )
@@ -132,6 +134,14 @@ def screen(
     effective_adjust = str(adjust or getattr(engine, "adjust", "qfq") or "qfq")
     started = time.monotonic()
 
+    # 静态前视闸门：entry_timing=open 裸用盘中字段等 block 级问题 fail-closed
+    from src.strategy.application.audit import LookAheadError, guard_strategy
+
+    try:
+        guard_strategy(engine)
+    except LookAheadError as exc:
+        raise StrategyError(str(exc)) from exc
+
     health: dict[str, Any] | None = None
     if health_check and not codes:
         from src.market import guard_market_health
@@ -157,7 +167,14 @@ def screen(
     start, end = _resolve_start(
         store, trade_date, bars, full_history=requires_full_history
     )
-    snapshot = dict(data_snapshot) if data_snapshot is not None else store.data_snapshot()
+    # 必须带 codes + 窗口：无范围 data_snapshot 会扫全库 source_evidence，
+    # 在千万行 market.db 上易触发 disk I/O error，拖死尾盘选股。
+    if data_snapshot is not None:
+        snapshot = dict(data_snapshot)
+    else:
+        snapshot = dict(
+            store.data_snapshot(codes=list(resolved.codes), start=start, end=end)
+        )
     result_snapshot = {
         **snapshot,
         "fields": list(engine.required_fields()),
@@ -231,6 +248,12 @@ def screen(
             data_snapshot=result_snapshot,
         )
 
+    # 动态截断一致性：小宇宙全列，大宇宙分片全覆盖（见 audit_sampling）
+    try:
+        guard_strategy(engine, panels, params=resolved_params)
+    except LookAheadError as exc:
+        raise StrategyError(str(exc)) from exc
+
     _progress("compute", 62, f"计算信号 · {engine.name}…")
     result: SignalResult = engine.compute(panels, resolved_params)
     target_date = trade_date or str(result.signals.index[-1])
@@ -239,7 +262,17 @@ def screen(
 
     rank_by = str(getattr(engine, "screen_rank_factor", "") or "").strip() or None
     pick_codes = result.picks_on(target_date, rank_by=rank_by)
-    _progress("explain", 78, f"解释因子 · 命中 {len(pick_codes)} 只…")
+    picked = set(pick_codes)
+    watch_codes = [
+        code
+        for code in result.watch_picks_on(target_date, rank_by=rank_by)
+        if code not in picked
+    ]
+    _progress(
+        "explain",
+        78,
+        f"解释因子 · 正式 {len(pick_codes)} 只 · 观察 {len(watch_codes)} 只…",
+    )
     close_panel = panels.get("close")
     picks = enrich_picks(
         [
@@ -254,16 +287,32 @@ def screen(
         ],
         resolved.meta,
     )
+    watch_picks = enrich_picks(
+        [
+            {
+                "code": code,
+                "close": _cell(close_panel, target_date, code),
+                "open": _cell(panels.get("open"), target_date, code),
+                "pct_chg": _pct_chg(close_panel, target_date, code),
+                "factors": result.explain(target_date, code),
+                "intent": "observe",
+            }
+            for code in watch_codes
+        ],
+        resolved.meta,
+    )
 
     funnel = resolved.funnel.to_dict()
     funnel["panel_columns"] = int(reference.shape[1])
     funnel["signals_true"] = len(picks)
+    funnel["watch_signals_true"] = len(watch_picks)
 
     return ScreenResult(
         strategy_slug=engine.slug,
         strategy_revision=str(getattr(engine, "strategy_revision", "")),
         trade_date=target_date,
         picks=picks,
+        watch_picks=watch_picks,
         universe_size=int(reference.shape[1]),
         elapsed_seconds=time.monotonic() - started,
         params=resolved_params,

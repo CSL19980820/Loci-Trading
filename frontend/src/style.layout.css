@@ -25,7 +25,8 @@
   background: transparent;
 }
 
-.page-host:has(> .page-fill) {
+/* 接受路由根或其下一层壳上的 .page-fill（勿要求必须是 page-host 直接子） */
+.page-host:has(.page-fill) {
   overflow: hidden;
 }
 
@@ -34,7 +35,13 @@
   --page-tabs-sticky-top: 0px;
 }
 
-/* 页面根：占满主区；纸色沟槽内的内容卡（底色异于 main-content） */
+/*
+ * 页面根：占满主区；纸色沟槽内的内容卡（底色异于 main-content）。
+ *
+ * 账页衬线：内容不足半屏时，此前整块下半页是死白，看着像没加载完。
+ * 这里给页底铺极淡的横线，把留白变成「这张账页还没写满」——线距对齐 EP small
+ * 行高 40px，内容区（sheet / 表格 / 页头）自带不透明底色会盖住它，只在真空处露出。
+ */
 .page-fill {
   display: flex;
   flex-direction: column;
@@ -43,7 +50,19 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--sheet);
+  /*
+   * 页级 PageBusy 用 position:absolute + inset:0 蒙住父级。这里若不定位，
+   * 蒙版会一路上溯到视口，把侧栏一起罩灰（工坊/设置/体检/策稿四页都中过）。
+   */
+  position: relative;
+  background-color: var(--sheet);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 39px,
+    color-mix(in srgb, var(--rule) 45%, transparent) 39px,
+    color-mix(in srgb, var(--rule) 45%, transparent) 40px
+  );
   border: 1px solid var(--rule);
   border-radius: var(--radius);
 }
@@ -81,10 +100,15 @@
   padding: 0.65rem 0.85rem;
 }
 
+.page-scroll--flush-top {
+  padding-top: 0;
+}
+
 /*
  * 视口契约（强制）：
  * - html/body/#app 禁止出现文档级滚动条；滚动只发生在 page-scroll / 表体 / 侧栏等内层。
- * - 路由页根必须 page-fill，把主区高度吃满；禁止内容撑破视口再靠 page-host 当「浏览器滚动」。
+ * - 路由页须含 .page-fill（根或浅层壳均可），把主区高度吃满；禁止内容撑破视口再靠 page-host 当「浏览器滚动」。
+ * - page-host 用 :has(.page-fill) 关外层滚动，包一层壳不再破契约。
  * - 疏密：区块间距用 .mb / filter-bar / page-tabs 既有尺度；禁止大块空白垫高，也禁止把可读区压成窄条。
  * - PageTabs：优先放在 page-scroll 外（与 Ops 一致）；短内容 Tab 面板加 .page-pane 让 Sheet 拉满剩余高度。
  */
@@ -115,8 +139,7 @@
 .page-pane .form-hint,
 .page-pane .form-error,
 .page-pane .brief,
-.page-pane .kv,
-.page-pane .chart-trust-row {
+.page-pane .kv {
   flex-shrink: 0;
 }
 

@@ -103,7 +103,7 @@ const invalid = computed(() => {
 }
 
 .date-range__hint {
-  color: var(--down, #c44);
+  color: var(--loss);
   font-size: 0.72rem;
 }
 </style>

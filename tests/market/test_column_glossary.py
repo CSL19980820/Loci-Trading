@@ -1,12 +1,12 @@
-"""列名中英对照表：往返一致，且东财适配器的四张表在重构后逐字不变。"""
+"""列名中英对照表：往返一致，且东财对照表在契约化后逐字不变。"""
 from __future__ import annotations
 
 from src.market.domain.column_glossary import CN_TO_EN, EN_TO_CN, gloss_column
-from src.market.infrastructure.adapters.eastmoney_adapter import (
-    _CAPITAL_FLOW_RENAME,
-    _EASTMONEY_RENAME,
-    _MINUTE_RENAME,
-    _SPOT_RENAME,
+from src.market.domain.source_contract import (
+    EASTMONEY_CAPITAL_FLOW_RENAME,
+    EASTMONEY_DAILY_RENAME,
+    EASTMONEY_MINUTE_RENAME,
+    EASTMONEY_SPOT_RENAME,
 )
 from src.market.infrastructure.adapters.types import (
     DAILY_OPTIONAL_COLUMNS,
@@ -40,7 +40,7 @@ def test_glossary_covers_every_normalized_daily_column() -> None:
 
 
 def test_eastmoney_rename_tables_are_unchanged_after_centralizing_the_glossary() -> None:
-    assert _EASTMONEY_RENAME == {
+    assert EASTMONEY_DAILY_RENAME == {
         "日期": "date",
         "开盘": "open",
         "最高": "high",
@@ -49,8 +49,9 @@ def test_eastmoney_rename_tables_are_unchanged_after_centralizing_the_glossary()
         "成交量": "volume",
         "成交额": "amount",
         "换手率": "turnover",
+        "流通股本": "outstanding_share",
     }
-    assert _SPOT_RENAME == {
+    assert EASTMONEY_SPOT_RENAME == {
         "代码": "code",
         "名称": "name",
         "今开": "open",
@@ -63,7 +64,7 @@ def test_eastmoney_rename_tables_are_unchanged_after_centralizing_the_glossary()
         "涨跌幅": "pct",
         "涨跌额": "change",
     }
-    assert _MINUTE_RENAME == {
+    assert EASTMONEY_MINUTE_RENAME == {
         "时间": "datetime",
         "开盘": "open",
         "收盘": "close",
@@ -73,7 +74,7 @@ def test_eastmoney_rename_tables_are_unchanged_after_centralizing_the_glossary()
         "成交额": "amount",
         "均价": "avg_price",
     }
-    assert _CAPITAL_FLOW_RENAME == {
+    assert EASTMONEY_CAPITAL_FLOW_RENAME == {
         "日期": "date",
         "收盘价": "close",
         "涨跌幅": "pct_chg",

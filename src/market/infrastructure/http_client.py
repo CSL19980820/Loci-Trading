@@ -8,13 +8,23 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import threading
+import time
 from typing import Any
 from urllib.parse import urlparse
 
 import requests
-from requests.exceptions import ProxyError
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import ProxyError, Timeout
 
 NO_PROXY: dict[str, None] = {"http": None, "https": None}
+
+#: 握手上限。境内行情源正常 <1s；跟着读超时一起给到 20s，只会让整批同步
+#: 在网络抖动时逐票各卡 20 秒。
+CONNECT_TIMEOUT_CAP = 6.0
+#: 幂等 GET 的抖动重试次数（不含首次）。全市场同步时单点 SYN 丢包很常见，
+#: 不重试就会变成整只票同步失败。
+TRANSIENT_RETRIES = 1
+_RETRY_BACKOFF_SEC = 0.5
 
 _MARKET_HOST_SUFFIXES = (
     "eastmoney.com",
@@ -46,15 +56,34 @@ def market_get(
     headers: Mapping[str, str] | None = None,
     timeout: float = 20,
     session: requests.Session | None = None,
+    retries: int = TRANSIENT_RETRIES,
+    connect_timeout: float | None = None,
 ) -> requests.Response:
-    """GET；默认直连（不走系统代理）。"""
+    """GET；默认直连（不走系统代理），连接/超时类抖动做有限重试。
+
+    只重试幂等读取；``timeout`` 拆成 (握手, 读取)，握手另有更短上限。
+    ``connect_timeout`` 给已知不稳的备源（如直连 ifzq）快败，避免按默认 6s 死磕。
+    """
     caller = session or market_session()
-    return caller.get(
-        url,
-        params=dict(params) if params else None,
-        headers=dict(headers) if headers else None,
-        timeout=timeout,
-    )
+    handshake = float(connect_timeout) if connect_timeout is not None else CONNECT_TIMEOUT_CAP
+    budget = (min(float(timeout), max(0.5, handshake)), float(timeout))
+    attempts = max(0, retries) + 1
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return caller.get(
+                url,
+                params=dict(params) if params else None,
+                headers=dict(headers) if headers else None,
+                timeout=budget,
+            )
+        except (RequestsConnectionError, Timeout) as exc:
+            last = exc
+            if attempt + 1 >= attempts:
+                break
+            time.sleep(_RETRY_BACKOFF_SEC * (attempt + 1))
+    assert last is not None  # pragma: no cover - 循环必然赋值
+    raise last
 
 
 def _is_market_host(url: str) -> bool:

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, reactive, ref, useAttrs, useSlots, watch } from 'vue'
+import { computed, onMounted, onUnmounted, provide, reactive, ref, shallowRef, useAttrs, useSlots, watch } from 'vue'
 import type { TableInstance } from 'element-plus'
 import { RefreshRight, Setting } from '@element-plus/icons-vue'
 
 import BasicTableColumns from './BasicTableColumns.vue'
+import BasicTableVirtual from './BasicTableVirtual.vue'
 import { createSpanMethod } from './basicTableMerge'
+import { canVirtualizeBasicTable } from './basicTableVirtualSupport'
 import type {
   BasicTableColumn,
   BasicTableEditConfig,
@@ -52,6 +54,7 @@ const props = withDefaults(
     emptyText?: string
     toolbarConfig?: BasicTableToolbarConfig
     loading?: boolean
+    virtualized?: boolean
     rowClassName?: string | ((data: { row: Record<string, unknown>; rowIndex: number }) => string)
   }>(),
   {
@@ -63,7 +66,7 @@ const props = withDefaults(
     stripe: false,
     border: false,
     size: 'small',
-    emptyText: '暂无数据',
+    emptyText: '没有匹配的记录',
     pagination: () => ({}),
   },
 )
@@ -81,7 +84,10 @@ const attrs = useAttrs()
 const slots = useSlots()
 provide('basicTableSlots', slots)
 const tableRef = ref<TableInstance>()
-const rows = ref<Record<string, unknown>[]>([])
+const virtualTableRef = ref<InstanceType<typeof BasicTableVirtual>>()
+// shallowRef：几千行的业务表不必再被本组件深度代理一层。写入全是整表替换
+// （见下方两处 `rows.value = …`）；行内字段的响应式由父层自己的 ref 提供。
+const rows = shallowRef<Record<string, unknown>[]>([])
 const innerLoading = ref(false)
 const zoomed = ref(false)
 const autoHeight = ref<number | undefined>()
@@ -126,13 +132,23 @@ const spanMethod = computed(() =>
   createSpanMethod(props.mergeField ?? [], rows.value, columns.value),
 )
 
+const useVirtualized = computed(() => {
+  return (
+    props.virtualized &&
+    canVirtualizeBasicTable(columns.value, props.mergeField ?? [], props.rowKey)
+  )
+})
+
 const customizableColumns = computed(() =>
   columns.value.filter((c) => c.type !== 'selection' && c.type !== 'index' && c.type !== 'expand'),
 )
 
+// 依赖只需要「数组换了」或「长度变了」；原来的 deep 会在每次触发时遍历
+// 全部行的每个字段（几千行 × 几十列），而回调根本不读字段值。
+// 元素级改动仍由父层自己的 ref 驱动重渲染，不经这个 watch。
 watch(
-  () => props.dataSource,
-  (list) => {
+  [() => props.dataSource, () => props.dataSource?.length],
+  ([list]) => {
     if (props.request) return
     rows.value = list ?? []
     pager.total =
@@ -140,18 +156,23 @@ watch(
         ? props.pagination.total
         : (list?.length ?? 0)
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 )
 
+// 只有三个标量字段，逐个监听即可，不必深遍历整个对象。
 watch(
-  () => (typeof props.pagination === 'object' ? props.pagination : null),
-  (p) => {
-    if (!p) return
-    if (p.currentPage != null) pager.currentPage = p.currentPage
-    if (p.pageSize != null) pager.pageSize = p.pageSize
-    if (p.total != null) pager.total = p.total
+  () => {
+    const p = typeof props.pagination === 'object' ? props.pagination : null
+    return p ? [p.currentPage, p.pageSize, p.total] : null
   },
-  { immediate: true, deep: true },
+  (values) => {
+    if (!values) return
+    const [currentPage, pageSize, total] = values
+    if (currentPage != null) pager.currentPage = currentPage
+    if (pageSize != null) pager.pageSize = pageSize
+    if (total != null) pager.total = total
+  },
+  { immediate: true },
 )
 
 async function fetch(opt: Record<string, unknown> = {}, resetPage = false): Promise<void> {
@@ -239,6 +260,10 @@ function onSelectionChange(selection: Record<string, unknown>[]): void {
   emit('selection-change', selection)
 }
 
+function onVirtualRowClick(row: Record<string, unknown>, event: Event): void {
+  onRowClick(row, undefined, event)
+}
+
 function onUpdateField(row: Record<string, unknown>, prop: string, value: unknown): void {
   row[prop] = value
 }
@@ -256,16 +281,34 @@ function calcOffsetHeight(): void {
   autoHeight.value = Math.max(120, window.innerHeight - props.offsetHeight)
 }
 
+// 注册/移除都必须无条件：以前两边都包在 `if (props.offsetHeight)` 里，
+// prop 在生命周期中间变化（0 → 非 0 或反过来）就会漏掉一次 remove，监听器永久泄漏。
+// calcOffsetHeight 自己在 offsetHeight 为空时会置空高度，所以空跑无副作用。
 onMounted(() => {
   calcOffsetHeight()
-  if (props.offsetHeight) window.addEventListener('resize', calcOffsetHeight)
+  window.addEventListener('resize', calcOffsetHeight)
   if (props.request && props.hasDefaultRequest) void fetch()
 })
 
 onUnmounted(() => {
   requestGeneration += 1
-  if (props.offsetHeight) window.removeEventListener('resize', calcOffsetHeight)
+  window.removeEventListener('resize', calcOffsetHeight)
 })
+
+watch(() => props.offsetHeight, calcOffsetHeight)
+
+function clearSelection(): void {
+  if (useVirtualized.value) {
+    virtualTableRef.value?.clearSelection()
+    return
+  }
+  tableRef.value?.clearSelection()
+}
+
+function doLayout(): void {
+  tableRef.value?.doLayout()
+  virtualTableRef.value?.doLayout()
+}
 
 defineExpose({
   fetch,
@@ -273,12 +316,13 @@ defineExpose({
   restReload,
   setPagination: (info: Partial<typeof pager>) => Object.assign(pager, info),
   getTableData: () => rows.value,
-  doLayout: () => tableRef.value?.doLayout(),
+  doLayout,
   setEditRow,
   clearEdit,
   getRowEdit,
   isEditByRow,
-  getTableRef: () => tableRef.value,
+  clearSelection,
+  getTableRef: () => virtualTableRef.value?.getTableRef() ?? tableRef.value,
 })
 </script>
 
@@ -332,7 +376,27 @@ defineExpose({
     </div>
 
     <div class="basic-table__body" v-loading="busy">
+      <BasicTableVirtual
+        v-if="useVirtualized"
+        ref="virtualTableRef"
+        :columns="columns"
+        :rows="rows"
+        :row-key="typeof rowKey === 'string' ? rowKey : 'id'"
+        :empty-text="emptyText"
+        :border="border"
+        :stripe="stripe"
+        :size="size"
+        :max-height="maxHeight"
+        :row-class-name="rowClassName"
+        :is-editing="isEditByRow"
+        v-bind="attrs"
+        @row-click="onVirtualRowClick"
+        @cell-click="onCellClick"
+        @selection-change="onSelectionChange"
+        @update:field="onUpdateField"
+      />
       <el-table
+        v-else
         ref="tableRef"
         :data="rows"
         :stripe="stripe"
@@ -378,12 +442,17 @@ defineExpose({
 </template>
 
 <style scoped>
+/*
+ * 不写 height: 100%。在弹性父级里 flex:1 1 auto 已经能吃满高度；
+ * 而在普通块级父级（如账本持仓卡）里，100% 会把只有几行的表撑成整屏，
+ * 把后面的兄弟节点顶出父级 overflow:hidden 之外——账本页的「交割绩效 /
+ * 月度盈亏」曾因此被整块裁掉且无法滚动到。
+ */
 .basic-table {
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
-  height: 100%;
   background: transparent;
 }
 

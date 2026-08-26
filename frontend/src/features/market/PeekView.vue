@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { getLiveTape, type LiveTapeItem } from '@/shared/api/quant'
 import { useLivePolling } from '@/shared/composables/useLivePolling'
+import { price as fmtPrice, pct as fmtPct } from '@/shared/lib/format'
 
 import { shouldShowGhost } from './composables/peekChrome'
 
@@ -10,7 +11,6 @@ type PeekPhase = 'free' | 'collapsed'
 type PeekEdge = 'left' | 'right' | 'top' | 'bottom'
 
 const indices = ref<LiveTapeItem[]>([])
-const positions = ref<LiveTapeItem[]>([])
 const asOf = ref('')
 const error = ref('')
 const phase = ref<PeekPhase>('free')
@@ -38,63 +38,12 @@ function tone(pct: number | null | undefined): string {
   return 'is-flat'
 }
 
-function fmtPct(value: number | null | undefined): string {
-  if (value == null) return '—'
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(2)}%`
-}
-
-function fmtPctShort(value: number | null | undefined): string {
-  if (value == null) return '—'
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(1)}%`
-}
-
-function fmtPrice(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
-  const n = Number(value)
-  return n >= 1000 ? n.toFixed(2) : n.toFixed(2)
-}
-
-function fmtCost(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value)) || Number(value) <= 0) return '—'
-  return Number(value).toFixed(2)
-}
-
 const clock = computed(() => {
   const raw = asOf.value
   if (!raw) return '连接中…'
   const part = raw.split(' ')[1]
   return part ? part.slice(0, 8) : raw
 })
-
-/** 市值加权今日涨跌（与托盘「仓」同口径；不用成本浮盈） */
-const bagPct = computed((): number | null => {
-  const rows = positions.value.filter((p) => p.ok && p.pct != null)
-  if (!rows.length) return null
-  let weighted = 0
-  let weight = 0
-  for (const p of rows) {
-    const pct = Number(p.pct)
-    const mv =
-      p.market_value ??
-      (p.price != null && p.shares ? Number(p.price) * Number(p.shares) : 0)
-    if (mv > 0) {
-      weighted += pct * mv
-      weight += mv
-    }
-  }
-  if (weight > 0) return weighted / weight
-  return rows.reduce((s, p) => s + Number(p.pct), 0) / rows.length
-})
-
-const sortedPositions = computed(() =>
-  [...positions.value].sort((a, b) => {
-    const ap = a.pct == null ? 0 : Number(a.pct)
-    const bp = b.pct == null ? 0 : Number(b.pct)
-    return ap - bp
-  }),
-)
 
 /** 行情轮询：宿主 phase=collapsed 即停；展示层用 showGhost（含视口守卫）。 */
 const hostCollapsed = computed(() => phase.value === 'collapsed')
@@ -181,12 +130,9 @@ async function tick(): Promise<void> {
     const tape = await getLiveTape()
     if (generation !== lifecycleGeneration || hostCollapsed.value) return
     indices.value = tape.indices || []
-    positions.value = tape.positions || []
     asOf.value = tape.as_of || ''
     error.value = tape.error || ''
-    const bag = bagPct.value
-    document.title =
-      bag != null ? `仓${fmtPctShort(bag)} · Loci` : tape.title || 'Loci · 行情'
+    document.title = tape.title || 'Loci · 行情'
   } catch (caught: unknown) {
     if (generation !== lifecycleGeneration) return
     error.value = caught instanceof Error ? caught.message : '行情失败'
@@ -210,7 +156,6 @@ onMounted(() => {
   window.addEventListener('resize', measureViewport)
   schedulePhaseResync()
   void refreshOnce()
-  document.getElementById('boot-splash')?.remove()
 })
 
 onUnmounted(() => {
@@ -266,10 +211,6 @@ onUnmounted(() => {
           <span class="peek-kicker">盘面</span>
           <span class="peek-clock">{{ clock }}</span>
         </div>
-        <div class="peek-bag" :class="tone(bagPct)">
-          <span class="peek-bag__label">仓</span>
-          <strong>{{ fmtPct(bagPct) }}</strong>
-        </div>
         <el-button
           class="peek-close"
           text
@@ -295,31 +236,6 @@ onUnmounted(() => {
         <b>{{ fmtPct(item.pct) }}</b>
       </article>
     </section>
-
-    <section v-if="sortedPositions.length" class="peek-pos">
-      <div class="peek-pos__head">
-        <h2>持仓 · 今日</h2>
-        <span class="peek-pos__cols" aria-hidden="true">
-          <em>现价</em>
-          <em>成本</em>
-          <em>涨跌</em>
-        </span>
-      </div>
-      <div
-        v-for="item in sortedPositions"
-        :key="item.code"
-        class="peek-row"
-        :class="tone(item.pct)"
-      >
-        <span class="name">{{ item.name || item.label }}</span>
-        <span class="nums">
-          <strong class="px">{{ fmtPrice(item.price) }}</strong>
-          <span class="cost">{{ fmtCost(item.cost) }}</span>
-          <b>{{ fmtPct(item.pct) }}</b>
-        </span>
-      </div>
-    </section>
-    <p v-else-if="!error" class="peek-empty">空仓</p>
 
     <p v-if="error" class="peek-err">{{ error }}</p>
   </main>
@@ -362,23 +278,9 @@ onUnmounted(() => {
   font: 500 0.7rem/1 var(--mono);
   font-variant-numeric: tabular-nums;
 }
-.peek-bag {
-  display: flex;
-  align-items: baseline;
-  gap: 0.28rem;
-  margin-left: auto;
-}
-.peek-bag__label {
-  color: var(--mist);
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-.peek-bag strong {
-  font: 700 1.2rem/1 var(--mono);
-  font-variant-numeric: tabular-nums;
-}
 .peek-close {
   flex: 0 0 auto;
+  margin-left: auto;
   font-size: 1rem;
   line-height: 1;
   color: var(--mist);
@@ -415,75 +317,6 @@ onUnmounted(() => {
 .peek-rail__cell b {
   font: 650 0.78rem/1 var(--mono);
   font-variant-numeric: tabular-nums;
-}
-.peek-pos {
-  margin-top: 0.5rem;
-}
-.peek-pos__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.4rem;
-  margin-bottom: 0.15rem;
-}
-.peek-pos h2 {
-  margin: 0;
-  font-size: 0.7rem;
-  color: var(--mist);
-  font-weight: 600;
-}
-.peek-pos__cols {
-  display: grid;
-  grid-template-columns: 3.6rem 3.4rem 3.6rem;
-  gap: 0.25rem;
-  color: var(--mist);
-  font-size: 0.62rem;
-  font-weight: 500;
-  text-align: right;
-}
-.peek-pos__cols em {
-  font-style: normal;
-}
-.peek-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 0.45rem;
-  padding: 0.22rem 0;
-  border-bottom: 1px solid var(--rule);
-  font-size: 0.82rem;
-}
-.peek-row .name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.peek-row .nums {
-  display: grid;
-  grid-template-columns: 3.6rem 3.4rem 3.6rem;
-  gap: 0.25rem;
-  flex: 0 0 auto;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-family: var(--mono);
-}
-.peek-row .px {
-  font-weight: 650;
-  color: var(--ink);
-}
-.peek-row .cost {
-  font-weight: 500;
-  color: var(--mist);
-  font-size: 0.78rem;
-}
-.peek-row b {
-  font-weight: 650;
-}
-.peek-empty {
-  margin-top: 0.85rem;
-  color: var(--mist);
-  font-size: 0.85rem;
 }
 .is-up b,
 .is-up strong {

@@ -9,11 +9,6 @@ import type {
   LanePolicyPayload,
   LaneProbeResponse,
   LaneSpeedTestResponse,
-  AkshareCatalog,
-  AkshareCatalogProbeResult,
-  AkshareCatalogSource,
-  AkshareBatchProbeResult,
-  AkshareVersionInfo,
   LlmModel,
   LlmProvider,
   MarketSyncSettings,
@@ -22,6 +17,12 @@ import type {
   Skill,
   SkillJob,
   SkillJobConfig,
+  SkillStrategyConfig,
+  SkillWatchPreview,
+  LeaderRoleHistoryResponse,
+  WatchTuning,
+  WatchTuningPreset,
+  WatchTuningResponse,
   WecomSettings,
 } from '@/shared/types/quant'
 
@@ -38,6 +39,21 @@ export function installSkill(file: File): Promise<Skill> {
   const form = new FormData()
   form.append('file', file)
   return quantRequest<Skill>('/skills', { method: 'POST', body: form })
+}
+
+export interface SkillTemplateSyncResult {
+  installed: string[]
+  skipped: string[]
+  errors: Array<{ slug: string; error: string }>
+  total: number
+}
+
+/** 从仓库 templates/skills 批量安装战法模板到 data/skills。 */
+export function syncSkillTemplates(overwrite = true): Promise<SkillTemplateSyncResult> {
+  const suffix = overwrite ? '' : '?overwrite=false'
+  return quantRequest<SkillTemplateSyncResult>(`/skills/sync-templates${suffix}`, {
+    method: 'POST',
+  })
 }
 
 export function removeSkill(slug: string): Promise<{ removed: boolean }> {
@@ -57,6 +73,105 @@ export function upsertSkillJob(slug: string, payload: SkillJobConfig): Promise<S
 
 export function unbindSkillJob(slug: string): Promise<{ removed: boolean }> {
   return quantRequest(`/skills/${encodeURIComponent(slug)}/job`, { method: 'DELETE' })
+}
+
+export function getSkillStrategyConfig(slug: string): Promise<SkillStrategyConfig> {
+  return quantRequest<SkillStrategyConfig>(`/skills/${encodeURIComponent(slug)}/strategy-config`)
+}
+
+export function upsertSkillStrategyConfig(
+  slug: string,
+  payload: SkillStrategyConfig,
+): Promise<SkillStrategyConfig> {
+  return quantRequest<SkillStrategyConfig>(`/skills/${encodeURIComponent(slug)}/strategy-config`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+/** 用实时数据试跑一次战法监测；只读不落库，悟道未装配时返回 available=false。 */
+export function previewSkillWatch(slug: string): Promise<SkillWatchPreview> {
+  return quantRequest<SkillWatchPreview>(`/skills/${encodeURIComponent(slug)}/watch-preview`, {
+    method: 'POST',
+  })
+}
+
+export type SecondWaveTrigger = {
+  code: string
+  name?: string
+  strength?: number
+  price?: number
+  live_price?: number
+  pct?: number | null
+  day_low?: number
+  tags?: string[]
+  quote_trade_date?: string
+}
+
+export type SecondWaveLatest = {
+  available: boolean
+  slug: string
+  trade_date: string
+  observed_at: string
+  quote_source: string
+  quote_trade_date?: string
+  breadth_pct: number | null
+  gate_pass: boolean | null
+  pool_size: number
+  pool_checked: number
+  min_strength: number | null
+  triggered: SecondWaveTrigger[]
+  picks: Array<Record<string, unknown>>
+  below_min_strength: number
+}
+
+/** 首页挂载：上一轮二波扫描 + 列表票当日现价。不重跑扫描。 */
+export function getSecondWaveLatest(
+  slug = 'dragon-second-wave',
+): Promise<SecondWaveLatest> {
+  return quantRequest<SecondWaveLatest>(`/skills/${encodeURIComponent(slug)}/second-wave`)
+}
+
+export function getWatchTuning(slug: string): Promise<WatchTuningResponse> {
+  return quantRequest<WatchTuningResponse>(`/skills/${encodeURIComponent(slug)}/watch-tuning`)
+}
+
+/** 按段合并保存：只传哪段就只改哪段，越界值由后端钳到边界。传 preset 整档套用命名预设。 */
+export function saveWatchTuning(
+  slug: string,
+  patch: Partial<WatchTuning> & { preset?: WatchTuningPreset['id'] },
+): Promise<WatchTuningResponse> {
+  return quantRequest<WatchTuningResponse>(`/skills/${encodeURIComponent(slug)}/watch-tuning`, {
+    method: 'PUT',
+    body: JSON.stringify(patch),
+  })
+}
+
+export function resetWatchTuning(slug: string): Promise<WatchTuningResponse> {
+  return quantRequest<WatchTuningResponse>(`/skills/${encodeURIComponent(slug)}/watch-tuning`, {
+    method: 'DELETE',
+  })
+}
+
+/** leader-roles 查询参数（与后端 skill_watch 一致）。 */
+export interface GetLeaderRolesParams {
+  code?: string
+  trade_date?: string
+  limit?: number
+}
+
+/** 龙头角色留痕与角色变化（只追加的观测流）。 */
+export function getLeaderRoles(
+  slug: string,
+  params?: GetLeaderRolesParams,
+): Promise<LeaderRoleHistoryResponse> {
+  return quantRequest<LeaderRoleHistoryResponse>(
+    `/skills/${encodeURIComponent(slug)}/leader-roles${query({
+      limit: params?.limit ?? 200,
+      code: params?.code,
+      trade_date: params?.trade_date,
+    })}`,
+  )
 }
 
 export interface SkillRunAsk {
@@ -120,21 +235,6 @@ export function getSkillRunEvents(
   return quantRequest(`/skill-runs/${encodeURIComponent(runId)}/events${query({ after })}`)
 }
 
-export function generateSkillMd(payload: {
-  description: string
-  slug: string
-  name: string
-  provider: string
-  model?: string
-  thinking?: string
-  context_hints?: string[]
-}): Promise<{ slug: string; name: string; skill_md: string }> {
-  return quantRequest('/skills/generate', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
 export function getJobs(): Promise<Job[]> {
   return quantRequest<Job[]>('/jobs')
 }
@@ -167,10 +267,11 @@ export function runJob(id: string): Promise<{ run_id: string; status: string; er
   return quantRequest(`/jobs/${encodeURIComponent(id)}/run`, { method: 'POST' })
 }
 
-export function getJobRuns(options: { job_id?: string; run_id?: string; status?: string; limit?: number } = {}): Promise<
-  JobRun[]
-> {
-  return quantRequest<JobRun[]>(`/jobs/runs${query(options)}`)
+export function getJobRuns(
+  options: { job_id?: string; run_id?: string; status?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<JobRun[]> {
+  return quantRequest<JobRun[]>(`/jobs/runs${query(options)}`, { signal })
 }
 
 export function batchDeleteJobRuns(ids: string[]): Promise<{ removed: number }> {
@@ -200,6 +301,32 @@ export function saveWecomSettings(payload: {
 
 export function testWecomSettings(): Promise<{ ok: boolean }> {
   return quantRequest('/ops/settings/wecom/test', { method: 'POST' })
+}
+
+export interface NotifySettings {
+  quiet_hours: string
+  timezone: string
+  bark: { enabled: boolean; device_key: string; server_url: string }
+  channels: Array<{ id?: string; type?: string; enabled?: boolean; is_default?: boolean }>
+}
+
+export function getNotifySettings(): Promise<NotifySettings> {
+  return quantRequest('/ops/settings/notify')
+}
+
+export function saveNotifySettings(payload: {
+  quiet_hours?: string
+  timezone?: string
+  bark?: { enabled?: boolean; device_key?: string; server_url?: string; is_default?: boolean }
+}): Promise<NotifySettings> {
+  return quantRequest('/ops/settings/notify', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function testNotifySettings(): Promise<{ ok: boolean; notify?: unknown }> {
+  return quantRequest('/ops/settings/notify/test', { method: 'POST' })
 }
 
 export function getMarketSyncSettings(): Promise<MarketSyncSettings> {
@@ -276,6 +403,16 @@ export function saveDesktopPrefs(payload: Partial<DesktopPrefs>): Promise<Deskto
   })
 }
 
+export type AppVersionInfo = {
+  version: string
+  released_at: string
+  summary: string
+}
+
+export function getAppVersion(): Promise<AppVersionInfo> {
+  return quantRequest<AppVersionInfo>('/ops/version')
+}
+
 export function fetchLanesCatalog(): Promise<LanesCatalog> {
   return quantRequest<LanesCatalog>('/ops/lanes')
 }
@@ -311,54 +448,6 @@ export function speedtestLane(
 export function saveLanePolicy(lane: string, payload: LanePolicyPayload): Promise<LanePolicy> {
   return quantRequest(`/ops/lanes/${encodeURIComponent(lane)}/policy`, {
     method: 'PUT',
-    body: JSON.stringify(payload),
-  })
-}
-
-export function getAkshareCatalog(
-  filters: { q?: string; category?: string; source?: string } = {},
-): Promise<AkshareCatalog> {
-  const query = new URLSearchParams()
-  if (filters.q) query.set('q', filters.q)
-  if (filters.category) query.set('category', filters.category)
-  if (filters.source) query.set('source', filters.source)
-  const search = query.toString()
-  const suffix = search ? `?${search}` : ''
-  return quantRequest<AkshareCatalog>(`/market/akshare/catalog${suffix}`)
-}
-
-/** 只要每个来源挂了多少接口。整份目录几千条，货架列表不该为一个数字全量拉。 */
-export function getAkshareSources(): Promise<{
-  sources: AkshareCatalogSource[]
-  total?: number
-  akshare_version?: string
-}> {
-  return quantRequest('/market/akshare/sources')
-}
-
-export function getAkshareVersion(fetchLatest = true): Promise<AkshareVersionInfo> {
-  const suffix = fetchLatest ? '' : '?fetch_latest=false'
-  return quantRequest(`/market/akshare/version${suffix}`)
-}
-
-export function probeAkshareCatalog(
-  name: string,
-  params: Record<string, unknown>,
-): Promise<AkshareCatalogProbeResult> {
-  return quantRequest(`/market/akshare/catalog/${encodeURIComponent(name)}/probe`, {
-    method: 'POST',
-    body: JSON.stringify({ params }),
-  })
-}
-
-/** 一键/分页批量探测；不传 names 则按目录全量续跑。 */
-export function probeAkshareCatalogBatch(payload: {
-  names?: string[]
-  offset?: number
-  limit?: number
-}): Promise<AkshareBatchProbeResult> {
-  return quantRequest('/market/akshare/catalog/probe-batch', {
-    method: 'POST',
     body: JSON.stringify(payload),
   })
 }
@@ -447,6 +536,7 @@ export function saveMcpServer(payload: {
   url: string
   token?: string
   note?: string
+  expires_at?: string
   verify?: boolean
 }): Promise<McpServer> {
   return quantRequest('/mcp', { method: 'POST', body: JSON.stringify(payload) })
@@ -484,4 +574,32 @@ export function toggleMcpServer(name: string, is_active: boolean): Promise<McpSe
 
 export function deleteMcpServer(name: string): Promise<{ removed: boolean }> {
   return quantRequest(`/mcp/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+export function getMcpQuota(): Promise<import('@/shared/types/quant').McpQuotaSnapshot> {
+  return quantRequest('/mcp/quota')
+}
+
+export function saveWudaoMcp(payload: {
+  url?: string
+  token?: string
+  expires_at?: string
+  note?: string
+  is_active?: boolean
+  verify?: boolean
+}): Promise<McpServer> {
+  return quantRequest('/mcp/wudao', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
+export function patchWudaoSettings(payload: {
+  hist_daily_primary?: boolean
+  note?: string
+  quota?: {
+    daily_total?: number
+    daily_structured?: number
+    daily_skill?: number
+    per_minute?: number
+  }
+}): Promise<Record<string, unknown>> {
+  return quantRequest('/mcp/wudao/settings', { method: 'PATCH', body: JSON.stringify(payload) })
 }

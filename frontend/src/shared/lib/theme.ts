@@ -56,7 +56,10 @@ export function applyTheme(appearanceId: string, primaryId: string): void {
   root.setAttribute('data-primary', primary)
   root.setAttribute('data-theme', appearance)
   const meta = APPEARANCE_OPTIONS.find((o) => o.id === appearance)
-  root.style.colorScheme = meta?.mode === 'dark' ? 'dark' : 'light'
+  const isDark = meta?.mode === 'dark'
+  root.style.colorScheme = isDark ? 'dark' : 'light'
+  // Element Plus 深色变量以 html.dark 为开关
+  root.classList.toggle('dark', isDark)
   localStorage.setItem(APPEARANCE_KEY, appearance)
   localStorage.setItem(PRIMARY_KEY, primary)
 }

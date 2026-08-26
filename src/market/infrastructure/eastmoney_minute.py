@@ -115,19 +115,12 @@ def _rows_from_csv(
         amount = out["amount"]
         out["avg_price"] = (amount / (volume * 100.0)).where(volume > 0)
     else:
-        out["avg_price"] = _sanitize_avg_price(out["avg_price"], out["close"])
+        from src.market.infrastructure.minute_sanitize import sanitize_avg_price
+
+        out["avg_price"] = sanitize_avg_price(out["avg_price"], out["close"])
     return out[
         ["datetime", "open", "high", "low", "close", "volume", "amount", "avg_price"]
     ].reset_index(drop=True)
-
-
-def _sanitize_avg_price(avg: pd.Series, close: pd.Series) -> pd.Series:
-    """trends 偶发把振幅等字段当均价；相对收盘偏离过大时按 100 倍回正或置空。"""
-    ratio = avg / close.replace(0, pd.NA)
-    # 典型误用：手未换算 → 约 100×；振幅百分比字段也会远偏离价格。
-    scaled = avg.where(~(ratio > 20), avg / 100.0)
-    ratio2 = scaled / close.replace(0, pd.NA)
-    return scaled.where((ratio2 > 0.2) & (ratio2 < 5.0))
 
 
 def _fetch_kline(secid: str, *, period: str, day: str) -> pd.DataFrame:

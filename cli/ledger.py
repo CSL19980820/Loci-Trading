@@ -1,8 +1,7 @@
-"""潜龙记忆宫殿 CLI：仓位、候选、预案、执行与复盘的单一入口。"""
+"""潜龙记忆宫殿 CLI：候选、预案、复盘与追溯的单一入口（不含持仓与成交）。"""
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -32,7 +31,7 @@ def _parse_evidence(items: list[str] | None) -> dict[str, str]:
 def build_parser() -> argparse.ArgumentParser:
     ensure_data_dir()
     parser = argparse.ArgumentParser(
-        description="潜龙记忆宫殿：可追溯、可复盘、可量化的本地研究账本（不含自动交易）。",
+        description="潜龙记忆宫殿：可追溯、可复盘、可量化的本地研究账本（不记录持仓与成交）。",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--db", default=str(palace_db()), help="SQLite 账本路径（默认 data/palace.db）")
@@ -45,28 +44,6 @@ def build_parser() -> argparse.ArgumentParser:
     stock.add_argument("name")
     stock.add_argument("--tag", action="append", default=[], help="可重复使用，例如 --tag AI")
     stock.add_argument("--note", default="")
-
-    for action, label in (("buy", "记录买入"), ("sell", "记录卖出")):
-        trade = commands.add_parser(action, help=label)
-        trade.add_argument("code")
-        trade.add_argument("shares", type=int)
-        trade.add_argument("price", type=float)
-        trade.add_argument("--name", default="", help="买入时可补充名称")
-        trade.add_argument("--date", default=None)
-        trade.add_argument("--reason", default="")
-        trade.add_argument("--source", default="manual")
-        trade.add_argument("--correlation-id", default="", help="关联候选/计划/外部报告 ID")
-
-    cashflow = commands.add_parser("cashflow", help="记录资金转入/取出；正数转入，负数取出")
-    cashflow.add_argument("amount", type=float)
-    cashflow.add_argument("--date", default=None)
-    cashflow.add_argument("--note", default="")
-
-    snapshot = commands.add_parser("snapshot", help="记录账户总资产快照")
-    snapshot.add_argument("total_assets", type=float)
-    snapshot.add_argument("--cash", type=float, default=None)
-    snapshot.add_argument("--date", default=None)
-    snapshot.add_argument("--note", default="")
 
     candidate = commands.add_parser("candidate", help="归档一个潜龙候选裁决")
     candidate.add_argument("code")
@@ -94,8 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--note", default="")
     plan.add_argument("--supersedes", default=None)
 
-    review = commands.add_parser("review", help="记录候选、预案或交易的结果复盘")
-    review.add_argument("entity_type", choices=["plan", "candidate", "trade"])
+    review = commands.add_parser("review", help="记录候选或预案的结果复盘")
+    review.add_argument("entity_type", choices=["plan", "candidate"])
     review.add_argument("entity_id")
     review.add_argument("--outcome", required=True)
     review.add_argument("--return-pct", type=float, default=None)
@@ -106,20 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--strategy-tag", default="qianlong")
     review.add_argument("--date", default=None)
 
-    dashboard = commands.add_parser("dashboard", help="生成日常经营看板")
-    dashboard.add_argument("--date", default=None)
-    dashboard.add_argument("--output", default=None)
-
     timeline = commands.add_parser("timeline", help="输出单只股票的完整追溯时间线")
     timeline.add_argument("code")
     timeline.add_argument("--output", default=None)
 
-    scorecard = commands.add_parser("scorecard", help="输出已实现交易与复盘样本统计")
-    scorecard.add_argument("--output", default=None)
-
-    importer = commands.add_parser("import-skill-memory", help="从潜龙技能 state.json 导入起始快照（仅限空账本）")
-    importer.add_argument("--state", required=True, help="qianlong-position-review/memory/state.json")
-    importer.add_argument("--source", default="qianlong-skill-memory")
     return parser
 
 
@@ -132,30 +99,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.command == "stock":
                 store.register_stock(args.code, args.name, args.tag, args.note)
                 print(f"已登记：{args.code} {args.name}")
-            elif args.command in {"buy", "sell"}:
-                event = store.record_trade(
-                    action="BUY" if args.command == "buy" else "SELL",
-                    code=args.code,
-                    shares=args.shares,
-                    price=args.price,
-                    name=args.name,
-                    occurred_on=args.date,
-                    reason=args.reason,
-                    source=args.source,
-                    correlation_id=args.correlation_id,
-                )
-                print(
-                    f"已记 {event['id']}：{event['action']} {event['code']} {event['shares_after']}股"
-                    f"｜余票成本 {event['cost_after']:.3f}｜本笔已实现 {event['realized_pnl']:+.2f} 元"
-                )
-            elif args.command == "cashflow":
-                event_id = store.record_account_event(kind="CASHFLOW", amount=args.amount, occurred_on=args.date, note=args.note)
-                print(f"已记 {event_id}：资金进出 {args.amount:+.2f} 元（不计入已实现盈亏）")
-            elif args.command == "snapshot":
-                snapshot_id = store.record_snapshot(
-                    total_assets=args.total_assets, cash=args.cash, occurred_on=args.date, note=args.note
-                )
-                print(f"已记 {snapshot_id}：总资产 {args.total_assets:,.2f} 元")
             elif args.command == "candidate":
                 candidate_id = store.record_candidate(
                     code=args.code, name=args.name, decision=args.decision, reason=args.reason, score=args.score,
@@ -177,15 +120,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                     strategy_tag=args.strategy_tag, reviewed_on=args.date,
                 )
                 print(f"已记 {review_id}：{args.entity_type} {args.entity_id} 复盘完成")
-            elif args.command == "dashboard":
-                _write_or_print(store.dashboard_markdown(args.date), args.output)
             elif args.command == "timeline":
                 _write_or_print(store.timeline_markdown(args.code), args.output)
-            elif args.command == "scorecard":
-                _write_or_print(json.dumps(store.scorecard(), ensure_ascii=False, indent=2) + "\n", args.output)
-            elif args.command == "import-skill-memory":
-                result = store.import_qianlong_state(args.state, args.source)
-                print(json.dumps(result, ensure_ascii=False, indent=2))
             else:
                 raise PalaceError(f"未知命令：{args.command}")
     except PalaceError as exc:

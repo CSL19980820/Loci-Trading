@@ -1,8 +1,7 @@
-"""潜龙记忆宫殿的本地事件账本。
+"""潜龙记忆宫殿的本地候选池与复盘账本。
 
-这个模块只记录事实、预案与复盘结果，不生成自动交易指令。核心原则是：
-任何当前仓位都能由 ``position_events`` 回放得到；任何结论都带有日期、来源和
-可选的证据字段，便于日后追溯与量化复盘。
+这个模块只记录候选裁决、预案与复盘结果，不记录持仓/成交，也不生成自动交易指令。
+核心原则是：任何结论都带有日期、来源和可选的证据字段，便于日后追溯与量化复盘。
 
 实现按职责拆到同目录 mixin 模块；本文件组合为 ``PalaceStore`` 并 re-export 公开符号。
 """
@@ -15,14 +14,13 @@ from typing import Iterator
 
 from src.ledger.infrastructure.ai_judgments import AiJudgmentMixin
 from src.ledger.infrastructure.candidates import CandidateMixin
-from src.ledger.infrastructure.import_qianlong import ImportQianlongMixin
+from src.ledger.infrastructure.candidates_query import CandidateQueryMixin
 from src.ledger.infrastructure.plans_reviews import PlanReviewMixin
 from src.ledger.infrastructure.queries import QueryMixin
 from src.ledger.infrastructure.schema import SchemaMixin
 from src.ledger.infrastructure.store_types import (
     SCHEMA_VERSION,
     PalaceError,
-    Position,
     _dumps,
     _loads,
     _normalize_decision,
@@ -31,14 +29,11 @@ from src.ledger.infrastructure.store_types import (
     normalize_code,
     normalize_date,
 )
-from src.ledger.infrastructure.tracking import TrackingMixin
-from src.ledger.infrastructure.trades import TradeMixin
 
 __all__ = [
     "SCHEMA_VERSION",
     "PalaceError",
     "PalaceStore",
-    "Position",
     "normalize_code",
     "normalize_date",
     "_dumps",
@@ -51,15 +46,13 @@ __all__ = [
 
 class PalaceStore(
     SchemaMixin,
-    TradeMixin,
     CandidateMixin,
+    CandidateQueryMixin,
     PlanReviewMixin,
     QueryMixin,
-    ImportQianlongMixin,
     AiJudgmentMixin,
-    TrackingMixin,
 ):
-    """SQLite 账本：当前快照为投影，事件表才是可审计的事实来源。"""
+    """SQLite 账本：候选池、预案、复盘与 AI 判定的可审计事实源。"""
 
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)

@@ -7,12 +7,16 @@ const api = vi.hoisted(() => ({
   getMcpServers: vi.fn(),
   getProviders: vi.fn(),
   getWecomSettings: vi.fn(),
+  getSharePackStatus: vi.fn(),
 }))
 
 vi.mock('@/shared/api/quant', () => api)
 vi.mock('@/shared/lib/theme', () => ({
   APPEARANCE_OPTIONS: [{ id: 'system', label: '跟随系统' }],
   getStoredAppearance: () => 'system',
+}))
+vi.mock('@/shared/lib/release', () => ({
+  APP_VERSION: '1.0.0',
 }))
 
 import { useSettingsSummaries } from './useSettingsSummaries'
@@ -35,6 +39,11 @@ describe('useSettingsSummaries request ordering', () => {
     api.getMarketSyncSettings.mockResolvedValue(null)
     api.getWecomSettings.mockResolvedValue(null)
     api.getDesktopPrefs.mockResolvedValue(null)
+    api.getSharePackStatus.mockResolvedValue({
+      version: '1.0.0',
+      can_pack: false,
+      options: [],
+    })
     const summaries = useSettingsSummaries()
 
     const first = summaries.refresh()

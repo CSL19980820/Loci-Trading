@@ -1,7 +1,7 @@
 """行情 / 策略 / 回测 / 技能 / 任务 / 供应商的 HTTP 聚合挂载。
 
 各限界上下文路由已下沉到 ``src/<bc>/api/``；本文件只做 include，保持 URL 不变。
-懒导入与 503 capabilities 语义由子 router / quant_common 保留。
+懒导入与 503 capabilities 语义由子 router / src.shared.api_deps 保留。
 """
 from __future__ import annotations
 
@@ -25,9 +25,11 @@ def build_quant_router(
     from src.market.api.router import build_market_router
     from src.ops.api.jobs import build_jobs_router
     from src.ops.api.settings import build_ops_settings_router
+    from src.ops.api.skill_watch import build_skill_watch_router
     from src.ops.api.skills import build_skills_router
     from src.review.api.router import build_review_router
-    from src.app.screen_skills_api import build_screen_skills_router
+    from src.research.api import build_research_api_router
+    from src.strategy.api.screen_skills_router import build_screen_skills_router
     from src.strategy.api.convert import build_strategy_convert_router
     from src.strategy.api.router import build_strategy_router
 
@@ -48,7 +50,9 @@ def build_quant_router(
         has_akshare = probe("akshare")
         has_scheduler = probe("apscheduler")
         has_yaml = probe("yaml")
-        has_crypto = probe("cryptography")
+        # LLM 走 httpx2；密钥早已不再加密（见 src/ai/infrastructure/crypto.py），
+        # 继续拿 cryptography 当探针会让没装它的机器看不到 AI 入口。
+        has_llm_http = probe("httpx2")
         return {
             "market": has_pandas,
             "quotes_sync": has_pandas and has_akshare,
@@ -56,7 +60,7 @@ def build_quant_router(
             "backtest": has_pandas,
             "skills": has_yaml,
             "scheduler": has_scheduler,
-            "llm": has_crypto,
+            "llm": has_llm_http,
             "missing": [
                 name
                 for name, ok in (
@@ -64,7 +68,7 @@ def build_quant_router(
                     ("akshare", has_akshare),
                     ("apscheduler", has_scheduler),
                     ("PyYAML", has_yaml),
-                    ("cryptography", has_crypto),
+                    ("httpx2", has_llm_http),
                 )
                 if not ok
             ],
@@ -80,7 +84,6 @@ def build_quant_router(
         build_market_router(
             write_dependency=write_dependency,
             market_db=market_db,
-            palace_db=palace_db,
         )
     )
     router.include_router(
@@ -103,7 +106,16 @@ def build_quant_router(
         build_review_router(market_db=market_db, palace_db=palace_db)
     )
     router.include_router(
+        build_research_api_router(
+            write_dependency=write_dependency,
+            market_db=market_db,
+        )
+    )
+    router.include_router(
         build_skills_router(**common, scheduler_getter=scheduler_getter)
+    )
+    router.include_router(
+        build_skill_watch_router(write_dependency=write_dependency, ops_db=ops_db)
     )
     router.include_router(
         build_jobs_router(**common, scheduler_getter=scheduler_getter)
@@ -124,5 +136,7 @@ def build_quant_router(
             palace_db=palace_db,
         )
     )
-    router.include_router(build_intel_router(write_dependency=write_dependency))
+    router.include_router(
+        build_intel_router(write_dependency=write_dependency, market_db=market_db)
+    )
     return router

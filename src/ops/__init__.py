@@ -1,5 +1,12 @@
 """运维限界上下文：技能、任务、调度、LLM 配置索引。"""
-from src.ops.application.jobs import EXECUTORS, JobContext, JobError, run_job
+from src.ops.application.jobs import (
+    EXECUTORS,
+    JobCancelled,
+    JobContext,
+    JobError,
+    JobTimedOut,
+    run_job,
+)
 from src.ops.infrastructure.scheduler import (
     JobScheduler,
     SchedulerError,
@@ -8,7 +15,20 @@ from src.ops.infrastructure.scheduler import (
     validate_cron,
 )
 from src.ops.application import skill_runs
+from src.ops.application.screen import (
+    ScreenPackageError,
+    ScreenPackageRecord,
+    delete_screen_history,
+    delete_screen_package,
+    get_screen_package,
+    list_screen_history,
+    list_screen_packages,
+    read_screen_archive,
+    restore_screen_package,
+    save_screen_package,
+)
 from src.ops.application.skills import (
+    DEFAULT_SKILL_ROOT,
     SkillError,
     SkillPackage,
     discover_skills,
@@ -23,6 +43,7 @@ from src.ops.application.skills import (
 )
 from src.ops.infrastructure.store import JOB_KINDS, OpsError, OpsStore, new_id
 from src.ops.infrastructure.store_helpers import (
+    DEFAULT_DB,
     MANAGED_OUTCOME_CRON,
     MANAGED_OUTCOME_TRACK,
     MANAGED_SYNC_EOD,
@@ -39,13 +60,17 @@ from src.ops.infrastructure.model_catalog import (
 
 __all__ = [
     "EXECUTORS",
+    "DEFAULT_DB",
+    "DEFAULT_SKILL_ROOT",
     "JOB_KINDS",
     "MANAGED_OUTCOME_CRON",
     "MANAGED_OUTCOME_TRACK",
     "MANAGED_SYNC_EOD",
     "MANAGED_SYNC_INTRADAY",
     "JobContext",
+    "JobCancelled",
     "JobError",
+    "JobTimedOut",
     "JobScheduler",
     "OpsError",
     "OpsStore",
@@ -73,4 +98,15 @@ __all__ = [
     "skill_runs",
     "uninstall_skill",
     "validate_cron",
+    # Screen Skill 包存储：strategy 侧编译/注册战法时经包根消费，禁止深引 application.screen
+    "ScreenPackageError",
+    "ScreenPackageRecord",
+    "delete_screen_history",
+    "delete_screen_package",
+    "get_screen_package",
+    "list_screen_history",
+    "list_screen_packages",
+    "read_screen_archive",
+    "restore_screen_package",
+    "save_screen_package",
 ]

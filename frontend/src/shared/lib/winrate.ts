@@ -35,7 +35,9 @@ export function winRateStatTone(rate: number | null | undefined, total: number):
   return ''
 }
 
+/** 胜率全站统一 1 位小数；原样透传会渲染出 66.66666666666667% */
 export function winRateText(rate: number | null | undefined): string {
   if (rate === null || rate === undefined) return '—'
-  return `${rate}%`
+  if (!Number.isFinite(Number(rate))) return '—'
+  return `${Number(rate).toFixed(1)}%`
 }

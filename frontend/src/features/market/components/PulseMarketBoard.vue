@@ -4,14 +4,17 @@ import { useRoute } from 'vue-router'
 
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
+import { pct as fmtPct } from '@/shared/lib/format'
 import type { BoardRow } from '@/shared/types/quant'
 
-import type { PulseBoardTab } from '../composables/usePulseHome'
+import type { PulseBoardTab, SectorBoardRow } from '../composables/usePulseHome'
 
 const props = defineProps<{
   tab: PulseBoardTab
   rows: BoardRow[]
+  sectorRows?: SectorBoardRow[]
   note?: string
+  asOf?: string
   pctOf: (row: BoardRow) => number | null
 }>()
 
@@ -22,7 +25,7 @@ const emit = defineEmits<{
 const route = useRoute()
 
 const batch = computed(() => ({
-  source: '市场榜',
+  source: '库内样本榜',
   sourcePath: route.fullPath || '/',
   items: toBatchItems(
     props.rows.map((r) => ({
@@ -33,18 +36,26 @@ const batch = computed(() => ({
   ),
 }))
 
+/** 标题旁只露时分秒。 */
+const clockText = computed(() => {
+  const raw = (props.asOf || '').trim()
+  if (!raw) return ''
+  const match = raw.match(/(\d{2}:\d{2}:\d{2})/)
+  return match?.[1] ?? ''
+})
+
 const tabs: { id: PulseBoardTab; label: string }[] = [
   { id: 'gain', label: '涨幅' },
   { id: 'turnover', label: '换手' },
-  { id: 'loss', label: '跌幅' },
+  { id: 'sector', label: '板块' },
 ]
 
-function fmtPct(value: number | null): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
-  const n = Number(value)
-  const sign = n > 0 ? '+' : ''
-  return `${sign}${n.toFixed(2)}%`
-}
+const isSector = computed(() => props.tab === 'sector')
+const sectorList = computed(() => props.sectorRows ?? [])
+const hasRows = computed(() =>
+  isSector.value ? sectorList.value.length > 0 : props.rows.length > 0,
+)
+
 
 function fmtTurnover(value: number | null | undefined): string {
   if (value == null || Number.isNaN(Number(value))) return '—'
@@ -60,7 +71,11 @@ function tone(value: number | null): string {
 <template>
   <section class="pulse-panel">
     <header class="pulse-panel__head">
-      <strong>市场榜</strong>
+      <div class="pulse-board__title">
+        <strong>库内样本榜</strong>
+        <span class="pulse-board__scope">非全市场领涨</span>
+        <span v-if="clockText" class="pulse-board__clock">{{ clockText }}</span>
+      </div>
       <div class="pulse-tabs">
         <el-button
           v-for="t in tabs"
@@ -76,23 +91,61 @@ function tone(value: number | null): string {
     </header>
     <p v-if="note" class="pulse-panel__note">{{ note }}</p>
     <el-table
-      v-if="rows.length"
+      v-if="hasRows && isSector"
+      :data="sectorList"
+      size="small"
+      stripe
+      height="100%"
+      class="pulse-table"
+    >
+      <el-table-column
+        type="index"
+        label="序号"
+        width="60"
+        align="center"
+        header-align="center"
+      />
+      <el-table-column label="板块" min-width="120" align="center" header-align="center">
+        <template #default="{ row }">
+          <span>{{ row.name }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="涨幅" min-width="120" align="center" header-align="center">
+        <template #default="{ row }">
+          <span class="num" :class="tone(row.pct)">{{ fmtPct(row.pct) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="成分" min-width="80" align="center" header-align="center">
+        <template #default="{ row }">
+          <span class="num pulse-muted">{{ row.count }}</span>
+        </template>
+      </el-table-column>
+    </el-table>
+    <el-table
+      v-else-if="hasRows"
       :data="rows"
       size="small"
       stripe
       height="100%"
       class="pulse-table"
     >
-      <el-table-column type="index" label="#" width="42" align="right" />
-      <el-table-column label="名称" min-width="110">
+      <el-table-column
+        type="index"
+        label="序号"
+        width="60"
+        align="center"
+        header-align="center"
+      />
+      <el-table-column label="名称" min-width="120" align="center" header-align="center">
         <template #default="{ row }">
           <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
         </template>
       </el-table-column>
       <el-table-column
         :label="tab === 'turnover' ? '换手' : '涨幅'"
-        width="78"
-        align="right"
+        min-width="120"
+        align="center"
+        header-align="center"
       >
         <template #default="{ row }">
           <span
@@ -102,13 +155,17 @@ function tone(value: number | null): string {
           <span v-else class="num" :class="tone(pctOf(row))">{{ fmtPct(pctOf(row)) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="行业" min-width="72">
+      <el-table-column label="板块" min-width="120" align="center" header-align="center">
         <template #default="{ row }">
           <span class="pulse-muted">{{ row.industry || '—' }}</span>
         </template>
       </el-table-column>
     </el-table>
-    <el-empty v-else description="暂无榜单，请先同步行情" :image-size="56" />
+    <el-empty
+      v-else
+      :description="isSector ? '暂无行业样本，请先同步行情并补全行业' : '暂无榜单，请先同步行情'"
+      :image-size="56"
+    />
   </section>
 </template>
 
@@ -132,14 +189,38 @@ function tone(value: number | null): string {
   border-bottom: 1px solid var(--rule);
 }
 
+.pulse-board__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
 .pulse-panel__head strong {
   font-size: 0.88rem;
+}
+
+.pulse-board__scope {
+  font-size: 0.68rem;
+  color: var(--mist);
+  font-weight: normal;
+}
+
+.pulse-board__clock {
+  font-size: 0.7rem;
+  color: var(--mist);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono, ui-monospace, monospace);
 }
 
 .pulse-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 0.08rem;
+}
+
+.pulse-tabs :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .pulse-panel__note {
@@ -151,7 +232,7 @@ function tone(value: number | null): string {
 
 .pulse-table {
   flex: 1;
-  min-height: 180px;
+  min-height: 140px;
 }
 
 .pulse-table :deep(.el-table__cell) {
@@ -170,10 +251,10 @@ function tone(value: number | null): string {
 }
 
 .is-up {
-  color: var(--up, #c23b3b);
+  color: var(--up, #c41e3a);
 }
 
 .is-down {
-  color: var(--down, #1a8f5c);
+  color: var(--down, #0f6b5c);
 }
 </style>

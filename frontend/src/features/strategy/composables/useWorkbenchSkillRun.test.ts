@@ -52,4 +52,29 @@ describe('useWorkbenchSkillRun lifecycle', () => {
     expect(api.getSkillRunEvents).not.toHaveBeenCalled()
     expect(setIntervalSpy).not.toHaveBeenCalled()
   })
+
+  it('resumes polling when run is still active after leave', async () => {
+    vi.useFakeTimers()
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval')
+    api.getSkillRunEvents.mockResolvedValue({ events: [], next_after: 0 })
+    api.getSkillRun.mockResolvedValue({ id: 'SR-2', status: 'running' })
+
+    let run!: ReturnType<typeof useWorkbenchSkillRun>
+    const Probe = defineComponent({
+      setup() {
+        run = useWorkbenchSkillRun()
+        return () => h('div')
+      },
+    })
+    const wrapper = mount(Probe)
+
+    run.skillRun.value = { id: 'SR-2', status: 'running' } as never
+    run.stopPoll()
+    run.resumePolling()
+    await flushPromises()
+
+    expect(setIntervalSpy).toHaveBeenCalled()
+    expect(api.getSkillRunEvents).toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })

@@ -1,0 +1,66 @@
+"""研究领域公开契约。"""
+from src.research.domain.contract import (
+    DimensionResult,
+    EvidenceRef,
+    QualitySnapshot,
+    ResearchInputSnapshot,
+    ResearchProfile,
+    ReviewIssue,
+    SourceAttempt,
+)
+from src.research.domain.dimensions import (
+    DimensionSpec,
+    get_dimension_spec,
+    list_dimension_specs,
+)
+from src.research.domain.temporal import (
+    MembershipSnapshot,
+    PointInTimeObservation,
+    TemporalDataError,
+    assert_strict_membership,
+    resolve_membership,
+    select_point_in_time,
+)
+from src.research.domain.run_card import (
+    ArtifactManifest,
+    ArtifactManifestEntry,
+    ArtifactManifestItem,
+    ArtifactRef,
+    RUN_CARD_CONTRACT_VERSION,
+    RUN_CARD_STATUSES,
+    ResearchRunCard,
+    RunCard,
+    RunCardStatus,
+    validate_relative_artifact_path,
+    validate_run_id,
+)
+
+__all__ = [
+    "DimensionResult",
+    "DimensionSpec",
+    "EvidenceRef",
+    "QualitySnapshot",
+    "ResearchInputSnapshot",
+    "ResearchProfile",
+    "ReviewIssue",
+    "SourceAttempt",
+    "ArtifactManifest",
+    "ArtifactManifestEntry",
+    "ArtifactManifestItem",
+    "ArtifactRef",
+    "RUN_CARD_CONTRACT_VERSION",
+    "RUN_CARD_STATUSES",
+    "ResearchRunCard",
+    "RunCard",
+    "RunCardStatus",
+    "validate_relative_artifact_path",
+    "validate_run_id",
+    "get_dimension_spec",
+    "list_dimension_specs",
+    "MembershipSnapshot",
+    "PointInTimeObservation",
+    "TemporalDataError",
+    "assert_strict_membership",
+    "resolve_membership",
+    "select_point_in_time",
+]

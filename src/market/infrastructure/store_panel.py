@@ -11,6 +11,10 @@ from src.market.infrastructure.duckdb_panel import (
     duckdb_panel_enabled,
     read_quotes_flat_duckdb,
 )
+from src.market.infrastructure.polars_panel import (
+    polars_panel_enabled,
+    read_quotes_flat_polars,
+)
 from src.market.infrastructure.store_codes import MarketError, normalize_code
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
 
@@ -36,6 +40,29 @@ def _consolidate(panel: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(values, index=panel.index, columns=panel.columns)
 
 
+def _require_bounded_range(
+    codes: Sequence[str] | None,
+    start: str | None,
+    end: str | None,
+) -> None:
+    """拒绝无范围的面板查询：codes / start / end 一个都不给 = 全库扫。
+
+    `quotes_daily` 按 `(trade_date, code)` 聚簇、生产库 1600 万+ 行。三个范围
+    参数全空时 where 子句是空串，SQL 退化成 `SELECT ... FROM quotes_daily
+    WHERE 1=1`——全表一次性进 pandas（8 列 × 千万行），既吃穿内存又在写锁存在
+    时把库拖成 `disk I/O error`。README「查询纪律」里的「选股必须传 codes+窗口」
+    在这里从约定变成硬约束：小库上跑得通不代表生产库上跑得通，默认值不该是
+    「扫全库」。
+    """
+    if codes or start or end:
+        return
+    raise MarketError(
+        "load_panel 必须限定范围：codes（股票池）、start、end 至少给一个。"
+        "三者全空会退化成对 quotes_daily（千万行）的无 LIMIT 全表扫描并整表进 pandas。"
+        "选股/回测请传 codes + start + end；确需全市场截面时至少传 start（可再加 end）。"
+    )
+
+
 class MarketPanelMixin:
     """load_panel / 复权比例矩阵。依赖宿主提供 conn。"""
 
@@ -59,10 +86,14 @@ class MarketPanelMixin:
 
         min_bars: 丢弃有效 K 线不足该根数的票（次新股会让指标全是 NaN，
                   留着只会污染筛选结果）。
+
+        **必须限定范围**：codes / start / end 至少给一个，否则直接报错，
+        见 `_require_bounded_range`——这不是参数校验洁癖，是这张表的物理约束。
         """
         unknown = [field for field in fields if field not in PANEL_FIELDS]
         if unknown:
             raise MarketError(f"不支持的面板字段：{unknown}")
+        _require_bounded_range(codes, start, end)
 
         needed = list(dict.fromkeys(fields))
         # 复权要用 close 之外的价格列时，仍只需按 code 取因子，与字段无关。
@@ -81,7 +112,14 @@ class MarketPanelMixin:
             params.extend(normalized)
 
         flat: pd.DataFrame | None = None
-        if duckdb_panel_enabled():
+        if polars_panel_enabled():
+            flat = read_quotes_flat_polars(
+                self.conn,
+                columns_sql=columns,
+                where_sql=where_sql,
+                params=params,
+            )
+        if flat is None and duckdb_panel_enabled():
             flat = read_quotes_flat_duckdb(
                 self.conn,
                 columns_sql=columns,

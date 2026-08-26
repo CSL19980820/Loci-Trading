@@ -25,7 +25,7 @@ LangChain / LangGraph 带来的抽象层、状态机、依赖链，解决的是�
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 import json
 import logging
 import os
@@ -38,7 +38,8 @@ import httpx2
 
 logger = logging.getLogger(__name__)
 
-PROTOCOL_VERSION = "2025-06-18"
+#: 与 Hermes Agent（``tools/mcp_tool.py``）一致：悟道 HTTP MCP 实测可用。
+PROTOCOL_VERSION = "2025-03-26"
 DEFAULT_TIMEOUT = 60.0
 
 #: 一次 tools/list 最多接受多少个工具。防御性上限：某个 server 返回几千个
@@ -50,6 +51,9 @@ MAX_TOOL_SCHEMA_BYTES = 32 * 1024
 MAX_TOOL_ARGUMENT_BYTES = 32 * 1024
 MAX_TOOL_RESULT_CHARS = 12_000
 _LOOPBACK_HTTP_ALLOWLIST_ENV = "PALACE_MCP_LOOPBACK_HTTP_HOSTS"
+#: Clash / Surge Fake-IP 常用段（RFC 2544 基准测试网）。DNS 名经代理解析到
+#: 这里时仍是出站公网 HTTPS，不能当 SSRF 内网拦掉，否则悟道等 MCP 全挂。
+_PROXY_FAKE_IP_NETWORKS = (ip_network("198.18.0.0/15"),)
 
 
 class McpError(RuntimeError):
@@ -72,6 +76,54 @@ def _is_allowlisted_loopback_http(host: str, address: Any | None = None) -> bool
     if host.casefold() not in _loopback_http_allowlist():
         return False
     return address is None or bool(address.is_loopback)
+
+
+def _is_proxy_fake_ip(address: Any) -> bool:
+    """代理 Fake-IP：仅允许「DNS 主机名 → 198.18/15」，禁止用户直接填该段字面量。"""
+    try:
+        return any(address in network for network in _PROXY_FAKE_IP_NETWORKS)
+    except TypeError:
+        return False
+
+
+def _resolved_addresses(url: str) -> set[Any]:
+    """解析主机 A/AAAA；供 SSRF 校验与「是否必须走系统代理」共用。"""
+    parts = urlsplit(str(url or "").strip().rstrip("/"))
+    host = (parts.hostname or "").casefold()
+    if not host:
+        raise McpError("MCP URL 缺少主机名")
+    local_http = parts.scheme == "http"
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise McpError("MCP URL 端口不合法") from exc
+    try:
+        resolved = socket.getaddrinfo(
+            host, port or (80 if local_http else 443), type=socket.SOCK_STREAM
+        )
+    except OSError as exc:
+        raise McpError("MCP 主机名无法解析") from exc
+    addresses = {_parse_ip(str(item[4][0])) for item in resolved}
+    addresses.discard(None)
+    if not addresses:
+        raise McpError("MCP 主机名没有可用地址")
+    return addresses
+
+
+def needs_system_proxy(url: str) -> bool:
+    """Clash/Surge Fake-IP 段只有经系统代理才能出站；直连 198.18 必挂。
+
+    与 Cursor / Node 默认读 ``HTTPS_PROXY`` 同理：DNS 名落到 Fake-IP 时才开
+    ``trust_env``，其余公网 HTTPS 仍禁用环境代理（防 SSRF 把流量拐进恶意代理）。
+    """
+    parts = urlsplit(str(url or "").strip().rstrip("/"))
+    if parts.scheme != "https" or _parse_ip(parts.hostname or ""):
+        return False
+    try:
+        addresses = _resolved_addresses(url)
+    except McpError:
+        return False
+    return any(_is_proxy_fake_ip(address) for address in addresses)
 
 
 def validate_mcp_url(url: str, *, resolve: bool = False) -> str:
@@ -108,16 +160,12 @@ def validate_mcp_url(url: str, *, resolve: bool = False) -> str:
     if not resolve:
         return normalized
 
-    try:
-        resolved = socket.getaddrinfo(host, port or (80 if local_http else 443), type=socket.SOCK_STREAM)
-    except OSError as exc:
-        raise McpError("MCP 主机名无法解析") from exc
-    addresses = {_parse_ip(str(item[4][0])) for item in resolved}
-    addresses.discard(None)
-    if not addresses:
-        raise McpError("MCP 主机名没有可用地址")
+    addresses = _resolved_addresses(normalized)
     for address in addresses:
         if local_http and address.is_loopback and _is_allowlisted_loopback_http(host, address):
+            continue
+        # HTTPS + DNS 名落到 Fake-IP：交给系统代理出站，不当内网 SSRF
+        if (not local_http) and _is_proxy_fake_ip(address):
             continue
         if not address.is_global:
             raise McpError("MCP 主机名解析到了内网、回环或保留地址")
@@ -280,6 +328,9 @@ class McpClient:
             "Accept": "application/json, text/event-stream",
             **self.extra_headers,
         }
+        # Hermes：部分远端要求会话外 POST 也带协议版本，否则握手被拒。
+        if not any(key.casefold() == "mcp-protocol-version" for key in headers):
+            headers["Mcp-Protocol-Version"] = PROTOCOL_VERSION
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         if self._session_id:
@@ -288,9 +339,10 @@ class McpClient:
 
     def _client(self) -> httpx2.Client:
         validate_mcp_url(self.url, resolve=True)
+        # Fake-IP 必须读系统代理；真公网 IP 仍 trust_env=False，防恶意 HTTPS_PROXY。
         return httpx2.Client(
             timeout=self.timeout,
-            trust_env=False,
+            trust_env=needs_system_proxy(self.url),
             follow_redirects=False,
         )
 
@@ -460,17 +512,26 @@ class McpClient:
                 resource = block.get("resource") or {}
                 chunks.append(str(resource.get("text") or resource.get("uri") or ""))
         text = "\n".join(chunk for chunk in chunks if chunk)
+        # MCP 2025：结构化结果优先走 structuredContent，避免只剩中文 headline 无法算闸门
+        structured = result.get("structuredContent")
+        if not isinstance(structured, dict):
+            structured = None
         return {
             "text": text[:MAX_TOOL_RESULT_CHARS],
             "is_error": bool(result.get("isError")),
             "raw": blocks,
+            "structured": structured,
             "truncated": len(text) > MAX_TOOL_RESULT_CHARS,
         }
 
-    def ping(self) -> dict[str, Any]:
-        """连通性与鉴权自检。配置时用来当场验证，而不是等定时任务半夜失败。"""
+    def ping(self, *, list_tools: bool = True) -> dict[str, Any]:
+        """连通性与鉴权自检。
+
+        ``list_tools=False`` 只做 initialize——数据源页「探测」用，避免为 60+ 工具
+        再拉一整页把 UI 卡死；保存配置 / 运维整服探测仍默认拉工具列表。
+        """
         info = self.ensure_initialized()
-        tools = self.list_tools()
+        tools = self.list_tools() if list_tools else []
         server = info.get("serverInfo") or {}
         return {
             "ok": True,

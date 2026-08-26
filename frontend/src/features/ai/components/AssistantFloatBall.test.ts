@@ -6,8 +6,6 @@ import AssistantFloatBall from './AssistantFloatBall.vue'
 const stubs = {
   ElTooltip: { template: '<div><slot /></div>' },
   ElButton: { inheritAttrs: false, template: '<button v-bind="$attrs"><slot /></button>' },
-  ElIcon: { template: '<span><slot /></span>' },
-  ChatDotRound: true,
 }
 
 describe('AssistantFloatBall', () => {
@@ -33,6 +31,31 @@ describe('AssistantFloatBall', () => {
 
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('toggle')).toHaveLength(1)
+  })
+
+  it('renders the ribbon knot when closed and morphs to X when open', async () => {
+    const wrapper = mount(AssistantFloatBall, {
+      props: { open: false },
+      global: { stubs },
+    })
+
+    expect(wrapper.find('.ball-mark__ribbon').exists()).toBe(true)
+    expect(wrapper.find('.ball-mark__close').exists()).toBe(false)
+
+    await wrapper.setProps({ open: true })
+    expect(wrapper.find('.ball-mark__ribbon').exists()).toBe(false)
+    expect(wrapper.find('.ball-mark__close').exists()).toBe(true)
+    expect(wrapper.get('button').classes()).toContain('is-open')
+  })
+
+  it('marks busy and unavailable states on the launcher', async () => {
+    const wrapper = mount(AssistantFloatBall, {
+      props: { open: false, busy: true, unavailable: true },
+      global: { stubs },
+    })
+    const ball = wrapper.get('button')
+    expect(ball.classes()).toContain('is-busy')
+    expect(ball.classes()).toContain('is-unavailable')
   })
 
   it('applies dragged inline bottom without CSS !important override', async () => {

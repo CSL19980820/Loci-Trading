@@ -13,6 +13,31 @@ class OpsProvidersMixin:
 
     conn: sqlite3.Connection
 
+    def list_provider_key_blobs(self) -> list[tuple[str, bytes]]:
+        """返回 ``[(provider_id, encrypted_key)]``，仅含非空密文。
+
+        给 ai 域的密钥格式迁移用：判断「这是不是废弃的旧密文」属于 ai 的加密知识，
+        但读写 ``ops.db`` 是本域的事——调用方不该直连 ``store.conn``。
+        """
+        rows = self.conn.execute(
+            "SELECT id, encrypted_key FROM llm_providers"
+            " WHERE encrypted_key IS NOT NULL AND length(encrypted_key) > 0"
+        ).fetchall()
+        out: list[tuple[str, bytes]] = []
+        for row in rows:
+            blob = row["encrypted_key"]
+            out.append((str(row["id"]), bytes(blob) if blob is not None else b""))
+        return out
+
+    def clear_provider_key(self, provider_id: str) -> None:
+        """清空某供应商的密文与末四位，迫使运维页重新录入。"""
+        with self._transaction() as cursor:
+            cursor.execute(
+                "UPDATE llm_providers SET encrypted_key = NULL, key_last4 = '',"
+                " updated_at = datetime('now') WHERE id = ?",
+                (provider_id,),
+            )
+
     def upsert_provider(self, payload: dict[str, Any]) -> str:
         provider_id = payload.get("id") or new_id("LLM")
         is_default_val = payload.get("is_default")

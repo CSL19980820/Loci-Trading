@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.evidence_compact import compact_job_result
+
 #: 盘后/当日真选写入源（首页「昨选今涨 / 今日选股」只认这些）
 LIVE_SCREEN_SOURCES: frozenset[str] = frozenset(
     {
@@ -22,6 +24,8 @@ _FACTOR_ZH: dict[str, str] = {
     "ma5": "MA5",
     "ma10": "MA10",
     "ROC5": "5日相对强度",
+    "白线贴近度": "白线贴近度",
+    "辰星线延伸": "辰星线延伸",
     "score": "评分",
     "hsl": "换手%",
     "zt": "涨停",
@@ -41,7 +45,8 @@ _RULE_LABELS: dict[str, str] = {
     "qianlong-close-v2": "潜龙",
     "qianlong-close-v3": "潜龙",
     "qianlong-tail-v1": "潜龙",
-    "sanyuan-tail-v1": "三源尾盘共振",
+    "sanyuan-tail-v1": "三源尾盘共振（15:30）",
+    "yangshi-tail-v1": "杨氏尾盘选股（15:30）",
 }
 
 
@@ -58,6 +63,10 @@ def factor_reason(slug: str, factors: dict[str, Any]) -> str:
 
 def score_from_factors(factors: dict[str, Any]) -> float | None:
     """把排序因子映射到候选池 score（0–100），便于列表按分降序。"""
+    closeness = factors.get("白线贴近度")
+    if isinstance(closeness, (int, float)) and not isinstance(closeness, bool):
+        # 辰星线/CLOSE：越贴近白线分越高，与选股降序一致。
+        return round(max(0.0, min(100.0, float(closeness) * 100.0)), 4)
     roc = factors.get("ROC5")
     if isinstance(roc, (int, float)) and not isinstance(roc, bool):
         # ROC5=CLOSE/REF(CLOSE,5) → 五日涨跌幅%，夹到 [0, 100]
@@ -93,9 +102,10 @@ def persist_screen_candidates(
     source: str = "api:screen",
     top_n: int = 0,
 ) -> dict[str, Any]:
-    """把选股 picks 写入 ``candidate_reviews``；同日同池先清空再写入。
+    """把正式与观察候选写入 ``candidate_reviews``；同日同池先清空再写入。
 
     重选 0 只时只清空、不写新行，避免旧结果残留。
+    ``watch_picks`` 始终以「观察」/``watch`` 层级写入，不进入精选胜率。
 
     回填源（``api:screen_backfill``）**只替换同池回填行**，绝不删除
     ``job:screen`` / ``api:screen_run`` 等真选，避免区间重跑污染昨选今涨。
@@ -105,12 +115,24 @@ def persist_screen_candidates(
 
     resolved_pool = pool_id or f"{result.strategy_slug}@{result.trade_date}"
     name_map = names or {}
-    picks = list(result.picks or [])
+    formal_picks = list(result.picks or [])
     if top_n > 0:
-        picks = picks[:top_n]
+        formal_picks = formal_picks[:top_n]
+    formal_codes = {
+        str(pick.get("code") or "") for pick in formal_picks if pick.get("code")
+    }
+    watch_picks = [
+        pick
+        for pick in list(getattr(result, "watch_picks", None) or [])
+        if str(pick.get("code") or "") not in formal_codes
+    ]
+    pending = [(pick, False) for pick in formal_picks] + [
+        (pick, True) for pick in watch_picks
+    ]
     resolved_source = str(source or "api:screen")
 
-    written, failed, skipped = 0, [], 0
+    written, formal_written, watch_written = 0, 0, 0
+    failed, skipped = [], 0
     with PalaceStore(palace_db or str(default_palace_db())) as palace:
         # 回填先取该池真选 code 集：record_candidate 按 (occurred_on, pool_id, code)
         # 幂等 upsert，不跳过会把真选行整体改写成回填行、从「仅真选」视图消失。
@@ -132,30 +154,45 @@ def persist_screen_candidates(
                 occurred_on=result.trade_date,
                 pool_id=resolved_pool,
             )
-        for index, pick in enumerate(picks):
+        for index, (pick, is_watch) in enumerate(pending):
             code = str(pick.get("code") or "")
             if not code:
                 continue
             if code in protected_codes:
                 skipped += 1
                 continue
-            tier = str(pick.get("_tier") or ("core" if top_n <= 0 or index < top_n else "reserve"))
-            pick_decision = str(pick.get("_decision") or decision)
+            default_tier = (
+                "watch"
+                if is_watch
+                else ("core" if top_n <= 0 or index < top_n else "reserve")
+            )
+            tier = str(pick.get("_tier") or default_tier)
+            pick_decision = str(
+                pick.get("_decision") or ("观察" if is_watch else decision)
+            )
             evidence = dict(pick.get("factors") or {})
             data_snapshot = getattr(result, "data_snapshot", None)
             if data_snapshot:
-                evidence["_data_snapshot"] = dict(data_snapshot)
+                # 每条候选各存一份完整快照,而无参 data_snapshot() 会带上全库逐票证据
+                # (实测 13.4 万条回执 / 单条 29 MB)。227 行候选就占了 palace.db 的 99%,
+                # `GET /api/candidates/list` 一次回 58 MB。权威副本在 market.db,这里只留样本。
+                snapshot = dict(data_snapshot)
+                compact_job_result(snapshot)
+                evidence["_data_snapshot"] = snapshot
             strategy_revision = str(getattr(result, "strategy_revision", "") or "")
             effective_params = getattr(result, "effective_params", None)
             if effective_params is None:
                 effective_params = getattr(result, "params", None)
             try:
                 factors = pick.get("factors") or {}
+                reason = factor_reason(result.strategy_slug, factors)
+                if is_watch:
+                    reason = reason.replace("选中：", "弱市低吸观察：", 1)
                 palace.record_candidate(
                     code=code,
                     name=name_map.get(code, ""),
                     decision=pick_decision,
-                    reason=factor_reason(result.strategy_slug, factors),
+                    reason=reason,
                     occurred_on=result.trade_date,
                     pool_id=resolved_pool,
                     score=score_from_factors(factors if isinstance(factors, dict) else {}),
@@ -169,12 +206,18 @@ def persist_screen_candidates(
                     source=resolved_source,
                 )
                 written += 1
+                if is_watch:
+                    watch_written += 1
+                else:
+                    formal_written += 1
             except PalaceError as exc:
                 failed.append({"code": code, "error": str(exc)[:200]})
 
     return {
         "pool_id": resolved_pool,
         "written": written,
+        "formal_written": formal_written,
+        "watch_written": watch_written,
         "removed": removed,
         "skipped": skipped,
         "failed": failed,

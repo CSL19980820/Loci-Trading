@@ -57,7 +57,10 @@ function fromDetail(detail: unknown): string | null {
   return null
 }
 
-export function toErrorMessage(caught: unknown, fallback = '请求失败'): string {
+export function toErrorMessage(
+  caught: unknown,
+  fallback = '没读到数据，确认本机服务还在运行',
+): string {
   if (caught == null || caught === false) return ''
   if (typeof caught === 'string') {
     const t = caught.trim()

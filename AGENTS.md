@@ -29,7 +29,9 @@ cd frontend; bun install; bun run typecheck; bun run test; bun run build
 .\.venv\Scripts\python.exe -m cli.serve
 ```
 
-CI（`.github/workflows/ci.yml`）：Python `pytest` + `lint-imports`；前端 `bun install` + `typecheck` + `test`；另跑 Playwright e2e（ubuntu + Chromium）。
+CI（`.github/workflows/ci.yml`）共 7 个 job：`python`（`pytest` + `lint-imports`）、`frontend`（`bun install` + `typecheck` + `test` + `build`）、`e2e`（ubuntu + Chromium 真跑）、`performance-baseline`（**硬门禁**，`tests/benchmarks/baseline_benchmark.py` 失败即红）、`uv-validation`（**硬门禁**，无 `continue-on-error` 且脚本 `set -euo pipefail`）、`python-quality`（ruff，`continue-on-error`，不阻断）、`security-reports`（pip-audit + gitleaks + zizmor，三步全 `continue-on-error` 且只上传 artifact，无人读取）。
+
+即：**5 个硬门禁**（python / frontend / e2e / performance-baseline / uv-validation）+ 2 个 report-only。
 
 可选加速：`$env:LOCI_MARKET_DUCKDB='1'`（[ADR-002](docs/adr/ADR-002-duckdb-readonly-panel.md)）；`$env:LOCI_BACKTEST_FAST='1'`（回测旁路，失败/有细规则止损回退经典引擎）。行情详情为 ECharts 通达信式三窗（K/量/副图常驻）；日 K 约拉 320 根供 MA250，默认可视最近 60 根。
 
@@ -40,7 +42,7 @@ CI（`.github/workflows/ci.yml`）：Python `pytest` + `lint-imports`；前端 `
 ### 3.1 体量
 
 - **单文件 ≤ 600 行**（含 Vue SFC / Python 模块）。逼近即拆：页面按区块、后端按用例。
-- 禁止在已超限的存量巨石上「再加一点」。
+- 禁止在已超限的存量巨石上「再加一点」；贴线簇（≥580 行）仅允许拆出，禁止继续堆功能。
 
 ### 3.2 耦合与分支
 
@@ -64,6 +66,7 @@ CI（`.github/workflows/ci.yml`）：Python `pytest` + `lint-imports`；前端 `
 | 最小改动 | 不做范围外重构 |
 | 不编造 API | URL/字段以代码与 `types` 为准 |
 | 秘密不上库 | `.env`、密钥、真实 `data/*.db` |
+| Agent Bearer | `PALACE_WRITE_TOKEN` 长期静态；生产若配置须 ≥32 字符；优先会话；`PALACE_WRITE_TOKEN_ISSUED_AT` 触发轮换告警 |
 | 测试隔离+清理 | 见 `tests/conftest.py`；跑完不留垃圾 |
 | README 同步 | 改模块公开行为 → **同批**更新该模块 README |
 | 中文沟通 | 对用户简洁中文；代码标识符保持英文 |

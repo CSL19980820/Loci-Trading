@@ -40,26 +40,31 @@ function onUpdate(name: string | number): void {
     class="page-tabs"
     :class="{ 'page-tabs--sticky': sticky, 'page-tabs--dense': dense }"
   >
-    <el-tabs
-      class="page-tabs__el"
-      :model-value="modelValue"
-      :aria-label="ariaLabel"
-      @update:model-value="onUpdate"
-    >
-      <el-tab-pane
-        v-for="item in items"
-        :key="item.name"
-        :name="item.name"
-        :disabled="item.disabled"
+    <div class="page-tabs__row">
+      <el-tabs
+        class="page-tabs__el"
+        :model-value="modelValue"
+        :aria-label="ariaLabel"
+        @update:model-value="onUpdate"
       >
-        <template #label>
-          <span class="page-tabs__label">{{ item.label }}</span>
-          <span v-if="item.badge != null && item.badge !== ''" class="page-tabs__badge">{{
-            item.badge
-          }}</span>
-        </template>
-      </el-tab-pane>
-    </el-tabs>
+        <el-tab-pane
+          v-for="item in items"
+          :key="item.name"
+          :name="item.name"
+          :disabled="item.disabled"
+        >
+          <template #label>
+            <span class="page-tabs__label">{{ item.label }}</span>
+            <span v-if="item.badge != null && item.badge !== ''" class="page-tabs__badge">{{
+              item.badge
+            }}</span>
+          </template>
+        </el-tab-pane>
+      </el-tabs>
+      <div v-if="$slots.trailing" class="page-tabs__trailing">
+        <slot name="trailing" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -70,6 +75,28 @@ function onUpdate(name: string | number): void {
   margin: 0 0 0.75rem;
   padding: 0 0.85rem;
   background: var(--paper);
+}
+
+.page-tabs__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.page-tabs__el {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.page-tabs__trailing {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--mist);
+  font: 0.72rem var(--mono);
+  white-space: nowrap;
 }
 
 .page-tabs--sticky {

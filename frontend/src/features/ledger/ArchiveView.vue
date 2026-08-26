@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 个股工作台：行情 / 交割历史 / 候选历史。
- * 默认行情；特殊入口可带 ?view=trades|candidates。按当前 tab 按需加载。
+ * 个股工作台：行情 / 候选历史。
+ * 默认行情；特殊入口可带 ?view=candidates。按当前 tab 按需加载。
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -12,12 +12,10 @@ import DataQueryDetailPanel from '@/features/market/components/DataQueryDetailPa
 import { useQuotesQuery } from '@/features/market/composables/useQuotesQuery'
 import { chgClass, fmtPct } from '@/features/market/composables/dataQueryFormat'
 import StockTimeline from '@/features/ledger/components/StockTimeline.vue'
-import TradesTable from '@/features/ledger/components/TradesTable.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import Sheet from '@/shared/components/layout/Sheet.vue'
-import { money } from '@/shared/lib/format'
 import type { IndicatorKind } from '@/shared/lib/klineConfig'
 import type { KPeriod } from '@/shared/lib/indicators'
 import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
@@ -25,7 +23,7 @@ import { usePalaceStore } from '@/shared/stores/palace'
 
 import './ArchiveView.css'
 
-type StockView = 'quote' | 'trades' | 'candidates'
+type StockView = 'quote' | 'candidates'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,11 +31,9 @@ const store = usePalaceStore()
 const batch = useBatchBrowseStore()
 
 const code = computed(() => String(route.params.code ?? '').trim())
-const view = computed<StockView>(() => {
-  const raw = String(route.query.view || 'quote')
-  if (raw === 'quote' || raw === 'candidates' || raw === 'trades') return raw
-  return 'quote'
-})
+const view = computed<StockView>(() =>
+  String(route.query.view || 'quote') === 'candidates' ? 'candidates' : 'quote',
+)
 /** 从候选/选股/回测带入：锚定日 K 到该交易日 */
 const focusDate = computed(() => {
   const d = String(route.query.date || '').trim()
@@ -46,14 +42,12 @@ const focusDate = computed(() => {
 
 const viewItems: { name: StockView; label: string }[] = [
   { name: 'quote', label: '行情' },
-  { name: 'trades', label: '交割' },
   { name: 'candidates', label: '候选' },
 ]
 
 /** 首次进入某 tab 才挂载面板，之后保留以免 K 线反复重绘。 */
 const visited = reactive({
   quote: false,
-  trades: false,
   candidates: false,
 })
 
@@ -79,34 +73,19 @@ const { quote, refetch, isPending, isLoading, error: quoteError, isError: quoteF
 }))
 
 const quoteBusy = computed(() => view.value === 'quote' && (isPending.value || isLoading.value))
-const ledgerBusy = computed(
-  () => (view.value === 'trades' || view.value === 'candidates') && store.loading,
-)
+const candidatesBusy = computed(() => view.value === 'candidates' && store.loading)
 const quoteErrorText = computed(() =>
   quoteFailed.value ? toErrorMessage(quoteError.value, '行情加载失败') : '',
 )
-const ledgerErrorText = computed(() =>
-  view.value !== 'quote' && !ledgerBusy.value ? store.error : '',
+const candidatesErrorText = computed(() =>
+  view.value === 'candidates' && !candidatesBusy.value ? store.error : '',
 )
 
 const timeline = computed(() => (store.selectedCode === code.value ? store.selectedTimeline : []))
-const trades = computed(() => store.trades.filter((item) => item.code === code.value))
 const candidates = computed(() => timeline.value.filter((e) => e.type === 'candidate'))
-const tradeEvents = computed(() => timeline.value.filter((e) => e.type === 'trade'))
-const position = computed(
-  () => store.dashboard?.positions.find((item) => item.code === code.value) ?? null,
-)
-const stockName = computed(
-  () =>
-    quote.value?.name ||
-    position.value?.name ||
-    trades.value[0]?.name ||
-    code.value,
-)
+const stockName = computed(() => quote.value?.name || code.value)
 
-const adjustLabel = computed(
-  () => ({ qfq: '前复权', hfq: '后复权', none: '不复权' })[adjust.value],
-)
+const adjustLabel = computed(() => ({ qfq: '前复权', hfq: '后复权', none: '不复权' })[adjust.value])
 
 const lastClose = computed(() => {
   const bars = quote.value?.bars
@@ -125,7 +104,6 @@ const detailPct = computed(() => {
 })
 
 const tabBadge = computed(() => ({
-  trades: visited.trades ? trades.value.length : null,
   candidates: visited.candidates ? candidates.value.length : null,
 }))
 
@@ -216,8 +194,14 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return target.isContentEditable
 }
 
+/** 有弹层打开时把按键让给它：否则档案里关个对话框会顺手把整个档案也退掉 */
+function hasOpenOverlay(): boolean {
+  return Boolean(document.querySelector('.el-overlay'))
+}
+
 function onKeydown(event: KeyboardEvent): void {
   if (isTypingTarget(event.target)) return
+  if (hasOpenOverlay()) return
   if (event.key === 'Escape') {
     event.preventDefault()
     goBack()
@@ -237,19 +221,6 @@ function updateNarrow(): void {
   narrow.value = window.matchMedia('(max-width: 959px)').matches
 }
 
-function fmtDays(days: number | null | undefined): string {
-  if (days == null) return '—'
-  if (days <= 0) return '今'
-  return String(days)
-}
-
-function positionAvailable(): number {
-  const p = position.value
-  if (!p) return 0
-  const todayBuy = p.today_buy_shares ?? Math.max(0, p.shares - (p.available_shares ?? p.shares))
-  return p.available_shares ?? Math.max(0, p.shares - todayBuy)
-}
-
 function extendHistory(): void {
   const q = quote.value
   const total = q?.total_rows ?? 0
@@ -258,7 +229,7 @@ function extendHistory(): void {
   quotesLimit.value = Math.min(total, Math.max(quotesLimit.value, rows) + 240)
 }
 
-function retryLedger(): void {
+function retryCandidates(): void {
   void store.loadRoute(route, true)
 }
 
@@ -273,12 +244,8 @@ function barHasFocusDate(q: NonNullable<typeof quote.value>, d: string): boolean
 watch(
   () => [view.value, code.value] as const,
   ([v, c]) => {
-    if (!c) return
-    visited[v] = true
-    if (v !== 'quote') {
-      // 账本切片由 palace.loadRoute 按 view 拉取；此处只标记访问
-      return
-    }
+    // 候选切片由 palace.loadRoute 按 view 拉取；这里只标记已访问，避免面板反复重挂
+    if (c) visited[v] = true
   },
   { immediate: true },
 )
@@ -287,7 +254,6 @@ watch(
   () => code.value,
   (c) => {
     visited.quote = view.value === 'quote'
-    visited.trades = view.value === 'trades'
     visited.candidates = view.value === 'candidates'
     if (c) batch.syncCode(c)
   },
@@ -422,73 +388,22 @@ onUnmounted(() => {
         </div>
 
         <div
-          v-if="visited.trades"
-          v-show="view === 'trades'"
-          class="sw-body page-scroll sw-body--ledger sw-pane--busy"
-        >
-          <PageBusy overlay :busy="ledgerBusy" label="加载交割…" />
-          <el-alert
-            v-if="ledgerErrorText"
-            :title="ledgerErrorText"
-            type="error"
-            show-icon
-            :closable="false"
-          >
-            <el-button size="small" @click="retryLedger">重试</el-button>
-          </el-alert>
-          <template v-else>
-          <section v-if="position" class="sw-pos" aria-label="持仓摘要">
-            <div class="sw-pos__cell">
-              <span class="sw-pos__label">当前仓</span>
-              <strong class="mono">{{ position.shares.toLocaleString('zh-CN') }}</strong>
-            </div>
-            <div class="sw-pos__cell">
-              <span class="sw-pos__label">可卖</span>
-              <strong class="mono">{{ positionAvailable().toLocaleString('zh-CN') }}</strong>
-            </div>
-            <div class="sw-pos__cell">
-              <span class="sw-pos__label">成本</span>
-              <strong class="mono">{{ position.cost.toFixed(3) }}</strong>
-            </div>
-            <div class="sw-pos__cell">
-              <span class="sw-pos__label">成本金额</span>
-              <strong class="mono">{{ money(position.cost_value) }}</strong>
-            </div>
-            <div class="sw-pos__cell">
-              <span class="sw-pos__label">持有</span>
-              <strong class="mono">{{ fmtDays(position.holding_days) }}</strong>
-            </div>
-          </section>
-
-          <Sheet title="交割明细" :chip="trades.length" margin>
-            <TradesTable v-if="trades.length" :trades="trades" />
-            <EmptyState v-else description="尚无交割记录" :image-size="56" />
-          </Sheet>
-
-          <Sheet title="成交时间线" :chip="tradeEvents.length">
-            <StockTimeline v-if="tradeEvents.length" mode="trade" :events="tradeEvents" />
-            <EmptyState v-else description="无成交事件" :image-size="48" />
-          </Sheet>
-          </template>
-        </div>
-
-        <div
           v-if="visited.candidates"
           v-show="view === 'candidates'"
           class="sw-body page-scroll sw-body--ledger sw-pane--busy"
         >
-          <PageBusy overlay :busy="ledgerBusy" label="加载候选…" />
+          <PageBusy overlay :busy="candidatesBusy" label="加载候选…" />
           <el-alert
-            v-if="ledgerErrorText"
-            :title="ledgerErrorText"
+            v-if="candidatesErrorText"
+            :title="candidatesErrorText"
             type="error"
             show-icon
             :closable="false"
           >
-            <el-button size="small" @click="retryLedger">重试</el-button>
+            <el-button size="small" @click="retryCandidates">重试</el-button>
           </el-alert>
           <Sheet v-else title="候选记录" :chip="candidates.length">
-            <StockTimeline v-if="candidates.length" mode="candidate" :events="candidates" />
+            <StockTimeline v-if="candidates.length" :events="candidates" />
             <EmptyState v-else description="该标的尚无候选记录。可在选股页入库后查看。" :image-size="56">
               <el-button size="small" @click="router.push('/screen-history')">去选股</el-button>
             </EmptyState>

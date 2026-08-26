@@ -1,22 +1,14 @@
 /** Pure display helpers for DataQueryView. */
+import { compactNumber } from '@/shared/lib/format'
 
 export function formatCount(n: number | undefined): string {
   if (n == null) return '—'
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  // 计数不用「亿」档，但也不再中英混排（原先 100 万以上会显示成 1.0M）
   if (n >= 10_000) return `${(n / 10_000).toFixed(1)}万`
   return String(n)
 }
 
-export function fmtPrice(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(Number(v))) return '—'
-  return Number(v).toFixed(2)
-}
-
-export function fmtPct(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(Number(v))) return '—'
-  const n = Number(v)
-  return `${n > 0 ? '+' : ''}${n.toFixed(2)}%`
-}
+export { pct as fmtPct, price as fmtPrice } from '@/shared/lib/format'
 
 export function fmtChange(v: number | null | undefined): string {
   if (v == null || Number.isNaN(Number(v))) return '—'
@@ -25,11 +17,7 @@ export function fmtChange(v: number | null | undefined): string {
 }
 
 export function fmtAmount(v: number | null | undefined): string {
-  if (v == null || Number.isNaN(Number(v))) return '—'
-  const n = Number(v)
-  if (n >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (n >= 1e4) return `${(n / 1e4).toFixed(1)}万`
-  return n.toFixed(0)
+  return compactNumber(v)
 }
 
 /** 库内换手为小数；展示为百分数。 */

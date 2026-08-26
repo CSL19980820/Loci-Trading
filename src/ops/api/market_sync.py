@@ -5,7 +5,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.app.legacy.quant_common import MarketSyncSettings, missing_dependency, ops_store
+from src.ops.api.schemas import MarketSyncSettings
+from src.shared.api_deps import missing_dependency, ops_store
 
 
 def build_market_sync_settings_router(
@@ -70,13 +71,10 @@ def build_market_sync_settings_router(
         from src.ops import MANAGED_SYNC_EOD, MANAGED_SYNC_INTRADAY
 
         interval = int(settings["interval_minutes"])
-        if interval not in {1, 5, 10, 15, 30, 60}:
-            # 允许任意 1-60，但 cron 用 */N
-            pass
         workers = int(settings["workers"])
         push = bool(settings.get("push_wecom_on_fail"))
-        intraday_cron = f"*/{interval} 9-14 * * 1-5"
-        eod_cron = f"{int(settings['eod_minute'])} {int(settings['eod_hour'])} * * 1-5"
+        intraday_cron = f"*/{interval} 9-14 * * mon-fri"
+        eod_cron = f"{int(settings['eod_minute'])} {int(settings['eod_hour'])} * * mon-fri"
 
         store.ensure_job(
             name=MANAGED_SYNC_INTRADAY,
@@ -146,8 +144,8 @@ def build_market_sync_settings_router(
         except ImportError as exc:
             raise missing_dependency(exc) from exc
         settings = payload.model_dump()
-        intraday_cron = f"*/{settings['interval_minutes']} 9-14 * * 1-5"
-        eod_cron = f"{settings['eod_minute']} {settings['eod_hour']} * * 1-5"
+        intraday_cron = f"*/{settings['interval_minutes']} 9-14 * * mon-fri"
+        eod_cron = f"{settings['eod_minute']} {settings['eod_hour']} * * mon-fri"
         try:
             validate_cron(intraday_cron)
             validate_cron(eod_cron)

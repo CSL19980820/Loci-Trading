@@ -29,6 +29,13 @@ describe('wecomScreenTemplate', () => {
     expect(previewWecomScreenTemplate(tpl, 'skills')).toContain('【潜龙拐点】-技能')
   })
 
+  it('skills preview appends note after pct with Chinese comma', () => {
+    const tpl = normalizeWecomScreenTemplate({ preset: 'default' })
+    const text = previewWecomScreenTemplate(tpl, 'skills')
+    expect(text).toContain('【潜龙拐点】-技能')
+    expect(text).toContain('📌 龙星科技 300105 +1.5%，主线放量站上五日线')
+  })
+
   it('legacy English skill tag is normalized', () => {
     const tpl = normalizeWecomScreenTemplate({ skills_tag: 'skills' })
     expect(tpl.skills_tag).toBe('技能')

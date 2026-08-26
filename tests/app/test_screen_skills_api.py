@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from fastapi.testclient import TestClient
 from src.app.main import create_app
-from src.app.screen_skills import _screen_result_dict
+from src.strategy.application.screen_skills import _screen_result_dict
 from src.formula.domain.screen_formula_catalog import FORMULA_FUNCTIONS
 from src.ledger import PalaceStore
 from src.market import MarketStore
@@ -414,12 +414,16 @@ class ScreenSkillApiTests(unittest.TestCase):
             strategy_slug="demo-screen",
             trade_date="2026-07-28",
             picks=[{"code": f"{index:06d}"} for index in range(501)],
+            watch_picks=[{"code": f"8{index:05d}"} for index in range(501)],
             universe_size=501,
         )
         body = _screen_result_dict(result)
         self.assertEqual(len(body["picks"]), 500)
         self.assertEqual(body["picks_total"], 501)
         self.assertTrue(body["picks_truncated"])
+        self.assertEqual(len(body["watch_picks"]), 500)
+        self.assertEqual(body["watch_picks_total"], 501)
+        self.assertTrue(body["watch_picks_truncated"])
 
     def test_preview_compile_failure_returns_200_diagnostics(self) -> None:
         payload = _screen_payload()

@@ -85,10 +85,9 @@ python market.py bench                           # 性能实测
 
 | slug | 战法 | 入场时点 | 实现 |
 |---|---|---|---|
-| `qianlong-close-v3` | 潜龙出海（V3） | 次日开盘 | 同上 |
-| `qianlong-tail-v1` | 潜龙尾盘（V1） | 尾盘收盘 | `src/strategy/application/qianlong.py` |
-| `sanyuan-tail-v1` | 三源尾盘共振 | 次日开盘 | `src/strategy/application/tail_resonance.py` |
-| `rsi30-dip` | RSI22 次日低吸 | 次日低吸 | `src/strategy/application/dip_reversal.py` |
+| `qianlong-close-v3` | 潜龙出海（V3.2） | 次日开盘 | `src/strategy/application/qianlong.py` |
+| `sanyuan-tail-v1` | 三源尾盘共振（15:30） | 次日开盘 | `src/strategy/application/tail_resonance.py` |
+| `yangshi-tail-v1` | 杨氏尾盘选股（15:30） | 次日开盘 | `src/strategy/application/yangshi_tail.py` |
 
 **入场时点是策略元数据的一部分，不是回测参数。** 同一套形态条件，
 "9:25 竞价筛、当日开盘买"和"盘后筛、次日开盘买"是两个完全不同的策略，
@@ -323,7 +322,7 @@ python ops.py skill remove my-skill
 不硬编码任何厂商：**名称 + Base URL + Key + 协议**，新增一家只是加一行配置。
 
 ```bash
-python ops.py genkey                    # 生成 PALACE_AI_MASTER_KEY
+python ops.py provider list             # 供应商
 
 python ops.py provider add --name openrouter \
     --base-url https://openrouter.ai/api/v1 --key sk-xxx
@@ -355,12 +354,9 @@ python ops.py provider add --name anthropic --protocol anthropic \
 
 ### 密钥安全
 
-- AES-256-GCM 加密，主密钥在环境变量、密文在 `ops.db`，**两者永不同处**
-- AAD 绑定 `provider_id`：密文被搬到另一行会直接解不开。没有这层绑定，
-  攻击者可以把 A 供应商的密文搬到 B 供应商，系统照样解密成功，然后拿着
-  A 的 key 去请求 B 声明的 base_url——等于主动把密钥送出去
+- 本机自用：LLM Key / MCP token **明文**分别落在 `ops.db` / `mcp.json`；HTTP 只回末四位
 - 保存时先发一次最小请求校验，**校验失败绝不落库**
-- 任何接口只回末四位，永不回显明文或密文
+- 旧 AES 密文启动时尽量自动迁明文；迁不了的在运维页重录
 
 ---
 
@@ -368,14 +364,15 @@ python ops.py provider add --name anthropic --protocol anthropic \
 
 运维页也可配置：
 
-- **行情同步**：盘中增量（默认每 5 分钟，`*/5 9-14 * * 1-5`）+ 日终重刷（默认 **15:25**，`mode=today_refresh` 刷当日 OHLC 并刷新过期复权因子）。首次启动默认开启两条托管任务；`loci.py` / `cli.serve` 默认 `PALACE_ENABLE_SCHEDULER=1`。
+- **行情同步**：盘中增量（默认每 5 分钟，`*/5 9-14 * * 1-5`）+ 日终重刷（默认 **15:10**，`mode=today_refresh` 刷当日 OHLC 并刷新过期复权因子）。首次启动默认开启两条托管任务；`loci.py` / `cli.serve` 默认 `PALACE_ENABLE_SCHEDULER=1`。
 - **推送**：企业微信群机器人 Webhook；任务类型 `notify`（触价 / 日终简报 / 最近选股 / 同步失败），或其它任务勾选 `push_wecom`。
 - 调度需 `PALACE_ENABLE_SCHEDULER=1`。
 
 四类任务走同一套调度与留痕：
 
 ```bash
-# 盘后同步行情
+# 盘后同步行情：仅演示 job add 语法。行情同步已有两条托管任务，
+# 真要用请改它们的 cron，别再加一条来抢同一把行情写锁。
 python ops.py job add 盘后同步 sync --cron "35 15 * * 1-5" \
     --config '{"workers":6}'
 
@@ -403,9 +400,12 @@ python ops.py serve                  # 前台常驻调度
 
 ### 一套能直接用的日常流水线
 
-```bash
-python ops.py job add "01 盘后同步行情" sync --cron "35 15 * * 1-5"     --config '{"workers":6,"interval":0.08}'
+行情同步**不用自己加**：首次启动已托管「行情盘中增量」+「行情日终重刷」两条
+（见上）。再手搓一条盘后同步只会和日终重刷抢同一把行情写锁——后到的那条
+等不到锁只能跳过本轮，白占一个调度线程。要改时间就去运维页调托管任务的
+cron，不要新建。
 
+```bash
 # record_candidates 是关键：选股结果自动入候选池，T+N 后复盘引擎才有得验
 python ops.py job add "02 盘后选股·分手快乐" screen --cron "45 15 * * 1-5"     --config '{"strategy":"lugw-fenshou","record_candidates":true}'
 python ops.py job add "03 盘后选股·潜龙出海" screen --cron "47 15 * * 1-5"     --config '{"strategy":"qianlong-close","record_candidates":true}'
@@ -418,7 +418,7 @@ python ops.py job add "06 周末退出扫描" optimize --cron "30 10 * * 6"     
 python ops.py job add "07 每周清理执行历史" prune --cron "0 3 * * 0"     --config '{"keep_per_job":200}'
 ```
 
-时间安排的理由：15:35 同步（收盘后行情已出），15:45 起选股（同步已完成）。
+时间安排的理由：托管日终重刷 15:10（收盘后行情已出），15:30 起选股（同步已完成）。
 
 `record_candidates` 是整条回路的接头处：
 
@@ -528,9 +528,7 @@ python ops.py mcp call wudao kline --args '{"codes":["600519"],"days":5}'
 注册时会**当场握手并拉工具列表**，连不上就不落库——配置错误应该在保存时
 暴露，而不是等某个半夜的定时任务失败。
 
-token 与 LLM Key 同一套加密：主密钥在环境变量、密文在 `ops.db`，
-AAD 绑定 server id。密文被搬到另一行会直接解不开——没有这层绑定，
-攻击者可以把 A 的 token 挪到 B 声明的 URL 上，等于主动把凭据送出去。
+token 与 LLM Key 一样本机明文保存（`mcp.json` / `ops.db`）；HTTP 与列表接口不回完整 Key。
 
 ### 为什么是 MCP 而不是包 REST
 

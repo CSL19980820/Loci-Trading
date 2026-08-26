@@ -14,12 +14,6 @@ from src.ops.infrastructure.store_helpers import (
 )
 
 
-# 进程崩溃时不会执行 finish_run。超过一天的 running 记录不再占用执行槽，
-# 避免一次异常重启后让同一任务永久无法再次执行。
-STALE_RUN_SECONDS = 24 * 60 * 60
-STALE_RUN_ERROR = "任务运行超过 24 小时，已按中断回收"
-
-
 class OpsJobsMixin:
     """任务 / meta 设置 / job_runs。依赖宿主提供 conn 与 _transaction。"""
 
@@ -168,7 +162,8 @@ class OpsJobsMixin:
     def ensure_managed_outcome_job(self, *, enabled: bool = True) -> str:
         """确保「候选T+N跟踪」托管任务存在（工作日 15:45）。
 
-        已有任务：只补配置，不强行改 enabled（与行情托管语义一致，尊重运维页开关）。
+        已有任务：只补齐缺失的配置键，不改 enabled / cron，也不还原用户调过的
+        参数（与行情托管语义一致，尊重运维页开关）。
         """
         from src.ops.infrastructure.store_helpers import (
             MANAGED_OUTCOME_CRON,
@@ -189,7 +184,8 @@ class OpsJobsMixin:
                 config=config,
                 enabled=enabled,
             )
-        self.update_job(existing["id"], config=config)
+        prev = existing.get("config") if isinstance(existing.get("config"), dict) else {}
+        self.update_job(existing["id"], config={**config, **prev})
         return existing["id"]
 
     def ensure_managed_screen_jobs(self) -> dict:
@@ -205,6 +201,35 @@ class OpsJobsMixin:
         )
 
         return ensure_managed_market_sync_jobs(self)
+
+    def ensure_managed_hot_rebuild_job(self) -> dict:
+        """确保「行情热库重建」托管任务（首次默认开启）。"""
+        from src.ops.application.ensure_hot_rebuild_job import (
+            ensure_managed_hot_rebuild_job,
+        )
+
+        return ensure_managed_hot_rebuild_job(self)
+
+    def ensure_managed_market_quality_job(self) -> dict:
+        """确保「行情库体检」托管任务（首次默认开启）。"""
+        from src.ops.application.ensure_market_quality_job import (
+          ensure_managed_market_quality_job,
+        )
+
+        return ensure_managed_market_quality_job(self)
+
+    def ensure_managed_prune_job(self) -> dict:
+        """确保「运维清理」托管任务（首次默认开启）。"""
+        from src.ops.application.ensure_managed_prune_job import (
+            ensure_managed_prune_job,
+        )
+
+        return ensure_managed_prune_job(self)
+
+    def ensure_managed_intel_jobs(self, *, enabled: bool = True) -> dict:
+        from src.ops.application.ensure_intel_jobs import ensure_managed_intel_jobs
+
+        return ensure_managed_intel_jobs(self, enabled=enabled)
 
     @staticmethod
     def _job_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -234,149 +259,3 @@ class OpsJobsMixin:
         with self._transaction() as cursor:
             cursor.execute("DELETE FROM meta WHERE key = ?", (key,))
             return cursor.rowcount > 0
-
-    @staticmethod
-    def _insert_run(
-        cursor: sqlite3.Cursor,
-        *,
-        run_id: str,
-        job: dict[str, Any],
-        trigger: str,
-    ) -> None:
-        cursor.execute(
-            "INSERT INTO job_runs(id, job_id, job_name, kind, trigger, status, started_at)"
-            " VALUES(?, ?, ?, ?, ?, 'running', datetime('now'))",
-            (run_id, job.get("id", ""), job.get("name", ""), job.get("kind", ""), trigger),
-        )
-
-    def claim_run(self, job: dict[str, Any], *, trigger: str = "manual") -> tuple[str, bool]:
-        """原子认领一个任务的执行槽。
-
-        ``False`` 表示该任务已有运行中的记录，返回其 ``run_id``；调用方不得再次
-        执行副作用。即时分析先创建独立 run 再传给 ``run_job``，因此仍可并行。
-        """
-        job_id = str(job.get("id") or "").strip()
-        if not job_id:
-            raise OpsError("任务缺少 id，无法认领执行槽")
-
-        with self._transaction(immediate=True) as cursor:
-            cursor.execute(
-                "UPDATE job_runs SET status = 'failed', finished_at = datetime('now'), "
-                "error_text = CASE WHEN error_text = '' THEN ? ELSE error_text END "
-                "WHERE job_id = ? AND status = 'running' "
-                "AND started_at < datetime('now', ?)",
-                (STALE_RUN_ERROR, job_id, f"-{STALE_RUN_SECONDS} seconds"),
-            )
-            active = cursor.execute(
-                "SELECT id FROM job_runs WHERE job_id = ? AND status = 'running' "
-                "ORDER BY started_at DESC, id DESC LIMIT 1",
-                (job_id,),
-            ).fetchone()
-            if active is not None:
-                return str(active["id"]), False
-
-            run_id = new_id("RUN")
-            self._insert_run(cursor, run_id=run_id, job=job, trigger=trigger)
-            return run_id, True
-
-    def start_run(self, job: dict[str, Any], *, trigger: str = "manual") -> str:
-        """直接创建执行记录；即时分析等已分配独立运行槽的路径使用。"""
-        run_id = new_id("RUN")
-        with self._transaction() as cursor:
-            self._insert_run(cursor, run_id=run_id, job=job, trigger=trigger)
-        return run_id
-
-    def finish_run(
-        self, run_id: str, *, status: str, result: Any = None, error: str = "",
-        duration_ms: int = 0,
-    ) -> None:
-        if status not in RUN_STATUSES:
-            raise OpsError(f"未知执行状态：{status}")
-        with self._transaction() as cursor:
-            cursor.execute(
-                "UPDATE job_runs SET status = ?, finished_at = datetime('now'),"
-                " duration_ms = ?, result_json = ?, error_text = ? WHERE id = ?",
-                (status, int(duration_ms), dumps(result if result is not None else {}),
-                 error[:4000], run_id),
-            )
-            if cursor.rowcount != 1:
-                raise OpsError("任务运行不存在或已被删除")
-            row = cursor.execute(
-                "SELECT job_id FROM job_runs WHERE id = ?", (run_id,)
-            ).fetchone()
-            if row and row["job_id"]:
-                cursor.execute(
-                    "UPDATE jobs SET last_run_at = datetime('now'), last_status = ?,"
-                    " updated_at = datetime('now') WHERE id = ?",
-                    (status, row["job_id"]),
-                )
-
-    def list_runs(
-        self,
-        *,
-        job_id: str | None = None,
-        run_id: str | None = None,
-        limit: int = 50,
-        status: str | None = None,
-    ) -> list[dict[str, Any]]:
-        sql = "SELECT * FROM job_runs WHERE 1=1"
-        params: list[Any] = []
-        if run_id:
-            sql += " AND id = ?"
-            params.append(run_id)
-        if job_id:
-            sql += " AND job_id = ?"
-            params.append(job_id)
-        if status:
-            sql += " AND status = ?"
-            params.append(status)
-        sql += " ORDER BY started_at DESC, id DESC LIMIT ?"
-        params.append(int(limit))
-        rows = []
-        for row in self.conn.execute(sql, params):
-            data = dict(row)
-            data["result"] = loads(data.pop("result_json", "{}"), {})
-            rows.append(data)
-        return rows
-
-    def delete_runs(self, ids: list[str]) -> int:
-        """按 id 批量删除执行历史。空列表直接返回 0。"""
-        cleaned = [str(item).strip() for item in ids if str(item).strip()]
-        if not cleaned:
-            return 0
-        # 去重，避免同一 id 重复占位
-        unique = list(dict.fromkeys(cleaned))
-        placeholders = ",".join("?" * len(unique))
-        with self._transaction() as cursor:
-            running = cursor.execute(
-                f"SELECT id FROM job_runs WHERE id IN ({placeholders}) AND status = 'running' LIMIT 1",
-                unique,
-            ).fetchone()
-            if running is not None:
-                raise OpsError("运行中的任务记录不可删除")
-            cursor.execute(
-                f"DELETE FROM job_runs WHERE id IN ({placeholders})",
-                unique,
-            )
-            return int(cursor.rowcount)
-
-    def prune_runs(self, keep_per_job: int = 200) -> int:
-        """只保留每个任务最近 N 条执行记录。
-
-        定时任务是每天跑的，不清理的话这张表会无限增长，最终把小小的
-        运维库撑成几百 MB。
-        """
-        with self._transaction() as cursor:
-            cursor.execute(
-                """
-                DELETE FROM job_runs WHERE id IN (
-                    SELECT id FROM (
-                        SELECT id, ROW_NUMBER() OVER (
-                            PARTITION BY job_id ORDER BY started_at DESC, id DESC
-                        ) AS rn FROM job_runs
-                    ) ranked WHERE rn > ?
-                )
-                """,
-                (int(keep_per_job),),
-            )
-            return cursor.rowcount

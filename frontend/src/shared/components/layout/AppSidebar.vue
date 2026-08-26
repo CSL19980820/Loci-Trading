@@ -11,7 +11,6 @@ import {
   Flag,
   Histogram,
   MagicStick,
-  Notebook,
   Odometer,
   Opportunity,
   QuestionFilled,
@@ -28,10 +27,7 @@ import type { RecordKind } from '@/shared/components/dialogs/RecordDialog.vue'
 import ThemeDialog from '@/shared/components/dialogs/ThemeDialog.vue'
 import { createDesktopShortcut, getDataLocation } from '@/shared/api/quant'
 import { BRAND_MARK, BRAND_NAME } from '@/shared/lib/brand'
-
-defineProps<{
-  archivePath?: string | null
-}>()
+import { navMenuItem, type NavMenuItem } from '@/shared/lib/navLabels'
 
 const emit = defineEmits<{
   record: [kind: RecordKind]
@@ -44,8 +40,8 @@ const route = useRoute()
 const collapsed = ref(false)
 const themeOpen = ref(false)
 
-type NavLeaf = { path: string; label: string; icon: Component }
-type NavGroup = { id: string; label: string; icon: Component; items: NavLeaf[] }
+/** 组名是分区，不是页面，故不进 NAV_LABELS */
+type NavGroup = { id: string; label: string; icon: Component; items: NavMenuItem[] }
 
 const navGroups: NavGroup[] = [
   {
@@ -53,32 +49,27 @@ const navGroups: NavGroup[] = [
     label: '日常',
     icon: Collection,
     items: [
-      { path: '/', label: '盘面', icon: Odometer },
-      { path: '/ledger', label: '账本', icon: Notebook },
-      { path: '/journal', label: '交割', icon: EditPen },
-      { path: '/pool', label: '候选池', icon: Opportunity },
-      { path: '/reviews', label: '绩效', icon: Stamp },
-      { path: '/winrate', label: '胜率', icon: TrendCharts },
+      navMenuItem('pulse', Odometer),
+      navMenuItem('pool', Opportunity),
+      navMenuItem('reviews', Stamp),
+      navMenuItem('winrate', TrendCharts),
     ],
   },
   {
     id: 'strat',
     label: '战法',
     icon: Flag,
-    items: [
-      { path: '/screen-history', label: '选股', icon: Search },
-      { path: '/insights', label: '体检', icon: DataAnalysis },
-    ],
+    items: [navMenuItem('screen-history', Search), navMenuItem('insights', DataAnalysis)],
   },
   {
     id: 'sys',
     label: '本机',
     icon: Cpu,
     items: [
-      { path: '/quant', label: '工坊', icon: Histogram },
-      { path: '/data', label: '行情', icon: DataBoard },
-      { path: '/strategy-converter', label: '策稿', icon: MagicStick },
-      { path: '/ops', label: '设置', icon: Setting },
+      navMenuItem('quant', Histogram),
+      navMenuItem('data-query', DataBoard),
+      navMenuItem('strategy-converter', MagicStick),
+      navMenuItem('ops', Setting),
     ],
   },
 ]
@@ -87,8 +78,6 @@ const recordEntries: { kind: RecordKind; label: string }[] = [
   { kind: 'candidate', label: '候选' },
   { kind: 'plan', label: '预案' },
   { kind: 'review', label: '复盘' },
-  { kind: 'snapshot', label: '资产' },
-  { kind: 'cashflow', label: '出入金' },
 ]
 
 const openeds = computed(() => navGroups.map((g) => g.id))

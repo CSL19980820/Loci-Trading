@@ -52,14 +52,11 @@ test.describe('Loci smoke', () => {
   test('pool virtual table renders mocked candidates', async ({ page }) => {
     // createWebHistory：路径是 /pool，不是 /#/pool
     await page.goto('/pool')
-    await expect(page.getByRole('heading', { name: '候选池' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('贵州茅台')).toBeVisible({ timeout: 30_000 })
   })
 
   test('data query shell loads', async ({ page }) => {
     await page.goto('/data')
-    await expect(page.getByRole('heading', { name: /数据|行情/ })).toBeVisible({
-      timeout: 30_000,
-    })
+    await expect(page.getByRole('textbox', { name: '关键词' })).toBeVisible({ timeout: 30_000 })
   })
 })

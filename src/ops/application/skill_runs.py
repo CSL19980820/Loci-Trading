@@ -1,7 +1,7 @@
 """Skill Run 持久化：data/skill_runs/<id>.json + events.jsonl。"""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from src.shared.clock import utc_now as _now
 import json
 from pathlib import Path
 import threading
@@ -11,10 +11,6 @@ import uuid
 from src.shared.paths import skill_runs_dir
 
 _lock = threading.Lock()
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def new_run_id() -> str:

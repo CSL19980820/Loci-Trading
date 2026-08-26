@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
-import { getMcpServers, probeMcpServer, type McpProbeResult } from '@/shared/api/quant'
+import { getMcpServers, probeMcpServer, refreshMcpTools, type McpProbeResult } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import { dialogWidth } from '@/shared/lib/format'
@@ -26,6 +26,7 @@ const emit = defineEmits<{ refreshed: [] }>()
 
 const live = ref<McpServer | null>(null)
 const probingServer = ref(false)
+const refreshingTools = ref(false)
 const serverProbe = ref<ProbeCell | null>(null)
 let active = true
 let session = 0
@@ -105,6 +106,26 @@ function tagType(tone: ProbeTone): 'success' | 'warning' | 'danger' | 'info' {
   return 'info'
 }
 
+async function refreshToolsList(): Promise<void> {
+  const version = session
+  const name = current.value?.name
+  if (!name || refreshingTools.value || !isCurrent(version)) return
+  refreshingTools.value = true
+  try {
+    await refreshMcpTools(name)
+    const rows = await getMcpServers()
+    if (!isCurrent(version)) return
+    live.value = rows.find((r) => r.name === name) ?? live.value
+    ElMessage.success(`已刷新 ${name} 工具列表`)
+    emit('refreshed')
+  } catch (caught: unknown) {
+    if (!isCurrent(version)) return
+    ElMessage.error(toErrorMessage(caught, '没刷出工具，确认这台服务还开着'))
+  } finally {
+    if (isCurrent(version)) refreshingTools.value = false
+  }
+}
+
 async function probeServer(): Promise<void> {
   const version = session
   const name = current.value?.name
@@ -122,11 +143,11 @@ async function probeServer(): Promise<void> {
       live.value = rows.find((r) => r.name === name) ?? live.value
       emit('refreshed')
     } else {
-      ElMessage.error(result.error || '整服探测失败')
+      ElMessage.error(result.error || '没探通，确认地址与 Key 仍有效')
     }
   } catch (caught: unknown) {
     if (!isCurrent(version)) return
-    const msg = toErrorMessage(caught, '整服探测失败')
+    const msg = toErrorMessage(caught, '没探通，确认地址与 Key 仍有效')
     serverProbe.value = { tone: 'bad', label: '失败', detail: msg }
     ElMessage.error(msg)
   } finally {
@@ -165,6 +186,14 @@ onUnmounted(() => {
           >
             {{ serverProbe.label }}
           </el-tag>
+          <el-button
+            size="small"
+            :loading="refreshingTools"
+            :disabled="isBuiltin && !current?.resident"
+            @click="refreshToolsList"
+          >
+            刷新工具
+          </el-button>
           <el-button
             size="small"
             :loading="probingServer"
@@ -211,7 +240,11 @@ onUnmounted(() => {
               </template>
             </el-table-column>
           </el-table>
-          <EmptyState v-else description="暂无线路工具" />
+          <EmptyState
+            v-else
+            description="这条线路还没报出工具"
+            reason="点上方「刷新工具」重新发现一次。"
+          />
         </section>
         <section class="mcp-detail-group">
           <h4>AkShare 接口 <b>{{ akshareTools.length }}</b></h4>
@@ -256,7 +289,11 @@ onUnmounted(() => {
             </template>
           </el-table-column>
         </el-table>
-        <EmptyState v-else description="暂无工具" />
+        <EmptyState
+          v-else
+          description="这台服务还没报出工具"
+          reason="点上方「刷新工具」重新发现一次。"
+        />
       </template>
     </div>
   </el-dialog>

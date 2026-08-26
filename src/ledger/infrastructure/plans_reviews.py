@@ -122,20 +122,36 @@ class PlanReviewMixin:
             for row in rows
         ]
 
+    def active_plans_with_stops(self) -> list[dict[str, Any]]:
+        """活跃且含止损/目标价的预案（触价提醒用；含股票名）。"""
+        rows = self.conn.execute(
+            """
+            SELECT p.id, p.code, p.title, p.stop_price, p.target_price, s.name
+            FROM plans p
+            LEFT JOIN stocks s ON s.code = p.code
+            WHERE p.status = 'active'
+              AND (p.stop_price IS NOT NULL OR p.target_price IS NOT NULL)
+            ORDER BY p.occurred_on DESC, p.created_at DESC
+            """
+        ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "code": str(row["code"]),
+                "title": str(row["title"]),
+                "stop_price": float(row["stop_price"]) if row["stop_price"] is not None else None,
+                "target_price": float(row["target_price"]) if row["target_price"] is not None else None,
+                "name": str(row["name"] or row["code"]),
+            }
+            for row in rows
+        ]
+
     def timeline_payload(self, code: str) -> list[dict[str, Any]]:
         """提供单票事件流，保留原始 ID 供复盘对象精确关联。
 
         未入账本的代码（仅从行情点进来）返回空列表，不抛错——行情/档案工作台需要可打开。
         """
         code = normalize_code(code)
-        position_events = self.conn.execute(
-            """
-            SELECT id, occurred_on, created_at, action, shares, price, shares_before, shares_after,
-                   cost_before, cost_after, realized_pnl, reason, source, correlation_id, metadata_json
-            FROM position_events WHERE code = ?
-            """,
-            (code,),
-        ).fetchall()
         candidates = self.conn.execute(
             """
             SELECT id, occurred_on, created_at, pool_id, score, decision, timing, reason,
@@ -153,19 +169,6 @@ class PlanReviewMixin:
             (code,),
         ).fetchall()
         events: list[dict[str, Any]] = []
-        events.extend(
-            {
-                "id": str(row["id"]), "date": str(row["occurred_on"]), "created_at": str(row["created_at"]),
-                "type": "trade", "label": str(row["action"]), "detail": {
-                    "shares": int(row["shares"]), "price": float(row["price"]), "shares_before": int(row["shares_before"]),
-                    "shares_after": int(row["shares_after"]), "cost_before": float(row["cost_before"]),
-                    "cost_after": float(row["cost_after"]), "realized_pnl": float(row["realized_pnl"]),
-                    "reason": str(row["reason"]), "source": str(row["source"]),
-                    "correlation_id": str(row["correlation_id"]), "metadata": _loads(str(row["metadata_json"])),
-                },
-            }
-            for row in position_events
-        )
         events.extend(
             {
                 "id": str(row["id"]), "date": str(row["occurred_on"]), "created_at": str(row["created_at"]),
@@ -263,22 +266,34 @@ class PlanReviewMixin:
             for row in rows
         ]
 
+    def review_returns_for_tag(self, strategy_tag: str) -> list[float]:
+        """某战法手工复盘收益序列（升序），供 decay 用；勿在 review 直捅 .conn。"""
+        rows = self.conn.execute(
+            """
+            SELECT return_pct FROM reviews
+            WHERE return_pct IS NOT NULL AND strategy_tag = ?
+            ORDER BY reviewed_on ASC, created_at ASC
+            """,
+            (strategy_tag,),
+        ).fetchall()
+        return [float(row["return_pct"]) for row in rows]
+
+    def review_strategy_tags_with_returns(self) -> list[str]:
+        """有 return_pct 的战法标签列表（decay 全量扫描）。"""
+        rows = self.conn.execute(
+            "SELECT DISTINCT strategy_tag FROM reviews WHERE return_pct IS NOT NULL"
+        ).fetchall()
+        return [str(row["strategy_tag"]) for row in rows]
+
     def timeline_markdown(self, code: str) -> str:
         code = normalize_code(code)
         stock = self.conn.execute("SELECT name FROM stocks WHERE code = ?", (code,)).fetchone()
         title_name = str(stock["name"]) if stock is not None else code
         rows = self.conn.execute(
             """
-            SELECT occurred_on AS event_date, created_at, '仓位事件' AS category, id,
-                   action || ' ' || shares || '股 @ ' || printf('%.3f', price) ||
-                   '｜余仓 ' || shares_after || '｜余票成本 ' || printf('%.3f', cost_after) ||
-                   '｜已实现 ' || printf('%+.2f', realized_pnl) ||
-                   CASE WHEN reason <> '' THEN '｜' || reason ELSE '' END AS detail
-            FROM position_events WHERE code = ?
-            UNION ALL
-            SELECT occurred_on, created_at, '候选裁决', id,
+            SELECT occurred_on AS event_date, created_at, '候选裁决' AS category, id,
                    pool_id || '｜' || decision || CASE WHEN score IS NOT NULL THEN '｜评分 ' || printf('%.1f', score) ELSE '' END ||
-                   CASE WHEN timing <> '' THEN '｜' || timing ELSE '' END || '｜' || reason
+                   CASE WHEN timing <> '' THEN '｜' || timing ELSE '' END || '｜' || reason AS detail
             FROM candidate_reviews WHERE code = ?
             UNION ALL
             SELECT occurred_on, created_at, '作战预案', id,
@@ -286,7 +301,7 @@ class PlanReviewMixin:
             FROM plans WHERE code = ?
             ORDER BY event_date, created_at
             """,
-            (code, code, code),
+            (code, code),
         ).fetchall()
         lines = [f"# {title_name}（{code}）追溯时间线", "", "| 日期 | 类型 | ID | 事实/预案 |", "|---|---|---|---|"]
         lines.extend(f"| {row['event_date']} | {row['category']} | {row['id']} | {row['detail']} |" for row in rows)

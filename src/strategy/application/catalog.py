@@ -5,7 +5,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.strategy.domain.base import StrategyEngine, StrategyError, StrategyInfo, _REGISTRY
-from src.strategy.application import dip_reversal, qianlong, tail_resonance  # noqa: F401
+from src.strategy.application import (  # noqa: F401
+    qianlong,
+    tail_resonance,
+    yangshi_tail,
+)
 
 _SCREEN_ENGINES: dict[str, StrategyEngine] = {}
 _SCREEN_METADATA: dict[str, dict[str, Any]] = {}
@@ -30,10 +34,6 @@ def replace_screen_engines(
     for slug, metadata in (metadata_by_slug or {}).items():
         if slug in next_map:
             _SCREEN_METADATA[slug] = dict(metadata)
-
-
-def replace_formula_engines(engines: list[StrategyEngine]) -> None:
-    replace_screen_engines(engines)
 
 
 def get(slug: str) -> StrategyEngine:

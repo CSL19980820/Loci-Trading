@@ -90,6 +90,11 @@ describe('LanePurposeBoard', () => {
     ])
   })
 
+    it('marks a required lane that is down to a single source', () => {
+    const wrapper = mountBoard()
+    expect(wrapper.text()).toContain('仅 1 个源')
+  })
+
   it('marks a required lane that lost every source', () => {
     const wrapper = mountBoard({
       ...LANE,

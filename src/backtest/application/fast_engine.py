@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import asdict
 from typing import Any
@@ -22,10 +23,14 @@ from src.backtest.application.engine import (
     BacktestConfig,
     BacktestResult,
     Trade,
+    _one_word_masks,
     _tradable_exit,
     compute_metrics,
     run_backtest,
 )
+from src.backtest.application.performance import compute_trade_performance
+
+logger = logging.getLogger(__name__)
 
 
 def fast_backtest_enabled() -> bool:
@@ -46,28 +51,32 @@ def run_backtest_fast(
     """加速路径；任一步失败回退经典 ``run_backtest``。
 
     有止损/止盈细规则时直接回退经典引擎——numpy 批量路径不实现盘中触价。
+    回退时把真实引擎与回退原因写进 ``config['fast']``：结果自称跑的是
+    numpy_fast、实际却是经典引擎，会让"两条路径是否一致"的复核无从下手。
     """
     cfg = config or BacktestConfig()
+
+    def _classic(reason: str) -> BacktestResult:
+        result = run_backtest(
+            signals,
+            panels,
+            entry_timing=entry_timing,
+            entry_price_panel=entry_price_panel,
+            config=cfg,
+            strategy_slug=strategy_slug,
+            benchmark_close=benchmark_close,
+        )
+        result.config["fast"] = {
+            **describe_fast_backend(),
+            "engine": "classic",
+            "fallback_reason": reason,
+        }
+        return result
+
     if entry_timing == "next_dip":
-        return run_backtest(
-            signals,
-            panels,
-            entry_timing=entry_timing,
-            entry_price_panel=entry_price_panel,
-            config=cfg,
-            strategy_slug=strategy_slug,
-            benchmark_close=benchmark_close,
-        )
+        return _classic("next_dip 需要盘中触价判断")
     if cfg.stop_loss_pct is not None or cfg.take_profit_pct is not None:
-        return run_backtest(
-            signals,
-            panels,
-            entry_timing=entry_timing,
-            entry_price_panel=entry_price_panel,
-            config=cfg,
-            strategy_slug=strategy_slug,
-            benchmark_close=benchmark_close,
-        )
+        return _classic("配置了止损/止盈细规则")
     try:
         return _run_numpy_batch(
             signals,
@@ -77,15 +86,11 @@ def run_backtest_fast(
             strategy_slug=strategy_slug,
             benchmark_close=benchmark_close,
         )
-    except Exception:
-        return run_backtest(
-            signals,
-            panels,
-            entry_timing=entry_timing,
-            config=cfg,
-            strategy_slug=strategy_slug,
-            benchmark_close=benchmark_close,
+    except Exception as exc:  # noqa: BLE001 — 加速失败必须回退，但不能静默
+        logger.warning(
+            "加速回测失败，回退经典引擎（strategy=%s）：%s", strategy_slug, exc
         )
+        return _classic(f"加速路径异常：{type(exc).__name__}")
 
 
 def _entry_offset(entry_timing: str) -> tuple[int, bool]:
@@ -128,7 +133,7 @@ def _run_numpy_batch(
     close_a = panels["close"].to_numpy(dtype=float)
     high_a = panels["high"].to_numpy(dtype=float)
     low_a = panels["low"].to_numpy(dtype=float)
-    one_word = np.isclose(high_a, low_a) & np.isfinite(high_a)
+    one_word_up, one_word_down = _one_word_masks(high_a, low_a, close_a)
     volume = panels.get("volume")
     volume_a = volume.to_numpy(dtype=float) if volume is not None else None
     dates = list(signals.index)
@@ -157,7 +162,7 @@ def _run_numpy_batch(
         if volume_a is not None and not volume_a[entry_idx, col] > 0:
             skip("入场日停牌")
             continue
-        if one_word[entry_idx, col] and not config.allow_limit_up_entry:
+        if one_word_up[entry_idx, col] and not config.allow_limit_up_entry:
             skip("入场日一字板买不进")
             continue
         last_index = len(dates) - 1
@@ -173,7 +178,7 @@ def _run_numpy_batch(
                 None,
                 config,
                 close_a,
-                one_word,
+                one_word_down,
                 volume_a,
                 last_index,
             )
@@ -222,6 +227,7 @@ def _run_numpy_batch(
     result.trades = trades
     result.skipped = skipped
     result.metrics = compute_metrics(trades)
+    result.performance = compute_trade_performance(trades)
     result.config["engine"] = "numpy_fast"
     return result
 

@@ -60,6 +60,20 @@ class TdxMinuteTests(unittest.TestCase):
                     "300071", period="1", trade_date="2026-07-06"
                 )
 
+    def test_rejects_an_all_zero_price_day(self) -> None:
+        """停牌日 TDX 照样回 240 行，价格全 0；当成有数据会画出 0 元分时。"""
+        client = mock.Mock()
+        client.get_history_minute_time_data.return_value = [
+            {"price": 0.0, "vol": 0.0} for _ in range(240)
+        ]
+
+        with mock.patch(
+            "src.market.infrastructure.tdx_minute._open_client",
+            return_value=client,
+        ):
+            with self.assertRaisesRegex(TdxMinuteError, "2026-07-06"):
+                fetch_minute_bars("300071", period="1", trade_date="2026-07-06")
+
     def test_router_reaches_tdx_after_web_sources_fail(self) -> None:
         fallback = pd.DataFrame(
             {

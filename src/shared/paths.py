@@ -18,11 +18,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
-import shutil
+import sqlite3
 import sys
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 #: 有真实日 K 回填时 market.db 远大于空壳 schema（通常 GB 级；空壳约几十 KB）
@@ -48,7 +51,14 @@ PROJECT_ROOT = _bundle_root()
 
 
 def config_path() -> Path:
-    return writable_root() / "loci.config.json"
+    """``loci.config.json`` 的位置。
+
+    ``LOCI_CONFIG_JSON`` 覆盖用于测试隔离：这份文件里存着 ``data_dir`` 与线路
+    策略，没有覆盖点时测试既会读到开发机的真实配置（结果随本机而变），也可能
+    被一次忘了 mock 的 ``save_config`` 改写。
+    """
+    raw = os.environ.get("LOCI_CONFIG_JSON", "").strip()
+    return Path(raw) if raw else writable_root() / "loci.config.json"
 
 
 def default_data_dir() -> Path:
@@ -66,12 +76,32 @@ def _resolve_data_path(raw: str) -> Path:
         return path.absolute()
 
 
+def _holds_unrebuildable_state(root: Path) -> bool:
+    """目录里是否已有丢了就回不来的库（账本 / 运维配置）。
+
+    ``market.db`` 不算：它是可重建缓存，大小随时可能为 0（从没同步过）。
+    """
+    for name in ("palace.db", "ops.db"):
+        try:
+            path = root / name
+            if path.is_file() and path.stat().st_size > 0:
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def _configured_data_dir(raw: str) -> Path:
     """解析配置目录，并为移动后的便携包提供旧绝对路径兜底。"""
     configured = _resolve_data_path(raw)
     default = default_data_dir().resolve()
     if configured == default:
         return default
+
+    # 行情库大小只能用来识别「空壳目录」，不能用来决定账本住哪：配置目录里
+    # 已有 palace.db/ops.db 就说明它是用户真在用的数据根，换目录 = 账本消失。
+    if _holds_unrebuildable_state(configured):
+        return configured
 
     # loci.config.json 会随旧机器的安装目录一起被复制。若旧目录失效，或
     # 只是启动时被创建出的空目录，而 exe 旁已有完整行情库，应优先使用便携库。
@@ -90,10 +120,19 @@ def load_config() -> dict[str, Any]:
     if not path.is_file():
         return {}
     try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return {}
+    cached = getattr(load_config, "_cache", None)
+    if isinstance(cached, tuple) and cached[0] == mtime and isinstance(cached[1], dict):
+        return cached[1]
+    try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
-    return raw if isinstance(raw, dict) else {}
+    result = raw if isinstance(raw, dict) else {}
+    load_config._cache = (mtime, result)  # type: ignore[attr-defined]
+    return result
 
 
 def save_config(updates: dict[str, Any]) -> dict[str, Any]:
@@ -102,10 +141,18 @@ def save_config(updates: dict[str, Any]) -> dict[str, Any]:
     current.update({k: v for k, v in updates.items() if v is not None})
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    # 原地截断覆盖时若中途崩溃，会留下半截 JSON；load_config 捕获解析错误后
+    # 静默返回 {}，data_dir / 线路策略 / setup_done 会一起无声重置。
+    staging = path.with_name(f"{path.name}.tmp")
+    staging.write_text(
         json.dumps(current, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    os.replace(staging, path)
+    try:
+        load_config._cache = (path.stat().st_mtime, current)  # type: ignore[attr-defined]
+    except OSError:
+        load_config._cache = None  # type: ignore[attr-defined]
     return current
 
 
@@ -184,6 +231,15 @@ def market_db() -> Path:
     return Path(raw) if raw else data_dir() / "market.db"
 
 
+def market_hot_db() -> Path:
+    """滚动热读库：近 N 交易日行情窗口，选股/面板只读它，与全量写库物理隔离。
+
+    全量库被同步写时，热库读路径不受写锁影响；数据从全量库镜像派生，可随时重建。
+    """
+    raw = os.environ.get("PALACE_MARKET_HOT_DB", "").strip()
+    return Path(raw) if raw else data_dir() / "market_hot.db"
+
+
 def ops_db() -> Path:
     raw = os.environ.get("PALACE_OPS_DB", "").strip()
     return Path(raw) if raw else data_dir() / "ops.db"
@@ -196,6 +252,11 @@ def skill_root() -> Path:
 
 def skill_runs_dir() -> Path:
     return data_dir() / "skill_runs"
+
+
+def research_runs_dir() -> Path:
+    """研究 run 的 JSON 产物目录；不与运维 run 或业务数据库混用。"""
+    return data_dir() / "research_runs"
 
 
 def mcp_json_path() -> Path:
@@ -239,9 +300,12 @@ def _prepare_layout_dirs(root: Path) -> None:
     (root / "skills").mkdir(parents=True, exist_ok=True)
     (root / "skill_runs").mkdir(parents=True, exist_ok=True)
     mcp_path = root / "mcp.json"
-    example = PROJECT_ROOT / "mcp.json.example"
-    if not mcp_path.is_file() and example.is_file():
-        shutil.copy2(example, mcp_path)
+    try:
+        with mcp_path.open("x", encoding="utf-8", newline="\n") as handle:
+            json.dump({"mcpServers": {}}, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+    except FileExistsError:
+        pass
 
 
 def _ensure_empty_stores(root: Path) -> None:
@@ -256,7 +320,7 @@ def _ensure_empty_stores(root: Path) -> None:
 
 
 def initialize_data_layout(root: Path | str | None = None) -> Path:
-    """创建目录树 + 三库空 schema + mcp.json 样例。
+    """创建目录树 + 三库空 schema + 空 MCP 配置。
 
     可指定任意根（向导确认新路径时，即使当前进程仍读旧目录也可先落盘）。
     """
@@ -276,6 +340,8 @@ def ensure_data_dir() -> Path:
     _prepare_layout_dirs(root)
     try:
         _ensure_empty_stores(root)
-    except Exception:
-        pass
+    except (ImportError, OSError, sqlite3.Error) as exc:
+        # 依赖缺失 / 磁盘只读 / 库被占用都不该拦住启动，但要留痕：
+        # 静默 pass 会让「建库失败」在后面某个接口以莫名其妙的形式冒出来。
+        logger.warning("三库空 schema 补齐失败，延后到首次访问再建：%s", exc)
     return root

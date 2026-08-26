@@ -10,11 +10,12 @@ from uuid import uuid4
 
 from src.ai.domain.assistant import AssistantError
 from src.ai.infrastructure.assistant_store_lifecycle import AssistantStoreLifecycleMixin
+from src.ai.infrastructure.assistant_store_profile import AssistantStoreProfileMixin
 from src.ai.infrastructure.assistant_store_util import _dump, _hash, _load, _now, redact
 
 
-class AssistantStore(AssistantStoreLifecycleMixin):
-    """会话、消息、运行事件及用量。每个线程使用自己的 Store 实例。"""
+class AssistantStore(AssistantStoreLifecycleMixin, AssistantStoreProfileMixin):
+    """会话、消息、运行事件、画像记忆及用量。每个线程使用自己的 Store 实例。"""
 
     def __init__(self, db_path: str | Path | None) -> None:
         if not db_path:
@@ -101,6 +102,7 @@ class AssistantStore(AssistantStoreLifecycleMixin):
                     ON ai_execution_grants(run_id, action, target, params_hash);
                 """
             )
+            self._ensure_profile_schema(self.conn)
 
     def create_session(
         self, *, title: str = "", provider: str = "", model: str = "", metadata: dict[str, Any] | None = None
@@ -119,12 +121,22 @@ class AssistantStore(AssistantStoreLifecycleMixin):
         row = self.conn.execute("SELECT * FROM ai_sessions WHERE id = ?", (session_id,)).fetchone()
         return self._session(row) if row else None
 
-    def list_sessions(self, *, limit: int = 50, include_archived: bool = False) -> list[dict[str, Any]]:
+    def list_sessions(
+        self,
+        *,
+        limit: int = 50,
+        include_archived: bool = False,
+        archived_only: bool = False,
+    ) -> list[dict[str, Any]]:
         if not 1 <= limit <= 500:
             raise AssistantError("limit 必须在 1-500 之间")
+        if include_archived and archived_only:
+            raise AssistantError("include_archived 与 archived_only 不能同时为真")
         sql = "SELECT * FROM ai_sessions"
         args: list[Any] = []
-        if not include_archived:
+        if archived_only:
+            sql += " WHERE status = 'archived'"
+        elif not include_archived:
             sql += " WHERE status <> 'archived'"
         sql += " ORDER BY updated_at DESC, id DESC LIMIT ?"
         args.append(limit)
@@ -165,9 +177,53 @@ class AssistantStore(AssistantStoreLifecycleMixin):
                 raise AssistantError("AI 会话不存在")
         return self.get_session(session_id) or {}
 
+    def unarchive_session(self, session_id: str) -> dict[str, Any]:
+        with self._tx() as cur:
+            row = cur.execute("SELECT status FROM ai_sessions WHERE id = ?", (session_id,)).fetchone()
+            if row is None:
+                raise AssistantError("AI 会话不存在")
+            if str(row["status"]) != "archived":
+                raise AssistantError("仅已归档会话可以恢复")
+            cur.execute(
+                "UPDATE ai_sessions SET status = 'idle', updated_at = ? WHERE id = ?",
+                (_now(), session_id),
+            )
+        return self.get_session(session_id) or {}
+
     def delete_session(self, session_id: str) -> bool:
-        """隐藏会话但保留运行与授权审计记录。"""
-        return bool(self.archive_session(session_id))
+        """永久删除会话及级联消息/run/events；授权审计 grants 无 FK，予以保留。"""
+        with self._tx() as cur:
+            self._ensure_session_inactive(cur, session_id)
+            cur.execute("DELETE FROM ai_sessions WHERE id = ?", (session_id,))
+            return cur.rowcount == 1
+
+    def batch_sessions(self, *, action: str, ids: list[str]) -> dict[str, Any]:
+        """逐条容错的批量归档 / 恢复 / 删除。"""
+        if action not in {"archive", "unarchive", "delete"}:
+            raise AssistantError("批量动作必须是 archive、unarchive 或 delete")
+        if not ids:
+            raise AssistantError("ids 不能为空")
+        if len(ids) > 100:
+            raise AssistantError("单次批量最多 100 条")
+        ok: list[str] = []
+        failed: list[dict[str, str]] = []
+        for session_id in ids:
+            sid = str(session_id).strip()
+            if not sid:
+                failed.append({"id": session_id, "error": "空 id"})
+                continue
+            try:
+                if action == "archive":
+                    self.archive_session(sid)
+                elif action == "unarchive":
+                    self.unarchive_session(sid)
+                else:
+                    if not self.delete_session(sid):
+                        raise AssistantError("AI 会话不存在")
+                ok.append(sid)
+            except AssistantError as exc:
+                failed.append({"id": sid, "error": str(exc)})
+        return {"ok": ok, "failed": failed}
 
     @staticmethod
     def _ensure_session_inactive(cur: sqlite3.Cursor, session_id: str) -> None:
@@ -196,6 +252,49 @@ class AssistantStore(AssistantStoreLifecycleMixin):
             cur.execute("UPDATE ai_sessions SET updated_at = ? WHERE id = ?", (_now(), session_id))
         return self.get_message(message_id) or {}
 
+    def append_assistant_if_run_active(
+        self,
+        run_id: str,
+        session_id: str,
+        *,
+        content: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """仅当 run 仍为 running 且未取消时写入助手消息，避免取消后迟到写入插队到新一轮之后。"""
+        message_id = f"AIM-{uuid4().hex[:16].upper()}"
+        with self._tx() as cur:
+            run = cur.execute(
+                "SELECT status, cancel_requested, session_id FROM ai_agent_runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+            if run is None:
+                return None
+            if str(run["session_id"]) != session_id:
+                return None
+            if str(run["status"]) != "running" or bool(run["cancel_requested"]):
+                return None
+            if cur.execute("SELECT 1 FROM ai_sessions WHERE id = ?", (session_id,)).fetchone() is None:
+                raise AssistantError("AI 会话不存在")
+            row = cur.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM ai_messages WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            cur.execute(
+                "INSERT INTO ai_messages(id,session_id,seq,role,content,metadata_json,created_at)"
+                " VALUES(?,?,?,?,?,?,?)",
+                (
+                    message_id,
+                    session_id,
+                    int(row["seq"]),
+                    "assistant",
+                    str(redact(content)),
+                    _dump(redact(metadata)),
+                    _now(),
+                ),
+            )
+            cur.execute("UPDATE ai_sessions SET updated_at = ? WHERE id = ?", (_now(), session_id))
+        return self.get_message(message_id)
+
     def get_message(self, message_id: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM ai_messages WHERE id = ?", (message_id,)).fetchone()
         return self._message(row) if row else None
@@ -222,12 +321,23 @@ class AssistantStore(AssistantStoreLifecycleMixin):
             )
 
     def begin_run(
-        self, session_id: str, *, provider: str = "", model: str = "", user_message: str,
+        self,
+        session_id: str,
+        *,
+        provider: str = "",
+        model: str = "",
+        user_message: str,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """原子写入用户消息并占用会话，避免并发请求启动多个 Agent。"""
         prompt = str(user_message).strip()
-        if not prompt:
+        meta = dict(metadata or {})
+        images = meta.get("images") if isinstance(meta.get("images"), list) else []
+        if not prompt and not images:
             raise AssistantError("消息不能为空")
+        # 仅附图时正文占位，保证 hash / 标题链路有非空串
+        stored_content = prompt or "（附图）"
+        hash_message = prompt or f"（附图×{len(images)}）"
         with self._tx() as cur:
             session = cur.execute("SELECT status FROM ai_sessions WHERE id = ?", (session_id,)).fetchone()
             self._ensure_session_startable(session)
@@ -242,8 +352,8 @@ class AssistantStore(AssistantStoreLifecycleMixin):
                     session_id,
                     int(next_seq["seq"]),
                     "user",
-                    str(redact(prompt)),
-                    "{}",
+                    str(redact(stored_content)),
+                    _dump(redact(meta)),
                     _now(),
                 ),
             )
@@ -252,7 +362,7 @@ class AssistantStore(AssistantStoreLifecycleMixin):
                 session_id=session_id,
                 provider=provider,
                 model=model,
-                user_message=prompt,
+                user_message=hash_message,
             )
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
@@ -279,16 +389,31 @@ class AssistantStore(AssistantStoreLifecycleMixin):
         return str(row["id"]) if row else ""
 
     def append_event(self, run_id: str, event_type: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        """写入一条事件并直接返回与 ``poll_events``/``_event`` 同形的 dict（事务内构造，无回读）。"""
         event_id = f"AIE-{uuid4().hex[:16].upper()}"
+        created_at = _now()
+        kind = event_type[:80]
+        payload_json = _dump(redact(payload))
         with self._tx() as cur:
-            row = cur.execute("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM ai_agent_events WHERE run_id = ?", (run_id,)).fetchone()
+            row = cur.execute(
+                "SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM ai_agent_events WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
             if cur.execute("SELECT 1 FROM ai_agent_runs WHERE id = ?", (run_id,)).fetchone() is None:
                 raise AssistantError("AI 运行不存在")
+            seq = int(row["seq"])
             cur.execute(
                 "INSERT INTO ai_agent_events(id,run_id,seq,event_type,payload_json,created_at) VALUES(?,?,?,?,?,?)",
-                (event_id, run_id, int(row["seq"]), event_type[:80], _dump(redact(payload)), _now()),
+                (event_id, run_id, seq, kind, payload_json, created_at),
             )
-        return self.poll_events(run_id, after_seq=int(row["seq"]) - 1, limit=1)[0]
+        return {
+            "id": event_id,
+            "run_id": run_id,
+            "seq": seq,
+            "event_type": kind,
+            "payload": _load(payload_json, {}),
+            "created_at": created_at,
+        }
 
     def poll_events(self, run_id: str, *, after_seq: int = 0, limit: int = 200) -> list[dict[str, Any]]:
         rows = self.conn.execute(
@@ -332,6 +457,18 @@ class AssistantStore(AssistantStoreLifecycleMixin):
         row = self.conn.execute(
             "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS total "
             "FROM ai_usage_daily WHERE day >= ? AND day < ?",
+            (start.isoformat(), end.isoformat()),
+        ).fetchone()
+        return int(row["total"] if row else 0)
+
+    def monthly_assistant_run_count(self, *, on: date | None = None) -> int:
+        """自然月内助手 run 次数（含失败）；查询失败时抛错（硬拒绝语义）。"""
+        current = on or date.today()
+        start = current.replace(day=1)
+        end = date(start.year + 1, 1, 1) if start.month == 12 else date(start.year, start.month + 1, 1)
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS total FROM ai_agent_runs "
+            "WHERE substr(started_at, 1, 10) >= ? AND substr(started_at, 1, 10) < ?",
             (start.isoformat(), end.isoformat()),
         ).fetchone()
         return int(row["total"] if row else 0)
@@ -417,7 +554,7 @@ class AssistantStore(AssistantStoreLifecycleMixin):
             raise AssistantError("AI 会话不存在或已归档")
         if status == "running":
             raise AssistantError("当前 AI 会话已有运行，请先等待结束或中止")
-        # waiting_user：允许用户回复；调用方须先 resolve_waiting_session。
+        # waiting_user：允许用户回复；正常路径走 resume_waiting_run，勿 begin_run。
 
     @staticmethod
     def _insert_run(

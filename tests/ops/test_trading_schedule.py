@@ -18,9 +18,9 @@ class ComposeCronTests(unittest.TestCase):
     def test_once(self) -> None:
         self.assertEqual(
             compose_trading_cron("once", run_hour=15, run_minute=30),
-            "30 15 * * 1-5",
+            "30 15 * * mon-fri",
         )
-        self.assertEqual(compose_trading_cron("once"), "30 15 * * 1-5")
+        self.assertEqual(compose_trading_cron("once"), "30 15 * * mon-fri")
 
     def test_interval(self) -> None:
         self.assertEqual(
@@ -30,7 +30,7 @@ class ComposeCronTests(unittest.TestCase):
                 window_start_hour=9,
                 window_end_hour=14,
             ),
-            "*/10 9-14 * * 1-5",
+            "*/10 9-14 * * mon-fri",
         )
 
     def test_bad_interval(self) -> None:
@@ -57,7 +57,7 @@ class PreviewRunsTests(unittest.TestCase):
         self.assertEqual(runs, ["2026-07-30 15:30"])
 
     def test_interval_five_slots_respect_minute_window(self) -> None:
-        """预览只显示完整时分窗口内、且能被 cron 真正触发的槽位。"""
+        """预览显示开头若干槽 + 当天末档，避免误以为结束于 14:00。"""
         now = datetime(2026, 7, 30, 9, 0)
         runs = preview_trading_runs(
             "interval",
@@ -76,7 +76,34 @@ class PreviewRunsTests(unittest.TestCase):
                 "2026-07-30 09:40",
                 "2026-07-30 09:50",
                 "2026-07-30 10:00",
-                "2026-07-30 10:10",
+                "2026-07-30 14:50",
+            ],
+        )
+
+    def test_interval_preview_skips_between_split_sessions(self) -> None:
+        runs = preview_trading_runs(
+            "interval",
+            now=datetime(2026, 7, 30, 11, 40),
+            interval_minutes=10,
+            window_start_hour=9,
+            window_start_minute=20,
+            window_end_hour=14,
+            window_end_minute=50,
+            sessions=[
+                {"start_hour": 9, "start_minute": 20, "end_hour": 11, "end_minute": 30},
+                {"start_hour": 13, "start_minute": 0, "end_hour": 14, "end_minute": 50},
+            ],
+            limit=5,
+        )
+
+        self.assertEqual(
+            runs,
+            [
+                "2026-07-30 13:00",
+                "2026-07-30 13:10",
+                "2026-07-30 13:20",
+                "2026-07-30 13:30",
+                "2026-07-30 14:50",
             ],
         )
 

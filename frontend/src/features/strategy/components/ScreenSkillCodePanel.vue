@@ -7,10 +7,18 @@ import type { ScreenSkillRuntime } from '@/shared/types/quant'
 
 import type { ScreenSkillDraftModel } from '../composables/screenSkillDraft'
 
-const props = defineProps<{
-  draft: ScreenSkillDraftModel
-  showEditor?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    draft: ScreenSkillDraftModel
+    showEditor?: boolean
+    fieldErrors?: Record<string, string>
+  }>(),
+  { fieldErrors: () => ({}) },
+)
+
+function err(field: string): string {
+  return props.fieldErrors[field] || ''
+}
 
 const emit = defineEmits<{
   addParam: []
@@ -30,16 +38,6 @@ const editorContent = computed({
   },
 })
 
-const dialectOptions = computed(() =>
-  props.draft.runtime === 'python'
-    ? [{ label: 'python', value: 'python' }]
-    : [
-        { label: 'loci', value: 'loci' },
-        { label: 'tdx', value: 'tdx' },
-        { label: 'ths', value: 'ths' },
-      ],
-)
-
 const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'python' : 'plaintext'))
 </script>
 
@@ -52,26 +50,25 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
           class="full"
           @update:model-value="requestRuntimeChange"
         >
-          <el-option label="公式" value="formula" />
-          <el-option label="Python" value="python" />
+          <el-option label="公式（通达信兼容）" value="formula" />
+          <el-option label="脚本（高级）" value="python" />
         </el-select>
       </el-form-item>
-      <el-form-item label="方言">
-        <el-select v-model="props.draft.dialect" class="full">
-          <el-option v-for="item in dialectOptions" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
+      <el-form-item v-if="props.draft.runtime === 'python'" label="入口函数" required :error="err('entrypoint')">
+        <el-input
+          v-model.trim="props.draft.entrypoint"
+          maxlength="80"
+          placeholder="文件:函数名，例如 strategy.py:compute"
+        />
       </el-form-item>
-      <el-form-item v-if="props.draft.runtime === 'python'" label="入口函数" required>
-        <el-input v-model.trim="props.draft.entrypoint" maxlength="80" placeholder="strategy.py:compute" />
-      </el-form-item>
-      <el-form-item v-else label="公式源">
-        <el-input :model-value="props.draft.dialect.toUpperCase()" readonly />
+      <el-form-item v-else label="公式方言">
+        <el-input model-value="通达信 / 同花顺兼容写法" readonly />
       </el-form-item>
     </div>
 
     <el-form-item
       v-if="showEditor !== false"
-      :label="props.draft.runtime === 'python' ? 'Python 源码' : '公式正文'"
+      :label="props.draft.runtime === 'python' ? '脚本源码' : '公式正文'"
       required
     >
       <CodeEditor v-model="editorContent" :language="editorLanguage" height="24rem" />
@@ -80,10 +77,18 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
     <div class="section-head">
       <div>
         <strong>参数表</strong>
-        <div class="dim">编译、保存、试跑共用同一份 manifest 参数定义。</div>
+        <div class="dim">编译、保存、试跑共用同一份参数定义。</div>
       </div>
       <el-button size="small" @click="emit('addParam')">新增参数</el-button>
     </div>
+    <el-alert
+      v-if="err('params')"
+      :title="err('params')"
+      type="error"
+      show-icon
+      :closable="false"
+      class="params-alert"
+    />
 
     <el-table :data="props.draft.params" size="small" border class="params-table">
       <el-table-column label="参数名" min-width="120">
@@ -94,15 +99,18 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
       <el-table-column label="类型" width="112">
         <template #default="{ row }">
           <el-select v-model="row.type" class="full">
-            <el-option label="int" value="int" />
-            <el-option label="float" value="float" />
-            <el-option label="bool" value="bool" />
+            <el-option label="整数" value="int" />
+            <el-option label="小数" value="float" />
+            <el-option label="开关" value="bool" />
           </el-select>
         </template>
       </el-table-column>
       <el-table-column label="默认值" min-width="110">
         <template #default="{ row }">
-          <el-input v-model.trim="row.defaultValue" :placeholder="row.type === 'bool' ? 'true / false' : '20'" />
+          <el-input
+            v-model.trim="row.defaultValue"
+            :placeholder="row.type === 'bool' ? '是 / 否' : '20'"
+          />
         </template>
       </el-table-column>
       <el-table-column label="最小值" min-width="96">
@@ -147,6 +155,10 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
+}
+
+.params-alert {
+  margin-bottom: 0.55rem;
 }
 
 .dim {

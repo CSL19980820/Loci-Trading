@@ -20,12 +20,7 @@ class PalaceApiTests(unittest.TestCase):
         self.client.close()
         self.temp.cleanup()
 
-    def test_trade_candidate_plan_and_dashboard_flow(self) -> None:
-        trade = self.client.post(
-            "/api/trades",
-            json={"action": "BUY", "code": "300358", "name": "楚天科技", "shares": 3200, "price": 8.3},
-        )
-        self.assertEqual(trade.status_code, 201)
+    def test_candidate_and_plan_flow(self) -> None:
         candidate = self.client.post(
             "/api/candidates",
             json={
@@ -42,17 +37,13 @@ class PalaceApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(plan.status_code, 201)
-        dashboard = self.client.get("/api/dashboard?date=2026-07-24")
-        self.assertEqual(dashboard.status_code, 200)
-        payload = dashboard.json()
-        self.assertEqual(payload["positions"][0]["code"], "300358")
-        self.assertEqual(payload["candidates"][0]["id"], candidate.json()["id"])
-        self.assertEqual(payload["plans"][0]["id"], plan.json()["id"])
-        self.assertIn("candidate_summary", payload)
-        self.assertGreaterEqual(payload["candidate_summary"]["selected_count"], 1)
-        self.assertIn("picks", payload["candidate_summary"])
-        self.assertTrue(isinstance(payload["candidate_summary"]["picks"][0], dict))
-        self.assertIn("reason", payload["candidate_summary"]["picks"][0])
+
+        listed = self.client.get("/api/candidates?date=2026-07-24")
+        plans = self.client.get("/api/plans")
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()[0]["id"], candidate.json()["id"])
+        self.assertEqual(plans.status_code, 200)
+        self.assertEqual(plans.json()[0]["id"], plan.json()["id"])
 
     def test_batch_delete_candidates(self) -> None:
         ids: list[str] = []
@@ -78,15 +69,7 @@ class PalaceApiTests(unittest.TestCase):
         remaining = {item["id"] for item in listed.json()}
         self.assertTrue(remaining.isdisjoint(ids))
 
-    def test_journal_pool_review_and_analytics_endpoints(self) -> None:
-        self.client.post(
-            "/api/trades",
-            json={"action": "BUY", "code": "300358", "name": "楚天科技", "shares": 100, "price": 8.3, "occurred_on": "2026-07-20"},
-        )
-        self.client.post(
-            "/api/trades",
-            json={"action": "SELL", "code": "300358", "shares": 40, "price": 8.8, "occurred_on": "2026-07-22"},
-        )
+    def test_pool_and_review_endpoints(self) -> None:
         self.client.post(
             "/api/candidates",
             json={
@@ -104,44 +87,36 @@ class PalaceApiTests(unittest.TestCase):
         created = self.client.post(
             "/api/reviews",
             json={
-                "entity_type": "trade",
-                "entity_id": "TX-TEST",
-                "outcome": "减仓节奏正确",
+                "entity_type": "candidate",
+                "entity_id": "CAND-TEST",
+                "outcome": "回踩节奏正确",
                 "return_pct": 2.1,
-                "lesson": "按预案减",
+                "lesson": "按预案跟",
                 "next_rule": "保留分批",
                 "reviewed_on": "2026-07-23",
             },
         )
         self.assertEqual(created.status_code, 201)
 
-        trades = self.client.get("/api/trades")
         pools = self.client.get("/api/pools")
         day = self.client.get("/api/pools/day?date=2026-07-24")
         reviews = self.client.get("/api/reviews")
-        analytics = self.client.get("/api/analytics")
 
-        self.assertEqual(trades.status_code, 200)
-        self.assertEqual(len(trades.json()), 2)
         self.assertEqual(pools.status_code, 200)
         self.assertEqual(pools.json()[0]["selected"], 1)
         self.assertEqual(day.status_code, 200)
         self.assertEqual(day.json()["filtered_count"], 1)
         self.assertEqual(reviews.status_code, 200)
-        self.assertEqual(reviews.json()[0]["outcome"], "减仓节奏正确")
-        self.assertEqual(analytics.status_code, 200)
-        self.assertIn("equity_curve", analytics.json())
+        self.assertEqual(reviews.json()[0]["outcome"], "回踩节奏正确")
 
     def test_today_alerts_and_csv_export(self) -> None:
-        import os
-
         import numpy as np
         import pandas as pd
 
-        from src.market.infrastructure.store import MarketStore
+        from src.market import open_market_hot
 
-        market_path = Path(self.temp.name) / "market.db"
-        market = MarketStore(market_path)
+        # 触价读热库；写入隔离的 market_hot.db（conftest 已设 PALACE_MARKET_HOT_DB）
+        market = open_market_hot()
         dates = ["2026-07-20", "2026-07-21", "2026-07-22"]
         frame = pd.DataFrame(
             {
@@ -159,105 +134,41 @@ class PalaceApiTests(unittest.TestCase):
         market.upsert_quotes("300358", frame, source="test")
         market.close()
 
-        prev_market = os.environ.get("PALACE_MARKET_DB")
-        os.environ["PALACE_MARKET_DB"] = str(market_path)
-        try:
-            # market_db 是构造期注入的：环境变量要先于 create_app 就位
-            self.client.close()
-            app = create_app(
-                Path(self.temp.name) / "palace.db",
-                Path(self.temp.name) / "no-static",
-            )
-            self.client = TestClient(app)
-            self.client.post(
-                "/api/plans",
-                json={
-                    "code": "300358",
-                    "title": "回踩首仓",
-                    "scenario": "缩量止跌",
-                    "stop_price": 7.76,
-                    "target_price": 9.1,
-                    "occurred_on": "2026-07-20",
-                },
-            )
-            alerts = self.client.get("/api/alerts/today")
-            self.assertEqual(alerts.status_code, 200)
-            payload = alerts.json()
-            self.assertEqual(len(payload), 1)
-            self.assertEqual(payload[0]["status"], "stop_hit")
-            self.assertAlmostEqual(payload[0]["last_close"], 7.5)
-
-            trade = self.client.post(
-                "/api/trades",
-                json={
-                    "action": "BUY",
-                    "code": "300358",
-                    "name": "楚天科技",
-                    "shares": 100,
-                    "price": 8.3,
-                    "reason": "试仓",
-                },
-            )
-            self.assertEqual(trade.status_code, 201)
-            csv_resp = self.client.get("/api/trades/export.csv")
-            self.assertEqual(csv_resp.status_code, 200)
-            self.assertIn("text/csv", csv_resp.headers["content-type"])
-            body = csv_resp.content.decode("utf-8-sig")
-            self.assertIn("日期", body)
-            self.assertIn("300358", body)
-            self.assertIn("试仓", body)
-        finally:
-            if prev_market is None:
-                os.environ.pop("PALACE_MARKET_DB", None)
-            else:
-                os.environ["PALACE_MARKET_DB"] = prev_market
-
-    def test_qianlong_import_preview_confirm_flow(self) -> None:
-        import io
-        import json
-
-        state = {
-            "updatedAt": "2026-07-24",
-            "totalAssets": 206400,
-            "realizedPnlCumulative": -11104,
-            "holdings": [{"name": "楚天科技", "code": "300358", "cost": 8.3, "shares": 3200}],
-        }
-        payload = json.dumps(state, ensure_ascii=False).encode("utf-8")
-        preview = self.client.post(
-            "/api/import/qianlong/preview",
-            files={"file": ("state.json", io.BytesIO(payload), "application/json")},
+        self.client.post(
+            "/api/plans",
+            json={
+                "code": "300358",
+                "title": "回踩首仓",
+                "scenario": "缩量止跌",
+                "stop_price": 7.76,
+                "target_price": 9.1,
+                "occurred_on": "2026-07-20",
+            },
         )
-        self.assertEqual(preview.status_code, 200)
-        preview_body = preview.json()
-        self.assertTrue(preview_body["can_import"])
-        self.assertEqual(preview_body["holdings_count"], 1)
+        alerts = self.client.get("/api/alerts/today")
+        self.assertEqual(alerts.status_code, 200)
+        payload = alerts.json()
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]["status"], "stop_hit")
+        self.assertAlmostEqual(payload[0]["last_close"], 7.5)
 
-        confirm = self.client.post(
-            "/api/import/qianlong/confirm",
-            files={"file": ("state.json", io.BytesIO(payload), "application/json")},
+        created = self.client.post(
+            "/api/candidates",
+            json={
+                "code": "300358",
+                "name": "楚天科技",
+                "decision": "重点",
+                "reason": "试仓观察",
+                "occurred_on": "2026-07-20",
+            },
         )
-        self.assertEqual(confirm.status_code, 200)
-        self.assertEqual(len(confirm.json()["position_events"]), 1)
-
-        trades = self.client.get("/api/trades")
-        self.assertEqual(trades.status_code, 200)
-        self.assertEqual(len(trades.json()), 1)
-        self.assertEqual(trades.json()[0]["action"], "OPENING")
-
-        preview_again = self.client.post(
-            "/api/import/qianlong/preview",
-            files={"file": ("state.json", io.BytesIO(payload), "application/json")},
-        )
-        self.assertEqual(preview_again.status_code, 200)
-        self.assertFalse(preview_again.json()["can_import"])
-
-    def test_rejects_invalid_position_change(self) -> None:
-        response = self.client.post(
-            "/api/trades", json={"action": "SELL", "code": "300358", "shares": 100, "price": 8.3}
-        )
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("没有可卖出的仓位", response.json()["detail"])
-
+        self.assertEqual(created.status_code, 201)
+        csv_resp = self.client.get("/api/candidates/export.csv")
+        self.assertEqual(csv_resp.status_code, 200)
+        self.assertIn("text/csv", csv_resp.headers["content-type"])
+        body = csv_resp.content.decode("utf-8-sig")
+        self.assertIn("300358", body)
+        self.assertIn("试仓观察", body)
     def test_static_ui_falls_back_to_index_for_client_side_route(self) -> None:
         static_dir = Path(self.temp.name) / "dist"
         static_dir.mkdir()
@@ -281,32 +192,32 @@ class PalaceApiTests(unittest.TestCase):
             Path(self.temp.name) / "no-static",
             environment="production",
             allowed_hosts=["testserver"],
-            write_token="test-agent-token",
+            write_token="test-agent-token-xxxxxxxxxxxxxxxx",
             auth_username="admin",
             auth_password="test-password",
             session_secret="test-session-secret",
         )
-        payload = {"action": "BUY", "code": "300358", "name": "楚天科技", "shares": 100, "price": 8.3}
+        payload = {"code": "300358", "name": "楚天科技", "decision": "观察", "reason": "鉴权探针"}
         # 生产形态是 HTTPS：会话 Cookie 带 Secure，只会经加密信道回传。
         # 用 http:// 跑这个用例的话客户端不会带回 Cookie，那是正确行为。
         with TestClient(app, base_url="https://testserver") as client:
-            blocked_read = client.get("/api/dashboard")
+            blocked_read = client.get("/api/candidates")
             bad_login = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
             login = client.post("/api/auth/login", json={"username": "admin", "password": "test-password"})
-            readable = client.get("/api/dashboard")
-            allowed_by_session = client.post("/api/trades", json=payload)
+            readable = client.get("/api/candidates")
+            allowed_by_session = client.post("/api/candidates", json=payload)
             session = client.get("/api/auth/session")
             logout = client.post("/api/auth/logout")
-            blocked_after_logout = client.get("/api/dashboard")
+            blocked_after_logout = client.get("/api/candidates")
             allowed_by_agent = client.post(
-                "/api/trades",
+                "/api/candidates",
                 json={**payload, "code": "300359"},
-                headers={"Authorization": "Bearer test-agent-token"},
+                headers={"Authorization": "Bearer test-agent-token-xxxxxxxxxxxxxxxx"},
             )
             extra = client.post(
-                "/api/trades",
+                "/api/candidates",
                 json={**payload, "unknown_field": "not accepted"},
-                headers={"Authorization": "Bearer test-agent-token"},
+                headers={"Authorization": "Bearer test-agent-token-xxxxxxxxxxxxxxxx"},
             )
         self.assertEqual(blocked_read.status_code, 401)
         self.assertEqual(bad_login.status_code, 401)
@@ -333,7 +244,7 @@ class PalaceApiTests(unittest.TestCase):
                 response = client.get("/api/ops/data-location")
                 authenticated = client.get(
                     "/api/ops/data-location",
-                    headers={"Authorization": "Bearer test-agent-token"},
+                    headers={"Authorization": "Bearer test-agent-token-xxxxxxxxxxxxxxxx"},
                 )
 
         self.assertEqual(response.status_code, 401)
@@ -381,7 +292,7 @@ class PalaceApiTests(unittest.TestCase):
                 )
                 authenticated_read = client.get(
                     "/api/ops/data-location",
-                    headers={"Authorization": "Bearer test-agent-token"},
+                    headers={"Authorization": "Bearer test-agent-token-xxxxxxxxxxxxxxxx"},
                 )
 
         self.assertEqual(anonymous_read.status_code, 401)
@@ -393,7 +304,7 @@ class PalaceApiTests(unittest.TestCase):
         kwargs: dict[str, object] = {
             "environment": "production",
             "allowed_hosts": ["testserver"],
-            "write_token": "test-agent-token",
+            "write_token": "test-agent-token-xxxxxxxxxxxxxxxx",
             "auth_username": "admin",
             "auth_password": "test-password",
             "session_secret": "test-session-secret",
@@ -410,7 +321,7 @@ class PalaceApiTests(unittest.TestCase):
             login = client.post(
                 "/api/auth/login", json={"username": "admin", "password": "test-password"}
             )
-            readable = client.get("/api/dashboard")
+            readable = client.get("/api/candidates")
         self.assertEqual(login.status_code, 200)
         self.assertNotIn("secure", login.headers["set-cookie"].lower())
         self.assertEqual(readable.status_code, 200)

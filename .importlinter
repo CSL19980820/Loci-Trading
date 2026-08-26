@@ -1,9 +1,12 @@
 [importlinter]
-root_package = src
+root_packages =
+    src
+    cli
 include_external_packages = True
 
 # Block direct imports of sibling infrastructure modules; package-root re-exports are allowed.
 # Keep same-context api/application/domain/infrastructure imports in allowed_importers.
+# cli must not deep-import *.infrastructure; desktop loci.py is outside root_packages (see cli/README).
 
 [importlinter:contract:protect-market-infra]
 name = Protect market.infrastructure
@@ -101,6 +104,35 @@ allowed_importers =
     src.backtest.domain
     src.backtest.infrastructure
 
+[importlinter:contract:protect-research-infra]
+name = Protect research.infrastructure
+type = protected
+protected_modules =
+    src.research.infrastructure
+allowed_importers =
+    src.research
+    src.research.api
+    src.research.application
+    src.research.domain
+    src.research.infrastructure
+
+[importlinter:contract:cli-no-infra-deep]
+name = CLI must not deep-import infrastructure
+type = forbidden
+source_modules =
+    cli
+forbidden_modules =
+    src.market.infrastructure
+    src.ledger.infrastructure
+    src.ops.infrastructure
+    src.ai.infrastructure
+    src.intel.infrastructure
+    src.review.infrastructure
+    src.strategy.infrastructure
+    src.backtest.infrastructure
+    src.research.infrastructure
+allow_indirect_imports = true
+
 [importlinter:contract:domain-no-web-framework]
 name = Domain must not import FastAPI
 type = forbidden
@@ -114,9 +146,37 @@ source_modules =
     src.intel.domain
     src.backtest.domain
     src.formula.domain
+    src.research.domain
 forbidden_modules =
     fastapi
     starlette
     httpx
     httpx2
+    sqlite3
+allow_indirect_imports = false
+
+# NOTE: keep this file ASCII-only. import-linter reads it with the platform
+# default encoding (gbk on Windows), so non-ASCII comments crash the run.
+#
+# The composition root wires contexts together; contexts must not depend back on
+# it. There used to be 22 reverse imports of src.app.legacy.quant_common across
+# six api layers, so changing one domain's request fields meant touching src/app.
+# Request models now live in <context>/api/schemas.py and the dependency openers
+# in src/shared/api_deps.py. This contract stops the reverse edge growing back.
+[importlinter:contract:contexts-must-not-import-composition-root]
+name = Bounded contexts must not import the composition root
+type = forbidden
+source_modules =
+    src.ledger
+    src.market
+    src.ops
+    src.ai
+    src.intel
+    src.review
+    src.strategy
+    src.backtest
+    src.research
+    src.formula
+forbidden_modules =
+    src.app
 allow_indirect_imports = false

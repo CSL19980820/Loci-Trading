@@ -8,17 +8,21 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.app.legacy.quant_common import (
-    AnalysisRequest,
-    ScreenRequest,
-    StrategyDocUpsert,
-    StrategyJobConfig,
+from src.shared.api_deps import (
+    market_hot_store,
     market_store,
     missing_dependency,
     ops_store,
     palace_store,
     should_sync_today,
 )
+from src.strategy.api.schemas import (
+    AnalysisRequest,
+    ScreenRequest,
+    StrategyDocUpsert,
+    StrategyJobConfig,
+)
+from src.shared.paths import market_hot_db
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +37,10 @@ def build_strategy_router(
 ) -> APIRouter:
     router = APIRouter()
     write_guard = Depends(write_dependency)
+    from src.strategy.api.screen_history_router import build_screen_history_router
     from src.strategy.api.version_router import build_strategy_version_router
 
+    router.include_router(build_screen_history_router(palace_db=palace_db))
     router.include_router(
         build_strategy_version_router(
             write_dependency=write_dependency, market_db=market_db, ops_db=ops_db
@@ -43,6 +49,10 @@ def build_strategy_router(
 
     def _market():
         return market_store(market_db)
+
+    def _hot():
+        """选股读滚动热库（近 700 交易日窗口），与全量写库物理隔离。"""
+        return market_hot_store(str(market_hot_db()))
 
     def _ops():
         return ops_store(ops_db)
@@ -93,7 +103,37 @@ def build_strategy_router(
         trade_date = win_end or payload.date
         universe = _effective_screen_universe(payload.strategy, payload.universe)
 
-        with _market() as store:
+        # 与 screen_run / job:screen 对齐：默认镜像后读热库；
+        # requires_full_history 或镜像失败时回退全量库。
+        try:
+            from src.strategy import get as _get_strategy
+
+            needs_full = bool(
+                getattr(_get_strategy(payload.strategy), "requires_full_history", False)
+            )
+        except Exception:
+            needs_full = False
+
+        from contextlib import ExitStack
+
+        with ExitStack() as stack:
+            full = stack.enter_context(_market())
+            store = full
+            if not needs_full:
+                try:
+                    from src.market import hot_unusable_reason, mirror_recent_to_hot
+
+                    hot = stack.enter_context(_hot())
+                    mirror_recent_to_hot(full, hot)
+                    reason = hot_unusable_reason(full, hot)
+                    if reason:
+                        logger.warning("%s，回退全量库选股", reason)
+                        store = full
+                    else:
+                        store = hot
+                except Exception as exc:
+                    logger.warning("镜像热库失败，回退全量库选股：%s", exc)
+                    store = full
             try:
                 result = screen(
                     store, payload.strategy, trade_date=trade_date,
@@ -123,6 +163,7 @@ def build_strategy_router(
             "params": result.params,
             "effective_params": result.effective_params,
             "picks": result.picks,
+            "watch_picks": result.watch_picks,
             "health": result.health,
             "universe": result.universe,
             "universe_funnel": result.universe_funnel,
@@ -157,6 +198,7 @@ def build_strategy_router(
             opts,
             market_factory=_market,
             palace_db=palace_db,
+            hot_db=str(market_hot_db()),
         )
     # ---- 分析任务（异步）---------------------------------------------
     # 横向对比与退出扫描都是分钟级的：对比 8 个战法 × 2 个持有期要跑 16 次
@@ -201,7 +243,12 @@ def build_strategy_router(
                 run_job(
                     own,
                     job_snapshot,
-                    context=JobContext(market_db=market_db, ops_store=own, palace_db=palace_db),
+                    context=JobContext(
+                        market_db=market_db,
+                        market_hot_db=str(market_hot_db()),
+                        ops_store=own,
+                        palace_db=palace_db,
+                    ),
                     trigger="api",
                     run_id=run_id,
                 )
@@ -389,33 +436,6 @@ def build_strategy_router(
         _reload_scheduler()
         return {"removed": True}
 
-    @router.get("/api/screen/history", tags=["strategy"])
-    def screen_history(
-        strategy: str = Query(min_length=1, max_length=64),
-        start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-        end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-        limit: int = Query(default=200, ge=1, le=1000),
-        live_only: bool = Query(
-            default=True,
-            description="默认仅盘后/当日真选；false 时含区间回填（审计用）",
-        ),
-    ) -> dict[str, Any]:
-        """按战法查历史选股记录（从账本候选池读取）。"""
-        with _palace() as palace:
-            items = palace.candidates_by_strategy(
-                strategy, start=start, end=end, limit=limit, live_only=live_only
-            )
-        # 按日期分组，前端方便展示
-        by_date: dict[str, list[dict]] = {}
-        for item in items:
-            by_date.setdefault(item["date"], []).append(item)
-        return {
-            "strategy": strategy,
-            "total": len(items),
-            "dates": sorted(by_date.keys(), reverse=True),
-            "by_date": by_date,
-        }
-
     @router.get("/api/screen/today", tags=["strategy"])
     def screen_today(
         strategy: str = Query(min_length=1, max_length=64),
@@ -443,7 +463,9 @@ def build_strategy_router(
             try:
                 from src.ops.application.jobs import JobContext, execute_sync
 
-                ctx = JobContext(market_db=market_db)
+                ctx = JobContext(
+                    market_db=market_db, market_hot_db=str(market_hot_db())
+                )
                 refresh_instruments = force_sync
                 with ctx.market() as store:
                     if not store.list_instruments():
@@ -466,7 +488,18 @@ def build_strategy_router(
             except Exception as exc:
                 sync_note = f"同步失败（{exc}），使用本地数据"
 
-        with _market() as store:
+        # 同步成功后把最近交易日（含当日 spot）增量镜像进热库，随后选股只读热库，
+        # 与全量写库物理隔离。镜像失败不阻断：热库缺当日由哨兵/重建任务兜底。
+        if synced:
+            try:
+                from src.market import mirror_recent_to_hot, open_market_hot
+
+                with _market() as full, open_market_hot(str(market_hot_db())) as hot:
+                    mirror_recent_to_hot(full, hot)
+            except Exception as exc:
+                logger.warning("镜像热库失败（由哨兵兜底）：%s", exc)
+
+        with _hot() as store:
             try:
                 result = run_screen(
                     store,
@@ -496,6 +529,7 @@ def build_strategy_router(
             "params": result.params,
             "effective_params": result.effective_params,
             "picks": result.picks,
+            "watch_picks": result.watch_picks,
             "universe": result.universe,
             "universe_funnel": result.universe_funnel,
             "data_snapshot": result.data_snapshot,

@@ -73,6 +73,17 @@ function slotVNode() {
     }"
     v-else-if="col.render"
   />
-  <span v-else-if="col.formatter">{{ col.formatter(row) }}</span>
-  <span v-else>{{ col.prop ? row[col.prop] : '' }}</span>
+  <span v-else-if="col.formatter" class="cell-text">{{ col.formatter(row) }}</span>
+  <span v-else class="cell-text">{{ col.prop ? row[col.prop] : '' }}</span>
 </template>
+
+<style scoped>
+.cell-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+</style>

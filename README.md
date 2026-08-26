@@ -50,11 +50,16 @@ bun run dev
 CLI 示例：
 
 ```powershell
-.\.venv\Scripts\python.exe -m cli.ledger dashboard
+.\.venv\Scripts\python.exe -m cli.ledger timeline 300358
 .\.venv\Scripts\python.exe -m cli.market coverage
 .\.venv\Scripts\python.exe -m cli.ops jobs
-.\.venv\Scripts\python.exe -m cli.review equity
+.\.venv\Scripts\python.exe -m cli.review candidates
 ```
+
+## 版本与分享包
+
+- 产品版本：`src/shared/version.py` 与 `frontend/src/shared/lib/release.ts`（当前 `1.0.0`）。
+- 运维「设置 → 一键打包」：基于已编译的 `Loci.exe`+`_internal` 打加密 zip（可选附带账本/行情等）；详见 [docs/portable-desktop.md](docs/portable-desktop.md)。
 
 ## 测试
 

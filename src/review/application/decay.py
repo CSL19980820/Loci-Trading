@@ -114,15 +114,7 @@ def check_decay(
     baseline_window: int = 100,
 ) -> StrategyDecayReport:
     """单战法衰减检测（手工复盘口径）。"""
-    rows = palace.conn.execute(
-        """
-        SELECT return_pct FROM reviews
-        WHERE return_pct IS NOT NULL AND strategy_tag = ?
-        ORDER BY reviewed_on ASC, created_at ASC
-        """,
-        (strategy_tag,),
-    ).fetchall()
-    returns = [float(r["return_pct"]) for r in rows]
+    returns = palace.review_returns_for_tag(strategy_tag)
     return _decay_from_returns(
         strategy_tag,
         returns,
@@ -165,11 +157,7 @@ def check_all_decay(
                 empty_note="暂无候选 T+5 样本",
             )
 
-    tags_rows = palace.conn.execute(
-        "SELECT DISTINCT strategy_tag FROM reviews WHERE return_pct IS NOT NULL"
-    ).fetchall()
-    for row in tags_rows:
-        tag = str(row["strategy_tag"])
+    for tag in palace.review_strategy_tags_with_returns():
         if tag in by_tag and by_tag[tag].total_records > 0:
             continue
         by_tag[tag] = check_decay(palace, tag, window, baseline_window)

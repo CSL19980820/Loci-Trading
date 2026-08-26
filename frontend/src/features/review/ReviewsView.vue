@@ -4,9 +4,9 @@ import { useRoute } from 'vue-router'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
+import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import RecordDialog from '@/shared/components/dialogs/RecordDialog.vue'
 import Sparkline from '@/shared/components/charts/Sparkline.vue'
 import { useClientPagination } from '@/shared/composables/useClientPagination'
@@ -31,7 +31,7 @@ const columns = ref<BasicTableColumn[]>([
   { prop: 'entity_type', label: '类型', width: 88, slotName: 'entity' },
   { prop: 'outcome', label: '结果', minWidth: 160, showOverflowTooltip: true },
   { prop: 'return_pct', label: '收益', width: 88, slotName: 'ret' },
-  { prop: 'mae_mfe', label: 'M / A', width: 120, slotName: 'maeMfe' },
+  { prop: 'mae_mfe', label: '最高浮盈 / 最深浮亏', width: 170, slotName: 'maeMfe' },
   {
     prop: 'lesson',
     label: '训 / 规',
@@ -45,13 +45,13 @@ const columns = ref<BasicTableColumn[]>([
 
 const tableRows = computed(() => paginatedReviews.value as unknown as Record<string, unknown>[])
 
-const listToolbar = computed<ListToolbarConfig>(() => ({
-  create: {
-    onClick: () => {
-      recordOpen.value = true
-    },
-  },
-}))
+/** 类型 tag 三色克制区分：候选=主题色、预案=暖色、成交=青绿；全部 plain 描边 */
+function entityTagType(type: string): 'primary' | 'warning' | 'success' | 'info' {
+  if (type === 'candidate') return 'primary'
+  if (type === 'plan') return 'warning'
+  if (type === 'trade') return 'success'
+  return 'info'
+}
 
 function onSaved(): void {
   void store.loadRoute(route, true)
@@ -60,6 +60,15 @@ function onSaved(): void {
 
 <template>
   <div class="page-fill">
+    <PageHeader
+      title="复盘记录"
+      :count="`共 ${store.reviews.length} 条`"
+      note="手工补记的买卖样本与教训；无候选样本时，胜率统计回退到这批复盘"
+    >
+      <template #actions>
+        <el-button type="primary" size="small" @click="recordOpen = true">新增</el-button>
+      </template>
+    </PageHeader>
     <PageContainer>
       <template v-if="returnSeries.length" #topExpand>
         <div class="spark-wrap">
@@ -88,11 +97,10 @@ function onSaved(): void {
           row-key="id"
           @current-change="(page) => { currentPage = page }"
         >
-          <template #toolbarButtons>
-            <ListToolbar :config="listToolbar" />
-          </template>
           <template #entity="{ row }">
-            <el-tag size="small" type="info">{{ entityLabel(String(row.entity_type)) }}</el-tag>
+            <el-tag size="small" effect="plain" :type="entityTagType(String(row.entity_type))">
+              {{ entityLabel(String(row.entity_type)) }}
+            </el-tag>
           </template>
           <template #ret="{ row }">
             <span class="mono" :class="toneClass(row.return_pct as number | null)">
@@ -101,8 +109,8 @@ function onSaved(): void {
           </template>
           <template #maeMfe="{ row }">
             <span class="mono dim">
-              M{{ pct(row.max_favorable_pct as number | null) }}
-              · A{{ pct(row.max_adverse_pct as number | null) }}
+              盈 {{ pct(row.max_favorable_pct as number | null) }}
+              · 亏 {{ pct(row.max_adverse_pct as number | null) }}
             </span>
           </template>
           <template #lesson="{ row }">

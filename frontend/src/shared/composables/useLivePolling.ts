@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, ref, type Ref } from 'vue'
+import { onActivated, onDeactivated, onMounted, onUnmounted, ref, type Ref } from 'vue'
 
 import { getMarketSession } from '@/shared/api/quant'
 import type { MarketSession } from '@/shared/lib/marketSession'
@@ -7,6 +7,7 @@ import type { MarketSession } from '@/shared/lib/marketSession'
  * 受交易日 / 15:00 闸门约束的轮询。
  * - 非交易日、开盘前、收盘后：不自动 tick（仍可手动 refresh 一次）
  * - 收盘后若库已是当日最新：live_allowed=false
+ * - KeepAlive 离页：onDeactivated 停表，onActivated 重启，避免后台请求风暴
  */
 export function useLivePolling(opts: {
   intervalMs: number
@@ -59,6 +60,7 @@ export function useLivePolling(opts: {
   }
 
   function stop(): void {
+    // 清定时器 + 作废进行中的 session 回调；手动 runTick 仍可用（测单飞 / 显式刷新）
     lifecycleGeneration += 1
     if (timer) {
       window.clearInterval(timer)
@@ -88,6 +90,14 @@ export function useLivePolling(opts: {
 
   onMounted(() => {
     start()
+  })
+
+  onActivated(() => {
+    start()
+  })
+
+  onDeactivated(() => {
+    stop()
   })
 
   onUnmounted(() => {

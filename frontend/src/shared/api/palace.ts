@@ -1,13 +1,8 @@
 import type {
-  Analytics,
   Candidate,
-  Dashboard,
   PoolDay,
-  PoolSummary,
   ReviewRecord,
   TimelineEvent,
-  TradePayload,
-  TradeRecord,
 } from '@/shared/types/palace'
 
 import { formatApiDetail } from '@/shared/lib/errors'
@@ -16,6 +11,9 @@ const API_ROOT = '/api'
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504])
 /** 账本 SQLite 偶发锁竞争 → 503；多退几步再抛给 UI。 */
 const MAX_GET_RETRIES = 4
+/** 单次请求的墙钟上限。全市场同步这类长活走 ops Job 轮询，不占用 HTTP 连接。 */
+const REQUEST_TIMEOUT_MS = 20_000
+const TIMEOUT_REASON = 'loci-request-timeout'
 
 export interface SessionStatus {
   authenticated: boolean
@@ -56,11 +54,36 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   if (!headers.has('Content-Type') && init?.body && !isFormData) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(`${API_ROOT}${path}`, {
-    ...init,
-    headers,
-    credentials: 'same-origin',
-  })
+  // 单次尝试的墙钟上限。没有它时后端挂住就是无限等，再叠上 GET 的 4 次重试，
+  // 界面会僵在加载态且没有任何交代。超时按可重试处理（等价于 504），
+  // 调用方主动取消则原样上抛、不重试。
+  const timer = new AbortController()
+  const timeout = window.setTimeout(() => timer.abort(TIMEOUT_REASON), REQUEST_TIMEOUT_MS)
+  const caller = init?.signal
+  if (caller) {
+    if (caller.aborted) timer.abort(caller.reason)
+    else caller.addEventListener('abort', () => timer.abort(caller.reason), { once: true })
+  }
+  let response: Response
+  try {
+    response = await fetch(`${API_ROOT}${path}`, {
+      ...init,
+      headers,
+      credentials: 'same-origin',
+      signal: timer.signal,
+    })
+  } catch (caught: unknown) {
+    if (timer.signal.reason === TIMEOUT_REASON) {
+      const error = new Error(`请求超时（${REQUEST_TIMEOUT_MS / 1000} 秒未响应）`) as Error & {
+        retryable?: boolean
+      }
+      error.retryable = true
+      throw error
+    }
+    throw caught
+  } finally {
+    window.clearTimeout(timeout)
+  }
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null)
     const rawDetail =
@@ -68,9 +91,15 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
         ? (body as { detail: unknown }).detail
         : null
     const detail = formatApiDetail(rawDetail, response.status)
-    const error = new Error(detail) as Error & { status?: number; retryable?: boolean }
+    const error = new Error(detail) as Error & {
+      status?: number
+      retryable?: boolean
+      reason?: string
+    }
     error.status = response.status
     error.retryable = RETRYABLE_STATUS.has(response.status)
+    // 503 同时表示「缺依赖」和「库繁忙」，只有前者带这个头；调用方据此分流引导。
+    error.reason = response.headers.get('x-loci-reason') ?? ''
     throw error
   }
   return response.json() as Promise<T>
@@ -92,11 +121,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       await sleep(200 * attempt)
     }
   }
-}
-
-export function getDashboard(date?: string): Promise<Dashboard> {
-  const query = date ? `?date=${encodeURIComponent(date)}` : ''
-  return request<Dashboard>(`/dashboard${query}`)
 }
 
 export function getTodayAlerts(): Promise<TodayAlert[]> {
@@ -122,13 +146,6 @@ async function downloadExport(path: string, filename: string): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
-export function exportTradesCsv(code?: string): Promise<void> {
-  const params = new URLSearchParams()
-  if (code) params.set('code', code)
-  const query = params.toString()
-  return downloadExport(`/trades/export.csv${query ? `?${query}` : ''}`, 'trades.csv')
-}
-
 export function exportCandidatesCsv(
   options: {
     strategy?: string
@@ -148,70 +165,13 @@ export function exportCandidatesCsv(
   return downloadExport(`/candidates/export.csv${query ? `?${query}` : ''}`, 'candidates.csv')
 }
 
-export interface QianlongImportPreviewHolding {
-  code: string
-  name: string
-  shares: number
-  cost: number
-  note: string
-}
-
-export interface QianlongImportPreview {
-  can_import: boolean
-  block_reason: string
-  date: string
-  holdings_count: number
-  holdings: QianlongImportPreviewHolding[]
-  realized_pnl_baseline: number
-  total_assets: number | null
-}
-
-export interface QianlongImportResult {
-  date: string
-  position_events: string[]
-  realized_pnl_baseline: number
-  total_assets: number | null
-}
-
-function qianlongImportFormData(file: File): FormData {
-  const form = new FormData()
-  form.append('file', file)
-  return form
-}
-
-export function previewQianlongImport(file: File): Promise<QianlongImportPreview> {
-  return request<QianlongImportPreview>('/import/qianlong/preview', {
-    method: 'POST',
-    body: qianlongImportFormData(file),
-  })
-}
-
-export function confirmQianlongImport(file: File): Promise<QianlongImportResult> {
-  return request<QianlongImportResult>('/import/qianlong/confirm', {
-    method: 'POST',
-    body: qianlongImportFormData(file),
-  })
-}
-
 export function getTimeline(code: string): Promise<TimelineEvent[]> {
   return request<TimelineEvent[]>(`/timeline/${encodeURIComponent(code)}`)
-}
-
-export function getTrades(code?: string, limit = 200): Promise<TradeRecord[]> {
-  const params = new URLSearchParams()
-  if (code) params.set('code', code)
-  if (limit !== 200) params.set('limit', String(limit))
-  const query = params.toString()
-  return request<TradeRecord[]>(`/trades${query ? `?${query}` : ''}`)
 }
 
 export function getReviews(limit = 100): Promise<ReviewRecord[]> {
   const query = limit === 100 ? '' : `?limit=${limit}`
   return request<ReviewRecord[]>(`/reviews${query}`)
-}
-
-export function getPools(): Promise<PoolSummary[]> {
-  return request<PoolSummary[]>('/pools')
 }
 
 export function getPoolDay(date?: string, poolId?: string): Promise<PoolDay> {
@@ -222,16 +182,8 @@ export function getPoolDay(date?: string, poolId?: string): Promise<PoolDay> {
   return request<PoolDay>(`/pools/day${query ? `?${query}` : ''}`)
 }
 
-export function getAnalytics(): Promise<Analytics> {
-  return request<Analytics>('/analytics')
-}
-
-export function createTrade(payload: TradePayload): Promise<{ id: string }> {
-  return request<{ id: string }>('/trades', { method: 'POST', body: JSON.stringify(payload) })
-}
-
-// ---- 此前只有后端接口、前端一个按钮都没有的五类写入 -----------------
-// 它们是"线上只能看不能记，什么都要回本地 CLI"的直接原因。
+// ---- 候选 / 预案 / 复盘三类写入 ------------------------------------
+// 持仓与成交类写入（成交、出入金、资产快照、持仓导入）已随账本下线一并移除。
 
 export interface CandidatePayload {
   code: string
@@ -274,21 +226,6 @@ export interface ReviewPayload {
   max_adverse_pct?: number | null
   lesson?: string
   next_rule?: string
-  source?: string
-}
-
-export interface SnapshotPayload {
-  total_assets: number
-  occurred_on?: string | null
-  cash?: number | null
-  note?: string
-  source?: string
-}
-
-export interface CashflowPayload {
-  amount: number
-  occurred_on?: string | null
-  note?: string
   source?: string
 }
 
@@ -360,20 +297,6 @@ export function createPlan(payload: PlanPayload): Promise<{ id: string }> {
 
 export function createReview(payload: ReviewPayload): Promise<{ id: string }> {
   return request<{ id: string }>('/reviews', {
-    method: 'POST',
-    body: JSON.stringify(compact(payload)),
-  })
-}
-
-export function createSnapshot(payload: SnapshotPayload): Promise<{ id: string }> {
-  return request<{ id: string }>('/snapshots', {
-    method: 'POST',
-    body: JSON.stringify(compact(payload)),
-  })
-}
-
-export function createCashflow(payload: CashflowPayload): Promise<{ id: string }> {
-  return request<{ id: string }>('/cashflows', {
     method: 'POST',
     body: JSON.stringify(compact(payload)),
   })

@@ -29,6 +29,7 @@ from src.formula import (
     SUM,
     WMA,
     ZTPRICE,
+    limit_up_price,
     weighted_ref_sum,
 )
 
@@ -204,6 +205,36 @@ class ZtPriceTests(unittest.TestCase):
 
     def test_preserves_nan(self) -> None:
         self.assertTrue(np.isnan(ZTPRICE(pd.Series([np.nan]), 0.1).iloc[0]))
+
+
+class LimitUpPriceTests(unittest.TestCase):
+    """``limit_up_price`` 是 DataFrame 之外唯一该用的涨停价出口。"""
+
+    def test_binary_error_guard_changes_a_real_price(self) -> None:
+        """ST 股前收 4.30、5% 涨停：真实涨停价 4.52。
+
+        少了抵消二进制误差的极小量就会算成 4.51，收在 4.52 的票被判成
+        没涨停。在 1.00~300.00 的价格网格上这种一分钱偏差有 235 处。
+        """
+        self.assertAlmostEqual(limit_up_price(4.30, 0.05), 4.52)
+        self.assertAlmostEqual(np.floor(4.30 * 1.05 * 100.0 + 0.5) / 100.0, 4.51)
+
+    def test_scalar_in_scalar_out(self) -> None:
+        self.assertIsInstance(limit_up_price(10.0, 0.1), float)
+        self.assertAlmostEqual(limit_up_price(10.0, 0.1), 11.00)
+        self.assertAlmostEqual(limit_up_price(10.0, 0.3), 13.00)
+
+    def test_matches_ztprice_on_the_same_inputs(self) -> None:
+        """与面板侧 ZTPRICE 必须逐值一致，否则同一只票两处口径不同。"""
+        prev = pd.Series([9.13, 10.045 / 1.1, 3.27, 4.30])
+        for ratio in (0.05, 0.1, 0.2):
+            expected = ZTPRICE(prev, ratio).to_numpy()
+            np.testing.assert_allclose(limit_up_price(prev, ratio), expected)
+
+    def test_preserves_nan(self) -> None:
+        result = limit_up_price(pd.Series([np.nan, 10.0]), 0.1)
+        self.assertTrue(np.isnan(result[0]))
+        self.assertAlmostEqual(result[1], 11.00)
 
 
 class WeightedRefSumTests(unittest.TestCase):

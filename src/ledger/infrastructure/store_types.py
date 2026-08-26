@@ -1,12 +1,13 @@
 """账本共享类型、校验与序列化助手。"""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, datetime
 import json
 from typing import Any
 
-SCHEMA_VERSION = 9
+#: v10：持仓/成交/账户七张表下线，已有库靠 schema.py 的 DROP 迁移清掉。
+#: 加删 DDL 必须同步 bump，否则已建库跳过 init_schema 的 DDL 段，迁移跑不到。
+SCHEMA_VERSION = 10
 
 #: 候选裁决唯一合法值（界面筛选与入库口径）。
 CANONICAL_DECISIONS = frozenset({"精选", "落选", "观察"})
@@ -26,7 +27,7 @@ _RULE_VERSION_ALIASES: dict[str, str] = {
     "lugw-sanwai": "三外有三",
     "lugw-tianyi": "天衣无缝",
     "lugw-daoba": "倒拔杨柳",
-    "lugw-haidi": "海底捞月",
+    "lugw-haidi": "海底捞月(已下线)",
     "lugw-fenshou": "分手快乐",
     "lugw-chouma": "筹码峰突破",
     "卢高文·三外有三": "三外有三",
@@ -134,20 +135,6 @@ def _normalize_reason_text(value: str | None) -> str:
 
 class PalaceError(ValueError):
     """用户输入或账本状态不满足约束时抛出。"""
-
-
-@dataclass(frozen=True, slots=True)
-class Position:
-    code: str
-    name: str
-    shares: int
-    cost: float
-    updated_on: str
-    note: str
-
-    @property
-    def cost_value(self) -> float:
-        return round(self.shares * self.cost, 2)
 
 
 def normalize_code(value: str) -> str:

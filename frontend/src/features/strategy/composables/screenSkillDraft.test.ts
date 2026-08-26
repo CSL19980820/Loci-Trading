@@ -119,7 +119,7 @@ describe('screenSkillDraft helpers', () => {
     const { payload, errors } = buildScreenSkillPayload(draft)
 
     expect(payload).toBeNull()
-    expect(errors[0]).toContain('true 或 false')
+    expect(errors[0]).toContain('是 或 否')
   })
 
   it('rejects int params that are not integers', () => {
@@ -163,7 +163,7 @@ describe('screenSkillDraft helpers', () => {
     const { payload, errors } = buildScreenSkillPayload(draft)
 
     expect(payload).toBeNull()
-    expect(errors[0]).toContain('必须落在 min/max 之间')
+    expect(errors[0]).toContain('必须落在最小值与最大值之间')
   })
 
   it('rejects min larger than max', () => {
@@ -235,6 +235,30 @@ describe('screenSkillDraft helpers', () => {
   it('treats stale skill load as invalid after route switches to no slug', () => {
     expect(isCurrentSkillLoad(3, 4, 'demo-screen', '')).toBe(false)
     expect(isCurrentSkillLoad(4, 4, 'demo-screen', 'demo-screen')).toBe(true)
+  })
+
+  it('allows save without any references', () => {
+    const draft = createEmptyScreenSkillDraft()
+    draft.slug = 'no-ref'
+    draft.name = '无资料战法'
+    draft.description = '不必填资料也能保存'
+    draft.references = [
+      {
+        id: 'ref_auto',
+        title: '',
+        kind: 'note',
+        url: '',
+        path: '',
+        section: '',
+        quote: '',
+      },
+    ]
+
+    const { payload, errors } = buildScreenSkillPayload(draft)
+
+    expect(errors).toEqual([])
+    expect(payload).not.toBeNull()
+    expect(payload?.manifest.references).toEqual([])
   })
 
   it('collects detailed references for ai generation gating', () => {

@@ -1,0 +1,194 @@
+{
+  "window": [
+    "2021-01-04",
+    "2026-08-12"
+  ],
+  "trading_days": 1359,
+  "note": "live untouched; only drop 非涨停价 before closeness Top2",
+  "limit_close_picks": {
+    "signal_days": 95,
+    "names": 102
+  },
+  "variants": {
+    "live_block_limit": {
+      "trades": 1023,
+      "win_rate": 47.7,
+      "payoff_ratio": 1.311,
+      "avg_net": 0.4152,
+      "median": -0.2064,
+      "portfolio": {
+        "sleeve_days": 4,
+        "portfolio_return_pct": 82.2888,
+        "max_drawdown_pct": -30.7208,
+        "occupancy_pct": 43.27,
+        "signal_days": 588,
+        "filled_trades": 1023,
+        "year_end_nav": [
+          {
+            "year": "2021",
+            "date": "2021-12-31",
+            "nav": 111.1869
+          },
+          {
+            "year": "2022",
+            "date": "2022-12-30",
+            "nav": 125.1743
+          },
+          {
+            "year": "2023",
+            "date": "2023-12-29",
+            "nav": 119.0642
+          },
+          {
+            "year": "2024",
+            "date": "2024-12-31",
+            "nav": 115.5231
+          },
+          {
+            "year": "2025",
+            "date": "2025-12-31",
+            "nav": 133.0282
+          },
+          {
+            "year": "2026",
+            "date": "2026-08-12",
+            "nav": 182.2888
+          }
+        ]
+      },
+      "years": {
+        "2021": {
+          "n": 197,
+          "win_rate": 49.75,
+          "avg": 0.467
+        },
+        "2022": {
+          "n": 161,
+          "win_rate": 50.93,
+          "avg": 0.4276
+        },
+        "2023": {
+          "n": 179,
+          "win_rate": 46.37,
+          "avg": -0.1179
+        },
+        "2024": {
+          "n": 140,
+          "win_rate": 44.29,
+          "avg": 0.3123
+        },
+        "2025": {
+          "n": 244,
+          "win_rate": 43.03,
+          "avg": 0.2746
+        },
+        "2026": {
+          "n": 102,
+          "win_rate": 56.86,
+          "avg": 1.7084
+        }
+      },
+      "negative_years_2021_2025": [
+        "2023"
+      ],
+      "skipped": {
+        "入场日停牌": 1,
+        "入场日一字板买不进": 1
+      },
+      "pool": {
+        "signal_days": 590,
+        "avg_names": 1.739,
+        "max_names": 2
+      }
+    },
+    "allow_limit_close": {
+      "trades": 1106,
+      "win_rate": 47.11,
+      "payoff_ratio": 1.282,
+      "avg_net": 0.3106,
+      "median": -0.31,
+      "portfolio": {
+        "sleeve_days": 4,
+        "portfolio_return_pct": 37.5362,
+        "max_drawdown_pct": -29.1087,
+        "occupancy_pct": 45.4,
+        "signal_days": 617,
+        "filled_trades": 1106,
+        "year_end_nav": [
+          {
+            "year": "2021",
+            "date": "2021-12-31",
+            "nav": 104.0703
+          },
+          {
+            "year": "2022",
+            "date": "2022-12-30",
+            "nav": 111.6547
+          },
+          {
+            "year": "2023",
+            "date": "2023-12-29",
+            "nav": 110.8871
+          },
+          {
+            "year": "2024",
+            "date": "2024-12-31",
+            "nav": 105.7079
+          },
+          {
+            "year": "2025",
+            "date": "2025-12-31",
+            "nav": 115.644
+          },
+          {
+            "year": "2026",
+            "date": "2026-08-12",
+            "nav": 137.5362
+          }
+        ]
+      },
+      "years": {
+        "2021": {
+          "n": 222,
+          "win_rate": 48.65,
+          "avg": 0.2711
+        },
+        "2022": {
+          "n": 184,
+          "win_rate": 51.09,
+          "avg": 0.3778
+        },
+        "2023": {
+          "n": 186,
+          "win_rate": 46.24,
+          "avg": 0.004
+        },
+        "2024": {
+          "n": 150,
+          "win_rate": 43.33,
+          "avg": 0.2312
+        },
+        "2025": {
+          "n": 255,
+          "win_rate": 42.75,
+          "avg": 0.232
+        },
+        "2026": {
+          "n": 109,
+          "win_rate": 54.13,
+          "avg": 1.0942
+        }
+      },
+      "negative_years_2021_2025": [],
+      "skipped": {
+        "入场日停牌": 1,
+        "入场日一字板买不进": 2
+      },
+      "pool": {
+        "signal_days": 620,
+        "avg_names": 1.79,
+        "max_names": 2
+      }
+    }
+  }
+}

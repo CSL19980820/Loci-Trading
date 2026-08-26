@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import { EditPen } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import AppSidebar from '@/shared/components/layout/AppSidebar.vue'
-import AssistantHost from '@/features/ai/AssistantHost.vue'
 import MobileBottomNav from '@/shared/components/layout/MobileBottomNav.vue'
 import PageHost from '@/shared/components/layout/PageHost.vue'
 import ScreenRunChip from '@/shared/components/layout/ScreenRunChip.vue'
 import MarketBootstrapDialog from '@/shared/components/dialogs/MarketBootstrapDialog.vue'
 import RecordDialog, { type RecordKind } from '@/shared/components/dialogs/RecordDialog.vue'
-import TradeDialog from '@/shared/components/dialogs/TradeDialog.vue'
 import { useMarketSyncGate } from '@/shared/composables/useMarketSyncGate'
 import { usePalaceStore } from '@/shared/stores/palace'
 import { useScreenRunStore } from '@/shared/stores/screenRun'
+
+// 助手树很重（marked + dompurify + vue-element-plus-x + 整棵 Assistant 子树），
+// 静态 import 会把它全部钉进首屏 chunk——而多数会话里用户根本不开助手。
+// 浮球本身在 AssistantHost 内，异步加载后首帧晚一点出现是可接受代价。
+const AssistantHost = defineAsyncComponent(() => import('@/features/ai/AssistantHost.vue'))
 
 const store = usePalaceStore()
 const screenRun = useScreenRunStore()
@@ -29,13 +32,9 @@ const isPublicRoute = computed(
 const archiveOpen = computed(() => route.name === 'archive')
 /** 档案蒙版 z-index=8000；打开档案时抬高 EP 弹层起点，避免记一笔/分时被盖住 */
 const epPopupZIndex = computed(() => (archiveOpen.value ? 8200 : 2000))
-const archivePath = computed(() =>
-  store.firstPosition ? `/archive/${store.firstPosition.code}` : null,
-)
 
 const recordOpen = ref(false)
 const recordKind = ref<RecordKind>('candidate')
-const tradeOpen = ref(false)
 
 function openRecord(kind: RecordKind): void {
   recordKind.value = kind
@@ -43,13 +42,6 @@ function openRecord(kind: RecordKind): void {
 }
 
 function onRecorded(): void {
-  if (route.name === 'archive') {
-    store.invalidateArchive(String(route.params.code ?? ''))
-  }
-  void store.loadRoute(route, true)
-}
-
-function onTradeSaved(): void {
   if (route.name === 'archive') {
     store.invalidateArchive(String(route.params.code ?? ''))
   }
@@ -67,7 +59,7 @@ function isTypingContext(): boolean {
 
 function showShortcutHelp(): void {
   void ElMessageBox.alert(
-    ['n — 记成交', 'c — 写候选', 'p — 写预案', '? — 显示本帮助'].join('\n'),
+    ['c — 写候选', 'p — 写预案', '? — 显示本帮助'].join('\n'),
     '键盘快捷键',
     { confirmButtonText: '知道了' },
   )
@@ -77,18 +69,16 @@ function onGlobalKeydown(event: KeyboardEvent): void {
   if (isPublicRoute.value) return
   if (isTypingContext()) return
   if (event.ctrlKey || event.metaKey || event.altKey) return
+  // 已有弹层时不再响应 c/p，否则会在对话框上再叠一层
+  if (document.querySelector('.el-overlay')) return
 
   if (event.key === '?' || (event.shiftKey && event.key === '/')) {
     event.preventDefault()
     showShortcutHelp()
     return
   }
-
   const key = event.key.toLowerCase()
-  if (key === 'n') {
-    event.preventDefault()
-    tradeOpen.value = true
-  } else if (key === 'c') {
+  if (key === 'c') {
     event.preventDefault()
     openRecord('candidate')
   } else if (key === 'p') {
@@ -136,7 +126,7 @@ function retryLoad(): void {
   <el-config-provider v-else :z-index="epPopupZIndex">
     <a class="skip-link" href="#main-content">跳至主内容</a>
     <div class="app-shell app-shell--with-mobile-nav">
-      <AppSidebar :archive-path="archivePath" @record="openRecord" />
+      <AppSidebar @record="openRecord" />
 
       <section class="workspace">
         <div v-if="syncing" class="sync-banner-wrap">
@@ -173,15 +163,6 @@ function retryLoad(): void {
           class="load-bar"
         />
         <el-alert
-          v-if="store.notice"
-          :title="store.notice"
-          type="success"
-          show-icon
-          closable
-          class="banner"
-          @close="store.clearNotice"
-        />
-        <el-alert
           v-if="store.error"
           :title="store.error"
           type="error"
@@ -203,10 +184,9 @@ function retryLoad(): void {
       </section>
     </div>
     <RecordDialog v-model="recordOpen" :kind="recordKind" @saved="onRecorded" />
-    <TradeDialog v-model="tradeOpen" @saved="onTradeSaved" />
     <MarketBootstrapDialog />
 
-    <MobileBottomNav :archive-path="archivePath" />
+    <MobileBottomNav />
 
     <div class="record-fab">
       <el-dropdown trigger="click" @command="openRecord">
@@ -218,8 +198,6 @@ function retryLoad(): void {
             <el-dropdown-item command="candidate">候选</el-dropdown-item>
             <el-dropdown-item command="plan">预案</el-dropdown-item>
             <el-dropdown-item command="review">复盘</el-dropdown-item>
-            <el-dropdown-item command="snapshot">资产</el-dropdown-item>
-            <el-dropdown-item command="cashflow">出入金</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>

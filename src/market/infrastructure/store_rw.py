@@ -1,22 +1,24 @@
 """MarketStore：写入与基础读取（证券 / 日线 / 日历 / 单票历史）。"""
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping
 from typing import Any
 import sqlite3
 
 import pandas as pd
 
-from src.market.infrastructure.store_codes import MarketError, normalize_code
+from src.market.infrastructure.store_codes import MarketError, guess_market, normalize_code
+from src.market.infrastructure.store_quote_payload import (
+    partition_valid_ohlc_rows,
+    quote_payload_from_bars,
+)
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
-
 
 class MarketRwMixin:
     """instruments / quotes / factors / watermark / calendar / history。"""
 
     conn: sqlite3.Connection
     db_path: Any
-
     @staticmethod
     def _bump_revisions(cursor: sqlite3.Cursor, *scopes: str) -> None:
         keys = ("market_revision", *(f"{scope}_revision" for scope in scopes))
@@ -66,70 +68,120 @@ class MarketRwMixin:
             self._bump_revisions(cursor, "instruments")
         return len(payload)
 
-    def upsert_quotes(self, code: str, frame: pd.DataFrame, *, source: str = "") -> int:
+    def reconcile_instrument_snapshot(
+        self,
+        active_codes: Iterable[str],
+        *,
+        complete_markets: Iterable[str],
+        snapshot_date: str,
+    ) -> dict[str, Any]:
+        """用完整交易所快照停用已消失的普通股票，不删除其历史行情。
+
+        ``complete_markets`` 只含本次明确拉全的交易所；部分列表失败时绝不能
+        把整所旧票误判为退市。大市场快照若骤减超过 20% 同样拒绝淘汰。
+        """
+        supported = {"sh", "sz", "bj"}
+        requested = {
+            str(market).strip().lower()
+            for market in complete_markets
+            if str(market).strip().lower() in supported
+        }
+        active = {normalize_code(code) for code in active_codes}
+        rows = self.conn.execute(
+            "SELECT code FROM instruments"
+            " WHERE instrument_type = 'STOCK' AND status = 'normal'"
+        ).fetchall()
+        existing = {str(row[0]) for row in rows}
+        accepted: set[str] = set()
+        rejected: set[str] = set()
+        retired: list[str] = []
+
+        for market in sorted(requested):
+            current = {code for code in existing if guess_market(code) == market}
+            incoming = {code for code in active if guess_market(code) == market}
+            if not incoming or (
+                len(current) >= 20 and len(incoming) < int(len(current) * 0.8)
+            ):
+                rejected.add(market)
+                continue
+            accepted.add(market)
+            retired.extend(sorted(current - incoming))
+
+        with self._transaction() as cursor:
+            if retired:
+                cursor.executemany(
+                    "UPDATE instruments SET status = 'delisted', updated_at = datetime('now')"
+                    " WHERE code = ? AND instrument_type = 'STOCK' AND status = 'normal'",
+                    [(code,) for code in retired],
+                )
+                self._bump_revisions(cursor, "instruments")
+            # 刷新时间表示「今天已成功拿到并核验至少一个交易所快照」。
+            # 某所失败/骤减时保留其旧目录；不应让 5 分钟任务当天反复重打全列表。
+            if accepted:
+                cursor.execute(
+                    "INSERT INTO meta(key, value, updated_at)"
+                    " VALUES('instruments_snapshot_date', ?, datetime('now'))"
+                    " ON CONFLICT(key) DO UPDATE SET value=excluded.value,"
+                    " updated_at=excluded.updated_at",
+                    (str(snapshot_date)[:10],),
+                )
+        return {
+            "retired": len(retired),
+            "accepted_markets": sorted(accepted),
+            "rejected_markets": sorted(rejected),
+        }
+
+    def instrument_snapshot_date(self) -> str:
+        row = self.conn.execute(
+            "SELECT value FROM meta WHERE key = 'instruments_snapshot_date'"
+        ).fetchone()
+        return str(row[0] or "")[:10] if row else ""
+
+    def upsert_quotes(
+        self,
+        code: str,
+        frame: pd.DataFrame,
+        *,
+        source: str = "",
+        receipt_id: str | None = None,
+    ) -> int:
         """写入单只证券的不复权日线。frame 需含 date/open/high/low/close 等列。"""
-        code = normalize_code(code)
-        if frame is None or frame.empty:
-            return 0
-        prepared = self._prepare_quote_frame(frame)
-        payload = [
-            (
-                row.trade_date, code, row.open, row.high, row.low, row.close,
-                row.volume, row.amount, row.outstanding_share, row.turnover, source,
-            )
-            for row in prepared.itertuples(index=False)
-        ]
-        return self._write_quote_payload(payload)
+        return self._write_quote_payload(
+            self._quote_payload_from_frame(code, frame, source=source, receipt_id=receipt_id)
+        )
 
     def upsert_quote_bars(
         self,
         bars: Iterable[dict[str, Any]],
         *,
         source: str = "",
+        receipt_ids: Mapping[str, str] | None = None,
     ) -> int:
         """批量写入多只证券日 K（单事务）。每条需含 code 与 date/OHLCV。
 
         全市场 spot 约五千行：必须一次 DataFrame 归一，禁止逐票建表（会慢到
         中途覆盖率只剩个位数）。去重键是 (code, trade_date)。
         """
-        records: list[dict[str, Any]] = []
-        for raw in bars:
-            try:
-                code = normalize_code(str(raw.get("code") or ""))
-            except MarketError:
-                continue
-            trade_date = raw.get("date") if raw.get("date") is not None else raw.get("trade_date")
-            if trade_date is None or trade_date == "":
-                continue
-            records.append(
-                {
-                    "code": code,
-                    "trade_date": trade_date,
-                    "open": raw.get("open"),
-                    "high": raw.get("high"),
-                    "low": raw.get("low"),
-                    "close": raw.get("close"),
-                    "volume": raw.get("volume"),
-                    "amount": raw.get("amount"),
-                    "outstanding_share": raw.get("outstanding_share"),
-                    "turnover": raw.get("turnover"),
-                }
-            )
-        if not records:
-            return 0
-        frame = pd.DataFrame(records)
-        frame["trade_date"] = pd.to_datetime(frame["trade_date"]).dt.strftime("%Y-%m-%d")
-        for column in PANEL_FIELDS:
-            if column not in frame.columns:
-                frame[column] = None
-        frame = frame[["code", "trade_date", *PANEL_FIELDS]].drop_duplicates(
-            subset=["code", "trade_date"], keep="last"
+        return self._write_quote_payload(
+            self._quote_payload_from_bars(bars, source=source, receipt_ids=receipt_ids)
         )
-        frame = frame.astype(object).where(pd.notna(frame), None)
-        payload = [
+
+    def _quote_payload_from_frame(
+        self,
+        code: str,
+        frame: pd.DataFrame,
+        *,
+        source: str,
+        receipt_id: str | None = None,
+    ) -> list[tuple[Any, ...]]:
+        code = normalize_code(code)
+        if frame is None or frame.empty: return []
+        prepared = self._prepare_quote_frame(frame)
+        prepared, _rejected = partition_valid_ohlc_rows(prepared)
+        return [
             (
-                str(row.trade_date),
-                str(row.code),
+                row.trade_date,
+                code,
                 row.open,
                 row.high,
                 row.low,
@@ -139,41 +191,60 @@ class MarketRwMixin:
                 row.outstanding_share,
                 row.turnover,
                 source,
+                receipt_id,
             )
-            for row in frame.itertuples(index=False)
+            for row in prepared.itertuples(index=False)
         ]
-        return self._write_quote_payload(payload)
 
-    def _write_quote_payload(self, payload: list[tuple[Any, ...]]) -> int:
-        if not payload:
-            return 0
-        with self._transaction() as cursor:
-            cursor.executemany(
-                """
+    def _quote_payload_from_bars(
+        self,
+        bars: Iterable[dict[str, Any]],
+        *,
+        source: str,
+        receipt_ids: Mapping[str, str] | None = None,
+    ) -> list[tuple[Any, ...]]:
+        return quote_payload_from_bars(bars, source=source, receipt_ids=receipt_ids)
+
+    def _write_quote_payload(
+        self,
+        payload: list[tuple[Any, ...]],
+        *,
+        cursor: sqlite3.Cursor | None = None,
+    ) -> int:
+        if not payload: return 0
+        if cursor is None:
+            with self._transaction() as tx:
+                return self._write_quote_payload(payload, cursor=tx)
+        cursor.executemany(
+            """
                 INSERT INTO quotes_daily(trade_date, code, open, high, low, close,
                                          volume, amount, outstanding_share, turnover,
-                                         source, fetched_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                                         source, receipt_id, fetched_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 ON CONFLICT(trade_date, code) DO UPDATE SET
                     open=excluded.open, high=excluded.high, low=excluded.low,
-                    close=excluded.close, volume=excluded.volume, amount=excluded.amount,
-                    -- spot / 无股本源常带 NULL；禁止用空值抹掉已有换手与股本。
+                    close=excluded.close,
+                    -- 缺列的源经 _prepare_quote_frame 会补成 NULL；量额与股本
+                    -- 换手一样禁止被空值抹掉（0 是停牌日的真值，仍照常覆盖）。
+                    volume=COALESCE(excluded.volume, quotes_daily.volume),
+                    amount=COALESCE(excluded.amount, quotes_daily.amount),
                     outstanding_share=COALESCE(
                         excluded.outstanding_share, quotes_daily.outstanding_share
                     ),
                     turnover=COALESCE(excluded.turnover, quotes_daily.turnover),
                     source=excluded.source,
+                    receipt_id=COALESCE(excluded.receipt_id, quotes_daily.receipt_id),
                     fetched_at=excluded.fetched_at
                 """,
-                payload,
-            )
-            cursor.executemany(
-                "INSERT INTO trading_calendar(trade_date, updated_at)"
-                " VALUES(?, datetime('now')) ON CONFLICT(trade_date) DO NOTHING",
-                [(row[0],) for row in payload],
-            )
-            cursor.execute("DELETE FROM meta WHERE key = 'quotes_daily_rows_v1'")
-            self._bump_revisions(cursor, "quotes")
+            payload,
+        )
+        cursor.executemany(
+            "INSERT INTO trading_calendar(trade_date, updated_at)"
+            " VALUES(?, datetime('now')) ON CONFLICT(trade_date) DO NOTHING",
+            [(row[0],) for row in payload],
+        )
+        cursor.execute("DELETE FROM meta WHERE key = 'quotes_daily_rows_v1'")
+        self._bump_revisions(cursor, "quotes")
         return len(payload)
 
     def set_watermarks(
@@ -182,11 +253,27 @@ class MarketRwMixin:
         *,
         status: str = "ok",
         source: str = "",
+        sources: Mapping[str, str] | None = None,
         message: str = "",
     ) -> int:
-        """批量更新 ingest_watermark（code, last_trade_date）。"""
+        """批量更新 ingest_watermark（code, last_trade_date）。
+
+        ``last_synced_at`` 按本地交易日写入，需与同步侧的 ``date.today()``
+        使用同一个日历，避免 UTC 午夜后把刚同步的数据误判为昨天。
+
+        ``sources`` 给每票单独指定来源。粘性竞速会让同一批里 tdx / tencent 混着
+        出现,只有一个标量 ``source`` 表达不了——同步侧真正需要的就是这个重载,
+        缺了它就只能退回逐票写,一次全市场同步 = 5500 多个独立事务。
+        """
+        by_code = dict(sources or {})
         payload = [
-            (normalize_code(code), trade_date, status, message[:500], source)
+            (
+                normalize_code(code),
+                trade_date,
+                status,
+                message[:500],
+                by_code.get(code, by_code.get(normalize_code(code), source)),
+            )
             for code, trade_date in rows
             if code and trade_date
         ]
@@ -197,7 +284,7 @@ class MarketRwMixin:
                 """
                 INSERT INTO ingest_watermark(code, last_trade_date, last_synced_at,
                                              status, message, source)
-                VALUES(?, ?, datetime('now'), ?, ?, ?)
+                VALUES(?, ?, datetime('now', 'localtime'), ?, ?, ?)
                 ON CONFLICT(code) DO UPDATE SET
                     last_trade_date=CASE WHEN excluded.last_trade_date <> ''
                                          THEN excluded.last_trade_date
@@ -241,8 +328,7 @@ class MarketRwMixin:
     def upsert_adjust_factors(self, code: str, frame: pd.DataFrame, *, source: str = "") -> int:
         """写入稀疏的后复权因子。frame 需含 date 与 hfq_factor 两列。"""
         code = normalize_code(code)
-        if frame is None or frame.empty:
-            return 0
+        if frame is None or frame.empty: return 0
         out = frame.copy()
         out.columns = [str(col).strip().lower() for col in out.columns]
         if "date" in out.columns:
@@ -253,8 +339,7 @@ class MarketRwMixin:
             for row in out.itertuples(index=False)
             if pd.notna(row.hfq_factor)
         ]
-        if not payload:
-            return 0
+        if not payload: return 0
         with self._transaction() as cursor:
             cursor.executemany(
                 """
@@ -283,7 +368,7 @@ class MarketRwMixin:
                 """
                 INSERT INTO ingest_watermark(code, last_trade_date, last_synced_at,
                                              status, message, source)
-                VALUES(?, ?, datetime('now'), ?, ?, ?)
+                VALUES(?, ?, datetime('now', 'localtime'), ?, ?, ?)
                 ON CONFLICT(code) DO UPDATE SET
                     last_trade_date=CASE WHEN excluded.last_trade_date <> ''
                                          THEN excluded.last_trade_date
@@ -314,209 +399,32 @@ class MarketRwMixin:
         sql += " ORDER BY code"
         return [dict(row) for row in self.conn.execute(sql, params)]
 
-    #: 列表取最近两根日线时，先只扫日历近窗（走 code+date 索引），避免
-    #: 对每只票做全历史窗口函数（千万行库上可达数秒）。
-    _LATEST_BARS_LOOKBACK_DAYS = 20
+    def instruments_meta(self, codes: Iterable[str]) -> dict[str, dict[str, str]]:
+        """按代码批量取名称/板块/行业，返回 ``{code: {...}}``。
 
-    def latest_bars(self, codes: Sequence[str]) -> dict[str, dict[str, Any]]:
-        """批量取每只证券最近两根日线，拼出现价/昨收（不复权）。"""
-        normalized: list[str] = []
-        for raw in codes:
-            try:
-                normalized.append(normalize_code(raw))
-            except MarketError:
-                continue
-        if not normalized:
+        给跨上下文的调用方用：它们既不该直连 ``market.conn``，也不该为了几十个
+        代码去拉 `list_instruments()` 的全表（约 5500 行）。逐 code 单查同样不行，
+        日终复盘那种几十票的场景会打出几十次查询。
+        """
+        wanted = [str(code).strip() for code in codes if str(code).strip()]
+        if not wanted:
             return {}
-
-        days = [
-            str(row[0])
-            for row in self.conn.execute(
-                "SELECT trade_date FROM trading_calendar"
-                " ORDER BY trade_date DESC LIMIT ?",
-                (self._LATEST_BARS_LOOKBACK_DAYS,),
+        out: dict[str, dict[str, str]] = {}
+        for offset in range(0, len(wanted), 900):
+            chunk = wanted[offset : offset + 900]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self.conn.execute(
+                f"SELECT code, name, board, industry FROM instruments"
+                f" WHERE code IN ({placeholders})",
+                chunk,
             )
-        ]
-        out: dict[str, dict[str, Any]] = {}
-        if days:
-            out.update(self._latest_bars_from_window(normalized, days))
-        missing = [code for code in normalized if code not in out]
-        if missing:
-            out.update(self._latest_bars_by_max(missing))
+            for row in rows:
+                out[str(row["code"])] = {
+                    "name": str(row["name"] or ""),
+                    "board": str(row["board"] or ""),
+                    "industry": str(row["industry"] or ""),
+                }
         return out
-
-    def _latest_bars_from_window(
-        self, codes: Sequence[str], days: Sequence[str]
-    ) -> dict[str, dict[str, Any]]:
-        """日历近窗内按 code 取最近两根（ORDER BY date DESC，Python 侧截断）。"""
-        code_ph = ",".join("?" * len(codes))
-        day_ph = ",".join("?" * len(days))
-        sql = f"""
-            SELECT code, trade_date, open, high, low, close, volume, amount, turnover
-            FROM quotes_daily
-            WHERE code IN ({code_ph}) AND trade_date IN ({day_ph})
-            ORDER BY code ASC, trade_date DESC
-        """
-        buckets: dict[str, list[sqlite3.Row]] = {}
-        for row in self.conn.execute(sql, [*codes, *days]):
-            code = str(row["code"])
-            bucket = buckets.setdefault(code, [])
-            if len(bucket) < 2:
-                bucket.append(row)
-        return {
-            code: self._bar_payload(bars[0], bars[1] if len(bars) > 1 else None)
-            for code, bars in buckets.items()
-        }
-
-    def _latest_bars_by_max(self, codes: Sequence[str]) -> dict[str, dict[str, Any]]:
-        """无日历近窗命中时的回退：MAX(trade_date) 联表（仍远快于全历史窗口函数）。"""
-        placeholders = ",".join("?" * len(codes))
-        sql = f"""
-            WITH last_dates AS (
-                SELECT code, MAX(trade_date) AS trade_date
-                FROM quotes_daily
-                WHERE code IN ({placeholders})
-                GROUP BY code
-            ),
-            prev_dates AS (
-                SELECT q.code, MAX(q.trade_date) AS trade_date
-                FROM quotes_daily q
-                INNER JOIN last_dates d
-                    ON q.code = d.code AND q.trade_date < d.trade_date
-                WHERE q.code IN ({placeholders})
-                GROUP BY q.code
-            )
-            SELECT a.code, a.trade_date, a.open, a.high, a.low, a.close,
-                   a.volume, a.amount, a.turnover, b.close AS prev_close
-            FROM quotes_daily a
-            INNER JOIN last_dates d ON a.code = d.code AND a.trade_date = d.trade_date
-            LEFT JOIN quotes_daily b
-                ON b.code = a.code
-               AND b.trade_date = (
-                    SELECT p.trade_date FROM prev_dates p WHERE p.code = a.code
-               )
-        """
-        out: dict[str, dict[str, Any]] = {}
-        for row in self.conn.execute(sql, [*codes, *codes]):
-            prev = float(row["prev_close"] or 0) if row["prev_close"] is not None else None
-            out[str(row["code"])] = self._bar_payload(row, prev_close=prev)
-        return out
-
-    @staticmethod
-    def _bar_payload(
-        latest: sqlite3.Row,
-        prev: sqlite3.Row | None = None,
-        *,
-        prev_close: float | None = None,
-    ) -> dict[str, Any]:
-        close = float(latest["close"] or 0)
-        if prev_close is None and prev is not None and prev["close"] is not None:
-            prev_close = float(prev["close"] or 0)
-        pct = None
-        change = None
-        if prev_close and prev_close > 0 and close > 0:
-            change = round(close - prev_close, 3)
-            pct = round(change / prev_close * 100, 2)
-        turnover = None
-        keys = latest.keys()
-        if "turnover" in keys and latest["turnover"] is not None:
-            turnover = float(latest["turnover"])
-        return {
-            "code": str(latest["code"]),
-            "trade_date": str(latest["trade_date"] or ""),
-            "open": latest["open"],
-            "high": latest["high"],
-            "low": latest["low"],
-            "close": latest["close"],
-            "volume": latest["volume"],
-            "amount": latest["amount"],
-            "turnover": turnover,
-            "prev_close": prev_close,
-            "change": change,
-            "pct": pct,
-        }
-
-    def coverage(self) -> dict[str, Any]:
-        """仓库现状概览，供健康检查与前端"数据新鲜度"展示。
-
-        日期走 trading_calendar、证券数走 instruments，避免对 quotes_daily
-        做全表 COUNT（千万行库上可达数秒）。行数用 meta 缓存，并绑定日历末日
-        与行情 revision；行情内容变化时会重算。
-        """
-        cal = self.conn.execute(
-            "SELECT MIN(trade_date) AS first_date, MAX(trade_date) AS last_date"
-            " FROM trading_calendar"
-        ).fetchone()
-        first_date = str(cal["first_date"] or "") if cal else ""
-        last_date = str(cal["last_date"] or "") if cal else ""
-        if not last_date:
-            # 老库尚未建日历：回退扫 quotes（慢，但只在异常路径）。
-            row = self.conn.execute(
-                "SELECT COUNT(*) AS rows, COUNT(DISTINCT code) AS codes,"
-                " MIN(trade_date) AS first_date, MAX(trade_date) AS last_date"
-                " FROM quotes_daily"
-            ).fetchone()
-            failed = self.conn.execute(
-                "SELECT COUNT(*) FROM ingest_watermark WHERE status <> 'ok'"
-            ).fetchone()[0]
-            return {
-                "rows": int(row["rows"] or 0),
-                "codes": int(row["codes"] or 0),
-                "first_date": row["first_date"] or "",
-                "last_date": row["last_date"] or "",
-                "failed_codes": int(failed),
-                "db_path": str(self.db_path),
-                "db_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
-            }
-
-        codes = int(self.conn.execute("SELECT COUNT(*) FROM instruments").fetchone()[0])
-        failed = int(
-            self.conn.execute(
-                "SELECT COUNT(*) FROM ingest_watermark WHERE status <> 'ok'"
-            ).fetchone()[0]
-        )
-        rows = self._cached_quote_row_count(last_date)
-        return {
-            "rows": rows,
-            "codes": codes,
-            "first_date": first_date,
-            "last_date": last_date,
-            "failed_codes": failed,
-            "db_path": str(self.db_path),
-            "db_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
-        }
-
-    def _cached_quote_row_count(self, last_date: str) -> int:
-        """quotes_daily 行数：按日历末日与行情 revision 缓存，避免每次全表 COUNT。"""
-        revision_row = self.conn.execute(
-            "SELECT value FROM meta WHERE key = 'quotes_revision'"
-        ).fetchone()
-        revision = str(revision_row[0] if revision_row else "0")
-        cached = self.conn.execute(
-            "SELECT value FROM meta WHERE key = 'quotes_daily_rows_v1'"
-        ).fetchone()
-        if cached and cached[0]:
-            raw = str(cached[0])
-            parts = raw.split("|")
-            if len(parts) == 3:
-                stamp, cached_revision, count_s = parts
-                if stamp == last_date and cached_revision == revision:
-                    try:
-                        return int(count_s)
-                    except ValueError:
-                        pass
-        count = int(self.conn.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0])
-        with self._transaction() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO meta(key, value, updated_at)
-                VALUES('quotes_daily_rows_v1', ?, datetime('now'))
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value, updated_at = excluded.updated_at
-                """,
-                (f"{last_date}|{revision}|{count}",),
-            )
-        return count
 
     def trading_days(self, start: str | None = None, end: str | None = None) -> list[str]:
         """交易日列表。走日历小表，不扫 quotes_daily。"""
@@ -530,7 +438,17 @@ class MarketRwMixin:
             params.append(end)
         sql += " ORDER BY trade_date"
         days = [row[0] for row in self.conn.execute(sql, params)]
-        if not days and self.conn.execute("SELECT 1 FROM quotes_daily LIMIT 1").fetchone():
+        if days:
+            return days
+        # 带 start/end 的空结果只表示窗口内无交易日（例如热库尚未写入下一交易日），
+        # 绝不能当成「日历表缺失」去 SELECT DISTINCT 全表重建——会把日终/预案拖死数十分钟。
+        if start or end:
+            has_calendar = self.conn.execute(
+                "SELECT 1 FROM trading_calendar LIMIT 1"
+            ).fetchone()
+            if has_calendar:
+                return []
+        if self.conn.execute("SELECT 1 FROM quotes_daily LIMIT 1").fetchone():
             # 老库还没有日历表：自动补一次，之后走快路径。
             self.rebuild_calendar()
             return self.trading_days(start, end)
@@ -559,18 +477,33 @@ class MarketRwMixin:
         start: str | None = None,
         end: str | None = None,
         adjust: str = "qfq",
+        limit: int | None = None,
     ) -> pd.DataFrame:
-        """单票日线，按需复权。用于 K 线展示与单票分析。"""
+        """单票日线，按需复权。用于 K 线展示与单票分析。
+
+        ``limit``：只取截止 ``end``（或缺省时最新）最近 N 根，避免龙头地图等热路径
+        拉全量历史再 Python ``tail``。
+        """
         code = normalize_code(code)
-        sql = "SELECT * FROM quotes_daily WHERE code = ?"
         params: list[Any] = [code]
+        where = "code = ?"
         if start:
-            sql += " AND trade_date >= ?"
+            where += " AND trade_date >= ?"
             params.append(start)
         if end:
-            sql += " AND trade_date <= ?"
+            where += " AND trade_date <= ?"
             params.append(end)
-        sql += " ORDER BY trade_date"
+        if limit is not None and int(limit) > 0:
+            # 先按日期倒序截断，再升序还原，保证复权与下游时序假定。
+            sql = (
+                "SELECT * FROM ("
+                f"SELECT * FROM quotes_daily WHERE {where} "
+                "ORDER BY trade_date DESC LIMIT ?"
+                ") AS recent ORDER BY trade_date"
+            )
+            params.append(int(limit))
+        else:
+            sql = f"SELECT * FROM quotes_daily WHERE {where} ORDER BY trade_date"
         frame = pd.read_sql_query(sql, self.conn, params=params)
         if frame.empty or adjust == "none":
             return frame
@@ -579,6 +512,53 @@ class MarketRwMixin:
         for column in PRICE_FIELDS:
             frame[column] = frame[column] * ratio.to_numpy()
         return frame
+
+    def history_many(
+        self,
+        codes: list[str],
+        *,
+        end: str | None = None,
+        adjust: str = "qfq",
+        limit: int = 80,
+    ) -> dict[str, pd.DataFrame]:
+        """批量最近 N 根日 K：一次 ``code IN (...)`` 再按票截断。
+
+        缺票不出现在返回 dict；调用方再走 routed 补齐。复权按票独立算。
+        """
+        cleaned = [normalize_code(code) for code in codes if str(code or "").strip()]
+        cleaned = list(dict.fromkeys(cleaned))
+        if not cleaned or int(limit) <= 0:
+            return {}
+        placeholders = ",".join("?" for _ in cleaned)
+        params: list[Any] = list(cleaned)
+        where = f"code IN ({placeholders})"
+        if end:
+            where += " AND trade_date <= ?"
+            params.append(end)
+        # 窗口函数按票倒序编号，一次取出每票最近 limit 根。
+        sql = (
+            "SELECT * FROM ("
+            f"SELECT q.*, ROW_NUMBER() OVER ("
+            "PARTITION BY code ORDER BY trade_date DESC"
+            f") AS rn FROM quotes_daily q WHERE {where}"
+            ") AS ranked WHERE rn <= ? ORDER BY code, trade_date"
+        )
+        params.append(int(limit))
+        frame = pd.read_sql_query(sql, self.conn, params=params)
+        if frame.empty:
+            return {}
+        if "rn" in frame.columns:
+            frame = frame.drop(columns=["rn"])
+        out: dict[str, pd.DataFrame] = {}
+        for code, group in frame.groupby("code", sort=False):
+            part = group.reset_index(drop=True)
+            if adjust != "none" and not part.empty:
+                factors = self._factor_series(str(code), part["trade_date"])
+                ratio = self._adjust_ratio(factors, adjust)
+                for column in PRICE_FIELDS:
+                    part[column] = part[column] * ratio.to_numpy()
+            out[str(code)] = part
+        return out
 
     def _factor_series(self, code: str, dates: pd.Series) -> pd.Series:
         """把稀疏的除权因子前向填充到给定交易日序列上。"""

@@ -2,24 +2,41 @@
 import Sheet from '@/shared/components/layout/Sheet.vue'
 
 import type { ScreenSkillDraftModel } from '../composables/screenSkillDraft'
+import { rowFieldError } from '../composables/screenSkillDraftIssues'
 
-const props = defineProps<{
-  draft: ScreenSkillDraftModel
-}>()
+const props = withDefaults(
+  defineProps<{
+    draft: ScreenSkillDraftModel
+    fieldErrors?: Record<string, string>
+  }>(),
+  { fieldErrors: () => ({}) },
+)
 
 const emit = defineEmits<{
   addLogic: []
   removeLogic: [index: number]
 }>()
+
+function err(field: string): string {
+  return props.fieldErrors[field] || ''
+}
+
+function logicErr(index: number, id: string, part: string): string {
+  return rowFieldError(props.fieldErrors, 'logic', index, id, part)
+}
 </script>
 
 <template>
-  <Sheet title="逻辑说明" padded margin>
+  <Sheet title="策略与逻辑" padded margin>
     <div class="meta-grid">
-      <el-form-item label="Slug" required>
-        <el-input v-model.trim="props.draft.slug" maxlength="64" placeholder="my-breakout" />
+      <el-form-item label="标识" required :error="err('slug')">
+        <el-input
+          v-model.trim="props.draft.slug"
+          maxlength="64"
+          placeholder="小写英文与连字符，例如 breakout-ma"
+        />
       </el-form-item>
-      <el-form-item label="名称" required>
+      <el-form-item label="名称" required :error="err('name')">
         <el-input v-model.trim="props.draft.name" maxlength="64" placeholder="我的突破战法" />
       </el-form-item>
       <el-form-item label="版本">
@@ -36,18 +53,18 @@ const emit = defineEmits<{
           <el-option label="次日低吸" value="next_dip" />
         </el-select>
       </el-form-item>
-      <el-form-item label="最少 K 线">
+      <el-form-item label="最少 K 线" :error="err('minBars')">
         <el-input-number v-model="props.draft.minBars" :min="1" :max="1000" :controls="false" class="full" />
       </el-form-item>
-      <el-form-item label="主信号名" required>
-        <el-input v-model.trim="props.draft.signal" maxlength="32" placeholder="PICK" />
+      <el-form-item label="主信号名" required :error="err('signal')">
+        <el-input v-model.trim="props.draft.signal" maxlength="32" placeholder="例如 入选" />
       </el-form-item>
       <el-form-item label="运行时">
-        <el-input :model-value="props.draft.runtime === 'python' ? 'Python' : '公式'" readonly />
+        <el-input :model-value="props.draft.runtime === 'python' ? '脚本' : '公式'" readonly />
       </el-form-item>
     </div>
 
-    <el-form-item label="说明">
+    <el-form-item label="说明" required :error="err('description')">
       <el-input
         v-model.trim="props.draft.description"
         type="textarea"
@@ -57,25 +74,31 @@ const emit = defineEmits<{
       />
     </el-form-item>
 
-    <el-form-item label="因子清单">
+    <el-form-item label="因子清单" required :error="err('factorsText')">
       <el-input
         v-model="props.draft.factorsText"
         type="textarea"
         :rows="2"
-        placeholder="用逗号或换行分隔，例如 BASE_MA, VOL_RATIO, BREAKOUT"
+        placeholder="用逗号或换行分隔，例如 均线、量比、突破"
       />
     </el-form-item>
 
     <div class="section-head">
       <div>
         <strong>逻辑卡片</strong>
-        <div class="dim">每条逻辑单独记录表达式、解释与引用 ID。</div>
+        <div class="dim">每条逻辑单独记录表达式、解释与引用编号。</div>
       </div>
       <el-button size="small" @click="emit('addLogic')">新增逻辑</el-button>
     </div>
 
     <div class="logic-list">
-      <el-card v-for="(row, index) in props.draft.logic" :key="row.id" shadow="never" class="logic-card">
+      <el-card
+        v-for="(row, index) in props.draft.logic"
+        :key="row.id"
+        shadow="never"
+        class="logic-card"
+        :class="{ 'logic-card--error': Boolean(logicErr(index, row.id, 'id') || logicErr(index, row.id, 'title') || logicErr(index, row.id, 'expression') || logicErr(index, row.id, 'explanation') || logicErr(index, row.id, 'citationsText')) }"
+      >
         <template #header>
           <div class="logic-card__head">
             <span>{{ row.id || `逻辑 ${index + 1}` }}</span>
@@ -83,14 +106,14 @@ const emit = defineEmits<{
           </div>
         </template>
         <div class="meta-grid">
-          <el-form-item label="逻辑 ID" required>
-            <el-input v-model.trim="row.id" maxlength="40" placeholder="logic_breakout" />
+          <el-form-item label="逻辑编号" required :error="logicErr(index, row.id, 'id')">
+            <el-input v-model.trim="row.id" maxlength="40" placeholder="例如 logic-breakout" />
           </el-form-item>
-          <el-form-item label="标题" required>
+          <el-form-item label="标题" required :error="logicErr(index, row.id, 'title')">
             <el-input v-model.trim="row.title" maxlength="64" placeholder="站上均线" />
           </el-form-item>
         </div>
-        <el-form-item label="表达式" required>
+        <el-form-item label="表达式" required :error="logicErr(index, row.id, 'expression')">
           <el-input
             v-model.trim="row.expression"
             type="textarea"
@@ -98,7 +121,7 @@ const emit = defineEmits<{
             placeholder="例如 CLOSE > MA(CLOSE, N)"
           />
         </el-form-item>
-        <el-form-item label="解释">
+        <el-form-item label="解释" required :error="logicErr(index, row.id, 'explanation')">
           <el-input
             v-model.trim="row.explanation"
             type="textarea"
@@ -106,12 +129,12 @@ const emit = defineEmits<{
             placeholder="说明该逻辑为何存在、适用什么行情。"
           />
         </el-form-item>
-        <el-form-item label="引用 ID">
+        <el-form-item label="引用编号" :error="logicErr(index, row.id, 'citationsText')">
           <el-input
             v-model="row.citationsText"
             type="textarea"
             :rows="2"
-            placeholder="逗号或换行分隔，例如 ref_ma_handbook, ref_turnover_note"
+            placeholder="逗号或换行分隔，填资料页里的编号"
           />
         </el-form-item>
       </el-card>
@@ -146,6 +169,10 @@ const emit = defineEmits<{
 
 .logic-card {
   border-color: color-mix(in srgb, var(--rule) 84%, transparent);
+}
+
+.logic-card--error {
+  border-color: var(--el-color-danger);
 }
 
 .dim {

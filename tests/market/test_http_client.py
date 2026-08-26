@@ -5,10 +5,11 @@ import unittest
 from unittest import mock
 
 import requests
-from requests.exceptions import ProxyError
+from requests.exceptions import ConnectTimeout, ProxyError
 
 from src.market.infrastructure import http_client
 from src.market.infrastructure.http_client import (
+    CONNECT_TIMEOUT_CAP,
     NO_PROXY,
     _is_market_host,
     install_market_proxy_fallback,
@@ -35,6 +36,49 @@ class HttpClientTests(unittest.TestCase):
         ) as get:
             market_get("https://finance.sina.com.cn/x", session=session, timeout=5)
             get.assert_called_once()
+
+    def test_connect_timeout_override_is_used_for_handshake(self) -> None:
+        session = market_session()
+        with mock.patch.object(
+            session, "get", return_value=mock.Mock(status_code=200)
+        ) as get:
+            market_get(
+                "https://web.ifzq.gtimg.cn/x",
+                session=session,
+                timeout=20,
+                connect_timeout=2.0,
+            )
+        self.assertEqual(get.call_args.kwargs["timeout"], (2.0, 20.0))
+
+    def test_connect_timeout_is_capped_below_the_read_budget(self) -> None:
+        session = market_session()
+        with mock.patch.object(
+            session, "get", return_value=mock.Mock(status_code=200)
+        ) as get:
+            market_get("https://proxy.finance.qq.com/x", session=session, timeout=20)
+        self.assertEqual(get.call_args.kwargs["timeout"], (CONNECT_TIMEOUT_CAP, 20.0))
+
+    def test_connect_timeout_retries_once(self) -> None:
+        """全市场同步时单点握手丢包很常见，不重试整只票就白失败。"""
+        session = market_session()
+        ok = mock.Mock(status_code=200)
+        with mock.patch.object(
+            session,
+            "get",
+            side_effect=[ConnectTimeout("connect timed out"), ok],
+        ) as get, mock.patch.object(http_client, "_RETRY_BACKOFF_SEC", 0.0):
+            out = market_get("https://proxy.finance.qq.com/x", session=session)
+        self.assertIs(out, ok)
+        self.assertEqual(get.call_count, 2)
+
+    def test_connect_timeout_gives_up_after_the_retry_budget(self) -> None:
+        session = market_session()
+        with mock.patch.object(
+            session, "get", side_effect=ConnectTimeout("connect timed out")
+        ) as get, mock.patch.object(http_client, "_RETRY_BACKOFF_SEC", 0.0):
+            with self.assertRaises(ConnectTimeout):
+                market_get("https://proxy.finance.qq.com/x", session=session)
+        self.assertEqual(get.call_count, 2)
 
     def test_proxy_fallback_retries_direct_on_proxy_error(self) -> None:
         calls: list[object] = []

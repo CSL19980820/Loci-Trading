@@ -1,11 +1,12 @@
 {
   "mcpServers": {
-    "wudao-a-stock": {
-      "url": "https://REPLACE_WITH_YOUR_MCP_URL/mcp",
+    "wudao": {
+      "url": "https://stock.quicktiny.cn/api/mcp",
       "headers": {
         "Authorization": "Bearer ${WUDAO_API_KEY}"
       },
-      "note": "把本文件复制/改名为 data/mcp.json；密钥用环境变量，不要写死进仓库"
+      "expires_at": "2027-06-04",
+      "note": "悟道 A 股 · 付费情报补充；配额约 5000 次/天、50 次/分。Key 用环境变量或运维 MCP 页加密保存，勿写死进仓库"
     }
   }
 }

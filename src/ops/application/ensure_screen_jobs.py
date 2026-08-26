@@ -11,10 +11,11 @@ SCREEN_EOD_MINUTE = 30
 
 
 def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
-    """为每个已注册引擎战法确保 ``screen:{slug}`` 任务。
+    """为每个需要托管的引擎战法确保 ``screen:{slug}`` 任务。
 
     幂等：已有绑定只合并关键配置（保留 universe / 推送等用户自定义字段），
     不强制改 enabled；战法声明固定时点时同步其 cron，避免旧任务继续在错误时刻执行。
+    ``screen_managed_job=False`` 的战法不建托管任务；残留 ``screen:{slug}`` 会按活动目录收缩删除。
     """
     from src.strategy import all_strategies
 
@@ -37,6 +38,8 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
     job_crons: dict[str, str] = {}
     for engine in all_strategies():
         slug = str(engine.slug)
+        if not _manages_screen_job(engine):
+            continue
         slugs.append(slug)
         engine_schedule = _schedule_for_engine(engine, default_schedule)
         job_name = f"screen:{slug}"
@@ -89,6 +92,10 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
             "use_ai_pick": bool(prev_cfg.get("use_ai_pick", False)),
             "push_wecom": bool(prev_cfg.get("push_wecom", True)),
             "schedule": schedule,
+            # 未声明则写 False，清掉盘中定点实验残留的强制刷现价。
+            "force_spot_refresh": bool(
+                getattr(engine, "screen_force_spot_refresh", False)
+            ),
         }
         if isinstance(prev_cfg.get("universe"), dict):
             config["universe"] = prev_cfg["universe"]
@@ -160,3 +167,8 @@ def _top_n_for_engine(engine: Any, previous: dict[str, Any]) -> int:
 
 def _has_schedule_override(engine: Any) -> bool:
     return isinstance(getattr(engine, "screen_schedule", None), dict)
+
+
+def _manages_screen_job(engine: Any) -> bool:
+    """未声明时默认托管；显式 ``screen_managed_job=False`` 的战法只留手跑。"""
+    return bool(getattr(engine, "screen_managed_job", True))

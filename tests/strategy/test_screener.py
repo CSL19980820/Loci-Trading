@@ -15,11 +15,13 @@ class _PanelStore:
         self.days = days
         self.volume = pd.DataFrame({"600001": [1.0] * len(days)}, index=days)
         self.load_args: dict[str, object] = {}
+        self.snapshot_args: dict[str, object] = {}
 
     def trading_days(self, *, end: str | None = None) -> list[str]:
         return [day for day in self.days if end is None or day <= end]
 
-    def data_snapshot(self) -> dict[str, object]:
+    def data_snapshot(self, **kwargs: object) -> dict[str, object]:
+        self.snapshot_args = dict(kwargs)
         return {"revision": "test"}
 
     def load_panel(self, **kwargs: object) -> dict[str, pd.DataFrame]:
@@ -37,9 +39,14 @@ class _VolumeOnlyEngine:
     strategy_revision = "test"
 
     def __init__(
-        self, *, requires_full_history: bool = False, warmup_bars: int | None = None
+        self,
+        *,
+        requires_full_history: bool = False,
+        warmup_bars: int | None = None,
+        watch_only: bool = False,
     ) -> None:
         self.requires_full_history = requires_full_history
+        self.watch_only = watch_only
         if warmup_bars is not None:
             self.warmup_bars = warmup_bars
 
@@ -56,7 +63,11 @@ class _VolumeOnlyEngine:
         self, panels: dict[str, pd.DataFrame], params: dict[str, object] | None = None
     ) -> SignalResult:
         volume = panels["volume"]
-        return SignalResult(signals=volume.gt(0), factors={"成交量": volume})
+        return SignalResult(
+            signals=volume.gt(1) if self.watch_only else volume.gt(0),
+            watch_signals=volume.gt(0) if self.watch_only else None,
+            factors={"成交量": volume},
+        )
 
 
 class ScreenerPanelSelectionTests(unittest.TestCase):
@@ -80,6 +91,26 @@ class ScreenerPanelSelectionTests(unittest.TestCase):
         self.assertEqual([pick["code"] for pick in result.picks], ["600001"])
         self.assertIsNone(result.picks[0]["close"])
         self.assertEqual(result.universe_size, 1)
+
+    def test_watch_signals_are_enriched_without_becoming_formal_picks(self) -> None:
+        result = self._screen(
+            _PanelStore(self.days), _VolumeOnlyEngine(watch_only=True)
+        )
+
+        self.assertEqual(result.picks, [])
+        self.assertEqual([pick["code"] for pick in result.watch_picks], ["600001"])
+        self.assertEqual(result.watch_picks[0]["intent"], "observe")
+
+    def test_data_snapshot_receives_universe_and_window(self) -> None:
+        store = _PanelStore(self.days)
+        result = self._screen(store, _VolumeOnlyEngine())
+
+        # 选股必须在解析宇宙后带 codes+窗口取证，禁止无范围全库扫证据
+        self.assertEqual(store.snapshot_args["codes"], ["600001"])
+        self.assertEqual(store.snapshot_args["end"], self.days[-1])
+        self.assertIn("start", store.snapshot_args)
+        self.assertEqual(result.data_snapshot["start"], store.snapshot_args["start"])
+        self.assertEqual(result.data_snapshot["end"], store.snapshot_args["end"])
 
     def test_stateful_strategy_loads_full_available_history(self) -> None:
         store = _PanelStore(self.days)

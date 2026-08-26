@@ -3,26 +3,45 @@ import { computed } from 'vue'
 
 import type { HealthPhase } from '@/features/review/composables/useHealthCheckup'
 
-const props = defineProps<{
-  score: number | null
-  grade: string
-  phase: HealthPhase
-  subtitle: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    score: number | null
+    grade: string
+    phase: HealthPhase
+    /** 0–100：idle 虚线待检环 / 扫描进度 / 结果分数 */
+    progress?: number
+  }>(),
+  { progress: 0 },
+)
+
+const R = 54
+const CX = 64
+const CY = 64
+const CIRC = 2 * Math.PI * R
 
 const display = computed(() => {
-  if (props.phase === 'idle') return '—'
+  if (props.phase === 'idle') return '待检'
   if (props.phase === 'scanning') return '···'
   if (props.score == null) return '—'
   return String(props.score)
 })
 
-const dialClass = computed(() => {
-  if (props.phase === 'scanning' || props.phase === 'repairing') return 'seal-dial--busy'
-  if (props.score != null && props.score >= 90) return 'seal-dial--ok'
-  if (props.phase === 'healthy') return 'seal-dial--ok'
-  if (props.score != null && props.score < 70) return 'seal-dial--bad'
-  return ''
+const tone = computed<'idle' | 'busy' | 'ok' | 'bad'>(() => {
+  if (props.phase === 'scanning' || props.phase === 'repairing') return 'busy'
+  if (props.score != null && props.score >= 90) return 'ok'
+  if (props.phase === 'healthy') return 'ok'
+  if (props.score != null && props.score < 70) return 'bad'
+  if (props.phase === 'result') return 'bad'
+  return 'idle'
+})
+
+/** idle 时整环虚线（还没盖的印）；其余态用 dashoffset 表达进度 */
+const arcDasharray = computed(() => (props.phase === 'idle' ? '2.5 5.5' : CIRC))
+
+const dashOffset = computed(() => {
+  if (props.phase === 'idle') return 0
+  const pct = Math.min(100, Math.max(0, props.progress)) / 100
+  return CIRC * (1 - pct)
 })
 
 const showGrade = computed(
@@ -35,83 +54,113 @@ const showGrade = computed(
 </script>
 
 <template>
-  <div class="seal-dial-wrap">
-    <div class="seal-dial" :class="dialClass" aria-live="polite">
-      <div class="seal-dial__inner" />
-      <span class="seal-dial__kicker">印鉴分</span>
-      <strong class="seal-dial__score mono">{{ display }}</strong>
+  <div class="seal-dial" :class="`seal-dial--${tone}`" aria-live="polite">
+    <svg class="seal-dial__svg" viewBox="0 0 128 128" aria-hidden="true">
+      <circle class="seal-dial__track" :cx="CX" :cy="CY" :r="R" fill="none" />
+      <circle
+        class="seal-dial__arc"
+        :cx="CX"
+        :cy="CY"
+        :r="R"
+        fill="none"
+        :stroke-dasharray="arcDasharray"
+        :stroke-dashoffset="dashOffset"
+        transform="rotate(-90 64 64)"
+      />
+    </svg>
+    <div class="seal-dial__core">
+      <span class="seal-dial__kicker">体检分</span>
+      <strong class="seal-dial__score mono" :class="{ 'seal-dial__score--word': phase === 'idle' }">
+        {{ display }}
+      </strong>
       <span v-if="showGrade" class="seal-dial__grade">{{ grade }}</span>
     </div>
-    <p class="seal-dial__sub">{{ subtitle }}</p>
   </div>
 </template>
 
 <style scoped>
-.seal-dial-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.35rem 0 0.15rem;
-}
-
 .seal-dial {
   position: relative;
-  width: 9.25rem;
-  height: 9.25rem;
-  border-radius: 50%;
-  border: 3px solid var(--seal);
-  background: var(--sheet);
+  width: 9.5rem;
+  height: 9.5rem;
+  flex-shrink: 0;
+}
+
+.seal-dial__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.seal-dial__track {
+  stroke: color-mix(in srgb, var(--rule) 85%, var(--sheet));
+  stroke-width: 8;
+}
+
+.seal-dial__arc {
+  stroke: var(--seal);
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.35s ease-out, stroke 0.2s ease;
+}
+
+/*
+ * 三态一律用语义色，不用品牌色：--lake 是静态绿，而 --seal 在「湖绿」主色下也是同一个绿，
+ * 曾导致「体检通过」和「体检失败」渲染成完全相同的颜色，只剩中心文字能区分。
+ */
+.seal-dial--ok .seal-dial__arc {
+  stroke: var(--success);
+}
+
+.seal-dial--bad .seal-dial__arc {
+  stroke: var(--loss);
+}
+
+.seal-dial--busy .seal-dial__arc {
+  stroke: var(--warn);
+  animation: seal-arc-pulse 1.4s ease-in-out infinite;
+}
+
+.seal-dial--idle .seal-dial__arc {
+  stroke: color-mix(in srgb, var(--mist) 62%, var(--rule));
+}
+
+.seal-dial__core {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.15rem;
-}
-
-.seal-dial--ok {
-  border-color: var(--lake);
-}
-
-.seal-dial--bad {
-  border-color: var(--seal);
-}
-
-.seal-dial--busy .seal-dial__inner {
-  animation: seal-spin 4s linear infinite;
-}
-
-.seal-dial__inner {
-  position: absolute;
-  inset: 0.45rem;
-  border-radius: 50%;
-  border: 1px solid var(--rule);
+  gap: 0.12rem;
   pointer-events: none;
 }
 
 .seal-dial__kicker {
-  position: relative;
   font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.12em;
   color: var(--mist);
   font-weight: 500;
 }
 
 .seal-dial__score {
-  position: relative;
-  font-size: 2.55rem;
+  font-size: 2.35rem;
   font-weight: 700;
   line-height: 1.05;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
+.seal-dial__score--word {
+  font-size: 1.5rem;
+  letter-spacing: 0.08em;
+  color: var(--mist);
+}
+
 .seal-dial__grade {
-  position: relative;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 650;
-  padding: 0.08rem 0.45rem;
+  padding: 0.06rem 0.4rem;
   border-radius: 3px;
   background: color-mix(in srgb, var(--seal-soft) 70%, var(--sheet));
   color: var(--seal-ink);
@@ -122,28 +171,20 @@ const showGrade = computed(
   color: var(--lake);
 }
 
-.seal-dial__sub {
-  margin: 0;
-  text-align: center;
-  font-size: 0.88rem;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--ink);
-  max-width: 26rem;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .seal-dial--busy .seal-dial__inner {
-    animation: none;
+  .seal-dial__arc {
+    transition: none;
+    animation: none !important;
   }
 }
 
-@keyframes seal-spin {
-  from {
-    transform: rotate(0deg);
+@keyframes seal-arc-pulse {
+  0%,
+  100% {
+    opacity: 1;
   }
-  to {
-    transform: rotate(360deg);
+  50% {
+    opacity: 0.55;
   }
 }
 </style>

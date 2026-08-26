@@ -6,12 +6,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.app.legacy.quant_common import (
-    JobCreate,
-    JobUpdate,
-    missing_dependency,
-    ops_store,
-)
+from src.ops.api.schemas import JobCreate, JobUpdate
+from src.shared.api_deps import missing_dependency, ops_store
+from src.shared.paths import market_hot_db
 
 
 class JobRunBatchDeleteInput(BaseModel):
@@ -115,7 +112,10 @@ def build_jobs_router(
                 return run_job(
                     store, job_id,
                     context=JobContext(
-                        market_db=market_db, ops_store=store, palace_db=palace_db
+                        market_db=market_db,
+                        market_hot_db=str(market_hot_db()),
+                        ops_store=store,
+                        palace_db=palace_db,
                     ),
                     trigger="api",
                 )
@@ -126,11 +126,39 @@ def build_jobs_router(
     def list_runs(
         job_id: str | None = Query(default=None),
         run_id: str | None = Query(default=None),
-        status: str | None = Query(default=None, pattern="^(success|failed|running|skipped)$"),
+        status: str | None = Query(
+            default=None,
+            pattern="^(success|failed|running|skipped|cancelled|timed_out)$",
+        ),
         limit: int = Query(default=50, ge=1, le=500),
     ) -> list[dict[str, Any]]:
         with _ops() as store:
             return store.list_runs(job_id=job_id, run_id=run_id, status=status, limit=limit)
+
+    @router.post("/api/jobs/runs/{run_id}/cancel", tags=["jobs"], status_code=202)
+    def cancel_run(run_id: str, _write: None = write_guard) -> dict[str, Any]:
+        """请求协作式取消；执行器到安全检查点后写入 cancelled 终态。"""
+        from src.ops import OpsError
+
+        try:
+            with _ops() as store:
+                run = store.get_run(run_id)
+                if run is None:
+                    raise HTTPException(status_code=404, detail=f"未知运行：{run_id}")
+                if run["status"] != "running":
+                    return {
+                        "run_id": run_id,
+                        "status": run["status"],
+                        "cancel_requested": bool(run.get("cancel_requested")),
+                    }
+                changed = store.request_cancel(run_id)
+        except OpsError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "run_id": run_id,
+            "status": "cancellation_requested" if changed else "not_running",
+            "cancel_requested": changed,
+        }
 
     @router.post("/api/jobs/runs/batch-delete", tags=["jobs"])
     def batch_delete_runs(

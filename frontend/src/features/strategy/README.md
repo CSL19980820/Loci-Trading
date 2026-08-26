@@ -6,31 +6,51 @@
   - 顶栏：交易日**区间**（`TradeDateRangeField`：daterange + 今日/本周/上周/近一月/上一月快捷泡，跨度 ≤31 自然日）· 入库候选 ·（Skill 时 LLM）· **详情** · **入库历史** · 刷新 · 主按钮「选股 / 区间选股 / 跑技能」
   - 选中战法、区间、`kind` 写入 URL query（`select`/`from`/`to`/`kind`），点开行情批再返回可还原
   - 选条：`ScreenCatalogRail` — 战法 + 技能同目录；样本不足不刷文案（右侧 `—`），样本够才出胜率·均收益；搜索「搜名称」
-  - 跑道：`ScreenRunPanel` — 待命/状态行折叠日志（默认展开，跑完自动收起；贴底滚动）；今日/区间末日 picks / 空态占满剩余高度
-  - 入库历史：顶栏按钮打开宽弹窗；默认 `live_only` 仅盘后真选，开关「含回填」可审计；`ScreenHistoryPanel` 为列表页样式（日期区间筛选 · BasicTable 分页 · 详情/重跑）
+  - 跑道：`ScreenRunPanel` — 待命/状态行折叠日志（默认展开，跑完自动收起；贴底滚动）；今日/区间末日结果把正式精选与“低吸观察（不计正式胜率）”分区，二者都为空才显示空态
+  - 入库历史：顶栏按钮打开宽弹窗；默认 `live_only` 仅盘后真选，开关「含回填」可审计；`ScreenHistoryPanel` 按“正式 / 观察”分别计数，详情显示每票裁决（日期区间筛选 · BasicTable 分页 · 详情/重跑）
     - 详情：顶栏打开既有 `StrategyDetailDialog` / `SkillDetailDialog`（与工坊战法/技能页一致）
 - **选股后台**：`useScreenRunStore` 全局轮询；顶栏 `ScreenRunChip` 可点回进度；区间跑按交易日循环通用 `screen` + 同日同池入库，进度日志逐日输出
 - `composables/tradeDateRange.ts`：快捷区间与跨度校验（前后端对齐）
 - `composables/useScreenCatalog.ts`：合并 strategies + skills + 复盘/候选胜率 + `/insights/decay`；保留 `selectedStrategy` / `selectedSkill` 供详情弹窗
 - `composables/useWorkbenchSkillRun.ts`：Skill 后台事件流 / HITL；日志经 `skillRunLog.ts` 全中文细粒度渲染（阶段/轮次/子任务启停/工具启停），跑道日志贴底自动滚动
 - `composables/useScreenHistoryQuery.ts`：入库历史 Colada 缓存
-- `QuantView.vue`（路由 `/quant` · 工坊）：**维护选股可用工具 + 本机货架 + 定时**
-  - Tab：**战法** · **技能** · **数据源** · **定时** · **市场** · **回测**（市场右侧；`QuantBacktestPanel` + `QuantBacktestExtremeTape` → `mode=horizon`；T+1/T+3 胜率·平均；样本最佳/最差标注个股与选股日/标记日，点击跳 `/archive/:code?date=`；区间快捷近一月/三月/六月）
-  - 选股结果 / 入库历史 / 跑道 picks：`StockLink` 带选股日 `date`，进行情默认落在该日 K
+- `QuantView.vue`（路由 `/quant` · 工坊）：**维护选股可用工具 + 本机货架 + 定时 + 研究证据台**
+  - Tab：**战法** · **技能** · **数据源** · **定时** · **市场** · **回测** · **研究** · **纸面量化**（`PaperQuantPanel`：舱配置 / 立即盯盘 / 日终 / 价格提醒 / 通知策略；`?tab=paper`）
+  - 研究台用 `v-if`（离开 Tab 卸载以停 job 轮询）；其它 Tab 仍 `v-show` 保状态
+  - 研究台默认只读本地证据，显示 21 维状态、实际来源回执、缺口和质量门禁；用户可显式归档输入快照；`?code=` 可预填标的；不生成生产信号
+  - 纸面舱与真实 `palace` 隔离；跟随仅企微，见 [ADR-008](../../../../docs/adr/ADR-008-paper-quant-cabin.md)
+  - **次日情景预案**：每票高开/平开/低开是否买、买点区间、层数；09:15–09:30 竞价/开盘前只纠偏（follow/revise/abandon/wait），≥09:30 过门闩才允许纸面开仓——不是选股池随便市价开
+  - **战法风格记忆**：长期评头论足写入教训并吸入「该怎么买/该看哪些」；与全局助手记忆隔离；另有 **记忆知识图**（类 codegraph explore：节点/边/子图查询）落在 ops.db
+  - **日终复盘**：强制回看近五个交易日，对照买过/没买/没卖的完整日 K，并看池内量能与板块环境（资金流可选）；另追加「角色演进」段（龙头存活、角色转移、走弱预警提前量），持仓里已判走弱/破位的票会落成 `role_alert` 教训
+  - 选股结果 / 入库历史 / 跑道正式与观察候选：`StockLink` 带选股日 `date`，进行情默认落在该日 K
   - 数据源角标只数源家数（面板 `count-changed`），不数线路条数、不数 AkShare 接口数；`?view=` 透传给面板做深链（运维旧 `?tab=akshare` 就落在 `view=interfaces`）
   - 定时角标=启用任务数；运维旧 `?tab=jobs` 深链落到本 Tab；`?tab=runs` / `?runs=1` 打开执行历史弹窗
   - 定时台顶栏「执行历史」→ `JobRunsDialog`（任务名最左 min200、时间 min160、耗时如 `11h2min3s`）
-  - 战法区：统一目录；来源/修订中文（内置·公式）；名称不展示 slug；产品内置为潜龙出海 / 潜龙尾盘 / 三源尾盘共振 / RSI22 次日低吸；海底捞月、三外有三与其他旧版只保留在归档回测，不进入活动目录；`formula` 可跳工坊编辑，`builtin` 行点击打开详情弹窗
-  - 详情/配置弹窗 `StrategyDetailDialog`（行「配置」或点行）：默认打开**配置** Tab；含行情范围、定时选股、**推送企微**（定时结束后自动推，默认开；关定时则开关禁用）；底栏保存 → `PUT /api/strategies/{slug}/job`；**关定时（off）自动剔除绑定**
+  - 战法区：统一目录；来源/修订中文（内置·公式）；名称不展示 slug；产品内置为潜龙出海 / 三源尾盘共振（15:30 定时）/ 杨氏尾盘选股（15:30 定时）；14:50 两档已整体删除，不再出现在目录；RSI 抄底、潜龙尾盘、海底捞月、三外有三与其他旧版只保留在归档回测，不进入活动目录；`formula` 可跳工坊编辑，`builtin` 行点击打开详情弹窗
+  - 详情/配置弹窗 `StrategyDetailDialog`（行「配置」或点行）：壳层编排 hydrate/save/版本回滚；**基础信息** Tab → `StrategyDetailBasicsPane`；**配置** Tab → `StrategyDetailConfigPane`（行情范围、定时选股、**推送企微**）；纯展示/格式化在 `strategyDetailFormat.ts`；底栏保存 → `PUT /api/strategies/{slug}/job`；**关定时（off）自动剔除绑定**
   - 定时台对 `screen:{slug}` 战法绑定只读（改配置走战法详情 / 「去战法改」带 `?strategy=`）；本机任务可 CRUD，战法/技能/供应商下拉选择
   - 主动作「选股」深链 `/screen-history?select=engine:|skill:`；操作列仅「选股」与「编辑(可编辑时)」；技能维持独立入口，不再混入公式工坊
   - 技能区与战法区同构：`QuantSkillsPanel` 行点击打开 `SkillDetailDialog`；工具栏「上传技能」支持 zip 或文件夹（文件夹本机打成 zip 再 `POST /api/skills`）
   - 详情弹窗 `SkillDetailDialog`：默认**配置** Tab（定时 + 推送企微 + LLM）/ 基础信息 / 说明书 / 工具；说明书按需拉 `instructions`，行内 Markdown 由 `ManualInline` 渲染；定时落库 `PUT /api/skills/{slug}/job`
+  - **专属战法**（frontmatter 有 `strategy_skill` / `signal_engine` / `signals`）走 `SkillStrategyConfigPanel`：一屏配两档——盘后 AI 选股（`skill:{slug}`）与盘中确定性信号监测（`监测·{slug}`），落库 `PUT /api/skills/{slug}/strategy-config`。只有启用盘后 AI 或盘中 AI 解读才要求 LLM；关闭即删对应任务
+  - **监测调参** `SkillWatchTuningPanel`：`GET|PUT|DELETE /api/skills/{slug}/watch-tuning`。三套命名预设（偏进攻 / 中性 / 偏防守）一键套用（确认对话框），套用后可继续手工微调保存；四个流水线开关 + 四段阈值；关掉的段会顶部告警。PUT 传 `{ preset: 'defensive' }` 整档套用（段开关保留）
+  - **监测预览** `SkillWatchPreviewPanel`：`POST .../watch-preview` 试跑 + `GET .../leader-roles` 累计留痕；展示闸门、龙头地图、竞价、角色变化、存活榜与 **调参建议**（`suggestions`，`el-alert` 标明仅建议不改参）；只读不落库
+  - 档位时间输入复用 `SkillScheduleFields.vue`（定点/间隔 + 下次运行预览），时间模型与转换在 `skillSchedule.ts`。**SKILL.md 不带 cron**，默认值由后端给（盘后 15:40、盘中每 10 分钟）；用户改动后预览回落本地估算，保存后再取后端按交易日历算的结果
   - `composables/skillManual.ts`：块级分块 + 行内解析；不用 `v-html`
   - 市场子区：`?shelf=` 浏览/已装/发布；装包变更会刷新战法/技能列表
-- `StrategyConverterView.vue`（路由 `/strategy-converter` · 量化技能工坊）：一个共享 `ScreenSkillDraftModel` 的工作台。左侧 `ScreenWorkbenchCatalog` 使用目录 API 提供函数/字段/片段；中间 `ScreenWorkbenchEditor` 编辑逻辑、数据、来源和源码；右侧 `ScreenAiCopilot` 对当前草稿提出修改；底部 `ScreenSkillTestReport` 展示中文 IR/manifest 解释、逐条 citation 对应的资料定位、诊断与试跑。
-- 顶部和设置抽屉的 Formula/Python 切换共用 `switchScreenSkillRuntime()`，同步方言、Python 入口和默认源码并清空旧预览，禁止产生运行时与方言不一致的草稿。
-- `components/ScreenSkillImportDialog.vue`：导入 TDX、THS 或 Python 源码到当前草稿；TDX/THS 只是方言导入，能否执行由当前公式子集和预览诊断决定，不宣称厂商全函数兼容。
-- `components/ScreenWorkbenchCatalog.vue`、`ScreenWorkbenchEditor.vue`、`ScreenAiCopilot.vue`、`ScreenSkillTestReport.vue`：统一工作台组件。
-- `composables/screenSkillDraft.ts`：Screen Skill 草稿与 manifest/runtime 契约互转、局部校验、参数/逻辑/逐条 citation/数据构造；人工与 AI 共用该草稿。
+- `StrategyConverterView.vue`（路由 `/strategy-converter` · 策稿台）：通达信式**整页公式纸**。顶栏：名称 / 函数 / 试跑 / 选股 / 回测 / 导入 / 保存 / 助手；无常驻左栏、无顶栏脚本/标识/方言选择。
+  - 函数：`ScreenCatalogDialog` + `ScreenWorkbenchCatalog`（三栏词典弹窗，默认可收）
+  - 分区条右侧：行数 / 字段 / 参数统计；编辑区 `ScreenWorkbenchEditor` 仅正文 + 试跑状态纸尾
+  - 助手：顶栏右上角按钮开/关；展开为右侧精简 `ScreenAiCopilot`；「在助手中继续」派发 `loci:assistant-open` 打开全局助手
+  - 试跑门闩：`trialPassed`；改正文失效；通过后才能选股
+  - 选股：`ScreenSelectDialog`（单日/区间 + 股票池）→ 单日走 preview run；区间需先保存后走 `useScreenRunStore`
+  - 结果坞：`ScreenWorkbenchDock`（诊断 / 解释 / 选股 / 回测）；选股页分开展示正式精选与低吸观察；回测复用 `QuantBacktestPanel`（`lockedSlug`）；Horizon/成交双口径可切换且结果互不冲掉；会话记住区间与成本；对照条/乐观差/直方；成交含筛选、分月条、复制摘要
+  - 顶层 PageTabs：公式 / 策略 / 数据 / 参数 / 资料（原设置抽屉并入，不再单独弹层）；界面文案中文化（标识、编号、链接等）
+  - 资料为可选项：空白卡不拦试跑/保存；动手填写或逻辑引用了编号才校验；仅 AI 生成草稿强制要求资料
+  - 试跑/保存校验失败：跳到对应 Tab，表单字段标红；Tab 角标显示缺项数
+  - 公式落地方言固定通达信兼容写法（内部仍为 `loci`）
+- 公式/脚本切换在「参数」Tab，共用 `switchScreenSkillRuntime()`。
+- `components/ScreenSkillImportDialog.vue`：导入通达信、同花顺或脚本源码到当前草稿；能否执行由公式子集和预览诊断决定。
+- `composables/useScreenSkillWorkbenchPage.ts`：策稿页编排（试跑门闩、选股、回测入口）。
+- `composables/screenSkillDraft.ts`：草稿与 manifest/runtime 契约互转；公式 payload 方言固定为 `loci`。
 - 装包 / 卸载货架 → [`../marketplace/README.md`](../marketplace/README.md)

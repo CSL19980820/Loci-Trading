@@ -277,6 +277,86 @@ describe('useDataQueryMarket request ordering', () => {
     wrapper.unmount()
   })
 
+  it('does not leave busy stuck when KeepAlive activate restarts refresh during loadBoard', async () => {
+    const local = deferred<Record<string, unknown>>()
+    api.getMarketSession.mockResolvedValue({ live_allowed: false })
+    api.getMarketBoard.mockImplementation((options: { live?: boolean }) => {
+      if (options.live) return Promise.resolve(board('live', true))
+      return local.promise
+    })
+
+    const busy = { value: false }
+    let market!: ReturnType<typeof useDataQueryMarket>
+    const Probe = defineComponent({
+      setup() {
+        market = useDataQueryMarket({
+          route: { fullPath: '/data' } as never,
+          router: { push: vi.fn() } as never,
+          busy,
+          error: { value: '' },
+          liveError: { value: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const wrapper = mount(Probe)
+
+    const pending = market.loadBoard()
+    expect(busy.value).toBe(true)
+
+    // KeepAlive 首次挂载会同步 onActivated → startRefresh → stopRefresh，
+    // 旧实现抬高 boardRequestSeq 后 loadBoard 的 finally 不再清 busy。
+    market.startRefresh()
+
+    local.resolve(board('local', false))
+    await pending
+    await flushPromises()
+
+    expect(busy.value).toBe(false)
+    expect(market.boardRows.value[0]?.code).toBe('local')
+    expect(market.boardTotal.value).toBe(1)
+
+    market.stopRefresh()
+    wrapper.unmount()
+  })
+
+  it('clears liveEnriching when refresh stops during an in-flight live request', async () => {
+    const live = deferred<Record<string, unknown>>()
+    api.getMarketSession.mockResolvedValue({ live_allowed: true })
+    api.getMarketBoard.mockImplementation((options: { live?: boolean }) => {
+      return options.live ? live.promise : Promise.resolve(board('local', false))
+    })
+
+    let market!: ReturnType<typeof useDataQueryMarket>
+    const Probe = defineComponent({
+      setup() {
+        market = useDataQueryMarket({
+          route: { fullPath: '/data' } as never,
+          router: { push: vi.fn() } as never,
+          busy: { value: false },
+          error: { value: '' },
+          liveError: { value: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const wrapper = mount(Probe)
+
+    await market.loadBoard()
+    await flushPromises()
+    expect(market.liveEnriching.value).toBe(true)
+
+    market.stopRefresh()
+    expect(market.liveEnriching.value).toBe(false)
+
+    live.resolve(board('stale-live', true))
+    await flushPromises()
+    expect(market.boardRows.value[0]?.code).toBe('local')
+    expect(market.liveEnriching.value).toBe(false)
+
+    wrapper.unmount()
+  })
+
   it('sends the current keyword when searching', async () => {
     api.getMarketSession.mockResolvedValue({ live_allowed: false })
     api.getMarketBoard.mockResolvedValue(board('local', false))

@@ -172,16 +172,18 @@ async function load(): Promise<void> {
   emit('changed')
 }
 
+// displayName 由 v-for 每行调用，逐行 find 会随目录长度线性劣化；预建索引。
+const strategyNames = computed(() => new Map(strategies.value.map((s) => [s.slug, s.name])))
+const skillNames = computed(() => new Map(skills.value.map((s) => [s.slug, s.name])))
+
 function displayName(job: Job): string {
   if (isStrategyBoundJob(job)) {
     const slug = strategySlugFromBoundJob(job)
-    const hit = strategies.value.find((s) => s.slug === slug)
-    return hit?.name || slug || job.name
+    return strategyNames.value.get(slug) || slug || job.name
   }
   if (isSkillBoundJob(job)) {
     const slug = skillSlugFromBoundJob(job)
-    const hit = skills.value.find((s) => s.slug === slug)
-    return hit?.name || slug || job.name
+    return skillNames.value.get(slug) || slug || job.name
   }
   return job.name
 }
@@ -271,10 +273,10 @@ async function fire(job: Job): Promise<void> {
   if (outcome) {
     notice.value =
       outcome.status === 'failed'
-        ? `任务失败：${outcome.error ?? ''}`
+        ? `没跑成：${displayName(job)} · ${outcome.error?.trim() || '后台没有留下原因'}`
         : outcome.status === 'skipped'
           ? `任务 ${displayName(job)} 已跳过：${outcome.error?.trim() || '未提供原因'}`
-        : `任务 ${displayName(job)} 执行成功`
+        : `已跑完：${displayName(job)}`
   }
   await load()
   await detailRef.value?.reloadRuns()
@@ -372,6 +374,7 @@ defineExpose({ load, schedule })
             :class="{ active: job.id === selectedId }"
             @click="selectedId = job.id"
             @keydown.enter.prevent="selectedId = job.id"
+            @keydown.space.prevent="selectedId = job.id"
           >
             <div class="job-row-top">
               <strong>{{ displayName(job) }}</strong>
@@ -388,7 +391,7 @@ defineExpose({ load, schedule })
               <span :class="job.enabled ? 'on' : 'off'">{{ job.enabled ? '启用' : '停用' }}</span>
             </div>
           </div>
-          <EmptyState v-if="!filteredJobs.length" description="该类型下没有任务" />
+          <EmptyState v-if="!filteredJobs.length" description="这个类型下没有任务，换上面的筛选看看" />
         </el-scrollbar>
       </aside>
 
@@ -411,7 +414,11 @@ defineExpose({ load, schedule })
       <EmptyState v-else description="选择左侧一条任务查看详情" />
     </div>
 
-    <EmptyState v-else-if="!jobsPending" description="尚无任务">
+    <EmptyState
+      v-else-if="!jobsPending"
+      description="还没有定时任务"
+      reason="任务负责按点自动跑选股、同步行情和推送。"
+    >
       <el-button type="primary" @click="emit('enable-recommended-sync')">配置推荐同步</el-button>
       <el-button @click="openCreate">新建任务</el-button>
     </EmptyState>
@@ -439,10 +446,15 @@ defineExpose({ load, schedule })
   display: grid;
   grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
   gap: 0.85rem;
-  min-height: 18rem;
+  min-height: 0;
   flex: 1 1 auto;
   min-width: 0;
   padding: 0.55rem 0.85rem 0.75rem;
+  overflow: hidden;
+}
+.jobs-desk > :deep(.job-detail) {
+  min-height: 0;
+  overflow: auto;
 }
 .jobs-rail {
   display: flex;
@@ -475,9 +487,14 @@ defineExpose({ load, schedule })
 .job-row:hover {
   background: color-mix(in srgb, var(--panel) 80%, var(--rule));
 }
+/* 全局焦点环只覆盖原生控件，自绘行要自己补，否则键盘用户看不见选到了哪一行 */
+.job-row:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: -2px;
+}
 .job-row.active {
   border-color: var(--rule);
-  background: color-mix(in srgb, var(--accent, #b54a32) 8%, transparent);
+  background: var(--seal-soft);
 }
 .job-row-top {
   display: flex;
@@ -500,7 +517,7 @@ defineExpose({ load, schedule })
   color: var(--muted);
 }
 .job-row-meta .on {
-  color: var(--success, #3f7d4e);
+  color: var(--success);
 }
 .job-row-meta .off {
   color: var(--muted);

@@ -14,6 +14,7 @@ from src.formula.domain.board import (
     limit_ratio_for,
     limit_ratio_panel,
     limit_up_flags,
+    limit_up_price,
     one_word_flags,
 )
 from src.formula.domain.chips import COST, WINNER, chip_cost_series, chip_winner_series
@@ -85,6 +86,7 @@ __all__ = [
     "limit_ratio_for",
     "limit_ratio_panel",
     "limit_up_flags",
+    "limit_up_price",
     "one_word_flags",
     "AVEDEV",
     "BARSCOUNT",

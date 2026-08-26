@@ -8,7 +8,13 @@ export interface WecomScreenTemplate {
   intro: string
   pick: string
   pick_no_pct: string
+  skill_pick: string
+  skill_pick_no_pct: string
   empty: string
+  formal_empty: string
+  watch_header: string
+  watch_pick: string
+  watch_pick_no_pct: string
   more: string
   quant_tag: string
   skills_tag: string
@@ -16,8 +22,8 @@ export interface WecomScreenTemplate {
 }
 
 export const WECOM_PRESET_OPTIONS: { value: WecomScreenPreset; label: string; hint: string }[] = [
-  { value: 'default', label: '默认', hint: '标题 + emoji 列表' },
-  { value: 'compact', label: '简洁', hint: '标题下直接列出标的' },
+  { value: 'default', label: '默认', hint: '标题 + 列表；技能涨跌幅后逗号说明' },
+  { value: 'compact', label: '简洁', hint: '同默认技能行式' },
   { value: 'with_date', label: '含日期', hint: '标题下显示交易日' },
   { value: 'custom', label: '自定义', hint: '自己改文案' },
 ]
@@ -28,7 +34,13 @@ const PRESET_COPY: Record<Exclude<WecomScreenPreset, 'custom'>, Partial<WecomScr
     intro: '',
     pick: '📌 {name} {code} {pct}',
     pick_no_pct: '📌 {name} {code}',
+    skill_pick: '📌 {name} {code} {pct}，{note}',
+    skill_pick_no_pct: '📌 {name} {code}，{note}',
     empty: '📭 暂无符合条件的标的',
+    formal_empty: '📭 正式精选 0 只',
+    watch_header: '👀 低吸观察（不计正式胜率）',
+    watch_pick: '▫️ {name} {code} {pct}',
+    watch_pick_no_pct: '▫️ {name} {code}',
     more: '…另有 {n} 只',
   },
   compact: {
@@ -36,7 +48,13 @@ const PRESET_COPY: Record<Exclude<WecomScreenPreset, 'custom'>, Partial<WecomScr
     intro: '',
     pick: '📌 {name} {code} {pct}',
     pick_no_pct: '📌 {name} {code}',
+    skill_pick: '📌 {name} {code} {pct}，{note}',
+    skill_pick_no_pct: '📌 {name} {code}，{note}',
     empty: '📭 暂无符合条件的标的',
+    formal_empty: '📭 正式精选 0 只',
+    watch_header: '👀 低吸观察（不计正式胜率）',
+    watch_pick: '▫️ {name} {code} {pct}',
+    watch_pick_no_pct: '▫️ {name} {code}',
     more: '…另有 {n} 只',
   },
   with_date: {
@@ -44,7 +62,13 @@ const PRESET_COPY: Record<Exclude<WecomScreenPreset, 'custom'>, Partial<WecomScr
     intro: '📅 {date}',
     pick: '📌 {name} {code} {pct}',
     pick_no_pct: '📌 {name} {code}',
+    skill_pick: '📌 {name} {code} {pct}，{note}',
+    skill_pick_no_pct: '📌 {name} {code}，{note}',
     empty: '📭 暂无符合条件的标的',
+    formal_empty: '📭 正式精选 0 只',
+    watch_header: '👀 低吸观察（不计正式胜率）',
+    watch_pick: '▫️ {name} {code} {pct}',
+    watch_pick_no_pct: '▫️ {name} {code}',
     more: '…另有 {n} 只',
   },
 }
@@ -55,20 +79,28 @@ export const DEFAULT_WECOM_SCREEN_TEMPLATE: WecomScreenTemplate = {
   intro: '',
   pick: '📌 {name} {code} {pct}',
   pick_no_pct: '📌 {name} {code}',
+  skill_pick: '📌 {name} {code} {pct}，{note}',
+  skill_pick_no_pct: '📌 {name} {code}，{note}',
   empty: '📭 暂无符合条件的标的',
+  formal_empty: '📭 正式精选 0 只',
+  watch_header: '👀 低吸观察（不计正式胜率）',
+  watch_pick: '▫️ {name} {code} {pct}',
+  watch_pick_no_pct: '▫️ {name} {code}',
   more: '…另有 {n} 只',
   quant_tag: '量化',
   skills_tag: '技能',
   max_picks: 30,
 }
 
+const SKILL_NOTE_MAX = 40
+
 const SAMPLE = {
   title: '潜龙拐点',
   date: '2026-07-30',
   picks: [
-    { name: '龙星科技', code: '300105', pct: 1.5 },
-    { name: '上港集团', code: '600018', pct: 5 },
-    { name: '平安银行', code: '000001', pct: null as number | null },
+    { name: '龙星科技', code: '300105', pct: 1.5, note: '主线放量站上五日线' },
+    { name: '上港集团', code: '600018', pct: 5, note: '回踩确认后温和放量' },
+    { name: '平安银行', code: '000001', pct: null as number | null, note: '防御仓样本无涨幅字段' },
   ],
 }
 
@@ -85,7 +117,23 @@ export function normalizeWecomScreenTemplate(
   base.intro = String(base.intro ?? DEFAULT_WECOM_SCREEN_TEMPLATE.intro)
   base.pick = String(base.pick || DEFAULT_WECOM_SCREEN_TEMPLATE.pick)
   base.pick_no_pct = String(base.pick_no_pct || DEFAULT_WECOM_SCREEN_TEMPLATE.pick_no_pct)
+  base.skill_pick = String(base.skill_pick || DEFAULT_WECOM_SCREEN_TEMPLATE.skill_pick)
+  base.skill_pick_no_pct = String(
+    base.skill_pick_no_pct || DEFAULT_WECOM_SCREEN_TEMPLATE.skill_pick_no_pct,
+  )
   base.empty = String(base.empty ?? DEFAULT_WECOM_SCREEN_TEMPLATE.empty)
+  base.formal_empty = String(
+    base.formal_empty ?? DEFAULT_WECOM_SCREEN_TEMPLATE.formal_empty,
+  )
+  base.watch_header = String(
+    base.watch_header ?? DEFAULT_WECOM_SCREEN_TEMPLATE.watch_header,
+  )
+  base.watch_pick = String(
+    base.watch_pick || DEFAULT_WECOM_SCREEN_TEMPLATE.watch_pick,
+  )
+  base.watch_pick_no_pct = String(
+    base.watch_pick_no_pct || DEFAULT_WECOM_SCREEN_TEMPLATE.watch_pick_no_pct,
+  )
   base.more = String(base.more ?? DEFAULT_WECOM_SCREEN_TEMPLATE.more)
   base.quant_tag = String(base.quant_tag || '量化')
   base.skills_tag = String(base.skills_tag || '技能')
@@ -121,23 +169,35 @@ function formatPct(value: number | null | undefined): string {
   return `${text}%`
 }
 
+function clipNote(raw: string | null | undefined): string {
+  const note = String(raw || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+  if (!note) return ''
+  if (note.length <= SKILL_NOTE_MAX) return note
+  return `${note.slice(0, SKILL_NOTE_MAX - 1)}…`
+}
+
 export function previewWecomScreenTemplate(
   raw: Partial<WecomScreenTemplate> | null | undefined,
   kind: 'quant' | 'skills' = 'quant',
 ): string {
   const tpl = normalizeWecomScreenTemplate(raw)
   const kindTag = kind === 'skills' ? tpl.skills_tag : tpl.quant_tag
+  const skillMode = kind === 'skills'
   const lines: string[] = []
   const header = fill(tpl.header, {
     title: SAMPLE.title,
     kind: kindTag,
     date: SAMPLE.date,
+    note: '',
   }).trim()
   if (header) lines.push(header)
   const intro = fill(tpl.intro, {
     title: SAMPLE.title,
     kind: kindTag,
     date: SAMPLE.date,
+    note: '',
   }).replace(/\s+$/u, '')
   if (intro) lines.push(intro)
 
@@ -145,12 +205,20 @@ export function previewWecomScreenTemplate(
   for (const pick of SAMPLE.picks) {
     if (rendered >= tpl.max_picks) break
     const pctText = formatPct(pick.pct)
-    let rowTpl = pctText ? tpl.pick : tpl.pick_no_pct
-    if (!pctText && rowTpl.includes('{pct}')) rowTpl = tpl.pick_no_pct
+    const note = skillMode ? clipNote(pick.note) : ''
+    let rowTpl: string
+    if (skillMode && note) {
+      rowTpl = pctText ? tpl.skill_pick : tpl.skill_pick_no_pct
+      if (!pctText && rowTpl.includes('{pct}')) rowTpl = tpl.skill_pick_no_pct
+    } else {
+      rowTpl = pctText ? tpl.pick : tpl.pick_no_pct
+      if (!pctText && rowTpl.includes('{pct}')) rowTpl = tpl.pick_no_pct
+    }
     const row = fill(rowTpl, {
       name: pick.name,
       code: pick.code,
       pct: pctText,
+      note,
     }).trim()
     if (row) lines.push(row)
     rendered += 1
@@ -168,7 +236,13 @@ export function sameWecomScreenTemplate(a: WecomScreenTemplate, b: WecomScreenTe
     x.intro === y.intro &&
     x.pick === y.pick &&
     x.pick_no_pct === y.pick_no_pct &&
+    x.skill_pick === y.skill_pick &&
+    x.skill_pick_no_pct === y.skill_pick_no_pct &&
     x.empty === y.empty &&
+    x.formal_empty === y.formal_empty &&
+    x.watch_header === y.watch_header &&
+    x.watch_pick === y.watch_pick &&
+    x.watch_pick_no_pct === y.watch_pick_no_pct &&
     x.more === y.more &&
     x.quant_tag === y.quant_tag &&
     x.skills_tag === y.skills_tag &&

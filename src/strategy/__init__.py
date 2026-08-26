@@ -12,12 +12,17 @@ from src.strategy.domain.base import (
     SignalResult,
     StrategyEngine,
     StrategyError,
+    is_builtin_registered,
     merge_params,
     register,
 )
 from src.strategy.application.screener import ScreenResult, screen
 
-from src.strategy.application import dip_reversal, qianlong, tail_resonance  # noqa: F401
+from src.strategy.application import (  # noqa: F401
+    qianlong,
+    tail_resonance,
+    yangshi_tail,
+)
 
 __all__ = [
     "ENTRY_TIMINGS",
@@ -33,6 +38,7 @@ __all__ = [
     "describe_all",
     "get",
     "guard_strategy",
+    "is_builtin_registered",
     "merge_params",
     "register",
     "screen",

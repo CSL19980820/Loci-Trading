@@ -29,8 +29,13 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
-/** 日志默认展开；跑完自动收起；点待命/状态行可手动切换 */
-const logOpen = ref(true)
+/**
+ * 有日志才默认展开：未跑过时展开只会显示一行「尚无日志」，
+ * 和下方的空结果区叠成两块零信息空壳。跑起来时下面的 watch 会自动展开。
+ */
+const logOpen = ref(
+  (props.kind === 'skill' ? props.skillLog : (props.snap?.log ?? [])).length > 0,
+)
 const logEl = ref<HTMLElement | null>(null)
 /** 用户上滚查看历史时暂停贴底；靠近底部再恢复 */
 const stickToBottom = ref(true)
@@ -141,11 +146,19 @@ const pickColumns = computed<BasicTableColumn[]>(() => [
 const pickRows = computed(
   () => (props.lastResult?.picks ?? []) as unknown as Record<string, unknown>[],
 )
+const watchRows = computed(
+  () => (props.lastResult?.watch_picks ?? []) as unknown as Record<string, unknown>[],
+)
 
 const picksBatch = computed(() => ({
   source: '选股结果',
   sourcePath: route.fullPath || route.path || '/screen-history',
   items: toBatchItems(props.lastResult?.picks ?? []),
+}))
+const watchBatch = computed(() => ({
+  source: '低吸观察',
+  sourcePath: route.fullPath || route.path || '/screen-history',
+  items: toBatchItems(props.lastResult?.watch_picks ?? []),
 }))
 
 function fmtNum(value: number | null | undefined): string {
@@ -233,7 +246,9 @@ function toggleLog(): void {
           {{ lastResult.range && lastResult.range.trading_days > 1 ? '区间末日' : '今日结果' }}
           · {{ lastResult.trade_date }}
         </strong>
-        <span class="mist">{{ lastResult.picks.length }} 只</span>
+        <span class="mist">
+          正式 {{ lastResult.picks.length }} 只 · 观察 {{ lastResult.watch_picks?.length ?? 0 }} 只
+        </span>
         <span v-if="lastResult.range && lastResult.range.trading_days > 1" class="chip mist-chip">
           共 {{ lastResult.range.trading_days }} 日
         </span>
@@ -246,41 +261,68 @@ function toggleLog(): void {
           }}
         </span>
       </div>
-      <div v-else class="picks-head">
-        <strong>今日结果</strong>
-        <span class="mist">—</span>
-      </div>
+      <!-- 未跑过时不再顶一条「今日结果 —」的空标题栏，直接由下方空态说明下一步 -->
       <div class="picks-body">
-        <BasicTable
-          v-if="pickRows.length"
-          :columns="pickColumns"
-          :data-source="pickRows"
-          :pagination="false"
-          row-key="code"
-          stripe
-          height="100%"
-          empty-text="无选股结果"
-        >
-          <template #code="{ row }">
-            <StockLink
-              :code="String(row.code)"
-              :name="String(row.name || row.code)"
-              :date="lastResult?.trade_date"
-              :batch="picksBatch"
-            />
-          </template>
-        </BasicTable>
+        <section v-if="pickRows.length" class="result-section">
+          <div class="result-section__title">
+            <strong>正式精选</strong>
+            <span class="mist">沿用原战法入场与胜率口径</span>
+          </div>
+          <BasicTable
+            :columns="pickColumns"
+            :data-source="pickRows"
+            :pagination="false"
+            row-key="code"
+            stripe
+            height="100%"
+            empty-text="无正式精选"
+          >
+            <template #code="{ row }">
+              <StockLink
+                :code="String(row.code)"
+                :name="String(row.name || row.code)"
+                :date="lastResult?.trade_date"
+                :batch="picksBatch"
+              />
+            </template>
+          </BasicTable>
+        </section>
+        <section v-if="watchRows.length" class="result-section">
+          <div class="result-section__title">
+            <strong>低吸观察</strong>
+            <el-tag size="small" type="warning" effect="plain">不计正式胜率</el-tag>
+          </div>
+          <BasicTable
+            :columns="pickColumns"
+            :data-source="watchRows"
+            :pagination="false"
+            row-key="code"
+            stripe
+            height="100%"
+            empty-text="无低吸观察"
+          >
+            <template #code="{ row }">
+              <StockLink
+                :code="String(row.code)"
+                :name="String(row.name || row.code)"
+                :date="lastResult?.trade_date"
+                :batch="watchBatch"
+              />
+            </template>
+          </BasicTable>
+        </section>
         <EmptyState
-          v-else-if="lastResult"
+          v-if="lastResult && !pickRows.length && !watchRows.length"
           class="picks-empty"
           description="该日无标的满足条件"
           :image-size="48"
         />
         <EmptyState
-          v-else
+          v-else-if="!lastResult"
           class="picks-empty"
-          description="跑完后选票落在这里"
-          :image-size="48"
+          description="今天还没跑过选股"
+          reason="在左侧选中战法后，点右上角「选股」开跑；工作日 15:30 也会自动跑一遍盘后选股。"
+          :image-size="56"
         />
       </div>
     </div>
@@ -297,221 +339,4 @@ function toggleLog(): void {
   </section>
 </template>
 
-<style scoped>
-.run-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  min-height: 0;
-  height: 100%;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-}
-
-.run-panel__status {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  flex-shrink: 0;
-}
-
-.run-panel__status-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  cursor: pointer;
-  user-select: none;
-  border-radius: 4px;
-  margin: -0.15rem -0.25rem;
-  padding: 0.15rem 0.25rem;
-}
-
-.run-panel__status-row:hover {
-  background: color-mix(in srgb, var(--rule) 35%, transparent);
-}
-
-.run-panel__status-row:focus-visible {
-  outline: 2px solid var(--accent, var(--up));
-  outline-offset: 1px;
-}
-
-.run-panel__status-main {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-}
-
-.run-panel__chevron {
-  flex-shrink: 0;
-  transition: transform 0.18s ease;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.run-panel__chevron.open {
-  transform: rotate(90deg);
-}
-
-.run-panel__status strong {
-  font-family: var(--font-display);
-  font-size: 1rem;
-}
-
-.run-panel__log {
-  flex-shrink: 0;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--paper);
-  padding: 0.35rem 0.55rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.run-panel__log--live {
-  border-color: color-mix(in srgb, var(--accent, var(--up)) 42%, var(--rule));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, var(--up)) 12%, transparent);
-}
-
-.log {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 11rem;
-  overflow: auto;
-  scroll-behavior: smooth;
-  font-size: 0.74rem;
-  line-height: 1.45;
-  color: var(--mist);
-}
-
-.log li {
-  padding: 0.16rem 0;
-  border-bottom: 1px dashed color-mix(in srgb, var(--rule) 70%, transparent);
-  transition: color 0.18s ease, background 0.18s ease;
-}
-
-.log li:last-child {
-  border-bottom: 0;
-}
-
-.log-line--ok {
-  color: color-mix(in srgb, var(--up) 78%, var(--ink));
-}
-
-.log-line--err {
-  color: color-mix(in srgb, var(--down, #c44) 82%, var(--ink));
-}
-
-.log-line--wait {
-  color: color-mix(in srgb, var(--accent, var(--up)) 70%, var(--ink));
-}
-
-.log-line--fresh {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--accent, var(--up)) 10%, transparent);
-  margin: 0 -0.35rem;
-  padding-left: 0.35rem;
-  padding-right: 0.35rem;
-  border-radius: 3px;
-}
-
-.hitl {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.55rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--paper);
-  flex-shrink: 0;
-}
-
-.hitl-prompt {
-  margin: 0;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.4;
-}
-
-.picks-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.55rem;
-  margin-bottom: 0.45rem;
-  flex-shrink: 0;
-}
-
-.chip {
-  font-size: 0.75rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--up) 14%, transparent);
-  color: var(--up);
-}
-
-.mist-chip {
-  background: color-mix(in srgb, var(--rule) 55%, transparent);
-  color: var(--mist);
-}
-
-.mist {
-  color: var(--mist);
-}
-
-.mono {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.skill-out {
-  margin: 0;
-  padding: 0.65rem;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  font-size: 0.75rem;
-  white-space: pre-wrap;
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-}
-
-.run-panel__picks,
-.run-panel__skill {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.picks-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.picks-body :deep(.basic-table) {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: 100%;
-}
-
-.picks-empty {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.picks-empty :deep(.el-empty) {
-  padding: 1rem 0;
-}
-</style>
+<style scoped src="./ScreenRunPanel.css"></style>

@@ -35,39 +35,34 @@ def _classify(
 
 
 def latest_closes(market: MarketStore | None, codes: list[str]) -> dict[str, float]:
-    """批量取各票最新收盘价；行情库缺失时返回空 dict。"""
+    """批量取各票最新收盘价；行情库缺失时返回空 dict。
+
+    经 ``MarketStore.latest_bars``，禁止 review 直捅 ``market.conn``。
+    """
     if market is None or not codes:
         return {}
     normalized = [normalize_code(code) for code in codes]
-    placeholders = ",".join("?" * len(normalized))
-    rows = market.conn.execute(
-        f"""
-        SELECT q.code, q.close
-        FROM quotes_daily q
-        INNER JOIN (
-            SELECT code, MAX(trade_date) AS max_date
-            FROM quotes_daily
-            WHERE code IN ({placeholders})
-            GROUP BY code
-        ) latest ON q.code = latest.code AND q.trade_date = latest.max_date
-        """,
-        normalized,
-    ).fetchall()
-    return {str(row["code"]): float(row["close"]) for row in rows if row["close"] is not None}
+    try:
+        bars = market.latest_bars(normalized)
+    except Exception:  # noqa: BLE001 — 触价提醒缺行情时降级空
+        return {}
+    out: dict[str, float] = {}
+    for code, bar in (bars or {}).items():
+        if not isinstance(bar, dict):
+            continue
+        close = bar.get("close")
+        if close is None:
+            continue
+        try:
+            out[str(code)] = float(close)
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def today_alerts_payload(palace: PalaceStore, market: MarketStore | None = None) -> list[dict[str, Any]]:
     """活跃预案 + 最新收盘 → 触价/接近提醒列表。"""
-    rows = palace.conn.execute(
-        """
-        SELECT p.id, p.code, p.title, p.stop_price, p.target_price, s.name
-        FROM plans p
-        LEFT JOIN stocks s ON s.code = p.code
-        WHERE p.status = 'active'
-          AND (p.stop_price IS NOT NULL OR p.target_price IS NOT NULL)
-        ORDER BY p.occurred_on DESC, p.created_at DESC
-        """
-    ).fetchall()
+    rows = palace.active_plans_with_stops()
     if not rows:
         return []
 
@@ -76,18 +71,20 @@ def today_alerts_payload(palace: PalaceStore, market: MarketStore | None = None)
     items: list[dict[str, Any]] = []
     for row in rows:
         code = str(row["code"])
-        stop = float(row["stop_price"]) if row["stop_price"] is not None else None
-        target = float(row["target_price"]) if row["target_price"] is not None else None
+        stop = row.get("stop_price")
+        target = row.get("target_price")
+        stop_f = float(stop) if stop is not None else None
+        target_f = float(target) if target is not None else None
         last_close = closes.get(code)
-        status, note = _classify(last_close, stop, target)
+        status, note = _classify(last_close, stop_f, target_f)
         items.append(
             {
                 "code": code,
-                "name": str(row["name"] or code),
+                "name": str(row.get("name") or code),
                 "plan_id": str(row["id"]),
                 "title": str(row["title"]),
-                "stop_price": stop,
-                "target_price": target,
+                "stop_price": stop_f,
+                "target_price": target_f,
                 "last_close": last_close,
                 "status": status,
                 "note": note,

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ArchiveView from './ArchiveView.vue'
 
 const quoteError = ref<Error | null>(null)
-const ledgerError = ref('')
+const candidatesError = ref('')
 
 vi.mock('@/features/market/composables/useQuotesQuery', () => ({
   useQuotesQuery: () => ({
@@ -22,11 +22,10 @@ vi.mock('@/features/market/composables/useQuotesQuery', () => ({
 vi.mock('@/shared/stores/palace', () => ({
   usePalaceStore: () => ({
     loading: false,
-    error: ledgerError,
+    error: candidatesError,
     selectedCode: '',
     selectedTimeline: [],
-    trades: [],
-    dashboard: null,
+    loadRoute: vi.fn(),
   }),
 }))
 
@@ -63,7 +62,6 @@ function mountArchive(path: string) {
           PageBusy: true,
           Sheet: { template: '<section><slot /></section>' },
           StockTimeline: true,
-          TradesTable: true,
           'el-alert': { props: ['title'], template: '<div role="alert">{{ title }}<slot /></div>' },
           'el-button': { template: '<button><slot /></button>' },
           'el-tag': { template: '<span><slot /></span>' },
@@ -76,7 +74,7 @@ function mountArchive(path: string) {
 describe('ArchiveView failure states', () => {
   beforeEach(() => {
     quoteError.value = null
-    ledgerError.value = ''
+    candidatesError.value = ''
     vi.stubGlobal('matchMedia', () => ({ matches: false }))
   })
 
@@ -89,12 +87,12 @@ describe('ArchiveView failure states', () => {
     expect(wrapper.text()).not.toContain('该证券暂无本机日线')
   })
 
-  it('shows a ledger failure instead of empty trade records', async () => {
-    ledgerError.value = '成交加载失败'
-    const wrapper = await mountArchive('/archive/600519?view=trades')
+  it('shows a candidate failure instead of an empty candidate state', async () => {
+    candidatesError.value = '候选加载失败'
+    const wrapper = await mountArchive('/archive/600519?view=candidates')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('成交加载失败')
-    expect(wrapper.text()).not.toContain('尚无交割记录')
+    expect(wrapper.text()).toContain('候选加载失败')
+    expect(wrapper.text()).not.toContain('该标的尚无候选记录')
   })
 })

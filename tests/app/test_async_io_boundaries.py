@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import inspect
 
-from src.app.screen_skills_api import build_screen_skills_router
+from src.strategy.api.screen_skills_router import build_screen_skills_router
 from src.ops.api.skills import build_skills_router
 
 

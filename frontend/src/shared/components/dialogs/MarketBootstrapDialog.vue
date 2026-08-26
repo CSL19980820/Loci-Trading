@@ -373,9 +373,9 @@ onUnmounted(() => {
     v-model="visible"
     width="560px"
     align-center
-    :close-on-click-modal="!running"
-    :close-on-press-escape="!running"
-    :show-close="!running"
+    :close-on-click-modal="true"
+    :close-on-press-escape="true"
+    :show-close="true"
     destroy-on-close
     class="boot-dialog"
     :aria-label="dialogTitle"
@@ -441,7 +441,12 @@ onUnmounted(() => {
             {{ isDone ? '完成' : '关闭' }}
           </el-button>
         </template>
-        <p v-else class="boot-foot-note">同步中，请保持窗口打开</p>
+        <template v-else>
+          <el-button native-type="button" class="boot-btn boot-btn--ghost" @click="close">
+            后台继续
+          </el-button>
+          <p class="boot-foot-note">关闭弹窗后顶栏仍显示进度</p>
+        </template>
       </div>
     </template>
   </el-dialog>

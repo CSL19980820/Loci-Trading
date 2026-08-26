@@ -108,6 +108,11 @@ class HorizonReturnTests(unittest.TestCase):
         self.assertEqual(stats["best_event"]["mark_date"], DATES[4])
         self.assertEqual(stats["worst_event"]["signal_date"], DATES[4])
         self.assertEqual(stats["worst_event"]["mark_date"], DATES[5])
+        self.assertIn("median", stats)
+        self.assertIn("close_avg", stats)
+        self.assertEqual(stats["mark_basis"], "high")
+        self.assertEqual(stats["sample_confidence"], "low")
+        self.assertTrue(stats["by_month"])
 
     def test_missing_mark_day_skipped(self) -> None:
         panels = _panels()

@@ -296,10 +296,9 @@ def _tool_instruments_search(args: dict[str, Any]) -> dict[str, Any]:
     limit = max(1, min(int(args.get("limit") or 30), _MAX_INSTRUMENT_ROWS))
 
     try:
-        from src.shared.paths import market_db
-        from src.market import MarketStore
+        from src.market import open_market_hot
 
-        with MarketStore(market_db()) as store:
+        with open_market_hot() as store:
             total, rows = store.page_instruments(q=q, limit=limit)
         if rows:
             items = [
@@ -469,8 +468,8 @@ class InProcessMcpClient:
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         return call_builtin_tool(name, arguments, server=self.name)
 
-    def ping(self) -> dict[str, Any]:
-        tools = self.list_tools()
+    def ping(self, *, list_tools: bool = True) -> dict[str, Any]:
+        tools = self.list_tools() if list_tools else []
         return {
             "ok": True,
             "server_name": BUILTIN_MCP_NAME,

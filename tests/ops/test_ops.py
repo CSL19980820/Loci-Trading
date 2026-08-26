@@ -7,108 +7,13 @@ from threading import Barrier, Event
 import unittest
 from unittest.mock import patch
 
-from src.ai.infrastructure.crypto import CryptoError, decrypt_secret, encrypt_secret, generate_master_key, mask_secret
+from src.ai.infrastructure.crypto import mask_secret
 from src.ops.application.jobs import JobContext, run_job
 from src.ops.infrastructure.scheduler import SchedulerError, validate_cron
 from src.ops.infrastructure.store import OpsError, OpsStore
 
 
-class CryptoTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.key = generate_master_key()
-
-    def test_round_trip(self) -> None:
-        cipher = encrypt_secret("sk-secret-value", aad="LLM-1", master_key=self.key)
-        self.assertEqual(decrypt_secret(cipher, aad="LLM-1", master_key=self.key), "sk-secret-value")
-
-    def test_ciphertext_is_not_the_plaintext(self) -> None:
-        cipher = encrypt_secret("sk-secret-value", aad="LLM-1", master_key=self.key)
-        self.assertNotIn(b"sk-secret-value", cipher)
-
-    def test_same_plaintext_encrypts_differently_each_time(self) -> None:
-        """随机 nonce：两次加密同一个 key 得到不同密文，防比对推断。"""
-        a = encrypt_secret("same", aad="LLM-1", master_key=self.key)
-        b = encrypt_secret("same", aad="LLM-1", master_key=self.key)
-        self.assertNotEqual(a, b)
-
-    def test_moving_ciphertext_to_another_record_fails(self) -> None:
-        """AAD 绑定 provider_id。
-
-        没有这层绑定，攻击者可以把 A 供应商的密文整行搬到 B 供应商，
-        系统照样解密成功，然后拿着 A 的 key 去请求 B 声明的 base_url——
-        等于把密钥主动送到攻击者的服务器。
-        """
-        cipher = encrypt_secret("sk-a", aad="LLM-A", master_key=self.key)
-        with self.assertRaises(CryptoError):
-            decrypt_secret(cipher, aad="LLM-B", master_key=self.key)
-
-    def test_wrong_master_key_fails(self) -> None:
-        cipher = encrypt_secret("sk-a", aad="LLM-A", master_key=self.key)
-        with self.assertRaises(CryptoError):
-            decrypt_secret(cipher, aad="LLM-A", master_key=generate_master_key())
-
-    def test_missing_master_key_gives_actionable_message(self) -> None:
-        with self.assertRaises(CryptoError) as ctx:
-            encrypt_secret("x", aad="a", master_key="")
-        self.assertIn("PALACE_AI_MASTER_KEY", str(ctx.exception))
-
-    def test_ensure_local_master_key_writes_file(self) -> None:
-        import os
-        import tempfile
-        from pathlib import Path
-        from unittest.mock import patch
-
-        from src.ai.infrastructure.crypto import MASTER_KEY_ENV, ensure_local_master_key
-
-        prev_key = os.environ.pop(MASTER_KEY_ENV, None)
-        prev_env = os.environ.get("PALACE_ENV")
-        os.environ["PALACE_ENV"] = "local"
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                root = Path(tmp)
-                with patch("src.shared.paths.writable_root", return_value=root):
-                    key = ensure_local_master_key()
-                    self.assertTrue(key)
-                    self.assertEqual(os.environ.get(MASTER_KEY_ENV), key)
-                    path = root / ".palace_ai_master_key"
-                    self.assertTrue(path.is_file())
-                    self.assertEqual(path.read_text(encoding="utf-8").strip(), key)
-
-                    os.environ.pop(MASTER_KEY_ENV, None)
-                    again = ensure_local_master_key()
-                    self.assertEqual(again, key)
-        finally:
-            if prev_key is None:
-                os.environ.pop(MASTER_KEY_ENV, None)
-            else:
-                os.environ[MASTER_KEY_ENV] = prev_key
-            if prev_env is None:
-                os.environ.pop("PALACE_ENV", None)
-            else:
-                os.environ["PALACE_ENV"] = prev_env
-
-    def test_ensure_local_skips_production(self) -> None:
-        import os
-        from unittest.mock import patch
-
-        from src.ai.infrastructure.crypto import MASTER_KEY_ENV, ensure_local_master_key
-
-        prev = os.environ.pop(MASTER_KEY_ENV, None)
-        try:
-            with patch.dict(os.environ, {"PALACE_ENV": "production"}, clear=False):
-                os.environ.pop(MASTER_KEY_ENV, None)
-                self.assertIsNone(ensure_local_master_key())
-                self.assertNotIn(MASTER_KEY_ENV, os.environ)
-        finally:
-            if prev is None:
-                os.environ.pop(MASTER_KEY_ENV, None)
-            else:
-                os.environ[MASTER_KEY_ENV] = prev
-
-    def test_corrupt_payload_is_rejected(self) -> None:
-        with self.assertRaises(CryptoError):
-            decrypt_secret(b"tooshort", aad="a", master_key=self.key)
-
+class MaskSecretTests(unittest.TestCase):
     def test_mask_only_shows_last_four(self) -> None:
         self.assertEqual(mask_secret("sk-abcdefgh1234"), "****1234")
         self.assertNotIn("abcdefgh", mask_secret("sk-abcdefgh1234"))
@@ -273,7 +178,65 @@ class StoreTests(unittest.TestCase):
         self.assertNotEqual(run_id, stale_id)
         runs = {run["id"]: run for run in self.store.list_runs(job_id=job_id, limit=10)}
         self.assertEqual(runs[stale_id]["status"], "failed")
-        self.assertIn("超过 24 小时", runs[stale_id]["error_text"])
+        self.assertIn("已按中断回收", runs[stale_id]["error_text"])
+
+    def test_claim_run_recovers_stale_sync_after_time_window(self) -> None:
+        job_id = self.store.create_job(name="sync-stale", kind="sync")
+        job = self.store.get_job(job_id)
+        stale_id = self.store.start_run(job)
+        # 1 小时前：超过 sync 的 45 分钟回收窗
+        with self.store._transaction() as cursor:
+            cursor.execute(
+                "UPDATE job_runs SET started_at = datetime('now', '-60 minutes') WHERE id = ?",
+                (stale_id,),
+            )
+
+        run_id, claimed = self.store.claim_run(job)
+
+        self.assertTrue(claimed)
+        self.assertNotEqual(run_id, stale_id)
+        runs = {run["id"]: run for run in self.store.list_runs(job_id=job_id, limit=10)}
+        self.assertEqual(runs[stale_id]["status"], "failed")
+        self.assertIn("sync", runs[stale_id]["error_text"])
+
+    def test_claim_run_recovers_dead_owner_pid_immediately(self) -> None:
+        job_id = self.store.create_job(name="dead-pid", kind="screen")
+        job = self.store.get_job(job_id)
+        stale_id = self.store.start_run(job)
+        with self.store._transaction() as cursor:
+            # 用不存在的 PID；即使刚启动也必须立刻腾槽
+            cursor.execute(
+                "UPDATE job_runs SET owner_pid = 99999999 WHERE id = ?",
+                (stale_id,),
+            )
+
+        run_id, claimed = self.store.claim_run(job)
+
+        self.assertTrue(claimed)
+        self.assertNotEqual(run_id, stale_id)
+        runs = {run["id"]: run for run in self.store.list_runs(job_id=job_id, limit=10)}
+        self.assertEqual(runs[stale_id]["status"], "failed")
+        self.assertIn("进程已退出", runs[stale_id]["error_text"])
+
+    def test_reclaim_stale_runs_clears_other_jobs(self) -> None:
+        sync_id = self.store.create_job(name="sync-a", kind="sync")
+        screen_id = self.store.create_job(name="screen-a", kind="screen")
+        sync_run = self.store.start_run(self.store.get_job(sync_id))
+        screen_run = self.store.start_run(self.store.get_job(screen_id))
+        with self.store._transaction() as cursor:
+            cursor.execute(
+                "UPDATE job_runs SET started_at = datetime('now', '-3 hours') "
+                "WHERE id IN (?, ?)",
+                (sync_run, screen_run),
+            )
+        n = self.store.reclaim_stale_runs()
+        self.assertGreaterEqual(n, 2)
+        self.assertEqual(
+            self.store.list_runs(run_id=sync_run)[0]["status"], "failed"
+        )
+        self.assertEqual(
+            self.store.list_runs(run_id=screen_run)[0]["status"], "failed"
+        )
 
     def test_failed_run_keeps_the_full_error_text(self) -> None:
         """只留状态码不留报错，等于失败了也查不出为什么。"""
@@ -342,7 +305,6 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(with_secret["encrypted_key"], b"cipher-bytes")
 
     def test_save_provider_rejects_unknown_protocol_before_database_write(self) -> None:
-        from src.ai.infrastructure.crypto import generate_master_key
         from src.ai.infrastructure.providers import save_provider
 
         with self.assertRaisesRegex(OpsError, "未知协议"):
@@ -355,7 +317,6 @@ class StoreTests(unittest.TestCase):
                 model="demo",
                 validate=False,
                 discover_models=False,
-                master_key=generate_master_key(),
             )
         self.assertIsNone(self.store.get_provider("invalid-protocol"))
 
@@ -410,7 +371,9 @@ class StoreTests(unittest.TestCase):
 class ExecuteScreenTopNTests(unittest.TestCase):
     """top_n 配置必须实际生效，不能只是存进 JSON 就不管了。"""
 
-    def _run_screen(self, top_n: int, pick_count: int = 10) -> dict:
+    def _run_screen(
+        self, top_n: int, pick_count: int = 10, watch_count: int = 0
+    ) -> dict:
         """用 mock 跑一次 execute_screen，返回结果。
 
         screen 函数是在 execute_screen 函数体内 `from src.strategy import screen`
@@ -421,10 +384,15 @@ class ExecuteScreenTopNTests(unittest.TestCase):
         from src.ops.application.jobs import execute_screen
 
         picks = [{"code": f"{i:06d}", "factors": {}} for i in range(pick_count)]
+        watch_picks = [
+            {"code": f"8{i:05d}", "factors": {}, "intent": "observe"}
+            for i in range(watch_count)
+        ]
         fake_result = ScreenResult(
             strategy_slug="test-strat",
             trade_date="2026-01-02",
             picks=picks,
+            watch_picks=watch_picks,
             universe_size=5000,
             elapsed_seconds=0.1,
             entry_timing="open",
@@ -450,6 +418,13 @@ class ExecuteScreenTopNTests(unittest.TestCase):
         self.assertEqual(result["pick_count"], 3)
         self.assertEqual(len(result["picks"]), 3)
         self.assertEqual(result["top_n_applied"], 3)
+
+    def test_top_n_does_not_promote_or_drop_watch_picks(self) -> None:
+        result = self._run_screen(top_n=3, pick_count=10, watch_count=2)
+
+        self.assertEqual(result["pick_count"], 3)
+        self.assertEqual(result["watch_count"], 2)
+        self.assertEqual(len(result["watch_picks"]), 2)
 
     def test_top_n_larger_than_picks_returns_all(self) -> None:
         result = self._run_screen(top_n=50, pick_count=10)

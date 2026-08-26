@@ -5,11 +5,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.app.legacy.quant_common import (
-    StrategyConvertRequest,
-    missing_dependency,
-    ops_store,
-)
+from src.shared.api_deps import missing_dependency, ops_store
+from src.strategy.api.schemas import StrategyConvertRequest
 
 
 def build_strategy_convert_router(
@@ -96,6 +93,24 @@ def build_strategy_convert_router(
         # 完整性检查
         issues = _validate_strategy_code(code, payload.slug)
 
+        # 前视静态审计：entry_timing=open 裸用盘中字段 → fail-closed
+        from src.strategy.application.audit import audit_source
+
+        audit = audit_source(
+            code,
+            entry_timing=str(payload.entry_timing or "next_open"),
+            strategy=payload.slug,
+        )
+        if audit.failed:
+            return {
+                "status": "lookahead",
+                "error": audit.reason(),
+                "issues": issues,
+                "audit": audit.to_dict(),
+                "code": code,
+                "slug": payload.slug,
+            }
+
         if payload.dry_run or issues:
             return {
                 "status": "preview" if not issues else "issues",
@@ -146,6 +161,13 @@ def build_strategy_convert_router(
         issues = _validate_strategy_code(code, slug)
         if issues:
             raise HTTPException(status_code=422, detail=f"代码有问题：{'; '.join(issues)}")
+
+        from src.strategy.application.audit import audit_source
+
+        entry_timing = str(payload.get("entry_timing") or "next_open")
+        audit = audit_source(code, entry_timing=entry_timing, strategy=slug)
+        if audit.failed:
+            raise HTTPException(status_code=422, detail=audit.reason())
 
         try:
             result = save_and_load(code, slug)

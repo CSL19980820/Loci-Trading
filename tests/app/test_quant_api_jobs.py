@@ -18,7 +18,6 @@ name: 测试技能
 slug: test-skill
 version: 0.1.0
 description: 用于接口测试
-schedule: "0 16 * * 1-5"
 ---
 
 请按步骤执行。
@@ -80,7 +79,7 @@ class QuantApiJobsAndProviderTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         body = response.json()
         self.assertEqual(body["slug"], "test-skill")
-        self.assertEqual(body["default_cron"], "0 16 * * 1-5")
+        self.assertNotIn("default_cron", body)
         # 列表接口不该把完整指令正文吐出来，那可能很长。
         self.assertNotIn("instructions", body)
 
@@ -188,8 +187,8 @@ class QuantApiJobsAndProviderTests(unittest.TestCase):
         jobs = {job["name"]: job for job in self.client.get("/api/jobs").json()}
         self.assertIn("行情盘中增量", jobs)
         self.assertIn("行情日终重刷", jobs)
-        self.assertEqual(jobs["行情盘中增量"]["cron"], "*/5 9-14 * * 1-5")
-        self.assertEqual(jobs["行情日终重刷"]["cron"], "0 16 * * 1-5")
+        self.assertEqual(jobs["行情盘中增量"]["cron"], "*/5 9-14 * * mon-fri")
+        self.assertEqual(jobs["行情日终重刷"]["cron"], "0 16 * * mon-fri")
         self.assertEqual(jobs["行情日终重刷"]["config"]["mode"], "today_refresh")
 
         notify = self.client.post(
@@ -267,85 +266,75 @@ class QuantApiJobsAndProviderTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
-    def test_provider_without_master_key_fails_cleanly(self) -> None:
-        """生产环境没配主密钥就存 Key，必须给出可操作的提示而不是 500。"""
+    def test_provider_saves_without_master_key(self) -> None:
+        """本机明文落库：不再要求 PALACE_AI_MASTER_KEY。"""
         import os
 
-        prev_env = os.environ.get("PALACE_ENV")
-        os.environ["PALACE_ENV"] = "production"
         os.environ.pop("PALACE_AI_MASTER_KEY", None)
-        try:
-            response = self.client.post(
-                "/api/providers",
-                json={"name": "p", "base_url": "https://example.com/v1", "api_key": "sk-x",
-                      "validate_key": False, "discover_models": False},
-            )
-            self.assertEqual(response.status_code, 422)
-            self.assertIn("PALACE_AI_MASTER_KEY", response.json()["detail"])
-        finally:
-            if prev_env is None:
-                os.environ.pop("PALACE_ENV", None)
-            else:
-                os.environ["PALACE_ENV"] = prev_env
+        response = self.client.post(
+            "/api/providers",
+            json={
+                "name": "plain-p",
+                "base_url": "https://example.com/v1",
+                "api_key": "sk-plain-xyz9",
+                "validate_key": False,
+                "discover_models": False,
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["key_last4"], "****xyz9")
+        self.assertNotIn("sk-plain-xyz9", response.text)
 
     def test_provider_round_trip_never_exposes_the_key(self) -> None:
-        import os
+        created = self.client.post(
+            "/api/providers",
+            json={
+                "name": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "sk-super-secret-1234", "model": "some/model",
+                "validate_key": False, "discover_models": False,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        body = created.json()
+        self.assertEqual(body["key_last4"], "****1234")
+        self.assertNotIn("encrypted_key", body)
+        self.assertNotIn("sk-super-secret", created.text)
+        self.assertEqual(body["models"], ["some/model"])
+        self.assertEqual(body["model_catalog"][0]["id"], "some/model")
+        self.assertEqual(body["model_catalog"][0]["source"], "manual")
 
-        from src.ai.infrastructure.crypto import generate_master_key
+        listed = self.client.get("/api/providers")
+        self.assertNotIn("sk-super-secret", listed.text)
+        self.assertTrue(listed.json()[0]["has_key"])
 
-        os.environ["PALACE_AI_MASTER_KEY"] = generate_master_key()
-        try:
-            created = self.client.post(
-                "/api/providers",
-                json={
-                    "name": "openrouter", "base_url": "https://openrouter.ai/api/v1",
-                    "api_key": "sk-super-secret-1234", "model": "some/model",
-                    "validate_key": False, "discover_models": False,
-                },
-            )
-            self.assertEqual(created.status_code, 201, created.text)
-            body = created.json()
-            self.assertEqual(body["key_last4"], "****1234")
-            self.assertNotIn("encrypted_key", body)
-            self.assertNotIn("sk-super-secret", created.text)
-            self.assertEqual(body["models"], ["some/model"])
-            self.assertEqual(body["model_catalog"][0]["id"], "some/model")
-            self.assertEqual(body["model_catalog"][0]["source"], "manual")
+        updated = self.client.put(
+            "/api/providers/openrouter/models",
+            json={
+                "default_model": "some/model",
+                "models": [
+                    {
+                        "id": "some/model",
+                        "name": "Some",
+                        "enabled": True,
+                        "context_window": 65536,
+                        "max_output_tokens": 4096,
+                        "source": "manual",
+                    },
+                    {
+                        "id": "other/model",
+                        "enabled": False,
+                        "source": "manual",
+                    },
+                ],
+            },
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        ubody = updated.json()
+        self.assertEqual(ubody["models"], ["some/model"])
+        self.assertEqual(ubody["model_catalog"][0]["context_window"], 65536)
+        self.assertFalse(ubody["model_catalog"][1]["enabled"])
 
-            listed = self.client.get("/api/providers")
-            self.assertNotIn("sk-super-secret", listed.text)
-            self.assertTrue(listed.json()[0]["has_key"])
-
-            updated = self.client.put(
-                "/api/providers/openrouter/models",
-                json={
-                    "default_model": "some/model",
-                    "models": [
-                        {
-                            "id": "some/model",
-                            "name": "Some",
-                            "enabled": True,
-                            "context_window": 65536,
-                            "max_output_tokens": 4096,
-                            "source": "manual",
-                        },
-                        {
-                            "id": "other/model",
-                            "enabled": False,
-                            "source": "manual",
-                        },
-                    ],
-                },
-            )
-            self.assertEqual(updated.status_code, 200, updated.text)
-            ubody = updated.json()
-            self.assertEqual(ubody["models"], ["some/model"])
-            self.assertEqual(ubody["model_catalog"][0]["context_window"], 65536)
-            self.assertFalse(ubody["model_catalog"][1]["enabled"])
-
-            self.assertEqual(self.client.delete("/api/providers/openrouter").status_code, 200)
-        finally:
-            os.environ.pop("PALACE_AI_MASTER_KEY", None)
+        self.assertEqual(self.client.delete("/api/providers/openrouter").status_code, 200)
 
     def test_provider_errors_and_probe_preview_redact_current_api_key(self) -> None:
         from types import SimpleNamespace

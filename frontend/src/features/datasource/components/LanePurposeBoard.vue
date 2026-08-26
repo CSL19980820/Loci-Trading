@@ -77,9 +77,16 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
           <strong>{{ row.label }}</strong>
           <el-tag v-if="row.required" size="small" type="warning" effect="plain">必需</el-tag>
           <el-tag v-if="!row.sources.length" size="small" type="info" effect="plain">
-            暂无内置源
+            未接内置源
           </el-tag>
           <el-tag v-else-if="!row.effectiveCount" size="small" type="danger">无可用源</el-tag>
+          <el-tag
+            v-else-if="row.required && row.effectiveCount === 1"
+            size="small"
+            type="warning"
+          >
+            仅 1 个源
+          </el-tag>
           <span class="lane-card__meta">
             来源 <b>{{ row.sources.length }}</b> · 生效 <b>{{ row.effectiveCount }}</b>
           </span>
@@ -202,7 +209,7 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
         </el-table-column>
       </el-table>
       <p v-else class="lane-card__empty">
-        这条线路目前没有内置适配器，等接入后会出现在这里。
+        这条用途还没有内置源。去「按接口」自己勾一个上桌，或等内置源接进来。
       </p>
     </section>
   </div>
@@ -213,6 +220,10 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  /* 高度随内容；滚动由 DataSourcePanel .ds-body 承担 */
+  flex: 0 0 auto;
+  min-height: min-content;
+  padding-bottom: 0.35rem;
 }
 
 .lane-card {

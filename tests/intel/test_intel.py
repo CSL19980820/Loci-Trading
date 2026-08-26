@@ -1,3 +1,7 @@
+"""MCP 客户端、URL 校验与服务器注册表。
+
+响应解析在 `test_intel_parsing.py`，agent 回路在 `test_intel_agent_loop.py`。
+"""
 from __future__ import annotations
 
 import json
@@ -8,86 +12,17 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import httpx2
 
-from src.ai.application.agent import (
-    AgentResult,
-    ToolInvocation,
-    format_tool_trace,
-    make_mcp_executor,
-    run_agent,
-)
-from src.ai.infrastructure.crypto import MASTER_KEY_ENV, generate_master_key
-from src.ai.infrastructure.client import ChatResponse, ProviderConfig, ToolCall
 from src.intel.infrastructure.mcp import (
-    MAX_TOOL_SCHEMA_BYTES,
     MAX_RESPONSE_BYTES,
+    MAX_TOOL_SCHEMA_BYTES,
     McpClient,
     McpError,
-    McpTool,
-    _parse_response,
     validate_mcp_url,
 )
 from src.intel.infrastructure.registry import build_client, collect_tools, probe_mcp, save_server
 from src.ops.infrastructure.store import OpsError
-
-
-class FakeResponse:
-    def __init__(self, *, text: str, status: int = 200, content_type: str = "application/json"):
-        self.text = text
-        self.status_code = status
-        self.headers = {"content-type": content_type}
-
-
-class ResponseParsingTests(unittest.TestCase):
-    def test_parses_plain_json(self) -> None:
-        payload = _parse_response(FakeResponse(text='{"jsonrpc":"2.0","id":1,"result":{"ok":1}}'))
-        self.assertEqual(payload["result"], {"ok": 1})
-
-    def test_parses_sse_and_takes_the_final_result(self) -> None:
-        """Streamable HTTP 允许用 SSE 回复单次请求，前面的事件是进度通知。"""
-        body = (
-            'event: message\ndata: {"jsonrpc":"2.0","method":"notifications/progress"}\n\n'
-            'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"tools":[]}}\n\n'
-        )
-        payload = _parse_response(FakeResponse(text=body, content_type="text/event-stream"))
-        self.assertEqual(payload["result"], {"tools": []})
-
-    def test_sse_without_a_result_is_an_error(self) -> None:
-        with self.assertRaises(McpError):
-            _parse_response(
-                FakeResponse(text="data: [DONE]\n\n", content_type="text/event-stream")
-            )
-
-    def test_non_json_body_is_reported_clearly(self) -> None:
-        with self.assertRaises(McpError) as ctx:
-            _parse_response(FakeResponse(text="<html>502 Bad Gateway</html>"))
-        self.assertIn("不是合法 JSON", str(ctx.exception))
-
-
-class ToolSchemaTests(unittest.TestCase):
-    def test_server_prefix_prevents_name_collisions(self) -> None:
-        """两个 server 都有 kline 时，不加前缀就会互相覆盖。"""
-        a = McpTool(name="kline", description="A 的 K 线", server="alpha")
-        b = McpTool(name="kline", description="B 的 K 线", server="beta")
-        self.assertEqual(a.to_openai_schema()["function"]["name"], "alpha__kline")
-        self.assertEqual(b.to_anthropic_schema()["name"], "beta__kline")
-
-    def test_empty_schema_falls_back_to_an_object(self) -> None:
-        """没有 inputSchema 时不能给 None，两家 API 都会拒绝。"""
-        tool = McpTool(name="ping", description="x", server="s")
-        self.assertEqual(
-            tool.to_openai_schema()["function"]["parameters"],
-            {"type": "object", "properties": {}},
-        )
-
-    def test_reserved_separator_cannot_appear_in_server_or_tool_name(self) -> None:
-        with self.assertRaisesRegex(McpError, "不允许包含 __"):
-            McpTool(name="bad__tool", description="x", server="demo")
-        with self.assertRaisesRegex(McpError, "不允许包含 __"):
-            McpTool(name="tool", description="x", server="bad__server")
 
 
 class McpClientTests(unittest.TestCase):
@@ -168,11 +103,24 @@ class McpClientTests(unittest.TestCase):
 
     def test_client_disables_environment_proxy_configuration(self) -> None:
         with patch("src.intel.infrastructure.mcp.validate_mcp_url"), patch(
-            "src.intel.infrastructure.mcp.httpx2.Client"
-        ) as client_cls:
+            "src.intel.infrastructure.mcp.needs_system_proxy", return_value=False
+        ), patch("src.intel.infrastructure.mcp.httpx2.Client") as client_cls:
             self.client._client()
         self.assertFalse(client_cls.call_args.kwargs.get("trust_env", True))
         self.assertFalse(client_cls.call_args.kwargs.get("follow_redirects", True))
+
+    def test_client_uses_system_proxy_for_clash_fake_ip(self) -> None:
+        """Fake-IP 直连必挂；与 Cursor/Node 一样此时读 HTTPS_PROXY。"""
+        with patch("src.intel.infrastructure.mcp.validate_mcp_url"), patch(
+            "src.intel.infrastructure.mcp.needs_system_proxy", return_value=True
+        ), patch("src.intel.infrastructure.mcp.httpx2.Client") as client_cls:
+            self.client._client()
+        self.assertTrue(client_cls.call_args.kwargs.get("trust_env"))
+
+    def test_headers_include_mcp_protocol_version_like_hermes(self) -> None:
+        headers = self.client._headers()
+        self.assertEqual(headers.get("Mcp-Protocol-Version"), "2025-03-26")
+        self.assertIn("text/event-stream", headers.get("Accept", ""))
 
     def test_response_body_has_a_hard_byte_cap(self) -> None:
         transport = httpx2.MockTransport(
@@ -250,6 +198,24 @@ class McpUrlValidationTests(unittest.TestCase):
         ), self.assertRaisesRegex(McpError, "解析到了内网"):
             validate_mcp_url("https://looks-public.example/mcp", resolve=True)
 
+    def test_proxy_fake_ip_dns_is_allowed_for_https_hostnames(self) -> None:
+        """Clash Fake-IP（198.18/15）解析结果不能拦死悟道等公网 MCP。"""
+        with patch(
+            "src.intel.infrastructure.mcp.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.0.140", 443))],
+        ):
+            self.assertEqual(
+                validate_mcp_url("https://stock.quicktiny.cn/api/mcp", resolve=True),
+                "https://stock.quicktiny.cn/api/mcp",
+            )
+            from src.intel.infrastructure.mcp import needs_system_proxy
+
+            self.assertTrue(needs_system_proxy("https://stock.quicktiny.cn/api/mcp"))
+
+    def test_literal_fake_ip_https_is_still_rejected(self) -> None:
+        with self.assertRaisesRegex(McpError, "内网|回环|保留"):
+            validate_mcp_url("https://198.18.0.140/api/mcp", resolve=False)
+
 
 class RegistryTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -257,17 +223,14 @@ class RegistryTests(unittest.TestCase):
         self.mcp_path = Path(self.temp.name) / "mcp.json"
         self._path_patch = patch("src.intel.infrastructure.mcp_config.mcp_json_path", return_value=self.mcp_path)
         self._path_patch.start()
-        self._key_patch = patch.dict(os.environ, {MASTER_KEY_ENV: generate_master_key()})
-        self._key_patch.start()
 
     def tearDown(self) -> None:
-        self._key_patch.stop()
         self._path_patch.stop()
         self.temp.cleanup()
 
     def _save(self, **overrides):
         params = {
-            "name": "wudao",
+            "name": "demo-mcp",
             "url": "https://example.com/mcp",
             "token": "lb_secret_1234",
             "verify": False,
@@ -275,17 +238,39 @@ class RegistryTests(unittest.TestCase):
         params.update(overrides)
         return save_server(**params)
 
-    def test_token_is_encrypted_in_mcp_json_and_masked_in_api(self) -> None:
+    def test_legacy_wudao_a_stock_key_migrates_to_canonical_wudao(self) -> None:
+        from src.intel.infrastructure.mcp_config import migrate_wudao_server_name
+
+        self.mcp_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "wudao-a-stock": {
+                            "url": "https://stock.quicktiny.cn/api/mcp",
+                            "note": "legacy",
+                            "tools": [{"name": "kline"}],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.assertTrue(migrate_wudao_server_name(self.mcp_path))
+        raw = json.loads(self.mcp_path.read_text(encoding="utf-8"))
+        self.assertIn("wudao", raw["mcpServers"])
+        self.assertNotIn("wudao-a-stock", raw["mcpServers"])
+        self.assertEqual(raw["mcpServers"]["wudao"]["tools"][0]["name"], "kline")
+
+    def test_token_is_plaintext_in_mcp_json_and_masked_in_api(self) -> None:
         record = self._save()
         self.assertTrue(str(record["token_last4"]).endswith("1234"))
         self.assertNotIn("token", record)
         self.assertTrue(record["has_token"])
         raw = json.loads(self.mcp_path.read_text(encoding="utf-8"))
-        cfg = raw["mcpServers"]["wudao"]
-        self.assertIn("encrypted_token", cfg)
-        self.assertNotIn("token", cfg)
+        cfg = raw["mcpServers"]["demo-mcp"]
+        self.assertEqual(cfg.get("token"), "lb_secret_1234")
+        self.assertNotIn("encrypted_token", cfg)
         self.assertNotIn("headers", cfg)
-        self.assertNotIn("lb_secret_1234", self.mcp_path.read_text(encoding="utf-8"))
 
     def test_corrupt_config_is_not_silently_replaced(self) -> None:
         original = "{not valid json"
@@ -298,7 +283,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_client_is_rebuilt_with_the_token(self) -> None:
         self._save()
-        client = build_client("wudao")
+        client = build_client("demo-mcp")
         self.assertEqual(client.token, "lb_secret_1234")
 
     def test_client_preserves_custom_auth_headers_from_cursor_config(self) -> None:
@@ -348,27 +333,119 @@ class RegistryTests(unittest.TestCase):
     def test_updating_without_a_token_keeps_the_existing_one(self) -> None:
         self._save()
         self._save(token=None, url="https://example.com/mcp2")
-        client = build_client("wudao")
+        client = build_client("demo-mcp")
         self.assertEqual(client.url, "https://example.com/mcp2")
         self.assertEqual(client.token, "lb_secret_1234")
+
+    def test_legacy_ciphertext_is_unusable_until_reentered(self) -> None:
+        from src.intel.infrastructure.mcp_config import (
+            get_mcp_server_from_json,
+            upsert_mcp_server_json,
+        )
+
+        self.mcp_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "demo-mcp": {
+                            "url": "https://example.com/mcp",
+                            "encrypted_token": "YWJjZGVmZ2hpams=",
+                            "token_last4": "****cret",
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        row = get_mcp_server_from_json("demo-mcp")
+        assert row is not None
+        self.assertFalse(row["is_usable"])
+        self.assertIn("废弃", row["skip_reason"])
+
+        upsert_mcp_server_json(
+            name="demo-mcp",
+            url="https://example.com/mcp",
+            token=None,
+            note="keepalive",
+        )
+        after = json.loads(self.mcp_path.read_text(encoding="utf-8"))
+        self.assertNotIn("encrypted_token", after["mcpServers"]["demo-mcp"])
+        self.assertEqual(after["mcpServers"]["demo-mcp"]["note"], "keepalive")
+
+    def test_legacy_ciphertext_purged_by_migrate(self) -> None:
+        from src.intel.infrastructure.mcp_config import migrate_encrypted_mcp_tokens
+
+        self.mcp_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "demo-mcp": {
+                            "url": "https://example.com/mcp",
+                            "encrypted_token": "YWJjZGVmZ2hpams=",
+                            "token": "keep-me",
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(migrate_encrypted_mcp_tokens(self.mcp_path), 1)
+        raw = json.loads(self.mcp_path.read_text(encoding="utf-8"))
+        self.assertEqual(raw["mcpServers"]["demo-mcp"]["token"], "keep-me")
+        self.assertNotIn("encrypted_token", raw["mcpServers"]["demo-mcp"])
+
+    def test_server_without_token_is_marked_unusable_and_skipped(self) -> None:
+        from src.intel.infrastructure.mcp_config import upsert_mcp_server_json
+        from src.intel.infrastructure.registry import list_effective_mcp_servers
+
+        upsert_mcp_server_json(name="bare", url="https://example.com/mcp", token="")
+        rows = list_effective_mcp_servers(active_only=False)
+        bare = next(item for item in rows if item["name"] == "bare")
+        self.assertFalse(bare["is_usable"])
+        self.assertIn("Key", bare["skip_reason"])
+        self.assertEqual(
+            [item["name"] for item in list_effective_mcp_servers(active_only=True)],
+            ["loci-market"],
+        )
+        with self.assertRaisesRegex(OpsError, "未配置 API Key"):
+            build_client("bare")
+
+    def test_expired_server_is_skipped_after_expires_at(self) -> None:
+        from datetime import date, timedelta
+        from unittest.mock import patch
+
+        from src.intel.infrastructure.registry import list_effective_mcp_servers
+
+        expired = (date.today() - timedelta(days=1)).isoformat()
+        record = self._save(name="paid", expires_at=expired)
+        self.assertEqual(record["expires_at"], expired)
+        self.assertFalse(record["is_usable"])
+        with patch("src.intel.infrastructure.mcp_config.date") as mock_date:
+            mock_date.today.return_value = date.today()
+            mock_date.fromisoformat = date.fromisoformat
+            active = list_effective_mcp_servers(active_only=True)
+        self.assertEqual([item["name"] for item in active], ["loci-market"])
+        with self.assertRaisesRegex(OpsError, "过期"):
+            build_client("paid")
 
     def test_collect_tools_narrows_to_the_allow_list(self) -> None:
         """一个 server 有 60+ 工具，全塞进 prompt 会占掉大量上下文。"""
         from src.intel.infrastructure.mcp_config import upsert_mcp_server_json
 
         upsert_mcp_server_json(
-            name="wudao",
+            name="demo-mcp",
             url="https://example.com/mcp",
-            token="",
+            token="lb_test_token",
             tools=[
                 {"name": "kline", "description": "K线"},
                 {"name": "limit_up_ladder", "description": "涨停梯队"},
                 {"name": "sec_filings", "description": "海外披露"},
             ],
         )
-        tools, routing = collect_tools(["wudao"], allow=["kline", "limit_up_ladder"])
+        tools, routing = collect_tools(["demo-mcp"], allow=["kline", "limit_up_ladder"])
         self.assertEqual(sorted(t.name for t in tools), ["kline", "limit_up_ladder"])
-        self.assertEqual(routing["wudao__kline"], "wudao")
+        self.assertEqual(routing["demo-mcp__kline"], "demo-mcp")
 
     def test_inactive_servers_are_excluded(self) -> None:
         from src.intel.infrastructure.mcp_config import upsert_mcp_server_json
@@ -376,6 +453,7 @@ class RegistryTests(unittest.TestCase):
         upsert_mcp_server_json(
             name="off",
             url="https://x/mcp",
+            token="lb_test_token",
             disabled=True,
             tools=[{"name": "t", "description": "d"}],
         )
@@ -393,193 +471,7 @@ class RegistryTests(unittest.TestCase):
         with patch("src.intel.infrastructure.registry.build_client", return_value=Client()), patch(
             "src.intel.infrastructure.registry.refresh_tools", side_effect=McpError("refresh timeout")
         ):
-            result = probe_mcp("wudao")
+            result = probe_mcp("demo-mcp")
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "MCP 服务暂不可用")
-
-
-class McpApiErrorTests(unittest.TestCase):
-    def test_refresh_maps_external_failure_to_503(self) -> None:
-        from src.intel.api.router import build_intel_router
-
-        app = FastAPI()
-        app.include_router(build_intel_router(write_dependency=lambda: None))
-        with patch("src.intel.infrastructure.registry.refresh_tools", side_effect=McpError("network timeout")), TestClient(
-            app, raise_server_exceptions=False
-        ) as client:
-            response = client.post("/api/mcp/demo/refresh")
-
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()["detail"], "MCP 服务暂不可用")
-
-    def test_probe_rejects_tool_payload_without_invoking_external_tool(self) -> None:
-        from src.intel.api.router import build_intel_router
-
-        app = FastAPI()
-        app.include_router(build_intel_router(write_dependency=lambda: None))
-        with patch("src.intel.infrastructure.registry.probe_mcp") as probe, TestClient(
-            app,
-            raise_server_exceptions=False,
-        ) as client:
-            response = client.post(
-                "/api/mcp/demo/probe",
-                json={"tool": "delete_everything", "arguments": {"force": True}},
-            )
-
-        self.assertEqual(response.status_code, 422)
-        probe.assert_not_called()
-
-
-class AgentLoopTests(unittest.TestCase):
-    """无人值守场景下，一个陷入循环的 Agent 会安静地烧光配额与 token。"""
-
-    config = ProviderConfig(
-        name="p", protocol="openai_compatible", base_url="https://x/v1",
-        api_key="k", model="m",
-    )
-
-    def test_returns_directly_when_no_tools_are_requested(self) -> None:
-        with patch("src.ai.application.agent.chat", return_value=ChatResponse(text="结论", model="m")):
-            result = run_agent(self.config, system="s", user_prompt="q")
-        self.assertEqual(result.text, "结论")
-        self.assertEqual(result.rounds, 1)
-        self.assertEqual(result.stopped_reason, "completed")
-
-    def test_executes_tools_then_continues(self) -> None:
-        responses = [
-            ChatResponse(
-                text="", model="m",
-                tool_calls=[ToolCall(id="c1", name="wudao__kline", arguments={"code": "600519"})],
-            ),
-            ChatResponse(text="基于 K 线的结论", model="m"),
-        ]
-        calls: list[tuple[str, dict]] = []
-
-        def executor(name, args):
-            calls.append((name, args))
-            return {"text": "日线数据", "is_error": False}
-
-        with patch("src.ai.application.agent.chat", side_effect=responses):
-            result = run_agent(
-                self.config, system="s", user_prompt="q",
-                tool_schemas=[{"type": "function"}], tool_executor=executor,
-            )
-        self.assertEqual(calls, [("wudao__kline", {"code": "600519"})])
-        self.assertEqual(result.text, "基于 K 线的结论")
-        self.assertEqual(len(result.invocations), 1)
-        self.assertTrue(result.invocations[0].ok)
-
-    def test_stops_at_the_round_limit_and_says_so(self) -> None:
-        """撞上限时必须如实说明，不能假装分析完整。"""
-        looping = ChatResponse(
-            text="", model="m", tool_calls=[ToolCall(id="c", name="t", arguments={})]
-        )
-        with patch("src.ai.application.agent.chat", return_value=looping):
-            result = run_agent(
-                self.config, system="s", user_prompt="q",
-                tool_schemas=[{}], tool_executor=lambda n, a: {"text": "x"},
-                max_rounds=3,
-            )
-        self.assertEqual(result.rounds, 3)
-        self.assertEqual(result.stopped_reason, "max_rounds")
-        self.assertIn("轮数上限", result.text)
-
-    def test_caps_tool_calls_per_round(self) -> None:
-        many = ChatResponse(
-            text="", model="m",
-            tool_calls=[ToolCall(id=f"c{i}", name="t", arguments={}) for i in range(20)],
-        )
-        done = ChatResponse(text="好了", model="m")
-        with patch("src.ai.application.agent.chat", side_effect=[many, done]):
-            result = run_agent(
-                self.config, system="s", user_prompt="q",
-                tool_schemas=[{}], tool_executor=lambda n, a: {"text": "x"},
-                max_calls_per_round=5,
-            )
-        self.assertEqual(len(result.invocations), 5)
-
-    def test_tool_failure_is_reported_to_the_model_not_swallowed(self) -> None:
-        """返回空结果会让模型以为"查到了但没数据"，进而编造结论。"""
-        responses = [
-            ChatResponse(text="", model="m", tool_calls=[ToolCall(id="c", name="t", arguments={})]),
-            ChatResponse(text="已说明取数失败", model="m"),
-        ]
-        def boom(name, args):
-            raise RuntimeError("配额用尽")
-
-        with patch("src.ai.application.agent.chat", side_effect=responses):
-            result = run_agent(
-                self.config, system="s", user_prompt="q",
-                tool_schemas=[{}], tool_executor=boom,
-            )
-        self.assertFalse(result.invocations[0].ok)
-        self.assertIn("配额用尽", result.invocations[0].error)
-
-    def test_accumulates_token_usage_across_rounds(self) -> None:
-        responses = [
-            ChatResponse(text="", model="m", input_tokens=100, output_tokens=20,
-                         tool_calls=[ToolCall(id="c", name="t", arguments={})]),
-            ChatResponse(text="done", model="m", input_tokens=300, output_tokens=50),
-        ]
-        with patch("src.ai.application.agent.chat", side_effect=responses):
-            result = run_agent(
-                self.config, system="s", user_prompt="q",
-                tool_schemas=[{}], tool_executor=lambda n, a: {"text": "x"},
-            )
-        self.assertEqual(result.input_tokens, 400)
-        self.assertEqual(result.output_tokens, 70)
-
-
-class ExecutorRoutingTests(unittest.TestCase):
-    def test_routes_by_prefix(self) -> None:
-        class FakeClient:
-            def __init__(self):
-                self.seen = None
-
-            def call_tool(self, name, args):
-                self.seen = (name, args)
-                return {"text": "ok", "is_error": False}
-
-        client = FakeClient()
-        execute = make_mcp_executor({"wudao": client}, {"wudao__kline": "wudao"})
-        result = execute("wudao__kline", {"code": "1"})
-        self.assertEqual(result["text"], "ok")
-        self.assertEqual(client.seen, ("wudao__kline", {"code": "1"}))
-
-    def test_unknown_tool_tells_the_model_what_exists(self) -> None:
-        """模型偶尔会凭空发明工具名。如实告诉它，别静默返回空。"""
-        execute = make_mcp_executor({}, {"wudao__kline": "wudao"})
-        result = execute("made_up_tool", {})
-        self.assertTrue(result["is_error"])
-        self.assertIn("wudao__kline", result["text"])
-
-
-class TraceTests(unittest.TestCase):
-    def test_formats_a_readable_trace(self) -> None:
-        """定时任务出问题时，"它查了什么、拿到什么"是第一个要看的东西。"""
-        trace = format_tool_trace(
-            [
-                ToolInvocation(name="wudao__kline", arguments={"code": "600519"},
-                               ok=True, result_preview="…", elapsed_ms=210),
-                ToolInvocation(name="wudao__ladder", arguments={}, ok=False,
-                               result_preview="", error="配额用尽", elapsed_ms=90),
-            ]
-        )
-        self.assertIn("✓ wudao__kline", trace)
-        self.assertIn("✗ wudao__ladder", trace)
-        self.assertIn("配额用尽", trace)
-
-    def test_empty_trace_is_explicit(self) -> None:
-        self.assertIn("未调用", format_tool_trace([]))
-
-    def test_agent_result_serialises_for_the_run_record(self) -> None:
-        result = AgentResult(text="t", rounds=2, model="m", input_tokens=1, output_tokens=2)
-        payload = result.to_dict()
-        self.assertEqual(payload["output"], "t")
-        self.assertEqual(payload["rounds"], 2)
-        self.assertEqual(json.loads(json.dumps(payload))["model"], "m")
-
-
-if __name__ == "__main__":
-    unittest.main()

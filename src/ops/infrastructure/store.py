@@ -3,7 +3,7 @@
 与账本 (palace.db)、行情仓 (market.db) 一样物理隔离。
 
 技能正文在 ``data/skills/*/SKILL.md``，MCP 在 ``data/mcp.json``——二者都不进本库。
-本库只保留任务状态与 LLM 密钥密文（主密钥在环境变量）。
+本库只保留任务状态与 LLM API Key（本机明文存 ``encrypted_key`` 列；旧密文启动时尽量迁明文）。
 
 实现拆分：
 - ``store_helpers`` — 常量 / OpsError / new_id / dumps / loads
@@ -20,6 +20,7 @@ import sqlite3
 from src.ops.infrastructure.store_helpers import (
     DEFAULT_DB,
     JOB_KINDS,
+    MANAGED_HOT_REBUILD,
     MANAGED_OUTCOME_CRON,
     MANAGED_OUTCOME_TRACK,
     MANAGED_SYNC_EOD,
@@ -32,6 +33,7 @@ from src.ops.infrastructure.store_helpers import (
     yaml_safe_dump,
 )
 from src.ops.infrastructure.store_jobs import OpsJobsMixin
+from src.ops.infrastructure.store_runs import OpsRunsMixin
 from src.ops.infrastructure.store_providers import OpsProvidersMixin
 from src.ops.infrastructure.store_schema import (
     SCHEMA_VERSION,
@@ -40,10 +42,17 @@ from src.ops.infrastructure.store_schema import (
     _SCHEMA_READY,
 )
 from src.ops.infrastructure.store_strategy import OpsStrategyMixin
+from src.ops.infrastructure.store_ai_decisions import OpsAiDecisionsMixin
+from src.ops.infrastructure.store_alerts import OpsAlertsMixin
+from src.ops.infrastructure.store_paper import OpsPaperMixin
+from src.ops.infrastructure.store_paper_mem import OpsPaperMemMixin
+from src.ops.infrastructure.store_quota import OpsQuotaMixin
+from src.ops.infrastructure.store_watch import OpsWatchMixin
 
 __all__ = [
     "DEFAULT_DB",
     "JOB_KINDS",
+    "MANAGED_HOT_REBUILD",
     "MANAGED_OUTCOME_CRON",
     "MANAGED_OUTCOME_TRACK",
     "MANAGED_SYNC_EOD",
@@ -59,27 +68,58 @@ __all__ = [
 ]
 
 
-class OpsStore(OpsJobsMixin, OpsProvidersMixin, OpsStrategyMixin):
-    """任务 / LLM 供应商的读写。每个请求或任务持有独立连接。"""
+class OpsStore(
+    OpsJobsMixin,
+    OpsRunsMixin,
+    OpsProvidersMixin,
+    OpsStrategyMixin,
+    OpsAlertsMixin,
+    OpsPaperMixin,
+    OpsPaperMemMixin,
+    OpsWatchMixin,
+    OpsQuotaMixin,
+    OpsAiDecisionsMixin,
+):
+    """任务 / LLM 供应商 / 提醒 / 纸面量化舱 / 记忆图 / 龙头留痕 的读写。每个请求或任务持有独立连接。"""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         self.db_path = Path(db_path or DEFAULT_DB)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path, timeout=30.0)
         self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA busy_timeout=30000")
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.execute("PRAGMA foreign_keys=ON")
-        key = str(self.db_path.resolve())
-        if key not in _SCHEMA_READY:
+        try:
+            self.conn.execute("PRAGMA busy_timeout=30000")
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.execute("PRAGMA foreign_keys=ON")
+            key = str(self.db_path.resolve())
+            if key not in _SCHEMA_READY:
+                # 旧库：CREATE TABLE IF NOT EXISTS 不会补列，但 _SCHEMA 里依赖新列的
+                # INDEX 会先于 ADD COLUMN 失败。先尽量建表 → 迁移补列 → 再补索引。
+                self._apply_schema_compat()
+                _SCHEMA_READY.add(key)
+            else:
+                # 迁移始终执行：CREATE TABLE IF NOT EXISTS / ALTER ADD COLUMN 幂等。
+                self._run_migrations()
+        except Exception:
+            self.conn.close()
+            raise
+
+    def _apply_schema_compat(self) -> None:
+        """兼容已有 ops.db：允许首轮 schema 因缺列失败，迁移后再补齐。"""
+        try:
             self.init_schema()
-            _SCHEMA_READY.add(key)
-        # 迁移始终执行：CREATE TABLE IF NOT EXISTS 和 ALTER TABLE ADD COLUMN 都是幂等的，
-        # 多跑一次耗时微秒，但能保证旧 ops.db 自动补齐新表和新列。
+        except sqlite3.OperationalError:
+            pass
         self._run_migrations()
+        self.init_schema()
 
     def close(self) -> None:
         self.conn.close()
+
+    def _now(self) -> str:
+        from datetime import datetime
+
+        return datetime.now().astimezone().isoformat(timespec="seconds")
 
     def __enter__(self) -> OpsStore:
         return self
@@ -168,9 +208,6 @@ class OpsStore(OpsJobsMixin, OpsProvidersMixin, OpsStrategyMixin):
             tools = loads(row["allowed_tools"] if "allowed_tools" in row.keys() else "[]", [])
             if tools:
                 meta["tools"] = tools
-            cron = str(row["default_cron"] or "")
-            if cron:
-                meta["cron"] = cron
             body = str(row["instructions"] or "").strip() or f"# {slug}\n"
             dumped = yaml_safe_dump(meta)
             manifest.write_text(f"---\n{dumped}\n---\n\n{body}\n", encoding="utf-8")
@@ -190,3 +227,9 @@ class OpsStore(OpsJobsMixin, OpsProvidersMixin, OpsStrategyMixin):
                 if "duplicate column name" in message or "already exists" in message:
                     continue
                 raise
+        self.conn.execute(
+            "INSERT INTO meta(key, value, updated_at) VALUES('schema_version', ?, datetime('now'))"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            (str(SCHEMA_VERSION),),
+        )
+        self.conn.commit()

@@ -1,5 +1,5 @@
 /**
- * useHealthCheckup：目录行映射 + 印鉴分回退。
+ * useHealthCheckup：目录行映射 + 体检分回退。
  */
 import { describe, expect, it } from 'vitest'
 
@@ -69,6 +69,44 @@ describe('normalizeHealthReport', () => {
     expect(next.grade).toBe('优')
     expect(next.repair_plan.needs_turnover_repair).toBe(true)
     expect(next.findings[0]?.remediation?.action).toBe('repair_turnover')
+  })
+
+  it('does not map job_sync_stale into one-click bootstrap', () => {
+    const raw = {
+      trade_date: '2026-08-07',
+      blocked: false,
+      reason: '数据体检通过（2 项提示）',
+      findings: [
+        {
+          check: 'turnover',
+          severity: 'warn',
+          message: '缺换手',
+          remediation: { action: 'repair_turnover', label: '回填换手率' },
+        },
+        {
+          check: 'job_sync_stale',
+          severity: 'warn',
+          message: '同步过久',
+          // 旧后端曾把 Job 时效标成 sync，导致一键全量 bootstrap 卡死
+          remediation: { action: 'sync', label: '手跑同步 Job' },
+        },
+      ],
+      block_count: 0,
+      warn_count: 2,
+      repair_plan: {
+        actions: ['sync', 'repair_turnover'],
+        primary_action: 'sync',
+        with_factors: true,
+        needs_bootstrap: true,
+        needs_turnover_repair: true,
+        labels: ['手跑同步 Job', '回填换手率'],
+        check_ids: ['job_sync_stale', 'turnover'],
+      },
+    } as MarketHealthReport
+    const next = normalizeHealthReport(raw)
+    expect(next.repair_plan.needs_bootstrap).toBe(false)
+    expect(next.repair_plan.needs_turnover_repair).toBe(true)
+    expect(next.repair_plan.actions).toEqual(['repair_turnover'])
   })
 })
 

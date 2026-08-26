@@ -199,7 +199,8 @@ function onRowClick(row: Record<string, unknown>): void {
           <el-button type="primary" :icon="Search" @click="handleSubmit">查询</el-button>
           <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
           <el-dropdown trigger="click" @command="openCreate">
-            <el-button type="success" :icon="Plus">
+            <!-- 主操作跟随印章红主色；此前是 EP 默认绿，与同页空态里的同一动作撞了两种主色 -->
+            <el-button type="primary" :icon="Plus">
               新建
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
@@ -229,7 +230,7 @@ function onRowClick(row: Record<string, unknown>): void {
             <div class="name-cell">
               <div class="name-line">
                 <strong>{{ row.name }}</strong>
-                <el-tag v-if="row.editable" size="small" type="success" effect="plain">可编辑</el-tag>
+                <el-tag v-if="row.editable" size="small" type="primary" effect="plain">可编辑</el-tag>
                 <el-tag v-else size="small" effect="plain">只读</el-tag>
               </div>
             </div>
@@ -274,7 +275,7 @@ function onRowClick(row: Record<string, unknown>): void {
         <EmptyState
           v-else
           description="还没有量化选股战法"
-          reason="自定义战法在量化技能工坊维护，builtin 战法由产品内置。"
+          reason="自定义战法在策稿台维护，builtin 战法由产品内置。"
           eta="可直接新建、生成草稿，或去市场安装。"
         >
           <el-dropdown trigger="click" @command="openCreate">

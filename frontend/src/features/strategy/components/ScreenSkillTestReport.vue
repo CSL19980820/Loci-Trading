@@ -126,7 +126,10 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
       </div>
 
       <div v-if="preview.run_result" class="report__hits" aria-label="试跑命中摘要">
-        <strong>试跑命中 {{ preview.run_result.picks.length }} 只</strong>
+        <strong>
+          试跑正式 {{ preview.run_result.picks.length }} 只 · 低吸观察
+          {{ preview.run_result.watch_picks?.length ?? 0 }} 只
+        </strong>
         <span>{{ preview.run_result.trade_date }} · 股票池 {{ preview.run_result.universe_size }} · {{ preview.run_result.elapsed_seconds.toFixed(2) }}s</span>
       </div>
     </template>

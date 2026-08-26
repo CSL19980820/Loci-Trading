@@ -1,6 +1,6 @@
-# stock-analyzer 环境初始化
-
-用法: `.\setup.ps1`
+﻿# stock-analyzer 环境初始化
+#
+# 用法: .\setup.ps1
 
 $ErrorActionPreference = "Stop"
 Write-Host "=== Loci / stock-analyzer 环境初始化 ===" -ForegroundColor Cyan
@@ -23,13 +23,15 @@ if (-not (Test-Path ".venv")) {
     Write-Host "[跳过] .venv 已存在" -ForegroundColor Gray
 }
 
-Write-Host "[步骤 2/3] 安装依赖 ..." -ForegroundColor Yellow
+# requirements-dev.txt 自带 `-r requirements.txt`。装 dev 是因为下方结束语
+# 就让用户跑 pytest 与 lint-imports，只装运行时依赖会让那两条命令必然失败。
+Write-Host "[步骤 2/3] 安装依赖（含开发工具）..." -ForegroundColor Yellow
 $pythonExe = ".\.venv\Scripts\python.exe"
 if ($useUv) {
-    & uv pip install -r requirements.txt
+    & uv pip install -r requirements-dev.txt
 } else {
     & $pythonExe -m pip install --upgrade pip
-    & $pythonExe -m pip install -r requirements.txt
+    & $pythonExe -m pip install -r requirements-dev.txt
 }
 
 Write-Host "[步骤 3/3] 验证安装 ..." -ForegroundColor Yellow

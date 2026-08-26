@@ -1,4 +1,5 @@
 /** K 线涨跌停 markPoint 数据。 */
+import { readChartTokens, type ChartTokens } from '@/shared/lib/chartTokens'
 import { detectLimitHit, limitLabel } from '@/shared/lib/limitBoard'
 import type { OhlcBar } from '@/shared/lib/indicators'
 
@@ -7,7 +8,9 @@ export function buildLimitMarks(
   dates: string[],
   stockCode: string,
   stockName?: string,
+  tokens?: ChartTokens,
 ): Array<Record<string, unknown>> {
+  const t = tokens ?? readChartTokens()
   if (!stockCode || !bars.length) return []
   const marks: Array<Record<string, unknown>> = []
   for (let i = 0; i < bars.length; i++) {
@@ -25,10 +28,10 @@ export function buildLimitMarks(
       symbol: 'pin',
       symbolSize: 28,
       symbolOffset: kind === 'up' ? [0, -4] : [0, 4],
-      itemStyle: { color: kind === 'up' ? '#c41e3a' : '#0f6b5c' },
+      itemStyle: { color: kind === 'up' ? t.up : t.down },
       label: {
         formatter: limitLabel(kind),
-        color: '#fff',
+        color: t.sheet,
         fontSize: 9,
         fontWeight: 650,
       },

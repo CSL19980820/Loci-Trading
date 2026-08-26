@@ -13,24 +13,6 @@
   width: 100%;
 }
 
-.table-foot {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0.65rem 0.25rem 0.15rem;
-}
-
-.query-filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.query-filter-bar__input {
-  width: min(16rem, 100%);
-}
-
 @media (max-width: 480px) {
   .form-grid {
     grid-template-columns: 1fr;
@@ -208,7 +190,7 @@
 
 .form-error {
   margin: 0.65rem 0 0;
-  color: var(--seal-ink);
+  color: var(--loss);
   font-size: 0.88rem;
 }
 

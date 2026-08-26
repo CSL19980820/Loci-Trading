@@ -8,7 +8,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.app.legacy.quant_common import BacktestRequest, market_store, missing_dependency, ops_store
+from src.shared.api_deps import market_store, missing_dependency, ops_store
+from src.strategy.api.schemas import BacktestRequest
 from src.ops import OpsError
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
         raise HTTPException(status_code=404, detail=f"未知战法：{slug}")
 
     def _rollback_screen_skill(slug: str, revision: str) -> dict[str, Any]:
-        from src.app import screen_skills
+        from src.strategy.application import screen_skills
 
         current = screen_skills.get_screen_skill_item(slug)
         if current is None:
@@ -115,6 +116,9 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
                         hold_days=payload.hold_days,
                         stop_loss_pct=payload.stop_loss_pct,
                         take_profit_pct=payload.take_profit_pct,
+                        commission_bps=payload.commission_bps,
+                        stamp_duty_bps=payload.stamp_duty_bps,
+                        slippage_bps=payload.slippage_bps,
                         benchmark=payload.benchmark,
                     ),
                     codes=payload.codes,
@@ -128,6 +132,7 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
             "mode": "trade",
             "config": trade.config,
             "metrics": trade.metrics,
+            "performance": trade.performance,
             "skipped": trade.skipped,
         }
         if payload.include_trades:
@@ -166,7 +171,7 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
     @router.get("/api/strategies/{slug}/versions", tags=["strategy"])
     def list_strategy_versions(slug: str) -> list[dict[str, Any]]:
         if _is_screen_skill(slug):
-            from src.app.screen_skills import list_screen_skill_history
+            from src.strategy.application.screen_skills import list_screen_skill_history
 
             return list_screen_skill_history(slug)
         with _ops() as store:
@@ -205,7 +210,7 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
     ) -> dict[str, bool]:
         try:
             if _is_screen_skill(slug):
-                from src.app.screen_skills import delete_screen_skill_history
+                from src.strategy.application.screen_skills import delete_screen_skill_history
 
                 removed = delete_screen_skill_history(slug, version)
             else:
@@ -228,7 +233,7 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
 
 def _translate_version_error(exc: Exception) -> None:
     from src.ops import OpsError
-    from src.ops.application.screen import ScreenPackageError
+    from src.ops import ScreenPackageError
 
     message = str(exc)
     if isinstance(exc, ScreenPackageError):

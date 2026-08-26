@@ -14,27 +14,56 @@ export function signedMoney(value: number | null | undefined): string {
 }
 
 export function pct(value: number | null | undefined, digits = 2): string {
-  if (value === null || value === undefined) return '—'
-  const prefix = value > 0 ? '+' : ''
-  return `${prefix}${value.toFixed(digits)}%`
+  const n = Number(value)
+  // 非有限值统一回退占位符：此前只挡 null/undefined，NaN 会直接渲染成 "NaN%"。
+  // features 里手抄的十余份都带这道守卫，收归到这里时一并补上。
+  if (value === null || value === undefined || !Number.isFinite(n)) return '—'
+  const prefix = n > 0 ? '+' : ''
+  return `${prefix}${n.toFixed(digits)}%`
+}
+
+/**
+ * 带符号百分比：**0 也带 `+`**，这是它与 `pct()` 的唯一区别。
+ *
+ * 仓内实际存在两套口径：行情涨跌用 `pct()`（0 显示 `0.00%`），复盘与回测这一族
+ * 用本函数（0 显示 `+0.00%`）。两者此前各自散着若干手抄副本，现在各归一处。
+ * 要统一成一套是产品决定，不要在调用点上私自改口径。
+ */
+export function signedPct(value: number | null | undefined, digits = 2): string {
+  const n = Number(value)
+  if (value === null || value === undefined || !Number.isFinite(n)) return '—'
+  return `${n >= 0 ? '+' : ''}${n.toFixed(digits)}%`
+}
+
+/** 价格/点位：默认两位小数。低价股要看三位时显式传 digits，不要另写一份。 */
+export function price(value: number | null | undefined, digits = 2): string {
+  const n = Number(value)
+  if (value === null || value === undefined || !Number.isFinite(n)) return '—'
+  return n.toFixed(digits)
 }
 
 export function shares(value: number): string {
   return `${value.toLocaleString('zh-CN')} 股`
 }
 
-export function shortTime(value: string): string {
-  return value.replace('T', ' ').slice(0, 16)
+/**
+ * 量级缩写：≥1 亿用「亿」（2 位），≥1 万用「万」（1 位），否则原值。
+ *
+ * 这段逻辑此前在 6 处各复制了一份（K 线 / 分时 / 行情详情 / 行情格式化 / 读数条两处），
+ * 还有两个离群口径（有的用 1e6→M 中英混排、有的阈值 1e6 且没有亿档，
+ * 导致同一条 Y 轴上 ¥500,000 和 150.0万 并排出现）。统一到这里。
+ */
+export function compactNumber(value: unknown, fallback = '—'): string {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  const abs = Math.abs(n)
+  if (abs >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
+  if (abs >= 1e4) return `${(n / 1e4).toFixed(1)}万`
+  return n.toFixed(0)
 }
 
-export function actionLabel(action: string): string {
-  return (
-    {
-      BUY: '买入',
-      SELL: '卖出',
-      OPENING: '开仓快照',
-    }[action] ?? action
-  )
+export function shortTime(value: string): string {
+  return value.replace('T', ' ').slice(0, 16)
 }
 
 export function entityLabel(type: string): string {
@@ -119,39 +148,6 @@ export function localToday(): string {
   return `${y}-${m}-${day}`
 }
 
-const FACTOR_LABELS: Record<string, string> = {
-  vol_ratio_5d: '5日量比',
-  vol_ratio: '量比',
-  turnover: '换手率',
-  ma20: 'MA20',
-  ma5: 'MA5',
-  ma10: 'MA10',
-  score: '评分',
-  hsl: '换手%',
-  zt: '涨停',
-  one_word: '一字板',
-  auction_ratio: '竞价比',
-  open_pct: '开盘涨幅%',
-  close_pct: '收盘涨幅%',
-}
-
-export function factorLabel(key: string): string {
-  return FACTOR_LABELS[key] ?? key
-}
-
-export function severityLabel(value: string): string {
-  return (
-    {
-      block: '阻断',
-      error: '阻断',
-      warn: '警告',
-      warning: '警告',
-      info: '提示',
-      ok: '正常',
-    }[value.toLowerCase()] ?? value
-  )
-}
-
 export function entryTimingLabel(value: string): string {
   const raw = value.trim()
   const key = raw.toLowerCase().replace(/\s+/g, '')
@@ -209,9 +205,13 @@ const STRATEGY_LABELS: Record<string, string> = {
   'qianlong-v1': '潜龙出海',
   'qianlong-close': '潜龙出海',
   'qianlong-close-v2': '潜龙出海（优化版）',
+  'qianfu-close': '潜伏（已下线）',
+  'qianfu-1450': '潜伏（已下线）',
   'qianlong-close-v3': '潜龙出海（V3）',
-  'qianlong-tail-v1': '潜龙尾盘（V1）',
-  'sanyuan-tail-v1': '三源尾盘共振',
+  'qianlong-tail-v1': '潜龙尾盘（已下线）',
+  'rsi30-dip': 'RSI22 次日低吸（已下线）',
+  'sanyuan-tail-v1': '三源尾盘共振（15:30）',
+  'yangshi-tail-v1': '杨氏尾盘选股（15:30）',
   'qianlong-auction': '潜龙出海',
   潜龙出海: '潜龙出海',
   '潜龙出海·原版': '潜龙出海',
@@ -219,19 +219,19 @@ const STRATEGY_LABELS: Record<string, string> = {
   三外有三: '三外有三',
   天衣无缝: '天衣无缝',
   倒拔杨柳: '倒拔杨柳',
-  海底捞月: '海底捞月',
+  海底捞月: '海底捞月（已下线）',
   分手快乐: '分手快乐',
   筹码峰突破: '筹码峰突破',
   '卢高文·三外有三': '三外有三',
   '卢高文·天衣无缝': '天衣无缝',
   '卢高文·倒拔杨柳': '倒拔杨柳',
-  '卢高文·海底捞月': '海底捞月',
+  '卢高文·海底捞月': '海底捞月（已下线）',
   '卢高文·分手快乐': '分手快乐',
   '卢高文·筹码峰突破': '筹码峰突破',
   'lugw-sanwai': '三外有三',
   'lugw-tianyi': '天衣无缝',
   'lugw-daoba': '倒拔杨柳',
-  'lugw-haidi': '海底捞月',
+  'lugw-haidi': '海底捞月（已下线）',
   'lugw-fenshou': '分手快乐',
   'lugw-chouma': '筹码峰突破',
 }
@@ -244,7 +244,7 @@ export function strategyLabel(slug: string | null | undefined, fallbackMap?: Map
   if (slug.startsWith('qianlong') || slug.includes('潜龙')) return '潜龙出海'
   if (slug.startsWith('lugw') || slug.includes('卢高文')) {
     if (slug.includes('sanwai') || slug.includes('三外')) return '三外有三'
-    if (slug.includes('haidi') || slug.includes('海底')) return '海底捞月'
+    if (slug.includes('haidi') || slug.includes('海底')) return '海底捞月（已下线）'
     if (slug.includes('chouma') || slug.includes('筹码')) return '筹码峰突破'
     if (slug.includes('tianyi') || slug.includes('天衣')) return '天衣无缝'
     if (slug.includes('daoba') || slug.includes('倒拔')) return '倒拔杨柳'

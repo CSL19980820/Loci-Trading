@@ -57,20 +57,37 @@ class MarketBoardPageMixin:
         join_where = list(where)
         join_params: list[Any] = [lookback, *params]
         if turnover_min is not None:
-            join_where.append("q.turnover IS NOT NULL AND q.turnover >= ?")
+            join_where.append(
+                "("
+                "CASE "
+                "WHEN q.amount IS NOT NULL AND q.amount > 0 "
+                " AND q.close IS NOT NULL AND q.close > 0 "
+                " AND q.outstanding_share IS NOT NULL AND q.outstanding_share > 0 "
+                "THEN q.amount / (q.close * q.outstanding_share) "
+                "WHEN q.turnover IS NOT NULL AND q.turnover > 0 AND q.turnover <= 0.5 "
+                "THEN q.turnover "
+                "ELSE NULL END"
+                ") >= ?"
+            )
             join_params.append(float(turnover_min))
         clause = " AND ".join(join_where)
         sort_key = (sort or "turnover_desc").strip().lower()
+        eff = (
+            "CASE "
+            "WHEN q.amount IS NOT NULL AND q.amount > 0 "
+            " AND q.close IS NOT NULL AND q.close > 0 "
+            " AND q.outstanding_share IS NOT NULL AND q.outstanding_share > 0 "
+            "THEN q.amount / (q.close * q.outstanding_share) "
+            "WHEN q.turnover IS NOT NULL AND q.turnover > 0 AND q.turnover <= 0.5 "
+            "THEN q.turnover "
+            "ELSE NULL END"
+        )
         if sort_key == "turnover_asc":
-            order = (
-                "CASE WHEN q.turnover IS NULL THEN 1 ELSE 0 END, q.turnover ASC, i.code"
-            )
+            order = f"CASE WHEN ({eff}) IS NULL THEN 1 ELSE 0 END, ({eff}) ASC, i.code"
         elif sort_key == "code":
             order = "i.code"
         else:
-            order = (
-                "CASE WHEN q.turnover IS NULL THEN 1 ELSE 0 END, q.turnover DESC, i.code"
-            )
+            order = f"CASE WHEN ({eff}) IS NULL THEN 1 ELSE 0 END, ({eff}) DESC, i.code"
         base_from = f"""
             FROM instruments i
             LEFT JOIN (

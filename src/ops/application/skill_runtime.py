@@ -89,7 +89,6 @@ def drive_skill_run(
             context.ops_store,
             str(state["provider"]),
             model=str(cfg.get("model") or ""),
-            master_key=context.master_key,
         )
 
         def on_event(event: dict[str, Any]) -> None:
@@ -142,6 +141,9 @@ def _drive(
             protocol=protocol,
             arguments=arguments,
             on_event=on_event,
+            trace_id=context.trace_id,
+            run_id=context.run_id or str(run_id),
+            job_id=context.job_id,
         )
 
     bus = build_toolbus(
@@ -152,6 +154,9 @@ def _drive(
         on_event=on_event,
         hitl_enabled=allow_hitl,
         run_subagents=run_subs,
+        trace_id=context.trace_id,
+        run_id=context.run_id or str(run_id),
+        job_id=context.job_id,
     )
 
     sub_briefs = ""

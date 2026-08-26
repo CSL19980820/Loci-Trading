@@ -1,4 +1,5 @@
 """AI 限界上下文：供应商与对话客户端。"""
+from src.ai.infrastructure.chat_retry import chat_text_with_thinking_fallback
 from src.ai.infrastructure.client import (
     PROTOCOLS,
     ChatMessage,
@@ -10,17 +11,11 @@ from src.ai.infrastructure.client import (
     list_models,
     validate,
 )
-from src.ai.infrastructure.crypto import (
-    CryptoError,
-    MASTER_KEY_ENV,
-    decrypt_secret,
-    encrypt_secret,
-    ensure_local_master_key,
-    generate_master_key,
-    mask_secret,
-)
+from src.ai.infrastructure.client_stream import chat_stream
+from src.ai.infrastructure.crypto import mask_secret
 from src.ai.infrastructure.providers import (
     get_model_entry,
+    migrate_encrypted_llm_keys,
     refresh_models,
     resolve_config,
     save_provider,
@@ -28,22 +23,19 @@ from src.ai.infrastructure.providers import (
 )
 
 __all__ = [
-    "MASTER_KEY_ENV",
     "PROTOCOLS",
     "ChatMessage",
     "ChatResponse",
-    "CryptoError",
     "LLMError",
     "ProviderConfig",
     "ToolCall",
     "chat",
-    "decrypt_secret",
-    "encrypt_secret",
-    "ensure_local_master_key",
-    "generate_master_key",
+    "chat_stream",
+    "chat_text_with_thinking_fallback",
     "get_model_entry",
     "list_models",
     "mask_secret",
+    "migrate_encrypted_llm_keys",
     "refresh_models",
     "resolve_config",
     "save_provider",

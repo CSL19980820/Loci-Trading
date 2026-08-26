@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
 import type { Router, RouteLocationNormalizedLoaded } from 'vue-router'
 
 import { getMarketBoard, getMarketSession } from '@/shared/api/quant'
@@ -31,7 +31,11 @@ export function useDataQueryMarket(opts: {
   let refreshTimer: ReturnType<typeof setInterval> | null = null
   let sessionTimer: ReturnType<typeof setInterval> | null = null
   let sessionLiveAllowed: boolean | null = null
-  let boardRequestSeq = 0
+  /** 本机列表请求世代：翻页/搜索互相作废；与实时世代分离，避免 stopRefresh 卡死 busy */
+  let listRequestSeq = 0
+  /** 实时叠价请求世代：停表/离页只抬这个，不碰列表 busy */
+  let liveRequestSeq = 0
+  let listLoadsInFlight = 0
   let refreshGeneration = 0
   let sessionRequestSeq = 0
   let liveRequestInFlight = false
@@ -42,6 +46,7 @@ export function useDataQueryMarket(opts: {
       page: page.value,
       page_size: pageSize.value,
       live,
+      persist: false,
       industry: industryFilter.value || undefined,
       sort: boardSort.value,
       turnover_min: turnoverMin.value ?? undefined,
@@ -90,8 +95,11 @@ export function useDataQueryMarket(opts: {
 
   function stopRefresh(): void {
     refreshGeneration += 1
-    // 关闭实时后，已发出的 live 请求不能再覆盖本地列表。
-    boardRequestSeq += 1
+    // 只作废实时叠价；勿抬 listRequestSeq，否则 KeepAlive onActivated→startRefresh
+    // 与首屏 loadBoard 竞态时 finally 清不掉 busy，页面永久转圈。
+    liveRequestSeq += 1
+    liveRequestInFlight = false
+    liveEnriching.value = false
     if (refreshTimer) {
       clearInterval(refreshTimer)
       refreshTimer = null
@@ -122,30 +130,36 @@ export function useDataQueryMarket(opts: {
 
   /** 只读本机库，列表立刻出来 */
   async function loadBoard(): Promise<void> {
-    const seq = ++boardRequestSeq
+    const seq = ++listRequestSeq
+    // 新列表查询作废进行中的实时叠价，避免旧 live 盖住新页。
+    liveRequestSeq += 1
+    liveRequestInFlight = false
     liveEnriching.value = false
+    listLoadsInFlight += 1
     opts.busy.value = true
     opts.error.value = ''
     try {
       const board = await getMarketBoard(boardQueryOpts(false))
-      if (seq !== boardRequestSeq) return
+      if (seq !== listRequestSeq) return
       boardRows.value = board.items
       boardTotal.value = board.total
       boardAsOf.value = board.as_of?.slice(11, 19) || ''
       opts.liveError.value = ''
     } catch (caught: unknown) {
-      if (seq !== boardRequestSeq) return
+      if (seq !== listRequestSeq) return
       opts.error.value = (caught as Error).message || '加载行情列表失败'
     } finally {
-      if (seq === boardRequestSeq) opts.busy.value = false
+      listLoadsInFlight = Math.max(0, listLoadsInFlight - 1)
+      if (listLoadsInFlight === 0) opts.busy.value = false
     }
     if (liveOn.value) {
       const generation = refreshGeneration
       void refreshSessionGate().then((allowed) => {
-        if (seq !== boardRequestSeq || generation !== refreshGeneration) return
+        if (seq !== listRequestSeq || generation !== refreshGeneration) return
         if (allowed) {
-          void enrichLiveBoard()
+          // 先建轮询（内部 stopRefresh 只作废旧 live），再立即叠一次现价。
           startRefresh()
+          void enrichLiveBoard()
         } else {
           stopRefresh()
         }
@@ -157,23 +171,27 @@ export function useDataQueryMarket(opts: {
 
   /** 后台叠当前页实时（不挡 busy），服务端会异步写入当日 bar */
   async function enrichLiveBoard(): Promise<void> {
-    if (!liveOn.value || !livePollAllowed() || liveRequestInFlight) return
+    if (!liveOn.value || !livePollAllowed() || liveRequestInFlight || listLoadsInFlight > 0) {
+      return
+    }
     liveRequestInFlight = true
-    const seq = ++boardRequestSeq
+    const seq = ++liveRequestSeq
     liveEnriching.value = true
     try {
       const board = await getMarketBoard(boardQueryOpts(true))
-      if (seq !== boardRequestSeq) return
+      if (seq !== liveRequestSeq) return
       boardRows.value = board.items
       boardTotal.value = board.total
       boardAsOf.value = board.as_of?.slice(11, 19) || ''
       opts.liveError.value = board.live_error || ''
     } catch (caught: unknown) {
-      if (seq !== boardRequestSeq) return
+      if (seq !== liveRequestSeq) return
       opts.liveError.value = (caught as Error).message || '实时刷新失败'
     } finally {
-      liveRequestInFlight = false
-      if (seq === boardRequestSeq) liveEnriching.value = false
+      if (seq === liveRequestSeq) {
+        liveRequestInFlight = false
+        liveEnriching.value = false
+      }
     }
   }
 
@@ -214,8 +232,8 @@ export function useDataQueryMarket(opts: {
       void refreshSessionGate().then((allowed) => {
         if (generation !== refreshGeneration || !liveOn.value) return
         if (allowed) {
-          void enrichLiveBoard()
           startRefresh()
+          void enrichLiveBoard()
         } else {
           stopRefresh()
         }
@@ -226,6 +244,10 @@ export function useDataQueryMarket(opts: {
     }
   })
 
+  onDeactivated(() => stopRefresh())
+  onActivated(() => {
+    if (liveOn.value) startRefresh()
+  })
   onBeforeUnmount(() => stopRefresh())
 
   return {

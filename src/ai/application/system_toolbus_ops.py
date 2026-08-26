@@ -30,7 +30,7 @@ _JOB_CONFIG_KEYS = {
     },
     "compare": {"holds", "strategies", "start", "end", "stop_loss_pct", "benchmark", "universe"},
     "optimize": {"strategy", "holds", "targets", "stops", "start", "end", "benchmark", "universe"},
-    "prune": {"keep_per_job"},
+    "prune": {"keep_per_job", "leader_role_keep_days"},
     "outcome": {"limit", "max_age_trading_days", "benchmark"},
 }
 
@@ -78,6 +78,8 @@ def _validate_job_config(kind: str, config: Any) -> None:
     _bounded_int(config, "reserve_n", minimum=0, maximum=300)
     _bounded_int(config, "hold_days", minimum=1, maximum=60)
     _bounded_int(config, "keep_per_job", minimum=1, maximum=1000)
+    # 0 = 不清理角色留痕；上限压到两年，避免助手写出一个永不生效的保留窗
+    _bounded_int(config, "leader_role_keep_days", minimum=0, maximum=730)
     _bounded_int(config, "max_age_trading_days", minimum=1, maximum=250)
     if kind == "optimize":
         combinations = 1
@@ -438,7 +440,7 @@ def _job_trigger(owner: Any, args: dict[str, Any]) -> dict[str, Any]:
                 }
             )
         try:
-            from src.ops.application.jobs import run_job
+            from src.ops import run_job
 
             with OpsStore(owner.ops_db) as store:
                 current = store.get_job(job_id)

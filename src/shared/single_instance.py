@@ -2,19 +2,31 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import os
 from ctypes import wintypes
 from pathlib import Path
 from typing import Any
 
-MUTEX_NAME = "Local\\LociDesktopSingleInstance"
 ERROR_ALREADY_EXISTS = 183
 STILL_ACTIVE = 259
 SW_RESTORE = 9
 SW_SHOW = 5
 
 _mutex_handle: Any = None
+
+
+def mutex_name_for(writable_root: Path) -> str:
+    """按安装根目录区分互斥量，避免开发态 loci.py 与打包 Loci.exe 互挡。"""
+    digest = hashlib.sha1(
+        str(writable_root.resolve()).encode("utf-8", errors="replace")
+    ).hexdigest()[:16]
+    return f"Local\\LociDesktopSingleInstance_{digest}"
+
+
+# 兼容旧测试 / 外部引用：默认名仅作文档占位，真实抢锁用 mutex_name_for
+MUTEX_NAME = "Local\\LociDesktopSingleInstance"
 
 
 def _kernel32() -> Any:
@@ -67,10 +79,11 @@ def clear_instance(path: Path) -> None:
         pass
 
 
-def acquire_mutex() -> bool:
+def acquire_mutex(name: str | None = None) -> bool:
     """拿到互斥量返回 True（本进程为首实例）；已被占用返回 False。"""
     global _mutex_handle
-    handle = _kernel32().CreateMutexW(None, False, MUTEX_NAME)
+    mutex = str(name or MUTEX_NAME)
+    handle = _kernel32().CreateMutexW(None, False, mutex)
     if not handle:
         return True  # 拿不到互斥也不要挡启动
     _mutex_handle = handle
@@ -141,15 +154,20 @@ def claim_or_focus(writable_root: Path) -> bool:
     已有实例：尝试前置其窗口并返回 False（调用方应退出）。
     """
     path = lock_path(writable_root)
-    first = acquire_mutex()
+    first = acquire_mutex(mutex_name_for(writable_root))
     if first:
         write_instance(path, pid=os.getpid())
         return True
 
     existing = read_instance(path)
     pid = int(existing.get("pid") or 0) if existing else 0
-    if pid and pid != os.getpid():
+    if pid and pid != os.getpid() and pid_alive(pid):
         focus_pid_windows(pid)
+        return False
+
+    # 互斥被占但锁文件 PID 已死：清陈旧锁，仍返回 False（本轮退出，用户再点一次）
+    if pid and pid != os.getpid():
+        clear_instance(path)
     return False
 
 

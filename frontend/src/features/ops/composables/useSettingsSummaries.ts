@@ -6,14 +6,16 @@ import {
   getMarketSyncSettings,
   getMcpServers,
   getProviders,
+  getSharePackStatus,
   getWecomSettings,
 } from '@/shared/api/quant'
 import { APPEARANCE_OPTIONS, getStoredAppearance } from '@/shared/lib/theme'
+import { APP_VERSION } from '@/shared/lib/release'
 
 import type { RailMark } from '../components/SettingsRail.vue'
 import { formatBytes } from './opsLabels'
 
-export type OpsTab = 'mcp' | 'llm' | 'system'
+export type OpsTab = 'mcp' | 'llm' | 'system' | 'pack'
 
 export type RailSummary = { tail: string; state: RailMark }
 
@@ -21,6 +23,7 @@ const EMPTY: Record<OpsTab, RailSummary> = {
   mcp: { tail: '—', state: 'idle' },
   llm: { tail: '—', state: 'idle' },
   system: { tail: '—', state: 'idle' },
+  pack: { tail: '—', state: 'idle' },
 }
 
 function appearanceTail(): string {
@@ -45,6 +48,7 @@ export function useSettingsSummaries() {
       getMarketSyncSettings(),
       getWecomSettings(),
       getDesktopPrefs(),
+      getSharePackStatus(),
     ])
     if (version !== refreshVersion) return
 
@@ -54,6 +58,7 @@ export function useSettingsSummaries() {
     const sync = results[3].status === 'fulfilled' ? results[3].value : null
     const wecom = results[4].status === 'fulfilled' ? results[4].value : null
     void (results[5].status === 'fulfilled' ? results[5].value : null)
+    const pack = results[6].status === 'fulfilled' ? results[6].value : null
 
     const mcpActive = mcp.filter((s) => s.is_active).length
     Object.assign(summaries.mcp, {
@@ -67,35 +72,45 @@ export function useSettingsSummaries() {
       state: providers.length ? 'ok' : 'idle',
     })
 
-    // 系统联摘要：优先同步下次时刻 → 目录体积 → 外观
-    let systemTail = appearanceTail()
+    // 系统联摘要：版本号优先露出；同步时刻 / 目录体积作次级
+    let systemTail = `v${APP_VERSION}`
     let systemState: RailMark = 'ok'
     if (sync) {
       const on = sync.enabled_intraday || sync.enabled_eod
       const eod = `${String(sync.eod_hour).padStart(2, '0')}:${String(sync.eod_minute).padStart(2, '0')}`
       if (on) {
-        systemTail = sync.enabled_eod ? eod : `每 ${sync.interval_minutes} 分`
+        systemTail = `v${APP_VERSION} · ${sync.enabled_eod ? eod : `每 ${sync.interval_minutes} 分`}`
         systemState = 'ok'
       } else if (dataLoc) {
-        systemTail = formatBytes(dataLoc.market_bytes)
+        systemTail = `v${APP_VERSION} · ${formatBytes(dataLoc.market_bytes)}`
         systemState = dataLoc.needed_bootstrap ? 'idle' : 'ok'
       } else {
-        systemTail = '未开'
+        systemTail = `v${APP_VERSION}`
         systemState = 'idle'
       }
     } else if (dataLoc) {
-      systemTail = formatBytes(dataLoc.market_bytes)
+      systemTail = `v${APP_VERSION} · ${formatBytes(dataLoc.market_bytes)}`
       systemState = dataLoc.needed_bootstrap ? 'idle' : 'ok'
     }
     if (wecom && !wecom.configured && systemState === 'ok' && sync && !(sync.enabled_intraday || sync.enabled_eod)) {
       systemState = 'idle'
     }
     Object.assign(summaries.system, { tail: systemTail, state: systemState })
+
+    if (pack) {
+      Object.assign(summaries.pack, {
+        tail: pack.can_pack ? `v${pack.version}` : '未编译',
+        state: pack.can_pack ? 'ok' : 'idle',
+      })
+    } else {
+      Object.assign(summaries.pack, { tail: '—', state: 'idle' })
+    }
   }
 
   function refreshAppearanceLocal(): void {
-    if (summaries.system.tail === appearanceTail() || !summaries.system.tail) {
-      summaries.system.tail = appearanceTail()
+    // 外观变更时不冲掉版本前缀
+    if (!summaries.system.tail.startsWith('v')) {
+      summaries.system.tail = `v${APP_VERSION} · ${appearanceTail()}`
     }
     summaries.system.state = 'ok'
   }

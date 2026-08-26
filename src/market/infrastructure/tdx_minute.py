@@ -91,6 +91,9 @@ def _rows_to_frame(rows: Any, day: str) -> pd.DataFrame:
     )
     if prices.isna().any() or volumes.isna().any():
         raise TdxMinuteError(f"{day} 历史分时含无法解析的价格或成交量")
+    if float(prices.max()) <= 0:
+        # 停牌日 TDX 照样回满 240 行、价格全 0；当成有数据会画出一条 0 元分时。
+        return _empty_frame()
 
     return pd.DataFrame(
         {

@@ -7,33 +7,43 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.market.domain.source_contract import CAPITAL_FLOW_CONTRACT
 from src.market.infrastructure.adapters.base import AdapterError, MarketAdapter
 from src.market.infrastructure.adapters.types import (
     AdapterMeta,
-    DAILY_REQUIRED_COLUMNS,
     LANE_ADJUST_FACTOR,
+    LANE_CAPITAL_FLOW,
     LANE_HIST_DAILY,
     LANE_MINUTE,
     LANE_SPOT_BATCH,
-    ProbeResult,
+    ProbeHint,
 )
+from src.market.infrastructure.pipeline import NormalizeError, normalize
 from src.market.infrastructure.sources import SinaSource, SourceError
 from src.market.infrastructure.store import normalize_code, to_sina_symbol
 
 
 class SinaAdapter(MarketAdapter):
-    """新浪直连 —— hist_daily / spot_batch / adjust_factor / minute_bars。"""
+    """新浪直连 —— hist_daily / spot_batch / adjust_factor / minute_bars / capital_flow。"""
 
     meta = AdapterMeta(
         id="sina",
         label="新浪直连",
-        lanes=(LANE_HIST_DAILY, LANE_SPOT_BATCH, LANE_ADJUST_FACTOR, LANE_MINUTE),
+        lanes=(
+            LANE_HIST_DAILY,
+            LANE_SPOT_BATCH,
+            LANE_ADJUST_FACTOR,
+            LANE_MINUTE,
+            # 资金流回退位：注册表里本适配器排在东财之后，天然是第二顺位，
+            # 不要为此调顺序。只覆盖主力 / 超大单两组，缺大中小单拆分。
+            LANE_CAPITAL_FLOW,
+        ),
         description=(
             "一次拉全历史，自带流通股本与换手率（小数）；分钟线直连 quotes.sina.cn；"
-            "日 K / 复权不经 akshare。"
+            "日 K / 复权不经 akshare；资金流为东财的回退源（仅主力 / 超大单）。"
         ),
-        # 取自 sina.HIST_URL / FACTOR_URL 的实际站点；现价另走 hq.sinajs.cn。
         base_url="https://finance.sina.com.cn",
+        probe_hints={LANE_HIST_DAILY: ProbeHint(note="full")},
     )
 
     def __init__(self, source: SinaSource | None = None) -> None:
@@ -48,10 +58,6 @@ class SinaAdapter(MarketAdapter):
             raise AdapterError(str(exc)) from exc
         return self._normalize_daily(frame)
 
-    def fetch_spot_sample(self, codes: list[str] | None = None) -> pd.DataFrame:
-        sample = codes or ["600519", "000001"]
-        return self.fetch_spot(sample)
-
     def fetch_live_quotes(
         self,
         codes: list[str],
@@ -59,37 +65,15 @@ class SinaAdapter(MarketAdapter):
         instrument_types: dict[str, str] | None = None,
         batch_size: int = 400,
     ) -> list[dict]:
-        """顶栏/列表富行情：含 name、prev_close、pct；每条带 code。"""
         from src.market import sina
 
-        types = instrument_types or {}
-        normalized = [normalize_code(c) for c in codes if str(c).strip()]
-        if not normalized:
-            return []
-        symbol_to_code = {
-            to_sina_symbol(code, instrument_type=types.get(code, "STOCK")): code
-            for code in normalized
-        }
-        symbols = list(symbol_to_code)
-        # sina.fetch_live_hq 内部已按 SPOT_BATCH_SIZE 分批
-        _ = batch_size
-        try:
-            rows = sina.fetch_live_hq(symbols)
-        except Exception as exc:
-            raise AdapterError(
-                f"新浪 live 行情异常：{type(exc).__name__}: {exc}"
-            ) from exc
-        out: list[dict] = []
-        for row in rows:
-            code = symbol_to_code.get(str(row.get("symbol") or ""))
-            if not code:
-                continue
-            item = dict(row)
-            item["code"] = code
-            out.append(item)
-        if not out:
-            raise AdapterError("新浪 live 行情为空")
-        return out
+        return self._live_via_symbols(
+            codes,
+            sina.fetch_live_hq,
+            instrument_types=instrument_types,
+            batch_size=batch_size,
+            who="新浪",
+        )
 
     def fetch_spot(
         self,
@@ -98,69 +82,16 @@ class SinaAdapter(MarketAdapter):
         instrument_types: dict[str, str] | None = None,
         batch_size: int = 400,
     ) -> pd.DataFrame:
-        """批量现价 → 归一列 code/date/open/high/low/close/volume/amount。"""
         from src.market import sina
 
-        types = instrument_types or {}
-        normalized = [normalize_code(c) for c in codes if str(c).strip()]
-        if not normalized:
-            return pd.DataFrame(
-                columns=[
-                    "code",
-                    "date",
-                    "open",
-                    "high",
-                    "low",
-                    "close",
-                    "volume",
-                    "amount",
-                ]
-            )
-
-        symbol_to_code = {
-            to_sina_symbol(code, instrument_type=types.get(code, "STOCK")): code
-            for code in normalized
-        }
-        symbols = list(symbol_to_code)
-        frames: list[pd.DataFrame] = []
-        errors: list[str] = []
-        size = max(1, batch_size)
-        for start in range(0, len(symbols), size):
-            batch = symbols[start : start + size]
-            try:
-                spot = sina.fetch_spot(batch)
-            except sina.SinaFetchError as exc:
-                errors.append(f"{batch[0]}…: {exc}")
-                continue
-            except Exception as exc:
-                errors.append(f"{batch[0]}…: {type(exc).__name__}: {exc}")
-                continue
-            if spot is None or spot.empty:
-                continue
-            out = spot.copy()
-            out["code"] = out["symbol"].map(symbol_to_code)
-            out = out.dropna(subset=["code"])
-            if not out.empty:
-                frames.append(out)
-
-        if not frames:
-            detail = "；".join(errors[-3:]) if errors else "空数据"
-            raise AdapterError(f"新浪现价失败：{detail}")
-        merged = pd.concat(frames, ignore_index=True)
-        for col in ("open", "high", "low", "close", "volume", "amount"):
-            merged[col] = pd.to_numeric(merged[col], errors="coerce")
-        return merged[
-            ["code", "date", "open", "high", "low", "close", "volume", "amount"]
-        ].reset_index(drop=True)
-
-    def probe(self, lane: str, *, code: str = "600519") -> ProbeResult:
-        """hist_daily：新浪接口一次就是全历史，探测仍走全量但只校验形状。"""
-        if lane != LANE_HIST_DAILY:
-            return super().probe(lane)
-        result = super().probe(lane, code=code)
-        if result.ok:
-            result.extra = {**(result.extra or {}), "probe_window": "full"}
-        return result
+        return self._spot_via_symbols(
+            codes,
+            sina.fetch_spot,
+            instrument_types=instrument_types,
+            batch_size=batch_size,
+            who="新浪",
+            fetch_error_type=sina.SinaFetchError,
+        )
 
     def fetch_adjust_factors(self, code: str) -> pd.DataFrame:
         try:
@@ -178,7 +109,6 @@ class SinaAdapter(MarketAdapter):
         days: int = 1,
         trade_date: str | None = None,
     ) -> pd.DataFrame:
-        """分钟 K（新浪 ``CN_MarketDataService.getKLineData``，不经 akshare）。"""
         from src.market import sina
 
         plain = normalize_code(code)
@@ -197,21 +127,38 @@ class SinaAdapter(MarketAdapter):
                 f"新浪分钟线 {plain} 失败：{type(exc).__name__}: {exc}"
             ) from exc
 
-    @staticmethod
-    def _normalize_daily(frame: pd.DataFrame) -> pd.DataFrame:
-        """新浪直连已产出标准列名；turnover 已是小数，勿再 /100。"""
-        if frame is None or frame.empty:
-            raise AdapterError("新浪日线为空")
-        out = frame.copy()
-        missing = [c for c in DAILY_REQUIRED_COLUMNS if c not in out.columns]
-        if missing:
-            raise AdapterError(f"新浪日线缺列：{missing}")
-        for col in ("open", "high", "low", "close", "volume", "amount"):
-            out[col] = pd.to_numeric(out[col], errors="coerce")
-        if "turnover" in out.columns:
-            out["turnover"] = pd.to_numeric(out["turnover"], errors="coerce")
-        if "outstanding_share" in out.columns:
-            out["outstanding_share"] = pd.to_numeric(
-                out["outstanding_share"], errors="coerce"
+    def fetch_capital_flow(self, code: str) -> pd.DataFrame:
+        """个股资金流（东财之后的回退源）。
+
+        新浪只有主力（``netamount`` / ``ratioamount``）与超大单（``r0_net`` /
+        ``r0_ratio``）两组，大 / 中 / 小单六列**整列缺席**——上游看到的是这几个
+        列名根本不在返回表里（不是 NaN 列），按 ``in frame.columns`` 判断即可。
+        口径转换（新浪小数 → 仓内百分数）全部由 ``CAPITAL_FLOW_CONTRACT`` 的
+        ``RATIO_TO_PERCENT`` 声明，这里一行乘除都不写。
+        """
+        from src.market import sina
+
+        plain = normalize_code(code)
+        symbol = to_sina_symbol(plain)
+        try:
+            raw = sina.fetch_capital_flow(symbol)
+        except sina.SinaFetchError as exc:
+            raise AdapterError(f"新浪资金流 {plain} 失败：{exc}") from exc
+        except Exception as exc:
+            raise AdapterError(
+                f"新浪资金流 {plain} 失败：{type(exc).__name__}: {exc}"
+            ) from exc
+        try:
+            return normalize(
+                raw,
+                CAPITAL_FLOW_CONTRACT,
+                who=f"新浪 {plain} 资金流",
+                empty_label=f"新浪 {plain} 资金流",
             )
-        return out.reset_index(drop=True)
+        except NormalizeError as exc:
+            raise AdapterError(str(exc)) from exc
+
+    @classmethod
+    def _normalize_daily(cls, frame: pd.DataFrame) -> pd.DataFrame:
+        """新浪直连已产出标准列名；turnover 已是小数，勿再 /100。"""
+        return cls._normalize_daily_frame(frame, who="新浪")

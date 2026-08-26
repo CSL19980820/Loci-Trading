@@ -22,6 +22,9 @@
 - **涨停买不进**：开盘即涨停且全天一字（high == low）时无法成交，跳过
   该信号而不是假装买到了。
 - **跌停卖不出**：触发退出条件当天若是一字跌停，顺延到下一个能成交的日子。
+  一字**涨停**不在此列——涨停价上有买盘，卖得掉。
+- **跳空不按限价成交**：低开穿过止损位只能按开盘价出，高开越过止盈价则卖
+  在更高的开盘价。按限价记账会让偏差单向堆在最差的那批交易上。
 - **停牌**：成交量为 0 的交易日不可成交。
 - **成本**：双边佣金 + 卖出印花税 + 滑点。个人账户单边万三、印花税千一，
   一趟下来约 0.2-0.3%，对短持有期策略足以吃掉大半利润。
@@ -29,7 +32,8 @@
 ## 口径
 
 单笔信号独立评估，不做组合层面的资金约束——先回答"这个战法本身有没有
-alpha"，再谈"用多少仓位去打"。组合级资金曲线由 equity 模块另做。
+alpha"，再谈"用多少仓位去打"。诊断用顺序复利曲线见 ``performance``；
+真实槽位组合见 ``research_portfolio``。
 """
 from __future__ import annotations
 
@@ -39,69 +43,18 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-#: 退出原因。用于归因："赚的钱是止盈拿到的还是到期拿到的"含义完全不同。
-EXIT_REASONS = ("hold_expired", "stop_loss", "take_profit", "data_end")
+from src.backtest.application.metrics import compute_metrics
+from src.backtest.application.performance import compute_trade_performance
+from src.backtest.domain.models import EXIT_REASONS, BacktestConfig, Trade
 
-
-@dataclass
-class BacktestConfig:
-    """回测参数。默认值面向短持有期的突破型战法。"""
-
-    hold_days: int = 3
-    """固定持有交易日数。到期按收盘价了结。"""
-
-    stop_loss_pct: float | None = -6.0
-    """止损线（相对开仓价的百分比，负数）。None 表示不设。"""
-
-    take_profit_pct: float | None = None
-    """止盈线。None 表示只靠持有期到期了结。"""
-
-    commission_bps: float = 3.0
-    """单边佣金，基点。万三 = 3bps。"""
-
-    stamp_duty_bps: float = 10.0
-    """卖出印花税，基点。千一 = 10bps，只在卖出收取。"""
-
-    slippage_bps: float = 5.0
-    """单边滑点，基点。开盘成交的实际价格通常比看到的差一点。"""
-
-    allow_limit_up_entry: bool = False
-    """是否允许在一字涨停日入场。默认否——那天根本买不到。"""
-
-    benchmark: str | None = "000300"
-    """基准指数代码，用于算超额收益。None 表示不比。"""
-
-    def round_trip_cost_pct(self) -> float:
-        """一趟买卖的总成本（百分比）。"""
-        return (
-            self.commission_bps * 2 + self.stamp_duty_bps + self.slippage_bps * 2
-        ) / 100.0
-
-
-@dataclass
-class Trade:
-    """一笔完整的信号→入场→退出记录。"""
-
-    code: str
-    signal_date: str
-    entry_date: str
-    entry_price: float
-    exit_date: str
-    exit_price: float
-    hold_days: int
-    gross_return_pct: float
-    net_return_pct: float
-    mae_pct: float
-    mfe_pct: float
-    exit_reason: str
-    benchmark_return_pct: float | None = None
-
-    @property
-    def alpha_pct(self) -> float | None:
-        """相对基准的超额。绝对收益会被大盘涨跌掩盖真实水平。"""
-        if self.benchmark_return_pct is None:
-            return None
-        return round(self.net_return_pct - self.benchmark_return_pct, 4)
+__all__ = [
+    "EXIT_REASONS",
+    "BacktestConfig",
+    "BacktestResult",
+    "Trade",
+    "compute_metrics",
+    "run_backtest",
+]
 
 
 @dataclass
@@ -111,6 +64,7 @@ class BacktestResult:
     trades: list[Trade] = field(default_factory=list)
     skipped: dict[str, int] = field(default_factory=dict)
     metrics: dict[str, Any] = field(default_factory=dict)
+    performance: dict[str, Any] = field(default_factory=dict)
 
     def to_frame(self) -> pd.DataFrame:
         if not self.trades:
@@ -144,6 +98,27 @@ def _forward_extreme(panel: pd.DataFrame, window: int, *, highest: bool) -> pd.D
         window, min_periods=1
     ).min()
     return rolled.shift(-(window - 1))
+
+
+def _one_word_masks(
+    high_a: np.ndarray, low_a: np.ndarray, close_a: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """把一字板拆成涨停一字与跌停一字。
+
+    方向由收盘与前收比较得出。一字涨停买不进但**卖得掉**（涨停价上有买盘），
+    一字跌停才是卖不出——两者共用一个方向无关的掩码，会把一字涨停日的了结
+    推到下一个交易日按收盘价结算，系统性低估打板类策略。
+
+    首行没有前收，方向未知时两边都算上，保持"不确定就不撮合"的保守口径。
+    """
+    one_word = np.isclose(high_a, low_a) & np.isfinite(high_a)
+    prev_close = np.full_like(close_a, np.nan)
+    prev_close[1:] = close_a[:-1]
+    unknown = ~np.isfinite(prev_close)
+    return (
+        one_word & (unknown | (close_a > prev_close)),
+        one_word & (unknown | (close_a < prev_close)),
+    )
 
 
 def run_backtest(
@@ -185,7 +160,7 @@ def run_backtest(
     volume_a = volume.to_numpy(dtype=float) if volume is not None else None
 
     # 一字板：全天最高等于最低。涨停一字买不进、跌停一字卖不出。
-    one_word = np.isclose(high_a, low_a) & np.isfinite(high_a)
+    one_word_up, one_word_down = _one_word_masks(high_a, low_a, close_a)
 
     # 三种入场时点对应两个自由度：哪一天、用哪个价。
     #   open      当日开盘（9:25 竞价筛出来的，开盘就能买）
@@ -226,7 +201,7 @@ def run_backtest(
         if volume_a is not None and not volume_a[entry_idx, col] > 0:
             skip("入场日停牌")
             continue
-        if one_word[entry_idx, col] and not cfg.allow_limit_up_entry:
+        if one_word_up[entry_idx, col] and not cfg.allow_limit_up_entry:
             skip("入场日一字板买不进")
             continue
 
@@ -262,7 +237,8 @@ def run_backtest(
             high_a=high_a,
             low_a=low_a,
             close_a=close_a,
-            one_word=one_word,
+            open_a=open_a,
+            one_word_down=one_word_down,
             volume_a=volume_a,
             last_index=len(dates) - 1,
         )
@@ -306,6 +282,7 @@ def run_backtest(
     result.trades = trades
     result.skipped = skipped
     result.metrics = compute_metrics(trades)
+    result.performance = compute_trade_performance(trades)
     return result
 
 
@@ -319,7 +296,8 @@ def _resolve_exit(
     high_a: np.ndarray,
     low_a: np.ndarray,
     close_a: np.ndarray,
-    one_word: np.ndarray,
+    open_a: np.ndarray,
+    one_word_down: np.ndarray,
     volume_a: np.ndarray | None,
     last_index: int,
 ) -> tuple[int | None, float, str]:
@@ -342,13 +320,15 @@ def _resolve_exit(
     for idx in range(entry_idx + 1, min(planned_exit, last_index) + 1):
         if stop_price is not None and low_a[idx, col] <= stop_price:
             price, resolved = _tradable_exit(
-                col, idx, stop_price, cfg, close_a, one_word, volume_a, last_index
+                col, idx, stop_price, cfg, close_a, one_word_down, volume_a, last_index,
+                open_a=open_a, limit_kind="stop",
             )
             if resolved is not None:
                 return resolved, price, "stop_loss"
         if target_price is not None and high_a[idx, col] >= target_price:
             price, resolved = _tradable_exit(
-                col, idx, target_price, cfg, close_a, one_word, volume_a, last_index
+                col, idx, target_price, cfg, close_a, one_word_down, volume_a, last_index,
+                open_a=open_a, limit_kind="take",
             )
             if resolved is not None:
                 return resolved, price, "take_profit"
@@ -358,11 +338,32 @@ def _resolve_exit(
         return last_index, float(close_a[last_index, col]), "data_end"
 
     price, resolved = _tradable_exit(
-        col, planned_exit, None, cfg, close_a, one_word, volume_a, last_index
+        col, planned_exit, None, cfg, close_a, one_word_down, volume_a, last_index
     )
     if resolved is None:
         return None, 0.0, "hold_expired"
     return resolved, price, "hold_expired"
+
+
+def _limit_fill_price(
+    limit_price: float,
+    open_a: np.ndarray | None,
+    idx: int,
+    col: int,
+    kind: str | None,
+) -> float:
+    """触发日的真实成交价。
+
+    "当日最低跌破止损价"只说明能成交，不代表能成交在止损价上——跳空低开
+    穿过止损位时只能按开盘价出，按止损价记账等于给回测注水，而且偏差全落在
+    最差的那批交易上，最大回撤与盈亏比会一起失真。止盈反向同理。
+    """
+    if open_a is None or kind is None:
+        return limit_price
+    open_price = float(open_a[idx, col])
+    if not np.isfinite(open_price) or open_price <= 0:
+        return limit_price
+    return min(limit_price, open_price) if kind == "stop" else max(limit_price, open_price)
 
 
 def _tradable_exit(
@@ -371,18 +372,22 @@ def _tradable_exit(
     limit_price: float | None,
     cfg: BacktestConfig,
     close_a: np.ndarray,
-    one_word: np.ndarray,
+    one_word_down: np.ndarray,
     volume_a: np.ndarray | None,
     last_index: int,
+    *,
+    open_a: np.ndarray | None = None,
+    limit_kind: str | None = None,
 ) -> tuple[float, int | None]:
     """从 idx 起找第一个真的能成交的日子。一字跌停/停牌顺延。"""
     for candidate in range(idx, last_index + 1):
         suspended = volume_a is not None and not volume_a[candidate, col] > 0
-        if suspended or one_word[candidate, col]:
+        if suspended or one_word_down[candidate, col]:
             continue
-        price = limit_price if candidate == idx and limit_price is not None else close_a[
-            candidate, col
-        ]
+        if candidate == idx and limit_price is not None:
+            price = _limit_fill_price(limit_price, open_a, candidate, col, limit_kind)
+        else:
+            price = close_a[candidate, col]
         if not np.isfinite(price):
             continue
         return float(price), candidate
@@ -399,80 +404,3 @@ def _benchmark_return(
     if not np.isfinite(start) or start <= 0 or not np.isfinite(end):
         return None
     return round((end / start - 1) * 100, 4)
-
-
-def compute_metrics(trades: list[Trade]) -> dict[str, Any]:
-    """把交易列表压成一组可比较的绩效指标。
-
-    刻意同时给出绝对收益与市场调整后的超额：项目此前那份手工回测就
-    发现过"观察档绝对 +0.3% 看着很差，市场调整后其实是 +1.9% 正超额"
-    ——只看绝对收益会把择时问题误判成选股问题。
-
-    ``data_end`` 交易保留在结果明细中供审计，但未覆盖完整持有期，不能
-    混入收益、胜率或 MFE/MAE；数量通过 ``data_end_trades`` 单独披露。
-    """
-    evaluable = [trade for trade in trades if trade.exit_reason != "data_end"]
-    data_end_trades = len(trades) - len(evaluable)
-    if not evaluable:
-        if not data_end_trades:
-            return {"trades": 0}
-        return {"trades": 0, "data_end_trades": data_end_trades}
-
-    net = np.array([t.net_return_pct for t in evaluable], dtype=float)
-    gross = np.array([t.gross_return_pct for t in evaluable], dtype=float)
-    mae = np.array([t.mae_pct for t in evaluable], dtype=float)
-    mfe = np.array([t.mfe_pct for t in evaluable], dtype=float)
-    hold = np.array([t.hold_days for t in evaluable], dtype=float)
-
-    wins = net[net > 0]
-    losses = net[net <= 0]
-    win_rate = len(wins) / len(net) * 100
-
-    profit_factor = None
-    if losses.size and abs(losses.sum()) > 1e-9:
-        profit_factor = round(float(wins.sum() / abs(losses.sum())), 3)
-    elif wins.size:
-        profit_factor = float("inf")
-
-    alphas = [t.alpha_pct for t in evaluable if t.alpha_pct is not None]
-
-    metrics: dict[str, Any] = {
-        "trades": len(evaluable),
-        "win_rate": round(float(win_rate), 2),
-        "wins": int(len(wins)),
-        "losses": int(len(losses)),
-        "avg_gross_return": round(float(gross.mean()), 4),
-        "avg_net_return": round(float(net.mean()), 4),
-        "median_net_return": round(float(np.median(net)), 4),
-        "best": round(float(net.max()), 4),
-        "worst": round(float(net.min()), 4),
-        "expectancy": round(float(net.mean()), 4),
-        "profit_factor": profit_factor,
-        "avg_win": round(float(wins.mean()), 4) if wins.size else None,
-        "avg_loss": round(float(losses.mean()), 4) if losses.size else None,
-        "avg_mfe": round(float(mfe.mean()), 4),
-        "avg_mae": round(float(mae.mean()), 4),
-        "avg_hold_days": round(float(hold.mean()), 2),
-        "exit_reasons": _count_by(evaluable, lambda t: t.exit_reason),
-        "data_end_trades": data_end_trades,
-    }
-
-    if alphas:
-        alpha_array = np.array(alphas, dtype=float)
-        metrics["avg_alpha"] = round(float(alpha_array.mean()), 4)
-        metrics["alpha_win_rate"] = round(float((alpha_array > 0).mean() * 100), 2)
-
-    # 小样本时给出提示，避免把 7 笔交易的均值当成结论。
-    if len(evaluable) < 30:
-        metrics["caution"] = (
-            f"样本仅 {len(evaluable)} 笔，统计量不稳定，不宜据此外推"
-        )
-    return metrics
-
-
-def _count_by(trades: list[Trade], key) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for trade in trades:
-        value = key(trade)
-        out[value] = out.get(value, 0) + 1
-    return out

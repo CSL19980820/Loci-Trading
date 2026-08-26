@@ -4,11 +4,8 @@
  * 红/绿只用于涨跌标点与成交量柱，不整条线染涨跌色。
  */
 import type { MinuteBar } from '@/shared/api/quant_market'
-
-const UP = '#c41e3a'
-const DOWN = '#128a6e'
-const LINE = '#2563eb'
-const AVG = '#d97706'
+import { readChartTokens, withAlpha, type ChartTokens } from '@/shared/lib/chartTokens'
+import { compactNumber } from '@/shared/lib/format'
 
 function fmtPx(v: unknown): string {
   const n = Number(v)
@@ -33,11 +30,7 @@ export function formatMinutePxPct(price: number, prevClose: number | null): stri
 }
 
 function fmtVol(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(1)}万`
-  return n.toFixed(0)
+  return compactNumber(v)
 }
 
 function timeLabel(dt: string): string {
@@ -143,8 +136,15 @@ function markLabel(text: string, bg: string): Record<string, unknown> {
 export function buildMinuteOption(opts: {
   bars: MinuteBar[]
   prevClose: number | null
+  /** 主题 token 快照；不传则即时读取 */
+  tokens?: ChartTokens
 }): Record<string, unknown> {
   const { bars, prevClose } = opts
+  const t = opts.tokens ?? readChartTokens()
+  const UP = t.up
+  const DOWN = t.down
+  const LINE = t.info
+  const AVG = t.warn
   const times = bars.map((b) => timeLabel(String(b.datetime || '')))
   const closes = bars.map((b) => Number(b.close))
   const avgs = bars.map((b) => saneMinuteAvg(Number(b.avg_price), Number(b.close)))
@@ -253,7 +253,7 @@ export function buildMinuteOption(opts: {
         boundaryGap: false,
         axisLabel: { show: false },
         axisTick: { show: false },
-        axisLine: { lineStyle: { color: '#c5ced9' } },
+        axisLine: { lineStyle: { color: t.rule } },
         splitLine: { show: false },
       },
       {
@@ -262,13 +262,13 @@ export function buildMinuteOption(opts: {
         gridIndex: 1,
         boundaryGap: false,
         axisLabel: {
-          color: '#5b6b7c',
+          color: t.mist,
           fontSize: 10,
           interval: (_: number, value: string) =>
             value === '09:30' || value === '11:30' || value === '13:00' || value === '15:00',
         },
         axisTick: { show: false },
-        axisLine: { lineStyle: { color: '#c5ced9' } },
+        axisLine: { lineStyle: { color: t.rule } },
       },
     ],
     yAxis: [
@@ -277,7 +277,7 @@ export function buildMinuteOption(opts: {
         gridIndex: 0,
         min: priceAxis?.min,
         max: priceAxis?.max,
-        axisLabel: { color: '#5b6b7c', fontSize: 10, formatter: (v: number) => fmtPx(v) },
+        axisLabel: { color: t.mist, fontSize: 10, fontFamily: t.mono, formatter: (v: number) => fmtPx(v) },
         splitLine: { lineStyle: { color: 'rgba(213,220,230,0.55)', type: 'dashed' } },
       },
       {
@@ -306,8 +306,8 @@ export function buildMinuteOption(opts: {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: `${LINE}28` },
-              { offset: 1, color: `${LINE}00` },
+              { offset: 0, color: withAlpha(LINE, 0.16) },
+              { offset: 1, color: withAlpha(LINE, 0) },
             ],
           },
         },
@@ -316,11 +316,11 @@ export function buildMinuteOption(opts: {
             ? {
                 silent: true,
                 symbol: 'none',
-                lineStyle: { type: 'dashed', width: 1, color: '#94a3b8' },
+                lineStyle: { type: 'dashed', width: 1, color: t.mist },
                 label: {
                   position: 'end',
                   formatter: () => fmtPx(prevClose),
-                  color: '#5b6b7c',
+                  color: t.mist,
                   fontSize: 10,
                 },
                 data: [{ yAxis: prevClose }],

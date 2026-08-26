@@ -45,7 +45,10 @@ function markCustom(): void {
   }
 }
 
-function insertToken(field: 'header' | 'intro' | 'pick', token: string): void {
+function insertToken(
+  field: 'header' | 'intro' | 'pick' | 'skill_pick',
+  token: string,
+): void {
   markCustom()
   screenTemplate.value = {
     ...screenTemplate.value,
@@ -154,6 +157,27 @@ function resetTemplate(): void {
         <el-col :xs="24" :sm="12" :md="6">
           <el-form-item label="无涨跌幅">
             <el-input v-model="screenTemplate.pick_no_pct" placeholder="{name} {code}" />
+          </el-form-item>
+        </el-col>
+        <el-col :xs="24" :md="12">
+          <el-form-item label="技能·每只（含说明）">
+            <el-input
+              v-model="screenTemplate.skill_pick"
+              placeholder="{name} {code} {pct} + {note}"
+              @change="onCustomFieldEdit"
+            />
+            <div class="token-row">
+              <el-button size="small" @click="insertToken('skill_pick', '{note}')">{note}</el-button>
+              <span class="hint">说明 ≤40 字</span>
+            </div>
+          </el-form-item>
+        </el-col>
+        <el-col :xs="24" :sm="12" :md="6">
+          <el-form-item label="技能·无涨跌幅">
+            <el-input
+              v-model="screenTemplate.skill_pick_no_pct"
+              placeholder="{name} {code} + {note}"
+            />
           </el-form-item>
         </el-col>
         <el-col :xs="24" :sm="12" :md="6">

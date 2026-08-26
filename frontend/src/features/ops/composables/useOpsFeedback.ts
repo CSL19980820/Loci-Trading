@@ -31,7 +31,7 @@ export function createOpsFeedback(): OpsFeedback {
           ? caught.message
           : caught instanceof Error
             ? caught.message
-            : '请求失败'
+            : '这一步没做成，确认本机服务还在运行'
       return null
     } finally {
       pending -= 1

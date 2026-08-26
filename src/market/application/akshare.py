@@ -11,11 +11,16 @@ from src.market.infrastructure.akshare_tools import DEFAULT_BATCH_PAGE, MAX_BATC
 
 
 def discover_stock_capabilities() -> list[dict[str, Any]]:
-    from src.market.infrastructure.akshare_catalog import (
-        discover_stock_capabilities as _discover_stock_capabilities,
-    )
+    """本机 AkShare 目录（读路径）。
 
-    return _discover_stock_capabilities()
+    走 ``catalog_entries()`` 的进程内缓存：同一进程里 akshare 版本不会变，
+    ``vars(akshare)`` 全量反射一次就够，别让每个 GET 请求重做四百次
+    ``inspect.signature`` / docstring 解析。换了 akshare 版本用既有的
+    ``clear_catalog_cache()`` 失效，不另造机制。
+    """
+    from src.market.infrastructure.akshare_tools import catalog_entries
+
+    return catalog_entries()
 
 
 def probe_stock_capability(name: str, params: dict[str, Any]) -> dict[str, Any]:

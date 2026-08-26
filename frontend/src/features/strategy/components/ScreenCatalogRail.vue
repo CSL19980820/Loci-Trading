@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import { pct } from '@/shared/lib/format'
 import { sampleConfidence, winRateDisplayTone, winRateText } from '@/shared/lib/winrate'
 
 import type { ScreenCatalogItem } from '../composables/useScreenCatalog'
@@ -29,10 +30,9 @@ const visible = computed(() => {
   )
 })
 
+/** 战法目录用一位小数，够看趋势即可。 */
 function fmtPct(value: number | null | undefined): string {
-  if (value == null) return '—'
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(1)}%`
+  return pct(value, 1)
 }
 
 /** 样本不足时不刷文案，右侧只留 —；够数才出胜率·均收益。 */

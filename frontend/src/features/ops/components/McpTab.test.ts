@@ -9,8 +9,12 @@ import { createOpsFeedback, provideOpsFeedback } from '../composables/useOpsFeed
 vi.mock('@/shared/api/quant', () => ({
   CapabilityUnavailableError: class CapabilityUnavailableError extends Error {},
   deleteMcpServer: vi.fn(),
+  getMcpQuota: vi.fn(() => Promise.resolve(null)),
   getMcpServers: vi.fn(),
+  patchWudaoSettings: vi.fn(),
+  refreshMcpTools: vi.fn(),
   saveMcpServer: vi.fn(),
+  saveWudaoMcp: vi.fn(),
   toggleMcpServer: vi.fn(),
 }))
 
@@ -26,6 +30,7 @@ const stubs = {
   SettingsPanel: { props: ['receipt'], template: '<div>{{ receipt[0].value }}<slot /></div>' },
   EmptyState: { template: '<div><slot /></div>' },
   McpToolsDialog: true,
+  WudaoMcpDialog: true,
   'el-button': {
     emits: ['click'],
     template: '<button @click="$emit(\'click\', $event)"><slot /></button>',
@@ -42,6 +47,11 @@ const stubs = {
   },
   'el-checkbox': true,
   'el-tag': true,
+  'el-alert': true,
+  'el-date-picker': true,
+  'el-switch': true,
+  'el-input-number': true,
+  'el-tooltip': { template: '<div><slot /></div>' },
 }
 
 function mountTab() {

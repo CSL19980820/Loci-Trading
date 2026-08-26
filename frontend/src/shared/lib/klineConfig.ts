@@ -18,6 +18,15 @@ export type KlineHoverPayload = {
 /** 通达信常用默认均线；可在设置里改成任意周期（如 5/13/21） */
 export const DEFAULT_MA_PERIODS: number[] = [5, 10, 20, 30, 60, 120, 250]
 
+/**
+ * 三窗（主图 / 量能 / 副图）的 grid 顶部位置，单位 %。
+ *
+ * 单一来源：ECharts 的 grid 和 HTML 读数浮层都从这里取。此前两边各写一份
+ * （grid 52%/70%、浮层 51%/68.5%），且浮层的百分比还锚在带 padding 的外框上，
+ * 分母都不一样——两个读数条永远对不齐 K 线的窗口边界。
+ */
+export const KLINE_GRID_TOPS = { vol: 52, ind: 70 } as const
+
 export const MA_LINE_COLORS = [
   '#c41e3a',
   '#2563eb',

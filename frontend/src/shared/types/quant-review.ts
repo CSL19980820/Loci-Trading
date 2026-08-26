@@ -2,65 +2,6 @@
 // 与回测问的是两个不同问题：回测问"这套战法有没有 alpha"，
 // 复盘问"我自己做得怎么样"。
 
-export interface EquityPoint {
-  trade_date: string
-  holding_value: number
-  cash: number
-  total_equity: number
-  floating_pnl: number
-  realized_pnl_cum: number
-  drawdown_pct: number
-  benchmarks: Record<string, number>
-}
-
-export interface EquityCurve {
-  points: EquityPoint[]
-  metrics: Record<string, number | string | null>
-  /** anchored = 有资产快照校准；estimated = 绝对值仅供参考，形状仍可用 */
-  confidence: 'anchored' | 'estimated' | 'none'
-  note: string
-}
-
-export interface RoundTrip {
-  code: string
-  name: string
-  opened_on: string
-  closed_on: string | null
-  is_open: boolean
-  peak_shares: number
-  avg_cost: number
-  buy_amount: number
-  sell_amount: number
-  realized_pnl: number
-  return_pct: number | null
-  hold_days: number | null
-  mae_pct: number | null
-  mfe_pct: number | null
-  event_ids: string[]
-}
-
-export interface RoundTripSummary {
-  total: number
-  closed: number
-  open: number
-  realized_pnl?: number
-  win_rate?: number
-  avg_return_pct?: number
-  profit_factor?: number | null
-  avg_mae_pct?: number
-  avg_mfe_pct?: number
-  winner_avg_mae_pct?: number
-  loser_avg_mae_pct?: number
-  profit_give_back_pct?: number
-  avg_hold_days?: number
-  best_pct?: number
-  worst_pct?: number
-  hint?: string
-  caution?: string
-  by_code: Record<string, { name: string; count: number; realized_pnl: number }>
-  by_month: Record<string, { count: number; realized_pnl: number }>
-}
-
 export interface CandidateOutcome {
   candidate_id: string
   code: string
@@ -73,6 +14,8 @@ export interface CandidateOutcome {
   returns: Record<string, number | null>
   alpha: Record<string, number | null>
   max_favorable_pct: number | null
+  /** 选股日后观察窗最低→最高涨幅 %（不含选股日当天） */
+  swing_pct: number | null
   note: string
   tier?: string
   strategy_slug?: string

@@ -4,3 +4,5 @@
 @import "./style.components.css";
 @import "./style.content.css";
 @import "./style.tail.css";
+/* 主题最后加载：外观/主色需覆盖前面各层的 token 默认值 */
+@import "./style.theme.css";

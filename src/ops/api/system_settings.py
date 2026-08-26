@@ -7,7 +7,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from src.app.legacy.quant_common import DataLocationUpdate, market_store
+from src.ops.api.schemas import DataLocationUpdate
+from src.shared.api_deps import market_store
 
 
 class DesktopPrefsUpdate(BaseModel):

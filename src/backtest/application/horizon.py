@@ -85,39 +85,65 @@ def mark_day_offset(entry_timing: str, horizon: int) -> int:
     return entry_day_offset(entry_timing) + max(1, int(horizon))
 
 
-def aggregate_returns(values: Sequence[float]) -> dict[str, Any] | None:
-    """仅数值聚合（单测/旧调用）；带极端事件请用 ``aggregate_horizon_events``。"""
-    if not values:
-        return None
-    arr = np.asarray(values, dtype=float)
-    wins = int(np.sum(arr > 0))
-    return {
-        "n": int(arr.size),
-        "win_rate": round(float(wins / arr.size * 100.0), 2),
-        "avg": round(float(arr.mean()), 4),
-        "best": round(float(arr.max()), 4),
-        "worst": round(float(arr.min()), 4),
-        "best_event": None,
-        "worst_event": None,
-    }
-
-
 def aggregate_horizon_events(events: Sequence[HorizonEvent]) -> dict[str, Any] | None:
+    """聚合 T+N 事件。不构造资金曲线——horizon 无真实持仓资金约束。"""
     if not events:
         return None
-    arr = np.asarray([e.return_pct for e in events], dtype=float)
-    wins = int(np.sum(arr > 0))
+    from src.backtest.application.metrics import summarize_return_array
+
+    high_stats = summarize_return_array([e.return_pct for e in events])
     best_ev = max(events, key=lambda e: e.return_pct)
     worst_ev = min(events, key=lambda e: e.return_pct)
-    return {
-        "n": int(arr.size),
-        "win_rate": round(float(wins / arr.size * 100.0), 2),
-        "avg": round(float(arr.mean()), 4),
+    body: dict[str, Any] = {
+        **high_stats,
         "best": round(float(best_ev.return_pct), 4),
         "worst": round(float(worst_ev.return_pct), 4),
         "best_event": best_ev.to_ref(),
         "worst_event": worst_ev.to_ref(),
+        "mark_basis": "high",
+        "mark_basis_note": (
+            "主收益用标记日最高÷选股日收盘，属乐观上沿，不可当成可稳定兑现成交价"
+        ),
+        "by_month": _horizon_by_month(events),
     }
+
+    close_vals = [
+        float(e.close_return_pct)
+        for e in events
+        if e.close_return_pct is not None and np.isfinite(e.close_return_pct)
+    ]
+    if close_vals:
+        close_stats = summarize_return_array(close_vals)
+        body["close_n"] = close_stats["n"]
+        body["close_avg"] = close_stats["avg"]
+        body["close_median"] = close_stats["median"]
+        body["close_win_rate"] = close_stats["win_rate"]
+        body["close_best"] = close_stats["best"]
+        body["close_worst"] = close_stats["worst"]
+        body["close_note"] = (
+            "标记日收盘÷选股日收盘；相对 high 口径更接近可兑现，仍非成交引擎净值"
+        )
+    return body
+
+
+def _horizon_by_month(events: Sequence[HorizonEvent]) -> list[dict[str, Any]]:
+    buckets: dict[str, list[float]] = {}
+    for event in events:
+        key = str(event.signal_date)[:7]
+        buckets.setdefault(key, []).append(float(event.return_pct))
+    rows: list[dict[str, Any]] = []
+    for period in sorted(buckets):
+        arr = np.asarray(buckets[period], dtype=float)
+        wins = int(np.sum(arr > 0))
+        rows.append(
+            {
+                "period": period,
+                "n": int(arr.size),
+                "win_rate": round(float(wins / arr.size * 100.0), 2),
+                "avg": round(float(arr.mean()), 4),
+            }
+        )
+    return rows
 
 
 def run_horizon_backtest(

@@ -21,6 +21,8 @@ export type HistoryRow = {
   capability: string
   tradeDate: string
   count: number
+  formalCount: number
+  watchCount: number
   items: ScreenCandidate[]
 }
 
@@ -89,6 +91,8 @@ const allRows = computed<HistoryRow[]>(() => {
       capability: name,
       tradeDate: date,
       count: items.length,
+      formalCount: items.filter((item) => item.decision === '精选').length,
+      watchCount: items.filter((item) => item.decision === '观察').length,
       items,
     }
   })
@@ -112,12 +116,12 @@ const columns = ref<BasicTableColumn[]>([
     formatter: (row) => String(row.tradeDate ?? '—'),
   },
   {
-    prop: 'count',
-    label: '股数',
-    width: 88,
+    prop: 'formalCount',
+    label: '正式 / 观察',
+    width: 120,
     align: 'center',
     headerAlign: 'center',
-    formatter: (row) => String(row.count ?? 0),
+    formatter: (row) => `${String(row.formalCount ?? 0)} / ${String(row.watchCount ?? 0)}`,
   },
   {
     prop: 'actions',
@@ -159,6 +163,7 @@ onMounted(() => {
 const detailColumns: BasicTableColumn[] = [
   { type: 'index', label: '#', width: 48, align: 'left' },
   { prop: 'code', label: '标的', minWidth: 148, slotName: 'code' },
+  { prop: 'decision', label: '裁决', width: 82, slotName: 'decision' },
   {
     prop: 'score',
     label: '分数',
@@ -311,6 +316,15 @@ function onToolbarRefresh(): void {
             :date="detailRow?.tradeDate"
             :batch="detailBatch"
           />
+        </template>
+        <template #decision="{ row }">
+          <el-tag
+            size="small"
+            :type="row.decision === '精选' ? 'primary' : row.decision === '观察' ? 'warning' : 'info'"
+            effect="plain"
+          >
+            {{ row.decision || '—' }}
+          </el-tag>
         </template>
       </BasicTable>
     </el-dialog>

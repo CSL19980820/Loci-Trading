@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, h, ref } from 'vue'
+import { KeepAlive, defineComponent, h, nextTick, ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 import { getMarketSession } from '@/shared/api/quant'
@@ -149,5 +149,73 @@ describe('useLivePolling', () => {
     expect(tick).not.toHaveBeenCalled()
     polling.stop()
     wrapper.unmount()
+  })
+
+  it('stops timers on deactivate and restarts on activate', async () => {
+    vi.useFakeTimers()
+    const tick = vi.fn()
+    let polling!: ReturnType<typeof useLivePolling>
+    const Probe = defineComponent({
+      setup() {
+        polling = useLivePolling({ intervalMs: 1000, tick })
+        return () => h('div')
+      },
+    })
+
+    const wrapper = mount(Probe)
+    await flushPromises()
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    polling.stop()
+    expect(vi.getTimerCount()).toBe(0)
+
+    polling.start()
+    await flushPromises()
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    polling.stop()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('KeepAlive deactivate stops timers and activate restarts them', async () => {
+    vi.useFakeTimers()
+    const sessionMock = vi.mocked(getMarketSession)
+    sessionMock.mockResolvedValue({ live_allowed: false } as never)
+    const tick = vi.fn()
+    const show = ref(true)
+
+    const Child = defineComponent({
+      name: 'LivePollingChild',
+      setup() {
+        useLivePolling({ intervalMs: 1000, tick })
+        return () => h('div', 'child')
+      },
+    })
+
+    const Host = defineComponent({
+      setup() {
+        return () =>
+          h(KeepAlive, null, {
+            default: () => (show.value ? h(Child) : null),
+          })
+      },
+    })
+
+    const wrapper = mount(Host)
+    await flushPromises()
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    show.value = false
+    await nextTick()
+    await flushPromises()
+    expect(vi.getTimerCount()).toBe(0)
+
+    show.value = true
+    await nextTick()
+    await flushPromises()
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 })

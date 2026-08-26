@@ -207,6 +207,24 @@ describe('useDataSources', () => {
     expect(store.error.value).toContain('6 位数字')
   })
 
+  it('probes each enabled lane separately so the UI can fill in progressively', async () => {
+    const store = withCatalog()
+    await store.load()
+    api.probeLanes.mockImplementation(async (lane: string | null) => ({
+      results:
+        lane === 'hist_daily'
+          ? [{ adapter_id: 'sina', lane: 'hist_daily', ok: true, rtt_ms: 42, rows: 8 }]
+          : [],
+    }))
+
+    await store.probeAll()
+
+    expect(api.probeLanes).toHaveBeenCalledWith('hist_daily', null, { code: '600519', runs: 1 })
+    expect(api.probeLanes.mock.calls.every((call) => call[0] != null)).toBe(true)
+    expect(store.cells.value['sina:hist_daily']?.ok).toBe(true)
+    expect(store.notice.value).toContain('全量探测完成')
+  })
+
   it('keeps the download test result marked as a download reading', async () => {
     const store = withCatalog()
     await store.load()

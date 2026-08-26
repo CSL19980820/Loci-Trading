@@ -19,11 +19,10 @@ GOOD_MANIFEST = """---
 name: 龙回头复盘
 slug: dragon-return
 version: 1.2.0
-description: 每个交易日盘后扫描龙回头形态并生成复盘简报
+description: 扫描龙回头形态并生成复盘简报
 tools:
   - get_quotes_daily
   - run_screen
-schedule: "30 15 * * 1-5"
 risk_note: 仅供研究
 ---
 
@@ -47,9 +46,19 @@ class ManifestParsingTests(unittest.TestCase):
     def test_splits_frontmatter_and_body(self) -> None:
         meta, body = parse_manifest(GOOD_MANIFEST)
         self.assertEqual(meta["slug"], "dragon-return")
-        self.assertEqual(meta["schedule"], "30 15 * * 1-5")
         self.assertIn("龙回头复盘", body)
         self.assertNotIn("---", body.splitlines()[0])
+
+    def test_scheduling_fields_are_rejected(self) -> None:
+        manifest = "---\nname: demo\ndescription: test\ncron: '30 15 * * 1-5'\n---\nbody\n"
+        with self.assertRaisesRegex(SkillError, "调度字段"):
+            parse_manifest(manifest)
+        nested = (
+            "---\nname: demo\ndescription: test\n"
+            "monitor:\n  schedule:\n    interval_minutes: 10\n---\nbody\n"
+        )
+        with self.assertRaisesRegex(SkillError, "monitor.schedule"):
+            parse_manifest(nested)
 
     def test_missing_frontmatter_is_rejected(self) -> None:
         with self.assertRaises(SkillError) as ctx:
@@ -87,7 +96,6 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(package.name, "龙回头复盘")
         self.assertEqual(package.version, "1.2.0")
         self.assertEqual(package.allowed_tools, ["get_quotes_daily", "run_screen"])
-        self.assertEqual(package.default_cron, "30 15 * * 1-5")
         self.assertIn("risk_note", package.metadata)
         self.assertIn("references/rules.md", package.files)
         self.assertTrue((self.root / "dragon-return" / "SKILL.md").is_file())

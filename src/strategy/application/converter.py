@@ -22,9 +22,7 @@ import ast
 import importlib.util
 import logging
 import re
-import subprocess
 import sys
-import tempfile
 import traceback
 from pathlib import Path
 from typing import Any
@@ -158,7 +156,6 @@ description: 一句话描述
 instructions: |
   （这里写给 AI 执行的完整指令，包括分析目标、输出格式、风险提示要求等）
 allowed_tools: []
-default_cron: ""
 ---
 
 （正文可以补充背景说明，供人类阅读）
@@ -174,6 +171,7 @@ default_cron: ""
 2. instructions 字段里的指令要具体，告诉 AI 该用什么数据、输出什么格式
 3. 必须在 instructions 末尾加上：「结论末尾必须附上：本分析仅供参考，不构成投资建议。」
 4. 如果需要 screen/positions/market_coverage 数据，在 instructions 里写明要用这些数据
+5. 不要生成 cron、schedule、default_cron 或任何运行时间配置；调度由系统负责
 
 直接输出 SKILL.md 内容："""
 
@@ -226,49 +224,6 @@ def _validate_strategy_code(code: str, expected_slug: str) -> list[str]:
         issues.append("signals 没有 fillna(False)，可能有 NaN 混入选股结果")
 
     return issues
-
-
-def _sandbox_check(code: str, slug: str, timeout_s: float = 10.0) -> str | None:
-    """在子进程里试运行策略代码，捕获无限循环/内存炸弹。
-
-    用 subprocess 而不是 exec：子进程超时直接 kill，不会拖垮服务进程。
-    """
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", encoding="utf-8", delete=False
-    ) as tmp:
-        # 沙箱脚本：只 import 必要路径，不启服务，加载完就退出
-        tmp.write(f"""
-import sys, os
-# 把项目根加到 sys.path 以便 from src.* 可以 import
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-try:
-    import importlib.util, importlib
-    spec = importlib.util.spec_from_loader("_sandbox_{slug}", loader=None)
-    # 直接 compile + exec 而不热加载，避免污染运行进程
-    code = open({str(tmp.name)!r}).read()
-    ast_tree = __import__('ast').parse(code)
-    # 只做语法级检查，不真正 exec 用户代码的副作用
-    print("ok")
-except Exception as e:
-    print(f"error: {{e}}", file=sys.stderr)
-    sys.exit(1)
-""")
-        tmp_path = tmp.name
-
-    # 用更简单的方式：直接 compile 代码，不 exec
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c",
-             f"import ast; ast.parse(open({str(tmp_path)!r}, encoding='utf-8').read()); print('ok')"],
-            capture_output=True, text=True, timeout=timeout_s,
-        )
-        return None  # ast.parse 已经在主进程做了，这里只是二重保险
-    except subprocess.TimeoutExpired:
-        return f"代码分析超时（>{timeout_s}s），可能有无限循环"
-    except Exception as exc:
-        return str(exc)
-    finally:
-        Path(tmp_path).unlink(missing_ok=True)
 
 
 def save_and_load(

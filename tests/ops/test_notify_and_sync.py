@@ -1,12 +1,15 @@
+"""通知侧：企微文案格式化、脱敏校验与通知 Job。
+
+同步用例已拆到 `test_sync_jobs.py`。
+"""
 from __future__ import annotations
 
 from pathlib import Path
 import tempfile
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from src.ops.application.jobs import JobContext, execute_sync, run_job
+from src.ops.application.jobs import JobContext, run_job
 from src.ops.application.notify import (
     NotifyError,
     format_alerts,
@@ -16,7 +19,7 @@ from src.ops.application.notify import (
     mask_wecom_webhook,
     validate_wecom_webhook,
 )
-from src.ops.infrastructure.store import MANAGED_SYNC_INTRADAY, OpsStore
+from src.ops.infrastructure.store import OpsStore
 
 
 class NotifyFormatTests(unittest.TestCase):
@@ -76,6 +79,50 @@ class NotifyFormatTests(unittest.TestCase):
         self.assertEqual(format_pct(5), "+5%")
         self.assertEqual(format_pct(-2.3), "-2.3%")
 
+    def test_weak_market_watch_picks_have_a_separate_notification_section(self) -> None:
+        text = format_screen_picks_text(
+            {
+                "strategy": "sanyuan-tail-v1",
+                "trade_date": "2026-08-11",
+                "picks": [],
+                "watch_picks": [
+                    {"code": "002963", "name": "豪尔赛", "pct_chg": 1.75},
+                    {"code": "301529", "name": "福赛科技", "pct_chg": 1.73},
+                ],
+            }
+        )
+
+        self.assertIn("📭 正式精选 0 只", text)
+        self.assertIn("👀 低吸观察（不计正式胜率）", text)
+        self.assertIn("▫️ 豪尔赛 002963 +1.75%", text)
+        self.assertIn("▫️ 福赛科技 301529 +1.73%", text)
+        self.assertNotIn("暂无符合条件的标的", text)
+
+    def test_skill_picks_include_clipped_note(self) -> None:
+        from src.ops.application.notify_screen_template import clip_skill_note
+
+        long_note = "N" * 55
+        clipped = clip_skill_note(long_note)
+        self.assertEqual(len(clipped), 40)
+        self.assertTrue(clipped.endswith("…"))
+        text = format_screen_picks_text(
+            {
+                "skill_name": "尾盘右侧",
+                "picks": [
+                    {
+                        "code": "600487",
+                        "name": "亨通光电",
+                        "pct_chg": 3.2,
+                        "note": long_note,
+                    }
+                ],
+            },
+            kind_tag="技能",
+        )
+        self.assertIn("【尾盘右侧】-技能", text)
+        self.assertIn("📌 亨通光电 600487 +3.2%，" + clipped, text)
+        self.assertNotIn(long_note, text)
+
     def test_legacy_english_skill_tag_is_normalized_to_chinese(self) -> None:
         from src.ops.application.notify_screen_template import normalize_screen_template
 
@@ -95,6 +142,19 @@ class NotifyFormatTests(unittest.TestCase):
         self.assertIn("类型 选股 · 状态 失败", text)
         self.assertNotIn("screen", text)
         self.assertNotIn("failed", text)
+
+    def test_skill_watch_status_uses_chinese_kind_and_name(self) -> None:
+        from src.ops.application.notify import format_job_status
+
+        text = format_job_status(
+            job_name="监测·dragon-return",
+            kind="skill_watch",
+            status="skipped",
+        )
+        self.assertIn("监测·龙回头", text)
+        self.assertIn("类型 监测 · 状态 已跳过", text)
+        self.assertNotIn("dragon-return", text)
+        self.assertNotIn("skill_watch", text)
 
     def test_screen_template_presets_and_custom(self) -> None:
         from src.ops.application.notify_screen_template import (
@@ -149,132 +209,7 @@ class NotifyFormatTests(unittest.TestCase):
         text = format_screen_picks_text(
             {"strategy": "rsi30-dip", "picks": [{"code": "000001", "name": "平安银行"}]}
         )
-        self.assertTrue(text.startswith("【RSI22 次日低吸】-量化\n"))
-
-
-class MarketSyncSettingsStoreTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory()
-        self.store = OpsStore(Path(self.temp.name) / "ops.db")
-
-    def tearDown(self) -> None:
-        self.store.close()
-        self.temp.cleanup()
-
-    def test_settings_kv_and_ensure_job(self) -> None:
-        self.store.set_setting("wecom_webhook", {"url": "x"})
-        self.assertEqual(self.store.get_setting("wecom_webhook")["url"], "x")
-        job_id = self.store.ensure_job(
-            name=MANAGED_SYNC_INTRADAY,
-            kind="sync",
-            cron="*/5 9-14 * * 1-5",
-            config={"mode": "full"},
-            enabled=True,
-        )
-        again = self.store.ensure_job(
-            name=MANAGED_SYNC_INTRADAY,
-            kind="sync",
-            cron="*/15 9-14 * * 1-5",
-            config={"mode": "full", "workers": 6},
-            enabled=False,
-        )
-        self.assertEqual(job_id, again)
-        job = self.store.get_job(job_id)
-        self.assertEqual(job["cron"], "*/15 9-14 * * 1-5")
-        self.assertFalse(job["enabled"])
-        self.assertEqual(job["config"]["workers"], 6)
-
-
-class TodayRefreshSyncTests(unittest.TestCase):
-    def test_today_refresh_skips_sync_quotes(self) -> None:
-        called = {"sync_quotes": 0, "spot": 0}
-
-        class FakeStore:
-            def __init__(self, *_args, **_kwargs):
-                pass
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def list_instruments(self):
-                return [{"code": "300358", "instrument_type": "STOCK"}]
-
-        def fake_sync_quotes(*_args, **_kwargs):
-            called["sync_quotes"] += 1
-            raise AssertionError("today_refresh should not call sync_quotes")
-
-        def fake_spot(_store, _codes, instrument_types=None):
-            called["spot"] += 1
-            return 3
-
-        ctx = JobContext(market_db=":memory:")
-        with (
-            patch("src.market.MarketStore", FakeStore),
-            patch("src.market.sync_instruments", lambda *_a, **_k: None),
-            patch("src.market.sync_quotes", fake_sync_quotes),
-            patch("src.market.apply_today_spot", fake_spot),
-            patch(
-                "src.market.infrastructure.sync.refresh_adjust_factors",
-                lambda *_a, **_k: 0,
-            ),
-        ):
-            result = execute_sync({"mode": "today_refresh"}, ctx)
-
-        self.assertEqual(result["mode"], "today_refresh")
-        self.assertEqual(result["spot_rows"], 3)
-        self.assertEqual(called["sync_quotes"], 0)
-        self.assertEqual(called["spot"], 1)
-
-
-class SyncProgressTests(unittest.TestCase):
-    def test_reports_total_before_first_quote_finishes(self) -> None:
-        events: list[tuple[int, int, str]] = []
-
-        def callback(done: int, total: int, code: str) -> None:
-            events.append((done, total, code))
-
-        class FakeStore:
-            def __init__(self, *_args, **_kwargs):
-                pass
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def list_instruments(self):
-                return [
-                    {"code": "600519", "instrument_type": "STOCK"},
-                    {"code": "000001", "instrument_type": "STOCK"},
-                ]
-
-        report = SimpleNamespace(
-            total=2,
-            succeeded=0,
-            skipped=0,
-            failed=0,
-            rows_written=0,
-            failures=[],
-            elapsed_seconds=0.0,
-        )
-
-        def fake_sync_quotes(*_args, **kwargs):
-            self.assertEqual(events, [(0, 2, "")])
-            self.assertIs(kwargs["progress"], callback)
-            return report
-
-        ctx = JobContext(market_db=":memory:")
-        with (
-            patch("src.market.MarketStore", FakeStore),
-            patch("src.market.sync_instruments", lambda *_a, **_k: None),
-            patch("src.market.sync_quotes", fake_sync_quotes),
-            patch("src.market.apply_today_spot", lambda *_a, **_k: 0),
-        ):
-            execute_sync({}, ctx, progress=callback)
+        self.assertTrue(text.startswith("【RSI22 次日低吸（已下线）】-量化\n"))
 
 
 class NotifyJobTests(unittest.TestCase):
@@ -308,7 +243,7 @@ class NotifyJobTests(unittest.TestCase):
                 "webhook": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcdefghijklmnop",
             },
         )
-        with patch("src.ops.application.notify.send_wecom_text") as send:
+        with patch("src.ops.application.notify_dispatch.send_wecom_text") as send:
             outcome = run_job(self.store, notify_id, context=JobContext(ops_store=self.store))
             send.assert_not_called()
         self.assertEqual(outcome["status"], "skipped")
@@ -316,9 +251,9 @@ class NotifyJobTests(unittest.TestCase):
 
     def test_screen_push_wecom_uses_text_template(self) -> None:
         job_id = self.store.create_job(
-            name="screen:demo",
+            name="screen:sanyuan-tail-v1",
             kind="screen",
-            config={"strategy": "demo", "push_wecom": True},
+            config={"strategy": "sanyuan-tail-v1", "push_wecom": True},
         )
         self.store.set_setting(
             "wecom_webhook",
@@ -327,7 +262,8 @@ class NotifyJobTests(unittest.TestCase):
 
         def fake_executor(_config, _ctx):
             return {
-                "strategy": "demo",
+                "strategy": "sanyuan-tail-v1",
+                "strategy_name": "三源尾盘共振",
                 "picks": [
                     {"code": "300105", "name": "龙星科技", "pct_chg": 1.5},
                     {"code": "600018", "name": "上港集团", "pct_chg": 5.0},
@@ -336,7 +272,7 @@ class NotifyJobTests(unittest.TestCase):
 
         with (
             patch.dict("src.ops.application.jobs.registry.EXECUTORS", {"screen": fake_executor}),
-            patch("src.ops.application.notify.send_wecom_text") as send,
+            patch("src.ops.application.notify_dispatch.send_wecom_text") as send,
         ):
             send.return_value = {"errcode": 0}
             outcome = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
@@ -344,7 +280,9 @@ class NotifyJobTests(unittest.TestCase):
             content = send.call_args.args[1]
         self.assertEqual(outcome["status"], "success")
         self.assertTrue(outcome["result"].get("pushed"))
-        self.assertIn("【demo】-量化", content)
+        self.assertTrue(content.startswith("【三源尾盘共振】-量化\n"))
+        self.assertNotIn("screen:", content)
+        self.assertNotIn("sanyuan-tail-v1", content)
         self.assertIn("📌 龙星科技 300105 +1.5%", content)
         self.assertIn("📌 上港集团 600018 +5%", content)
         self.assertNotIn("msgtype", content)
@@ -369,7 +307,7 @@ class NotifyJobTests(unittest.TestCase):
 
         with (
             patch.dict("src.ops.application.jobs.registry.EXECUTORS", {"screen": fake_executor}),
-            patch("src.ops.application.notify.send_wecom_text") as send,
+            patch("src.ops.application.notify_dispatch.send_wecom_text") as send,
         ):
             send.return_value = {"errcode": 0}
             first = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
@@ -400,7 +338,7 @@ class NotifyJobTests(unittest.TestCase):
 
         with (
             patch.dict("src.ops.application.jobs.registry.EXECUTORS", {"skill": fake_executor}),
-            patch("src.ops.application.notify.send_wecom_text") as send,
+            patch("src.ops.application.notify_dispatch.send_wecom_text") as send,
         ):
             send.return_value = {"errcode": 0}
             outcome = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
@@ -427,7 +365,7 @@ class NotifyJobTests(unittest.TestCase):
 
         with (
             patch.dict("src.ops.application.jobs.registry.EXECUTORS", {"screen": fake_executor}),
-            patch("src.ops.application.notify.send_wecom_text") as send,
+            patch("src.ops.application.notify_dispatch.send_wecom_text") as send,
         ):
             outcome = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
             send.assert_not_called()

@@ -1,29 +1,22 @@
-"""账本 HTTP 路由（dashboard / positions / candidates / plans / reviews / account）。"""
+"""账本 HTTP 路由（candidates / plans / reviews / pools / timeline / alerts）。"""
 import csv
 import io
-import json
 import logging
 from collections.abc import Callable, Generator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from src.ledger import PalaceStore
 from src.ledger.api.schemas import (
     CandidateBatchDeleteInput,
     CandidateInput,
-    CashflowInput,
-    DailyPnlInput,
     PlanInput,
     ReviewInput,
-    SnapshotInput,
-    TradeInput,
 )
 
 logger = logging.getLogger(__name__)
-
-MAX_QIANLONG_IMPORT_BYTES = 2 * 1024 * 1024
 
 
 def build_ledger_router(
@@ -41,16 +34,6 @@ def build_ledger_router(
     router = APIRouter()
     Store = Annotated[PalaceStore, Depends(get_store)]
     WriteAccess = Annotated[None, Depends(write_dependency)]
-
-    @router.get("/api/dashboard", tags=["dashboard"])
-    def dashboard(
-        store: Store, date_value: str | None = Query(default=None, alias="date")
-    ) -> dict[str, Any]:
-        return store.dashboard_payload(date_value)
-
-    @router.get("/api/positions", tags=["positions"])
-    def positions(store: Store) -> list[dict[str, Any]]:
-        return store.positions_payload()
 
     @router.get("/api/candidates", tags=["candidates"])
     def candidates(
@@ -96,14 +79,6 @@ def build_ledger_router(
     def timeline(code: str, store: Store) -> list[dict[str, Any]]:
         return store.timeline_payload(code)
 
-    @router.get("/api/trades", tags=["positions"])
-    def trades(
-        store: Store,
-        code: str | None = Query(default=None, pattern=r"^\d{6}$"),
-        limit: int = Query(default=200, ge=1, le=1000),
-    ) -> list[dict[str, Any]]:
-        return store.trades_payload(code=code, limit=limit)
-
     def _csv_attachment(
         rows: list[dict[str, Any]], columns: list[tuple[str, str]], filename: str
     ) -> Response:
@@ -117,25 +92,6 @@ def build_ledger_router(
             media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-
-    @router.get("/api/trades/export.csv", tags=["positions"])
-    def export_trades_csv(
-        store: Store,
-        code: str | None = Query(default=None, pattern=r"^\d{6}$"),
-        limit: int = Query(default=10_000, ge=1, le=10_000),
-    ) -> Response:
-        rows = store.trades_payload(code=code, limit=limit)
-        columns = [
-            ("date", "日期"),
-            ("action", "动作"),
-            ("code", "代码"),
-            ("name", "名称"),
-            ("shares", "数量"),
-            ("price", "价格"),
-            ("realized_pnl", "已实现盈亏"),
-            ("reason", "备注"),
-        ]
-        return _csv_attachment(rows, columns, "trades.csv")
 
     @router.get("/api/candidates/export.csv", tags=["candidates"])
     def export_candidates_csv(
@@ -167,56 +123,17 @@ def build_ledger_router(
         ]
         return _csv_attachment(rows, columns, "candidates.csv")
 
-    def _read_qianlong_upload(upload: UploadFile) -> tuple[dict[str, Any], str]:
-        # 同步读文件：async 路由会切线程，与单连接 PalaceStore 冲突。
-        source_label = upload.filename or "state.json"
-        raw = upload.file.read(MAX_QIANLONG_IMPORT_BYTES + 1)
-        if len(raw) > MAX_QIANLONG_IMPORT_BYTES:
-            raise HTTPException(status_code=413, detail="state.json 文件过大")
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except UnicodeDecodeError as exc:
-            raise HTTPException(status_code=400, detail="state.json 须为 UTF-8 编码") from exc
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail="JSON 格式无效") from exc
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=400, detail="潜龙 state.json 必须是 JSON 对象")
-        return payload, source_label
-
-    @router.post("/api/import/qianlong/preview", tags=["positions"])
-    def preview_qianlong_import(
-        store: Store,
-        file: UploadFile = File(..., description="潜龙 state.json"),
-    ) -> dict[str, Any]:
-        payload, _ = _read_qianlong_upload(file)
-        return store.preview_qianlong_state(payload)
-
-    @router.post("/api/import/qianlong/confirm", tags=["positions"])
-    def confirm_qianlong_import(
-        store: Store,
-        _: WriteAccess,
-        file: UploadFile = File(..., description="潜龙 state.json"),
-    ) -> dict[str, Any]:
-        payload, source_label = _read_qianlong_upload(file)
-        return store.import_qianlong_payload(
-            payload,
-            source="qianlong-web-import",
-            source_label=source_label,
-        )
-
     @router.get("/api/alerts/today", tags=["plans"])
     def today_alerts(store: Store) -> list[dict[str, Any]]:
         from src.review.application.alerts import today_alerts_payload
 
-        if not market_db:
-            return today_alerts_payload(store, None)
         try:
-            from src.market import MarketStore
+            from src.market import open_market_hot
 
-            with MarketStore(market_db) as market:
+            with open_market_hot() as market:
                 return today_alerts_payload(store, market)
         except Exception:
-            logger.debug("行情库不可用，触价提醒降级为无报价", exc_info=True)
+            logger.debug("热读库不可用，触价提醒降级为无报价", exc_info=True)
             return today_alerts_payload(store, None)
 
     @router.get("/api/reviews", tags=["review"])
@@ -236,20 +153,6 @@ def build_ledger_router(
         pool_id: str | None = Query(default=None),
     ) -> dict[str, Any]:
         return store.pool_day_payload(date_value, pool_id)
-
-    @router.get("/api/analytics", tags=["dashboard"])
-    def analytics(store: Store) -> dict[str, Any]:
-        return store.analytics_payload()
-
-    @router.get("/api/scorecard", tags=["review"])
-    def scorecard(store: Store) -> dict[str, Any]:
-        return store.scorecard()
-
-    @router.post("/api/trades", status_code=201, tags=["positions"])
-    def create_trade(payload: TradeInput, store: Store, _: WriteAccess) -> dict[str, Any]:
-        values = payload.model_dump()
-        correlation_id = str(values.get("correlation_id") or "").strip()
-        return store.record_trades([values], idempotency_key=correlation_id)[0]
 
     @router.post("/api/candidates", status_code=201, tags=["candidates"])
     def create_candidate(
@@ -280,34 +183,5 @@ def build_ledger_router(
     @router.post("/api/reviews", status_code=201, tags=["review"])
     def create_review(payload: ReviewInput, store: Store, _: WriteAccess) -> dict[str, str]:
         return {"id": store.record_review(**payload.model_dump())}
-
-    @router.post("/api/snapshots", status_code=201, tags=["account"])
-    def create_snapshot(
-        payload: SnapshotInput, store: Store, _: WriteAccess
-    ) -> dict[str, str]:
-        return {"id": store.record_snapshot(**payload.model_dump())}
-
-    @router.post("/api/cashflows", status_code=201, tags=["account"])
-    def create_cashflow(
-        payload: CashflowInput, store: Store, _: WriteAccess
-    ) -> dict[str, str]:
-        return {"id": store.record_account_event(kind="CASHFLOW", **payload.model_dump())}
-
-    @router.get("/api/daily-pnl", tags=["account"])
-    def list_daily_pnl(
-        store: Store,
-        limit: int = Query(default=365, ge=1, le=3650),
-    ) -> dict[str, Any]:
-        """券商市值法当日盈亏流水（应用账本权威）。"""
-        return {
-            "summary": store.daily_pnl_summary(),
-            "rows": store.list_daily_pnl(limit=limit),
-        }
-
-    @router.post("/api/daily-pnl", status_code=201, tags=["account"])
-    def upsert_daily_pnl(
-        payload: DailyPnlInput, store: Store, _: WriteAccess
-    ) -> dict[str, Any]:
-        return store.record_daily_pnl(**payload.model_dump())
 
     return router

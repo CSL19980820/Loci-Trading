@@ -22,10 +22,7 @@ export function fmt(value: number | boolean | null | undefined): string {
   return Number(value).toFixed(2)
 }
 
-export function signed(value: number | undefined): string {
-  if (value === undefined) return '—'
-  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
-}
+export { signedPct as signed } from '@/shared/lib/format'
 
 export function pnlTone(value: number | null | undefined): 'up' | 'down' | '' {
   if (value == null) return ''
@@ -48,11 +45,16 @@ const EXIT_DIST_LABELS: Record<string, string> = {
   data_end: '无数据',
 }
 
+export function exitReasonLabel(reason: string | undefined): string {
+  if (!reason) return '—'
+  return EXIT_LABELS[reason] ?? reason
+}
+
 export function exitReasonsText(reasons: Record<string, number> | undefined): string {
   if (!reasons) return '—'
   return (
     Object.entries(reasons)
-      .map(([key, count]) => `${EXIT_LABELS[key] ?? key} ${count}`)
+      .map(([key, count]) => `${exitReasonLabel(key)} ${count}`)
       .join(' · ') || '—'
   )
 }

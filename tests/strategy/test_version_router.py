@@ -78,8 +78,8 @@ def test_strategy_catalog_persists_and_reads_builtin_entry_instructions(tmp_path
     ops_db = tmp_path / "ops.db"
     with OpsStore(ops_db) as store:
         store.upsert_strategy_doc(
-            "rsi30-dip",
-            entry_instructions="人工维护的 RSI 买入说明",
+            "qianlong-close-v3",
+            entry_instructions="人工维护的潜龙买入说明",
         )
 
     app = FastAPI()
@@ -91,7 +91,7 @@ def test_strategy_catalog_persists_and_reads_builtin_entry_instructions(tmp_path
 
     assert response.status_code == 200, response.text
     described = {item["slug"]: item for item in response.json()}
-    assert described["rsi30-dip"]["entry_instructions"] == "人工维护的 RSI 买入说明"
+    assert described["qianlong-close-v3"]["entry_instructions"] == "人工维护的潜龙买入说明"
     assert "T+2 收盘卖出" in described["sanyuan-tail-v1"]["entry_instructions"]
     with OpsStore(ops_db) as store:
         assert store.get_strategy_doc("sanyuan-tail-v1")["entry_instructions"]
@@ -128,11 +128,11 @@ def test_formula_version_routes_support_frontend_rollback_contract() -> None:
     try:
         with (
             TestClient(app) as client,
-            patch("src.app.screen_skills.list_screen_skill_history", return_value=history),
-            patch("src.app.screen_skills.get_screen_skill_item", return_value={
+            patch("src.strategy.application.screen_skills.list_screen_skill_history", return_value=history),
+            patch("src.strategy.application.screen_skills.get_screen_skill_item", return_value={
                 "package_revision": current_revision
             }),
-            patch("src.app.screen_skills.rollback_screen_skill") as rollback,
+            patch("src.strategy.application.screen_skills.rollback_screen_skill") as rollback,
         ):
             listed = client.get("/api/strategies/metadata-screen/versions")
             response = client.post(
@@ -160,7 +160,7 @@ def test_formula_rollback_rejects_anonymous_callers_before_package_access() -> N
     ))
     with (
         TestClient(app, raise_server_exceptions=False) as client,
-        patch("src.app.screen_skills.get_screen_skill_item", side_effect=AssertionError("must not load")),
+        patch("src.strategy.application.screen_skills.get_screen_skill_item", side_effect=AssertionError("must not load")),
     ):
         response = client.post(
             "/api/strategies/metadata-screen/rollback",
@@ -193,11 +193,11 @@ def test_formula_rollback_reports_missing_archive_as_not_found() -> None:
     try:
         with (
             TestClient(app, raise_server_exceptions=False) as client,
-            patch("src.app.screen_skills.get_screen_skill_item", return_value={
+            patch("src.strategy.application.screen_skills.get_screen_skill_item", return_value={
                 "package_revision": current_revision
             }),
             patch(
-                "src.app.screen_skills.rollback_screen_skill",
+                "src.strategy.application.screen_skills.rollback_screen_skill",
                 side_effect=ScreenPackageError("history_not_found"),
             ),
         ):
@@ -222,6 +222,7 @@ def test_trade_backtest_persists_only_custom_strategy_metadata(tmp_path: Path) -
         strategy_slug="metadata-screen",
         config={"hold_days": 3},
         metrics={"trades": 4, "win_rate": 50.0, "avg_net_return": 1.1, "profit_factor": 1.2},
+        performance={"assumption": {"model": "trade_sequence_compounding"}},
         skipped={},
         trades=[],
     )
@@ -234,7 +235,11 @@ def test_trade_backtest_persists_only_custom_strategy_metadata(tmp_path: Path) -
         ):
             response = client.post("/api/backtest", json={"strategy": "metadata-screen"})
         assert response.status_code == 200, response.text
-        assert response.json()["backtest_metadata"]["version"] == "screen-revision-a"
+        body = response.json()
+        assert body["backtest_metadata"]["version"] == "screen-revision-a"
+        # performance 是诊断口径，必须原样带上 assumption.model，否则前端会把
+        # 顺序复利曲线当成账户净值。
+        assert body["performance"]["assumption"]["model"] == "trade_sequence_compounding"
         assert not market_db.exists()
         with OpsStore(ops_db) as store:
             saved = store.get_strategy_backtest("metadata-screen", "screen-revision-a")
@@ -251,9 +256,10 @@ def test_trade_backtest_does_not_overwrite_builtin_metadata(tmp_path: Path) -> N
         write_dependency=lambda: None, market_db=None, ops_db=str(ops_db)
     ))
     trade = SimpleNamespace(
-        strategy_slug="rsi30-dip",
+        strategy_slug="qianlong-close-v3",
         config={"hold_days": 3},
         metrics={"trades": 4, "win_rate": 50.0, "avg_net_return": 1.1, "profit_factor": 1.2},
+        performance={"assumption": {"model": "trade_sequence_compounding"}},
         skipped={},
         trades=[],
     )
@@ -262,7 +268,7 @@ def test_trade_backtest_does_not_overwrite_builtin_metadata(tmp_path: Path) -> N
         patch("src.strategy.api.version_router.market_store", return_value=_Market()),
         patch("src.backtest.backtest_strategy", return_value=trade),
     ):
-        response = client.post("/api/backtest", json={"strategy": "rsi30-dip"})
+        response = client.post("/api/backtest", json={"strategy": "qianlong-close-v3"})
     assert response.status_code == 200, response.text
     assert "backtest_metadata" not in response.json()
     assert not ops_db.exists()

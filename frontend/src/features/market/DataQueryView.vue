@@ -8,6 +8,7 @@ import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
+import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
@@ -55,7 +56,6 @@ const {
   boardTotal,
   loadBoard,
   openDetail,
-  startRefresh,
 } = useDataQueryMarket({ route, router, busy, error, liveError })
 
 const filterModel = computed({
@@ -255,7 +255,7 @@ function onRowClick(row: Record<string, unknown>): void {
 }
 
 function goBootstrapHint(): void {
-  void router.push('/ops')
+  void router.push({ path: '/ops', query: { tab: 'system' }, hash: '#sys-sync' })
 }
 
 watch(
@@ -283,12 +283,17 @@ onMounted(async () => {
   }
   void loadIndustries()
   await Promise.all([loadCoverage(), loadBoard()])
-  startRefresh()
+  // loadBoard 在 live 闸门允许时会自行 startRefresh；此处勿再调，以免 stopRefresh 作废刚发起的叠价
 })
 </script>
 
 <template>
   <div class="page-fill data-desk">
+    <PageHeader
+      title="行情"
+      :count="boardTotal ? `共 ${boardTotal} 只` : ''"
+      note="只读视图：行情由同步任务写入本机 market.db，这里只查不写。"
+    />
     <el-alert
       v-if="error"
       :title="error"
@@ -328,9 +333,9 @@ onMounted(async () => {
         <EmptyState
           v-if="coverageLoaded && !hasMarket"
           description="还没有历史日 K"
-          reason="数据目录已就绪，但 market.db 里尚无行情。初始化后才能查日线。"
+          reason="数据目录已就绪，但 market.db 里尚无行情。同步行情后才能查日线。"
         >
-          <el-button type="primary" @click="goBootstrapHint">去初始化</el-button>
+          <el-button type="primary" @click="goBootstrapHint">去同步行情</el-button>
         </EmptyState>
         <div v-else class="desk-main">
           <PageBusy overlay :busy="busy" />
@@ -380,9 +385,8 @@ onMounted(async () => {
               }}</span>
             </template>
             <template #source="{ row }">
-              <span class="src" :class="{ 'src--live': Boolean(row.ok) }">{{
-                row.ok ? '实时' : '日线'
-              }}</span>
+              <el-tag v-if="row.ok" size="small" type="info" effect="plain">实时</el-tag>
+              <span v-else class="src">日线</span>
             </template>
           </BasicTable>
         </div>
@@ -477,10 +481,6 @@ onMounted(async () => {
 .src {
   font-size: 0.72rem;
   color: var(--mist);
-}
-
-.src--live {
-  color: var(--lake);
 }
 
 .mono {

@@ -10,12 +10,32 @@ import logging
 from pathlib import Path
 from typing import Any, Callable
 
+from src.ai.application.tool_schema import invoke_mcp_tool, mcp_tool_fullname, tool_schema
 from src.ops.application.skill_cli import run_skill_cli
-from src.ops.application.skills import SkillError
+from src.ops import SkillError
+from src.shared.observability import (
+    current as current_observation,
+    event as observation_event,
+    new_id,
+    span as observation_span,
+)
 
 logger = logging.getLogger(__name__)
 
 EventCallback = Callable[[dict[str, Any]], None]
+
+
+def _notify(callback: EventCallback | None, payload: dict[str, Any]) -> None:
+    """把当前 tool receipt 追加到 UI 事件，不泄露参数之外的新数据。"""
+    if callback is None:
+        return
+    receipt_id = current_observation().tool_receipt_id
+    callback(
+        {
+            **payload,
+            **({"tool_receipt_id": receipt_id} if receipt_id else {}),
+        }
+    )
 
 
 @dataclass
@@ -27,31 +47,6 @@ class ToolBus:
     routing: dict[str, str] = field(default_factory=dict)
 
 
-def _openai_schema(name: str, description: str, args_schema: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": (description or name)[:1000],
-            "parameters": args_schema or {"type": "object", "properties": {}},
-        },
-    }
-
-
-def _anthropic_schema(name: str, description: str, args_schema: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "name": name,
-        "description": (description or name)[:1000],
-        "input_schema": args_schema or {"type": "object", "properties": {}},
-    }
-
-
-def _to_schema(protocol: str, name: str, description: str, args_schema: dict[str, Any]) -> dict[str, Any]:
-    if protocol == "anthropic":
-        return _anthropic_schema(name, description, args_schema)
-    return _openai_schema(name, description, args_schema)
-
-
 def build_toolbus(
     skill: dict[str, Any],
     *,
@@ -61,6 +56,10 @@ def build_toolbus(
     on_event: EventCallback | None = None,
     hitl_enabled: bool = False,
     run_subagents: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
+    trace_id: str | None = None,
+    run_id: str | None = None,
+    job_id: str | None = None,
+    source_id: str | None = None,
 ) -> ToolBus | None:
     """根据 skill 记录装配工具面。没有任何工具时返回 None。"""
     allow_set = {str(item) for item in (allow or skill.get("allowed_tools") or []) if item}
@@ -81,7 +80,7 @@ def build_toolbus(
         kind = str(spec.get("kind") or "cli").lower()
         description = str(spec.get("description") or name)
         args_schema = spec.get("args_schema") if isinstance(spec.get("args_schema"), dict) else {}
-        schemas.append(_to_schema(protocol, name, description, args_schema))
+        schemas.append(tool_schema(protocol, name, description, args_schema))
         routing[name] = f"skill:{kind}"
 
         if kind == "cli":
@@ -91,22 +90,21 @@ def build_toolbus(
 
             def make_cli(cmd=command, work=cwd, to=timeout, root=skill_root, tool=name):
                 def _run(arguments: dict[str, Any]) -> dict[str, Any]:
-                    if on_event:
-                        on_event({"type": "tool_start", "name": tool, "arguments": arguments})
+                    _notify(on_event, {"type": "tool_start", "name": tool, "arguments": arguments})
                     try:
                         result = run_skill_cli(
                             root, cmd, arguments=arguments, cwd=work, timeout_sec=to
                         )
                     except SkillError as exc:
                         result = {"text": str(exc), "is_error": True, "meta": {}}
-                    if on_event:
-                        on_event(
-                            {
-                                "type": "tool_end",
-                                "name": tool,
-                                "ok": not result.get("is_error"),
-                                "preview": str(result.get("text", ""))[:400],
-                            }
+                    _notify(
+                        on_event,
+                        {
+                            "type": "tool_end",
+                            "name": tool,
+                            "ok": not result.get("is_error"),
+                            "preview": str(result.get("text", ""))[:400],
+                        },
                         )
                     return result
 
@@ -166,7 +164,7 @@ def build_toolbus(
     for bname, bdesc, bschema in builtins:
         if bname in handlers:
             continue
-        schemas.append(_to_schema(protocol, bname, bdesc, bschema))
+        schemas.append(tool_schema(protocol, bname, bdesc, bschema))
         routing[bname] = "skill:builtin"
         handlers[bname] = _make_builtin(
             bname, skill, on_event, hitl_enabled=hitl_enabled, run_subagents=run_subagents
@@ -191,7 +189,7 @@ def build_toolbus(
                     logger.warning("MCP server %s 不可用：%s", server, exc)
 
             for tool in tools:
-                full = f"{tool.server}__{tool.name}" if tool.server else tool.name
+                full = mcp_tool_fullname(tool.server, tool.name)
                 if allow_set and tool.name not in allow_set and full not in allow_set:
                     continue
                 if tool.server not in clients:
@@ -206,21 +204,24 @@ def build_toolbus(
 
                 def make_mcp(t: McpTool = tool, fname: str = full):
                     def _run(arguments: dict[str, Any]) -> dict[str, Any]:
-                        if on_event:
-                            on_event({"type": "tool_start", "name": fname, "arguments": arguments})
-                        client = clients.get(t.server)
-                        if client is None:
-                            result = {"text": f"MCP server {t.server} 不可用", "is_error": True}
-                        else:
-                            result = client.call_tool(fname, arguments)
-                        if on_event:
-                            on_event(
-                                {
-                                    "type": "tool_end",
-                                    "name": fname,
-                                    "ok": not result.get("is_error"),
-                                    "preview": str(result.get("text", ""))[:400],
-                                }
+                        _notify(
+                            on_event,
+                            {"type": "tool_start", "name": fname, "arguments": arguments},
+                        )
+                        result = invoke_mcp_tool(
+                            clients.get(t.server),
+                            server=t.server,
+                            full_name=fname,
+                            arguments=arguments,
+                        )
+                        _notify(
+                            on_event,
+                            {
+                                "type": "tool_end",
+                                "name": fname,
+                                "ok": not result.get("is_error"),
+                                "preview": str(result.get("text", ""))[:400],
+                            },
                             )
                         return result
 
@@ -232,20 +233,49 @@ def build_toolbus(
         return None
 
     def executor(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        receipt_id = new_id("tool")
         handler = handlers.get(name)
-        if handler is None:
-            available = ", ".join(sorted(handlers)[:20])
-            return {
-                "text": f"没有名为 {name} 的工具。可用：{available}",
-                "is_error": True,
-            }
-        try:
-            outcome = handler(arguments or {})
-        except Exception as exc:
-            return {"text": f"工具失败：{type(exc).__name__}: {exc}", "is_error": True}
-        if not isinstance(outcome, dict):
-            return {"text": str(outcome), "is_error": False}
-        return outcome
+        inherited = current_observation()
+        routed_source = source_id or routing.get(name, "")
+        with observation_span(
+            "tool.invoke",
+            trace_id=trace_id or inherited.trace_id,
+            run_id=run_id or inherited.run_id,
+            job_id=job_id or inherited.job_id,
+            source_id=routed_source,
+            tool_receipt_id=receipt_id,
+            labels={"component": "toolbus", "operation": "invoke"},
+        ):
+            if handler is None:
+                available = ", ".join(sorted(handlers)[:20])
+                outcome = {
+                    "text": f"没有名为 {name} 的工具。可用：{available}",
+                    "is_error": True,
+                }
+            else:
+                try:
+                    outcome = handler(arguments or {})
+                except Exception as exc:
+                    outcome = {
+                        "text": f"工具失败：{type(exc).__name__}: {exc}",
+                        "is_error": True,
+                    }
+            if not isinstance(outcome, dict):
+                outcome = {"text": str(outcome), "is_error": False}
+            result = dict(outcome)
+            meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
+            result["meta"] = {**meta, "tool_receipt_id": receipt_id}
+            result["tool_receipt_id"] = receipt_id
+            observation_event(
+                logger,
+                logging.INFO if not result.get("is_error") else logging.WARNING,
+                "tool_invocation",
+                fields={
+                    "operation": "invoke",
+                    "outcome": "error" if result.get("is_error") else "ok",
+                },
+            )
+        return result
 
     return ToolBus(schemas=schemas, executor=executor, routing=routing)
 
@@ -261,8 +291,7 @@ def _make_builtin(
     skill_root = Path(str(skill.get("install_path") or ""))
 
     def _run(arguments: dict[str, Any]) -> dict[str, Any]:
-        if on_event:
-            on_event({"type": "tool_start", "name": name, "arguments": arguments})
+        _notify(on_event, {"type": "tool_start", "name": name, "arguments": arguments})
         if name == "write_journal":
             result = _builtin_write_journal(skill_root, arguments)
         elif name == "ask_user":
@@ -309,14 +338,14 @@ def _make_builtin(
                     result = {"text": f"子 agent 失败：{exc}", "is_error": True}
         else:
             result = {"text": f"未知内置工具：{name}", "is_error": True}
-        if on_event:
-            on_event(
-                {
-                    "type": "tool_end",
-                    "name": name,
-                    "ok": not result.get("is_error"),
-                    "preview": str(result.get("text", ""))[:400],
-                }
+        _notify(
+            on_event,
+            {
+                "type": "tool_end",
+                "name": name,
+                "ok": not result.get("is_error"),
+                "preview": str(result.get("text", ""))[:400],
+            },
             )
         return result
 

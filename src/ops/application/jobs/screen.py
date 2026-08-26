@@ -33,12 +33,19 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     if not slug:
         raise JobError("screen 任务必须指定 strategy")
 
-    # 盘后选股前轻量刷当日 spot，避免吃到上午未定稿 OHLC。刷新失败必须阻断，
-    # 否则任务会拿上一交易日的 K 线生成一份看似成功的候选并推送出去。
+    # 选股要的是「今日日 K 可用」：覆盖已达标则跳过 spot，避免与盘后同步抢写。
     spot_rows = 0
     spot_requested = 0
+    spot_refresh_meta: dict[str, Any] = {
+        "enabled": bool(config.get("refresh_spot", True)),
+        "status": "disabled",
+        "message": "",
+    }
     if bool(config.get("refresh_spot", True)):
-        from src.market import apply_today_spot
+        from src.market.application.screen_spot import (
+            ScreenSpotError,
+            ensure_today_quotes_for_screen,
+        )
 
         try:
             with context.market() as store:
@@ -47,19 +54,54 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
                 spot_types = {
                     item["code"]: item["instrument_type"] for item in instruments
                 }
-            spot_requested = len(spot_codes)
-            if spot_codes:
-                with context.market() as store:
-                    spot_rows = apply_today_spot(
-                        store,
-                        spot_codes,
-                        instrument_types=spot_types or None,
-                        raise_on_failure=True,
-                    )
+                spot_requested = len(spot_codes)
+                ensured = ensure_today_quotes_for_screen(
+                    store,
+                    spot_codes,
+                    instrument_types=spot_types or None,
+                    force_refresh=bool(config.get("force_spot_refresh", False)),
+                )
+            spot_rows = int(ensured.get("written") or 0)
+            spot_refresh_meta = {
+                "enabled": True,
+                "status": str(ensured.get("status") or ""),
+                "requested": spot_requested,
+                "written": spot_rows,
+                "message": str(ensured.get("message") or ""),
+                "coverage": ensured.get("coverage") or {},
+            }
+        except ScreenSpotError as exc:
+            raise JobError(str(exc)) from exc
         except Exception as exc:
-            raise JobError(f"选股前刷新当日行情失败，已阻断选股：{exc}") from exc
+            raise JobError(
+                f"选股前准备当日行情失败，已阻断选股：{exc}"
+            ) from exc
 
-    with context.market() as store:
+    # 策略声明 requires_full_history 时跳过热库镜像，直接读全量库。
+    # 否则尽量镜像后读热库；镜像失败或热库落后于全量时回退全量库选股
+    # （与 screen_run 一致，不假装哨兵会修）。
+    try:
+        needs_full = bool(getattr(get(str(slug)), "requires_full_history", False))
+    except Exception:
+        needs_full = False
+
+    use_hot = False
+    if not needs_full:
+        # refresh_spot=False 时也补一次窗口，保证热库与全量库一致。
+        try:
+            with context.market() as full, context.market_hot() as hot:
+                from src.market import hot_unusable_reason, mirror_recent_to_hot
+
+                mirror_recent_to_hot(full, hot)
+                reason = hot_unusable_reason(full, hot)
+                if reason:
+                    logger.warning("%s，回退全量库选股", reason)
+                else:
+                    use_hot = True
+        except Exception as exc:
+            logger.warning("镜像热库失败，回退全量库选股：%s", exc)
+
+    with (context.market_hot() if use_hot else context.market()) as store:
         result = screen(
             store,
             str(slug),
@@ -140,15 +182,13 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
         "effective_params": getattr(result, "effective_params", getattr(result, "params", {})),
         "pick_count": len(picks),
         "picks": picks,
+        "watch_count": len(getattr(result, "watch_picks", None) or []),
+        "watch_picks": list(getattr(result, "watch_picks", None) or []),
         "top_n_applied": top_n if top_n > 0 else None,
         "universe": result.universe,
         "universe_funnel": result.universe_funnel,
         "data_snapshot": result.data_snapshot,
-        "spot_refresh": {
-            "enabled": bool(config.get("refresh_spot", True)),
-            "requested": spot_requested,
-            "written": spot_rows,
-        },
+        "spot_refresh": spot_refresh_meta,
     }
     if ai_pick_meta:
         payload.update(ai_pick_meta)
@@ -171,6 +211,10 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
                 {**p, "_tier": _tier(i), "_decision": _TIER_DECISION[_tier(i)]}
                 for i, p in enumerate(result.picks)
             ]
+            watch_picks = [
+                {**p, "_tier": "watch", "_decision": "观察"}
+                for p in list(getattr(result, "watch_picks", None) or [])
+            ]
 
         payload["recorded"] = persist_screen_candidates(
             _Bag(),
@@ -182,13 +226,6 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             top_n=0,
         )
     return payload
-
-
-def _factor_reason(slug: str, factors: dict[str, Any]) -> str:
-    """兼容旧测试/导入；实现已迁至 strategy.application.persist。"""
-    from src.strategy.application.persist import factor_reason
-
-    return factor_reason(slug, factors)
 
 
 _ACCOUNT_EXCUSE_RE = re.compile(
@@ -229,7 +266,6 @@ def _ai_pick_codes(
             context.ops_store,
             provider_name,
             model=model,
-            master_key=context.master_key,
         )
     except Exception as exc:
         logger.warning("AI 精选跳过（供应商不可用）：%s", exc)

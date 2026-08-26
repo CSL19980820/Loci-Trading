@@ -4,12 +4,14 @@
 定时任务里推送不应拖垮主任务。
 
 企微出站**只发 text**（msgtype=text），不用 markdown。
+HTTP 经 ``notify_send_queue`` 串行：失败最多 3 次后再发下一条。
 选股正文模板见 ``notify_screen_template``，可在系统推送联配置。
 """
 from __future__ import annotations
 
 import json
 import logging
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -22,6 +24,7 @@ from src.ops.application.notify_screen_template import (
     preview_screen_template,
     resolve_kind_tag,
 )
+from src.ops.application.notify_send_queue import run_serialized
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +80,13 @@ def mask_wecom_webhook(url: str) -> str:
 
 
 def send_wecom_text(webhook_url: str, content: str) -> dict[str, Any]:
-    """企微唯一出站通道：text。"""
+    """企微唯一出站通道：text。经出站队列串行，失败最多 3 次。"""
     url = validate_wecom_webhook(webhook_url)
     body = json.dumps(
         {"msgtype": "text", "text": {"content": _clip(content, MAX_TEXT_CHARS)}},
         ensure_ascii=False,
     ).encode("utf-8")
-    return _post(url, body)
+    return run_serialized(lambda: _post(url, body))
 
 
 def send_wecom_markdown(webhook_url: str, content: str) -> dict[str, Any]:
@@ -104,6 +107,8 @@ def _post(url: str, body: bytes) -> dict[str, Any]:
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:300]
         raise NotifyError(f"企微返回 HTTP {exc.code}：{detail}") from exc
+    except TimeoutError as exc:
+        raise NotifyError("无法连接企微 Webhook：timed out") from exc
     except urllib.error.URLError as exc:
         raise NotifyError(f"无法连接企微 Webhook：{exc.reason}") from exc
     try:
@@ -177,42 +182,37 @@ def format_sync_report(result: dict[str, Any], *, job_name: str = "行情同步"
     return "\n".join(lines)
 
 
-def format_digest(dashboard: dict[str, Any]) -> str:
-    account = dashboard.get("account") or {}
-    positions = dashboard.get("positions") or []
-    candidates = dashboard.get("candidates") or []
-    summary = dashboard.get("candidate_summary") or {}
-    as_of = dashboard.get("as_of") or ""
-    realized = account.get("realized_pnl")
-    today = account.get("today_realized_pnl")
-    assets = account.get("total_assets")
+def format_digest(
+    *,
+    candidates: list[dict[str, Any]],
+    summary: dict[str, Any] | None = None,
+) -> str:
+    """日终简报：当日候选池摘要。
 
-    def money(value: Any) -> str:
-        if value is None:
-            return "—"
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return "—"
-        sign = "+" if number > 0 else ""
-        return f"{sign}{number:,.2f}"
-
+    实盘账本（持仓 / 现金 / 当日盈亏）已下线，这里只转述候选池事实，不再报
+    任何账户口径的金额。
+    """
+    stats = summary or {}
+    as_of = ""
+    for item in candidates:
+        if isinstance(item, dict) and item.get("date"):
+            as_of = str(item["date"])
+            break
     lines = [
         "【日终简报】",
-        f"截至 {as_of}",
-        f"累计已实现 {money(realized)} · 当日 {money(today)}",
-        f"总资产 {money(assets)} · 持仓 {len(positions)} 只",
+        f"截至 {as_of}" if as_of else "暂无候选记录",
         (
-            f"候选精选 {summary.get('selected', '—')} · "
-            f"观察 {summary.get('watch', '—')} · 今日列表 {len(candidates)}"
+            f"候选精选 {stats.get('selected_count', '—')} · "
+            f"未选 {stats.get('filtered_count', '—')} · 今日列表 {len(candidates)}"
         ),
     ]
-    for pos in positions[:8]:
-        if not isinstance(pos, dict):
+    for card in (stats.get("picks") or [])[:8]:
+        if not isinstance(card, dict):
             continue
+        timing = f" · {card.get('timing')}" if card.get("timing") else ""
         lines.append(
-            f"{pos.get('name') or pos.get('code')} {pos.get('code')} "
-            f"{pos.get('shares')} 股 @ {pos.get('cost')}"
+            f"{card.get('name') or card.get('code')} {card.get('code')}"
+            f" · {card.get('decision') or '精选'}{timing}"
         )
     return "\n".join(lines)
 
@@ -231,6 +231,9 @@ def format_job_status(
         "sync": "同步",
         "screen": "选股",
         "skill": "技能",
+        "skill_watch": "监测",
+        "strategy_monitor": "纸面监测",
+        "intel_fetch": "情报采集",
         "notify": "推送",
         "outcome": "跟踪",
         "backtest": "回测",
@@ -276,24 +279,50 @@ def format_job_status(
 def _display_job_name(job_name: str, kind: str) -> str:
     """失败/空结果通知也不把内部任务 slug 直接发给用户。"""
     raw = str(job_name or "").strip()
-    for prefix in ("screen:", "skill:"):
+    for prefix in ("screen:", "skill:", "监测·"):
         if raw.startswith(prefix):
             raw = raw[len(prefix) :]
             break
     builtin_names = {
         "qianlong-close-v3": "潜龙出海（V3）",
-        "qianlong-tail-v1": "潜龙尾盘（V1）",
-        "rsi30-dip": "RSI22 次日低吸",
-        "sanyuan-tail-v1": "三源尾盘共振",
-        "lugw-haidi": "海底捞月",
+        "qianfu-close": "潜伏（已下线）",
+        "qianfu-1450": "潜伏（已下线）",
+        "qianlong-tail-v1": "潜龙尾盘（已下线）",
+        "rsi30-dip": "RSI22 次日低吸（已下线）",
+        "sanyuan-tail-v1": "三源尾盘共振（15:30）",
+        "yangshi-tail-v1": "杨氏尾盘选股（15:30）",
+        "lugw-haidi": "海底捞月（已下线）",
     }
+    from src.ops.application.skill_watch.watch_labels import WATCH_SLUG_LABELS
+
+    builtin_names.update(WATCH_SLUG_LABELS)
     if raw in builtin_names:
-        return builtin_names[raw]
+        label = builtin_names[raw]
+        return f"监测·{label}" if kind == "skill_watch" else label
+    if kind == "skill_watch":
+        from src.ops.application.skill_watch.watch_labels import watch_job_title
+
+        return watch_job_title(slug=raw, job_name=job_name)
     if kind == "screen":
         return "选股"
     if kind == "skill":
         return "技能"
+    # 仍含英文/连字符的内部名，不直接外露
+    if re.search(r"[A-Za-z]", raw) and ("-" in raw or "_" in raw):
+        return kind_labels_fallback(kind)
     return raw or "任务"
+
+
+def kind_labels_fallback(kind: str) -> str:
+    return {
+        "sync": "同步",
+        "screen": "选股",
+        "skill": "技能",
+        "skill_watch": "监测",
+        "strategy_monitor": "纸面监测",
+        "intel_fetch": "情报采集",
+        "notify": "推送",
+    }.get(kind, "任务")
 
 
 def _title_from_result(result: dict[str, Any], fallback: str) -> str:

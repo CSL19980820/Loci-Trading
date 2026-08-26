@@ -21,8 +21,14 @@ from pathlib import Path
 import sys
 import time
 
-from src.market import MarketStore, sync_instruments, sync_quotes
-from src.market.infrastructure.store import DEFAULT_DB
+from src.market import (
+    DEFAULT_DB,
+    MarketStore,
+    MarketWriteBusy,
+    market_write_lock,
+    sync_instruments,
+    sync_quotes,
+)
 from src.strategy import describe_all, get, screen
 
 DISCLAIMER = "本工具仅用于信息整理与方法论辅助，输出不构成任何投资建议。股市有风险，入市需谨慎。"
@@ -43,6 +49,7 @@ def cmd_instruments(args: argparse.Namespace) -> int:
 
 def cmd_sync(args: argparse.Namespace) -> int:
     with _store(args) as store:
+        db_path = store.db_path
         if args.codes:
             codes = [code.strip() for code in args.codes.split(",") if code.strip()]
             types: dict[str, str] = {}
@@ -66,16 +73,34 @@ def cmd_sync(args: argparse.Namespace) -> int:
             print(f"\r  进度 {done}/{count}", end="", flush=True)
 
     print(f"开始同步 {total} 只证券（并发 {args.workers}，最小间隔 {args.interval}s）")
-    report = sync_quotes(
-        lambda: MarketStore(args.db),
-        codes,
-        instrument_types=types if not args.codes else None,
-        workers=args.workers,
-        min_interval=args.interval,
-        force=args.force,
-        with_factors=not args.no_factors,
-        progress=progress,
-    )
+    # README 宣称「四入口共用同一把闸门」，可这里原先直调 sync_quotes，等于第四个
+    # 入口根本不在闸门里：CLI 是独立进程，线程闸门 ops.market_gate 够不着它，能拦住
+    # 的只有跨进程的 market_write_lock。于是「桌面端正在同步」时跑一次本命令就是双写
+    # market.db，SQLite 直接顶成 locked。label 与 ops 侧同形（sync:<mode>），
+    # 报错文案和运维诊断里能一眼认出占锁的是谁。
+    lock_label = "sync:codes" if args.codes else "sync:full"
+    try:
+        with market_write_lock(db_path, label=lock_label):
+            report = sync_quotes(
+                lambda: MarketStore(args.db),
+                codes,
+                instrument_types=types if not args.codes else None,
+                workers=args.workers,
+                min_interval=args.interval,
+                force=args.force,
+                with_factors=not args.no_factors,
+                progress=progress,
+            )
+    except MarketWriteBusy as exc:
+        print(file=sys.stderr)
+        print(f"本次同步没有开始：{exc}", file=sys.stderr)
+        print(
+            "行情库同一时刻只允许一个写入者，桌面端 Loci、定时调度和这条命令共用同一把锁。"
+            "等对方跑完再执行本命令即可；若确认它已经卡死，"
+            "到桌面端「运维 → 执行历史」把那条同步停掉。",
+            file=sys.stderr,
+        )
+        return 3
     print()
     print(report.summary())
     if report.failures:

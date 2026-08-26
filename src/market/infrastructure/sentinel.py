@@ -44,8 +44,8 @@ DEFAULT_THRESHOLDS: dict[str, float] = {
     "max_zero_amount_ratio": 0.10,
 }
 
-#: UI 扫描目录（与检查函数一一对应；空仓时只会出现 empty_store）。
-CHECK_CATALOG: tuple[dict[str, str], ...] = (
+#: UI 扫描目录（仓内核心项；扩展项见 sentinel_extended.EXTENDED_CATALOG）。
+CHECK_CATALOG_CORE: tuple[dict[str, str], ...] = (
     {"id": "empty_store", "label": "仓内是否有日 K", "group": "仓体"},
     {"id": "staleness", "label": "最新日是否落后", "group": "时效"},
     {"id": "coverage", "label": "当日覆盖率", "group": "覆盖"},
@@ -66,6 +66,9 @@ _REPAIR_ACTION_PRIORITY: dict[str, int] = {
     "sync": 2,
     "repair_turnover": 3,
 }
+
+#: 可由体检页自动执行的 remediation；其余只给人看跳转。
+_AUTO_REPAIR_ACTIONS = frozenset(_REPAIR_ACTION_PRIORITY)
 
 
 @dataclass
@@ -128,7 +131,11 @@ def remediation_for(check: str) -> dict[str, str] | None:
             "hint": "对失败代码再跑一轮同步",
         },
     }
-    return mapping.get(check)
+    if check in mapping:
+        return mapping[check]
+    from src.market.infrastructure.sentinel_extended import extended_remediation
+
+    return extended_remediation(check)
 
 
 def seal_score(*, block_count: int, warn_count: int) -> int:
@@ -137,11 +144,12 @@ def seal_score(*, block_count: int, warn_count: int) -> int:
     return max(0, min(100, int(raw)))
 
 
-def seal_grade(score: int) -> str:
-    """印鉴分档：优 / 良 / 中 / 差。"""
-    if score >= 90:
+def seal_grade(score: int, *, blocked: bool = False) -> str:
+    """印鉴分档：优 / 良 / 中 / 差；``blocked`` 时最高只到「中」——单条 block
+    只扣 25 分（75 →「良」），体检拦下了选股却显示「良」是典型的虚假安心。"""
+    if score >= 90 and not blocked:
         return "优"
-    if score >= 70:
+    if score >= 70 and not blocked:
         return "良"
     if score >= 50:
         return "中"
@@ -152,8 +160,10 @@ def build_repair_plan(findings: list[Finding]) -> dict[str, Any]:
     """把多条 finding 的 remediation 去重合并成一次可执行计划。
 
     优先级：bootstrap > sync_factors > sync。含因子问题时 ``with_factors=True``。
+    仅收录可自动执行的 action（不含 open_jobs / open_lanes 等人工项）。
     """
     by_action: dict[str, dict[str, str]] = {}
+    auto_check_ids: list[str] = []
     for item in findings:
         if item.severity == "ok":
             continue
@@ -161,6 +171,9 @@ def build_repair_plan(findings: list[Finding]) -> dict[str, Any]:
         if not rem:
             continue
         action = rem["action"]
+        if action not in _AUTO_REPAIR_ACTIONS:
+            continue
+        auto_check_ids.append(item.check)
         if action not in by_action:
             by_action[action] = rem
 
@@ -179,11 +192,7 @@ def build_repair_plan(findings: list[Finding]) -> dict[str, Any]:
         "needs_bootstrap": any(a in {"bootstrap", "sync", "sync_factors"} for a in actions),
         "needs_turnover_repair": "repair_turnover" in actions,
         "labels": [rem["label"] for rem in ordered],
-        "check_ids": [
-            item.check
-            for item in findings
-            if item.severity != "ok" and remediation_for(item.check)
-        ],
+        "check_ids": auto_check_ids,
     }
 
 
@@ -194,6 +203,7 @@ class HealthReport:
     trade_date: str
     findings: list[Finding] = field(default_factory=list)
     checked_at: str = ""
+    include_network: bool = False
 
     @property
     def blocked(self) -> bool:
@@ -220,7 +230,20 @@ class HealthReport:
 
     @property
     def grade(self) -> str:
-        return seal_grade(self.score)
+        return seal_grade(self.score, blocked=self.blocked)
+
+    def catalog_rows(self) -> list[dict[str, str]]:
+        from src.market.infrastructure.sentinel_extended import (
+            EXTENDED_CATALOG,
+            is_network_check,
+        )
+
+        rows = [dict(row) for row in CHECK_CATALOG_CORE]
+        for row in EXTENDED_CATALOG:
+            if is_network_check(row["id"]) and not self.include_network:
+                continue
+            rows.append(dict(row))
+        return rows
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -228,14 +251,25 @@ class HealthReport:
             "blocked": self.blocked,
             "reason": self.reason(),
             "checked_at": self.checked_at,
+            "include_network": self.include_network,
             "findings": [item.to_dict() for item in self.findings],
             "block_count": len(self.blockers),
             "warn_count": len(self.warnings),
             "score": self.score,
             "grade": self.grade,
             "repair_plan": build_repair_plan(self.findings),
-            "catalog": [dict(row) for row in CHECK_CATALOG],
+            "catalog": self.catalog_rows(),
         }
+
+
+# 兼容旧 ``CHECK_CATALOG`` 导入（含全部扩展项，含网络）
+def _full_catalog() -> tuple[dict[str, str], ...]:
+    from src.market.infrastructure.sentinel_extended import EXTENDED_CATALOG
+
+    return CHECK_CATALOG_CORE + EXTENDED_CATALOG
+
+
+CHECK_CATALOG: tuple[dict[str, str], ...] = _full_catalog()
 
 
 class DataQualityError(RuntimeError):
@@ -252,17 +286,27 @@ def check_market_health(
     trade_date: str | None = None,
     thresholds: dict[str, float] | None = None,
     include_ok: bool = False,
+    include_network: bool = False,
+    sync_jobs: list[dict[str, Any]] | None = None,
 ) -> HealthReport:
     """对行情仓做一次体检。不抛异常，把结论交给调用方决定。
 
     ``include_ok=True`` 时保留通过项，供体检页扫描回放；选股门禁默认 False。
+    ``include_network=True`` 时额外探测数据源连通（深度扫描；选股门禁勿开）。
+    ``sync_jobs`` 可选注入托管同步 Job 快照；``None`` 时自动读 ops.db。
     """
-    limits = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
+    from src.market.infrastructure.sentinel_extended import (
+        EXTENDED_THRESHOLDS,
+        run_extended_checks,
+    )
+
+    limits = {**DEFAULT_THRESHOLDS, **EXTENDED_THRESHOLDS, **(thresholds or {})}
     coverage = store.coverage()
     target = trade_date or str(coverage.get("last_date") or "")
     report = HealthReport(
         trade_date=target,
         checked_at=datetime.now().isoformat(timespec="seconds"),
+        include_network=include_network,
     )
 
     if not target:
@@ -273,6 +317,18 @@ def check_market_health(
                 message="行情仓是空的，没有任何可用于选股的数据",
             )
         )
+        # 空仓仍跑本地扩展项（依赖/线路关空等），便于一页看清
+        report.findings.extend(
+            run_extended_checks(
+                store,
+                coverage,
+                limits=limits,
+                include_network=include_network,
+                sync_jobs=sync_jobs,
+            )
+        )
+        if not include_ok:
+            report.findings = [item for item in report.findings if item.severity != "ok"]
         return report
 
     report.findings.append(_check_staleness(store, coverage, target, limits))
@@ -281,8 +337,16 @@ def check_market_health(
     report.findings.append(_check_zero_amount(store, target, limits))
     report.findings.append(_check_factor_age(store, limits))
     report.findings.append(_check_failed_codes(coverage, limits))
+    report.findings.extend(
+        run_extended_checks(
+            store,
+            coverage,
+            limits=limits,
+            include_network=include_network,
+            sync_jobs=sync_jobs,
+        )
+    )
     if not include_ok:
-        # 只保留有话说的项；全 ok 的检查不必占版面。
         report.findings = [item for item in report.findings if item.severity != "ok"]
     return report
 
@@ -474,7 +538,7 @@ def _check_factor_age(store: MarketStore, limits: dict[str, float]) -> Finding:
     if not row or not row["rows"]:
         return Finding(
             "factor_age",
-            "warn",
+            "block",
             "adjust_factors 表是空的：前复权等同于不复权，除权票的历史价格会错位",
             observed=0,
         )

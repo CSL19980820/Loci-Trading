@@ -13,7 +13,7 @@ const props = withDefaults(
     /** 同批上下文：≥2 只时开切票会话 */
     batch?: Omit<OpenBatchInput, 'focusCode'> | null
     /** 可选覆盖目标 view */
-    view?: 'quote' | 'trades' | 'candidates'
+    view?: 'quote' | 'candidates'
     /** 锚定日 K 到该交易日（YYYY-MM-DD） */
     date?: string | null
     /** 有名称时是否附带显示代码；窄列表可关 */
@@ -33,7 +33,7 @@ const router = useRouter()
 const batchStore = useBatchBrowseStore()
 
 function archiveQuery(
-  view?: 'quote' | 'trades' | 'candidates',
+  view?: 'quote' | 'candidates',
   date?: string | null,
 ): Record<string, string> | undefined {
   const query: Record<string, string> = {}
@@ -60,7 +60,7 @@ function onClick(event: MouseEvent): void {
 
 /** 供父组件程序化开档（如表行点击）。 */
 function openWithBatch(
-  input: OpenBatchInput & { view?: 'quote' | 'trades' | 'candidates'; date?: string | null },
+  input: OpenBatchInput & { view?: 'quote' | 'candidates'; date?: string | null },
 ): void {
   batchStore.openBatch(input)
   void router.push({

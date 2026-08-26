@@ -19,11 +19,10 @@ const source = ref('')
 const kindOptions = [
   { label: '通达信', value: 'tdx' },
   { label: '同花顺', value: 'ths' },
-  { label: 'Python', value: 'python' },
+  { label: '脚本', value: 'python' },
 ]
 
 const language = computed(() => (kind.value === 'python' ? 'python' : 'plaintext'))
-const filename = computed(() => (kind.value === 'python' ? 'strategy.py' : 'formula.tdx'))
 
 function applyImport(): void {
   const code = source.value.trim()
@@ -50,7 +49,6 @@ watch(visible, (open) => {
   >
     <div class="import-toolbar">
       <el-segmented v-model="kind" :options="kindOptions" />
-      <span class="import-file">{{ filename }}</span>
     </div>
     <CodeEditor v-model="source" :language="language" height="26rem" />
     <template #footer>
@@ -67,10 +65,5 @@ watch(visible, (open) => {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
-}
-
-.import-file {
-  color: var(--mist);
-  font: 0.78rem var(--mono);
 }
 </style>

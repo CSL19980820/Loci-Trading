@@ -37,6 +37,21 @@ PRIMARY_HORIZONS = (1, 3, 5)
 #: 完整观察窗口。短中期 + 60 看漏掉的大牛股。
 HORIZONS = (1, 3, 5, 10, 20, 60)
 
+#: 样本可信度阈值（已兑现候选数），与回测侧 ``backtest.application.metrics``
+#: 的 SAMPLE_LOW / SAMPLE_MEDIUM 同口径：目录页的「胜率」和回测页的「胜率」
+#: 摆在一起看，样本分档必须一致，否则 3 个样本的 100% 会被当成结论。
+SAMPLE_LOW = 30
+SAMPLE_MEDIUM = 100
+
+
+def sample_confidence(n: int) -> str:
+    if n < SAMPLE_LOW:
+        return "low"
+    if n < SAMPLE_MEDIUM:
+        return "medium"
+    return "high"
+
+
 @dataclass
 class CandidateOutcome:
     candidate_id: str
@@ -49,6 +64,8 @@ class CandidateOutcome:
     base_close: float | None
     returns: dict[int, float | None] = field(default_factory=dict)
     max_favorable_pct: float | None = None
+    #: 观察窗口（不含选股日）最低价→最高价涨幅（%），(max_high - min_low) / min_low。
+    swing_pct: float | None = None
     benchmark_returns: dict[int, float | None] = field(default_factory=dict)
     note: str = ""
     tier: str = "core"
@@ -94,6 +111,7 @@ class CandidateOutcome:
             "returns": {f"t{h}": self.returns.get(h) for h in HORIZONS},
             "alpha": {f"t{h}": self.alpha(h) for h in HORIZONS},
             "max_favorable_pct": self.max_favorable_pct,
+            "swing_pct": self.swing_pct,
             "note": self.note,
             "tier": self.tier,
             "strategy_slug": self.strategy_slug,
@@ -114,9 +132,42 @@ def _series_for(market: MarketStore, code: str, start: str, end: str) -> dict[st
         str(row.trade_date): {
             "close": float(row.close) if row.close is not None else float("nan"),
             "high": float(row.high) if row.high is not None else float("nan"),
+            "low": float(row.low) if row.low is not None else float("nan"),
         }
         for row in frame.itertuples()
     }
+
+
+def _series_from_panel(
+    panels: dict[str, Any], code: str, start: str, end: str
+) -> dict[str, dict[str, float]]:
+    """从宽表面板切出单票 [start, end] 的 close/high/low，形状同 ``_series_for``。
+
+    面板里缺票/停牌是 NaN：整日三列全 NaN 视为「当天没有这根 K 线」，
+    不落 key（等价于原来 history 里没有这一行），**绝不把 NaN 当 0**。
+    """
+    columns: dict[str, Any] = {}
+    for key in ("close", "high", "low"):
+        panel = panels.get(key)
+        if panel is None or getattr(panel, "empty", True):
+            continue
+        if code not in panel.columns:
+            continue
+        column = panel[code]
+        # 面板窗口是全局合并区间，这里要回到本票自己的 [start, end]
+        columns[key] = column[(column.index >= start) & (column.index <= end)]
+    if not columns:
+        return {}
+    series: dict[str, dict[str, float]] = {}
+    for key, column in columns.items():
+        for day, value in column.items():
+            if value != value:  # NaN：该字段当日无数
+                continue
+            series.setdefault(str(day), {})[key] = float(value)
+    for bar in series.values():
+        for key in ("close", "high", "low"):
+            bar.setdefault(key, float("nan"))
+    return series
 
 
 def filter_recent_outcomes(
@@ -161,26 +212,7 @@ def evaluate_candidates(
     benchmark: str | None = "000300",
 ) -> list[CandidateOutcome]:
     """对候选池里的每一条裁决算 T+N 结局。"""
-    rows = [
-        dict(row)
-        for row in palace.conn.execute(
-            """
-            SELECT id, occurred_on, code, name, score, decision, tier,
-                   strategy_slug, rule_version, pool_id
-            FROM (
-                SELECT *, ROW_NUMBER() OVER (
-                    PARTITION BY occurred_on, pool_id, code
-                    ORDER BY created_at DESC, id DESC
-                ) AS rn FROM candidate_reviews
-                WHERE IFNULL(source, '') NOT LIKE '%backfill%'
-                  AND IFNULL(source, '') NOT LIKE '%:history'
-            ) ranked WHERE rn = 1
-            ORDER BY occurred_on DESC, code
-            LIMIT ?
-            """,
-            (int(limit),),
-        )
-    ]
+    rows = palace.candidate_outcome_rows(limit=limit)
     if not rows:
         return []
 
@@ -223,15 +255,29 @@ def evaluate_candidates(
                 max(previous[1], window[-1]),
             )
 
+    # 基准指数只有一只票、一个区间，保留原来的单次 history 查询。
     benchmark_series = (
         _series_for(market, benchmark, calendar[0], calendar[-1]) if benchmark else {}
     )
-    # 候选池常会在不同池/不同日重复收录同一标的。按代码合并读取区间，
-    # 防止默认 300（任务 2000）条候选退化成同等数量的 SQLite 查询。
-    series_by_code = {
-        code: _series_for(market, code, start, end)
-        for code, (start, end) in ranges_by_code.items()
-    }
+    # 为什么批量：候选池常在不同池/不同日重复收录同一标的，按代码合并区间后
+    # 仍有 N_code 次 history（默认 300、任务下 2000 条候选 = 上千次 SQLite 往返）；
+    # load_panel 一条 IN (...) 全取回，只剩 1 次（加基准 1 次）。
+    series_by_code: dict[str, dict[str, dict[str, float]]] = {}
+    if ranges_by_code:
+        # 面板必须给 start；取全局合并区间，再在内存按票切回各自区间。
+        min_start = min(window_start for window_start, _ in ranges_by_code.values())
+        max_end = max(window_end for _, window_end in ranges_by_code.values())
+        panels = market.load_panel(
+            fields=("close", "high", "low"),
+            codes=sorted(ranges_by_code),
+            start=min_start,
+            end=max_end,
+            adjust="qfq",
+        )
+        series_by_code = {
+            code: _series_from_panel(panels, code, window_start, window_end)
+            for code, (window_start, window_end) in ranges_by_code.items()
+        }
 
     outcomes: list[CandidateOutcome] = []
     for row in rows:
@@ -266,6 +312,8 @@ def evaluate_candidates(
         outcome.base_close = round(base, 4)
 
         highs: list[float] = []
+        lows: list[float] = []
+        post_highs: list[float] = []
         for horizon in HORIZONS:
             if index + horizon >= len(calendar):
                 outcome.returns[horizon] = None
@@ -280,12 +328,23 @@ def evaluate_candidates(
                 benchmark_series, window[0], target_day
             )
 
+        # 浮盈高点 / 低→高波幅都不含选股日当天，只看 T+1 起的观察窗。
         for day in window[1:]:
-            high = series.get(day, {}).get("high")
+            bar = series.get(day, {})
+            high = bar.get("high")
+            low = bar.get("low")
             if high and high == high:
                 highs.append(high)
-        if highs:
-            outcome.max_favorable_pct = round((max(highs) / base - 1) * 100, 4)
+                post_highs.append(high)
+            if low and low == low and low > 0:
+                lows.append(low)
+        if post_highs:
+            outcome.max_favorable_pct = round((max(post_highs) / base - 1) * 100, 4)
+        if highs and lows:
+            floor = min(lows)
+            peak = max(highs)
+            if floor > 0 and peak >= floor:
+                outcome.swing_pct = round((peak - floor) / floor * 100, 4)
         if all(value is None for value in outcome.returns.values()):
             outcome.note = "观察窗口尚未走完"
         elif any(outcome.returns.get(h) is None for h in PRIMARY_HORIZONS):
@@ -301,13 +360,19 @@ def _horizon_aggregate(items: list[CandidateOutcome], horizon: int) -> dict[str,
     values = [v for v in values if v is not None]
     if not values:
         return None
-    return {
+    body = {
         "n": len(values),
         "avg": round(sum(values) / len(values), 4),
         "win_rate": round(sum(1 for v in values if v > 0) / len(values) * 100, 2),
         "best": round(max(values), 4),
         "worst": round(min(values), 4),
+        # 一只候选走完 T+5 就能报「胜率 100%」。数字本身没错，但不标样本档
+        # 等于放任把它当结论；与回测 metrics 用同一套 low/medium/high。
+        "sample_confidence": sample_confidence(len(values)),
     }
+    if len(values) < SAMPLE_LOW:
+        body["caution"] = f"样本仅 {len(values)} 只候选，胜率不稳定，不宜据此外推"
+    return body
 
 
 def summarize_by_strategy(
@@ -342,21 +407,26 @@ def summarize_by_strategy(
             1 for o in items if o.window_progress()["status"] != "complete"
         )
         last_dates = [o.base_date for o in items if o.base_date]
-        rows.append(
-            {
-                "strategy_tag": tag,
-                "total": len(primary_values),
-                "wins": wins,
-                "win_rate": primary["win_rate"] if primary else None,
-                "avg_return": primary["avg"] if primary else None,
-                "last_reviewed": max(last_dates) if last_dates else "",
-                "source": "candidates",
-                "horizons": horizons,
-                "observing": observing,
-                "sample_all": len(items),
-                "primary_horizon": primary_horizon,
-            }
-        )
+        row: dict[str, Any] = {
+            "strategy_tag": tag,
+            "total": len(primary_values),
+            "wins": wins,
+            "win_rate": primary["win_rate"] if primary else None,
+            "avg_return": primary["avg"] if primary else None,
+            "last_reviewed": max(last_dates) if last_dates else "",
+            "source": "candidates",
+            "horizons": horizons,
+            "observing": observing,
+            "sample_all": len(items),
+            "primary_horizon": primary_horizon,
+            "sample_confidence": sample_confidence(len(primary_values)),
+        }
+        if primary_values and len(primary_values) < SAMPLE_LOW:
+            row["caution"] = (
+                f"T+{primary_horizon} 仅 {len(primary_values)} 只候选走完窗口，"
+                "胜率不稳定，不宜据此外推"
+            )
+        rows.append(row)
     rows.sort(
         key=lambda r: (-int(r.get("total") or 0), -int(r.get("sample_all") or 0), str(r["strategy_tag"]))
     )
@@ -375,6 +445,12 @@ def track_candidate_outcomes(
 
     ``max_age_trading_days`` 默认 5：只强调短线窗口内的跟踪进度；
     汇总仍基于全量 limit 内候选，便于目录胜率连贯。
+
+    **口径变更（2026-08，实盘项下线）**：此前本函数在算完候选 T+N 之后，还会把
+    精选候选镜像写进 ``position_tracking``，供「回测-实盘偏离」消费；返回值里
+    因此带一个 ``tracking`` 计数。``position_tracking`` 已随实盘项一并删除，那段
+    镜像写入和 ``tracking`` 键都已移除。**T+N 数字本身一个都没变**——它们从来
+    只由 ``candidate_reviews`` + 行情推导，``position_tracking`` 是只写不读的旁路。
     """
     outcomes = evaluate_candidates(palace, market, limit=limit, benchmark=benchmark)
     calendar = market.trading_days()
@@ -400,16 +476,6 @@ def track_candidate_outcomes(
         status = outcome.window_progress()["status"]
         by_status[status] = by_status.get(status, 0) + 1
 
-    # 把精选候选的 T+N 计划写入 position_tracking，供「回测-实盘偏离」追踪消费。
-    # 函数内导入避免 outcomes ↔ drift 循环依赖。
-    tracking: dict[str, int] = {"opened": 0, "closed": 0, "skipped": 0}
-    try:
-        from src.review.application.drift import sync_position_tracking
-
-        tracking = sync_position_tracking(palace, outcomes, calendar)
-    except Exception:  # noqa: BLE001 — 计划跟踪失败不阻塞胜率快照
-        pass
-
     return {
         "as_of": as_of,
         "age_cutoff": age_cutoff,
@@ -421,7 +487,6 @@ def track_candidate_outcomes(
         "by_strategy": summarize_by_strategy(outcomes, selected_only=True),
         "summary": summarize_candidates(outcomes),
         "horizons": list(PRIMARY_HORIZONS),
-        "tracking": tracking,
     }
 
 
@@ -503,132 +568,3 @@ def _score_buckets(outcomes: list[CandidateOutcome]) -> list[dict[str, Any]]:
             }
         )
     return result
-
-
-def evaluate_plans(palace: PalaceStore, market: MarketStore) -> list[dict[str, Any]]:
-    """预案兑现：止损/止盈事后有没有被触发。
-
-    口径约束：
-    - 预案是盘后（或休市日）制定的，信号日当天尚未开盘 → 从下一交易日开始扫描，
-      不能用当天的盘中价「提前」标记触发。
-    - 观察窗口上限 60 个交易日：长尾预案不无限扫描。
-    """
-    calendar = market.trading_days()
-    position_of = {day: index for index, day in enumerate(calendar)}
-    #: 预案观察窗口上限（交易日）。超过仍未触发视为「未兑现」，不再追溯。
-    PLAN_WINDOW_TRADING_DAYS = 60
-
-    rows = [
-        dict(row)
-        for row in palace.conn.execute(
-            "SELECT id, occurred_on, code, title, stop_price, target_price, status"
-            " FROM plans WHERE status = 'active' ORDER BY occurred_on DESC"
-        )
-    ]
-    results: list[dict[str, Any]] = []
-    evaluations: list[tuple[dict[str, Any], list[str] | None, int | None]] = []
-    codes: set[str] = set()
-    window_start: str | None = None
-    window_end: str | None = None
-    for row in rows:
-        code = str(row["code"])
-        base_date = str(row["occurred_on"])
-        stop = row["stop_price"]
-        target = row["target_price"]
-
-        record: dict[str, Any] = {
-            "plan_id": str(row["id"]),
-            "code": code,
-            "title": str(row["title"]),
-            "occurred_on": base_date,
-            "stop_price": stop,
-            "target_price": target,
-            "stop_hit_on": None,
-            "target_hit_on": None,
-            "status_final": "observing",
-        }
-
-        base_index = position_of.get(base_date)
-        if base_index is None:
-            following = [day for day in calendar if day >= base_date]
-            if not following:
-                record["status_final"] = "no_data"
-                record["note"] = "预案日之后还没有交易日数据"
-                evaluations.append((record, None, None))
-                continue
-            base_index = position_of[following[0]]
-        start_index = base_index + 1  # 盘后预案：次日才可能触发
-        if start_index >= len(calendar):
-            # 预案日之后还没有交易日，保持 observing
-            evaluations.append((record, None, None))
-            continue
-        end_index = min(start_index + PLAN_WINDOW_TRADING_DAYS, len(calendar))
-        window = calendar[start_index:end_index]
-        evaluations.append((record, window, start_index))
-        codes.add(code)
-        window_start = min(window_start, window[0]) if window_start else window[0]
-        window_end = max(window_end, window[-1]) if window_end else window[-1]
-
-    panels = (
-        market.load_panel(
-            fields=("low", "high"),
-            codes=sorted(codes),
-            start=window_start,
-            end=window_end,
-            adjust="qfq",
-        )
-        if codes
-        else {}
-    )
-    low_panel = panels.get("low")
-    high_panel = panels.get("high")
-
-    for record, window, start_index in evaluations:
-        if window is None:
-            results.append(record)
-            continue
-
-        code = str(record["code"])
-        low_series = low_panel[code] if low_panel is not None and code in low_panel else None
-        high_series = high_panel[code] if high_panel is not None and code in high_panel else None
-        observed_days = set()
-        if low_series is not None:
-            observed_days.update(str(day) for day in low_series.dropna().index)
-        if high_series is not None:
-            observed_days.update(str(day) for day in high_series.dropna().index)
-        if not any(day in observed_days for day in window):
-            record["status_final"] = "no_data"
-            record["note"] = "未取得真实行情"
-            results.append(record)
-            continue
-
-        if start_index is not None and len(calendar) - start_index > PLAN_WINDOW_TRADING_DAYS:
-            record["window_expired"] = True
-
-        for trade_date in window:
-            low = low_series.get(trade_date) if low_series is not None else None
-            high = high_series.get(trade_date) if high_series is not None else None
-            if stop is not None and low is not None and low <= float(stop) and not record["stop_hit_on"]:
-                record["stop_hit_on"] = trade_date
-            if (
-                target is not None
-                and high is not None
-                and high >= float(target)
-                and not record["target_hit_on"]
-            ):
-                record["target_hit_on"] = trade_date
-
-        if record["target_hit_on"] and record["stop_hit_on"]:
-            record["status_final"] = (
-                "target_first" if record["target_hit_on"] <= record["stop_hit_on"] else "stop_first"
-            )
-        elif record["target_hit_on"]:
-            record["status_final"] = "target_hit"
-        elif record["stop_hit_on"]:
-            record["status_final"] = "stop_hit"
-        elif record.get("window_expired"):
-            # 观察窗口完整走完仍未触发 → 未兑现；否则保持 observing 等行情补齐
-            record["status_final"] = "expired"
-            record["note"] = "观察窗口内未触发"
-        results.append(record)
-    return results

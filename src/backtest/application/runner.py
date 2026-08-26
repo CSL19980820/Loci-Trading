@@ -24,7 +24,7 @@ from src.backtest.application.horizon import (
     run_horizon_backtest,
 )
 from src.market import MarketStore
-from src.market.domain.universe import UniverseError, resolve_universe
+from src.market import UniverseError, resolve_universe
 from src.strategy.application.catalog import get
 from src.strategy.application.price_constraints import attach_raw_limit_close
 from src.strategy.domain.base import (
@@ -52,7 +52,36 @@ def backtest_strategy(
     adjust: str | None = None,
 ) -> BacktestResult:
     """在指定区间对某个策略跑成交回测（入场价 / 持有 / 止损）。"""
-    ctx = _prepare_signal_context(
+    ctx = prepare_backtest_context(
+        store,
+        strategy,
+        start=start,
+        end=end,
+        params=params,
+        codes=codes,
+        universe=universe,
+        skip_universe_safety=skip_universe_safety,
+        adjust=adjust,
+        config=config,
+    )
+    return execute_backtest_context(store, ctx)
+
+
+def prepare_backtest_context(
+    store: MarketStore,
+    strategy: str | StrategyEngine,
+    *,
+    start: str | None = None,
+    end: str | None = None,
+    params: dict[str, Any] | None = None,
+    config: BacktestConfig | None = None,
+    codes: list[str] | None = None,
+    universe: Mapping[str, Any] | None = None,
+    skip_universe_safety: bool = False,
+    adjust: str | None = None,
+) -> dict[str, Any]:
+    """准备一次回测的冻结上下文，供研究层生成同宇宙对照。"""
+    return _prepare_signal_context(
         store,
         strategy,
         start=start,
@@ -65,16 +94,31 @@ def backtest_strategy(
         tail_days=None,
         config=config,
     )
+
+
+def execute_backtest_context(
+    store: MarketStore,
+    ctx: Mapping[str, Any],
+    *,
+    use_fast: bool | None = None,
+) -> BacktestResult:
+    """按已准备上下文执行；研究验证可显式关闭加速旁路。"""
     cfg = ctx["config"]
     engine = ctx["engine"]
     signals = ctx["signals"]
     panels = ctx["panels"]
     execution_panels = ctx.get("execution_panels", panels)
 
-    benchmark_close = None
-    if cfg.benchmark:
+    # 研究回测会把 benchmark 一并放进冻结 context；一旦存在就绝不能
+    # 回到 MarketStore 重新读取，否则 market 在 train/OOS 之间变化会污染证据。
+    if "benchmark_close" in ctx:
+        benchmark_close = ctx["benchmark_close"]
+    elif cfg.benchmark:
         benchmark_close = _load_benchmark(store, cfg.benchmark, panels["close"].index)
+    else:
+        benchmark_close = None
 
+    fast = fast_backtest_enabled() if use_fast is None else bool(use_fast)
     result = (
         run_backtest_fast(
             signals,
@@ -85,7 +129,7 @@ def backtest_strategy(
             strategy_slug=engine.slug,
             benchmark_close=benchmark_close,
         )
-        if fast_backtest_enabled()
+        if fast
         else run_backtest(
             signals,
             execution_panels,
@@ -96,10 +140,45 @@ def backtest_strategy(
             benchmark_close=benchmark_close,
         )
     )
-    _attach_context(result.config, ctx)
-    if fast_backtest_enabled():
-        result.config["fast"] = describe_fast_backend()
+    _attach_context(result.config, dict(ctx))
+    if fast:
+        # 加速旁路可能已回退经典引擎并写好了 fallback_reason，别覆盖成
+        # "engine=numpy_fast"——那等于对外谎报这份结果是加速路径跑的。
+        result.config.setdefault("fast", describe_fast_backend())
     return result
+
+
+def build_universe_control(
+    store: MarketStore,
+    ctx: Mapping[str, Any],
+    *,
+    use_fast: bool = False,
+) -> BacktestResult:
+    """在策略实际命中的日期，对同一面板的全部代码生成基线事件。
+
+    这不是把策略交易复制一份：控制信号只复用观察日期，随后让同一 A 股
+    执行引擎重新检查每只股票的可成交性、T+1、涨跌停和持有期。
+    """
+    signals = ctx["signals"]
+    control_signals = pd.DataFrame(
+        False,
+        index=signals.index,
+        columns=signals.columns,
+    )
+    active_days = signals.any(axis=1)
+    if bool(active_days.any()):
+        membership_mask = ctx.get("universe_control_mask")
+        if isinstance(membership_mask, pd.DataFrame):
+            aligned = membership_mask.reindex(
+                index=signals.index,
+                columns=signals.columns,
+            ).fillna(False)
+            control_signals.loc[active_days, :] = aligned.loc[active_days, :]
+        else:
+            control_signals.loc[active_days, :] = True
+    control_ctx = dict(ctx)
+    control_ctx["signals"] = control_signals
+    return execute_backtest_context(store, control_ctx, use_fast=use_fast)
 
 
 def backtest_strategy_horizon(
@@ -281,6 +360,14 @@ def _prepare_signal_context(
     if panels["close"].empty:
         raise StrategyError("所选区间没有行情数据")
 
+    # 前视闸门：静态始终；大宇宙分片截断一致性（见 audit_sampling）
+    from src.strategy.application.audit import LookAheadError, guard_strategy
+
+    try:
+        guard_strategy(engine, panels, params=resolved_params)
+    except LookAheadError as exc:
+        raise StrategyError(str(exc)) from exc
+
     signals = engine.compute(panels, resolved_params).signals
     if start:
         signals = signals[signals.index >= start]
@@ -288,8 +375,11 @@ def _prepare_signal_context(
         signals = signals[signals.index <= end]
     signals = signals.reindex(panels["close"].index).fillna(False)
 
+    # 预挂价必须落在**执行面板**的价格坐标系里：目标价随后要跟 execution_panels
+    # 的 open/low 比大小。用 qfq 信号面板算目标价、拿不复权最低价去比，两边差
+    # 一个复权因子，触价判断会整体错位（除权越多错得越狠）。
     entry_price_panel = _build_entry_price_panel(
-        engine, resolved_params, panels
+        engine, resolved_params, execution_panels
     )
 
     return {
@@ -308,7 +398,16 @@ def _prepare_signal_context(
         "execution_adjust": execution_adjust or effective_adjust,
         "signals": signals,
         "entry_price_panel": entry_price_panel,
-        "data_snapshot": store.data_snapshot(),
+        # 作为 context 的一部分冻结，避免执行阶段再次读取行情仓。
+        "benchmark_close": _load_benchmark(store, cfg.benchmark, panels["close"].index)
+        if cfg.benchmark
+        else None,
+        "data_snapshot": _data_snapshot(
+            store,
+            codes=resolved.codes,
+            start=load_start,
+            end=load_end,
+        ),
     }
 
 
@@ -383,3 +482,19 @@ def _load_benchmark(store: MarketStore, code: str, index: pd.Index) -> pd.Series
         return None
     series = frame.set_index("trade_date")["close"].astype(float)
     return series.reindex(index).ffill()
+
+
+def _data_snapshot(
+    store: Any,
+    *,
+    codes: Sequence[str],
+    start: str,
+    end: str,
+) -> dict[str, Any]:
+    """兼容测试替身/旧读模型，同时优先保留查询范围来源证据。"""
+    try:
+        return dict(store.data_snapshot(codes=codes, start=start, end=end))
+    except TypeError as exc:
+        if "unexpected keyword" not in str(exc):
+            raise
+        return dict(store.data_snapshot())

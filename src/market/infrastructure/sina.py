@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 import json
 import logging
 import threading
+import time
 from typing import Any
 
 import pandas as pd
@@ -55,6 +56,10 @@ MINUTE_URL = (
 MINUTE_PERIODS = frozenset({"1", "5", "15", "30", "60"})
 MINUTE_DATALEN = 1970
 
+#: 个股资金流历史（新浪「资金流向」页背后的接口）。返回 JSON 数组，字段为
+#: opendate/trade/changeratio/turnover/netamount/ratioamount/r0_net/r0_ratio…
+#: 主力与超大单两组齐全，**没有**大单 / 中单 / 小单拆分。
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -68,6 +73,23 @@ DEFAULT_TIMEOUT = 20
 #: 全局唯一的 JS 运行时与它的锁。整个进程只此一份。
 _JS_LOCK = threading.Lock()
 _JS_RUNTIME: Any = None
+
+#: 流通股本变动表的进程内 TTL 缓存。
+#: 为什么要缓存：``fetch_daily`` 每票都要再打一次 ``AMOUNT_URL`` 才能算换手率，
+#: 于是全市场一轮同步在新浪线路上是「日 K + 股本」两倍请求量。
+#: 为什么是 12 小时：流通股本只在增发 / 回购 / 解禁 / 送转时变，按天都算高频；
+#: 12h 让同一天里的多轮取数（盘前补历史、盘中 spot 拼接、盘后收线）共用一份，
+#: 又保证跨日必然重取，不会把一次股本变动扣在缓存里过夜。
+_SHARES_TTL_SEC = 12 * 3600.0
+#: 取不到（超时 / 报文变形 / 该票没有这张表）时的负缓存要短得多：一次网络抖动
+#: 不该让这只票半天算不出换手率。它只是防同一轮里对同一只死票反复重试。
+_SHARES_MISS_TTL_SEC = 600.0
+#: 上限。A 股全市场约 5500 只，8000 条留足余量（含指数 / 退市票 / 港美代码误入）；
+#: 满了按插入序淘汰最旧的一条，绝不让这个 dict 无界增长成常驻内存泄漏。
+_SHARES_CACHE_MAX = 8000
+_SHARES_LOCK = threading.Lock()
+#: symbol -> (过期时刻 monotonic, 股本表)
+_SHARES_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
 
 
 class SinaFetchError(RuntimeError):
@@ -150,7 +172,7 @@ def fetch_daily(symbol: str, *, session: requests.Session | None = None) -> pd.D
     for column in numeric:
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
 
-    shares = _fetch_outstanding_share(symbol, session)
+    shares = _cached_outstanding_share(symbol, session)
     frame = _attach_turnover(frame, shares)
     return frame.reset_index(drop=True)
 
@@ -197,6 +219,10 @@ def fetch_spot(
         # 未开盘/停牌常见现价为 0；没有可用 OHLC 就别写入假 K 线。
         if close <= 0 and open_ <= 0:
             continue
+        # 停牌票会带着昨收、零成交返回。这条通道产出的是**当日日 K**，
+        # 零成交仍落一根 bar 等于凭空多记一个交易日（live 通道不受此限）。
+        if volume <= 0 and amount <= 0:
+            continue
         if close <= 0:
             close = open_
         if high <= 0:
@@ -240,12 +266,16 @@ def fetch_live_hq(
         sess.headers.update(HEADERS)
 
     out: list[dict[str, Any]] = []
+    failures: list[str] = []
+    batches = 0
     try:
         for start in range(0, len(clean), SPOT_BATCH_SIZE):
             batch = clean[start : start + SPOT_BATCH_SIZE]
+            batches += 1
             try:
                 text = _get(SPOT_URL.format(",".join(batch)), sess)
             except SinaFetchError as exc:
+                failures.append(str(exc))
                 logger.warning("实时行情批次失败：%s", exc)
                 continue
             for chunk in text.split(";"):
@@ -255,6 +285,9 @@ def fetch_live_hq(
     finally:
         if own_session:
             sess.close()
+    if batches and len(failures) == batches:
+        # 全批失败还返回空表，上层只会报「行情为空」，把真正的网络原因吞掉。
+        raise SinaFetchError(f"实时行情 {batches} 批全部失败 -> {failures[-1]}")
     return out
 
 
@@ -308,6 +341,39 @@ def _parse_hq_line(line: str) -> dict[str, Any] | None:
     }
 
 
+def _cached_outstanding_share(
+    symbol: str, session: requests.Session | None
+) -> pd.DataFrame:
+    """带 TTL 的股本表读取：同一 symbol 在 TTL 内只打一次新浪。
+
+    缓存只做省流，任何一步出问题都退回「直接取数」的原行为——缓存未命中、
+    缓存写不进去都不该变成错误，换手率缺失的判断仍然只由取数结果决定。
+    """
+    now = time.monotonic()
+    with _SHARES_LOCK:
+        hit = _SHARES_CACHE.get(symbol)
+        if hit is not None:
+            expires_at, cached = hit
+            if now < expires_at:
+                # 给副本：下游（_attach_turnover）不该改到缓存里的表。
+                return cached.copy()
+            _SHARES_CACHE.pop(symbol, None)
+
+    frame = _fetch_outstanding_share(symbol, session)
+    ttl = _SHARES_MISS_TTL_SEC if frame.empty else _SHARES_TTL_SEC
+    with _SHARES_LOCK:
+        while _SHARES_CACHE and len(_SHARES_CACHE) >= _SHARES_CACHE_MAX:
+            _SHARES_CACHE.pop(next(iter(_SHARES_CACHE)), None)
+        _SHARES_CACHE[symbol] = (time.monotonic() + ttl, frame)
+    return frame.copy()
+
+
+def clear_outstanding_share_cache() -> None:
+    """清空股本缓存（股本刚变动 / 测试需要确定性时手动调用）。"""
+    with _SHARES_LOCK:
+        _SHARES_CACHE.clear()
+
+
 def _fetch_outstanding_share(
     symbol: str, session: requests.Session | None
 ) -> pd.DataFrame:
@@ -315,6 +381,8 @@ def _fetch_outstanding_share(
 
     拿不到不算致命——没有它只是缺换手率，日线本身仍然可用。换手率是
     通达信量能类公式的必需字段，所以失败要记日志而不是静默。
+
+    调用方走 ``_cached_outstanding_share``（12h TTL）；这里永远是真·取数。
     """
     try:
         text = _get(AMOUNT_URL.format(symbol, symbol), session)
@@ -413,14 +481,13 @@ def fetch_minute(
         if col in out.columns:
             out[col] = pd.to_numeric(out[col], errors="coerce")
     # 新浪分钟量单位为股、额为元 → VWAP=额/量；偶发把「手」当量时约 100×，回正或置空。
+    from src.market.infrastructure.minute_sanitize import sanitize_avg_price
+
     volume = out["volume"] if "volume" in out.columns else 0.0
     amount = out["amount"] if "amount" in out.columns else 0.0
     close = out["close"] if "close" in out.columns else pd.Series(dtype=float)
     raw_avg = (amount / volume).where(volume > 0)
-    ratio = raw_avg / close.replace(0, pd.NA)
-    scaled = raw_avg.where(~(ratio > 20), raw_avg / 100.0)
-    ratio2 = scaled / close.replace(0, pd.NA)
-    out["avg_price"] = scaled.where((ratio2 > 0.2) & (ratio2 < 5.0))
+    out["avg_price"] = sanitize_avg_price(raw_avg, close)
 
     day = (trade_date or "").strip()[:10]
     if day:
@@ -447,30 +514,47 @@ def fetch_hfq_factors(
 ) -> pd.DataFrame:
     """取稀疏的后复权因子（date, hfq_factor）。
 
-    只在除权除息日有行。取不到返回空表——行情本身不受影响，
-    只是无法做复权换算。
+    只在除权除息日有行。**取不到会抛 ``SinaFetchError``**：网络失败 / 404 /
+    报文变形与「这只票真的没有除权除息」必须分开。以前一律吞成空表，调用方
+    看到的是「无需复权」，前复权面板就静默按不复权价画，除权跳空当成真跌。
+
+    只有新浪明确回了 ``data`` 为空（票存在但没有除权事件）才返回空表。
     """
     empty = pd.DataFrame(columns=["date", "hfq_factor"])
+    text = _get(FACTOR_URL.format(symbol, "hfq"), session)
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < 0:
+        raise SinaFetchError(f"{symbol} 后复权因子报文无 JSON 段（{len(text)} 字节）")
+    # akshare 这里用的是 eval()，对一个网络返回的字符串做 eval 是不必要的
+    # 风险；实测新浪返回的就是合法 JSON，用 json.loads 即可。
     try:
-        text = _get(FACTOR_URL.format(symbol, "hfq"), session)
-        start, end = text.find("{"), text.rfind("}")
-        if start < 0 or end < 0:
-            return empty
-        # akshare 这里用的是 eval()，对一个网络返回的字符串做 eval 是不必要的
-        # 风险；实测新浪返回的就是合法 JSON，用 json.loads 即可。
         payload = json.loads(text[start : end + 1])
-    except Exception as exc:
-        logger.info("取 %s 后复权因子失败：%s", symbol, exc)
-        return empty
+    except ValueError as exc:
+        raise SinaFetchError(f"{symbol} 后复权因子 JSON 解析失败：{exc}") from exc
 
     data = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(data, list) or not data:
-        return empty
+    if data is None or (isinstance(data, list) and not data):
+        return empty  # 票存在但无除权事件
+    if not isinstance(data, list):
+        raise SinaFetchError(f"{symbol} 后复权因子 data 不是数组：{type(data).__name__}")
     frame = pd.DataFrame(data).rename(columns={"d": "date", "f": "hfq_factor"})
     if "date" not in frame.columns or "hfq_factor" not in frame.columns:
-        return empty
+        raise SinaFetchError(f"{symbol} 后复权因子缺列：{list(frame.columns)[:6]}")
     frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
     frame["hfq_factor"] = pd.to_numeric(frame["hfq_factor"], errors="coerce")
-    return (
+    out = (
         frame[["date", "hfq_factor"]].dropna().sort_values("date").reset_index(drop=True)
     )
+    if out.empty:
+        # 有行却一行都解析不出来 = 报文变了，不是「没有除权事件」。
+        raise SinaFetchError(f"{symbol} 后复权因子 {len(frame)} 行全部无法解析")
+    return out
+
+
+
+from src.market.infrastructure.sina_capital_flow import (
+    CAPITAL_FLOW_FIELDS,
+    CAPITAL_FLOW_MAX_NUM,
+    CAPITAL_FLOW_URL,
+    fetch_capital_flow,
+)

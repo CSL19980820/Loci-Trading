@@ -2,50 +2,54 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import threading
+import time
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.app.legacy.quant_common import (
-    DEFAULT_PALACE_DB,
+from src.market.api.schemas import (
     BootstrapRequest,
-    UniverseSpecModel,
     _BOOTSTRAP,
     _BOOTSTRAP_LOCK,
     bootstrap_snapshot,
     bootstrap_update,
+)
+from src.shared.api_deps import (
+    market_hot_store,
     market_store,
     missing_dependency,
 )
+from src.shared.api_models import UniverseSpecModel
 
 logger = logging.getLogger(__name__)
 
-#: board live 后台写库节流：多会话/多轮询并发时，60s 内只放行一次
-#: apply_today_spot，避免写放大与锁竞争。
-_SPOT_PERSIST_LOCK = threading.Lock()
-_SPOT_PERSIST_LAST: float = 0.0
-_SPOT_PERSIST_INTERVAL_SEC = 60.0
+# 测试与旧导入路径兼容：闸门实现在 board_router。
+from src.market.api.board_router import board_spot_persist_gate as board_spot_persist_gate
 
 
-def board_spot_persist_gate() -> bool:
-    """进程内节流闸门：距上次放行超过间隔才返回 True。"""
-    global _SPOT_PERSIST_LAST
-    with _SPOT_PERSIST_LOCK:
-        import time
+def _session_status(store) -> tuple[dict[str, Any], dict[str, Any]]:
+    """读覆盖 + 日历并组装闸门状态，返回 ``(coverage, session)``。
 
-        now = time.monotonic()
-        if now - _SPOT_PERSIST_LAST < _SPOT_PERSIST_INTERVAL_SEC:
-            return False
-        _SPOT_PERSIST_LAST = now
-        return True
+    日历读不出时降级为空日历，但必须留痕：静默空列表会让 ``build_session_status``
+    报「休市」，和真的休市无法区分。
+    """
+    from src.market.application.session import build_session_status
+
+    coverage = store.coverage()
+    try:
+        days = store.trading_days()
+    except sqlite3.Error as exc:
+        logger.warning("交易日历读取失败，按空日历降级：%s", exc)
+        days = []
+    return coverage, build_session_status(coverage=coverage, trading_days=days)
 
 
 def build_market_router(
     *,
     write_dependency,
     market_db: str | None = None,
-    palace_db: str | None = None,
 ) -> APIRouter:
     router = APIRouter()
     from src.market.api.akshare import build_akshare_catalog_router
@@ -56,47 +60,34 @@ def build_market_router(
     def _market():
         return market_store(market_db)
 
+    def _hot():
+        return market_hot_store()
+
     @router.get("/api/market/coverage", tags=["market"])
     def market_coverage() -> dict[str, Any]:
-        with _market() as store:
+        with _hot() as store:
             return store.coverage()
 
     @router.get("/api/market/session", tags=["market"])
     def market_session() -> dict[str, Any]:
         """交易日 / 实时闸门 / 是否需要补数。前端轮询与回填都看这个。"""
-        from src.market.application.session import build_session_status
-
-        with _market() as store:
-            coverage = store.coverage()
-            try:
-                days = store.trading_days()
-            except Exception:
-                days = []
-        return build_session_status(coverage=coverage, trading_days=days)
+        with _hot() as store:
+            return _session_status(store)[1]
 
     @router.get("/api/market/live-tape", tags=["market"])
     def market_live_tape(
         refresh: bool = Query(default=False),
     ) -> dict[str, Any]:
-        """任务栏 / 顶栏实时行情：指数 + 当前持仓现价（新浪 hq）。"""
+        """任务栏 / 顶栏实时行情：只有指数（新浪 hq）。
+
+        账本不再记录真实持仓，行情条也就没有「我的票」这一段，只保留指数。
+        """
         try:
             from src.market.application.live import build_live_tape
-            from src.ledger import PalaceStore
         except ImportError as exc:
             raise missing_dependency(exc) from exc
 
-        positions: list[dict[str, Any]] = []
-        try:
-            with PalaceStore(palace_db or DEFAULT_PALACE_DB) as store:
-                positions = store.positions_payload()
-        except Exception as exc:
-            # 账本坏了仍应返回指数，不让顶栏整条挂掉
-            logger.warning("读持仓失败，行情条仅显示指数：%s", exc)
-
-        return build_live_tape(
-            position_codes=positions,
-            use_cache=not refresh,
-        )
+        return build_live_tape(use_cache=not refresh)
 
     @router.get("/api/universe/presets", tags=["universe"])
     def universe_presets() -> list[dict[str, Any]]:
@@ -112,7 +103,7 @@ def build_market_router(
             from src.market.domain.universe import universe_stats
         except ImportError as exc:
             raise missing_dependency(exc) from exc
-        with _market() as store:
+        with _hot() as store:
             return universe_stats(store)
 
     @router.post("/api/universe/preview", tags=["universe"])
@@ -122,7 +113,7 @@ def build_market_router(
             from src.market.domain.universe import UniverseError, resolve_universe
         except ImportError as exc:
             raise missing_dependency(exc) from exc
-        with _market() as store:
+        with _hot() as store:
             try:
                 resolved = resolve_universe(
                     store, payload.model_dump(exclude_none=True)
@@ -144,7 +135,7 @@ def build_market_router(
         needle = q.strip().lower()
         if not needle:
             return []
-        with _market() as store:
+        with _hot() as store:
             _total, rows = store.page_instruments(
                 q=needle,
                 instrument_type=None,
@@ -154,224 +145,14 @@ def build_market_router(
             )
         return rows
 
-    @router.get("/api/market/board", tags=["market"])
-    def market_board(
-        q: str = Query(default="", max_length=32),
-        page: int = Query(default=1, ge=1),
-        page_size: int = Query(default=50, ge=1, le=100),
-        live: bool = Query(default=False),
-        instrument_type: str | None = Query(default="STOCK"),
-        status: str = Query(default="normal"),
-        industry: str | None = Query(
-            default=None,
-            description="所属行业模糊匹配（如 半导体 / 电力设备）；空=全部",
-        ),
-        sort: str = Query(
-            default="code",
-            description="排序：code | turnover_desc | turnover_asc | pct_desc | pct_asc",
-        ),
-        turnover_min: float | None = Query(
-            default=None,
-            ge=0,
-            description="最低换手率（百分数，如 5 表示 5%）",
-        ),
-        codes: str | None = Query(
-            default=None,
-            max_length=800,
-            description="逗号分隔代码（最多 80）；指定时忽略分页宇宙，按给定顺序返回",
-        ),
-    ) -> dict[str, Any]:
-        """行情台分页列表：默认只读本机最新日线（快）；``live=true`` 才叠当前页实时。
+    from src.market.api.board_router import register_board_routes
 
-        只对当前页批量拉实时，不扫全市场——几千只票靠分页浏览。
-        ``codes`` 供首页「昨选今涨」等按票叠价。
-        """
-        from datetime import datetime
-
-        type_filter = None if instrument_type in (None, "", "all") else instrument_type
-        status_filter = "" if status in ("", "all") else status
-        industry_filter = None if industry in (None, "", "all") else str(industry).strip()
-        sort_key = (sort or "code").strip().lower()
-        allowed_sort = {
-            "code",
-            "turnover_desc",
-            "turnover_asc",
-            "pct_desc",
-            "pct_asc",
-        }
-        if sort_key not in allowed_sort:
-            raise HTTPException(
-                status_code=422,
-                detail="sort 仅支持 code / turnover_desc / turnover_asc / pct_desc / pct_asc",
-            )
-        # 库内 turnover 为小数；入参按百分数（与列表展示一致）
-        turnover_floor = None if turnover_min is None else float(turnover_min) / 100.0
-        offset = (page - 1) * page_size
-        code_list = [
-            part.strip()
-            for part in str(codes or "").split(",")
-            if part.strip()
-        ][:80]
-        with _market() as store:
-            if code_list:
-                instruments = store.instruments_by_codes(
-                    code_list, instrument_type=type_filter
-                )
-                total = len(instruments)
-            elif sort_key.startswith("turnover") or turnover_floor is not None:
-                total, instruments = store.page_instruments_by_turnover(
-                    q=q,
-                    instrument_type=type_filter,
-                    status=status_filter,
-                    industry=industry_filter,
-                    turnover_min=turnover_floor,
-                    sort=sort_key if sort_key.startswith("turnover") else "code",
-                    offset=offset,
-                    limit=page_size,
-                )
-            elif sort_key.startswith("pct"):
-                total, instruments = store.page_instruments_by_pct(
-                    q=q,
-                    instrument_type=type_filter,
-                    status=status_filter,
-                    industry=industry_filter,
-                    sort=sort_key,
-                    offset=offset,
-                    limit=page_size,
-                )
-            else:
-                total, instruments = store.page_instruments(
-                    q=q,
-                    instrument_type=type_filter,
-                    status=status_filter,
-                    industry=industry_filter,
-                    offset=offset,
-                    limit=page_size,
-                )
-            local_map = store.latest_bars([row["code"] for row in instruments])
-
-        live_map: dict[str, dict[str, Any]] = {}
-        live_error = ""
-        if live and instruments:
-            try:
-                from src.market.application.live import fetch_live_quotes
-
-                codes = [str(row["code"]) for row in instruments]
-                types = {
-                    str(row["code"]): str(row.get("instrument_type") or "STOCK")
-                    for row in instruments
-                }
-                for quote in fetch_live_quotes(codes, instrument_types=types):
-                    code = str(quote.get("code") or "")
-                    if code:
-                        live_map[code] = quote
-
-                # 盘中实时写入当日 bar：后台线程，不拖慢列表响应。
-                # 每次 live 轮询都写库会放大写放大与锁竞争，60s 内只落一次。
-                persist_codes = list(codes)
-                persist_types = dict(types)
-                persist_quotes = list(live_map.values())
-                persist_db = market_db
-                def _persist_spot() -> None:
-                    try:
-                        from src.market import MarketStore, apply_today_spot
-
-                        with MarketStore(persist_db) as spot_store:
-                            apply_today_spot(
-                                spot_store,
-                                persist_codes,
-                                instrument_types=persist_types,
-                                live_quotes=persist_quotes,
-                            )
-                    except Exception as exc:  # pragma: no cover
-                        logger.warning("后台写入当日行情失败：%s", exc)
-
-                if persist_quotes and board_spot_persist_gate():
-                    threading.Thread(
-                        target=_persist_spot, name="board-spot-persist", daemon=True
-                    ).start()
-            except Exception as exc:  # pragma: no cover - 网络失败
-                live_error = f"{type(exc).__name__}: {exc}"
-
-        items: list[dict[str, Any]] = []
-        for row in instruments:
-            code = str(row["code"])
-            local = local_map.get(code) or {}
-            spot = live_map.get(code)
-            item: dict[str, Any] = {
-                "code": code,
-                "name": row.get("name") or "",
-                "market": row.get("market") or "",
-                "board": row.get("board") or "",
-                "industry": row.get("industry") or "",
-                "instrument_type": row.get("instrument_type") or "STOCK",
-                "status": row.get("status") or "",
-                "local_date": local.get("trade_date") or "",
-                "local_close": local.get("close"),
-                "local_pct": local.get("pct"),
-                "local_change": local.get("change"),
-                "price": None,
-                "pct": None,
-                "change": None,
-                "open": None,
-                "high": None,
-                "low": None,
-                "prev_close": local.get("prev_close"),
-                "volume": local.get("volume"),
-                "amount": local.get("amount"),
-                "turnover": local.get("turnover"),
-                "trade_time": "",
-                "ok": False,
-                "source": "local" if local else "",
-            }
-            if spot:
-                item.update(
-                    {
-                        "name": spot.get("name") or item["name"],
-                        "price": spot.get("price"),
-                        "pct": spot.get("pct"),
-                        "change": spot.get("change"),
-                        "open": spot.get("open"),
-                        "high": spot.get("high"),
-                        "low": spot.get("low"),
-                        "prev_close": spot.get("prev_close"),
-                        "volume": spot.get("volume"),
-                        "amount": spot.get("amount"),
-                        "trade_time": spot.get("trade_time") or "",
-                        "ok": True,
-                        "source": spot.get("source") or "sina",
-                    }
-                )
-            elif local:
-                item.update(
-                    {
-                        "price": local.get("close"),
-                        "pct": local.get("pct"),
-                        "change": local.get("change"),
-                        "open": local.get("open"),
-                        "high": local.get("high"),
-                        "low": local.get("low"),
-                        "ok": False,
-                        "source": "local",
-                    }
-                )
-            items.append(item)
-
-        return {
-            "total": total,
-            "page": page,
-            "page_size": page_size,
-            "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "live_error": live_error,
-            "items": items,
-        }
-
-    @router.get("/api/market/industries", tags=["market"])
-    def market_industries() -> dict[str, Any]:
-        """已入库所属行业列表（刷新证券列表后才有半导体/电力设备等）。"""
-        with _market() as store:
-            names = store.list_industries()
-        return {"items": names, "total": len(names)}
+    register_board_routes(
+        router,
+        hot_factory=_hot,
+        market_db=market_db,
+        write_dependency=write_dependency,
+    )
 
     @router.get("/api/market/quotes/{code}", tags=["market"])
     def market_quotes(
@@ -386,7 +167,7 @@ def build_market_router(
             description="只返回最近 N 根日线（从末尾截）；详情默认 60，可按需加大",
         ),
     ) -> dict[str, Any]:
-        with _market() as store:
+        with _hot() as store:
             try:
                 from src.market import normalize_code
 
@@ -466,7 +247,7 @@ def build_market_router(
                 if len(datetime_text) >= 10:
                     actual_trade_date = datetime_text[:10]
                     break
-        with _market() as store:
+        with _hot() as store:
             row = store.conn.execute(
                 "SELECT name FROM instruments WHERE code = ?",
                 (code,),
@@ -505,16 +286,9 @@ def build_market_router(
     @router.get("/api/market/bootstrap", tags=["market"])
     def market_bootstrap_status() -> dict[str, Any]:
         """历史 K 线回填进度；附带是否需要补数（空库或落后交易日）。"""
-        from src.market.application.session import build_session_status
-
         snap = bootstrap_snapshot()
         with _market() as store:
-            coverage = store.coverage()
-            try:
-                days = store.trading_days()
-            except Exception:
-                days = []
-        session = build_session_status(coverage=coverage, trading_days=days)
+            coverage, session = _session_status(store)
         snap["needed"] = bool(session.get("needs_backfill"))
         snap["coverage"] = coverage
         snap["session"] = session
@@ -551,11 +325,30 @@ def build_market_router(
         opts = (payload or BootstrapRequest()).model_dump()
 
         def run() -> None:
+            stop_heartbeat = threading.Event()
+
+            def instruments_heartbeat() -> None:
+                started = time.monotonic()
+                while not stop_heartbeat.wait(5.0):
+                    snap = bootstrap_snapshot()
+                    if snap.get("status") != "running" or snap.get("phase") != "instruments":
+                        return
+                    waited = int(time.monotonic() - started)
+                    bootstrap_update(
+                        phase="instruments",
+                        message=f"正在刷新证券列表…（已等待 {waited}s）",
+                    )
+
             try:
                 bootstrap_update(
                     phase="instruments",
                     message="正在刷新证券列表…",
                 )
+                threading.Thread(
+                    target=instruments_heartbeat,
+                    name="loci-bootstrap-instruments-hb",
+                    daemon=True,
+                ).start()
 
                 def on_progress(done: int, total: int, code: str) -> None:
                     message = (
@@ -587,6 +380,7 @@ def build_market_router(
                     context,
                     progress=on_progress,
                 )
+                stop_heartbeat.set()
                 bootstrap_update(
                     status="done",
                     phase="done",
@@ -596,8 +390,10 @@ def build_market_router(
                     report=report,
                 )
             except JobError as exc:
+                stop_heartbeat.set()
                 bootstrap_update(status="error", phase="error", message=str(exc))
             except Exception as exc:
+                stop_heartbeat.set()
                 bootstrap_update(
                     status="error",
                     phase="error",

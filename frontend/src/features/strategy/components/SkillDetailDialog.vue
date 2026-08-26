@@ -6,6 +6,7 @@ import type { Skill, SkillJob } from '@/shared/types/quant'
 
 import ManualInline from './ManualInline.vue'
 import SkillJobConfigPanel from './SkillJobConfigPanel.vue'
+import SkillStrategyConfigPanel from './SkillStrategyConfigPanel.vue'
 import { parseSkillManual } from '../composables/skillManual'
 
 const props = defineProps<{
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 }>()
 
 const jobPanel = ref<InstanceType<typeof SkillJobConfigPanel> | null>(null)
+const strategyPanel = ref<InstanceType<typeof SkillStrategyConfigPanel> | null>(null)
 
 type ToolSpec = {
   name: string
@@ -78,7 +80,6 @@ const metaRows = computed(() => {
     { label: '上下文', value: ISOLATION_LABEL[skill.isolation || 'normal'] || '常规' },
     { label: '口径', value: POLICY_LABEL[skill.policy || 'research'] || '研究' },
   ]
-  if (skill.default_cron) rows.push({ label: '定时', value: skill.default_cron })
   return rows
 })
 
@@ -111,6 +112,13 @@ const bareTools = computed(() => {
 const hasTools = computed(() => toolSpecs.value.length > 0 || bareTools.value.length > 0)
 
 const mcpServers = computed(() => props.skill?.mcp_servers ?? [])
+
+/** 专属战法 = 声明了 strategy_skill / signal_engine / signals 之一 */
+const isStrategySkill = computed(() => {
+  const meta = props.skill?.metadata as Record<string, unknown> | undefined
+  if (!meta) return false
+  return Boolean(meta.strategy_skill || meta.signal_engine || meta.signals)
+})
 
 const manualBlocks = computed(() => (body.value ? parseSkillManual(body.value) : []))
 
@@ -150,7 +158,11 @@ watch(
 )
 
 async function saveJob(): Promise<void> {
-  await jobPanel.value?.save()
+  if (isStrategySkill.value) {
+    await strategyPanel.value?.save()
+  } else {
+    await jobPanel.value?.save()
+  }
 }
 </script>
 
@@ -165,8 +177,14 @@ async function saveJob(): Promise<void> {
     <template v-if="skill">
       <el-tabs v-model="tab" class="detail-tabs">
         <el-tab-pane label="配置" name="config">
+          <SkillStrategyConfigPanel
+            v-if="skill && isStrategySkill"
+            ref="strategyPanel"
+            :slug="skill.slug"
+            @saved="(cfg) => skill && emit('saved', { slug: skill.slug, bound: true, config: cfg } as SkillJob)"
+          />
           <SkillJobConfigPanel
-            v-if="skill"
+            v-else-if="skill"
             ref="jobPanel"
             :slug="skill.slug"
             @saved="(job) => emit('saved', job)"
@@ -287,11 +305,11 @@ async function saveJob(): Promise<void> {
       <el-button
         v-if="tab === 'config'"
         type="primary"
-        :loading="Boolean(jobPanel?.saving)"
+        :loading="Boolean(isStrategySkill ? strategyPanel?.saving : jobPanel?.saving)"
         :disabled="!skill"
         @click="saveJob"
       >
-        保存定时
+        保存配置
       </el-button>
       <el-button
         v-else

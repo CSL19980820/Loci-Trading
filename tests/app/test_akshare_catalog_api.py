@@ -86,7 +86,7 @@ def _isolate_catalog_cache():
 def test_catalog_exposes_runtime_metadata_and_display_aliases(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         with patch(
-            "src.market.infrastructure.akshare_catalog.discover_stock_capabilities",
+            "src.market.infrastructure.akshare_tools.discover_stock_capabilities",
             return_value=_catalog_fixture(),
         ):
             response = client.get("/api/market/akshare/catalog?q=hist")
@@ -114,7 +114,7 @@ def test_catalog_exposes_runtime_metadata_and_display_aliases(tmp_path: Path) ->
 def test_catalog_defaults_missing_doc_sections_for_older_catalog_entries(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         with patch(
-            "src.market.infrastructure.akshare_catalog.discover_stock_capabilities",
+            "src.market.infrastructure.akshare_tools.discover_stock_capabilities",
             return_value=_catalog_fixture(),
         ):
             response = client.get("/api/market/akshare/catalog?q=spot")
@@ -127,7 +127,7 @@ def test_catalog_defaults_missing_doc_sections_for_older_catalog_entries(tmp_pat
 def test_catalog_filters_source_and_counts_every_source_unfiltered(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         with patch(
-            "src.market.infrastructure.akshare_catalog.discover_stock_capabilities",
+            "src.market.infrastructure.akshare_tools.discover_stock_capabilities",
             return_value=_catalog_fixture(),
         ):
             response = client.get(
@@ -148,7 +148,7 @@ def test_catalog_filters_source_and_counts_every_source_unfiltered(tmp_path: Pat
 def test_sources_endpoint_returns_counts_without_capability_payload(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         with patch(
-            "src.market.infrastructure.akshare_catalog.discover_stock_capabilities",
+            "src.market.infrastructure.akshare_tools.discover_stock_capabilities",
             return_value=_catalog_fixture(),
         ):
             response = client.get("/api/market/akshare/sources")
@@ -169,7 +169,7 @@ def test_sources_endpoint_returns_counts_without_capability_payload(tmp_path: Pa
 def test_catalog_filters_category(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         with patch(
-            "src.market.infrastructure.akshare_catalog.discover_stock_capabilities",
+            "src.market.infrastructure.akshare_tools.discover_stock_capabilities",
             return_value=_catalog_fixture(),
         ):
             response = client.get("/api/market/akshare/catalog?category=%E5%AE%9E%E6%97%B6%E8%A1%8C%E6%83%85")
@@ -280,12 +280,15 @@ def test_catalog_probe_maps_capacity_and_worker_start_failures(tmp_path: Path) -
     assert capacity.headers["retry-after"] == "2"
     assert unavailable.status_code == 503
     assert unavailable.json()["detail"] == "spawn unavailable"
+    # 这是「子进程起不动」不是「缺依赖」：不能带 capability 标记，否则前端会
+    # 引导用户去装包。见 tests/app/test_capability_contract.py。
+    assert "x-loci-reason" not in unavailable.headers
 
 
 def test_catalog_lists_source_counts_without_enable_flags(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         with patch(
-            "src.market.infrastructure.akshare_catalog.discover_stock_capabilities",
+            "src.market.infrastructure.akshare_tools.discover_stock_capabilities",
             return_value=_catalog_fixture(),
         ):
             body = client.get("/api/market/akshare/catalog").json()

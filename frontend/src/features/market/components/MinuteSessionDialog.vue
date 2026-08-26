@@ -20,6 +20,7 @@ import {
   computeMinuteDayStats,
   formatMinutePxPct,
 } from '@/shared/lib/minuteChartOption'
+import { useChartTheme } from '@/shared/lib/useChartTheme'
 
 echarts.use([
   LineChart,
@@ -53,6 +54,7 @@ const sessionAdjust = ref<'qfq' | 'hfq' | 'none'>('none')
 /** 优先用接口昨收（已按 adjust 对齐）；仅在缺库时回退日 K 传入值 */
 const sessionPrevClose = ref<number | null>(null)
 const chartEl = ref<HTMLElement | null>(null)
+const { tokens } = useChartTheme()
 let chart: echarts.ECharts | null = null
 let resizeObs: ResizeObserver | null = null
 let seq = 0
@@ -115,6 +117,7 @@ function paint(): void {
     buildMinuteOption({
       bars: bars.value,
       prevClose: prevClose.value,
+      tokens: tokens.value,
     }) as echarts.EChartsCoreOption,
     { notMerge: true },
   )
@@ -166,7 +169,7 @@ async function load(): Promise<void> {
 }
 
 watch(
-  () => [props.modelValue, props.code, props.tradeDate, props.adjust] as const,
+  () => [props.modelValue, props.code, props.tradeDate, props.adjust, tokens.value] as const,
   ([openNow]) => {
     if (openNow && props.code && props.tradeDate) void load()
     if (!openNow) {

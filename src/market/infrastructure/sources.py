@@ -14,13 +14,20 @@
 """
 from __future__ import annotations
 
+from src.shared.clock import utc_now
+
 from abc import ABC, abstractmethod
+import json
 import logging
+import os
+from pathlib import Path
+import threading
 import time
 from typing import Any
 
 import pandas as pd
 
+from src.market.infrastructure.em_industry import fetch_em_industry_map
 from src.market.infrastructure.store import normalize_code, to_sina_symbol
 
 logger = logging.getLogger(__name__)
@@ -69,6 +76,7 @@ class SinaSource(QuoteSource):
     """
 
     name = "sina"
+    source_url = "https://finance.sina.com.cn"
 
     def fetch_daily(self, code: str, *, instrument_type: str = "STOCK") -> pd.DataFrame:
         from src.market import sina
@@ -87,16 +95,86 @@ class SinaSource(QuoteSource):
     def fetch_adjust_factors(self, code: str) -> pd.DataFrame:
         from src.market import sina
 
-        return sina.fetch_hfq_factors(to_sina_symbol(code))
+        symbol = to_sina_symbol(code)
+        try:
+            return sina.fetch_hfq_factors(symbol)
+        except sina.SinaFetchError as exc:
+            # 取数失败要往上抛（换源 / 记回执），不能吞成「这只票没有除权事件」。
+            raise SourceError(f"新浪取 {symbol} 复权因子失败：{exc}") from exc
 
     def fetch_instruments(self) -> pd.DataFrame:
         return fetch_instrument_list()
 
 
+class BaostockSource(QuoteSource):
+    """证券宝（baostock）日线：独立免费源，登录后拉不复权 K 线。
+
+    对齐 Vibe-Trading A 股 fallback 链中的 ``baostock`` 位；不经 akshare。
+    SDK 会话全局共享，并发取数串行化 login/query/logout。
+    """
+
+    name = "baostock"
+    source_url = "http://baostock.com"
+
+    _lock = threading.Lock()
+
+    def fetch_daily(
+        self,
+        code: str,
+        *,
+        instrument_type: str = "STOCK",
+        start_date: str = "1990-01-01",
+        end_date: str = "2099-12-31",
+    ) -> pd.DataFrame:
+        try:
+            import baostock as bs
+        except ImportError as exc:  # pragma: no cover - 依赖缺失路径
+            raise SourceError(
+                "未安装 baostock，无法取证券宝行情。安装方式：pip install baostock"
+            ) from exc
+
+        from src.market.infrastructure.store import guess_market
+
+        plain = normalize_code(code)
+        symbol = f"{guess_market(plain, instrument_type=instrument_type)}.{plain}"
+        fields = "date,open,high,low,close,volume,amount,turn"
+        with self._lock:
+            login = bs.login()
+            if getattr(login, "error_code", "0") not in ("0", 0, None, ""):
+                raise SourceError(
+                    f"baostock 登录失败：{getattr(login, 'error_msg', login)}"
+                )
+            try:
+                result = bs.query_history_k_data_plus(
+                    symbol,
+                    fields,
+                    start_date=start_date,
+                    end_date=end_date,
+                    frequency="d",
+                    adjustflag="3",  # 不复权
+                )
+                if getattr(result, "error_code", "0") not in ("0", 0, None, ""):
+                    raise SourceError(
+                        f"baostock 取 {symbol} 失败："
+                        f"{getattr(result, 'error_msg', result)}"
+                    )
+                rows: list[list[str]] = []
+                while result.error_code == "0" and result.next():
+                    rows.append(result.get_row_data())
+            finally:
+                bs.logout()
+
+        if not rows:
+            raise SourceError(f"baostock 返回 {symbol} 空数据")
+        # 保留原始 turn（百分数）；换算交给管线 FieldSpec(unit_by_source)。
+        return pd.DataFrame(rows, columns=fields.split(","))
+
+
 class EastmoneySource(QuoteSource):
-    """东财源。备源：主源失败时顶上，也用于交叉校验。"""
+    """东财源（akshare ``stock_zh_a_hist``）。备源；覆盖 Vibe 链上的 eastmoney/akshare-hist。"""
 
     name = "eastmoney"
+    source_url = "https://quote.eastmoney.com"
 
     def fetch_daily(
         self,
@@ -128,26 +206,8 @@ class EastmoneySource(QuoteSource):
             raise SourceError(f"东财取 {plain} 日线失败：{type(exc).__name__}: {exc}") from exc
         if frame is None or frame.empty:
             raise SourceError(f"东财返回 {plain} 空数据")
-        out = frame.rename(
-            columns={
-                "日期": "date",
-                "开盘": "open",
-                "最高": "high",
-                "最低": "low",
-                "收盘": "close",
-                "成交量": "volume",
-                "成交额": "amount",
-                "换手率": "turnover",
-            }
-        )
-        # 东财「成交量」为手，行情仓与新浪/腾讯统一为股。
-        if "volume" in out.columns:
-            out["volume"] = pd.to_numeric(out["volume"], errors="coerce") * 100.0
-        # 东财「换手率」为百分数（5.0=5%）；行情仓 / COST 要小数（0.05）。
-        # 转换写在 Source，sync 降级链与 Adapter 共用同一口径。
-        if "turnover" in out.columns:
-            out["turnover"] = pd.to_numeric(out["turnover"], errors="coerce") / 100.0
-        return out
+        # 原始中文表；列映射与单位换算由 Adapter / fetch_with_fallback 走管线。
+        return frame
 
 
 def fetch_instrument_list() -> pd.DataFrame:
@@ -161,8 +221,13 @@ def fetch_instrument_list() -> pd.DataFrame:
     ak = _import_akshare()
     frames: list[pd.DataFrame] = []
     errors: list[str] = []
+    complete_markets: set[str] = set()
 
-    def collect(label: str, loader: Any, mapping: dict[str, str], board: str) -> None:
+    def collect(
+        label: str, loader: Any, contract: Any, board: str, market: str
+    ) -> None:
+        from src.market.infrastructure.pipeline import NormalizeError, normalize
+
         try:
             raw = loader()
         except Exception as exc:
@@ -171,39 +236,51 @@ def fetch_instrument_list() -> pd.DataFrame:
         if raw is None or raw.empty:
             errors.append(f"{label}: 空表")
             return
-        available = {src: dst for src, dst in mapping.items() if src in raw.columns}
-        if "code" not in available.values():
+        try:
+            frame = normalize(raw, contract, who=label, empty_label=f"{label}列表")
+        except NormalizeError as exc:
+            errors.append(f"{label}: {exc}")
+            return
+        if "code" not in frame.columns:
             errors.append(f"{label}: 缺代码列（实际列 {list(raw.columns)[:6]}）")
             return
-        frame = raw.rename(columns=available)[list(available.values())].copy()
-        frame["board"] = frame.get("board", board)
+        frame = frame.copy()
+        if "board" not in frame.columns or frame["board"].isna().all():
+            frame["board"] = board
+        else:
+            frame["board"] = frame["board"].fillna(board)
         if "industry" not in frame.columns:
             frame["industry"] = ""
+        frame["market"] = market
         frames.append(frame)
+        complete_markets.add(market.lower())
+
+    from src.market.domain.source_contract import (
+        INSTRUMENTS_BJ_CONTRACT,
+        INSTRUMENTS_SH_CONTRACT,
+        INSTRUMENTS_SZ_CONTRACT,
+    )
 
     collect(
         "上交所",
         ak.stock_info_sh_name_code,
-        {"证券代码": "code", "证券简称": "name", "上市日期": "list_date"},
+        INSTRUMENTS_SH_CONTRACT,
         "上交所",
+        "SH",
     )
     collect(
         "深交所",
         lambda: ak.stock_info_sz_name_code(symbol="A股列表"),
-        {
-            "A股代码": "code",
-            "A股简称": "name",
-            "A股上市日期": "list_date",
-            "板块": "board",
-            "所属行业": "industry",
-        },
+        INSTRUMENTS_SZ_CONTRACT,
         "深交所",
+        "SZ",
     )
     collect(
         "北交所",
         getattr(ak, "stock_info_bj_name_code", lambda: pd.DataFrame()),
-        {"证券代码": "code", "证券简称": "name", "上市日期": "list_date"},
+        INSTRUMENTS_BJ_CONTRACT,
         "北交所",
+        "BJ",
     )
 
     if not frames:
@@ -218,11 +295,14 @@ def fetch_instrument_list() -> pd.DataFrame:
         merged["industry"] = ""
     merged["industry"] = merged["industry"].fillna("").map(_normalize_industry)
     # 东财行业板块成分覆盖沪深（半导体/电力设备等），补全上交所等缺行业行
+    # 走 7 天磁盘缓存（em_industry_map.json）：这张图 ~90 次 akshare，不能每次同步都拉
     em_map = fetch_em_industry_map()
     if em_map:
         mapped = merged["code"].map(em_map)
         merged["industry"] = mapped.where(mapped.notna() & (mapped != ""), merged["industry"])
-    return merged.drop_duplicates(subset=["code"], keep="first").reset_index(drop=True)
+    merged = merged.drop_duplicates(subset=["code"], keep="first").reset_index(drop=True)
+    merged.attrs["complete_markets"] = tuple(sorted(complete_markets))
+    return merged
 
 
 def _normalize_industry(value: object) -> str:
@@ -236,57 +316,14 @@ def _normalize_industry(value: object) -> str:
     return text
 
 
-def fetch_em_industry_map() -> dict[str, str]:
-    """东财行业板块成分 → code→行业名（如半导体、电力设备）。失败返回空字典。"""
-    import os
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    if os.environ.get("LOCI_SKIP_EM_INDUSTRY", "").strip() in {"1", "true", "yes"}:
-        return {}
-    try:
-        ak = _import_akshare()
-        boards = ak.stock_board_industry_name_em()
-    except Exception as exc:
-        logger.warning("取东财行业板块列表失败：%s", exc)
-        return {}
-    if boards is None or boards.empty:
-        return {}
-    name_col = "板块名称" if "板块名称" in boards.columns else boards.columns[1]
-    names = [str(n).strip() for n in boards[name_col].tolist() if str(n).strip()]
-    out: dict[str, str] = {}
-
-    def one(name: str) -> dict[str, str]:
-        try:
-            cons = ak.stock_board_industry_cons_em(symbol=name)
-        except Exception:
-            return {}
-        if cons is None or cons.empty:
-            return {}
-        code_col = "代码" if "代码" in cons.columns else None
-        if not code_col:
-            return {}
-        local: dict[str, str] = {}
-        for raw in cons[code_col].tolist():
-            code = str(raw).strip().zfill(6)
-            if code.isdigit() and len(code) == 6:
-                local[code] = name
-        return local
-
-    workers = min(8, max(2, len(names) // 10 or 2))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(one, name) for name in names]
-        for fut in as_completed(futures):
-            try:
-                out.update(fut.result())
-            except Exception as exc:  # pragma: no cover
-                logger.debug("行业成分合并失败：%s", exc)
-    logger.info("东财行业映射 %s 只", len(out))
-    return out
 
 
 def default_sources() -> list[QuoteSource]:
-    """默认降级链：新浪优先（一次拿全历史且字段全），东财兜底。"""
-    return [SinaSource(), EastmoneySource()]
+    """遗留顺序降级链（sync 在未走 adapter 路由时用）。
+
+    日常同步优先 ``fetch_daily_routed``；此处保留字段更全的新浪优先语义。
+    """
+    return [SinaSource(), EastmoneySource(), BaostockSource()]
 
 
 def fetch_with_fallback(
@@ -296,19 +333,59 @@ def fetch_with_fallback(
     instrument_type: str = "STOCK",
     retries: int = 2,
     backoff: float = 1.5,
+    receipt: list[dict[str, Any]] | None = None,
 ) -> tuple[pd.DataFrame, str]:
     """依次尝试每个源，每个源内部重试。返回 (日线, 命中的源名)。
 
     重试用退避而不是固定间隔：被限流时立刻重试只会加深限流。
+    Source 只出原始表；此处统一过管线，与 Adapter 出口一致。
     """
+    from src.market.domain.source_contract import DAILY_CONTRACT
+    from src.market.infrastructure.pipeline import NormalizeError, normalize
+
+    labels = {
+        "sina": "新浪",
+        "eastmoney": "东财",
+        "baostock": "证券宝",
+    }
     errors: list[str] = []
     for source in sources:
+        who = labels.get(source.name, source.name)
         for attempt in range(retries + 1):
             try:
-                frame = source.fetch_daily(code, instrument_type=instrument_type)
+                raw = source.fetch_daily(code, instrument_type=instrument_type)
+                try:
+                    frame = normalize(
+                        raw, DAILY_CONTRACT, who=who, empty_label=f"{who}日线"
+                    )
+                except NormalizeError as exc:
+                    raise SourceError(str(exc)) from exc
+                if receipt is not None:
+                    receipt.append(
+                        {
+                            "source_id": source.name,
+                            "state": "selected",
+                            "attempt": attempt + 1,
+                            "checked_at": utc_now(),
+                            "rows": int(len(frame)) if frame is not None else 0,
+                            "fields": [str(field) for field in frame.columns]
+                            if frame is not None
+                            else [],
+                        }
+                    )
                 return frame, source.name
-            except SourceError as exc:
+            except Exception as exc:
                 errors.append(f"{source.name}#{attempt + 1}: {exc}")
+                if receipt is not None:
+                    receipt.append(
+                        {
+                            "source_id": source.name,
+                            "state": "failed",
+                            "attempt": attempt + 1,
+                            "checked_at": utc_now(),
+                            "error": str(exc)[:500],
+                        }
+                    )
                 if attempt < retries:
                     time.sleep(backoff * (attempt + 1))
     raise SourceError(f"{code} 全部数据源失败 -> " + " | ".join(errors[-4:]))

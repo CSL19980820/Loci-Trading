@@ -1,0 +1,241 @@
+.tdx-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.tdx-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  padding: 0.4rem 0.65rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel-2);
+}
+
+.tdx-back {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.2rem;
+}
+
+.tdx-id {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+  min-width: 0;
+}
+
+.tdx-name {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.tdx-code {
+  color: var(--mist);
+  font-size: 0.82rem;
+}
+
+.tdx-last {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.tdx-pct {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.tdx-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.tdx-meta {
+  font-size: 0.7rem;
+  color: var(--mist);
+}
+
+.tdx-ma-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 0.22rem 0.65rem;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.72rem;
+  min-height: 1.45rem;
+}
+
+.tdx-ma-rail__item {
+  font-weight: 600;
+}
+
+.tdx-ma-rail__empty {
+  color: var(--mist);
+}
+
+.tdx-ma-pop__title {
+  margin: 0 0 0.25rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.tdx-ma-pop__hint {
+  margin: 0 0 0.55rem;
+  font-size: 0.72rem;
+  color: var(--mist);
+  line-height: 1.4;
+}
+
+.tdx-ma-pop__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.tdx-ma-pop__row {
+  display: grid;
+  grid-template-columns: 2.4rem 1fr auto;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.tdx-ma-pop__label {
+  font-size: 0.72rem;
+  color: var(--mist);
+}
+
+.tdx-ma-pop__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.65rem;
+  justify-content: flex-end;
+}
+
+/*
+ * 不能有 padding：读数浮层用 % 定位，锚的是这个盒子的 padding box，
+ * 而 ECharts 的 grid % 锚的是 canvas（padding 之内）。两个分母不一样，
+ * 浮层就永远对不齐窗口边界，且偏差随面板高度放大。
+ */
+.tdx-chart-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tdx-chart {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+
+.tdx-pane {
+  position: absolute;
+  left: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.65rem;
+  padding: 0.12rem 0.35rem 0.12rem 3.2rem;
+  pointer-events: none;
+  font-size: 0.72rem;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+}
+
+/* 顶部位置由 KLINE_GRID_TOPS 经内联变量注入，与 ECharts grid 同源 */
+.tdx-pane--vol {
+  top: var(--kline-vol-top);
+}
+
+.tdx-pane--ind {
+  top: var(--kline-ind-top);
+  pointer-events: none;
+}
+
+.tdx-pane__tag {
+  font-weight: 700;
+  color: var(--mist);
+}
+
+.tdx-pane__item {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* 指标读数配色走语义 token，别再直写 hex（深色外观下会失配） */
+.is-vma5 {
+  color: var(--warn);
+}
+
+.is-vma60 {
+  color: var(--info);
+}
+
+.is-dif,
+.is-k {
+  color: var(--info);
+}
+
+.is-dea,
+.is-d {
+  color: var(--warn);
+}
+
+.is-macd,
+.is-j {
+  color: var(--seal);
+}
+
+.tdx-hint {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.35rem;
+  margin: 0;
+  font-size: 0.68rem;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.tdx-ind-switch {
+  pointer-events: auto;
+  margin-right: 0.25rem;
+}
+
+.tdx-ind-switch :deep(.el-radio-button__inner) {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.7rem;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.is-up {
+  color: var(--up);
+}
+
+.is-down {
+  color: var(--down);
+}

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
+import { pct as fmtPct } from '@/shared/lib/format'
 
 import type { PulsePickRow } from '../composables/usePulseHome'
 
@@ -23,12 +24,6 @@ const batch = computed(() => ({
   items: toBatchItems(props.rows),
 }))
 
-function fmtPct(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
-  const n = Number(value)
-  const sign = n > 0 ? '+' : ''
-  return `${sign}${n.toFixed(2)}%`
-}
 
 function fmtScore(value: number | null | undefined): string {
   if (value == null || Number.isNaN(Number(value))) return '—'
@@ -58,28 +53,46 @@ function tone(value: number | null | undefined): string {
       class="pulse-table"
       empty-text="—"
     >
-      <el-table-column prop="rank" label="#" min-width="48" align="right" />
-      <el-table-column label="标的" min-width="240">
+      <el-table-column
+        prop="rank"
+        label="序号"
+        width="60"
+        align="center"
+        header-align="center"
+      />
+      <el-table-column label="标的" width="200" align="center" header-align="center">
         <template #default="{ row }">
-          <StockLink :code="row.code" :name="row.name" :batch="batch" />
+          <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
         </template>
       </el-table-column>
       <el-table-column
         v-if="showStrategy"
-        label="策略"
-        min-width="160"
+        label="战法"
+        min-width="240"
+        align="center"
+        header-align="center"
         show-overflow-tooltip
       >
         <template #default="{ row }">
           <span class="pulse-muted pulse-strategy">{{ row.strategyName }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="今涨" min-width="88" align="right">
+      <el-table-column
+        label="今涨"
+        width="160"
+        align="center"
+        header-align="center"
+      >
         <template #default="{ row }">
           <span class="num" :class="tone(row.pct)">{{ fmtPct(row.pct) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="分" min-width="72" align="right">
+      <el-table-column
+        label="评分"
+        width="160"
+        align="center"
+        header-align="center"
+      >
         <template #default="{ row }">
           <span class="num pulse-muted">{{ fmtScore(row.score) }}</span>
         </template>
@@ -92,8 +105,9 @@ function tone(value: number | null | undefined): string {
 <style scoped>
 .pulse-table {
   flex: 1;
-  min-height: 180px;
-  min-width: 640px;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .pulse-panel {
@@ -101,9 +115,10 @@ function tone(value: number | null | undefined): string {
   border-radius: var(--radius);
   background: var(--sheet);
   min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .pulse-panel__head {
@@ -146,17 +161,19 @@ function tone(value: number | null | undefined): string {
 }
 
 .pulse-strategy {
-  display: block;
+  display: inline-block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .is-up {
-  color: var(--up, #c23b3b);
+  color: var(--up, #c41e3a);
 }
 
 .is-down {
-  color: var(--down, #1a8f5c);
+  color: var(--down, #0f6b5c);
 }
 </style>

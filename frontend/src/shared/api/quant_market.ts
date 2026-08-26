@@ -1,6 +1,11 @@
 /** 行情：覆盖率 / 实时条 / 看板 / K 线 / 同步 / 引导 / 股票池 / 体检。 */
 import { quantRequest, query } from '@/shared/api/quant_client'
 import type {
+  AkshareBatchProbeResult,
+  AkshareCatalog,
+  AkshareCatalogProbeResult,
+  AkshareCatalogSource,
+  AkshareVersionInfo,
   Capabilities,
   Instrument,
   MarketBoard,
@@ -44,7 +49,6 @@ export interface LiveTape {
   error: string
   title: string
   indices: LiveTapeItem[]
-  positions: LiveTapeItem[]
   watches: LiveTapeItem[]
   items: LiveTapeItem[]
 }
@@ -62,6 +66,8 @@ export function getMarketBoard(options: {
   page?: number
   page_size?: number
   live?: boolean
+  /** 兼容旧 GET persist；轮询请保持 false，显式落盘用 persistMarketBoardSpot */
+  persist?: boolean
   instrument_type?: string
   status?: string
   industry?: string
@@ -71,6 +77,7 @@ export function getMarketBoard(options: {
   codes?: string | string[]
 } = {}): Promise<MarketBoard> {
   const live = options.live === true ? 'true' : 'false'
+  const persist = options.persist === true ? 'true' : 'false'
   const codes = Array.isArray(options.codes)
     ? options.codes.filter(Boolean).join(',')
     : options.codes
@@ -80,6 +87,7 @@ export function getMarketBoard(options: {
       page: options.page,
       page_size: options.page_size,
       live,
+      persist,
       instrument_type: options.instrument_type,
       status: options.status,
       industry: options.industry,
@@ -88,6 +96,40 @@ export function getMarketBoard(options: {
       codes,
     })}`,
   )
+}
+
+/** 显式落盘当日 spot + 热库镜像；与 live 轮询解耦，需写鉴权（本地桌面默认可写）。 */
+export function persistMarketBoardSpot(payload: {
+  codes?: string[]
+  q?: string
+  page?: number
+  page_size?: number
+  instrument_type?: string
+  status?: string
+  industry?: string
+  sort?: string
+  turnover_min?: number | null
+} = {}): Promise<{
+  ok: boolean
+  written: number
+  codes: string[]
+  as_of: string
+  mirrored?: Record<string, unknown>
+}> {
+  const body: Record<string, unknown> = {}
+  if (payload.codes?.length) body.codes = payload.codes.filter(Boolean)
+  if (payload.q) body.q = payload.q
+  if (payload.page != null) body.page = payload.page
+  if (payload.page_size != null) body.page_size = payload.page_size
+  if (payload.instrument_type) body.instrument_type = payload.instrument_type
+  if (payload.status) body.status = payload.status
+  if (payload.industry) body.industry = payload.industry
+  if (payload.sort) body.sort = payload.sort
+  if (payload.turnover_min != null) body.turnover_min = payload.turnover_min
+  return quantRequest('/market/board/spot', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 export function getMarketIndustries(): Promise<{ items: string[]; total: number }> {
@@ -257,6 +299,7 @@ export type MarketHealthReport = {
   blocked: boolean
   reason: string
   checked_at: string
+  include_network?: boolean
   findings: HealthFinding[]
   block_count: number
   warn_count: number
@@ -269,10 +312,14 @@ export type MarketHealthReport = {
 export function getMarketHealth(options?: {
   date?: string
   include_ok?: boolean
+  include_network?: boolean
+  signal?: AbortSignal
 }): Promise<MarketHealthReport> {
   const date = options?.date
   const include_ok = options?.include_ok ? 'true' : undefined
-  return quantRequest(`/market/health${query({ date, include_ok })}`)
+  const include_network = options?.include_network ? 'true' : undefined
+  const init = options?.signal ? { signal: options.signal } : undefined
+  return quantRequest(`/market/health${query({ date, include_ok, include_network })}`, init)
 }
 
 /** 用 as-of 流通股本回填缺换手率（体检「回填换手率」）。 */
@@ -283,4 +330,52 @@ export function repairMarketTurnover(since?: string): Promise<{
   dates_scanned: number
 }> {
   return quantRequest(`/market/repair/turnover${query({ since })}`, { method: 'POST' })
+}
+
+export function getAkshareCatalog(
+  filters: { q?: string; category?: string; source?: string } = {},
+): Promise<AkshareCatalog> {
+  const query = new URLSearchParams()
+  if (filters.q) query.set('q', filters.q)
+  if (filters.category) query.set('category', filters.category)
+  if (filters.source) query.set('source', filters.source)
+  const search = query.toString()
+  const suffix = search ? `?${search}` : ''
+  return quantRequest<AkshareCatalog>(`/market/akshare/catalog${suffix}`)
+}
+
+/** 只要每个来源挂了多少接口。整份目录几千条，货架列表不该为一个数字全量拉。 */
+export function getAkshareSources(): Promise<{
+  sources: AkshareCatalogSource[]
+  total?: number
+  akshare_version?: string
+}> {
+  return quantRequest('/market/akshare/sources')
+}
+
+export function getAkshareVersion(fetchLatest = true): Promise<AkshareVersionInfo> {
+  const suffix = fetchLatest ? '' : '?fetch_latest=false'
+  return quantRequest(`/market/akshare/version${suffix}`)
+}
+
+export function probeAkshareCatalog(
+  name: string,
+  params: Record<string, unknown>,
+): Promise<AkshareCatalogProbeResult> {
+  return quantRequest(`/market/akshare/catalog/${encodeURIComponent(name)}/probe`, {
+    method: 'POST',
+    body: JSON.stringify({ params }),
+  })
+}
+
+/** 一键/分页批量探测；不传 names 则按目录全量续跑。 */
+export function probeAkshareCatalogBatch(payload: {
+  names?: string[]
+  offset?: number
+  limit?: number
+}): Promise<AkshareBatchProbeResult> {
+  return quantRequest('/market/akshare/catalog/probe-batch', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }

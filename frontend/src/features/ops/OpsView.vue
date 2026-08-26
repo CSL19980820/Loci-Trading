@@ -8,6 +8,7 @@ import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import LlmTab from './components/LlmTab.vue'
 import McpTab from './components/McpTab.vue'
+import PackTab from './components/PackTab.vue'
 import SettingsRail, {
   type SettingsRailGroup,
 } from './components/SettingsRail.vue'
@@ -24,7 +25,7 @@ type SystemTabExpose = TabLoadable & {
   isDirty: () => boolean
 }
 
-const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system'])
+const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'pack'])
 
 const SYSTEM_LEGACY: Record<string, string> = {
   'data-dir': 'sys-location',
@@ -72,6 +73,7 @@ const visited = reactive<Record<OpsTab, boolean>>({
   mcp: false,
   llm: false,
   system: false,
+  pack: false,
 })
 visited[activeTab.value] = true
 
@@ -79,13 +81,17 @@ const railGroups = computed((): SettingsRailGroup[] => [
   {
     title: '模型与工具',
     items: [
-      { name: 'mcp', label: 'MCP', ...summaries.mcp },
-      { name: 'llm', label: 'LLM', ...summaries.llm },
+      // 缩写降为副标：主标说人话，MCP / LLM 仍留着，老用户才认得出是同一处
+      { name: 'mcp', label: '工具连接', ...summaries.mcp, tail: `MCP · ${summaries.mcp.tail}` },
+      { name: 'llm', label: 'AI 模型', ...summaries.llm, tail: `LLM · ${summaries.llm.tail}` },
     ],
   },
   {
     title: '本机',
-    items: [{ name: 'system', label: '系统', ...summaries.system }],
+    items: [
+      { name: 'system', label: '系统', ...summaries.system },
+      { name: 'pack', label: '一键打包', ...summaries.pack },
+    ],
   },
 ])
 
@@ -96,12 +102,14 @@ const mobileTabs = computed(() =>
 const mcpTab = ref<TabLoadable | null>(null)
 const llmTab = ref<TabLoadable | null>(null)
 const systemTab = ref<SystemTabExpose | null>(null)
+const packTab = ref<TabLoadable | null>(null)
 
 function tabLoader(tab: OpsTab): TabLoadable | null {
   const map: Record<OpsTab, { value: TabLoadable | null }> = {
     mcp: mcpTab,
     llm: llmTab,
     system: systemTab,
+    pack: packTab,
   }
   return map[tab].value
 }
@@ -235,6 +243,9 @@ onMounted(() => {
             @jobs-changed="refreshSummaries"
             @changed="() => { refreshSummaries(); onAppearanceChanged() }"
           />
+        </div>
+        <div v-if="visited.pack" v-show="activeTab === 'pack'" class="ops-pane">
+          <PackTab ref="packTab" @changed="refreshSummaries" />
         </div>
       </div>
     </div>

@@ -195,13 +195,17 @@ class RegistryTests(unittest.TestCase):
     def test_default_catalog_has_chinese_labels(self) -> None:
         catalog = list_catalog()
         ids = {item["id"] for item in catalog}
-        self.assertEqual(ids, {"sina", "eastmoney", "tencent", "tdx", "exchange_list"})
+        # wudao 视运行时开关；baostock 已进默认注册表
+        self.assertTrue(
+            {"sina", "eastmoney", "tencent", "tdx", "exchange_list", "baostock"}.issubset(ids)
+        )
         labels = {item["id"]: item["label"] for item in catalog}
         self.assertEqual(labels["sina"], "新浪直连")
         self.assertEqual(labels["eastmoney"], "东财")
         self.assertEqual(labels["tencent"], "腾讯财经")
         self.assertEqual(labels["tdx"], "通达信")
         self.assertEqual(labels["exchange_list"], "交易所列表")
+        self.assertIn("baostock", labels)
 
     def test_default_catalog_exposes_base_url_for_source_detail(self) -> None:
         base_urls = {item["id"]: item["base_url"] for item in list_catalog()}
@@ -213,16 +217,18 @@ class RegistryTests(unittest.TestCase):
 
     def test_adapters_for_lane(self) -> None:
         hist = {a.meta.id for a in adapters_for_lane(LANE_HIST_DAILY)}
-        self.assertEqual(hist, {"sina", "eastmoney", "tencent"})
+        self.assertTrue({"sina", "eastmoney", "tencent", "baostock"}.issubset(hist))
         spot = {a.meta.id for a in adapters_for_lane(LANE_SPOT_BATCH)}
-        self.assertEqual(spot, {"sina", "eastmoney", "tencent"})
+        self.assertTrue({"sina", "eastmoney", "tencent"}.issubset(spot))
         minute = [a.meta.id for a in adapters_for_lane(LANE_MINUTE)]
-        self.assertEqual(set(minute), {"eastmoney", "sina", "tdx"})
+        self.assertTrue({"eastmoney", "sina", "tdx"}.issubset(set(minute)))
         # 分时默认通达信最高优先（注册表顺序即 auto 路由顺序）。
         self.assertEqual(minute[0], "tdx")
         self.assertEqual(enabled_adapter_ids(LANE_MINUTE, config={})[0], "tdx")
-        capital = {a.meta.id for a in adapters_for_lane(LANE_CAPITAL_FLOW)}
-        self.assertEqual(capital, {"eastmoney"})
+        # 资金流：东财主源，新浪回退（只有主力 / 超大单两组，缺大中小单拆分）。
+        # 顺序就是 auto 路由顺序，新浪必须排在东财之后。
+        capital = [a.meta.id for a in adapters_for_lane(LANE_CAPITAL_FLOW)]
+        self.assertEqual(capital, ["eastmoney", "sina"])
         instruments = {a.meta.id for a in adapters_for_lane(LANE_INSTRUMENTS)}
         self.assertEqual(instruments, {"exchange_list"})
 
@@ -252,9 +258,12 @@ class RegistryTests(unittest.TestCase):
         }
         with mock.patch("src.shared.paths.load_config", return_value=config):
             self.assertEqual(enabled_adapter_ids(LANE_HIST_DAILY), ["selected"])
-            with self.assertRaises(AdapterError):
+            with self.assertRaises(AdapterError) as ctx:
                 fetch_daily_routed("600519")
         self.assertEqual(first.fetch_calls, 0)
+        # 只打一个源就全灭时，错误必须说清「是你锁的源」，别让人以为整条线挂了
+        self.assertIn("手动锁定", str(ctx.exception))
+        self.assertIn("selected", str(ctx.exception))
 
     def test_manual_route_with_fallback_prefers_selected_then_default_order(self) -> None:
         reset_registry([_FakeAdapter("first"), _FakeAdapter("selected"), _FakeAdapter("third")])
@@ -287,8 +296,9 @@ class RegistryTests(unittest.TestCase):
         }
         with mock.patch("src.shared.paths.load_config", return_value=config):
             _, adapter_id = fetch_daily_routed("600519")
+        # 协作合并：手选主源优先；fallback 源仍可能被调用做补齐
         self.assertEqual(adapter_id, "selected")
-        self.assertEqual(faster.fetch_calls, 0)
+        self.assertGreaterEqual(selected.fetch_calls, 1)
 
     def test_manual_daily_fallback_uses_other_source_only_after_selected_fails(self) -> None:
         selected = _FakeAdapter("selected", fail=True)
@@ -437,25 +447,31 @@ class RegistryTests(unittest.TestCase):
             fetch_minute_routed("600519")
 
 
+class _BarrierAdapter(MarketAdapter):
+    """probe 时在栅栏会合：只有两条 probe 真的同时在跑才能都通过。"""
+
+    def __init__(self, adapter_id: str, barrier: threading.Barrier) -> None:
+        self.meta = AdapterMeta(
+            id=adapter_id, label=adapter_id, lanes=(LANE_HIST_DAILY,), description="fake"
+        )
+        self.barrier = barrier
+
+    def fetch_daily(self, code: str, *, instrument_type: str = "STOCK") -> pd.DataFrame:
+        self.barrier.wait()
+        return _daily_frame(1)
+
+
 class ProbeLaneParallelTests(unittest.TestCase):
     def tearDown(self) -> None:
         reset_registry()
 
     def test_probe_lane_runs_in_parallel(self) -> None:
-        """两个各 sleep 0.15s 的 probe，墙钟应明显小于串行之和。"""
-        reset_registry(
-            [
-                _FakeAdapter("slow_a", delay=0.15),
-                _FakeAdapter("slow_b", delay=0.15),
-            ]
-        )
-        started = time.perf_counter()
+        """并行判据用栅栏而不是墙钟：串行时栅栏会超时破裂，probe 变红。"""
+        barrier = threading.Barrier(2, timeout=5.0)
+        reset_registry([_BarrierAdapter("par_a", barrier), _BarrierAdapter("par_b", barrier)])
         results = probe_lane(LANE_HIST_DAILY, max_workers=2)
-        elapsed = time.perf_counter() - started
         self.assertEqual(len(results), 2)
-        self.assertTrue(all(r.ok for r in results))
-        # 串行约 0.30s；并行应 < 0.28（留余量给调度抖动）
-        self.assertLess(elapsed, 0.28)
+        self.assertTrue(all(r.ok for r in results), [r.error for r in results])
 
     def test_probe_lane_preserves_order(self) -> None:
         reset_registry(
@@ -479,6 +495,17 @@ class ProbeLaneParallelTests(unittest.TestCase):
         self.assertTrue(result[0].ok)
         self.assertEqual(adapter.code_seen, "000001")
 
+    def test_probe_lane_times_out_hung_adapter(self) -> None:
+        """单源挂死时必须在墙钟内返回失败，不能堵死探测接口。"""
+        reset_registry([_FakeAdapter("hung", delay=2.0)])
+        started = time.perf_counter()
+        results = probe_lane(LANE_HIST_DAILY, timeout_sec=0.2)
+        elapsed = time.perf_counter() - started
+        self.assertEqual(len(results), 1)
+        self.assertFalse(results[0].ok)
+        self.assertIn("超时", results[0].error or "")
+        self.assertLess(elapsed, 1.5)
+
 
 class NormalizeUnitTests(unittest.TestCase):
     def test_eastmoney_turnover_percent_to_fraction(self) -> None:
@@ -501,16 +528,27 @@ class NormalizeUnitTests(unittest.TestCase):
         for col in ("date", "open", "high", "low", "close", "volume", "amount"):
             self.assertIn(col, out.columns)
 
-    def test_eastmoney_already_renamed_percent(self) -> None:
-        """原始百分数（未走 Source）走默认 turnover_as_percent=True。"""
-        raw = _daily_frame(turnover=12.3)
+    def test_eastmoney_chinese_percent_via_contract(self) -> None:
+        """中文「换手率」列走契约百分数→小数。"""
+        raw = pd.DataFrame(
+            {
+                "日期": ["2026-01-05"],
+                "开盘": [10.0],
+                "最高": [11.0],
+                "最低": [9.0],
+                "收盘": [10.5],
+                "成交量": [100.0],
+                "成交额": [1e6],
+                "换手率": [12.3],
+            }
+        )
         out = EastmoneyAdapter._normalize_daily(raw)
         self.assertAlmostEqual(float(out["turnover"].iloc[0]), 0.123)
 
-    def test_eastmoney_source_fraction_not_double_divided(self) -> None:
-        """经 Source 已是小数时，adapter 不得再 /100。"""
+    def test_eastmoney_english_fraction_not_double_divided(self) -> None:
+        """已是英文小数口径时，契约不得再 /100。"""
         raw = _daily_frame(turnover=0.05)
-        out = EastmoneyAdapter._normalize_daily(raw, turnover_as_percent=False)
+        out = EastmoneyAdapter._normalize_daily(raw)
         self.assertAlmostEqual(float(out["turnover"].iloc[0]), 0.05)
 
     def test_sina_turnover_stays_fraction(self) -> None:

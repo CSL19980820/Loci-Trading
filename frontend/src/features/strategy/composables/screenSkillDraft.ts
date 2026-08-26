@@ -199,11 +199,13 @@ function parseListText(raw: string): string[] {
 function hasAnyText(values: string[]): boolean {
   return values.some((value) => value.trim())
 }
+/** 仅 id 预填不算已用；用户动过正文才纳入校验。 */
 function isUsedLogicRow(row: ScreenSkillLogicRow): boolean {
-  return hasAnyText([row.id, row.title, row.expression, row.explanation, row.citationsText])
+  return hasAnyText([row.title, row.expression, row.explanation, row.citationsText])
 }
-function isUsedReferenceRow(row: ScreenSkillReferenceRow): boolean {
-  return hasAnyText([row.id, row.title, row.kind, row.url, row.path, row.section, row.quote])
+/** 编号/类型有默认值；只有填了标题或定位信息才算要保存的资料。 */
+export function isUsedReferenceRow(row: ScreenSkillReferenceRow): boolean {
+  return hasAnyText([row.title, row.url, row.path, row.section, row.quote])
 }
 export function paramRowsFromManifest(
   params: Record<string, ScreenSkillParamDef> | undefined,
@@ -351,12 +353,14 @@ function parseParamRow(row: ScreenSkillParamRow): ScreenSkillParamDef {
   if (!row.key.trim()) throw new Error('参数名不能为空')
   if (row.type === 'bool') {
     const text = row.defaultValue.trim().toLowerCase()
-    if (text !== 'true' && text !== 'false') {
-      throw new Error(`参数 ${row.key} 的默认值必须是 true 或 false`)
+    const truthy = new Set(['true', '1', '是', '开', '真'])
+    const falsy = new Set(['false', '0', '否', '关', '假'])
+    if (!truthy.has(text) && !falsy.has(text)) {
+      throw new Error(`参数 ${row.key} 的默认值必须是 是 或 否`)
     }
     return {
       type: 'bool',
-      default: text === 'true',
+      default: truthy.has(text),
       ...(row.label.trim() ? { label: row.label.trim() } : {}),
     }
   }
@@ -368,7 +372,7 @@ function parseParamRow(row: ScreenSkillParamRow): ScreenSkillParamDef {
     throw new Error(`参数 ${row.key} 的最小值不能大于最大值`)
   }
   if (value < min || value > max) {
-    throw new Error(`参数 ${row.key} 的默认值必须落在 min/max 之间`)
+    throw new Error(`参数 ${row.key} 的默认值必须落在最小值与最大值之间`)
   }
   return {
     type: row.type,
@@ -388,7 +392,7 @@ function buildReferenceRows(
     if (!isUsedReferenceRow(row)) continue
     const id = row.id.trim()
     if (!id) {
-      errors.push(`资料来源 #${index + 1} 缺少 ID`)
+      errors.push(`资料来源 #${index + 1} 缺少编号（填了内容就需要编号）`)
       continue
     }
     if (ids.has(id)) {
@@ -428,7 +432,7 @@ function buildLogicRows(rows: ScreenSkillLogicRow[], referenceIds: Set<string>):
     if (!isUsedLogicRow(row)) continue
     const id = row.id.trim()
     if (!id) {
-      errors.push(`逻辑 #${index + 1} 缺少 ID`)
+      errors.push(`逻辑 #${index + 1} 缺少编号`)
       continue
     }
     if (ids.has(id)) {
@@ -464,7 +468,7 @@ function buildLogicRows(rows: ScreenSkillLogicRow[], referenceIds: Set<string>):
   }
   return { logic, errors }
 }
-function buildUniverseSpec(draft: ScreenSkillDraftModel): UniverseSpec {
+export function buildUniverseSpec(draft: ScreenSkillDraftModel): UniverseSpec {
   const minListDays = draft.minListDays == null || Number.isNaN(draft.minListDays) ? null : Math.max(0, Math.trunc(draft.minListDays))
   return {
     preset: draft.universePreset.trim() || null,
@@ -509,7 +513,7 @@ export function buildScreenSkillPayload(
   errors.push(...builtReferences.errors)
   const builtLogic = buildLogicRows(draft.logic, builtReferences.ids)
   errors.push(...builtLogic.errors)
-  if (!draft.slug.trim()) errors.push('Slug 不能为空')
+  if (!draft.slug.trim()) errors.push('标识不能为空')
   if (!draft.name.trim()) errors.push('名称不能为空')
   if (!draft.description.trim()) errors.push('说明不能为空')
   if (!draft.signal.trim()) errors.push('信号名不能为空')
@@ -522,11 +526,11 @@ export function buildScreenSkillPayload(
   if (!fields.length) errors.push('至少选择一个数据字段')
   if (draft.runtime === 'formula') {
     if (!draft.formula.trim()) errors.push('公式正文不能为空')
-    if (draft.dialect === 'python') errors.push('公式运行时不能使用 python 方言')
+    if (draft.dialect === 'python') errors.push('公式运行时不能使用脚本方言')
   } else {
-    if (!draft.code.trim()) errors.push('Python 代码不能为空')
-    if (!draft.entrypoint.trim()) errors.push('Python 入口函数不能为空')
-    if (draft.dialect !== 'python') errors.push('Python 运行时的方言必须为 python')
+    if (!draft.code.trim()) errors.push('脚本代码不能为空')
+    if (!draft.entrypoint.trim()) errors.push('脚本入口函数不能为空')
+    if (draft.dialect !== 'python') errors.push('脚本运行时的方言必须为脚本')
   }
   const manifest: ScreenSkillManifest = {
     schema_version: 2,
@@ -556,7 +560,7 @@ export function buildScreenSkillPayload(
       version: draft.version.trim() || undefined,
       enabled: draft.enabled,
       runtime: draft.runtime,
-      dialect: draft.dialect,
+      dialect: draft.runtime === 'formula' ? 'loci' : draft.dialect,
       formula: draft.runtime === 'formula' ? draft.formula : undefined,
       code: draft.runtime === 'python' ? draft.code : undefined,
       entrypoint: draft.runtime === 'python' ? draft.entrypoint.trim() : undefined,

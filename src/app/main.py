@@ -20,8 +20,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from src.app.login_throttle import LoginThrottle  # noqa: F401 — 测试/兼容 re-export
+from src.app.write_token_policy import apply_write_token_policy
 from src.ledger import PalaceError, PalaceStore
 from src.ledger.api.router import build_ledger_router
+from src.shared.observability import (
+    current as current_observation,
+    event as observation_event,
+    header_values as observation_header_values,
+    metric as observation_metric,
+    span as observation_span,
+)
 from src.shared.paths import PROJECT_ROOT, ensure_data_dir, palace_db
 from src.shared.webview_cache import purge_webview_http_cache_on_boot
 
@@ -101,59 +110,6 @@ def _spawn_eod_catchup(
     threading.Thread(target=_worker, name="eod-catchup", daemon=True).start()
 
 
-class LoginThrottle:
-    """登录失败限流，防止固定口令被暴力枚举。
-
-    单容器单进程部署，用内存计数就够；进程重启计数清零，这是已知取舍。
-    它只是下限保护，真正的边界仍是 PALACE_AUTH_PASSWORD 的熵值，
-    以及 HTTPS 部署下 Nginx 那层 Basic Auth。
-    """
-
-    def __init__(self, *, max_failures: int = 5, window_seconds: int = 900) -> None:
-        self.max_failures = max_failures
-        self.window_seconds = window_seconds
-        self._failures: dict[str, list[float]] = {}
-
-    def _recent(self, key: str, now: float) -> list[float]:
-        cutoff = now - self.window_seconds
-        recent = [stamp for stamp in self._failures.get(key, []) if stamp > cutoff]
-        if recent:
-            self._failures[key] = recent
-        else:
-            self._failures.pop(key, None)
-        return recent
-
-    def retry_after(self, key: str) -> int:
-        """仍在锁定期内返回剩余秒数；未锁定返回 0。"""
-        now = time.monotonic()
-        recent = self._recent(key, now)
-        if len(recent) < self.max_failures:
-            return 0
-        return max(1, int(self.window_seconds - (now - recent[0])))
-
-    def record_failure(self, key: str) -> None:
-        now = time.monotonic()
-        recent = self._recent(key, now)
-        recent.append(now)
-        self._failures[key] = recent
-        self._prune(now)
-
-    def reset(self, key: str) -> None:
-        self._failures.pop(key, None)
-
-    def _prune(self, now: float) -> None:
-        """伪造来源 IP 可以刷出大量条目，超阈值时清掉已过期的键。"""
-        if len(self._failures) <= 1024:
-            return
-        cutoff = now - self.window_seconds
-        for key in [
-            key
-            for key, stamps in self._failures.items()
-            if not any(stamp > cutoff for stamp in stamps)
-        ]:
-            self._failures.pop(key, None)
-
-
 def create_app(
     db_path: Path | str | None = None,
     static_dir: Path | str | None = None,
@@ -169,13 +125,23 @@ def create_app(
     """创建可测试的 FastAPI 实例；每个请求独立持有 SQLite 连接。"""
     ensure_data_dir()
     try:
-        from src.ai import ensure_local_master_key
+        from src.ai import migrate_encrypted_llm_keys
 
-        ensure_local_master_key()
+        purged_llm = migrate_encrypted_llm_keys()
+        if purged_llm:
+            logger.info("已清除 %s 条 LLM 旧加密凭据（请在运维页重录）", purged_llm)
     except Exception:
-        logger.exception("本机 AI 主密钥准备失败（已忽略；保存 API Key 时仍会报错）")
+        logger.exception("清理 LLM 旧加密凭据失败（已忽略）")
     try:
-        from src.app.screen_skills import refresh_screen_strategy_catalog
+        from src.intel import migrate_encrypted_mcp_tokens
+
+        purged_mcp = migrate_encrypted_mcp_tokens()
+        if purged_mcp:
+            logger.info("已清除 %s 条 MCP 旧加密凭据（请在运维页重录）", purged_mcp)
+    except Exception:
+        logger.exception("清理 MCP 旧加密凭据失败（已忽略）")
+    try:
+        from src.strategy.application.screen_skills import refresh_screen_strategy_catalog
 
         refresh_screen_strategy_catalog()
     except Exception:
@@ -188,12 +154,26 @@ def create_app(
     resolved_db = Path(db_path or os.environ.get("PALACE_DB") or DEFAULT_DB)
     runtime_environment = (environment or os.environ.get("PALACE_ENV") or "local").strip().lower()
     is_production = runtime_environment == "production"
+    # 本地桌面默认可写；对网/共享主机可设 PALACE_REQUIRE_WRITE_AUTH=1 强制会话/Bearer
+    require_write_auth = is_production or _env_flag("PALACE_REQUIRE_WRITE_AUTH")
+    if not require_write_auth:
+        logger.warning(
+            "写鉴权开放（非 production）：浏览器会话恒真。"
+            "对网暴露请设 PALACE_ENV=production 或 PALACE_REQUIRE_WRITE_AUTH=1"
+        )
     resolved_hosts = allowed_hosts or _split_hosts(os.environ.get("PALACE_ALLOWED_HOSTS", ""))
     if is_production and not resolved_hosts:
         raise RuntimeError("生产环境必须配置 PALACE_ALLOWED_HOSTS")
     if not resolved_hosts:
         resolved_hosts = ["localhost", "127.0.0.1", "testserver"]
     resolved_write_token = write_token if write_token is not None else os.environ.get("PALACE_WRITE_TOKEN", "")
+    apply_write_token_policy(
+        write_token=resolved_write_token,
+        is_production=is_production,
+        require_write_auth=require_write_auth,
+        issued_at_raw=os.environ.get("PALACE_WRITE_TOKEN_ISSUED_AT", ""),
+        log=logger,
+    )
     resolved_auth_username = auth_username if auth_username is not None else os.environ.get("PALACE_AUTH_USERNAME", "")
     resolved_auth_password = auth_password if auth_password is not None else os.environ.get("PALACE_AUTH_PASSWORD", "")
     resolved_session_secret = session_secret if session_secret is not None else os.environ.get("PALACE_SESSION_SECRET", "")
@@ -231,31 +211,10 @@ def create_app(
         """
         def _ensure_managed_jobs() -> None:
             from src.ops import OpsStore
+            from src.ops.application.ensure_managed_jobs import ensure_all_managed_jobs
 
             with OpsStore(os.environ.get("PALACE_OPS_DB") or None) as ops:
-                ops.ensure_managed_outcome_job()
-                try:
-                    sync_plan = ops.ensure_managed_market_sync_jobs()
-                    logger.info(
-                        "托管行情同步已确保：盘中=%s 日终=%s（新建 %s / 更新 %s）",
-                        sync_plan.get("enabled_intraday"),
-                        sync_plan.get("enabled_eod"),
-                        sync_plan.get("created"),
-                        sync_plan.get("updated"),
-                    )
-                except Exception as sync_exc:  # noqa: BLE001
-                    logger.warning("托管行情同步确保失败：%s", sync_exc)
-                try:
-                    screen_plan = ops.ensure_managed_screen_jobs()
-                    logger.info(
-                        "托管盘后选股已确保：%s 个战法 @%s（新建 %s / 更新 %s）",
-                        screen_plan.get("total"),
-                        screen_plan.get("cron"),
-                        screen_plan.get("created"),
-                        screen_plan.get("updated"),
-                    )
-                except Exception as screen_exc:  # noqa: BLE001
-                    logger.warning("托管盘后选股确保失败：%s", screen_exc)
+                ensure_all_managed_jobs(ops)
 
         if _env_flag("PALACE_ENABLE_SCHEDULER"):
             try:
@@ -263,9 +222,12 @@ def create_app(
                 from src.ops import JobScheduler
 
                 market_db = os.environ.get("PALACE_MARKET_DB") or None
+                market_hot = os.environ.get("PALACE_MARKET_HOT_DB") or None
                 scheduler = JobScheduler(
                     db_path=os.environ.get("PALACE_OPS_DB") or None,
-                    context_factory=lambda: JobContext(market_db=market_db),
+                    context_factory=lambda: JobContext(
+                        market_db=market_db, market_hot_db=market_hot
+                    ),
                 )
                 scheduler.start()
                 scheduler_box["instance"] = scheduler
@@ -282,7 +244,9 @@ def create_app(
                 _spawn_eod_catchup(
                     ops_db=os.environ.get("PALACE_OPS_DB") or None,
                     market_db=market_db,
-                    context_factory=lambda: JobContext(market_db=market_db),
+                    context_factory=lambda: JobContext(
+                        market_db=market_db, market_hot_db=market_hot
+                    ),
                 )
             except ImportError as exc:
                 logger.warning("调度器依赖缺失（%s），定时任务未启动", exc.name)
@@ -311,6 +275,67 @@ def create_app(
     )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=resolved_hosts)
 
+    @app.middleware("http")
+    async def observe_request(request: Request, call_next: Any) -> Any:
+        """为 HTTP 请求建立本地相关性；默认不加响应头、不发外部数据。"""
+        incoming = observation_header_values(request.headers)
+        started = time.perf_counter()
+        span_kwargs = {
+            key: incoming.get(key)
+            for key in ("trace_id", "run_id", "job_id", "source_id", "tool_receipt_id")
+        }
+        with observation_span(
+            "http.request",
+            **span_kwargs,
+            labels={"component": "http", "operation": request.method.lower()},
+        ) as correlation:
+            try:
+                response = await call_next(request)
+            except Exception:
+                elapsed_ms = max(0, int((time.perf_counter() - started) * 1000))
+                observation_metric(
+                    "loci.http.requests",
+                    labels={"component": "http", "operation": request.method.lower(), "status": "error"},
+                )
+                observation_event(
+                    logger,
+                    logging.ERROR,
+                    "http_request",
+                    fields={
+                        "method": request.method,
+                        "status": "error",
+                        "duration_ms": elapsed_ms,
+                    },
+                )
+                raise
+            elapsed_ms = max(0, int((time.perf_counter() - started) * 1000))
+            status = str(getattr(response, "status_code", 500))
+            outcome = "success" if status.startswith("2") else "error"
+            observation_metric(
+                "loci.http.requests",
+                labels={
+                    "component": "http",
+                    "operation": request.method.lower(),
+                    "status": status[:3],
+                    "outcome": outcome,
+                },
+            )
+            route = getattr(request.scope.get("route"), "path", "") or "unmatched"
+            observation_event(
+                logger,
+                logging.INFO if outcome == "success" else logging.WARNING,
+                "http_request",
+                fields={
+                    "method": request.method,
+                    "route": route,
+                    "status": status,
+                    "duration_ms": elapsed_ms,
+                },
+            )
+            if _env_flag("LOCI_OBSERVABILITY_EXPOSE"):
+                response.headers["X-Loci-Trace-ID"] = correlation.trace_id or current_observation().trace_id
+            return response
+
     # 启动时跑一遍 schema/去重迁移，避免线上仍吃旧脏数据。
     with PalaceStore(resolved_db):
         pass
@@ -324,8 +349,10 @@ def create_app(
 
     def has_browser_session(request: Request) -> bool:
         """只认当前固定账号签发的、未被篡改的会话 Cookie。"""
-        if not is_production:
+        if not require_write_auth:
             return True
+        if not resolved_auth_username:
+            return False
         return compare_digest(str(request.session.get("username", "")), resolved_auth_username)
 
     def has_agent_token(request: Request) -> bool:
@@ -545,7 +572,15 @@ def create_app(
 
         @app.get("/{frontend_path:path}", include_in_schema=False)
         def serve_spa(frontend_path: str) -> FileResponse:
-            """提供产物文件，并为 Vue Router 的历史路由回退到 index.html。"""
+            """提供产物文件,并为 Vue Router 的历史路由回退到 index.html。
+
+            ``/api/`` 下未匹配到路由的一律回 JSON 404,**不吐 SPA 外壳**。
+            否则调用方拿到的是 200 + text/html:前端会以「JSON 解析失败」的形式炸在
+            离现场十万八千里的地方,API 客户端也分不清「端点没了」和「服务器返回了页面」。
+            持仓下线这一轮删掉十几个 `/api/*`,正是这类混淆最容易发生的时候。
+            """
+            if frontend_path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="接口不存在:/%s" % frontend_path)
             requested = (resolved_dist / frontend_path).resolve()
             if frontend_path and requested.is_relative_to(resolved_dist) and requested.is_file():
                 return FileResponse(requested)

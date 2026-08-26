@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as ElementPlus from 'element-plus'
 import type { StrategyInfo, StrategyVersion } from '@/shared/types/quant'
 
 const api = vi.hoisted(() => ({
@@ -15,7 +16,12 @@ const confirmation = vi.hoisted(() => ({ confirmDangerous: vi.fn() }))
 
 vi.mock('@/shared/api/quant_strategy', () => api)
 vi.mock('@/shared/lib/confirm', () => confirmation)
-vi.mock('element-plus', () => ({ ElMessage: feedback }))
+// 必须 partial mock：Element Plus 已改按需注册，SFC 模板里的 el-* 会被编译成
+// 从 'element-plus' 具名 import，整包替换会让 ElDialog/ElTabPane 等全变 undefined。
+vi.mock('element-plus', async (importOriginal) => {
+  const actual = await importOriginal<typeof ElementPlus>()
+  return { ...actual, ElMessage: feedback }
+})
 
 import StrategyDetailDialog from './StrategyDetailDialog.vue'
 

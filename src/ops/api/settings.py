@@ -13,6 +13,8 @@ from src.ops.api.data_sources import (
 )
 from src.ops.api.market_sync import build_market_sync_settings_router
 from src.ops.api.notifications import build_notification_settings_router
+from src.ops.api.paper_quant import build_paper_quant_router
+from src.ops.api.share_pack import build_share_pack_router
 from src.ops.api.system_settings import DesktopPrefsUpdate, build_system_settings_router
 
 
@@ -41,10 +43,18 @@ def build_ops_settings_router(
         )
     )
     router.include_router(
+        build_paper_quant_router(
+            write_dependency=write_dependency,
+            ops_db=ops_db,
+            scheduler_getter=scheduler_getter,
+        )
+    )
+    router.include_router(
         build_market_sync_settings_router(
             write_dependency=write_dependency,
             ops_db=ops_db,
             scheduler_getter=scheduler_getter,
         )
     )
+    router.include_router(build_share_pack_router(write_dependency=write_dependency))
     return router

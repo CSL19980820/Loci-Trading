@@ -267,9 +267,8 @@ function setAkshareBatchOpen(open: boolean): void {
       </template>
       <EmptyState
         v-else
-        description="没有可用数据源"
-        reason="内置适配器注册表为空，或目录接口没返回"
-        eta="点刷新重试；仍为空说明后端注册表异常"
+        description="这台机器上没有报出任何数据源"
+        reason="点下面的「刷新」重读一次；仍为空说明程序里的取数源没装上。"
       >
         <el-button type="primary" @click="load()">刷新</el-button>
       </EmptyState>
@@ -378,7 +377,8 @@ function setAkshareBatchOpen(open: boolean): void {
 .ds-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  /* 按用途/按数据源卡片高于视口时在此内滚；按接口表仍靠自身吃满高度 */
+  overflow: auto;
   display: flex;
   flex-direction: column;
   padding: 0.1rem 0.1rem 0.5rem;

@@ -1,15 +1,15 @@
 """assistant_store 共享小工具，供主 Store 与 lifecycle mixin 复用。"""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from src.shared.clock import utc_now as utc_now
 import hashlib
 import json
 import re
 from typing import Any
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+# 域内旧调用点别名；application 应使用 utc_now。
+_now = utc_now
 
 
 def _dump(value: Any) -> str:
@@ -35,6 +35,9 @@ def redact(value: Any) -> Any:
     if isinstance(value, list):
         return [redact(item) for item in value]
     if isinstance(value, str):
+        # 附图 data URL 需完整保留给多模态；普通文本仍截断防日志膨胀
+        if value.startswith("data:image/"):
+            return value[:5_000_000]
         return _URL.sub("[URL]", _SECRET_VALUE.sub("[REDACTED]", value))[:8000]
     return value
 

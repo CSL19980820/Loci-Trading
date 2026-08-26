@@ -24,6 +24,9 @@ Loci/
 loci.config.json
 build/
 
+# 部署脚本与配置文件（禁止进仓）
+deploy/
+
 # 旧 PyInstaller 输出（现默认打到仓库根）
 dist/Loci.exe
 
@@ -41,6 +44,9 @@ data/
 
 # 本机私密记忆 / 主机备注（禁止进仓、禁止上传）
 .local/
+
+# 本机 Windows 注册表备份（排障时生成，与本仓无关）
+_regbackup_*/
 
 # 工具与编辑器缓存
 .codegraph/

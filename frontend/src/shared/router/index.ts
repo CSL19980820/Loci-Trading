@@ -2,24 +2,27 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { getSession } from '@/shared/api/palace'
 import { brandTitle } from '@/shared/lib/brand'
+import { navRoute } from '@/shared/lib/navLabels'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'pulse', component: () => import('@/features/market/PulseView.vue'), meta: { title: '盘面' } },
-    { path: '/ledger', name: 'ledger', component: () => import('@/features/ledger/DashboardView.vue'), meta: { title: '账本' } },
-    // 旧总览入口：持仓已迁至账本
-    { path: '/dashboard', redirect: '/ledger' },
-    { path: '/journal', name: 'journal', component: () => import('@/features/ledger/JournalView.vue'), meta: { title: '交割单' } },
-    { path: '/pool', name: 'pool', component: () => import('@/features/ledger/PoolView.vue'), meta: { title: '候选池' } },
-    { path: '/data', name: 'data-query', component: () => import('@/features/market/DataQueryView.vue'), meta: { title: '数据查询' } },
-    { path: '/reviews', name: 'reviews', component: () => import('@/features/review/ReviewCenterView.vue'), meta: { title: '复盘中心' } },
-    { path: '/reviews/records', name: 'review-records', component: () => import('@/features/review/ReviewsView.vue'), meta: { title: '复盘记录' } },
-    { path: '/quant', name: 'quant', component: () => import('@/features/strategy/QuantView.vue'), meta: { title: '工坊' } },
-    { path: '/strategy-converter', name: 'strategy-converter', component: () => import('@/features/strategy/StrategyConverterView.vue'), meta: { title: '量化技能工坊' } },
-    { path: '/winrate', name: 'winrate', component: () => import('@/features/review/WinRateView.vue'), meta: { title: '胜率统计' } },
-    { path: '/insights', name: 'insights', component: () => import('@/features/review/InsightsView.vue'), meta: { title: '洞察' } },
-    { path: '/screen-history', name: 'screen-history', component: () => import('@/features/strategy/ScreenHistoryView.vue'), meta: { title: '选股' } },
+    { ...navRoute('pulse'), component: () => import('@/features/market/PulseView.vue') },
+    { ...navRoute('pool'), component: () => import('@/features/ledger/PoolView.vue') },
+    { ...navRoute('data-query'), component: () => import('@/features/market/DataQueryView.vue') },
+    { ...navRoute('reviews'), component: () => import('@/features/review/ReviewCenterView.vue') },
+    { ...navRoute('review-records'), component: () => import('@/features/review/ReviewsView.vue') },
+    { ...navRoute('quant'), component: () => import('@/features/strategy/QuantView.vue') },
+    {
+      ...navRoute('strategy-converter'),
+      component: () => import('@/features/strategy/StrategyConverterView.vue'),
+    },
+    { ...navRoute('winrate'), component: () => import('@/features/review/WinRateView.vue') },
+    { ...navRoute('insights'), component: () => import('@/features/review/InsightsView.vue') },
+    {
+      ...navRoute('screen-history'),
+      component: () => import('@/features/strategy/ScreenHistoryView.vue'),
+    },
     // 旧独立市场入口 → 工坊「市场」Tab（?tab=installed 映射为 ?shelf=）
     {
       path: '/market',
@@ -41,21 +44,25 @@ const router = createRouter({
         }
       },
     },
-    { path: '/ops', name: 'ops', component: () => import('@/features/ops/OpsView.vue'), meta: { title: '运维' } },
+    { ...navRoute('ops'), component: () => import('@/features/ops/OpsView.vue') },
     // 旧运维「技能包」入口 → 工坊市场·已装
     {
       path: '/ops/skills',
       redirect: { path: '/quant', query: { tab: 'market', shelf: 'installed', kind: 'skill' } },
     },
-    { path: '/archive/:code', name: 'archive', component: () => import('@/features/ledger/ArchiveView.vue'), meta: { title: '档案' } },
-    { path: '/login', name: 'login', component: () => import('@/features/ledger/LoginView.vue'), meta: { title: '登录', public: true } },
+    { ...navRoute('archive'), component: () => import('@/features/ledger/ArchiveView.vue') },
     {
-      path: '/auth-unavailable',
-      name: 'auth-unavailable',
-      component: () => import('@/features/ledger/AuthUnavailableView.vue'),
-      meta: { title: '认证服务不可用', public: true },
+      ...navRoute('login', { public: true }),
+      component: () => import('@/features/ledger/LoginView.vue'),
     },
-    { path: '/peek', name: 'peek', component: () => import('@/features/market/PeekView.vue'), meta: { title: '行情', public: true } },
+    {
+      ...navRoute('auth-unavailable', { public: true }),
+      component: () => import('@/features/ledger/AuthUnavailableView.vue'),
+    },
+    {
+      ...navRoute('peek', { public: true }),
+      component: () => import('@/features/market/PeekView.vue'),
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior() {

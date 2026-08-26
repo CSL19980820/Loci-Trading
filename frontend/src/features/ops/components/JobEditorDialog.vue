@@ -178,7 +178,7 @@ function onSubmit(): void {
     return
   }
   if (isReservedStrategyJobName(name)) {
-    formError.value = 'screen:/skill: 前缀留给战法/技能绑定，请到对应详情开定时与推送'
+    formError.value = '这个名字留给战法和技能自己建的任务。这两类由它们自己管，请到对应详情页开定时与推送'
     return
   }
   if (form.kind === 'screen' && !form.strategy) {

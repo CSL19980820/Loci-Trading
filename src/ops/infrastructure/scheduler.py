@@ -28,16 +28,34 @@ from src.ops.infrastructure.store import OpsStore
 
 logger = logging.getLogger(__name__)
 
-#: 同一个任务的两次触发之间的最小间隔（秒）。防止 cron 写错成每秒一次。
-MIN_INTERVAL_SECONDS = 30
-
 #: 任务错过触发时间后，多久之内仍然补跑。超过就跳过——盘后同步晚 4 小时
 #: 才跑起来没有意义，不如等下一个交易日。
 MISFIRE_GRACE_SECONDS = 3600
 
+#: 本仓历史 cron 用 Unix 习惯写 ``1-5`` 表示周一至周五；APScheduler 的
+#: ``from_crontab`` 却是 0=周一…6=周日，``1-5`` 会变成周二至周六、整周跳过周一。
+_UNIX_WEEKDAYS_MON_FRI = frozenset({"1-5", "1,2,3,4,5"})
+
 
 class SchedulerError(RuntimeError):
     """调度配置错误。"""
+
+
+def normalize_cron_weekdays(expression: str) -> str:
+    """把 Unix 习惯的工作日字段改成 APScheduler 可识别的 ``mon-fri``。
+
+    已是命名星期（mon/tue/…）或 ``*`` 的原样返回；只改常见的 ``1-5`` 写法，
+    避免误伤已经按 APScheduler 编号写的 ``0-4``。
+    """
+    text = (expression or "").strip()
+    fields = text.split()
+    if len(fields) != 5:
+        return text
+    dow = fields[4].strip().lower()
+    if dow in _UNIX_WEEKDAYS_MON_FRI:
+        fields[4] = "mon-fri"
+        return " ".join(fields)
+    return text
 
 
 def validate_cron(
@@ -55,10 +73,11 @@ def validate_cron(
     if len(fields) != 5:
         raise SchedulerError(
             f"cron 需要 5 个字段（分 时 日 月 周），实际 {len(fields)} 个：{text!r}。"
-            " 例：'35 15 * * 1-5' 表示工作日 15:35"
+            " 例：'35 15 * * mon-fri' 表示工作日 15:35"
         )
+    normalized = normalize_cron_weekdays(text)
     try:
-        return CronTrigger.from_crontab(text, timezone=timezone)
+        return CronTrigger.from_crontab(normalized, timezone=timezone)
     except Exception as exc:
         raise SchedulerError(f"非法的 cron 表达式 {text!r}：{exc}") from exc
 
@@ -141,6 +160,13 @@ class JobScheduler:
         self._scheduler.start()
         self._started = True
         self.reload()
+        try:
+            with OpsStore(self.db_path) as store:
+                n = store.reclaim_stale_runs()
+                if n:
+                    logger.warning("调度器启动时回收了 %s 条超时 running 记录", n)
+        except Exception:
+            logger.exception("调度器启动回收超时 running 失败")
         logger.info("调度器已启动（时区 %s）", self.timezone)
 
     def shutdown(self, *, wait: bool = False) -> None:

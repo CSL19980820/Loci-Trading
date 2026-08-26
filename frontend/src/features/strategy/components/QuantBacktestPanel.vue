@@ -1,183 +1,79 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, toRef } from 'vue'
 import { ElMessage } from 'element-plus'
 
-import { runHorizonBacktest } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import { toErrorMessage } from '@/shared/lib/errors'
-import type { HorizonBacktestResult, HorizonStats, StrategyInfo } from '@/shared/types/quant'
+import type { StrategyInfo } from '@/shared/types/quant'
 
-import { pnlTone, signed } from '../composables/quantFormat'
-import QuantBacktestExtremeTape from './QuantBacktestExtremeTape.vue'
+import {
+  buildHorizonSummaryText,
+} from '../composables/quantBacktestSummary'
+import { useQuantBacktestPanel } from '../composables/useQuantBacktestPanel'
+import QuantBacktestCompareStrip from './QuantBacktestCompareStrip.vue'
+import QuantBacktestHorizonCard from './QuantBacktestHorizonCard.vue'
+import QuantBacktestTradeResult from './QuantBacktestTradeResult.vue'
 
 const props = defineProps<{
   strategies: StrategyInfo[]
   loading?: boolean
+  /** 策稿页注入：锁定当前技能，不展示战法下拉 */
+  lockedSlug?: string
+  lockedName?: string
 }>()
 
-const strategySlug = ref('')
-const range = ref<[string, string] | null>(null)
-const busy = ref(false)
-const result = ref<HorizonBacktestResult | null>(null)
-const errorText = ref('')
-const activePreset = ref<30 | 90 | 180 | null>(90)
+const strategiesRef = computed(() => props.strategies)
+const lockedSlugRef = toRef(props, 'lockedSlug')
 
-const selected = computed(() => props.strategies.find((s) => s.slug === strategySlug.value) ?? null)
-
-const entryLabel = computed(() => {
-  const timing = selected.value?.entry_timing || result.value?.entry_timing || ''
-  if (timing === 'close') return '尾盘买'
-  if (timing === 'next_dip') return '次日低吸'
-  if (timing === 'next_open') return '次日开'
-  if (timing === 'open') return '开盘买'
-  return timing || '—'
+const {
+  strategySlug,
+  range,
+  mode,
+  busy,
+  horizonResult,
+  tradeResult,
+  errorText,
+  activePreset,
+  showCost,
+  holdDays,
+  stopLossEnabled,
+  stopLossPct,
+  commissionBps,
+  stampDutyBps,
+  slippageBps,
+  entryLabel,
+  entryDetail,
+  subtitle,
+  rangeShortcuts,
+  tripCostPct,
+  resultMeta,
+  rangeLabel,
+  activeHasResult,
+  applyPreset,
+  onRangeChange,
+  disabledDate,
+  run,
+  skippedText,
+} = useQuantBacktestPanel({
+  strategies: strategiesRef,
+  lockedSlug: lockedSlugRef,
 })
 
-const entryDetail = computed(() => {
-  const timing = selected.value?.entry_timing || result.value?.entry_timing || ''
-  if (timing === 'close') return '选股日收盘入场 · T+N 看其后第 N 日最高'
-  if (timing === 'next_dip') return '选股日后挂 2% 低吸单 · 成交后看其后第 N 日最高'
-  if (timing === 'next_open') return '选股日后一交易日开盘入场 · T+1 约看第 2 日最高'
-  if (timing === 'open') return '选股日开盘入场 · T+N 看其后第 N 日最高'
-  return '入场时点以战法声明为准'
-})
-
-watch(
-  () => props.strategies,
-  (list) => {
-    if (!strategySlug.value && list.length) strategySlug.value = list[0].slug
-    if (strategySlug.value && !list.some((s) => s.slug === strategySlug.value)) {
-      strategySlug.value = list[0]?.slug ?? ''
-    }
-  },
-  { immediate: true },
-)
-
-function iso(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-function rangeEndingToday(daysBack: number): [string, string] {
-  const end = new Date()
-  const start = new Date(end)
-  start.setDate(start.getDate() - daysBack)
-  return [iso(start), iso(end)]
-}
-
-if (!range.value) range.value = rangeEndingToday(90)
-
-const rangeShortcuts = [
-  {
-    text: '近一月',
-    value: () => {
-      const end = new Date()
-      const start = new Date()
-      start.setDate(start.getDate() - 30)
-      return [start, end] as [Date, Date]
-    },
-  },
-  {
-    text: '近三月',
-    value: () => {
-      const end = new Date()
-      const start = new Date()
-      start.setDate(start.getDate() - 90)
-      return [start, end] as [Date, Date]
-    },
-  },
-  {
-    text: '近六月',
-    value: () => {
-      const end = new Date()
-      const start = new Date()
-      start.setDate(start.getDate() - 180)
-      return [start, end] as [Date, Date]
-    },
-  },
-]
-
-function applyPreset(daysBack: 30 | 90 | 180): void {
-  activePreset.value = daysBack
-  range.value = rangeEndingToday(daysBack)
-}
-
-function onRangeChange(): void {
-  activePreset.value = null
-}
-
-const disabledDate = (date: Date): boolean => {
-  const today = new Date()
-  today.setHours(23, 59, 59, 999)
-  return date.getTime() > today.getTime()
-}
-
-async function run(): Promise<void> {
-  errorText.value = ''
-  if (!strategySlug.value) {
-    ElMessage.warning('请先选择战法')
-    return
-  }
-  if (!range.value?.[0] || !range.value?.[1]) {
-    ElMessage.warning('请选择回测区间')
-    return
-  }
-  const [start, end] = range.value
-  const span = (Date.parse(end) - Date.parse(start)) / 86_400_000
-  if (span < 0) {
-    ElMessage.warning('结束日不能早于开始日')
-    return
-  }
-  if (span > 186) {
-    ElMessage.warning('一次性回测最长约 6 个月（186 天）')
-    return
-  }
-
-  busy.value = true
+async function copyHorizonSummary(): Promise<void> {
+  if (!horizonResult.value) return
+  const text = buildHorizonSummaryText({
+    strategy: strategySlug.value,
+    range: rangeLabel.value,
+    entry: entryLabel.value,
+    t1: horizonResult.value.horizons.t1 ?? null,
+    t3: horizonResult.value.horizons.t3 ?? null,
+  })
   try {
-    const next = await runHorizonBacktest({
-      strategy: strategySlug.value,
-      start,
-      end,
-      horizons: [1, 3],
-    })
-    result.value = next
-    const n1 = next.horizons.t1?.n ?? 0
-    const n3 = next.horizons.t3?.n ?? 0
-    if (!n1 && !n3) {
-      ElMessage.info('区间内没有可评估的信号事件')
-    } else {
-      ElMessage.success(`回测完成 · T+1 ${n1} 笔 · T+3 ${n3} 笔`)
-    }
-  } catch (caught: unknown) {
-    errorText.value = toErrorMessage(caught, '回测失败')
-    ElMessage.error(errorText.value)
-  } finally {
-    busy.value = false
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('已复制 Horizon 摘要')
+  } catch {
+    ElMessage.error('复制失败')
   }
 }
-
-function statsOf(key: 't1' | 't3'): HorizonStats | null {
-  return result.value?.horizons[key] ?? null
-}
-
-function skippedText(): string {
-  const skipped = result.value?.skipped
-  if (!skipped) return ''
-  return Object.entries(skipped)
-    .filter(([, n]) => n > 0)
-    .map(([reason, n]) => `${reason} ${n}`)
-    .join(' · ')
-}
-
-const resultMeta = computed(() => {
-  if (!result.value) return ''
-  const start = String((result.value.config?.range as { start?: string } | undefined)?.start || range.value?.[0] || '')
-  const end = String((result.value.config?.range as { end?: string } | undefined)?.end || range.value?.[1] || '')
-  return `${result.value.strategy} · ${start} — ${end} · ${entryLabel.value}`
-})
 </script>
 
 <template>
@@ -185,11 +81,24 @@ const resultMeta = computed(() => {
     <header class="bt-rail">
       <div class="bt-rail__title">
         <h2>战法回测</h2>
-        <p>标记日最高 ÷ 选股日收盘 · 最长 6 个月</p>
+        <p>{{ subtitle }}</p>
       </div>
       <el-form class="bt-rail__form" inline @submit.prevent="run">
+        <el-form-item label="口径">
+          <el-radio-group v-model="mode" :disabled="busy" size="default">
+            <el-radio-button value="horizon">Horizon T+N</el-radio-button>
+            <el-radio-button value="trade">成交回测</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="战法">
+          <el-input
+            v-if="lockedSlug"
+            :model-value="lockedName || lockedSlug"
+            readonly
+            style="width: 180px"
+          />
           <el-select
+            v-else
             v-model="strategySlug"
             filterable
             placeholder="选择战法"
@@ -249,12 +158,51 @@ const resultMeta = computed(() => {
           </el-button>
         </el-form-item>
       </el-form>
+
+      <div v-if="mode === 'trade'" class="bt-trade-cfg">
+        <el-form inline>
+          <el-form-item label="持有日">
+            <el-input-number v-model="holdDays" :min="1" :max="60" :disabled="busy" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="止损">
+            <el-switch v-model="stopLossEnabled" :disabled="busy" inline-prompt active-text="开" inactive-text="关" />
+          </el-form-item>
+          <el-form-item v-if="stopLossEnabled" label="止损%">
+            <el-input-number
+              v-model="stopLossPct"
+              :min="-50"
+              :max="0"
+              :step="0.5"
+              :disabled="busy"
+              controls-position="right"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button link type="primary" @click="showCost = !showCost">
+              {{ showCost ? '收起成本' : '成本参数' }}
+            </el-button>
+            <span class="bt-trip">一趟约 {{ tripCostPct.toFixed(2) }}%</span>
+          </el-form-item>
+        </el-form>
+        <el-form v-if="showCost" inline class="bt-cost">
+          <el-form-item label="佣金bps">
+            <el-input-number v-model="commissionBps" :min="0" :max="50" :step="0.5" :disabled="busy" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="印花税bps">
+            <el-input-number v-model="stampDutyBps" :min="0" :max="50" :step="0.5" :disabled="busy" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="滑点bps">
+            <el-input-number v-model="slippageBps" :min="0" :max="50" :step="0.5" :disabled="busy" controls-position="right" />
+          </el-form-item>
+        </el-form>
+      </div>
+
       <p class="bt-rail__meta">
         入场 <strong>{{ entryLabel }}</strong>
         <span class="dot">·</span>
         {{ entryDetail }}
         <span class="dot">·</span>
-        与目录胜率跟踪不是同一口径
+        切换口径会保留上次结果 · 设置记在本会话
       </p>
     </header>
 
@@ -269,50 +217,41 @@ const resultMeta = computed(() => {
     />
 
     <EmptyState
-      v-if="!result && !busy"
-      description="选战法并用近一月 / 三月 / 六月，再跑回测。全市场可能要几十秒，页面会显示加载。"
+      v-if="!activeHasResult && !busy"
+      description="选口径与战法，用近一月 / 三月 / 六月再跑。全市场可能要几十秒。"
     />
 
-    <div v-if="result" class="bt-result" :key="resultMeta">
-      <p class="bt-result__meta">{{ resultMeta }}</p>
-
-      <div class="bt-horizons">
-        <section v-for="key in (['t1', 't3'] as const)" :key="key" class="bt-card">
-          <header class="bt-card__head">
-            <div>
-              <h3>{{ key === 't1' ? 'T+1' : 'T+3' }}</h3>
-              <span class="bt-card__n">有效样本 {{ statsOf(key)?.n ?? 0 }}</span>
-            </div>
-            <template v-if="statsOf(key)">
-              <div class="bt-hero">
-                <div class="bt-hero__win">
-                  <span class="bt-hero__k">胜率</span>
-                  <span class="bt-hero__v">{{ statsOf(key)!.win_rate.toFixed(1) }}%</span>
-                </div>
-                <div class="bt-hero__avg" :class="pnlTone(statsOf(key)!.avg)">
-                  <span class="bt-hero__k">平均</span>
-                  <span class="bt-hero__v">{{ signed(statsOf(key)!.avg) }}</span>
-                </div>
-              </div>
-            </template>
-          </header>
-
-          <EmptyState
-            v-if="!statsOf(key)"
-            description="该窗口无有效事件（尾部信号或缺行情已剔除）"
-          />
-
-          <div v-else class="bt-extremes">
-            <QuantBacktestExtremeTape kind="best" :event="statsOf(key)?.best_event" />
-            <QuantBacktestExtremeTape kind="worst" :event="statsOf(key)?.worst_event" />
-          </div>
-        </section>
+    <div v-if="mode === 'horizon' && horizonResult" class="bt-result" :key="`${resultMeta}-hz`">
+      <div class="bt-result__bar">
+        <p class="bt-result__meta">{{ resultMeta }} · horizon</p>
+        <el-button size="small" @click="copyHorizonSummary">复制摘要</el-button>
       </div>
-
+      <QuantBacktestCompareStrip
+        :t1="horizonResult.horizons.t1"
+        :t3="horizonResult.horizons.t3"
+      />
+      <div class="bt-horizons">
+        <QuantBacktestHorizonCard title="T+1" :stats="horizonResult.horizons.t1 ?? null" />
+        <QuantBacktestHorizonCard title="T+3" :stats="horizonResult.horizons.t3 ?? null" />
+      </div>
       <p class="bt-footnote">
-        样本最佳 / 最差是区间内单笔事件的极值，并标注选股日与标记日；创业板连板两日可接近 +44%，属乐观上沿，不能当成可稳定兑现成交价。
+        高点口径是乐观上沿；收盘口径更接近可兑现。要看止损/成本/资金曲线请切「成交回测」（结果会保留）。
       </p>
-      <p v-if="skippedText()" class="bt-skip">跳过：{{ skippedText() }}</p>
+      <p v-if="skippedText(horizonResult.skipped)" class="bt-skip">
+        跳过：{{ skippedText(horizonResult.skipped) }}
+      </p>
+    </div>
+
+    <div v-if="mode === 'trade' && tradeResult" class="bt-result" :key="`${resultMeta}-tr`">
+      <p class="bt-result__meta">{{ resultMeta }} · trade</p>
+      <QuantBacktestTradeResult
+        :result="tradeResult"
+        :strategy-label="strategySlug"
+        :range-label="rangeLabel"
+      />
+      <p v-if="skippedText(tradeResult.skipped)" class="bt-skip">
+        跳过：{{ skippedText(tradeResult.skipped) }}
+      </p>
     </div>
   </div>
 </template>
@@ -340,7 +279,6 @@ const resultMeta = computed(() => {
   margin: 0;
   font-size: 1.05rem;
   font-weight: 650;
-    letter-spacing: 0;
   color: var(--ink);
 }
 .bt-rail__title p {
@@ -351,8 +289,19 @@ const resultMeta = computed(() => {
 .bt-rail__form {
   margin: 0;
 }
-.bt-rail__form :deep(.el-form-item) {
+.bt-rail__form :deep(.el-form-item),
+.bt-trade-cfg :deep(.el-form-item),
+.bt-cost :deep(.el-form-item) {
   margin-bottom: 0.35rem;
+}
+.bt-trade-cfg {
+  padding-top: 0.15rem;
+  border-top: 1px dashed var(--rule);
+}
+.bt-trip {
+  margin-left: 0.5rem;
+  font: 0.78rem/1.4 var(--mono);
+  color: var(--mist);
 }
 .bt-rail__meta {
   margin: 0;
@@ -378,6 +327,13 @@ const resultMeta = computed(() => {
   min-height: 0;
   animation: bt-in 0.28s ease both;
 }
+.bt-result__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
 .bt-result__meta {
   margin: 0;
   font: 0.78rem/1.4 var(--mono);
@@ -388,62 +344,6 @@ const resultMeta = computed(() => {
   grid-template-columns: 1fr 1fr;
   gap: 0.85rem;
   min-height: 0;
-}
-.bt-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius, 8px);
-  background: var(--paper, var(--sheet));
-  min-width: 0;
-}
-.bt-card__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 0.65rem 1rem;
-}
-.bt-card__head h3 {
-  margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
-    letter-spacing: 0;
-}
-.bt-card__n {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 0.78rem;
-  color: var(--mist);
-}
-.bt-hero {
-  display: flex;
-  gap: 1.1rem;
-}
-.bt-hero__k {
-  display: block;
-  font-size: 0.72rem;
-  color: var(--mist);
-  letter-spacing: 0.04em;
-}
-.bt-hero__v {
-  font: 700 1.45rem/1.1 var(--mono);
-  font-variant-numeric: tabular-nums;
-    letter-spacing: 0;
-  color: var(--ink);
-}
-.bt-hero__avg.up .bt-hero__v {
-  color: var(--up);
-}
-.bt-hero__avg.down .bt-hero__v {
-  color: var(--down);
-}
-.bt-extremes {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 .bt-footnote,
 .bt-skip {

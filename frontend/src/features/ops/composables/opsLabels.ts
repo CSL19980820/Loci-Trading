@@ -12,6 +12,13 @@ export function kindLabel(kind: string): string {
       optimize: '退出扫描',
       prune: '清理历史',
       outcome: '候选T+N',
+      hot_rebuild: '行情热库重建',
+      data_quality: '行情库体检',
+      intel_fetch: '情报采集',
+      skill_watch: '战法监测',
+      alert_scan: '价格提醒扫描',
+      strategy_monitor: '纸面盯盘',
+      paper_eod: '纸面日终',
     }[kind] ?? kind
   )
 }

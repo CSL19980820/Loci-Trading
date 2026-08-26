@@ -8,7 +8,7 @@ import { defineStore } from 'pinia'
 export type BatchItem = {
   code: string
   name?: string
-  /** 进档瞬间涨跌幅快照（小数或百分数均可；展示侧自行格式化） */
+  /** 进档瞬间涨跌幅快照（百分数点，如 -0.71 表示 -0.71%） */
   pct?: number | null
 }
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { parseBatchSource, toBatchItems } from '@/shared/lib/batchBrowse'
+import { parseBatchSource, toBatchItems, batchItemLabel, formatBatchPct } from '@/shared/lib/batchBrowse'
 import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
 
 describe('toBatchItems', () => {
@@ -16,6 +16,24 @@ describe('toBatchItems', () => {
       { code: '600000', name: '浦发银行', pct: 1.2 },
       { code: '000001', name: undefined, pct: -0.5 },
     ])
+  })
+})
+
+describe('formatBatchPct', () => {
+  it('treats values as percentage points, not fractions', () => {
+    expect(formatBatchPct(-0.71)).toBe('-0.71%')
+    expect(formatBatchPct(1.23)).toBe('+1.23%')
+    expect(formatBatchPct(0)).toBe('0.00%')
+    expect(formatBatchPct(null)).toBe('')
+  })
+})
+
+describe('batchItemLabel', () => {
+  it('prefers name and strips a trailing code glued onto the name', () => {
+    expect(batchItemLabel({ code: '000001', name: '平安银行' })).toBe('平安银行')
+    expect(batchItemLabel({ code: '000001', name: '平安银行000001' })).toBe('平安银行')
+    expect(batchItemLabel({ code: '000001', name: '平安银行 000001' })).toBe('平安银行')
+    expect(batchItemLabel({ code: '000001' })).toBe('000001')
   })
 })
 

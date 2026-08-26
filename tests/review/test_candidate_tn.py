@@ -96,6 +96,26 @@ class CandidateTnTests(unittest.TestCase):
         self.assertIn("t1", rows[0]["horizons"])
         self.assertIn("t5", rows[0]["horizons"])
 
+    def test_small_sample_winrate_is_marked_low_confidence(self) -> None:
+        """一只候选也能报「胜率 100%」；不标样本档等于放任把它当结论。"""
+        self.palace.record_candidate(
+            code="600001",
+            name="甲",
+            decision="精选",
+            reason="r",
+            occurred_on=DAYS[0],
+            strategy_slug="demo-screen",
+        )
+        rows = summarize_by_strategy(evaluate_candidates(self.palace, self.market))
+        row = rows[0]
+        self.assertEqual(row["total"], 1)
+        self.assertEqual(row["sample_confidence"], "low")
+        self.assertIn("不宜据此外推", row["caution"])
+        self.assertEqual(row["horizons"]["t5"]["sample_confidence"], "low")
+        self.assertIn("caution", row["horizons"]["t5"])
+        # 胜率口径本身不变，只是多了样本披露
+        self.assertEqual(row["win_rate"], row["horizons"]["t5"]["win_rate"])
+
     def test_reuses_market_series_for_same_code_candidates(self) -> None:
         """同一标的的多池候选不应各自重复读一次日线。"""
         for index, day in enumerate(DAYS[:2]):
@@ -109,12 +129,18 @@ class CandidateTnTests(unittest.TestCase):
                 strategy_slug="demo-screen",
             )
 
-        with patch.object(self.market, "history", wraps=self.market.history) as history:
+        with patch.object(
+            self.market, "history", wraps=self.market.history
+        ) as history, patch.object(
+            self.market, "load_panel", wraps=self.market.load_panel
+        ) as panel:
             outcomes = evaluate_candidates(self.palace, self.market)
 
         self.assertEqual(len(outcomes), 2)
-        # 600001 一次 + 基准 000300 一次；不能按候选行重复读取 600001。
-        self.assertEqual(history.call_count, 2)
+        # 候选日线走一次 load_panel 批量取；``history`` 只剩基准指数那一次。
+        # 逐票 history 在 2000 条候选上是 2000 次查询，批量后恒为 1 次面板。
+        self.assertEqual(panel.call_count, 1)
+        self.assertEqual(history.call_count, 1)
 
     def test_winrate_summary_prefers_candidates(self) -> None:
         self.palace.record_candidate(

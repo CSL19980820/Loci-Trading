@@ -42,17 +42,55 @@ def _writable_root() -> Path:
     return Path(__file__).resolve().parent
 
 
+LOG_MAX_BYTES = 1 << 20        # 单个日志文件上限 1 MiB
+LOG_BACKUP_COUNT = 3         # 另存 3 份历史 → 启动日志占用硬上限 4 MiB
+_LOG_LOCK = threading.Lock()   # 托盘线程与主线程会同时写
+
+
 def _log_path() -> Path:
     path = _writable_root() / "data" / "loci-startup.log"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def log(msg: str) -> None:
-    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n"
+def _rotate_log(path: Path) -> None:
+    """按大小轮转：loci-startup.log → .1 → .2 → .3 → 丢弃。
+
+    托盘线程每 5s 轮询一次行情，断网时每轮写一行；不轮转的话长期挂机
+    会把便携目录里的这个文件一路撑大，直到磁盘或用户先受不了。
+    """
     try:
-        with _log_path().open("a", encoding="utf-8") as fh:
-            fh.write(line)
+        if path.stat().st_size < LOG_MAX_BYTES:
+            return
+    except OSError:
+        return
+    if LOG_BACKUP_COUNT <= 0:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return
+    # 从最老的一份开始往后挪，os.replace 覆盖同名目标
+    for idx in range(LOG_BACKUP_COUNT, 0, -1):
+        src = path if idx == 1 else Path(str(path) + "." + str(idx - 1))
+        dst = Path(str(path) + "." + str(idx))
+        if not src.exists():
+            continue
+        try:
+            os.replace(src, dst)
+        except OSError:
+            # Windows 上文件可能正被别的进程开着：这轮不转，下一行日志再试
+            return
+
+
+def log(msg: str) -> None:
+    line = time.strftime("%Y-%m-%d %H:%M:%S") + " " + msg + "\n"
+    try:
+        path = _log_path()
+        with _LOG_LOCK:
+            _rotate_log(path)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(line)
     except OSError:
         pass
     print(msg, flush=True)
@@ -78,11 +116,37 @@ def info_box(msg: str, title: str = "Loci") -> None:
         pass
 
 
+def _probe_sockopts(sock: socket.socket, *, os_name: str | None = None) -> None:
+    """给「端口探测」用的 socket 设正确的地址复用语义。
+
+    Windows 与 POSIX 在 SO_REUSEADDR 上语义是反的：
+
+    · Windows：设了它就能绑上别人正在 listen 的端口（等于抢占）。于是 --port
+      指定的被占端口会被判成空闲，真正失败推迟到 uvicorn 自己 bind，再被
+      run_server 的 except 吞成一行日志 —— 现象是「点了没反应」。这里不设它，
+      反过来请求 SO_EXCLUSIVEADDRUSE，要一个明确的独占答案。
+    · POSIX：SO_REUSEADDR 只放行 TIME_WAIT 残留，不会放行正在 listen 的端口。
+      不设它反而会把「刚退出、上次连接还在 TIME_WAIT」误判成占用。
+    """
+    name = os.name if os_name is None else os_name
+    if name == "nt":
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if exclusive is not None:
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+            except OSError:
+                pass
+        return
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+
 def _port_free(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _probe_sockopts(sock)
         try:
             sock.bind((host, port))
+            # bind 成功 ≠ 能服务：listen 才是 uvicorn 真正要做的动作
+            sock.listen(1)
         except OSError:
             return False
     return True
@@ -93,78 +157,21 @@ def pick_listen_port(host: str, preferred: int = 0) -> int:
     if preferred > 0:
         if _port_free(host, preferred):
             return preferred
-        raise OSError(f"端口 {preferred} 已被占用")
+        raise OSError("端口 " + str(preferred) + " 已被占用（" + host + "）")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _probe_sockopts(sock)
         sock.bind((host, 0))
         return int(sock.getsockname()[1])
 
 
 def _splash_html(message: str = "启动中", *, phase: str = "enter") -> str:
-    """原生窗口首屏 / 关闭过渡：印章 + 字标 + 开账线（与 SPA boot-splash 同构）。
+    """原生窗口首屏 / 关闭过渡：全屏分时底图（与 SPA #boot-splash 同构）。
 
     phase: enter | exit | error
     """
-    safe = (
-        message.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-    phase_key = phase if phase in {"enter", "exit", "error"} else "enter"
-    kickers = {"enter": "开账", "exit": "落笔", "error": "中断"}
-    kicker = kickers[phase_key]
-    body_class = f"phase-{phase_key}"
-    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Loci</title>
-<style>
-html,body{{margin:0;height:100%;color:#142033;
-font-family:"IBM Plex Sans","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif}}
-body{{display:grid;place-items:center;
-background:radial-gradient(ellipse 55% 40% at 50% 38%,rgba(196,30,58,.05),transparent 70%),#eef2f6}}
-.stage{{display:flex;flex-direction:column;align-items:center;gap:15px;
-width:min(14rem,72vw);animation:rise .42s ease-out both}}
-.mark{{position:relative;width:44px;height:44px;border-radius:6px;background:#c41e3a;
-color:#fff;display:grid;place-items:center;font-family:Georgia,"Noto Serif SC","Songti SC",serif;
-font-weight:700;letter-spacing:.03em;font-size:15px;
-box-shadow:inset 0 -2px 0 rgba(0,0,0,.12);animation:seal .5s ease-out both}}
-.mark::after{{content:"";position:absolute;inset:5px;border:1px solid rgba(255,255,255,.28);
-border-radius:3px;pointer-events:none}}
-.brand-block{{display:flex;flex-direction:column;align-items:center;gap:11px;width:100%}}
-.brand{{font-family:Georgia,"Noto Serif SC","Songti SC",serif;font-size:23px;font-weight:700;
-letter-spacing:.02em;line-height:1;color:#142033}}
-.tape{{position:relative;width:100%;height:1px;background:#d5dce6;overflow:hidden}}
-.tape-fill{{position:absolute;inset:0 auto 0 0;width:0;background:#c41e3a;
-animation:tape-in .7s cubic-bezier(.22,1,.36,1) .18s forwards}}
-.status{{display:flex;align-items:baseline;gap:7px;font-family:Consolas,"Cascadia Mono",
-"IBM Plex Mono",monospace;font-size:11px;font-weight:500;letter-spacing:.14em;color:#5b6b7c;
-animation:fade .45s ease .28s both}}
-.kicker{{color:#8a96a5}}.dot{{color:#c5ced9}}
-.phase-exit{{opacity:.92}}
-.phase-exit .stage{{animation:sink .5s ease both}}
-.phase-exit .tape-fill{{animation:tape-out .55s cubic-bezier(.4,0,.2,1) .05s forwards;width:72%}}
-.phase-error .tape-fill{{animation:none;width:42%;background:#5b6b7c}}
-.phase-error .status{{animation:none}}
-@keyframes rise{{from{{opacity:0;transform:translateY(6px)}}to{{opacity:1;transform:none}}}}
-@keyframes sink{{from{{opacity:1;transform:none}}to{{opacity:.85;transform:translateY(4px)}}}}
-@keyframes seal{{from{{opacity:0;transform:scale(.92)}}to{{opacity:1;transform:none}}}}
-@keyframes tape-in{{from{{width:0}}to{{width:72%}}}}
-@keyframes tape-out{{from{{width:72%}}to{{width:18%}}}}
-@keyframes fade{{from{{opacity:0}}to{{opacity:1}}}}
-@media (prefers-reduced-motion:reduce){{
-.stage,.mark,.status,.tape-fill{{animation:none!important}}
-.tape-fill{{width:72%}}.phase-exit .tape-fill{{width:28%}}.phase-error .tape-fill{{width:42%}}
-}}
-</style></head><body class="{body_class}"><div class="stage">
-<div class="mark" aria-hidden="true">LC</div>
-<div class="brand-block">
-<div class="brand">Loci</div>
-<div class="tape" aria-hidden="true"><div class="tape-fill"></div></div>
-</div>
-<div class="status" role="status">
-<span class="kicker">{kicker}</span><span class="dot" aria-hidden="true">·</span>
-<span id="h">{safe}</span>
-</div></div></body></html>"""
+    from src.shared.boot_splash import render_splash_html
+
+    return render_splash_html(message, phase=phase)
 
 
 def _bootstrap_running(base: str) -> bool:
@@ -176,30 +183,28 @@ def _bootstrap_running(base: str) -> bool:
         return False
 
 
+# uvicorn 线程里的致命错误落在这里：主线程据此立刻说清「服务起不来」，
+# 而不是干等 _wait_ready 熬满 60s 再报一句含糊的「未就绪」。
+SERVER_ERROR: dict[str, str] = dict()
+
+
 def _wait_ready(url: str, timeout: float = 60.0) -> None:
     deadline = time.monotonic() + timeout
     last_err = ""
     while time.monotonic() < deadline:
+        crash = SERVER_ERROR.get("traceback")
+        if crash:
+            raise RuntimeError("服务线程启动失败：\n" + crash[-600:])
         try:
             with urllib.request.urlopen(url, timeout=1.5) as resp:
                 if 200 <= getattr(resp, "status", 200) < 500:
                     return
         except Exception as exc:  # noqa: BLE001
-            last_err = f"{type(exc).__name__}: {exc}"
+            last_err = type(exc).__name__ + ": " + str(exc)
             time.sleep(0.35)
-    raise RuntimeError(f"服务未能在 {timeout:.0f}s 内就绪：{url}（{last_err}）")
-
-    deadline = time.monotonic() + timeout
-    last_err = ""
-    while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=1.5) as resp:
-                if 200 <= getattr(resp, "status", 200) < 500:
-                    return
-        except Exception as exc:  # noqa: BLE001
-            last_err = f"{type(exc).__name__}: {exc}"
-            time.sleep(0.35)
-    raise RuntimeError(f"服务未能在 {timeout:.0f}s 内就绪：{url}（{last_err}）")
+    raise RuntimeError(
+        "服务未能在 " + str(int(timeout)) + "s 内就绪：" + url + "（" + last_err + "）"
+    )
 
 
 def _fetch_tape(base: str) -> dict:
@@ -209,8 +214,8 @@ def _fetch_tape(base: str) -> dict:
 
 
 def _format_tray_title(tape: dict[str, Any]) -> str:
-    """托盘悬停文案：委托 market.live_tape（仓置顶 + 等宽排版）。"""
-    from src.market.infrastructure.live_tape import format_tray_title
+    """托盘悬停文案：委托 market 公开 API（仓置顶 + 等宽排版）。"""
+    from src.market import format_tray_title
 
     return format_tray_title(tape)
 
@@ -249,7 +254,10 @@ def run_server(host: str, port: int) -> None:
             log_config=None,
         )
     except Exception:
-        log("server thread crashed:\n" + traceback.format_exc())
+        detail = traceback.format_exc()
+        # 记给主线程：端口被占、依赖缺失这类失败以前只留一行日志就沉了
+        SERVER_ERROR["traceback"] = detail
+        log("server thread crashed:\n" + detail)
 
 
 def _icon_png() -> Path:
@@ -321,10 +329,12 @@ def start_tray(
 
     def refresh_loop() -> None:
         last_ok_title = tooltip
+        last_err_sig = ""
+        last_err_at = 0.0
         while True:
             try:
                 # 非交易日 / 盘后库已最新：不刷实时，只保留静态提示
-                with urllib.request.urlopen(f"{base_url}/api/market/session", timeout=4) as resp:
+                with urllib.request.urlopen(base_url + "/api/market/session", timeout=4) as resp:
                     session = json.loads(resp.read().decode("utf-8"))
                 if not session.get("live_allowed"):
                     reason = session.get("live_reason") or "off"
@@ -342,8 +352,15 @@ def start_tray(
                 icon.title = title
                 last_ok_title = title
             except Exception as exc:
+                signature = type(exc).__name__ + ": " + str(exc)
+                now = time.monotonic()
+                # 5s 一轮 × 长期断网 = 一天两万行同样的话。同一种失败最多 5 分钟记一次，
+                # 轮转只是兜底上限，这里才是不让日志白涨的地方。
+                if signature != last_err_sig or now - last_err_at >= 300.0:
+                    log("tray tape refresh failed: " + signature)
+                    last_err_sig = signature
+                    last_err_at = now
                 # 短暂超时/选路失败：保留上次成功文案，避免托盘一直「暂不可用」
-                log(f"tray tape refresh failed: {type(exc).__name__}: {exc}")
                 if last_ok_title and last_ok_title != tooltip:
                     icon.title = last_ok_title[:128]
                 else:

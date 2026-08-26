@@ -1,5 +1,5 @@
 /** 工作台右侧：Agent 技能后台跑 + 事件流 / HITL */
-import { onUnmounted, ref } from 'vue'
+import { onActivated, onDeactivated, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import {
@@ -14,6 +14,7 @@ import { toErrorMessage } from '@/shared/lib/errors'
 import { formatSkillRunEvent } from './skillRunLog'
 
 const LOG_CAP = 120
+const ACTIVE_STATUSES = new Set(['running', 'queued', 'pending', 'waiting_reply', 'waiting_input'])
 
 export function useWorkbenchSkillRun() {
   const skillBusy = ref(false)
@@ -70,6 +71,52 @@ export function useWorkbenchSkillRun() {
     }
   }
 
+  function beginPoll(runId: string, generation: number): void {
+    stopPoll()
+    skillPoll = setInterval(() => {
+      if (generation !== lifecycleGeneration) return
+      void refreshEvents(runId, generation)
+      void (async () => {
+        try {
+          const next = await getSkillRun(runId)
+          if (generation !== lifecycleGeneration) return
+          skillRun.value = next
+          const st = skillRun.value.status
+          if (st === 'done') {
+            if (!terminalLogged) {
+              terminalLogged = true
+              pushLog('■ 技能跑完')
+            }
+            stopPoll()
+            skillBusy.value = false
+          } else if (st === 'error') {
+            if (!terminalLogged) {
+              terminalLogged = true
+              const err = skillRun.value.error || '未知错误'
+              pushLog(`✗ 技能失败 · ${err}`)
+            }
+            stopPoll()
+            skillBusy.value = false
+          }
+        } catch {
+          /* ignore */
+        }
+      })()
+    }, 800)
+  }
+
+  function resumePolling(): void {
+    const run = skillRun.value
+    if (!run?.id) return
+    const st = String(run.status || '')
+    if (!ACTIVE_STATUSES.has(st)) return
+    lifecycleGeneration += 1
+    const generation = lifecycleGeneration
+    skillBusy.value = true
+    void refreshEvents(run.id, generation)
+    beginPoll(run.id, generation)
+  }
+
   async function start(opts: {
     slug: string
     name: string
@@ -102,35 +149,7 @@ export function useWorkbenchSkillRun() {
         pushLog(`· 任务号 ${started.run.id.slice(0, 8)}…`)
         await refreshEvents(started.run.id, generation)
         if (generation !== lifecycleGeneration) return false
-        skillPoll = setInterval(() => {
-          if (generation !== lifecycleGeneration) return
-          if (!started.run.id) return
-          void refreshEvents(started.run.id, generation)
-          void (async () => {
-            try {
-              const next = await getSkillRun(started.run.id)
-              if (generation !== lifecycleGeneration) return
-              skillRun.value = next
-              const st = skillRun.value.status
-              if (st === 'done') {
-                if (!terminalLogged) {
-                  terminalLogged = true
-                  pushLog('■ 技能跑完')
-                }
-                stopPoll()
-              } else if (st === 'error') {
-                if (!terminalLogged) {
-                  terminalLogged = true
-                  const err = skillRun.value.error || '未知错误'
-                  pushLog(`✗ 技能失败 · ${err}`)
-                }
-                stopPoll()
-              }
-            } catch {
-              /* ignore */
-            }
-          })()
-        }, 800)
+        beginPoll(started.run.id, generation)
       }
       ElMessage.info(`已在后台跑技能：${opts.name}`)
       return true
@@ -157,6 +176,9 @@ export function useWorkbenchSkillRun() {
       skillRun.value = next.run
       skillReply.value = ''
       await refreshEvents(run.id, generation)
+      if (generation !== lifecycleGeneration) return
+      const st = String(next.run.status || '')
+      if (ACTIVE_STATUSES.has(st)) beginPoll(run.id, generation)
     } catch (e: unknown) {
       if (generation !== lifecycleGeneration) return
       error.value = toErrorMessage(e, '回复失败')
@@ -166,6 +188,8 @@ export function useWorkbenchSkillRun() {
     }
   }
 
+  onActivated(resumePolling)
+  onDeactivated(invalidate)
   onUnmounted(invalidate)
 
   return {
@@ -178,5 +202,6 @@ export function useWorkbenchSkillRun() {
     start,
     reply,
     stopPoll,
+    resumePolling,
   }
 }

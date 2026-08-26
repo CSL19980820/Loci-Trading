@@ -13,6 +13,7 @@ def check_market_health(
     *,
     trade_date: str | None = None,
     include_ok: bool = False,
+    include_network: bool = False,
 ) -> "HealthReport":
     """执行行情体检并返回领域报告。"""
     from src.market.infrastructure.sentinel import check_market_health as _check_market_health
@@ -21,6 +22,7 @@ def check_market_health(
         store,
         trade_date=trade_date,
         include_ok=include_ok,
+        include_network=include_network,
     )
 
 

@@ -27,7 +27,7 @@ const meterClass = computed(() => ({
 
 <template>
   <div class="scan-progress" aria-live="polite">
-    <div class="scan-progress__kicker mono">印鉴进度尺</div>
+    <div class="scan-progress__kicker mono">体检进度</div>
     <div class="scan-progress__head">
       <strong>{{ head }}</strong>
       <span class="mono scan-progress__pct">{{ pct }}%</span>

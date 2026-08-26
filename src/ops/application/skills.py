@@ -1,8 +1,8 @@
 """技能包（skill）的安装、解析与卸载。
 
 一个技能包是个 zip，解出来至少要有 ``SKILL.md``：YAML frontmatter 给元数据，
-正文是给模型的指令。装上之后它就成了一个可复用的"模式"——可以手动触发，
-也可以挂上 cron 让它按配置的 LLM 定时跑。
+正文是给模型的指令。装上之后它就成了一个可复用的"模式"；是否运行、何时运行、
+是否推送，全部由系统 Job 配置管理，Skill 本身不携带调度。
 
 ## 解 zip 是这个系统攻击面最大的地方
 
@@ -25,7 +25,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import hashlib
 from pathlib import Path
-import re
 import shutil
 import tempfile
 from typing import Any
@@ -34,8 +33,20 @@ import zipfile
 import yaml
 
 from src.ops.application.skill_files import atomic_replace_directory
-
-from src.shared.paths import skill_root
+from src.ops.application.skill_manifest import (
+    SkillError,
+    _meta_agents,
+    _meta_enabled,
+    _meta_extras,
+    _meta_isolation,
+    _meta_mcp_servers,
+    _meta_policy,
+    _meta_tool_specs,
+    _meta_tools,
+    _normalise_slug,
+    parse_manifest,
+)
+from src.shared.paths import PROJECT_ROOT, skill_root
 
 #: 技能包安装根。每次调用再解析，避免 import 时 cwd/env 未就绪。
 def _skill_root_default() -> Path:
@@ -57,14 +68,6 @@ ALLOWED_SUFFIXES = {
     ".ps1", ".bat", ".cmd", ".sh", "",
 }
 
-SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.S)
-
-
-class SkillError(RuntimeError):
-    """技能包不合法。消息会原样回给用户，要说清楚哪一条不满足。"""
-
-
 @dataclass
 class SkillPackage:
     """解析好的技能包元数据。"""
@@ -75,7 +78,6 @@ class SkillPackage:
     description: str
     instructions: str
     allowed_tools: list[str]
-    default_cron: str
     metadata: dict[str, Any]
     install_path: str
     source_filename: str
@@ -100,7 +102,6 @@ class SkillPackage:
             "description": self.description,
             "instructions": self.instructions,
             "allowed_tools": self.allowed_tools,
-            "default_cron": self.default_cron,
             "metadata": {**self.metadata, "files": self.files},
             "install_path": self.install_path,
             "source_filename": self.source_filename,
@@ -174,177 +175,6 @@ def _locate_skill_manifest(root: Path) -> Path:
     return min(candidates, key=lambda path: len(path.parts))
 
 
-def parse_manifest(text: str) -> tuple[dict[str, Any], str]:
-    """拆出 YAML frontmatter 与正文指令。"""
-    match = FRONTMATTER_PATTERN.match(text.lstrip("﻿"))
-    if not match:
-        raise SkillError(
-            "SKILL.md 缺少 YAML frontmatter。开头必须是 --- 包裹的元数据块，"
-            "至少包含 name 与 description。"
-        )
-    try:
-        meta = yaml.safe_load(match.group(1)) or {}
-    except yaml.YAMLError as exc:
-        raise SkillError(f"SKILL.md 的 frontmatter 不是合法 YAML：{exc}") from exc
-    if not isinstance(meta, dict):
-        raise SkillError("SKILL.md 的 frontmatter 必须是键值映射")
-    return meta, match.group(2).strip()
-
-
-def _meta_tool_specs(meta: dict[str, Any]) -> list[dict[str, Any]]:
-    """解析 frontmatter 的 tools 声明。
-
-    兼容两种写法：
-    - 旧：``tools: [kline, limit_up]`` → 仅作为 allowed 名字，无本地 CLI
-    - 新：``tools: [{name, description, kind, command, ...}]``
-    """
-    raw = meta.get("tools")
-    if not isinstance(raw, list):
-        return []
-    specs: list[dict[str, Any]] = []
-    for item in raw:
-        if isinstance(item, dict) and item.get("name"):
-            kind = str(item.get("kind") or "cli").strip().lower()
-            if kind not in {"cli", "mcp", "builtin"}:
-                kind = "cli"
-            specs.append(
-                {
-                    "name": str(item["name"]).strip(),
-                    "description": str(item.get("description") or item["name"]).strip(),
-                    "kind": kind,
-                    "command": item.get("command") or [],
-                    "cwd": str(item.get("cwd") or "."),
-                    "timeout_sec": int(item.get("timeout_sec") or 120),
-                    "args_schema": item.get("args_schema")
-                    if isinstance(item.get("args_schema"), dict)
-                    else {"type": "object", "properties": {}},
-                    "mcp_tool": str(item.get("mcp_tool") or item.get("name") or ""),
-                }
-            )
-    return specs
-
-
-def _meta_tools(meta: dict[str, Any]) -> list[str]:
-    """允许暴露给模型的工具名列表（收窄面）。"""
-    explicit = meta.get("allowed_tools")
-    if explicit is not None:
-        if isinstance(explicit, str):
-            return [item.strip() for item in explicit.split(",") if item.strip()]
-        if isinstance(explicit, list):
-            return [str(item) for item in explicit if not isinstance(item, dict)]
-        return []
-
-    tools = meta.get("tools") or []
-    if isinstance(tools, str):
-        return [item.strip() for item in tools.split(",") if item.strip()]
-    if not isinstance(tools, list):
-        return []
-    names: list[str] = []
-    for item in tools:
-        if isinstance(item, dict) and item.get("name"):
-            names.append(str(item["name"]))
-        elif not isinstance(item, dict):
-            names.append(str(item))
-    return names
-
-
-def _meta_mcp_servers(meta: dict[str, Any]) -> list[str]:
-    raw = meta.get("mcp_servers") or meta.get("mcpServers") or []
-    if isinstance(raw, str):
-        raw = [item.strip() for item in raw.split(",") if item.strip()]
-    if not isinstance(raw, list):
-        return []
-    return [str(item) for item in raw]
-
-
-def _meta_enabled(meta: dict[str, Any]) -> bool:
-    if "enabled" not in meta:
-        return True
-    value = meta.get("enabled")
-    if isinstance(value, str):
-        return value.strip().lower() not in {"0", "false", "no", "off"}
-    return bool(value)
-
-
-def _meta_isolation(meta: dict[str, Any]) -> str:
-    raw = str(meta.get("isolation") or "normal").strip().lower()
-    return "skill_only" if raw in {"skill_only", "isolated", "strict"} else "normal"
-
-
-def _meta_policy(meta: dict[str, Any]) -> str:
-    raw = str(meta.get("policy") or "research").strip().lower()
-    return "trading_voice" if raw in {"trading_voice", "trading", "weipan"} else "research"
-
-
-def _meta_agents(meta: dict[str, Any]) -> list[dict[str, Any]]:
-    """解析 frontmatter ``agents:`` 子任务声明。"""
-    raw = meta.get("agents")
-    if not isinstance(raw, list):
-        return []
-    agents: list[dict[str, Any]] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        agent_id = str(item.get("id") or "").strip()
-        if not agent_id:
-            continue
-        kind = str(item.get("kind") or "cli").strip().lower()
-        if kind not in {"cli", "llm"}:
-            kind = "cli"
-        role = str(item.get("role") or "ammo").strip().lower() or "ammo"
-        agents.append(
-            {
-                "id": agent_id,
-                "role": role,
-                "kind": kind,
-                "description": str(item.get("description") or "").strip(),
-                "tool": str(item.get("tool") or "").strip(),
-                "command": item.get("command") or [],
-                "cwd": str(item.get("cwd") or "."),
-                "timeout_sec": int(item.get("timeout_sec") or 300),
-                "instructions": str(item.get("instructions") or "").strip(),
-                "max_rounds": int(item.get("max_rounds") or 3),
-                "max_tokens": int(item.get("max_tokens") or 2048),
-                "mcp_servers": list(item["mcp_servers"])
-                if isinstance(item.get("mcp_servers"), list)
-                else None,
-                "tools": list(item["tools"]) if isinstance(item.get("tools"), list) else None,
-            }
-        )
-    return agents
-
-
-def _meta_extras(meta: dict[str, Any]) -> dict[str, Any]:
-    skip = {
-        "name",
-        "slug",
-        "version",
-        "description",
-        "tools",
-        "allowed_tools",
-        "schedule",
-        "cron",
-        "enabled",
-        "mcp_servers",
-        "mcpServers",
-        "isolation",
-        "policy",
-        "hitl",
-        "agents",
-    }
-    return {key: value for key, value in meta.items() if key not in skip}
-
-
-def _normalise_slug(raw: str) -> str:
-    slug = str(raw).strip().lower().replace(" ", "-")
-    if not SLUG_PATTERN.match(slug):
-        raise SkillError(
-            f"非法的技能标识：{raw!r}。只允许小写字母、数字、点、下划线与连字符，"
-            "且不超过 64 字符"
-        )
-    return slug
-
-
 def install_skill(
     archive_path: Path | str,
     *,
@@ -416,7 +246,6 @@ def install_skill(
         description=str(meta["description"]).strip(),
         instructions=instructions,
         allowed_tools=tools,
-        default_cron=str(meta.get("schedule") or meta.get("cron") or ""),
         metadata=_meta_extras(meta),
         install_path=str(destination),
         source_filename=archive_path.name,
@@ -517,7 +346,6 @@ def load_skill_from_disk(
         description=str(meta["description"]).strip(),
         instructions=instructions,
         allowed_tools=tools,
-        default_cron=str(meta.get("schedule") or meta.get("cron") or ""),
         metadata=_meta_extras(meta),
         install_path=str(folder),
         source_filename="SKILL.md",
@@ -548,6 +376,99 @@ def discover_skills(*, skill_root: Path | str | None = None) -> list[SkillPackag
         if pkg is not None:
             packages.append(pkg)
     return packages
+
+
+def _template_skills_root() -> Path:
+    """仓库或 PyInstaller 只读包内的 ``templates/skills``。"""
+    return PROJECT_ROOT / "templates" / "skills"
+
+
+def _discover_template_skill_dirs(template_root: Path) -> list[tuple[str, Path]]:
+    """扫描模板根下含 SKILL.md 的子目录，返回 (slug, source_dir)。"""
+    if not template_root.is_dir():
+        return []
+    root_resolved = template_root.resolve()
+    found: list[tuple[str, Path]] = []
+    for child in sorted(template_root.iterdir()):
+        if not child.is_dir():
+            continue
+        if not (child / "SKILL.md").is_file():
+            continue
+        child_resolved = child.resolve()
+        if not child_resolved.is_relative_to(root_resolved):
+            continue
+        try:
+            slug = _normalise_slug(child.name)
+        except SkillError:
+            continue
+        found.append((slug, child))
+    return found
+
+
+def sync_skills_from_templates(
+    *,
+    skill_root: Path | str | None = None,
+    template_root: Path | str | None = None,
+    overwrite: bool = True,
+    slugs: list[str] | None = None,
+) -> dict[str, Any]:
+    """把 ``templates/skills`` 下的战法模板批量安装到 skill_root。
+
+    每个子目录经 ``install_skill_dir`` 原子覆盖；``overwrite=False`` 时
+    已存在的 slug 记入 ``skipped`` 而不报错。
+    """
+    tpl_root = Path(template_root or _template_skills_root()).resolve()
+    if not tpl_root.is_dir():
+        return {
+            "installed": [],
+            "skipped": [],
+            "errors": [{"slug": "*", "error": f"模板目录不存在：{tpl_root}"}],
+            "total": 0,
+        }
+
+    filter_slugs: set[str] | None = None
+    errors: list[dict[str, str]] = []
+    if slugs is not None:
+        filter_slugs = set()
+        for raw in slugs:
+            try:
+                filter_slugs.add(_normalise_slug(raw))
+            except SkillError as exc:
+                errors.append({"slug": str(raw), "error": str(exc)})
+
+    candidates = _discover_template_skill_dirs(tpl_root)
+    if filter_slugs is not None:
+        candidates = [(slug, path) for slug, path in candidates if slug in filter_slugs]
+
+    dest_root = Path(skill_root or _skill_root_default())
+    installed: list[str] = []
+    skipped: list[str] = []
+    from src.ops.application.retire_dragon_return import is_retired_paper_cabin
+
+    for slug, source_dir in candidates:
+        if is_retired_paper_cabin(slug):
+            skipped.append(slug)
+            continue
+        source_resolved = source_dir.resolve()
+        if not source_resolved.is_relative_to(tpl_root):
+            errors.append({"slug": slug, "error": "模板路径越界"})
+            continue
+        try:
+            install_skill_dir(source_dir, skill_root=dest_root, overwrite=overwrite)
+            installed.append(slug)
+        except SkillError as exc:
+            msg = str(exc)
+            if not overwrite and "已存在" in msg:
+                skipped.append(slug)
+            else:
+                errors.append({"slug": slug, "error": msg})
+
+    return {
+        "installed": installed,
+        "skipped": skipped,
+        "errors": errors,
+        "total": len(candidates),
+    }
 
 
 def install_skill_dir(

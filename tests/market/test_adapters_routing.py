@@ -1,197 +1,27 @@
-"""数据线路适配器层单测 —— 不打真网。"""
+"""日线多源竞速与合并口径。
+
+现货路由 / 粘性线路用例在 `test_adapters_sticky.py`；假适配器在 `adapter_fakes.py`。
+"""
 from __future__ import annotations
 
 import time
-from concurrent.futures import ThreadPoolExecutor
-import threading
 import unittest
-from typing import Any
-from unittest import mock
 
 import pandas as pd
 
-from src.market.infrastructure.adapters.base import AdapterError, MarketAdapter
-from src.market.infrastructure.adapters.eastmoney_adapter import EastmoneyAdapter
-from src.market.infrastructure.adapters.registry import (
-    adapters_for_lane,
-    all_adapters,
-    enabled_adapter_ids,
-    get_adapter,
-    list_catalog,
-    reset_registry,
-)
-from src.market.infrastructure.adapters.router import (
-    clear_sticky,
-    fetch_capital_flow_routed,
-    fetch_daily_best,
-    fetch_daily_routed,
-    fetch_live_quotes_routed,
-    fetch_minute_routed,
-    fetch_spot_routed,
-    probe_lane,
-)
-from src.market.infrastructure.adapters.sina_adapter import SinaAdapter
-from src.market.infrastructure.adapters.tencent_adapter import TencentAdapter
-from src.market.infrastructure.adapters.types import (
-    AdapterMeta,
-    LANE_CAPITAL_FLOW,
-    LANE_HIST_DAILY,
-    LANE_INSTRUMENTS,
-    LANE_MINUTE,
-    LANE_SPOT_BATCH,
-    ProbeResult,
-)
+from src.market.infrastructure.adapters.base import AdapterError
+from src.market.infrastructure.adapters.registry import reset_registry
+from src.market.infrastructure.adapters.router import fetch_daily_best
 
-
-def _daily_frame(n: int = 3, *, turnover: float = 0.05) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "date": [f"2026-01-{i:02d}" for i in range(1, n + 1)],
-            "open": [10.0] * n,
-            "high": [11.0] * n,
-            "low": [9.0] * n,
-            "close": [10.5] * n,
-            "volume": [1_000_000.0] * n,
-            "amount": [10_000_000.0] * n,
-            "turnover": [turnover] * n,
-            "outstanding_share": [1e9] * n,
-        }
-    )
-
-
-class _FakeAdapter(MarketAdapter):
-    """可控延迟 / 成败的假适配器，专供 registry / probe 并行测试。"""
-
-    def __init__(
-        self,
-        adapter_id: str,
-        *,
-        lanes: tuple[str, ...] = (LANE_HIST_DAILY,),
-        delay: float = 0.0,
-        fail: bool = False,
-        frame: pd.DataFrame | None = None,
-        live_rows: list[dict[str, object]] | None = None,
-        live_call_order: list[str] | None = None,
-    ) -> None:
-        self.meta = AdapterMeta(
-            id=adapter_id,
-            label=adapter_id,
-            lanes=lanes,
-            description="fake",
-        )
-        self.delay = delay
-        self.fail = fail
-        self.frame = frame if frame is not None else _daily_frame()
-        self.probe_calls = 0
-        self.fetch_calls = 0
-        self.live_rows = list(live_rows or [])
-        self.live_call_order = live_call_order
-        self.live_fetch_calls = 0
-
-    def fetch_daily(
-        self, code: str, *, instrument_type: str = "STOCK"
-    ) -> pd.DataFrame:
-        self.fetch_calls += 1
-        if self.delay:
-            time.sleep(self.delay)
-        if self.fail:
-            raise AdapterError(f"{self.meta.id} 故意失败")
-        return self.frame.copy()
-
-    def fetch_live_quotes(
-        self,
-        codes: list[str],
-        *,
-        instrument_types: dict[str, str] | None = None,
-        batch_size: int = 400,
-    ) -> list[dict]:
-        _ = codes, instrument_types, batch_size
-        self.live_fetch_calls += 1
-        if self.live_call_order is not None:
-            self.live_call_order.append(self.meta.id)
-        if self.delay:
-            time.sleep(self.delay)
-        if self.fail:
-            raise AdapterError(f"{self.meta.id} 故意失败")
-        return list(self.live_rows)
-
-
-class _BlockingSpotAdapter(MarketAdapter):
-    def __init__(self, started: threading.Event, release: threading.Event) -> None:
-        self.meta = AdapterMeta(
-            id="blocking_spot",
-            label="blocking spot",
-            lanes=(LANE_SPOT_BATCH,),
-            description="blocking spot test adapter",
-        )
-        self.started = started
-        self.release = release
-        self.calls = 0
-
-    def fetch_daily(
-        self, code: str, *, instrument_type: str = "STOCK"
-    ) -> pd.DataFrame:
-        raise AdapterError("unused")
-
-    def fetch_spot(
-        self,
-        codes: list[str],
-        *,
-        instrument_types: dict[str, str] | None = None,
-        batch_size: int = 400,
-    ) -> pd.DataFrame:
-        _ = instrument_types, batch_size
-        self.calls += 1
-        self.started.set()
-        self.release.wait(timeout=5)
-        return pd.DataFrame({"code": codes, "close": [10.0] * len(codes)})
-
-    def probe(self, lane: str) -> ProbeResult:
-        self.probe_calls += 1
-        if self.delay:
-            time.sleep(self.delay)
-        if lane not in self.meta.lanes:
-            return ProbeResult(
-                adapter_id=self.meta.id,
-                lane=lane,
-                ok=False,
-                unsupported=True,
-                error="unsupported",
-            )
-        if self.fail:
-            return ProbeResult(
-                adapter_id=self.meta.id,
-                lane=lane,
-                ok=False,
-                error="fail",
-            )
-        return ProbeResult(
-            adapter_id=self.meta.id,
-            lane=lane,
-            ok=True,
-            rtt_ms=self.delay * 1000.0,
-            rows=len(self.frame),
-        )
-
-
-class _CodeProbeAdapter(MarketAdapter):
-    meta = AdapterMeta("code_probe", "code_probe", (LANE_HIST_DAILY,))
-
-    def __init__(self) -> None:
-        self.code_seen: str | None = None
-
-    def fetch_daily(
-        self, code: str, *, instrument_type: str = "STOCK"
-    ) -> pd.DataFrame:
-        self.code_seen = code
-        return _daily_frame()
+from tests.market.adapter_fakes import _FakeAdapter, _daily_frame
 
 
 class FetchDailyBestTests(unittest.TestCase):
     def tearDown(self) -> None:
         reset_registry()
 
-    def test_winner_is_fastest_success(self) -> None:
+    def test_primary_follows_preferred_order_not_rtt(self) -> None:
+        """协作合并：主源取 preferred_order 中首个有贡献者，不是谁快谁赢。"""
         reset_registry(
             [
                 _FakeAdapter("slow", delay=0.12, frame=_daily_frame(2)),
@@ -199,10 +29,12 @@ class FetchDailyBestTests(unittest.TestCase):
             ]
         )
         frame, winner = fetch_daily_best("600519", max_workers=2)
-        self.assertEqual(winner, "fast")
-        self.assertEqual(len(frame), 5)
+        self.assertEqual(winner, "slow")
+        # slow 优先覆盖冲突日；fast 可补缺失日 → 行数 ≥ slow
+        self.assertGreaterEqual(len(frame), 2)
 
-    def test_fast_success_does_not_wait_for_slow_success(self) -> None:
+    def test_merge_waits_for_all_sources(self) -> None:
+        """协作合并须等齐各源，不再提前取消慢源。"""
         reset_registry(
             [
                 _FakeAdapter("slow", delay=0.35, frame=_daily_frame(2)),
@@ -213,9 +45,9 @@ class FetchDailyBestTests(unittest.TestCase):
         frame, winner = fetch_daily_best("600519", max_workers=2)
         elapsed = time.perf_counter() - started
 
-        self.assertEqual(winner, "fast")
-        self.assertEqual(len(frame), 5)
-        self.assertLess(elapsed, 0.25)
+        self.assertEqual(winner, "slow")
+        self.assertGreaterEqual(len(frame), 2)
+        self.assertGreaterEqual(elapsed, 0.30)
 
     def test_all_fail_raises(self) -> None:
         reset_registry(
@@ -253,269 +85,139 @@ class FetchDailyBestTests(unittest.TestCase):
         self.assertEqual(len(frame), 1)
 
 
-class FetchSpotRoutedTests(unittest.TestCase):
+def _one_bar(
+    *,
+    date: str = "2026-01-05",
+    open_: float = 10.0,
+    high: float = 11.0,
+    low: float = 9.0,
+    close: float = 10.5,
+    volume: float = 1_000_000.0,
+    amount: float = 10_500_000.0,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "date": date,
+                "open": open_,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+                "amount": amount,
+            }
+        ]
+    )
+
+
+class DailyMergeTests(unittest.TestCase):
+    """互补合并的冲突口径：坏值 / 估算值不许压过真实行情。"""
+
     def tearDown(self) -> None:
         reset_registry()
 
-    def test_same_slow_source_is_not_called_concurrently(self) -> None:
-        started = threading.Event()
-        release = threading.Event()
-        adapter = _BlockingSpotAdapter(started, release)
-        reset_registry([adapter])
+    def test_zero_price_row_loses_to_a_source_with_real_quotes(self) -> None:
+        """0 元 OHLC 是源侧缺失哨兵，不是行情；它不能因为排在前面就赢。"""
+        from src.market.infrastructure.adapters.daily_merge import merge_daily_frames
 
-        try:
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                first = pool.submit(
-                    fetch_spot_routed, ["600519"], adapter_ids=[adapter.meta.id]
-                )
-                self.assertTrue(started.wait(timeout=1))
-                second = pool.submit(
-                    fetch_spot_routed, ["600519"], adapter_ids=[adapter.meta.id]
-                )
-                with self.assertRaises(AdapterError) as ctx:
-                    second.result(timeout=1)
-                self.assertIn("请求进行中", str(ctx.exception))
-                release.set()
-                _frame, winner = first.result(timeout=2)
-            self.assertEqual(winner, adapter.meta.id)
-            self.assertEqual(adapter.calls, 1)
-        finally:
-            release.set()
+        broken = _one_bar(open_=0.0, high=0.0, low=0.0, close=0.0, volume=0.0, amount=0.0)
+        good = _one_bar()
 
-
-class SinaAdapterWrapTests(unittest.TestCase):
-    """确认 adapter 走现有 Source，不打真网。"""
-
-    def test_fetch_daily_delegates_and_normalizes(self) -> None:
-        class StubSource:
-            def fetch_daily(self, code: str, *, instrument_type: str = "STOCK") -> pd.DataFrame:
-                self.seen = (code, instrument_type)
-                return _daily_frame(turnover=0.01)
-
-        stub: Any = StubSource()
-        adapter = SinaAdapter(source=stub)  # type: ignore[arg-type]
-        frame = adapter.fetch_daily("600519")
-        self.assertEqual(stub.seen, ("600519", "STOCK"))
-        self.assertAlmostEqual(float(frame["turnover"].iloc[0]), 0.01)
-
-
-class StickyRouteTests(unittest.TestCase):
-    def tearDown(self) -> None:
-        from src.market.infrastructure.adapters.router import clear_sticky
-
-        clear_sticky()
-        reset_registry()
-
-    def test_pins_winner_and_prefers_sticky(self) -> None:
-        from src.market.infrastructure.adapters.router import fetch_daily_routed, peek_sticky
-
-        slow = _FakeAdapter("slow", delay=0.08, frame=_daily_frame(2))
-        fast = _FakeAdapter("fast", delay=0.01, frame=_daily_frame(5))
-        reset_registry([slow, fast])
-
-        frame, winner = fetch_daily_routed(
-            "600519", adapter_ids=["slow", "fast"], max_workers=2
-        )
-        self.assertEqual(winner, "fast")
-        self.assertEqual(peek_sticky(LANE_HIST_DAILY), "fast")
-        self.assertEqual(len(frame), 5)
-
-        class Counting(MarketAdapter):
-            def __init__(self, inner: _FakeAdapter) -> None:
-                self.inner = inner
-                self.meta = inner.meta
-                self.hits = 0
-
-            def fetch_daily(
-                self, code: str, *, instrument_type: str = "STOCK"
-            ) -> pd.DataFrame:
-                self.hits += 1
-                return self.inner.fetch_daily(code, instrument_type=instrument_type)
-
-        c_slow = Counting(slow)
-        c_fast = Counting(fast)
-        reset_registry([c_slow, c_fast])
-        frame2, winner2 = fetch_daily_routed(
-            "000001", adapter_ids=["slow", "fast"], sticky_ttl_sec=60.0
-        )
-        self.assertEqual(winner2, "fast")
-        self.assertEqual(c_fast.hits, 1)
-        self.assertEqual(c_slow.hits, 0)
-        self.assertEqual(len(frame2), 5)
-
-    def test_sticky_failure_re_races(self) -> None:
-        from src.market.infrastructure.adapters.router import fetch_daily_routed, pin_sticky
-
-        pin_sticky(LANE_HIST_DAILY, "broken", ttl_sec=60.0)
-        broken = _FakeAdapter("broken", fail=True)
-        ok = _FakeAdapter("ok", frame=_daily_frame(3))
-        reset_registry([broken, ok])
-        frame, winner = fetch_daily_routed(
-            "600519", adapter_ids=["broken", "ok"], max_workers=2
-        )
-        self.assertEqual(winner, "ok")
-        self.assertEqual(len(frame), 3)
-
-    def test_enabled_prefs_filter(self) -> None:
-        from unittest.mock import patch
-
-        from src.market.infrastructure.adapters.registry import enabled_adapter_ids
-        from src.market.infrastructure.adapters.router import fetch_daily_routed
-
-        reset_registry(
-            [
-                _FakeAdapter("sina", frame=_daily_frame(1)),
-                _FakeAdapter("eastmoney", frame=_daily_frame(2)),
-            ]
-        )
-        with patch(
-            "src.shared.paths.load_config",
-            return_value={"lane_providers": {"sina": {"enabled": False}}},
-        ):
-            self.assertEqual(enabled_adapter_ids(LANE_HIST_DAILY), ["eastmoney"])
-            _frame, winner = fetch_daily_routed("600519")
-        self.assertEqual(winner, "eastmoney")
-
-    def test_per_lane_prefs_only_mute_that_lane(self) -> None:
-        """逐工具开关：关掉 sina 的日 K 不影响它的实时快照。"""
-        from unittest.mock import patch
-
-        from src.market.infrastructure.adapters.registry import (
-            enabled_adapter_ids,
-            lane_provider_enabled,
-            provider_disabled_lanes,
-            provider_master_enabled,
+        merged, primary, _contributed = merge_daily_frames(
+            [("broken", broken), ("good", good)],
+            preferred_order=["broken", "good"],
         )
 
-        reset_registry(
-            [
-                _FakeAdapter("sina", lanes=(LANE_HIST_DAILY, LANE_SPOT_BATCH)),
-                _FakeAdapter("eastmoney", lanes=(LANE_HIST_DAILY,)),
-            ]
+        row = merged.iloc[0]
+        self.assertAlmostEqual(float(row["close"]), 10.5)
+        self.assertAlmostEqual(float(row["open"]), 10.0)
+        self.assertAlmostEqual(float(row["volume"]), 1_000_000.0)
+        self.assertEqual(primary, "good")
+
+    def test_nan_close_row_loses_to_a_source_with_real_quotes(self) -> None:
+        from src.market.infrastructure.adapters.daily_merge import merge_daily_frames
+
+        broken = _one_bar(close=float("nan"))
+        good = _one_bar(close=10.5)
+
+        merged, _primary, _contributed = merge_daily_frames(
+            [("broken", broken), ("good", good)],
+            preferred_order=["broken", "good"],
         )
-        config = {"lane_providers": {"sina": {"lanes": {LANE_HIST_DAILY: False}}}}
-        with patch("src.shared.paths.load_config", return_value=config):
-            self.assertEqual(enabled_adapter_ids(LANE_HIST_DAILY), ["eastmoney"])
-            self.assertEqual(enabled_adapter_ids(LANE_SPOT_BATCH), ["sina"])
-            self.assertFalse(lane_provider_enabled("sina", LANE_HIST_DAILY))
-            self.assertTrue(lane_provider_enabled("sina", LANE_SPOT_BATCH))
-            # 源总开关仍是开的：停用的是工具，不是整家
-            self.assertTrue(provider_master_enabled("sina"))
-            self.assertEqual(provider_disabled_lanes("sina"), [LANE_HIST_DAILY])
 
-    def test_master_switch_overrides_per_lane_prefs(self) -> None:
-        from unittest.mock import patch
+        self.assertAlmostEqual(float(merged.iloc[0]["close"]), 10.5)
 
-        from src.market.infrastructure.adapters.registry import enabled_adapter_ids
+    def test_zero_amount_is_filled_from_a_source_that_has_one(self) -> None:
+        """有的源缺字段时填 0（悟道 kline 就是 ``float(x or 0)``），0 不是成交额。"""
+        from src.market.infrastructure.adapters.daily_merge import merge_daily_frames
 
-        reset_registry([_FakeAdapter("sina", lanes=(LANE_HIST_DAILY, LANE_SPOT_BATCH))])
-        config = {
-            "lane_providers": {"sina": {"enabled": False, "lanes": {LANE_HIST_DAILY: True}}}
-        }
-        with patch("src.shared.paths.load_config", return_value=config):
-            self.assertEqual(enabled_adapter_ids(LANE_HIST_DAILY), [])
-            self.assertEqual(enabled_adapter_ids(LANE_SPOT_BATCH), [])
+        blank = _one_bar(volume=0.0, amount=0.0)
+        real = _one_bar(volume=1_000_000.0, amount=10_500_000.0)
 
+        merged, _primary, _contributed = merge_daily_frames(
+            [("blank", blank), ("real", real)],
+            preferred_order=["blank", "real"],
+        )
 
-class SyncRoutedTests(unittest.TestCase):
-    """默认 sync 走 fetch_daily_routed（不注入 sources）。"""
+        row = merged.iloc[0]
+        self.assertAlmostEqual(float(row["amount"]), 10_500_000.0)
+        self.assertAlmostEqual(float(row["volume"]), 1_000_000.0)
 
-    def tearDown(self) -> None:
-        from src.market.infrastructure.adapters.router import clear_sticky
+    def test_preferred_real_quote_still_wins_over_a_later_source(self) -> None:
+        from src.market.infrastructure.adapters.daily_merge import merge_daily_frames
 
-        clear_sticky()
-        reset_registry()
+        first = _one_bar(close=10.5)
+        second = _one_bar(close=99.0)
 
-    def test_sync_quotes_uses_routed_path(self) -> None:
-        import tempfile
-        from pathlib import Path
-        from unittest.mock import patch
+        merged, primary, _contributed = merge_daily_frames(
+            [("first", first), ("second", second)],
+            preferred_order=["first", "second"],
+        )
 
-        from src.market.infrastructure.store import MarketStore
-        from src.market.infrastructure.sync import sync_quotes
+        self.assertAlmostEqual(float(merged.iloc[0]["close"]), 10.5)
+        self.assertEqual(primary, "first")
 
-        temp = tempfile.TemporaryDirectory()
-        try:
-            db = Path(temp.name) / "m.db"
-            with patch(
-                "src.market.infrastructure.adapters.fetch_daily_routed",
-                return_value=(_daily_frame(4), "sina"),
-            ) as mocked:
-                report = sync_quotes(
-                    lambda: MarketStore(db),
-                    ["600519"],
-                    workers=1,
-                    min_interval=0.0,
-                    with_factors=False,
-                    with_today_spot=False,
-                    force=True,
-                )
-            mocked.assert_called()
-            self.assertEqual(report.succeeded, 1)
-            self.assertEqual(report.failed, 0)
-        finally:
-            temp.cleanup()
+    def test_estimated_amount_loses_to_a_real_amount(self) -> None:
+        """腾讯日 K 的成交额是 close×volume 估的，不能盖掉源生成交额。"""
+        from src.market.infrastructure.adapters.daily_merge import merge_daily_frames
 
-    def test_apply_today_spot_uses_spot_routed(self) -> None:
-        import tempfile
-        from datetime import date
-        from pathlib import Path
-        from unittest.mock import patch
+        estimated = _one_bar(amount=10.5 * 1_000_000.0)
+        real = _one_bar(amount=9_900_000.0)
 
-        from src.market.infrastructure.store import MarketStore
-        from src.market.infrastructure.sync import apply_today_spot
+        merged, _primary, _contributed = merge_daily_frames(
+            [("tencent", estimated), ("eastmoney", real)],
+            preferred_order=["tencent", "eastmoney"],
+            estimated_fields={"tencent": ("amount",)},
+        )
 
-        temp = tempfile.TemporaryDirectory()
-        try:
-            db = Path(temp.name) / "m.db"
-            store = MarketStore(db)
-            store.upsert_quotes("600519", _daily_frame(2), source="hist")
-            today = date.today()
-            # 模拟交易时段：日历里先有今天（非交易日会被 apply_today_spot 钳制跳过）
-            store.upsert_quotes(
-                "600519",
-                pd.DataFrame(
-                    [
-                        {
-                            "date": today,
-                            "open": 1.0,
-                            "high": 2.0,
-                            "low": 0.5,
-                            "close": 1.5,
-                            "volume": 100.0,
-                            "amount": 150.0,
-                            "outstanding_share": 1e9,
-                            "turnover": 0.001,
-                        }
-                    ]
-                ),
-                source="hist",
-            )
-            fake = pd.DataFrame(
-                [
-                    {
-                        "code": "600519",
-                        "date": today,
-                        "open": 1.0,
-                        "high": 2.0,
-                        "low": 0.5,
-                        "close": 1.5,
-                        "volume": 100.0,
-                        "amount": 150.0,
-                    }
-                ]
-            )
-            with patch(
-                "src.market.infrastructure.adapters.fetch_spot_routed",
-                return_value=(fake, "sina"),
-            ) as mocked:
-                n = apply_today_spot(store, ["600519"])
-            mocked.assert_called_once()
-            self.assertEqual(n, 1)
-            store.close()
-        finally:
-            temp.cleanup()
+        row = merged.iloc[0]
+        self.assertAlmostEqual(float(row["amount"]), 9_900_000.0)
+        # 只有被声明为估算的列让位，价量仍按优先序
+        self.assertAlmostEqual(float(row["close"]), 10.5)
 
+    def test_estimated_amount_is_kept_when_nobody_else_has_one(self) -> None:
+        from src.market.infrastructure.adapters.daily_merge import merge_daily_frames
 
-if __name__ == "__main__":
-    unittest.main()
+        estimated = _one_bar(amount=10.5 * 1_000_000.0)
+
+        merged, _primary, _contributed = merge_daily_frames(
+            [("tencent", estimated)],
+            preferred_order=["tencent"],
+            estimated_fields={"tencent": ("amount",)},
+        )
+
+        self.assertAlmostEqual(float(merged.iloc[0]["amount"]), 10.5 * 1_000_000.0)
+
+    def test_router_lets_a_real_amount_beat_the_estimating_source(self) -> None:
+        estimating = _FakeAdapter(
+            "estimator",
+            frame=_one_bar(amount=10.5 * 1_000_000.0),
+            estimated_fields=("amount",),
+        )
+        exact = _FakeAdapter("exact", frame=_one_bar(amount=9_900_000.0))
+        reset_registry([estimating, exact])
+
+        frame, winner = fetch_daily_best("600519", max_workers=2)
+
+        self.assertEqual(winner, "estimator")
+        self.assertAlmostEqual(float(frame.iloc[0]["amount"]), 9_900_000.0)

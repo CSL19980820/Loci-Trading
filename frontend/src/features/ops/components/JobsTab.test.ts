@@ -80,7 +80,7 @@ describe('JobsTab failure state', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('任务服务不可用')
-    expect(wrapper.text()).not.toContain('尚无任务')
+    expect(wrapper.text()).not.toContain('还没有定时任务')
   })
 
   it('shows a schedule failure instead of the empty jobs state', async () => {
@@ -89,7 +89,7 @@ describe('JobsTab failure state', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('调度状态不可用')
-    expect(wrapper.text()).not.toContain('尚无任务')
+    expect(wrapper.text()).not.toContain('还没有定时任务')
   })
 
   it('shows the skip reason instead of reporting success', async () => {
@@ -119,6 +119,6 @@ describe('JobsTab failure state', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('已跳过：当前不是交易时段')
-    expect(wrapper.text()).not.toContain('执行成功')
+    expect(wrapper.text()).not.toContain('已跑完')
   })
 })

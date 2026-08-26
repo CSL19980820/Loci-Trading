@@ -5,12 +5,15 @@
 | 组件 | 职责 |
 |---|---|
 | `PageBusy` | 页/面板加载态（转圈 + 文案）；首屏无数据用占位，有内容刷新用 `overlay` |
-| `PageTabs` | 页级分区切换（`el-tabs` + 朱印底线）；`v-model` + `items`；面板由父级 `v-show` 编排 |
+| `PageTabs` | 页级分区切换（`el-tabs` + 朱印底线）；`v-model` + `items`；可选 `#trailing` 槽（右侧统计/操作）；面板由父级 `v-show` 编排 |
 | `SegmentSwitch` | 页头紧凑分段（`el-segmented`）；`v-model` + `items`（name/label/disabled） |
 | `BasicForm` | 配置化筛选/表单（对齐 CBasicForm）；`schemas` + `v-model`；见下文 |
 | `BasicTable` | 配置化表格（对齐 CBasicTable）；`columns` + `dataSource`/`request`；见下文 |
 | `ListToolbar` | 列表工具栏；`config` 按键开关：`create`/`batchDelete`/`import`/`export`；不写或 `false` 不显示，写 `{ onClick, disabled?, loading?, show? }` 即接线 |
-| `EmptyState` / `StatCard` / `NumText` / … | 既有展示原子 |
+| `HeaderStat` | 页头行内读数（标签在上、数值在下），专供 `PageHeader` 的 `stats` 槽；`label`/`value`/`tone`/`lead`。不带卡片壳——页头已有分隔线，再套 `StatCard` 会变「卡中卡」 |
+| `EmptyState` / `StatCard` / … | 既有展示原子；`EmptyState` 用自绘「空账页 + 淡印章」替代 EP 默认插图，随主题走 |
+
+页头本身是布局件，在 `shared/components/layout/PageHeader.vue`。
 
 ## BasicTable（对齐 CBasicTable）
 
@@ -18,14 +21,15 @@
 
 - `request`：`(params) => { list, total }`，组件管分页与加载
 - `dataSource` + `pagination` 对象：外部控页；`@current-change` / `@size-change`
-- `pagination=false`：无分页（首页持仓）
+- `pagination=false`：无分页（短列表，如复盘中心候选验证表）
 - `pagination=true` / `{}`：内置分页（默认 layout 含 jumper）
+- `virtualized`：启用 Element Plus `el-table-v2`；与完整数据 `dataSource`、`pagination=false` 搭配用于大表。含动态 slot/formatter、选择、固定列和键盘行焦点；多级表头、展开、列筛选/排序、合并单元格或函数 `rowKey` 会自动回退到 `el-table`
 
 **能力**：`v-model:columns`、`toolbarConfig`（refresh / zoom / custom 列设置）、`mergeField`、`editConfig`+`editRender`、多级表头 `children`、列 `filters`/`filterMethod`、`formatter`/`render`/`slotName`、`offsetHeight`、`cell-click`/`row-click`/`selection-change`
 
-**方法**：`fetch` / `reloadTable` / `restReload` / `setPagination` / `getTableData` / `doLayout` / `setEditRow` / `clearEdit` / `getRowEdit` / `isEditByRow` / `getTableRef`
+**方法**：`fetch` / `reloadTable` / `restReload` / `setPagination` / `getTableData` / `doLayout` / `setEditRow` / `clearEdit` / `getRowEdit` / `isEditByRow` / `clearSelection` / `getTableRef`
 
-**样式**：表头 `panel-2` + mist、单元格 padding、斑马纹与首页持仓表一致（全局内置，页面无需再写 `:deep`）。
+**样式**：表头 `panel-2` + mist、单元格 padding、斑马纹全站统一（全局内置，页面无需再写 `:deep`）。
 
 ## BasicForm（对齐 CBasicForm）
 

@@ -1,5 +1,5 @@
 /** 策略：选股 / 回测 / 分析 / 转换 / 档案 / 审计 / 洞察。 */
-import { quantRequest, query } from '@/shared/api/quant_client'
+import { abortableSleep, quantRequest, query, toAbortError } from '@/shared/api/quant_client'
 import { getJobRuns } from '@/shared/api/quant_ops'
 import type {
   AnalysisStarted,
@@ -151,6 +151,9 @@ export function runBacktest(payload: {
   hold_days?: number
   stop_loss_pct?: number | null
   take_profit_pct?: number | null
+  commission_bps?: number
+  stamp_duty_bps?: number
+  slippage_bps?: number
   benchmark?: string | null
   codes?: string[]
   params?: Record<string, unknown>
@@ -197,18 +200,29 @@ export function startAnalysis(
   return quantRequest(`/analysis/${kind}`, { method: 'POST', body: JSON.stringify(payload) })
 }
 
-/** 轮询直到任务结束。分析任务是分钟级的，间隔取 3 秒足够。 */
+/**
+ * 轮询直到任务结束。分析任务是分钟级的，间隔取 3 秒足够。
+ *
+ * `signal` 不是可选的礼貌参数：3s × 900s 上限 = 最多 300 次 `getJobRuns`，
+ * 调用方（组件）卸载后若不能取消，这个循环会自己跑满 15 分钟。
+ * 组件里请用 `onUnmounted(() => controller.abort())` 接上。
+ */
 export async function awaitJobResult(
   jobId: string,
-  { intervalMs = 3000, timeoutMs = 900_000 }: { intervalMs?: number; timeoutMs?: number } = {},
+  {
+    intervalMs = 3000,
+    timeoutMs = 900_000,
+    signal,
+  }: { intervalMs?: number; timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<JobRun> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
-    const runs = await getJobRuns({ job_id: jobId, limit: 3 })
+    if (signal?.aborted) throw toAbortError(signal.reason)
+    const runs = await getJobRuns({ job_id: jobId, limit: 3 }, signal)
     const done = runs.find((run) => run.status === 'success' || run.status === 'failed')
     if (done) return done
     if (Date.now() > deadline) throw new Error('分析任务超时；可到设置页查看执行历史')
-    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+    await abortableSleep(intervalMs, signal)
   }
 }
 
@@ -281,6 +295,30 @@ export function getScreenHistory(options: {
   return quantRequest(
     `/screen/history${query({
       strategy: options.strategy,
+      start: options.start,
+      end: options.end,
+      limit: options.limit,
+      live_only:
+        options.live_only === undefined
+          ? undefined
+          : options.live_only
+            ? 'true'
+            : 'false',
+    })}`,
+  )
+}
+
+export function getScreenHistoryBatch(options: {
+  strategies: string[]
+  start?: string
+  end?: string
+  limit?: number
+  live_only?: boolean
+}): Promise<{ strategies: string[]; histories: ScreenHistory[] }> {
+  const strategies = options.strategies.map((s) => s.trim()).filter(Boolean).slice(0, 32)
+  return quantRequest(
+    `/screen/history/batch${query({
+      strategies: strategies.join(','),
       start: options.start,
       end: options.end,
       limit: options.limit,

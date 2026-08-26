@@ -2,16 +2,18 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { RefreshRight, Search } from '@element-plus/icons-vue'
+import { Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 
 import { batchDeleteCandidates, deleteCandidate } from '@/shared/api/palace'
 import { getStrategies } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
 import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
-import BasicTable, { type BasicTableColumn, type BasicTableRequest } from '@/shared/components/ui/BasicTable.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
+import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import RecordDialog from '@/shared/components/dialogs/RecordDialog.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
@@ -35,7 +37,6 @@ const recordOpen = ref(false)
 const selectedIds = ref<string[]>([])
 const basicFormRef = ref<InstanceType<typeof BasicForm>>()
 const basicTableRef = ref<InstanceType<typeof BasicTable>>()
-const filtersReady = ref(false)
 
 const filters = reactive({
   strategy: '',
@@ -61,12 +62,13 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
   {
     field: 'strategy',
     label: '战法',
-    component: 'input',
+    component: 'select',
     colSpan: 6,
     componentProps: {
       clearable: true,
-      placeholder: '模糊查询',
-      maxlength: 64,
+      filterable: true,
+      placeholder: '全部',
+      options: strategies.value.map((item) => ({ label: item.name, value: item.slug })),
     },
   },
   {
@@ -118,6 +120,7 @@ const {
 } = useCandidatesQuery(queryFilters)
 
 const rows = cachedRows
+const tableRows = computed(() => rows.value as unknown as Record<string, unknown>[])
 
 const poolBatch = computed(() => {
   const seen = new Set<string>()
@@ -136,6 +139,19 @@ const poolBatch = computed(() => {
   }
 })
 const busy = isPending
+
+const decisionCounts = computed(() => {
+  let selected = 0
+  let watching = 0
+  let rejected = 0
+  for (const row of rows.value) {
+    const label = decisionLabel(row.decision)
+    if (label === '精选') selected += 1
+    else if (label === '观察') watching += 1
+    else if (label === '落选') rejected += 1
+  }
+  return { selected, watching, rejected }
+})
 
 watch(queryError, (err) => {
   error.value = err ? toErrorMessage(err, '加载候选失败') : ''
@@ -160,39 +176,38 @@ const evidenceText = computed(() => {
 })
 
 const columns = ref<BasicTableColumn[]>([
-  { type: 'selection', width: 48 },
+  { type: 'selection', width: 48, fixed: 'left' },
   { prop: 'date', label: '日期', width: 110 },
-  { prop: 'code', label: '标的', minWidth: 140, slotName: 'stock' },
+  { prop: 'code', label: '标的', width: 140, slotName: 'stock' },
   {
     prop: 'rule_version',
     label: '战法',
-    minWidth: 160,
+    width: 150,
     showOverflowTooltip: true,
     formatter: (row) => strategyLabel(String(row.rule_version ?? '')),
   },
-  { prop: 'decision', label: '裁决', width: 90, slotName: 'decision' },
+  { prop: 'decision', label: '裁决', width: 80, slotName: 'decision' },
   {
     prop: 'timing',
     label: '时点',
-    width: 100,
+    width: 90,
     formatter: (row) => timingLabel(String(row.timing ?? '')),
   },
   {
     prop: 'score',
     label: '评分',
-    width: 80,
+    width: 70,
     formatter: (row) => String(row.score ?? '—'),
   },
   {
     prop: 'reason',
     label: '理由',
-    minWidth: 180,
+    minWidth: 260,
     align: 'left',
     headerAlign: 'left',
-    showOverflowTooltip: true,
-    formatter: (row) => String(row.reason || '—'),
+    slotName: 'reason',
   },
-  { prop: 'actions', label: '操作', width: 72, slotName: 'actions' },
+  { prop: 'actions', label: '操作', width: 80, slotName: 'actions', fixed: 'right' },
 ])
 
 function strategyLabel(slug: string): string {
@@ -200,46 +215,28 @@ function strategyLabel(slug: string): string {
   return strategyNameBySlug.value.get(slug) || formatStrategyLabel(slug)
 }
 
-function decisionType(decision: string): 'success' | 'info' | 'danger' | 'warning' {
-  const d = decisionLabel(decision)
-  if (d === '精选') return 'danger'
-  if (d === '落选') return 'info'
-  return 'warning'
+function decisionType(decision: string): 'info' | 'danger' {
+  return decisionLabel(decision) === '精选' ? 'danger' : 'info'
 }
 
-const loadDataTable: BasicTableRequest = async (params) => {
-  const list = rows.value
-  const start = (params.currentPage - 1) * params.pageSize
-  return {
-    list: list.slice(start, start + params.pageSize) as unknown as Record<string, unknown>[],
-    total: list.length,
-  }
-}
-
-function reloadList(resetPage = true): void {
-  if (resetPage) void basicTableRef.value?.restReload()
-  else void basicTableRef.value?.reloadTable()
-}
-
-async function load(resetPage = true): Promise<void> {
+async function load(): Promise<void> {
   error.value = ''
   selectedIds.value = []
+  basicTableRef.value?.clearSelection()
   try {
     await refetch()
-    await nextTick()
-    reloadList(resetPage)
   } catch (e: unknown) {
     error.value = toErrorMessage(e, '加载失败')
   }
 }
 
 function handleSubmit(): void {
-  void load(true)
+  void load()
 }
 
 function handleReset(): void {
   basicFormRef.value?.resetForm()
-  void nextTick(() => load(true))
+  void nextTick(() => load())
 }
 
 function onSelectionChange(selection: Record<string, unknown>[]): void {
@@ -277,7 +274,7 @@ function goArchive(): void {
 }
 
 function onRecorded(): void {
-  void load(false)
+  void load()
 }
 
 async function confirmDelete(row: Candidate): Promise<void> {
@@ -293,7 +290,7 @@ async function confirmDelete(row: Candidate): Promise<void> {
       detailOpen.value = false
       detail.value = null
     }
-    await load(false)
+    await load()
   } catch (e: unknown) {
     ElMessage.error(e instanceof Error ? e.message : '删除失败')
   }
@@ -310,18 +307,13 @@ async function confirmBatchDelete(): Promise<void> {
       detailOpen.value = false
       detail.value = null
     }
-    await load(true)
+    await load()
   } catch (e: unknown) {
     ElMessage.error(e instanceof Error ? e.message : '批量删除失败')
   }
 }
 
 const listToolbar = computed<ListToolbarConfig>(() => ({
-  create: {
-    onClick: () => {
-      recordOpen.value = true
-    },
-  },
   batchDelete: {
     disabled: !selectedIds.value.length || !!busy.value,
     onClick: () => {
@@ -333,7 +325,6 @@ const listToolbar = computed<ListToolbarConfig>(() => ({
 watch(rows, () => {
   const alive = new Set(rows.value.map((r) => r.id))
   selectedIds.value = selectedIds.value.filter((id) => alive.has(id))
-  if (filtersReady.value) void nextTick(() => reloadList(false))
 })
 
 onMounted(async () => {
@@ -342,13 +333,26 @@ onMounted(async () => {
   } catch {
     strategies.value = []
   }
-  await load(true)
-  filtersReady.value = true
+  await load()
 })
 </script>
 
 <template>
   <div class="page-fill">
+    <PageHeader
+      title="候选池"
+      :count="rows.length ? `共 ${rows.length} 条` : ''"
+      note="选股产出与手动记录的候选；裁决与理由为当时快照，不随行情变动"
+    >
+      <template #stats>
+        <HeaderStat label="精选" :value="decisionCounts.selected" tone="up" />
+        <HeaderStat label="观察" :value="decisionCounts.watching" />
+        <HeaderStat label="落选" :value="decisionCounts.rejected" />
+      </template>
+      <template #actions>
+        <el-button type="primary" :icon="Plus" @click="recordOpen = true">新增</el-button>
+      </template>
+    </PageHeader>
     <PageContainer>
       <template #search>
         <div class="pool-search-form">
@@ -379,17 +383,17 @@ onMounted(async () => {
           v-if="rows.length || busy"
           ref="basicTableRef"
           v-model:columns="columns"
-          :request="loadDataTable"
-          :pagination="true"
+          :data-source="tableRows"
+          :pagination="false"
+          virtualized
           :toolbar-config="{ refresh: true, custom: true }"
           :loading="!!busy"
-          :has-default-request="false"
           stripe
           row-key="id"
           empty-text="暂无候选"
           @row-click="openDetail"
           @selection-change="onSelectionChange"
-          @refresh="load(false)"
+          @refresh="load"
         >
           <template #toolbarButtons>
             <ListToolbar :config="listToolbar" />
@@ -408,6 +412,17 @@ onMounted(async () => {
               {{ decisionLabel(String(row.decision ?? '')) }}
             </el-tag>
           </template>
+          <template #reason="{ row }">
+            <el-tooltip
+              :content="String(row.reason || '—')"
+              placement="top"
+              :show-after="150"
+              :disabled="!row.reason"
+              popper-class="pool-reason-popper"
+            >
+              <span class="pool-reason-text">{{ String(row.reason || '—') }}</span>
+            </el-tooltip>
+          </template>
           <template #actions="{ row }">
             <el-button
               text
@@ -419,7 +434,12 @@ onMounted(async () => {
             </el-button>
           </template>
         </BasicTable>
-        <EmptyState v-else description="暂无候选">
+        <EmptyState
+          v-else
+          description="暂无候选"
+          reason="候选来自选股产出与手动记录；当前筛选下暂无数据"
+          eta="跑一次选股，或用侧栏「记一笔 → 候选」手动写入"
+        >
           <el-button type="primary" @click="recordOpen = true">新增</el-button>
         </EmptyState>
       </template>
@@ -476,12 +496,23 @@ onMounted(async () => {
   min-width: 0;
 }
 
+/* 与表单末行输入框底对齐：form-item 自带 0.65rem 下间距，这里用同拍 margin 而非 padding 补丁 */
 .pool-search-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
   flex-shrink: 0;
-  padding-bottom: 0.65rem;
+  align-self: flex-end;
+  margin-bottom: 0.65rem;
+}
+
+.pool-reason-text {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .pool-alert {
@@ -514,7 +545,15 @@ onMounted(async () => {
   word-break: break-word;
 }
 
-:deep(.el-table__row) {
+:deep(.el-table__row),
+:deep(.el-table-v2__row) {
   cursor: pointer;
+}
+</style>
+
+<style>
+/* 理由全文气泡经 teleport 挂到 body，scoped 够不着；用 popper-class 限宽换行 */
+.pool-reason-popper {
+  max-width: 26rem;
 }
 </style>

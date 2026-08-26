@@ -63,6 +63,7 @@ class SignalResult:
 
     signals: pd.DataFrame
     factors: dict[str, pd.DataFrame] = field(default_factory=dict)
+    watch_signals: pd.DataFrame | None = None
 
     def picks_on(self, trade_date: str, *, rank_by: str | None = None) -> list[str]:
         """取某个交易日选中的代码。
@@ -70,9 +71,26 @@ class SignalResult:
         ``rank_by`` 指定 factors 中的排序键时按该值**降序**（高分在前）；
         缺键或非有限值时回退代码序，保证稳定可复现。
         """
-        if trade_date not in self.signals.index:
+        return self._codes_on(self.signals, trade_date, rank_by=rank_by)
+
+    def watch_picks_on(
+        self, trade_date: str, *, rank_by: str | None = None
+    ) -> list[str]:
+        """取弱市降级观察代码；不属于正式信号或原回测样本。"""
+        if self.watch_signals is None:
             return []
-        row = self.signals.loc[trade_date]
+        return self._codes_on(self.watch_signals, trade_date, rank_by=rank_by)
+
+    def _codes_on(
+        self,
+        signals: pd.DataFrame,
+        trade_date: str,
+        *,
+        rank_by: str | None = None,
+    ) -> list[str]:
+        if trade_date not in signals.index:
+            return []
+        row = signals.loc[trade_date]
         codes = [str(code) for code in row.index[row.fillna(False).astype(bool)].tolist()]
         key = str(rank_by or "").strip()
         panel = self.factors.get(key) if key else None
@@ -150,6 +168,11 @@ def get(slug: str) -> StrategyEngine:
 
 def all_strategies() -> list[StrategyEngine]:
     return [_REGISTRY[slug] for slug in sorted(_REGISTRY)]
+
+
+def is_builtin_registered(slug: str) -> bool:
+    """Builtin 战法 slug 是否已占用（Screen Skill 冲突检测等组合根编排用）。"""
+    return slug in _REGISTRY
 
 
 def describe_all() -> list[StrategyInfo]:

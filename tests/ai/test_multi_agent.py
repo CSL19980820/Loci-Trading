@@ -7,7 +7,13 @@ import unittest
 from unittest.mock import patch
 
 from src.ai.application.agent import run_agent
-from src.ai.infrastructure.client import ChatMessage, ChatResponse, ProviderConfig, ToolCall
+from src.ai.infrastructure.client import (
+    ChatMessage,
+    ChatResponse,
+    LLMError,
+    ProviderConfig,
+    ToolCall,
+)
 from src.ai.application.multi_agent import format_subagent_briefs, run_ammo_agents
 from src.ai.application.toolbus import build_toolbus
 from src.ops import skill_runs
@@ -117,7 +123,10 @@ class HitlTests(unittest.TestCase):
                 )
             return ChatResponse(text="终稿", model="m", tool_calls=[], input_tokens=1, output_tokens=1)
 
-        with patch("src.ai.application.agent.chat", side_effect=fake_chat):
+        # run_agent 默认走流式：不挡 chat_stream 就会对着假 base_url 发真请求。
+        with patch(
+            "src.ai.application.agent.chat_stream", side_effect=LLMError("no stream")
+        ), patch("src.ai.application.agent.chat", side_effect=fake_chat):
             first = run_agent(
                 _provider(),
                 system="sys",
@@ -148,7 +157,9 @@ class HitlTests(unittest.TestCase):
                     output_tokens=1,
                 )
 
-            with patch("src.ai.application.agent.chat", side_effect=fake_chat2):
+            with patch(
+                "src.ai.application.agent.chat_stream", side_effect=LLMError("no stream")
+            ), patch("src.ai.application.agent.chat", side_effect=fake_chat2):
                 second = run_agent(
                     _provider(),
                     system="sys",

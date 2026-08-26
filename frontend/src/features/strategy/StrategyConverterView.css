@@ -8,57 +8,44 @@
 }
 
 .workbench-bar {
-  display: grid;
-  grid-template-columns: minmax(12rem, 1fr) auto minmax(24rem, 1fr);
+  display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-height: 3.4rem;
-  padding: 0.45rem 0.7rem;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-height: 3rem;
+  padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--rule);
   background: var(--sheet);
 }
 
 .workbench-identity,
-.workbench-runtime,
-.workbench-actions,
-.report-dock__toolbar {
+.workbench-actions {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 0.45rem;
+  gap: 0.4rem;
 }
 
-.workbench-name {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.workbench-identity {
+  flex: 1 1 auto;
 }
 
-.workbench-name strong {
-  overflow: hidden;
-  font-size: 0.92rem;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.workbench-name-input {
+  width: min(18rem, 42vw);
 }
 
-.workbench-name span {
-  overflow: hidden;
-  color: var(--mist);
-  font: 0.68rem/1.25 var(--mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 本文件以 <style scoped src> 挂进 SFC：凡是打到 EP 内部结构的选择器都要 :deep() */
+.workbench-name-input :deep(.el-input__wrapper) {
+  box-shadow: none;
+  background: transparent;
 }
 
-.workbench-runtime {
-  justify-content: center;
-}
-
-.workbench-runtime .el-select {
-  width: 7.5rem;
+.workbench-name-input :deep(.el-input__inner) {
+  font-weight: 600;
 }
 
 .workbench-actions {
+  flex: 0 1 auto;
   justify-content: flex-end;
   overflow-x: auto;
   scrollbar-width: none;
@@ -72,10 +59,17 @@
   margin-left: 0;
 }
 
-.catalog-trigger,
-.ai-trigger,
-.report-trigger {
-  display: none;
+.workbench-page > .page-tabs {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sheet);
+}
+
+@media (max-width: 640px) {
+  .workbench-page > .page-tabs .page-tabs__trailing span:not(:first-child) {
+    display: none;
+  }
 }
 
 .workbench-flash {
@@ -85,178 +79,66 @@
   background: var(--paper);
 }
 
+.workbench-settings {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.75rem 0.85rem 1rem;
+}
+
 .workbench-shell {
   display: grid;
-  grid-template-columns: minmax(16rem, 18rem) minmax(24rem, 1fr) minmax(16rem, 18rem);
+  grid-template-columns: minmax(0, 1fr);
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
 }
 
-.workbench-pane {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  padding: 0.7rem;
-  background: color-mix(in srgb, var(--sheet) 82%, var(--paper));
-}
-
-.catalog-pane {
-  border-right: 1px solid var(--rule);
+.workbench-shell--assist {
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 17.5rem);
 }
 
 .copilot-pane {
-  border-left: 1px solid var(--rule);
-}
-
-.copilot-pane > .el-button {
-  margin-top: 0.35rem;
-}
-
-.report-dock {
-  display: grid;
-  grid-template-rows: 2.35rem minmax(0, 1fr);
-  flex: 0 0 14.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
   min-width: 0;
   min-height: 0;
-  border-top: 1px solid var(--rule);
-  background: var(--sheet);
-}
-
-.report-dock__toolbar {
-  padding: 0.35rem 0.7rem;
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel-2);
-}
-
-.report-dock__toolbar strong {
-  margin-right: auto;
-  font-size: 0.82rem;
-}
-
-.report-dock__toolbar .el-date-editor {
-  width: 9.5rem;
-}
-
-.report-dock__toolbar .el-input {
-  width: min(18rem, 28vw);
-}
-
-.report-dock__body {
-  min-height: 0;
   overflow: auto;
-  padding: 0.6rem 0.75rem 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border-left: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--sheet) 82%, var(--paper));
 }
 
-.report-dock__body .report__content {
-  display: grid;
-  grid-template-columns: minmax(14rem, 0.65fr) minmax(24rem, 1.35fr);
-  gap: 0.75rem;
+.copilot-pane__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.report-dock__body .report__summary,
-.report-dock__body .report__data {
-  grid-column: 1;
+.copilot-pane__head strong {
+  font-size: 0.86rem;
 }
 
-.report-dock__body .report__steps {
-  grid-column: 2;
-  grid-row: 1 / span 3;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-}
-
-.mobile-tools__tabs {
-  height: 100%;
-}
-
-.mobile-tools__tabs > .el-tabs__content {
-  height: calc(100% - 3rem);
-  overflow: auto;
-}
-
-@media (max-width: 1180px) {
-  .workbench-bar {
-    grid-template-columns: minmax(11rem, 1fr) auto minmax(22rem, 1fr);
-  }
-
-  .workbench-shell {
-    grid-template-columns: minmax(28rem, 1fr) minmax(17rem, 19rem);
-  }
-
-  .catalog-pane {
+@media (max-width: 900px) {
+  .workbench-secondary :deep(span) {
     display: none;
   }
 
-  .catalog-trigger {
-    display: inline-flex;
-  }
-}
-
-@media (max-width: 940px) {
-  .workbench-bar {
-    grid-template-columns: minmax(10rem, 1fr) auto;
-  }
-
-  .workbench-runtime {
-    grid-column: 1;
-    grid-row: 2;
-    justify-content: flex-start;
-  }
-
-  .workbench-actions {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-  }
-}
-
-@media (max-width: 820px) {
-  .workbench-bar {
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.35rem;
-    padding: 0.4rem 0.45rem;
-  }
-
-  .workbench-shell {
+  .workbench-shell--assist {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .copilot-pane,
-  .report-dock {
+  .workbench-shell--assist .copilot-pane {
     display: none;
   }
+}
 
-  .ai-trigger,
-  .report-trigger {
-    display: inline-flex;
-  }
-
-  .workbench-actions .el-button span {
+@media (max-width: 640px) {
+  .workbench-actions .el-button :deep(span) {
     display: none;
   }
 
   .workbench-actions .el-button {
     padding-inline: 0.55rem;
-  }
-
-  .workbench-identity > .el-tag {
-    display: none;
-  }
-
-  .workbench-runtime {
-    overflow-x: auto;
-  }
-}
-
-@media (max-width: 520px) {
-  .workbench-name span,
-  .workbench-actions > .el-button:nth-child(1),
-  .workbench-actions > .el-button:nth-child(4) {
-    display: none;
-  }
-
-  .workbench-runtime .el-select {
-    width: 6.8rem;
   }
 }

@@ -83,7 +83,7 @@ class DuckdbPanelTests(unittest.TestCase):
 
     def test_duckdb_disabled_still_loads(self) -> None:
         os.environ["LOCI_MARKET_DUCKDB"] = "0"
-        panels = self.store.load_panel(fields=("close",), adjust="none")
+        panels = self.store.load_panel(fields=("close",), start=self.dates[0], adjust="none")
         self.assertIn("600519", panels["close"].columns)
         self.assertIn("000001", panels["close"].columns)
 
@@ -92,7 +92,7 @@ class DuckdbPanelTests(unittest.TestCase):
         """同一夹具：经典 load_panel vs LOCI_MARKET_DUCKDB=1，行数/关键价一致。"""
         os.environ.pop("LOCI_MARKET_DUCKDB", None)
         baseline = self.store.load_panel(
-            fields=("open", "high", "low", "close", "volume"),
+            fields=("open", "high", "low", "close", "volume"), start=self.dates[0],
             adjust="none",
         )
 
@@ -110,7 +110,7 @@ class DuckdbPanelTests(unittest.TestCase):
         os.environ["LOCI_MARKET_DUCKDB"] = "1"
         self.assertTrue(duckdb_panel_enabled())
         via_duck = self.store.load_panel(
-            fields=("open", "high", "low", "close", "volume"),
+            fields=("open", "high", "low", "close", "volume"), start=self.dates[0],
             adjust="none",
         )
 
@@ -136,6 +136,44 @@ class DuckdbPanelTests(unittest.TestCase):
                     places=6,
                     msg=f"{field} 合计",
                 )
+
+
+    @unittest.skipUnless(_HAS_DUCKDB, "duckdb 未安装，跳过旁路对照")
+    def test_duckdb_panel_matches_pandas_on_sparse_nulls(self) -> None:
+        """缺行（停牌）与 NULL 换手才是旁路最容易错位的地方。
+
+        稠密夹具对不出问题：行数差 / NaN 落错格子会让选股静默少票或把
+        缺失当成 0，必须逐格比对。
+        """
+        sparse = _quotes([self.dates[0], self.dates[2]], base=7.0).assign(turnover=None)
+        self.store.upsert_quotes("000002", sparse)
+
+        os.environ.pop("LOCI_MARKET_DUCKDB", None)
+        baseline = self.store.load_panel(
+            fields=("close", "turnover"), start=self.dates[0], adjust="none"
+        )
+        os.environ["LOCI_MARKET_DUCKDB"] = "1"
+        via_duck = self.store.load_panel(
+            fields=("close", "turnover"), start=self.dates[0], adjust="none"
+        )
+
+        for field in ("close", "turnover"):
+            left = baseline[field].sort_index(axis=1)
+            right = via_duck[field].sort_index(axis=1)
+            self.assertEqual(left.shape, right.shape, msg=field)
+            self.assertEqual(list(left.columns), list(right.columns), msg=field)
+            # NaN 必须落在同一格：np.allclose 的 equal_nan 只比值不比位置
+            np.testing.assert_array_equal(
+                left.isna().to_numpy(), right.isna().to_numpy(), err_msg=f"{field} NaN 位置"
+            )
+            np.testing.assert_allclose(
+                left.to_numpy(dtype=float),
+                right.to_numpy(dtype=float),
+                rtol=1e-9,
+                atol=1e-9,
+                equal_nan=True,
+                err_msg=field,
+            )
 
 
 if __name__ == "__main__":

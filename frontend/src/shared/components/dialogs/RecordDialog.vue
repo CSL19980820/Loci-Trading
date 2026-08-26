@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
-import {
-  createCandidate,
-  createCashflow,
-  createPlan,
-  createReview,
-  createSnapshot,
-} from '@/shared/api/palace'
+import { createCandidate, createPlan, createReview } from '@/shared/api/palace'
 import { dialogWidth, localToday } from '@/shared/lib/format'
 
-export type RecordKind = 'candidate' | 'plan' | 'review' | 'snapshot' | 'cashflow'
+export type RecordKind = 'candidate' | 'plan' | 'review'
 
 interface FieldSpec {
   key: string
@@ -121,15 +115,14 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
         key: 'entity_type',
         label: '对象',
         type: 'select',
-        default: 'trade',
+        default: 'candidate',
         options: [
-          { value: 'trade', label: '成交' },
           { value: 'candidate', label: '候选' },
           { value: 'plan', label: '预案' },
         ],
       },
-      { key: 'entity_id', label: '对象 ID（可选）', type: 'text', placeholder: 'TX-… / CA-… / PL-…' },
-      { key: 'strategy_tag', label: '战法', type: 'text', required: true, placeholder: '如 qianlong-close-v3 / lugw-haidi' },
+      { key: 'entity_id', label: '对象 ID（可选）', type: 'text', placeholder: 'CA-… / PL-…' },
+      { key: 'strategy_tag', label: '战法', type: 'text', required: true, placeholder: '如 qianlong-close-v3 / sanyuan-tail-v1' },
       { key: 'return_pct', label: '收益 %', type: 'number', step: 0.01 },
       { key: 'max_favorable_pct', label: '最高浮盈 %', type: 'number', step: 0.01 },
       { key: 'max_adverse_pct', label: '最深浮亏 %', type: 'number', step: 0.01 },
@@ -140,7 +133,7 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
     ],
     submit: (values) =>
       createReview({
-        entity_type: values.entity_type as 'plan' | 'candidate' | 'trade',
+        entity_type: values.entity_type as 'plan' | 'candidate',
         entity_id: String(values.entity_id || 'manual'),
         outcome: String(values.outcome),
         strategy_tag: String(values.strategy_tag ?? '').trim(),
@@ -150,37 +143,6 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
         lesson: String(values.lesson ?? ''),
         next_rule: String(values.next_rule ?? ''),
         reviewed_on: String(values.reviewed_on ?? '') || null,
-      }),
-  },
-  snapshot: {
-    title: '记资产快照',
-    fields: [
-      { key: 'total_assets', label: '总资产', type: 'number', required: true, min: 0, max: 1e12, step: 0.01 },
-      { key: 'cash', label: '可用现金', type: 'number', min: 0, max: 1e12, step: 0.01 },
-      { key: 'occurred_on', label: '日期', type: 'date', default: today() },
-      { key: 'note', label: '备注', type: 'textarea', rows: 2 },
-    ],
-    submit: (values) =>
-      createSnapshot({
-        total_assets: Number(values.total_assets),
-        cash: numberOrNull(values.cash),
-        note: String(values.note ?? ''),
-        occurred_on: String(values.occurred_on ?? '') || null,
-      }),
-  },
-  cashflow: {
-    title: '记出入金',
-    hint: '出入金不计入已实现盈亏，只影响本金口径。',
-    fields: [
-      { key: 'amount', label: '金额', type: 'number', required: true, step: 0.01, placeholder: '入金为正，出金为负' },
-      { key: 'occurred_on', label: '日期', type: 'date', default: today() },
-      { key: 'note', label: '备注', type: 'textarea', rows: 2 },
-    ],
-    submit: (values) =>
-      createCashflow({
-        amount: Number(values.amount),
-        note: String(values.note ?? ''),
-        occurred_on: String(values.occurred_on ?? '') || null,
       }),
   },
 }

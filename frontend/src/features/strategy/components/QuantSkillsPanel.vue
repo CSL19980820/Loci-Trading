@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { RefreshRight, Search } from '@element-plus/icons-vue'
 
-import { installSkill } from '@/shared/api/quant'
+import { installSkill, syncSkillTemplates } from '@/shared/api/quant'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
 import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
@@ -168,6 +168,27 @@ function onUploadCommand(command: string | number | object): void {
   else pickZip()
 }
 
+async function syncFromTemplates(): Promise<void> {
+  installing.value = true
+  try {
+    const result = await syncSkillTemplates(true)
+    const parts: string[] = []
+    if (result.installed.length) parts.push(`已安装 ${result.installed.length} 个`)
+    if (result.skipped.length) parts.push(`跳过 ${result.skipped.length} 个`)
+    if (result.errors.length) parts.push(`失败 ${result.errors.length} 个`)
+    if (result.errors.length) {
+      ElMessage.warning(parts.join('，') || '同步完成')
+    } else {
+      ElMessage.success(parts.join('，') || '模板目录为空，无需同步')
+    }
+    if (result.installed.length) emit('refresh')
+  } catch (caught: unknown) {
+    ElMessage.error(toErrorMessage(caught, '模板同步失败'))
+  } finally {
+    installing.value = false
+  }
+}
+
 async function installPackage(file: File): Promise<void> {
   installing.value = true
   try {
@@ -258,6 +279,13 @@ async function onFolderSelected(event: Event): Promise<void> {
           @refresh="emit('refresh')"
         >
           <template #toolbarButtons>
+            <el-button
+              size="small"
+              :disabled="installing"
+              @click="syncFromTemplates"
+            >
+              从模板同步战法
+            </el-button>
             <el-dropdown
               split-button
               type="primary"
@@ -325,8 +353,16 @@ async function onFolderSelected(event: Event): Promise<void> {
           v-else
           description="还没有技能"
           reason="本机安装技能包后会出现在这里"
-          eta="点「上传技能」选择 zip 或文件夹"
+          eta="点「从模板同步战法」或「上传技能」"
         >
+          <el-button
+            type="primary"
+            plain
+            :disabled="installing"
+            @click="syncFromTemplates"
+          >
+            从模板同步战法
+          </el-button>
           <el-dropdown
             split-button
             type="primary"

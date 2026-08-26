@@ -1,8 +1,7 @@
 """行情列名中英对照表（唯一真相）。
 
-上游（akshare / 交易所）返回的多为中文列名，仓内归一列名为英文。两套名字
-在适配器、探测结果、前端「出参」展示里都要用，因此对照表只在这里维护一份，
-适配器按需从中挑子集，不再各自抄一遍。
+上游（akshare / 交易所）返回的多为中文列名，仓内归一列名为英文。
+契约 ``source_contract`` 经 ``_cn()`` 从本表取候选源列；禁止在 adapter 再抄 rename。
 
 纯标准库：领域层不依赖 pandas / fastapi / sqlite。
 """
@@ -10,7 +9,7 @@ from __future__ import annotations
 
 
 #: 中文列名 → 仓内英文列名。键唯一，因此同一中文名只能有一个英文归一名；
-#: 少数历史列名冲突（如资金流的 ``pct_chg``）由使用方在本表之外显式覆盖。
+#: 少数历史列名冲突（如资金流的 ``pct_chg``）由契约 FieldSpec 显式覆盖。
 CN_TO_EN: dict[str, str] = {
     # 日线（含 types.py 的 DAILY_REQUIRED_COLUMNS / DAILY_OPTIONAL_COLUMNS）
     "日期": "date",
@@ -45,7 +44,17 @@ CN_TO_EN: dict[str, str] = {
     "中单净流入-净占比": "medium_net_pct",
     "小单净流入-净额": "small_net_inflow",
     "小单净流入-净占比": "small_net_pct",
+    # 交易所证券列表
+    "证券代码": "code",
+    "证券简称": "name",
+    "上市日期": "list_date",
+    "A股代码": "code",
+    "A股简称": "name",
+    "A股上市日期": "list_date",
+    "板块": "board",
+    "所属行业": "industry",
 }
+
 
 def _build_reverse(mapping: dict[str, str]) -> dict[str, str]:
     reverse: dict[str, str] = {}
@@ -71,14 +80,6 @@ def gloss_column(raw: str) -> dict[str, str]:
     if _has_chinese(text):
         return {"raw": text, "cn": text, "en": ""}
     return {"raw": text, "cn": "", "en": text}
-
-
-def select_columns(*chinese_names: str) -> dict[str, str]:
-    """按中文列名从 ``CN_TO_EN`` 取子集，供适配器拼自己的 rename 表。"""
-    missing = [name for name in chinese_names if name not in CN_TO_EN]
-    if missing:
-        raise KeyError(f"列名未登记在 CN_TO_EN：{missing}")
-    return {name: CN_TO_EN[name] for name in chinese_names}
 
 
 def _has_chinese(text: str) -> bool:

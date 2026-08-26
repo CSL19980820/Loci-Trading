@@ -2,13 +2,12 @@
 /**
  * 定时台「执行历史」弹窗：宽表、任务名左置、耗时可读。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { batchDeleteJobRuns } from '@/shared/api/quant'
 import BasicTable, {
   type BasicTableColumn,
-  type BasicTableRequest,
 } from '@/shared/components/ui/BasicTable.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
@@ -44,9 +43,10 @@ const open = computed({
 const { runs, refetch } = useJobRunsQuery(() => ({ limit: 500 }))
 const basicTableRef = ref<InstanceType<typeof BasicTable> | null>(null)
 const selectedIds = ref<string[]>([])
+const tableRows = computed(() => runs.value as unknown as Record<string, unknown>[])
 
 const columns = ref<BasicTableColumn[]>([
-  { type: 'selection', width: 48 },
+  { type: 'selection', width: 48, fixed: 'left' },
   {
     prop: 'job_name',
     label: '任务',
@@ -54,6 +54,7 @@ const columns = ref<BasicTableColumn[]>([
     align: 'left',
     headerAlign: 'left',
     showOverflowTooltip: true,
+    fixed: 'left',
   },
   {
     prop: 'started_at',
@@ -91,31 +92,16 @@ const columns = ref<BasicTableColumn[]>([
   },
 ])
 
-const loadDataTable: BasicTableRequest = async (params) => {
-  const list = runs.value
-  const start = (params.currentPage - 1) * params.pageSize
-  return {
-    list: list.slice(start, start + params.pageSize) as unknown as Record<string, unknown>[],
-    total: list.length,
-  }
-}
-
-function reloadList(resetPage = true): void {
-  if (resetPage) void basicTableRef.value?.restReload()
-  else void basicTableRef.value?.reloadTable()
-}
-
-async function load(resetPage = true): Promise<void> {
+async function load(): Promise<void> {
   selectedIds.value = []
+  basicTableRef.value?.clearSelection()
   await refetch()
-  await nextTick()
-  reloadList(resetPage)
 }
 
 watch(
   () => props.modelValue,
   (opened) => {
-    if (opened) void load(true)
+    if (opened) void load()
   },
 )
 
@@ -133,7 +119,7 @@ async function confirmBatchDelete(): Promise<void> {
   if (!result) return
   ElMessage.success(`已删除 ${result.removed} 条`)
   emit('changed')
-  await load(true)
+  await load()
 }
 
 const listToolbar = computed<ListToolbarConfig>(() => ({
@@ -162,17 +148,17 @@ defineExpose({ load })
       <BasicTable
         ref="basicTableRef"
         v-model:columns="columns"
-        :request="loadDataTable"
-        :pagination="true"
+        :data-source="tableRows"
+        :pagination="false"
+        virtualized
         :toolbar-config="{ refresh: true }"
         :loading="busy"
-        :has-default-request="false"
         stripe
         row-key="id"
         height="100%"
         empty-text="还没有执行记录"
         @selection-change="onSelectionChange"
-        @refresh="load(false)"
+        @refresh="load"
       >
         <template #toolbarButtons>
           <ListToolbar :config="listToolbar" />
@@ -221,7 +207,7 @@ defineExpose({ load })
 
 .runs-duration {
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.88em;
 }
 

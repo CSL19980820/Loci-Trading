@@ -1,35 +1,24 @@
 <script setup lang="ts">
 import type { LiveTapeItem } from '@/shared/api/quant'
+import { pct as fmtPct, price as fmtPrice } from '@/shared/lib/format'
 
 const props = defineProps<{
   indices: LiveTapeItem[]
-  bagPct: number | null
-  positionCount: number
   alertCount: number
   asOf: string
   sessionText: string
 }>()
 
-function fmtPct(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
-  const n = Number(value)
-  const sign = n > 0 ? '+' : ''
-  return `${sign}${n.toFixed(2)}%`
-}
 
 function tone(value: number | null | undefined): string {
   if (value == null || value === 0) return ''
   return value > 0 ? 'is-up' : 'is-down'
 }
 
-function fmtPrice(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
-  return Number(value).toFixed(2)
-}
 </script>
 
 <template>
-  <div class="pulse-strip" aria-label="指数与仓摘要">
+  <div class="pulse-strip" aria-label="指数与触价提醒">
     <div
       v-for="item in props.indices"
       :key="item.code || item.label"
@@ -41,14 +30,12 @@ function fmtPrice(value: number | null | undefined): string {
         <span :class="tone(item.pct)">{{ fmtPct(item.pct) }}</span>
       </div>
     </div>
-    <div class="pulse-strip__cell pulse-strip__cell--bag">
-      <span class="pulse-strip__k">我的仓 · {{ props.asOf || '—' }} · {{ props.sessionText }}</span>
+    <div class="pulse-strip__cell pulse-strip__cell--alerts">
+      <span class="pulse-strip__k">{{ props.asOf || '—' }} · {{ props.sessionText }}</span>
       <div class="pulse-strip__v">
-        <strong :class="tone(props.bagPct)">{{ fmtPct(props.bagPct) }}</strong>
-        <span class="pulse-strip__meta">{{ props.positionCount }} 只</span>
-        <RouterLink class="text-link" to="/ledger">
-          {{ props.alertCount > 0 ? `触价 ${props.alertCount} →` : '账本 →' }}
-        </RouterLink>
+        <strong :class="props.alertCount > 0 ? 'is-down' : ''">
+          {{ props.alertCount > 0 ? `触价 ${props.alertCount}` : '无触价' }}
+        </strong>
       </div>
     </div>
   </div>
@@ -79,7 +66,7 @@ function fmtPrice(value: number | null | undefined): string {
   border-left: none;
 }
 
-.pulse-strip__cell--bag {
+.pulse-strip__cell--alerts {
   flex: 1.3 1 160px;
 }
 
@@ -106,15 +93,11 @@ function fmtPrice(value: number | null | undefined): string {
   font-size: 0.78rem;
 }
 
-.pulse-strip__meta {
-  color: var(--mist);
-}
-
 .is-up {
-  color: var(--up, #c23b3b);
+  color: var(--up, #c41e3a);
 }
 
 .is-down {
-  color: var(--down, #1a8f5c);
+  color: var(--down, #0f6b5c);
 }
 </style>

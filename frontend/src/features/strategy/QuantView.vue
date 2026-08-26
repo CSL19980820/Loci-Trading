@@ -24,8 +24,18 @@ import JobsTab from '@/features/ops/components/JobsTab.vue'
 import QuantBacktestPanel from './components/QuantBacktestPanel.vue'
 import QuantSkillsPanel from './components/QuantSkillsPanel.vue'
 import QuantStrategiesPanel from './components/QuantStrategiesPanel.vue'
+import ResearchPanel from '@/features/research/ResearchPanel.vue'
+import PaperQuantPanel from '@/features/ops/components/PaperQuantPanel.vue'
 
-type WorkshopTab = 'engines' | 'skills' | 'sources' | 'jobs' | 'market' | 'backtest'
+type WorkshopTab =
+  | 'engines'
+  | 'skills'
+  | 'sources'
+  | 'jobs'
+  | 'market'
+  | 'backtest'
+  | 'research'
+  | 'paper'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,6 +48,8 @@ function parseTab(raw: unknown): WorkshopTab {
     || value === 'jobs'
     || value === 'market'
     || value === 'backtest'
+    || value === 'research'
+    || value === 'paper'
   ) {
     return value
   }
@@ -47,6 +59,8 @@ function parseTab(raw: unknown): WorkshopTab {
 const activeTab = ref<WorkshopTab>(parseTab(route.query.tab))
 /** 运维旧链接会带 view=interfaces 直落「按接口」 */
 const sourceView = computed(() => String(route.query.view || ''))
+/** 选股/行情等入口可通过 query 直接打开对应研究标的 */
+const researchCode = computed(() => String(route.query.code || '').trim())
 /** 数据源角标只数源家数，工具条数不参与统计 */
 const sourceCount = ref(0)
 const jobsEnabled = ref(0)
@@ -57,6 +71,8 @@ const workshopTabs = computed(() => [
   { name: 'jobs', label: '定时', badge: jobsEnabled.value || undefined },
   { name: 'market', label: '市场' },
   { name: 'backtest', label: '回测' },
+  { name: 'research', label: '研究' },
+  { name: 'paper', label: '纸面量化' },
 ])
 
 const strategies = ref<StrategyInfo[]>([])
@@ -178,7 +194,7 @@ onMounted(() => {
 
 <template>
   <div class="page-fill">
-    <PageBusy overlay :busy="busy && !coverage && !strategies.length && !skills.length" />
+    <PageBusy overlay :busy="activeTab !== 'research' && busy && !coverage && !strategies.length && !skills.length" />
     <el-alert
       v-if="unavailable"
       :title="unavailable"
@@ -216,7 +232,8 @@ onMounted(() => {
         />
       </div>
 
-      <div v-show="activeTab === 'skills'" class="page-pane">
+      <!-- 技能面板可能带刷新/轮询：v-if 离开 Tab 才卸载 -->
+      <div v-if="activeTab === 'skills'" class="page-pane">
         <QuantSkillsPanel
           :skills="skills"
           :loading="busy && !skills.length"
@@ -251,6 +268,15 @@ onMounted(() => {
           :loading="busy && !strategies.length"
         />
       </div>
+
+      <!-- 研究台有 job 轮询：v-if 离开 Tab 才停；勿用 v-show 常挂 -->
+      <div v-if="activeTab === 'research'" class="page-pane research-pane">
+        <ResearchPanel :initial-code="researchCode" />
+      </div>
+
+      <div v-show="activeTab === 'paper'" class="page-pane paper-pane">
+        <PaperQuantPanel />
+      </div>
     </div>
   </div>
 </template>
@@ -272,8 +298,15 @@ onMounted(() => {
 .market-pane,
 .sources-pane,
 .jobs-pane,
-.backtest-pane {
+.backtest-pane,
+.paper-pane {
   padding: 0 0.35rem 0;
+}
+.sources-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
 }
 .jobs-pane {
   display: flex;

@@ -19,6 +19,16 @@ from src.ledger.infrastructure.store_types import (
 )
 
 
+def _is_missing_object(exc: sqlite3.OperationalError) -> bool:
+    """极旧库还没建这张表/列，跳过即可。
+
+    其余 OperationalError（磁盘、锁、损坏）必须上抛：一次性数据迁移吞掉失败后
+    ``init_schema`` 照样把 schema_version 盖成最新，那条迁移就再也不会重跑了。
+    """
+    message = str(exc).lower()
+    return "no such table" in message or "no such column" in message
+
+
 class SchemaMixin:
     def _schema_is_current(self) -> bool:
         """meta 表已存在且版本一致时无需再跑 DDL。"""
@@ -32,7 +42,13 @@ class SchemaMixin:
 
     def init_schema(self) -> None:
         resolved = str(self.db_path.resolve())
-        if resolved in _SCHEMA_READY or self._schema_is_current():
+        current = self._schema_is_current()
+        if current and resolved in _SCHEMA_READY:
+            # 本进程已经补过 DDL。组合根按请求 new 一个 Store，在这里重跑建表/加列
+            # 只是白付几次 ALTER 异常构造，外加一次写事务提交——后者还会和同步
+            # 任务抢写锁。版本号一致 + 本进程已处理过，直接返回。
+            return
+        if current:
             # 当前版本只补结构迁移；候选事实的归一/回填属于一次性数据迁移，
             # 不能在普通打开账本时再次改写历史。
             self._run_migrations()
@@ -64,67 +80,6 @@ class SchemaMixin:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
-
-            CREATE TABLE IF NOT EXISTS holdings (
-                code TEXT PRIMARY KEY REFERENCES stocks(code),
-                name TEXT NOT NULL,
-                shares INTEGER NOT NULL CHECK (shares > 0),
-                cost REAL NOT NULL CHECK (cost >= 0),
-                updated_on TEXT NOT NULL,
-                note TEXT NOT NULL DEFAULT ''
-            );
-
-            CREATE TABLE IF NOT EXISTS position_events (
-                id TEXT PRIMARY KEY,
-                occurred_on TEXT NOT NULL,
-                code TEXT NOT NULL REFERENCES stocks(code),
-                name TEXT NOT NULL,
-                action TEXT NOT NULL CHECK (action IN ('OPENING', 'BUY', 'SELL')),
-                shares INTEGER NOT NULL CHECK (shares > 0),
-                price REAL NOT NULL CHECK (price >= 0),
-                shares_before INTEGER NOT NULL,
-                shares_after INTEGER NOT NULL,
-                cost_before REAL NOT NULL,
-                cost_after REAL NOT NULL,
-                realized_pnl REAL NOT NULL DEFAULT 0,
-                reason TEXT NOT NULL DEFAULT '',
-                source TEXT NOT NULL DEFAULT 'manual',
-                correlation_id TEXT NOT NULL DEFAULT '',
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_position_events_code_date
-                ON position_events(code, occurred_on, created_at);
-
-            CREATE TABLE IF NOT EXISTS ledger_write_receipts (
-                idempotency_key TEXT PRIMARY KEY,
-                request_json TEXT NOT NULL,
-                result_json TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS account_events (
-                id TEXT PRIMARY KEY,
-                occurred_on TEXT NOT NULL,
-                kind TEXT NOT NULL CHECK (kind IN ('CASHFLOW', 'REALIZED_PNL_IMPORT')),
-                amount REAL NOT NULL,
-                note TEXT NOT NULL DEFAULT '',
-                source TEXT NOT NULL DEFAULT 'manual',
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS account_snapshots (
-                id TEXT PRIMARY KEY,
-                occurred_on TEXT NOT NULL,
-                total_assets REAL NOT NULL CHECK (total_assets >= 0),
-                cash REAL,
-                note TEXT NOT NULL DEFAULT '',
-                source TEXT NOT NULL DEFAULT 'manual',
-                created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_account_snapshots_date
-                ON account_snapshots(occurred_on, created_at);
 
             CREATE TABLE IF NOT EXISTS candidate_reviews (
                 id TEXT PRIMARY KEY,
@@ -183,7 +138,10 @@ class SchemaMixin:
                 source TEXT NOT NULL DEFAULT 'manual',
                 created_at TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_reviews_entity ON reviews(entity_type, entity_id, reviewed_on);
+            -- 索引按真实查询建：9 处 reviews 查询没有一处约束 entity_type，
+            -- 旧的 (entity_type, entity_id, reviewed_on) 前导列吃不上，只剩写入开销。
+            CREATE INDEX IF NOT EXISTS idx_reviews_entity_id ON reviews(entity_id);
+            CREATE INDEX IF NOT EXISTS idx_reviews_tag ON reviews(strategy_tag, reviewed_on DESC);
 
             -- AI 判定记录：独立于量化选股，记录 AI 筛选结论。
             -- 不记录的话无法事后算 AI 的 alpha（AI 否决的那些天量化 top3 赚了多少）。
@@ -201,51 +159,6 @@ class SchemaMixin:
                 created_at   TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_ai_judgments_strategy ON ai_judgments(strategy_tag, occurred_on DESC);
-
-            -- 持仓周期跟踪：记录每个量化候选的 T+N 跟踪窗口。
-            -- status: active=追踪中 / closed=已关闭 / expired=到期
-            -- 关键用途：区分「还在持仓周期内」vs「周期已结束可以算收益了」，
-            --           避免拿一只还在追踪中的票计入当日复盘统计。
-            CREATE TABLE IF NOT EXISTS position_tracking (
-                id              TEXT PRIMARY KEY,
-                strategy_tag    TEXT NOT NULL,
-                pool_id         TEXT NOT NULL,
-                code            TEXT NOT NULL,
-                name            TEXT NOT NULL DEFAULT '',
-                tier            TEXT NOT NULL DEFAULT 'core',
-                signal_date     TEXT NOT NULL,
-                entry_date      TEXT NOT NULL,
-                hold_days       INTEGER NOT NULL DEFAULT 3,
-                exit_by_date    TEXT NOT NULL,
-                entry_price     REAL,
-                exit_price      REAL,
-                max_price       REAL,
-                min_price       REAL,
-                actual_return   REAL,
-                status          TEXT NOT NULL DEFAULT 'active'
-                                CHECK (status IN ('active','closed','expired')),
-                closed_reason   TEXT NOT NULL DEFAULT '',
-                created_at      TEXT NOT NULL,
-                updated_at      TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_pt_strategy ON position_tracking(strategy_tag, signal_date DESC);
-            CREATE INDEX IF NOT EXISTS idx_pt_status   ON position_tracking(status, exit_by_date);
-
-            -- 券商市值法当日盈亏（≠ 已实现盈亏）：今日市值+卖出 − 昨日市值−买入。
-            CREATE TABLE IF NOT EXISTS daily_pnl_ledger (
-                occurred_on TEXT PRIMARY KEY,
-                broker_pnl REAL NOT NULL,
-                market_pnl REAL,
-                gap REAL,
-                source TEXT NOT NULL DEFAULT 'market',
-                note TEXT NOT NULL DEFAULT '',
-                legs_json TEXT NOT NULL DEFAULT '[]',
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_daily_pnl_date
-                ON daily_pnl_ledger(occurred_on DESC);
             """
         )
         self._dedupe_candidate_reviews()
@@ -258,12 +171,28 @@ class SchemaMixin:
         self.conn.commit()
         _SCHEMA_READY.add(str(self.db_path.resolve()))
 
+    #: v10 下线的持仓/成交/账户七张表。已有库在 _run_migrations 里 DROP 掉。
+    #: 顺序无所谓：没有任何一张被其它保留表外键引用（引用方向都是 -> stocks）。
+    RETIRED_TABLES = (
+        "position_events",
+        "position_tracking",
+        "account_events",
+        "account_snapshots",
+        "daily_pnl_ledger",
+        "holdings",
+        "ledger_write_receipts",
+    )
+
     def _run_migrations(self) -> None:
-        """增量列迁移：对已有数据库补加新列。
+        """增量迁移：对已有库补加新列、补建新表，并清掉已下线的表。
 
         CREATE TABLE IF NOT EXISTS 对已存在的表什么都不做，
         所以新增的列必须用 ALTER TABLE ADD COLUMN 单独迁移。
         SQLite 的 ALTER TABLE 在列已存在时会报错，用 try/except 跳过。
+
+        注意：本方法只在 schema_version 与 SCHEMA_VERSION 不一致、或本进程首次打开
+        该库时才跑得到。所以**加 DDL 和删 DDL 都必须同步 bump SCHEMA_VERSION**
+        （见 store_types.SCHEMA_VERSION），否则已有库压根进不来这段。
         """
         migrations = [
             # v4: candidate_reviews 增加 tier 列
@@ -283,56 +212,16 @@ class SchemaMixin:
                 created_at   TEXT NOT NULL
             )""",
             "CREATE INDEX IF NOT EXISTS idx_ai_judgments_strategy ON ai_judgments(strategy_tag, occurred_on DESC)",
-            # v4: position_tracking 表补建
-            """CREATE TABLE IF NOT EXISTS position_tracking (
-                id              TEXT PRIMARY KEY,
-                strategy_tag    TEXT NOT NULL,
-                pool_id         TEXT NOT NULL,
-                code            TEXT NOT NULL,
-                name            TEXT NOT NULL DEFAULT '',
-                tier            TEXT NOT NULL DEFAULT 'core',
-                signal_date     TEXT NOT NULL,
-                entry_date      TEXT NOT NULL,
-                hold_days       INTEGER NOT NULL DEFAULT 3,
-                exit_by_date    TEXT NOT NULL,
-                entry_price     REAL,
-                exit_price      REAL,
-                max_price       REAL,
-                min_price       REAL,
-                actual_return   REAL,
-                status          TEXT NOT NULL DEFAULT 'active',
-                closed_reason   TEXT NOT NULL DEFAULT '',
-                created_at      TEXT NOT NULL,
-                updated_at      TEXT NOT NULL
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_pt_strategy ON position_tracking(strategy_tag, signal_date DESC)",
-            "CREATE INDEX IF NOT EXISTS idx_pt_status ON position_tracking(status, exit_by_date)",
-            # v5: 券商市值法当日盈亏账本
-            """CREATE TABLE IF NOT EXISTS daily_pnl_ledger (
-                occurred_on TEXT PRIMARY KEY,
-                broker_pnl REAL NOT NULL,
-                market_pnl REAL,
-                gap REAL,
-                source TEXT NOT NULL DEFAULT 'market',
-                note TEXT NOT NULL DEFAULT '',
-                legs_json TEXT NOT NULL DEFAULT '[]',
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )""",
-            "CREATE INDEX IF NOT EXISTS idx_daily_pnl_date ON daily_pnl_ledger(occurred_on DESC)",
             # v7: 公式战法运行可复现字段
             "ALTER TABLE candidate_reviews ADD COLUMN strategy_slug TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE candidate_reviews ADD COLUMN strategy_revision TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE candidate_reviews ADD COLUMN effective_params_json TEXT NOT NULL DEFAULT '{}'",
             "CREATE INDEX IF NOT EXISTS idx_candidates_strategy_slug ON candidate_reviews(strategy_slug, occurred_on DESC)",
-            # v9: 可重放的成交批次收据，避免 API / AI 重试重复记账
-            """CREATE TABLE IF NOT EXISTS ledger_write_receipts (
-                idempotency_key TEXT PRIMARY KEY,
-                request_json TEXT NOT NULL,
-                result_json TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )""",
+            # reviews 索引换成匹配实际查询的两条；旧的前导列 entity_type 无人约束。
+            # 索引是派生物，DROP 后由下面两条立即重建，不涉及账本事实。
+            "CREATE INDEX IF NOT EXISTS idx_reviews_entity_id ON reviews(entity_id)",
+            "CREATE INDEX IF NOT EXISTS idx_reviews_tag ON reviews(strategy_tag, reviewed_on DESC)",
+            "DROP INDEX IF EXISTS idx_reviews_entity",
         ]
         for sql in migrations:
             try:
@@ -342,6 +231,20 @@ class SchemaMixin:
                 if "duplicate column name" in message or "already exists" in message:
                     continue
                 raise
+        self._drop_retired_tables()
+
+    def _drop_retired_tables(self) -> None:
+        """v10：持仓/成交/账户下线，把这七张表从已有库里删掉。幂等。
+
+        用 DROP 而不是「建了不读」：留着的话旧代码路径还会往里写（position_tracking
+        就是这么变成只写孤儿的），备份体积和 review 指纹扫描也都还要为它买单。
+        索引随表一起消失，不必单独 DROP INDEX。
+
+        表名是本模块的字面量常量，不来自外部输入，f-string 拼进 DDL 没有注入面；
+        SQLite 的 DROP TABLE 也不接受参数占位符。
+        """
+        for table in self.RETIRED_TABLES:
+            self.conn.execute(f"DROP TABLE IF EXISTS {table}")
 
     def _retag_stale_screen_candidates(self) -> None:
         """把「隔日写入却标成真选」的 API 选股行改标为回填。幂等。
@@ -361,8 +264,9 @@ class SchemaMixin:
                       ) <> occurred_on
                 """
             )
-        except Exception:
-            pass
+        except sqlite3.OperationalError as exc:
+            if not _is_missing_object(exc):
+                raise
 
     def _normalize_candidate_vocab(self) -> None:
         """裁决/战法/时点/理由中文化归一。幂等。"""
@@ -370,7 +274,9 @@ class SchemaMixin:
             rows = self.conn.execute(
                 "SELECT id, decision, timing, reason, rule_version FROM candidate_reviews"
             ).fetchall()
-        except Exception:
+        except sqlite3.OperationalError as exc:
+            if not _is_missing_object(exc):
+                raise
             return
         for row in rows:
             new_decision = _normalize_decision(str(row["decision"]))
@@ -396,7 +302,9 @@ class SchemaMixin:
             )
         try:
             plan_rows = self.conn.execute("SELECT id, rule_version FROM plans").fetchall()
-        except Exception:
+        except sqlite3.OperationalError as exc:
+            if not _is_missing_object(exc):
+                raise
             plan_rows = []
         for row in plan_rows:
             new_rule = _normalize_rule_version(str(row["rule_version"]))
@@ -409,7 +317,9 @@ class SchemaMixin:
             review_rows = self.conn.execute(
                 "SELECT id, strategy_tag FROM reviews"
             ).fetchall()
-        except Exception:
+        except sqlite3.OperationalError as exc:
+            if not _is_missing_object(exc):
+                raise
             review_rows = []
         for row in review_rows:
             new_tag = _normalize_rule_version(str(row["strategy_tag"]))

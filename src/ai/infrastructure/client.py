@@ -52,6 +52,8 @@ class ChatMessage:
     tool_calls: list[ToolCall] = field(default_factory=list)
     #: tool 消息要指明回应的是哪一次调用
     tool_call_id: str = ""
+    #: 用户附图：data:image/...;base64,...（供多模态模型）
+    images: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -168,7 +170,7 @@ def chat(
 ) -> ChatResponse:
     """一次非流式对话。两种协议在这里被抹平成同一个返回结构。
 
-    thinking: off/low/medium/high。同供应商不同次调用可传不同模型与思考程度。
+    thinking: off/low/medium/high/xhigh/max。同供应商不同次调用可传不同模型与思考程度。
     tools 用各协议自己的 schema 格式（由 McpTool.to_*_schema 生成）。
     """
     if config.protocol == "anthropic":
@@ -180,11 +182,14 @@ def chat(
     )
 
 
+_THINKING_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
+
+
 def _normalize_thinking(thinking: str) -> str:
     level = (thinking or "").strip().lower()
     if level in ("", "off", "none", "false", "0"):
         return ""
-    if level in ("low", "medium", "high"):
+    if level in _THINKING_EFFORTS:
         return level
     return ""
 
@@ -203,12 +208,70 @@ def _apply_anthropic_thinking(
     level = _normalize_thinking(thinking)
     if not level:
         return max_tokens
-    budgets = {"low": 1024, "medium": 4096, "high": 10000}
+    budgets = {
+        "low": 1024,
+        "medium": 4096,
+        "high": 10000,
+        "xhigh": 16000,
+        "max": 32000,
+    }
     budget = budgets[level]
     body["thinking"] = {"type": "enabled", "budget_tokens": budget}
     # Anthropic 开启 thinking 时要求 temperature=1
     body["temperature"] = 1
     return max(max_tokens, budget + 1024)
+
+
+def parse_data_image(url: str) -> tuple[str, str] | None:
+    """解析 data:image/...;base64,... → (media_type, raw_base64)。"""
+    text = (url or "").strip()
+    if not text.lower().startswith("data:image/") or "," not in text:
+        return None
+    header, _, payload = text.partition(",")
+    if ";base64" not in header.lower() or not payload:
+        return None
+    media = header[5:].split(";", 1)[0].strip().lower()
+    if media == "image/jpg":
+        media = "image/jpeg"
+    if media not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+        return None
+    return media, payload
+
+
+# 域内旧调用点别名；application 应使用 parse_data_image。
+_parse_data_image = parse_data_image
+
+
+def _openai_content(message: ChatMessage) -> Any:
+    if not message.images:
+        return message.content
+    parts: list[dict[str, Any]] = []
+    if message.content:
+        parts.append({"type": "text", "text": message.content})
+    for url in message.images:
+        if _parse_data_image(url):
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+    return parts if parts else message.content
+
+
+def _anthropic_content(message: ChatMessage) -> Any:
+    if not message.images:
+        return message.content
+    blocks: list[dict[str, Any]] = []
+    if message.content:
+        blocks.append({"type": "text", "text": message.content})
+    for url in message.images:
+        parsed = _parse_data_image(url)
+        if not parsed:
+            continue
+        media, data = parsed
+        blocks.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media, "data": data},
+            }
+        )
+    return blocks if blocks else message.content
 
 
 def _openai_messages(messages: list[ChatMessage], system: str) -> list[dict[str, Any]]:
@@ -243,7 +306,7 @@ def _openai_messages(messages: list[ChatMessage], system: str) -> list[dict[str,
                 }
             )
         else:
-            out.append({"role": message.role, "content": message.content})
+            out.append({"role": message.role, "content": _openai_content(message)})
     return out
 
 
@@ -347,7 +410,7 @@ def _anthropic_messages(messages: list[ChatMessage]) -> list[dict[str, Any]]:
             )
             out.append({"role": "assistant", "content": blocks})
         else:
-            out.append({"role": message.role, "content": message.content})
+            out.append({"role": message.role, "content": _anthropic_content(message)})
     return out
 
 

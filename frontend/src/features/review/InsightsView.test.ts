@@ -10,8 +10,10 @@ vi.mock('@/features/review/composables/useHealthCheckup', () => ({
   useHealthCheckup: () => ({
     phase: ref('idle'), error: ref(''), report: ref(null), progress: ref(null),
     repairBusy: ref(''), score: ref(0), grade: ref(''), repairPlan: ref(null),
-    canOneClickRepair: ref(false), hasRepairableIssues: ref(false), subtitle: ref(''),
+    canOneClickRepair: ref(false), hasRepairableIssues: ref(false),
+    headline: ref('尚未体检'), subtitle: ref(''), idleSkeletonRows: ref([]),
     issueRows: ref([]), okRows: ref([]), pendingRows: ref([]), scan: vi.fn(), cancelScan: vi.fn(),
+    cancelRepair: vi.fn(),
     repairAll: vi.fn(), repairFinding: vi.fn(),
   }),
 }))

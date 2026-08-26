@@ -6,13 +6,14 @@
 ```json
 {
   "mcpServers": {
-    "wudao-a-stock": {
+    "wudao": {
       "url": "https://example.com/mcp",
       "headers": { "Authorization": "Bearer ${WUDAO_API_KEY}" },
       "proxy_url": "",
       "tools": [],
       "tools_synced_at": "",
       "disabled": false,
+      "expires_at": "2027-06-04",
       "note": ""
     }
   }
@@ -23,8 +24,6 @@
 """
 from __future__ import annotations
 
-import base64
-import binascii
 from copy import deepcopy
 from contextlib import contextmanager
 import json
@@ -34,12 +33,23 @@ from pathlib import Path
 import tempfile
 import threading
 import time
+from datetime import date
 from typing import Any
 
-from src.ai import CryptoError, decrypt_secret, encrypt_secret, mask_secret
+from src.ai import mask_secret
 from src.shared.paths import mcp_json_path
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+#: 悟道 / stock.quicktiny.cn 官方 MCP 端点（付费情报补充源）
+WUDAO_MCP_URL = "https://stock.quicktiny.cn/api/mcp"
+#: 与 Hermes Studio / Cursor 习惯一致，全仓只认这一条名。
+WUDAO_PRESET_NAME = "wudao"
+#: 旧配置键；读到时迁到 ``WUDAO_PRESET_NAME``，列表里不再单独出现。
+WUDAO_LEGACY_NAMES = frozenset({"wudao-a-stock", "wudao-mcp"})
+WUDAO_PRESET_NOTE = (
+    "悟道 A 股 · 涨停梯队/题材/龙虎榜/研报等；配额约 5000 次/天、50 次/分"
+)
 _MCP_JSON_LOCK_TIMEOUT_SECONDS = 5.0
 _MCP_JSON_STALE_LOCK_SECONDS = 60.0
 _MCP_JSON_THREAD_LOCK = threading.RLock()
@@ -176,6 +186,42 @@ def _servers_map(data: dict[str, Any]) -> dict[str, Any]:
     return servers if isinstance(servers, dict) else {}
 
 
+def migrate_wudao_server_name(path: Path | str | None = None) -> bool:
+    """把 ``wudao-a-stock`` / ``wudao-mcp`` 合并到唯一键 ``wudao``。
+
+    已有 ``wudao`` 时丢掉旧键（优先保留规范名下的配置）；只写盘一次。
+    """
+    target = _target_path(path)
+    with _mcp_json_write_lock(target):
+        data = load_mcp_json_raw(target)
+        servers = dict(_servers_map(data))
+        legacy_hits = [
+            name for name in list(servers) if str(name).strip() in WUDAO_LEGACY_NAMES
+        ]
+        if not legacy_hits:
+            return False
+        canonical = WUDAO_PRESET_NAME
+        if canonical not in servers:
+            # 旧键里挑一份最像「已配好」的迁过去
+            pick = legacy_hits[0]
+            for name in legacy_hits:
+                cfg = servers.get(name)
+                if isinstance(cfg, dict) and (
+                    cfg.get("encrypted_token") or cfg.get("headers") or cfg.get("tools")
+                ):
+                    pick = name
+                    break
+            cfg = servers.get(pick)
+            if isinstance(cfg, dict):
+                servers[canonical] = dict(cfg)
+        for name in legacy_hits:
+            servers.pop(name, None)
+        data["mcpServers"] = servers
+        data.pop("mcp_servers", None)
+        write_mcp_json(data, target)
+    return True
+
+
 def _extract_legacy_token(cfg: dict[str, Any]) -> str:
     headers = cfg.get("headers") or {}
     if isinstance(headers, dict):
@@ -196,33 +242,10 @@ def _extract_legacy_token(cfg: dict[str, Any]) -> str:
     return ""
 
 
-def _token_aad(name: str) -> str:
-    return f"mcp:{name}"
-
-
-def _encrypt_token(name: str, token: str) -> str:
-    try:
-        encrypted = encrypt_secret(token, aad=_token_aad(name))
-    except CryptoError as exc:
-        raise McpConfigError("MCP 凭据无法加密") from exc
-    return base64.b64encode(encrypted).decode("ascii")
-
-
-def _decrypt_token(name: str, payload: str) -> str:
-    try:
-        encrypted = base64.b64decode(payload.encode("ascii"), validate=True)
-        return decrypt_secret(encrypted, aad=_token_aad(name))
-    except (UnicodeError, ValueError, binascii.Error) as exc:
-        raise McpConfigError("MCP 凭据密文损坏") from exc
-    except CryptoError as exc:
-        raise McpConfigError("MCP 凭据无法解密") from exc
-
-
-def _extract_token(name: str, cfg: dict[str, Any], *, decrypt_secrets: bool) -> str:
-    encrypted = str(cfg.get("encrypted_token") or "").strip()
-    if encrypted:
-        return _decrypt_token(name, encrypted) if decrypt_secrets else ""
-    return _extract_legacy_token(cfg)
+def _extract_token(name: str, cfg: dict[str, Any], *, decrypt_secrets: bool = False) -> str:
+    """只读明文 token。``decrypt_secrets`` 保留兼容参数，已忽略。"""
+    _ = name, decrypt_secrets
+    return _extract_legacy_token(cfg).strip()
 
 
 def _mask_token(token: str) -> str:
@@ -231,7 +254,72 @@ def _mask_token(token: str) -> str:
     return mask_secret(token) if len(token) > 4 else "****"
 
 
+def _parse_expires_at(raw: Any) -> date | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _has_configured_token(name: str, cfg: dict[str, Any], *, decrypt_secrets: bool = False) -> bool:
+    _ = name, decrypt_secrets
+    plain = _extract_legacy_token(cfg).strip()
+    if plain and not _ENV_PATTERN.fullmatch(plain):
+        return True
+    headers = cfg.get("headers") if isinstance(cfg.get("headers"), dict) else {}
+    auth = next(
+        (
+            str(value)
+            for key, value in headers.items()
+            if str(key).casefold() == "authorization"
+        ),
+        "",
+    ).strip()
+    if not auth:
+        return False
+    expanded = _expand_env(auth)
+    if expanded.strip():
+        return True
+    for match in _ENV_PATTERN.finditer(auth):
+        if os.environ.get(match.group(1), "").strip():
+            return True
+    return False
+
+
+def assess_server_usability(
+    name: str,
+    cfg: dict[str, Any],
+    *,
+    decrypt_secrets: bool = False,
+) -> dict[str, Any]:
+    """判断 MCP server 是否应参与工具汇总 / 调用。
+
+    未配 Key、仅剩旧密文、已过期或显式停用时 ``usable=False``。
+    """
+    _ = decrypt_secrets
+    if cfg.get("disabled") is True:
+        return {"usable": False, "skip_reason": "已停用"}
+    plain = _extract_legacy_token(cfg).strip()
+    encrypted = str(cfg.get("encrypted_token") or "").strip()
+    if not plain and encrypted:
+        return {
+            "usable": False,
+            "skip_reason": "旧加密凭据已废弃，请重新录入 API Key",
+        }
+    if not _has_configured_token(name, cfg):
+        return {"usable": False, "skip_reason": "未配置 API Key"}
+    expires = _parse_expires_at(cfg.get("expires_at"))
+    if expires is not None and date.today() > expires:
+        return {"usable": False, "skip_reason": f"已于 {expires.isoformat()} 过期"}
+    return {"usable": True, "skip_reason": ""}
+
+
 def _set_token(cfg: dict[str, Any], name: str, token: str) -> None:
+    """写入 MCP API Key：明文 ``token``，并清掉旧 ``encrypted_token``。"""
+    _ = name
     headers = dict(cfg.get("headers") or {}) if isinstance(cfg.get("headers"), dict) else {}
     for key, value in list(headers.items()):
         if str(key).casefold() == "authorization" and str(value).casefold().startswith("bearer "):
@@ -240,12 +328,12 @@ def _set_token(cfg: dict[str, Any], name: str, token: str) -> None:
         cfg["headers"] = headers
     else:
         cfg.pop("headers", None)
-    cfg.pop("token", None)
+    cfg.pop("encrypted_token", None)
     if token:
-        cfg["encrypted_token"] = _encrypt_token(name, token)
+        cfg["token"] = token
         cfg["token_last4"] = _mask_token(token)
     else:
-        cfg.pop("encrypted_token", None)
+        cfg.pop("token", None)
         cfg.pop("token_last4", None)
 
 
@@ -255,13 +343,18 @@ def _row_from_cfg(
     url = str(cfg.get("url") or cfg.get("serverUrl") or "").strip().rstrip("/")
     token = _extract_token(name, cfg, decrypt_secrets=decrypt_secrets)
     headers = cfg.get("headers") if isinstance(cfg.get("headers"), dict) else {}
+    expires_at = str(cfg.get("expires_at") or "").strip()
+    usability = assess_server_usability(name, cfg, decrypt_secrets=decrypt_secrets)
     return {
         "id": f"JSON-{name}",
         "name": str(name),
         "url": url,
         "token": token,
         "token_last4": str(cfg.get("token_last4") or _mask_token(token)),
-        "has_token": bool(cfg.get("encrypted_token") or token or headers),
+        "has_token": _has_configured_token(name, cfg, decrypt_secrets=decrypt_secrets),
+        "expires_at": expires_at,
+        "is_usable": bool(usability["usable"]),
+        "skip_reason": str(usability["skip_reason"] or ""),
         "proxy_url": str(cfg.get("proxy_url") or cfg.get("proxy") or ""),
         "tools": cfg.get("tools") or [],
         "tools_synced_at": str(cfg.get("tools_synced_at") or ""),
@@ -293,10 +386,49 @@ def list_mcp_servers_from_json(
 def get_mcp_server_from_json(
     name_or_id: str, path: Path | str | None = None, *, decrypt_secrets: bool = False
 ) -> dict[str, Any] | None:
-    for row in list_mcp_servers_from_json(path, decrypt_secrets=decrypt_secrets):
-        if row["name"] == name_or_id or row["id"] == name_or_id:
+    key = str(name_or_id or "").strip()
+    rows = list_mcp_servers_from_json(path, decrypt_secrets=decrypt_secrets)
+    for row in rows:
+        if row["name"] == key or row["id"] == key:
             return row
+    # 悟道旧名 ↔ 规范名互认（迁移前读盘仍可用）
+    wudao_keys = {WUDAO_PRESET_NAME, *WUDAO_LEGACY_NAMES}
+    if key in wudao_keys:
+        for row in rows:
+            if row["name"] == WUDAO_PRESET_NAME:
+                return row
+        for row in rows:
+            if row["name"] in WUDAO_LEGACY_NAMES:
+                return row
     return None
+
+
+def migrate_encrypted_mcp_tokens(path: Path | str | None = None) -> int:
+    """丢掉旧 ``encrypted_token``（主密钥方案已废弃）；有明文则保留明文。
+
+    返回清理条数。无明文的 server 需在运维页重录 Key。
+    """
+    target = _target_path(path)
+    if not target.is_file():
+        return 0
+    changed = 0
+    with _mcp_json_write_lock(target):
+        data = load_mcp_json_raw(target)
+        servers = dict(_servers_map(data))
+        for name, raw_cfg in list(servers.items()):
+            if not isinstance(raw_cfg, dict):
+                continue
+            cfg = dict(raw_cfg)
+            if not str(cfg.get("encrypted_token") or "").strip():
+                continue
+            cfg.pop("encrypted_token", None)
+            servers[name] = cfg
+            changed += 1
+        if changed:
+            data["mcpServers"] = servers
+            data.pop("mcp_servers", None)
+            write_mcp_json(data, target)
+    return changed
 
 
 def upsert_mcp_server_json(
@@ -305,13 +437,14 @@ def upsert_mcp_server_json(
     url: str,
     token: str | None = None,
     proxy_url: str = "",
-    note: str = "",
+    note: str | None = None,
+    expires_at: str | None = None,
     tools: list[dict[str, Any]] | None = None,
     tools_synced_at: str = "",
     disabled: bool | None = None,
     path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """新增或更新一条 MCP server，写回 mcp.json。token=None 表示保留原 headers。"""
+    """新增或更新一条 MCP server，写回 mcp.json。token=None 表示保留原 Key。"""
     name = name.strip()
     target = _target_path(path)
     with _mcp_json_write_lock(target):
@@ -323,8 +456,17 @@ def upsert_mcp_server_json(
         cfg["url"] = url.strip().rstrip("/")
         if proxy_url or "proxy_url" in cfg:
             cfg["proxy_url"] = proxy_url
-        if note or "note" in cfg:
+        if note is not None:
             cfg["note"] = note
+        if expires_at is not None:
+            cleaned = expires_at.strip()
+            if cleaned:
+                parsed = _parse_expires_at(cleaned)
+                if parsed is None:
+                    raise McpConfigError("expires_at 必须是 YYYY-MM-DD 格式")
+                cfg["expires_at"] = parsed.isoformat()
+            else:
+                cfg.pop("expires_at", None)
         if tools is not None:
             cfg["tools"] = tools
         if tools_synced_at:
@@ -335,12 +477,16 @@ def upsert_mcp_server_json(
             else:
                 cfg.pop("disabled", None)
 
+        # token=None：保留已有明文；顺手丢掉旧密文残留。
         if token is not None:
             _set_token(cfg, name, token.strip())
-        elif "encrypted_token" not in cfg:
-            legacy_token = _extract_legacy_token(cfg)
-            if legacy_token and not _ENV_PATTERN.fullmatch(legacy_token):
-                _set_token(cfg, name, legacy_token)
+        else:
+            if str(cfg.get("encrypted_token") or "").strip():
+                cfg.pop("encrypted_token", None)
+            if not str(cfg.get("token") or "").strip():
+                legacy_token = _extract_legacy_token(cfg)
+                if legacy_token and not _ENV_PATTERN.fullmatch(legacy_token):
+                    _set_token(cfg, name, legacy_token)
 
         servers[name] = cfg
         data["mcpServers"] = servers

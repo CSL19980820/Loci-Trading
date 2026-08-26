@@ -46,17 +46,17 @@ def test_grant_is_bound_single_use_and_rejects_parameter_substitution(tmp_path: 
         session_id = store.create_session()
         message = "请明确记录 BUY 600000 100 股 10 元"
         run_id = store.create_run(session_id, user_message=message)
-        params = {"action": "BUY", "code": "600000", "shares": 100, "price": 10.0}
-        grant = store.issue_grant(session_id=session_id, run_id=run_id, user_message=message, action="ledger.record_trade", target="600000", parameters=params)
+        params = {"code": "600000", "decision": "观察", "reason": "等待确认"}
+        grant = store.issue_grant(session_id=session_id, run_id=run_id, user_message=message, action="ledger.upsert_candidate", target="600000", parameters=params)
 
         with pytest.raises(AssistantError, match="不匹配"):
-            store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.record_trade", target="600000", parameters={**params, "price": 11.0})
+            store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.upsert_candidate", target="600000", parameters={**params, "price": 11.0})
 
-        assert store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.record_trade", target="600000", parameters=params)
+        assert store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.upsert_candidate", target="600000", parameters=params)
         with pytest.raises(AssistantError, match="已使用"):
-            store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.record_trade", target="600000", parameters=params)
+            store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.upsert_candidate", target="600000", parameters=params)
         with pytest.raises(AssistantError, match="拒绝重复"):
-            store.issue_grant(session_id=session_id, run_id=run_id, user_message=message, action="ledger.record_trade", target="600000", parameters=params)
+            store.issue_grant(session_id=session_id, run_id=run_id, user_message=message, action="ledger.upsert_candidate", target="600000", parameters=params)
 
 
 def test_grant_failure_and_archived_session_preserve_auditable_terminal_state(tmp_path: Path) -> None:
@@ -67,11 +67,11 @@ def test_grant_failure_and_archived_session_preserve_auditable_terminal_state(tm
         params = {"action": "BUY", "code": "600000"}
         grant = store.issue_grant(
             session_id=session_id, run_id=run_id, user_message=message,
-            action="ledger.record_trade", target="600000", parameters=params,
+            action="ledger.upsert_candidate", target="600000", parameters=params,
         )
         store.consume_grant(
             grant_id=grant["id"], session_id=session_id, run_id=run_id,
-            user_message=message, action="ledger.record_trade", target="600000", parameters=params,
+            user_message=message, action="ledger.upsert_candidate", target="600000", parameters=params,
         )
         store.complete_grant(grant["id"], {"error": "api_key sk-secret"}, status="failed")
         store.finish_run(run_id, status="failed")
@@ -83,7 +83,8 @@ def test_grant_failure_and_archived_session_preserve_auditable_terminal_state(tm
         assert grant_row is not None
         assert grant_row["status"] == "failed"
         assert "sk-secret" not in grant_row["result_json"]
-        assert store.get_session(session_id)["status"] == "archived"
+        # 永久删除会话；授权审计行无 FK，予以保留
+        assert store.get_session(session_id) is None
         assert store.list_sessions() == []
 
 
@@ -92,11 +93,11 @@ def test_cancelled_run_cannot_consume_an_already_issued_grant(tmp_path: Path) ->
         session_id = store.create_session()
         message = "请明确记录 BUY 600000 100 股 10 元"
         run_id = store.create_run(session_id, user_message=message)
-        params = {"action": "BUY", "code": "600000", "shares": 100, "price": 10.0}
-        grant = store.issue_grant(session_id=session_id, run_id=run_id, user_message=message, action="ledger.record_trade", target="600000", parameters=params)
+        params = {"code": "600000", "decision": "观察", "reason": "等待确认"}
+        grant = store.issue_grant(session_id=session_id, run_id=run_id, user_message=message, action="ledger.upsert_candidate", target="600000", parameters=params)
         assert store.cancel_run(run_id)
         with pytest.raises(AssistantError, match="不匹配"):
-            store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.record_trade", target="600000", parameters=params)
+            store.consume_grant(grant_id=grant["id"], session_id=session_id, run_id=run_id, user_message=message, action="ledger.upsert_candidate", target="600000", parameters=params)
 
 
 def test_running_session_cannot_be_archived_or_deleted(tmp_path: Path) -> None:
@@ -152,6 +153,21 @@ def test_get_active_run_prefers_running_and_returns_waiting_user(tmp_path: Path)
         assert store.get_active_run(session_id)["id"] == waiting_id
         store.resolve_waiting_session(session_id)
         assert store.get_active_run(session_id) is None
+
+
+def test_append_event_returns_without_poll_roundtrip(tmp_path: Path) -> None:
+    """append_event 事务内构造返回值，字段与 poll_events/_event 一致。"""
+    with AssistantStore(tmp_path / "ops.db") as store:
+        session_id = store.create_session()
+        run_id = store.create_run(session_id, user_message="流式")
+        returned = store.append_event(run_id, "token", {"delta": "你好"})
+        polled = store.poll_events(run_id, after_seq=0, limit=1)[0]
+
+        assert set(returned) == {"id", "run_id", "seq", "event_type", "payload", "created_at"}
+        assert returned == polled
+        assert returned["event_type"] == "token"
+        assert returned["payload"] == {"delta": "你好"}
+        assert returned["seq"] == 1
 
 
 def test_monthly_token_usage_excludes_previous_month(tmp_path: Path) -> None:

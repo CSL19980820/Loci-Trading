@@ -62,7 +62,7 @@ defineProps<{
           <div
             class="seal-meter"
             :class="{ 'seal-meter--done': isDone, 'seal-meter--err': isError }"
-            aria-label="印鉴进度尺"
+            aria-label="同步进度"
           >
             <div class="seal-meter__track">
               <div

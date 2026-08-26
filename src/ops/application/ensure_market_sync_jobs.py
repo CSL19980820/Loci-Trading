@@ -7,7 +7,13 @@ from src.ops.infrastructure.store_helpers import MANAGED_SYNC_EOD, MANAGED_SYNC_
 
 #: 日终重刷默认点：收盘后、盘后选股（15:30）之前，保证选票吃到当日定稿 spot
 EOD_HOUR = 15
-EOD_MINUTE = 25
+EOD_MINUTE = 10
+
+#: 托管语义键：历史遗留配置不得覆盖。盘中增量一旦被写成 ``force=true``，
+#: 每 5 分钟就会把全市场历史重拉一遍（watermark 近窗增量彻底失效）。
+_MANAGED_KEYS = frozenset(
+    {"mode", "force", "with_factors", "refresh_instruments_daily"}
+)
 
 DEFAULT_MARKET_SYNC: dict[str, Any] = {
     "enabled_intraday": True,
@@ -42,8 +48,8 @@ def ensure_managed_market_sync_jobs(store: Any) -> dict[str, Any]:
         settings.get("eod_minute") if settings.get("eod_minute") is not None else EOD_MINUTE
     )
 
-    intraday_cron = f"*/{interval} 9-14 * * 1-5"
-    eod_cron = f"{eod_minute} {eod_hour} * * 1-5"
+    intraday_cron = f"*/{interval} 9-14 * * mon-fri"
+    eod_cron = f"{eod_minute} {eod_hour} * * mon-fri"
 
     created = 0
     updated = 0
@@ -56,6 +62,7 @@ def ensure_managed_market_sync_jobs(store: Any) -> dict[str, Any]:
                 "workers": workers,
                 "force": False,
                 "with_factors": True,
+                "refresh_instruments_daily": True,
                 "push_wecom": push,
             },
             bool(settings["enabled_intraday"]),
@@ -67,6 +74,7 @@ def ensure_managed_market_sync_jobs(store: Any) -> dict[str, Any]:
                 "mode": "today_refresh",
                 "workers": workers,
                 "refresh_instruments": False,
+                "refresh_instruments_daily": True,
                 "with_factors": True,
                 "push_wecom": push,
             },
@@ -86,8 +94,8 @@ def ensure_managed_market_sync_jobs(store: Any) -> dict[str, Any]:
         else:
             # 补齐 with_factors 等关键配置，但不强行改 enabled / cron（用户可能调过）
             prev = existing.get("config") if isinstance(existing.get("config"), dict) else {}
-            merged = {**config, **{k: v for k, v in prev.items() if k not in {"mode"}}}
-            merged["mode"] = config["mode"]
+            merged = {**config, **{k: v for k, v in prev.items() if k not in _MANAGED_KEYS}}
+            merged.update({k: v for k, v in config.items() if k in _MANAGED_KEYS})
             merged["with_factors"] = True
             store.update_job(existing["id"], config=merged)
             updated += 1

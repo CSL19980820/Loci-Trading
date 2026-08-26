@@ -9,10 +9,11 @@ index=交易日 / columns=股票代码）。绝大多数直接落在 pandas 的�
 """
 from __future__ import annotations
 
-from typing import TypeVar, Union
+from typing import Callable, TypeVar, Union
 
 import numpy as np
 import pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view
 
 #: 面板或单票。两者在本模块里走完全相同的代码路径。
 Frame = Union[pd.Series, pd.DataFrame]
@@ -71,16 +72,27 @@ def WMA(series: F, periods: int) -> F:
     """
     if periods <= 0:
         raise ValueError("WMA 的周期必须为正")
-    # rolling 传进来的窗口是"最旧在前、当期在末"，所以权重要递增排列。
+    # 滑动窗口的内存顺序是"最旧在前、当期在末"，所以权重要递增排列。
     # 写成 arange(periods, 0, -1) 会把最大权重压在最旧那根上——这正是
     # src/qianlong.py 辰星线曾经踩过的坑，别再踩第二次。
     weights = np.arange(1, periods + 1, dtype=float)
     weights /= weights.sum()
 
-    def _apply(window: np.ndarray) -> float:
-        return float(np.dot(window, weights))
-
-    return series.rolling(periods).apply(_apply, raw=True)
+    # 线性加权和就是一次卷积，没必要为每个窗口回调一次 Python。这里按
+    # 权重逐位累加平移后的整块矩阵：额外内存只有一份 (rows, cols)，
+    # 也不需要物化 sliding_window_view（见 _rolling_column_chunks 的说明）。
+    # NaN 会顺着加法自然传播，与 rolling 的 min_periods=N 语义一致：
+    # 窗口内只要有一个缺失值，结果就是 NaN。
+    matrix, single = _as_matrix(series)
+    rows, cols = matrix.shape
+    out = np.full((rows, cols), np.nan, dtype=float)
+    if rows >= periods:
+        span = rows - periods + 1
+        total = np.zeros((span, cols), dtype=float)
+        for offset, weight in enumerate(weights):
+            total += weight * matrix[offset : offset + span]
+        out[periods - 1 :] = total
+    return _like(series, out[:, 0] if single else out)
 
 
 def weighted_ref_sum(series: F, weights: dict[int, float], divisor: float) -> F:
@@ -151,12 +163,25 @@ def STD(series: F, periods: int) -> F:
 
 
 def AVEDEV(series: F, periods: int) -> F:
-    """AVEDEV(X, N)：N 周期平均绝对偏差，BOLL 的变体与 CCI 会用到。"""
+    """AVEDEV(X, N)：N 周期平均绝对偏差，BOLL 的变体与 CCI 会用到。
 
-    def _apply(window: np.ndarray) -> float:
-        return float(np.abs(window - window.mean()).mean())
+    平均绝对偏差没有可递推的分离形式（不像 MA/STD 能靠前缀和），只能真的
+    看整个窗口，所以这里按列分块取滑动窗口再整块规约，替掉原来"每个窗口
+    回调一次 Python"的 ``rolling.apply``。CCI 建在它上面，全市场扫描时
+    这一个函数就能吃掉大半时间。
 
-    return series.rolling(periods).apply(_apply, raw=True)
+    周期语义沿用 ``rolling`` 原样：N=0 全为空值，N<0 报错。
+    """
+    _require_rolling_periods(periods, "AVEDEV")
+    matrix, single = _as_matrix(series)
+
+    def _kernel(windows: np.ndarray) -> np.ndarray:
+        deviations = windows - windows.mean(axis=2, keepdims=True)
+        np.abs(deviations, out=deviations)
+        return deviations.mean(axis=2)
+
+    out = _rolling_column_chunks(matrix, periods, _kernel)
+    return _like(series, out[:, 0] if single else out)
 
 
 def COUNT(condition: F, periods: int) -> F:
@@ -267,24 +292,23 @@ def LLVBARS(series: F, periods: int) -> F:
 def _extreme_bars(series: F, periods: int, *, highest: bool) -> F:
     if periods <= 0:
         raise ValueError("HHVBARS/LLVBARS 的周期必须为正")
-    values = np.asarray(series, dtype=float)
-    single = values.ndim == 1
-    matrix = values[:, None] if single else values
-    rows, cols = matrix.shape
-    out = np.full((rows, cols), np.nan, dtype=float)
-    if rows >= periods:
-        from numpy.lib.stride_tricks import sliding_window_view
+    matrix, single = _as_matrix(series)
+    fill = -np.inf if highest else np.inf
+    pick = np.argmax if highest else np.argmin
 
-        windows = sliding_window_view(matrix, periods, axis=0)  # (rows-N+1, cols, N)
-        with np.errstate(invalid="ignore"):
-            picker = np.nanargmax if highest else np.nanargmin
-            allnan = np.all(np.isnan(windows), axis=2)
-            safe = np.where(np.isnan(windows), -np.inf if highest else np.inf, windows)
-            # 反转时间方向后，argmax/argmin 的位置就是“距当前”的周期数，
-            # 也自然选择了相同最值中最近的一根。
-            distance = picker(safe[..., ::-1], axis=2).astype(float)
-            distance[allnan] = np.nan
-        out[periods - 1 :] = distance
+    def _kernel(windows: np.ndarray) -> np.ndarray:
+        # 先反转时间方向：argmax/argmin 取到的下标就是"距当前"的周期数，
+        # 也自然选中相同最值里最近的一根（两者都返回首个命中位置）。
+        reversed_windows = windows[..., ::-1]
+        missing = np.isnan(reversed_windows)
+        # 缺失位填成 ±inf 后数组里已无 NaN，用 argmax/argmin 即可；
+        # nanargmax 会在内部再复制一份同样大小的数组。
+        safe = np.where(missing, fill, reversed_windows)
+        distance = pick(safe, axis=2).astype(float)
+        distance[missing.all(axis=2)] = np.nan
+        return distance
+
+    out = _rolling_column_chunks(matrix, periods, _kernel)
     return _like(series, out[:, 0] if single else out)
 
 
@@ -359,6 +383,52 @@ def _round_half_up(series: Frame, digits: int) -> Frame:
 # --------------------------------------------------------------------------
 # 内部工具
 # --------------------------------------------------------------------------
+
+#: 滑动窗口按列分块的宽度（只影响峰值内存与缓存命中，不影响结果）。
+#:
+#: ``sliding_window_view`` 本身零拷贝，但只要对它做一次 ``isnan`` / ``where``
+#: / 减法，(rows-N+1, cols, N) 就会被整块物化：250 天 × 5500 只 × N=60 是
+#: 约 1.5 GB，700 天更是 4.3 GB——而服务器可用内存只有 1.1 G
+#: （见 ``src/strategy/application/screener.py`` 的开头说明），这是 OOM 不是慢。
+#: 切成 256 列一批后峰值降到几十 MB 且与股票数无关；因为每批都装得进
+#: CPU 缓存，实测反而比一次性算更快。
+_COLUMN_CHUNK = 256
+
+
+def _as_matrix(series: Frame) -> tuple[np.ndarray, bool]:
+    """把单票/面板统一成二维矩阵，并告知是否需要在返回时降回一维。"""
+    values = np.asarray(series, dtype=float)
+    single = values.ndim == 1
+    return (values[:, None] if single else values), single
+
+
+def _require_rolling_periods(periods: int, name: str) -> None:
+    """复刻 ``rolling`` 的周期校验：负数报错，0 合法（结果全为空值）。"""
+    if periods < 0:
+        raise ValueError(f"{name} 的周期不能为负")
+
+
+def _rolling_column_chunks(
+    matrix: np.ndarray,
+    periods: int,
+    kernel: Callable[[np.ndarray], np.ndarray],
+) -> np.ndarray:
+    """按列分块地对滑动窗口调用 ``kernel``，返回与 ``matrix`` 同形的结果。
+
+    ``kernel`` 收到 ``(rows-N+1, chunk, N)`` 的窗口视图（时间轴在最后一维，
+    最旧在前），必须返回 ``(rows-N+1, chunk)``。不足 N 根的前 N-1 行留空值，
+    与 ``rolling`` 的 ``min_periods=N`` 一致。
+    """
+    rows, cols = matrix.shape
+    out = np.full((rows, cols), np.nan, dtype=float)
+    if periods <= 0 or rows < periods or cols == 0:
+        return out
+    for start in range(0, cols, _COLUMN_CHUNK):
+        stop = min(start + _COLUMN_CHUNK, cols)
+        windows = sliding_window_view(matrix[:, start:stop], periods, axis=0)
+        out[periods - 1 :, start:stop] = kernel(windows)
+    return out
+
 
 def _to_float_flags(condition: Frame) -> Frame:
     """把条件转成 0/1 浮点。

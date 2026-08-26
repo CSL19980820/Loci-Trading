@@ -1,22 +1,27 @@
-"""选路：探测 / 测速 / 竞速粘性。
+"""选路：探测 / 测速 / 多源协作合并与粘性。
 
-日常同步走 ``fetch_daily_routed``：先试粘性赢家，失败再并行竞速并钉住。
+日常同步走 ``fetch_daily_routed``：各启用源排队取数、全部结束后互补合并，
+再把合并主源钉成粘性赢家。粘性只提高合并优先序，不再「谁快谁赢、取消其余」。
 """
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-import threading
-import time
+from src.shared.clock import utc_now
+
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
+import os
 import inspect
-from typing import Sequence
+import time
+from typing import Any, Sequence
 
 import pandas as pd
 
+from src.market.infrastructure.adapters import circuit
 from src.market.infrastructure.adapters.base import AdapterError, MarketAdapter
 from src.market.infrastructure.adapters.registry import (
     adapters_for_lane,
     enabled_adapter_ids,
     get_adapter,
+    lane_disabled_provider_ids,
     lane_route_policy,
 )
 from src.market.infrastructure.adapters.types import (
@@ -32,166 +37,210 @@ from src.market.infrastructure.adapters.aux_router import (
     fetch_instruments_routed,
     fetch_minute_routed,
 )
-
-#: 粘性赢家存活时间（秒）。过期后下一次取数重新竞速。
-STICKY_TTL_SEC = 600.0
-
-_sticky_lock = threading.Lock()
-#: lane -> (adapter_id, expires_monotonic)
-_sticky: dict[str, tuple[str, float]] = {}
-
-_adapter_gate_lock = threading.Lock()
-_adapter_gates: dict[tuple[str, str], threading.Lock] = {}
-
-
-def _try_claim_adapter(lane: str, adapter_id: str) -> threading.Lock | None:
-    """同一 lane/源最多保留一个未结束的外部请求，避免慢源线程堆积。"""
-    key = (lane, adapter_id)
-    with _adapter_gate_lock:
-        gate = _adapter_gates.setdefault(key, threading.Lock())
-    return gate if gate.acquire(blocking=False) else None
+from src.market.infrastructure.adapters import router_live as _live_router
+from src.market.infrastructure.adapters.router_live import (
+    ADAPTER_CLAIM_WAIT_SEC,
+    STICKY_TTL_SEC,
+    _claim_adapter,
+    authoritative_order,
+    clear_sticky,
+    lane_authority,
+    peek_sticky,
+    pin_authority,
+    pin_sticky,
+)
+from src.shared.observability import (
+    metric as observation_metric,
+    span as observation_span,
+)
 
 
-def _release_gate_if_cancelled(
-    future: Future[object], gate: threading.Lock
+def _record_receipt(
+    receipt: list[dict[str, Any]] | None,
+    *,
+    source_id: str,
+    state: str,
+    rows: int | None = None,
+    fields: Sequence[str] = (),
+    error: str = "",
 ) -> None:
-    """释放尚未启动就被线程池取消的请求 gate。"""
-    if future.cancelled():
+    observation_metric(
+        "loci.market.provider.attempts",
+        labels={"component": "market", "operation": "route", "status": state},
+    )
+    if receipt is None:
+        return
+    receipt.append(
+        {
+            "source_id": source_id,
+            "state": state,
+            "checked_at": utc_now(),
+            "rows": rows,
+            "fields": [str(field) for field in fields],
+            "error": str(error)[:500],
+        }
+    )
+
+
+# 兼容既有测试与第三方扩展对 router 私有竞速钩子的 monkeypatch；实际实现
+# 保持在 router_live，粘性和 gate 状态也由它统一维护。
+_LIVE_QUOTE_PREFERRED: tuple[str, ...] = _live_router._LIVE_QUOTE_PREFERRED
+
+
+def _race_live_quotes(*args: Any, **kwargs: Any) -> tuple[list[dict], str]:
+    return _live_router._race_live_quotes(*args, **kwargs)
+
+
+from src.market.infrastructure.adapters.router_shared import _resolve_adapters
+
+
+from src.market.infrastructure.adapters.router_probe import (
+    PROBE_ADAPTER_TIMEOUT_SEC,
+    SPEEDTEST_TIMEOUT_SEC,
+    probe_lane,
+    speedtest_daily,
+)
+
+
+
+def _fetch_daily_queued(
+    adapter: MarketAdapter,
+    code: str,
+    instrument_type: str,
+    claim_wait_sec: float,
+    recent_bars: int | None = None,
+) -> tuple[str, pd.DataFrame | None, str, str]:
+    """排队领取本源门闩后拉取；不取消、不抢赢。
+
+    第四个返回值是结果类别：``ok`` / ``empty`` / ``failed`` / ``gate_timeout``。
+    「源答了但没这只票」（empty）与「源打不通」（failed）必须分开——熔断只认后者。
+    """
+    aid = adapter.meta.id
+    gate = _claim_adapter(LANE_HIST_DAILY, aid, timeout=claim_wait_sec)
+    if gate is None:
+        return aid, None, "等待来源空闲超时", "gate_timeout"
+    try:
+        with observation_span(
+            "market.provider.fetch",
+            source_id=aid,
+            labels={"component": "market", "operation": "fetch", "lane": LANE_HIST_DAILY},
+        ):
+            frame = (
+                adapter.fetch_daily(code, instrument_type=instrument_type)
+                if recent_bars is None
+                else adapter.fetch_daily_window(
+                    code, instrument_type=instrument_type, bars=recent_bars
+                )
+            )
+        if frame is None or frame.empty:
+            return aid, None, "空数据", "empty"
+        return aid, frame, "", "ok"
+    except Exception as exc:
+        return aid, None, f"{type(exc).__name__}: {exc}", "failed"
+    finally:
         gate.release()
 
 
-def clear_sticky(lane: str | None = None) -> None:
-    """测试 / 运维：清粘性。``None`` 清全部。"""
-    with _sticky_lock:
-        if lane is None:
-            _sticky.clear()
-        else:
-            _sticky.pop(lane, None)
+#: 交叉校验抽样：非抽中的票只打主源。多源协作合并是正确性手段，
+#: 但对每票每天都跑，成本是「启用源数」倍的全量请求——实测这正是
+#: 全市场同步 57 分钟里最大的一块。抽样保留信号，成本降一个量级。
+CROSS_CHECK_SAMPLE_EVERY = 50
+#: 环境变量覆盖；``0`` 或负数关闭抽样（全部只打主源）。
+_CROSS_CHECK_ENV = "LOCI_CROSS_CHECK_EVERY"
+#: 交叉校验这条路径的墙钟预算。抽中的票要等所有源跑完，而最慢的源（证券宝
+#: 实测 1.7~30s/票）会把整轮同步顶住：40 只票里抽中 1 只，那一只就吃掉
+#: 全部墙钟。超预算就用已经拿到的源合并，不足的记在回执里，不再干等。
+CROSS_CHECK_BUDGET_SEC = 8.0
 
 
-def peek_sticky(lane: str) -> str | None:
-    """未过期的粘性赢家；过期则清除并返回 None。"""
-    now = time.monotonic()
-    with _sticky_lock:
-        entry = _sticky.get(lane)
-        if not entry:
-            return None
-        adapter_id, expires = entry
-        if now >= expires:
-            _sticky.pop(lane, None)
-            return None
-        return adapter_id
+def cross_check_every() -> int:
+    raw = str(os.environ.get(_CROSS_CHECK_ENV) or "").strip()
+    if not raw:
+        return CROSS_CHECK_SAMPLE_EVERY
+    try:
+        return int(raw)
+    except ValueError:
+        return CROSS_CHECK_SAMPLE_EVERY
 
 
-def pin_sticky(lane: str, adapter_id: str, *, ttl_sec: float = STICKY_TTL_SEC) -> None:
-    with _sticky_lock:
-        _sticky[lane] = (adapter_id, time.monotonic() + max(0.0, ttl_sec))
+def should_cross_check(code: str, *, every: int | None = None) -> bool:
+    """这只票本轮要不要做多源交叉校验。
 
+    按代码取模而不是随机：同一只票的判定在多次同步间稳定，回执可复现，
+    不会今天说校验过、明天说没有。
+    """
+    step = cross_check_every() if every is None else int(every)
+    if step <= 0:
+        return False
+    if step == 1:
+        return True
+    digits = "".join(ch for ch in str(code) if ch.isdigit())
+    if not digits:
+        return True
+    return int(digits) % step == 0
 
-def _resolve_adapters(
-    lane: str, adapter_ids: Sequence[str] | None
-) -> list[MarketAdapter]:
-    if adapter_ids is None:
-        return adapters_for_lane(lane)
-    out: list[MarketAdapter] = []
-    for aid in adapter_ids:
-        adapter = get_adapter(aid)
-        if lane in adapter.meta.lanes:
-            out.append(adapter)
-    return out
-
-
-def probe_lane(
-    lane: str,
+def _fetch_daily_primary(
+    code: str,
+    adapters: list[MarketAdapter],
     *,
-    adapter_ids: Sequence[str] | None = None,
-    max_workers: int = 4,
-    code: str = "600519",
-) -> list[ProbeResult]:
-    """并行探测该 lane 下各 adapter。返回顺序与参与列表一致。"""
-    adapters = _resolve_adapters(lane, adapter_ids)
-    if not adapters:
-        return []
+    instrument_type: str,
+    claim_wait_sec: float,
+    recent_bars: int | None,
+    receipt: list[dict[str, Any]] | None,
+    errors: list[str],
+) -> tuple[pd.DataFrame, str]:
+    """按优先序试到第一个成功就返回；不并发、不合并。
 
-    def probe_adapter(adapter: MarketAdapter) -> ProbeResult:
-        # 第三方/旧自定义适配器可能仍是 probe(lane)；保留该扩展契约。
-        if "code" not in inspect.signature(adapter.probe).parameters:
-            return adapter.probe(lane)
-        return adapter.probe(lane, code=code)
-
-    results: dict[str, ProbeResult] = {}
-    workers = max(1, min(max_workers, len(adapters)))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(probe_adapter, adapter): adapter for adapter in adapters}
-        for future in as_completed(futures):
-            adapter = futures[future]
-            try:
-                results[adapter.meta.id] = future.result()
-            except Exception as exc:  # pragma: no cover - probe 自身应吞异常
-                results[adapter.meta.id] = ProbeResult(
-                    adapter_id=adapter.meta.id,
-                    lane=lane,
-                    ok=False,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-    return [results[a.meta.id] for a in adapters if a.meta.id in results]
-
-
-def _estimate_bytes(frame: pd.DataFrame) -> int:
-    """粗估载荷字节：行数 × 列数 × 8（浮点近似），仅用于比吞吐。"""
-    if frame is None or frame.empty:
-        return 0
-    return int(frame.shape[0] * frame.shape[1] * 8)
-
-
-def speedtest_daily(
-    code: str = "600519",
-    *,
-    instrument_type: str = "STOCK",
-    adapter_ids: Sequence[str] | None = None,
-    max_workers: int = 4,
-) -> list[SpeedTestResult]:
-    """对 hist_daily lane 各 adapter 拉全历史，记耗时与粗估吞吐。"""
-    adapters = _resolve_adapters(LANE_HIST_DAILY, adapter_ids)
-    if not adapters:
-        return []
-
-    def run_one(adapter: MarketAdapter) -> SpeedTestResult:
-        started = time.perf_counter()
+    主源是通达信二进制（单票 p50 约 28ms），一次命中就够；退化到这条路径
+    的代价远小于「每票都等最慢的源跑完」。未尝试的源在回执里明确记 skipped，
+    不能让人误读成「校验过且一致」。
+    """
+    for position, adapter in enumerate(adapters):
+        aid = adapter.meta.id
+        _record_receipt(receipt, source_id=aid, state="attempted")
         try:
-            frame = adapter.fetch_daily(code, instrument_type=instrument_type)
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            rows = int(len(frame)) if frame is not None else 0
-            bytes_est = _estimate_bytes(frame)
-            elapsed_s = max(elapsed_ms / 1000.0, 1e-9)
-            mb_per_s = (bytes_est / (1024 * 1024)) / elapsed_s
-            return SpeedTestResult(
-                adapter_id=adapter.meta.id,
-                code=code,
-                ok=True,
-                elapsed_ms=elapsed_ms,
-                rows=rows,
-                bytes_est=bytes_est,
-                mb_per_s=mb_per_s,
+            source_id, frame, error, kind = _fetch_daily_queued(
+                adapter, code, instrument_type, max(0.0, claim_wait_sec), recent_bars
             )
         except Exception as exc:
-            elapsed_ms = (time.perf_counter() - started) * 1000.0
-            return SpeedTestResult(
-                adapter_id=adapter.meta.id,
-                code=code,
-                ok=False,
-                elapsed_ms=elapsed_ms,
+            errors.append(f"{aid}: {type(exc).__name__}: {exc}")
+            circuit.record_failure(LANE_HIST_DAILY, aid)
+            _record_receipt(
+                receipt,
+                source_id=aid,
+                state="failed",
                 error=f"{type(exc).__name__}: {exc}",
             )
-
-    results: dict[str, SpeedTestResult] = {}
-    workers = max(1, min(max_workers, len(adapters)))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(run_one, adapter): adapter for adapter in adapters}
-        for future in as_completed(futures):
-            adapter = futures[future]
-            results[adapter.meta.id] = future.result()
-    return [results[a.meta.id] for a in adapters if a.meta.id in results]
+            continue
+        if kind != "ok" or frame is None or frame.empty:
+            message = error or "空数据"
+            errors.append(f"{source_id}: {message}")
+            if kind == "empty":
+                state = "empty"
+            else:
+                circuit.record_failure(LANE_HIST_DAILY, source_id)
+                state = "skipped" if kind == "gate_timeout" else "failed"
+            _record_receipt(receipt, source_id=source_id, state=state, error=message)
+            continue
+        circuit.record_success(LANE_HIST_DAILY, source_id)
+        _record_receipt(
+            receipt,
+            source_id=source_id,
+            state="selected",
+            rows=int(len(frame)),
+            fields=frame.columns,
+        )
+        for other in adapters[position + 1 :]:
+            _record_receipt(
+                receipt,
+                source_id=other.meta.id,
+                state="skipped",
+                error="主源命中，本轮未抽中交叉校验，该源未请求",
+            )
+        return frame, source_id
+    raise AdapterError(
+        f"{code} 全部 hist_daily 适配器失败 -> " + " | ".join(errors[-6:])
+    )
 
 
 def fetch_daily_best(
@@ -200,75 +249,135 @@ def fetch_daily_best(
     instrument_type: str = "STOCK",
     adapter_ids: Sequence[str] | None = None,
     max_workers: int = 4,
+    receipt: list[dict[str, Any]] | None = None,
+    claim_wait_sec: float = ADAPTER_CLAIM_WAIT_SEC,
+    recent_bars: int | None = None,
+    cross_check: bool = True,
 ) -> tuple[pd.DataFrame, str]:
-    """并行试拉 hist_daily，返回 (归一日线, 最快成功的 adapter_id)。
+    """拉取 hist_daily。
 
-    策略：所有候选同时 fetch；第一个成功完成的即胜出（其余 future 仍跑完
-    但不采用）。若全部失败，抛出汇总错误。
+    ``cross_check=True``（默认）走协作合并：各源排队取数，全部结束后互补合并。
+    冲突日按 ``adapter_ids`` 优先序，缺失日/空字段由后方源补齐。
+
+    ``cross_check=False`` 只打主源，第一个成功即返回。日常同步的绝大多数票走
+    这条：协作合并对每票都跑，单票成本是「启用源数」倍，而最慢的源（证券宝
+    实测 1.7~30s/票）会把整票拖到和它一样慢。抽样策略见 ``should_cross_check``。
+
+    ``recent_bars``：只要最近这么多根，用于日常增量；``None`` 为全历史。
     """
-    adapters = _resolve_adapters(LANE_HIST_DAILY, adapter_ids)
-    if not adapters:
+    from src.market.infrastructure.adapters.daily_merge import merge_daily_frames
+
+    resolved = _resolve_adapters(LANE_HIST_DAILY, adapter_ids)
+    if not resolved:
         raise AdapterError(f"没有可用的 hist_daily 适配器（code={code}）")
 
+    preferred = [adapter.meta.id for adapter in resolved]
     errors: list[str] = []
+    adapters: list[MarketAdapter] = []
+    for adapter in resolved:
+        if circuit.acquire(LANE_HIST_DAILY, adapter.meta.id):
+            adapters.append(adapter)
+            continue
+        cooldown = circuit.cooldown_remaining(LANE_HIST_DAILY, adapter.meta.id)
+        message = f"来源连续失败已熔断，{int(cooldown)}s 后自动重试"
+        errors.append(f"{adapter.meta.id}: {message}")
+        _record_receipt(
+            receipt, source_id=adapter.meta.id, state="skipped", error=message
+        )
+    if not adapters:
+        raise AdapterError(
+            f"{code} 所有 hist_daily 来源都在熔断冷却中 -> " + " | ".join(errors[-6:])
+        )
+
+    if not cross_check:
+        return _fetch_daily_primary(
+            code,
+            adapters,
+            instrument_type=instrument_type,
+            claim_wait_sec=claim_wait_sec,
+            recent_bars=recent_bars,
+            receipt=receipt,
+            errors=errors,
+        )
     workers = max(1, min(max_workers, len(adapters)))
+    successes: list[tuple[str, pd.DataFrame]] = []
+
     pool = ThreadPoolExecutor(max_workers=workers)
     try:
-        futures = {}
-        for adapter in adapters:
-            gate = _try_claim_adapter(LANE_HIST_DAILY, adapter.meta.id)
-            if gate is None:
-                errors.append(f"{adapter.meta.id}: 请求进行中")
-                continue
-            try:
-                future = pool.submit(
-                    _fetch_daily_claimed,
-                    adapter,
-                    gate,
-                    code,
-                    instrument_type,
-                )
-            except Exception:
-                gate.release()
-                raise
-            future.add_done_callback(
-                lambda completed, claimed=gate: _release_gate_if_cancelled(
-                    completed, claimed
-                )
-            )
-            futures[future] = adapter
+        futures = {
+            pool.submit(
+                _fetch_daily_queued,
+                adapter,
+                code,
+                instrument_type,
+                max(0.0, claim_wait_sec),
+                recent_bars,
+            ): adapter
+            for adapter in adapters
+        }
         for future in as_completed(futures):
             adapter = futures[future]
+            aid = adapter.meta.id
+            _record_receipt(receipt, source_id=aid, state="attempted")
             try:
-                frame = future.result()
-                if frame is None or frame.empty:
-                    errors.append(f"{adapter.meta.id}: 空数据")
-                    continue
-                # 取消尚未完成的任务（尽力而为；已在跑的不会真停）
-                for pending in futures:
-                    if pending is not future and not pending.done():
-                        pending.cancel()
-                return frame, adapter.meta.id
+                source_id, frame, error, kind = future.result()
             except Exception as exc:
-                errors.append(f"{adapter.meta.id}: {type(exc).__name__}: {exc}")
+                errors.append(f"{aid}: {type(exc).__name__}: {exc}")
+                circuit.record_failure(LANE_HIST_DAILY, aid)
+                _record_receipt(
+                    receipt,
+                    source_id=aid,
+                    state="failed",
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                continue
+            if kind != "ok" or frame is None or frame.empty:
+                message = error or "空数据"
+                errors.append(f"{source_id}: {message}")
+                if kind == "gate_timeout":
+                    circuit.record_failure(LANE_HIST_DAILY, source_id)
+                    state = "skipped"
+                elif kind == "empty":
+                    state = "empty"
+                else:
+                    circuit.record_failure(LANE_HIST_DAILY, source_id)
+                    state = "failed"
+                _record_receipt(receipt, source_id=source_id, state=state, error=message)
+                continue
+            circuit.record_success(LANE_HIST_DAILY, source_id)
+            successes.append((source_id, frame))
+    finally:
+        pool.shutdown(wait=True, cancel_futures=False)
+
+    if not successes:
         raise AdapterError(
             f"{code} 全部 hist_daily 适配器失败 -> " + " | ".join(errors[-6:])
         )
-    finally:
-        # 已启动的网络请求无法强制中断，但不能让慢源拖住最快成功结果。
-        pool.shutdown(wait=False, cancel_futures=True)
 
-
-def _fetch_daily_claimed(
-    adapter: MarketAdapter,
-    gate: threading.Lock,
-    code: str,
-    instrument_type: str,
-) -> pd.DataFrame:
     try:
-        return adapter.fetch_daily(code, instrument_type=instrument_type)
-    finally:
-        gate.release()
+        merged, primary, contributed = merge_daily_frames(
+            successes,
+            preferred_order=preferred,
+            estimated_fields={
+                adapter.meta.id: adapter.meta.estimated_fields
+                for adapter in adapters
+                if adapter.meta.estimated_fields
+            },
+        )
+    except ValueError as exc:
+        raise AdapterError(f"{code} 多源合并失败：{exc}") from exc
+
+    for source_id, frame in successes:
+        rows = int(contributed.get(source_id, 0))
+        _record_receipt(
+            receipt,
+            source_id=source_id,
+            state="selected" if source_id == primary else "succeeded",
+            rows=rows if rows else int(len(frame)),
+            fields=frame.columns,
+            error="" if source_id == primary else "协作合并：校验/补齐用",
+        )
+    return merged, primary
 
 
 def fetch_daily_routed(
@@ -278,66 +387,94 @@ def fetch_daily_routed(
     adapter_ids: Sequence[str] | None = None,
     max_workers: int = 4,
     sticky_ttl_sec: float = STICKY_TTL_SEC,
+    receipt: list[dict[str, Any]] | None = None,
+    recent_bars: int | None = None,
+    cross_check: bool | None = None,
 ) -> tuple[pd.DataFrame, str]:
-    """日常同步入口：粘性赢家优先，失败再竞速并钉住。
+    """日常同步入口：命中后钉住主源。
 
+    ``cross_check`` 为 None 时按 ``should_cross_check(code)`` 抽样决定——多数票
+    只打主源，抽中的票才做多源协作合并。粘性赢家只提高优先序。
     ``adapter_ids`` 为 None 时读 ``lane_providers`` 启用名单。
+    启用源全灭且用户关掉了其他日 K 源时，把关掉的源当最后回退（不钉粘性），
+    避免必需线路只剩单源时一次握手超时就整票失败。
     """
+    effective_cross_check = (
+        should_cross_check(code) if cross_check is None else bool(cross_check)
+    )
     ids = list(adapter_ids) if adapter_ids is not None else enabled_adapter_ids(LANE_HIST_DAILY)
     if not ids:
         raise AdapterError(f"没有启用的 hist_daily 适配器（code={code}）")
 
     policy = lane_route_policy(LANE_HIST_DAILY) if adapter_ids is None else None
     preferred = policy.get("provider_id") if policy else None
-    if policy and policy["mode"] == "manual" and policy["fallback"] and preferred in ids:
-        gate = _try_claim_adapter(LANE_HIST_DAILY, preferred)
-        try:
-            if gate is None:
-                raise AdapterError(f"{preferred}: 请求进行中")
-            frame = get_adapter(preferred).fetch_daily(code, instrument_type=instrument_type)
-            if frame is not None and not frame.empty:
-                pin_sticky(LANE_HIST_DAILY, preferred, ttl_sec=sticky_ttl_sec)
-                return frame, preferred
-        except Exception:
-            pass
-        finally:
-            if gate is not None:
-                gate.release()
-        # 手选源不可用才允许其他源竞速；下次仍先探手选源，不被 fallback sticky 覆盖。
-        fallback_ids = [adapter_id for adapter_id in ids if adapter_id != preferred]
-        if not fallback_ids:
-            raise AdapterError(f"手选 hist_daily 适配器失败且无回退源（code={code}）")
+    locked_single = False
+    if policy and policy["mode"] == "manual" and preferred in ids:
+        if not policy.get("fallback"):
+            order = [preferred]
+            locked_single = True
+        else:
+            order = [preferred] + [aid for aid in ids if aid != preferred]
+    else:
+        order = authoritative_order(LANE_HIST_DAILY, ids)
+
+    if pin_authority(LANE_HIST_DAILY, order):
+        # 权威源在位时不钉粘性：粘性的作用是「谁刚成功就先问谁」，
+        # 但权威源本来就排第一，再钉一次只会在它某次失败后把别人钉到它前面。
+        sticky_ttl_sec = 0.0
+
+    try:
         frame, winner = fetch_daily_best(
             code,
             instrument_type=instrument_type,
-            adapter_ids=fallback_ids,
+            adapter_ids=order,
             max_workers=max_workers,
+            receipt=receipt,
+            recent_bars=recent_bars,
+            cross_check=effective_cross_check,
         )
-        pin_sticky(LANE_HIST_DAILY, winner, ttl_sec=sticky_ttl_sec)
-        return frame, winner
-
-    pinned = peek_sticky(LANE_HIST_DAILY)
-    if pinned and pinned in ids:
-        gate = _try_claim_adapter(LANE_HIST_DAILY, pinned)
-        if gate is not None:
+    except AdapterError as exc:
+        if adapter_ids is not None:
+            raise
+        # 手选无回退：其余源根本没跑过，错误必须写清，不能让人以为整条线路挂了。
+        if locked_single:
+            raise AdapterError(
+                f"{exc}（历史日 K 已手动锁定「{preferred}」且未开失败回退，"
+                "其余数据源未尝试；可在运维「数据源」页打开失败回退或改回自动）"
+            ) from exc
+        parked = lane_disabled_provider_ids(LANE_HIST_DAILY)
+        if not parked:
+            raise
+        # 关开关 = 日常协同合并不用它们，不是「必需日 K 单源抖动就整票失败」。
+        for aid in parked:
             try:
-                frame = get_adapter(pinned).fetch_daily(
-                    code, instrument_type=instrument_type
+                frame, winner = fetch_daily_best(
+                    code,
+                    instrument_type=instrument_type,
+                    adapter_ids=[aid],
+                    max_workers=1,
+                    receipt=receipt,
+                    recent_bars=recent_bars,
                 )
-                if frame is not None and not frame.empty:
-                    return frame, pinned
-            except Exception:
-                clear_sticky(LANE_HIST_DAILY)
-            finally:
-                gate.release()
-
-    frame, winner = fetch_daily_best(
-        code,
-        instrument_type=instrument_type,
-        adapter_ids=ids,
-        max_workers=max_workers,
-    )
-    pin_sticky(LANE_HIST_DAILY, winner, ttl_sec=sticky_ttl_sec)
+            except AdapterError:
+                continue
+            _record_receipt(
+                receipt,
+                source_id=winner,
+                state="emergency",
+                rows=int(len(frame)),
+                fields=frame.columns,
+                error="启用源失败后回退到已关闭来源",
+            )
+            return frame, winner
+        raise AdapterError(
+            f"{exc}（历史日 K 只剩 {len(ids)} 个启用源；"
+            f"{'、'.join(parked)} 已关闭，最后回退仍失败）"
+        ) from exc
+    # 手选无回退时始终钉住手选源；其余钉合并主源。
+    pin_id = preferred if (policy and policy["mode"] == "manual" and preferred) else winner
+    if pin_id:
+        pin_sticky(LANE_HIST_DAILY, pin_id, ttl_sec=sticky_ttl_sec)
     return frame, winner
 
 
@@ -348,8 +485,10 @@ def fetch_spot_routed(
     batch_size: int = 400,
     adapter_ids: Sequence[str] | None = None,
     sticky_ttl_sec: float = STICKY_TTL_SEC,
+    claim_wait_sec: float = ADAPTER_CLAIM_WAIT_SEC,
+    receipt: list[dict[str, Any]] | None = None,
 ) -> tuple[pd.DataFrame, str]:
-    """批量现价：粘性赢家优先，失败再按启用顺序试。"""
+    """批量现价：粘性赢家优先，失败再按启用顺序试；源忙时排队等待，不立刻报『请求进行中』。"""
     ids = (
         list(adapter_ids)
         if adapter_ids is not None
@@ -359,147 +498,60 @@ def fetch_spot_routed(
         raise AdapterError("没有启用的 spot_batch 适配器")
 
     pinned = peek_sticky(LANE_SPOT_BATCH)
-    order = (
-        [pinned] + [aid for aid in ids if aid != pinned]
-        if pinned and pinned in ids
-        else list(ids)
-    )
+    # 权威源（通达信）领衔；它不在启用名单里才退回粘性排序。
+    order = authoritative_order(LANE_SPOT_BATCH, list(ids))
 
     errors: list[str] = []
     for aid in order:
-        gate = _try_claim_adapter(LANE_SPOT_BATCH, aid)
+        gate = _claim_adapter(LANE_SPOT_BATCH, aid, timeout=claim_wait_sec)
         if gate is None:
-            errors.append(f"{aid}: 请求进行中")
+            errors.append(f"{aid}: 等待来源空闲超时")
+            _record_receipt(
+                receipt, source_id=aid, state="skipped", error="等待来源空闲超时"
+            )
             if pinned == aid:
                 clear_sticky(LANE_SPOT_BATCH)
             continue
         try:
-            frame = get_adapter(aid).fetch_spot(
-                list(codes),
-                instrument_types=instrument_types,
-                batch_size=batch_size,
-            )
+            _record_receipt(receipt, source_id=aid, state="attempted")
+            with observation_span(
+                "market.provider.fetch",
+                source_id=aid,
+                labels={"component": "market", "operation": "fetch", "lane": LANE_SPOT_BATCH},
+            ):
+                frame = get_adapter(aid).fetch_spot(
+                    list(codes),
+                    instrument_types=instrument_types,
+                    batch_size=batch_size,
+                )
             if frame is not None and not frame.empty:
+                _record_receipt(
+                    receipt,
+                    source_id=aid,
+                    state="selected",
+                    rows=int(len(frame)),
+                    fields=frame.columns,
+                )
                 pin_sticky(LANE_SPOT_BATCH, aid, ttl_sec=sticky_ttl_sec)
                 return frame, aid
             errors.append(f"{aid}: 空数据")
+            _record_receipt(receipt, source_id=aid, state="empty", rows=0)
             if pinned == aid:
                 clear_sticky(LANE_SPOT_BATCH)
         except Exception as exc:
             errors.append(f"{aid}: {type(exc).__name__}: {exc}")
+            _record_receipt(
+                receipt,
+                source_id=aid,
+                state="failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             if pinned == aid:
                 clear_sticky(LANE_SPOT_BATCH)
         finally:
             gate.release()
 
-    raise AdapterError("现价全部失败 -> " + " | ".join(errors[-4:]))
-
-
-#: 顶栏/托盘 live 优先走按代码直连的源；东财全市场现价表慢且易 SSL 超时。
-_LIVE_QUOTE_PREFERRED: tuple[str, ...] = ("sina", "tencent")
-
-
-def _race_live_quotes(
-    adapter_ids: Sequence[str],
-    codes: list[str],
-    *,
-    instrument_types: dict[str, str] | None,
-    batch_size: int,
-) -> tuple[list[dict], str]:
-    """并行拉 live，第一个非空结果胜出。"""
-    if not adapter_ids:
-        raise AdapterError("没有可竞速的 live 适配器")
-    errors: list[str] = []
-    workers = max(1, min(4, len(adapter_ids)))
-    pool = ThreadPoolExecutor(max_workers=workers)
-    try:
-        futures = {}
-        for aid in adapter_ids:
-            gate = _try_claim_adapter(LANE_SPOT_BATCH, aid)
-            if gate is None:
-                errors.append(f"{aid}: 请求进行中")
-                continue
-            try:
-                future = pool.submit(
-                    _fetch_live_claimed,
-                    aid,
-                    gate,
-                    codes,
-                    instrument_types,
-                    batch_size,
-                )
-            except Exception:
-                gate.release()
-                raise
-            future.add_done_callback(
-                lambda completed, claimed=gate: _release_gate_if_cancelled(
-                    completed, claimed
-                )
-            )
-            futures[future] = aid
-        for future in as_completed(futures):
-            aid = futures[future]
-            try:
-                rows = future.result()
-                if rows:
-                    for pending in futures:
-                        if pending is not future and not pending.done():
-                            pending.cancel()
-                    return rows, aid
-                errors.append(f"{aid}: 空数据")
-            except Exception as exc:
-                errors.append(f"{aid}: {type(exc).__name__}: {exc}")
-        raise AdapterError("live 竞速失败 -> " + " | ".join(errors[-4:]))
-    finally:
-        # 已启动的适配器请求无法强制中断，但不能让慢源阻塞已完成的快源。
-        pool.shutdown(wait=False, cancel_futures=True)
-
-
-def _fetch_live_claimed(
-    adapter_id: str,
-    gate: threading.Lock,
-    codes: list[str],
-    instrument_types: dict[str, str] | None,
-    batch_size: int,
-) -> list[dict]:
-    try:
-        return get_adapter(adapter_id).fetch_live_quotes(
-            codes,
-            instrument_types=instrument_types,
-            batch_size=batch_size,
-        )
-    finally:
-        gate.release()
-
-
-def _fetch_live_quotes_in_configured_order(
-    adapter_ids: Sequence[str],
-    codes: list[str],
-    *,
-    instrument_types: dict[str, str] | None,
-    batch_size: int,
-) -> tuple[list[dict], str]:
-    """按配置顺序拉 live；手选源及其回退链不能参与竞速。"""
-    errors: list[str] = []
-    for aid in adapter_ids:
-        gate = _try_claim_adapter(LANE_SPOT_BATCH, aid)
-        if gate is None:
-            errors.append(f"{aid}: 请求进行中")
-            continue
-        try:
-            rows = get_adapter(aid).fetch_live_quotes(
-                codes,
-                instrument_types=instrument_types,
-                batch_size=batch_size,
-            )
-            if rows:
-                return rows, aid
-            errors.append(f"{aid}: 空数据")
-        except Exception as exc:
-            errors.append(f"{aid}: {type(exc).__name__}: {exc}")
-        finally:
-            gate.release()
-    raise AdapterError("live 行情全部失败 -> " + " | ".join(errors[-4:]))
+    raise AdapterError("当日现价暂时拉不到 -> " + " | ".join(errors[-4:]))
 
 
 def fetch_live_quotes_routed(
@@ -510,73 +562,15 @@ def fetch_live_quotes_routed(
     adapter_ids: Sequence[str] | None = None,
     sticky_ttl_sec: float = STICKY_TTL_SEC,
 ) -> tuple[list[dict], str]:
-    """顶栏/托盘富行情：先竞速 sina/tencent，再回落东财等全市场源。
-
-    东财 spot 要拉全表，冷启动常卡十几秒；托盘 urlopen 只有数秒超时，
-    若仍按注册表顺序先试东财，会稳定显示「行情暂不可用」而行情板（库内）正常。
-    """
-    ids = (
-        list(adapter_ids)
-        if adapter_ids is not None
-        else enabled_adapter_ids(LANE_SPOT_BATCH)
+    """兼容 facade：实现和共享状态集中在 ``router_live``。"""
+    return _live_router.fetch_live_quotes_routed(
+        codes,
+        instrument_types=instrument_types,
+        batch_size=batch_size,
+        adapter_ids=adapter_ids,
+        sticky_ttl_sec=sticky_ttl_sec,
+        _enabled_adapter_ids=enabled_adapter_ids,
+        _lane_route_policy=lane_route_policy,
+        _preferred_sources=_LIVE_QUOTE_PREFERRED,
+        _race_live=_race_live_quotes,
     )
-    if not ids:
-        raise AdapterError("没有启用的 spot_batch 适配器")
-
-    code_list = list(codes)
-    policy = lane_route_policy(LANE_SPOT_BATCH) if adapter_ids is None else None
-    selected = policy.get("provider_id") if policy else None
-    if policy and policy["mode"] == "manual" and selected in ids:
-        rows, winner = _fetch_live_quotes_in_configured_order(
-            ids,
-            code_list,
-            instrument_types=instrument_types,
-            batch_size=batch_size,
-        )
-        pin_sticky(LANE_SPOT_BATCH, winner, ttl_sec=sticky_ttl_sec)
-        return rows, winner
-
-    preferred = [aid for aid in _LIVE_QUOTE_PREFERRED if aid in ids]
-    others = [aid for aid in ids if aid not in preferred]
-    pinned = peek_sticky(LANE_SPOT_BATCH)
-    # 仅当粘性赢家本身是快源时前置；东财粘性不阻断 sina/tencent 竞速。
-    if pinned and pinned in preferred:
-        preferred = [pinned] + [aid for aid in preferred if aid != pinned]
-
-    errors: list[str] = []
-    if preferred:
-        try:
-            rows, winner = _race_live_quotes(
-                preferred,
-                code_list,
-                instrument_types=instrument_types,
-                batch_size=batch_size,
-            )
-            pin_sticky(LANE_SPOT_BATCH, winner, ttl_sec=sticky_ttl_sec)
-            return rows, winner
-        except AdapterError as exc:
-            errors.append(str(exc))
-            if pinned and pinned in preferred:
-                clear_sticky(LANE_SPOT_BATCH)
-
-    for aid in others:
-        gate = _try_claim_adapter(LANE_SPOT_BATCH, aid)
-        if gate is None:
-            errors.append(f"{aid}: 请求进行中")
-            continue
-        try:
-            rows = get_adapter(aid).fetch_live_quotes(
-                code_list,
-                instrument_types=instrument_types,
-                batch_size=batch_size,
-            )
-            if rows:
-                pin_sticky(LANE_SPOT_BATCH, aid, ttl_sec=sticky_ttl_sec)
-                return rows, aid
-            errors.append(f"{aid}: 空数据")
-        except Exception as exc:
-            errors.append(f"{aid}: {type(exc).__name__}: {exc}")
-        finally:
-            gate.release()
-
-    raise AdapterError("live 行情全部失败 -> " + " | ".join(errors[-4:]))

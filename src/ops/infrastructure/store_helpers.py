@@ -20,18 +20,34 @@ JOB_KINDS = (
     "skill",
     "notify",
     "outcome",
+    "hot_rebuild",
+    "data_quality",
+    "intel_fetch",
+    "skill_watch",
+    "alert_scan",
+    "strategy_monitor",
+    "paper_eod",
 )
 
 #: 行情同步托管任务名（运维「行情同步」面板 upsert，勿改名）
 MANAGED_SYNC_INTRADAY = "行情盘中增量"
 MANAGED_SYNC_EOD = "行情日终重刷"
 
+#: 行情热库重建托管任务名（全量重灌近 N 交易日滚动热读库，勿改名）
+MANAGED_HOT_REBUILD = "行情热库重建"
+
+#: 行情库数据体检托管任务名（只读体检、只报不改,勿改名）
+MANAGED_MARKET_QUALITY = "行情库体检"
+
 #: 候选 T+N 自动跟踪（选出后 5 个交易日内盘后重算）
 MANAGED_OUTCOME_TRACK = "候选T+N跟踪"
-MANAGED_OUTCOME_CRON = "45 15 * * 1-5"
+MANAGED_OUTCOME_CRON = "45 15 * * mon-fri"
+
+#: 运维库清理托管任务名（job_runs / leader_role_snapshots 保留窗，勿改名）
+MANAGED_PRUNE = "运维清理"
 
 #: 任务与执行状态。
-RUN_STATUSES = ("running", "success", "failed", "skipped")
+RUN_STATUSES = ("running", "success", "failed", "skipped", "cancelled", "timed_out")
 
 
 class OpsError(RuntimeError):

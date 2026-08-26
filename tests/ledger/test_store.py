@@ -29,102 +29,6 @@ class PalaceStoreTests(unittest.TestCase):
         self.assertEqual(normalize_decision("剔除"), "落选")
         self.assertEqual(normalize_decision("持仓"), "观察")
 
-    def test_positions_payload_batches_event_queries_and_keeps_lifecycle_semantics(
-        self,
-    ) -> None:
-        today = date.today()
-        code_a = "600001"
-        code_b = "600002"
-        self.store.record_trade(
-            action="OPENING",
-            code=code_a,
-            name="甲",
-            shares=100,
-            price=10,
-            occurred_on=today.isoformat(),
-        )
-        self.store.record_trade(
-            action="OPENING",
-            code=code_b,
-            name="乙",
-            shares=100,
-            price=10,
-            occurred_on=(today - timedelta(days=10)).isoformat(),
-        )
-        self.store.record_trade(
-            action="SELL",
-            code=code_b,
-            shares=100,
-            price=11,
-            occurred_on=(today - timedelta(days=5)).isoformat(),
-        )
-        self.store.record_trade(
-            action="OPENING",
-            code=code_b,
-            name="乙",
-            shares=50,
-            price=12,
-            occurred_on=(today - timedelta(days=2)).isoformat(),
-        )
-
-        statements: list[str] = []
-        self.store.conn.set_trace_callback(statements.append)
-        try:
-            payload = self.store.positions_payload()
-        finally:
-            self.store.conn.set_trace_callback(None)
-
-        by_code = {row["code"]: row for row in payload}
-        self.assertEqual(by_code[code_a]["today_buy_shares"], 100)
-        self.assertEqual(by_code[code_a]["available_shares"], 0)
-        self.assertEqual(by_code[code_a]["holding_days"], 0)
-        self.assertEqual(by_code[code_b]["today_buy_shares"], 0)
-        self.assertEqual(
-            by_code[code_b]["opened_on"], (today - timedelta(days=2)).isoformat()
-        )
-        event_selects = [
-            statement
-            for statement in statements
-            if "FROM position_events" in statement and statement.lstrip().startswith("SELECT")
-        ]
-        self.assertEqual(len(event_selects), 3)
-
-    def test_positions_payload_keeps_same_day_reopen_as_current_round_start(self) -> None:
-        code = "600003"
-        self.store.record_trade(
-            action="BUY",
-            code=code,
-            name="丙",
-            shares=100,
-            price=10,
-            occurred_on="2026-07-01",
-        )
-        self.store.record_trade(
-            action="SELL",
-            code=code,
-            shares=100,
-            price=11,
-            occurred_on="2026-07-02",
-        )
-        self.store.record_trade(
-            action="BUY",
-            code=code,
-            shares=50,
-            price=12,
-            occurred_on="2026-07-02",
-        )
-        self.store.record_trade(
-            action="BUY",
-            code=code,
-            shares=50,
-            price=13,
-            occurred_on="2026-07-03",
-        )
-
-        payload = self.store.positions_payload()
-
-        self.assertEqual(payload[0]["opened_on"], "2026-07-02")
-
     def test_candidates_by_strategy_filters_by_rule_version(self) -> None:
         """按战法查历史选股，只返回匹配 rule_version 的记录。"""
         self.store.record_candidate(
@@ -345,8 +249,6 @@ class PalaceStoreTests(unittest.TestCase):
 
     def test_winrate_trend_groups_by_month(self) -> None:
         """胜率趋势按月聚合。"""
-        self.store.record_trade(action="BUY", code="000001", name="A", shares=100, price=10, occurred_on="2026-05-01")
-        self.store.record_trade(action="SELL", code="000001", shares=100, price=12, occurred_on="2026-05-02")
 
         review_id = self.store.record_review(
             entity_type="trade",
@@ -388,152 +290,9 @@ class PalaceStoreTests(unittest.TestCase):
         self.assertEqual(aa["total"], 2)
         self.assertEqual(aa["wins"], 1)
         self.assertAlmostEqual(aa["win_rate"], 50.0)
-        self.store.record_trade(action="BUY", code="300358", name="楚天科技", shares=100, price=10, occurred_on="2026-07-01")
-        self.store.record_trade(action="BUY", code="300358", shares=100, price=12, occurred_on="2026-07-02")
-        result = self.store.record_trade(action="SELL", code="300358", shares=50, price=10, occurred_on="2026-07-03")
 
-        position = self.store.list_positions()[0]
-        self.assertEqual(position.shares, 150)
-        self.assertAlmostEqual(position.cost, 11.333333, places=5)
-        self.assertEqual(result["realized_pnl"], -50.0)
-        self.assertEqual(self.store.realized_pnl(), -50.0)
-        self.assertIn("SELL 50股", self.store.timeline_markdown("300358"))
 
-    def test_rejects_sell_larger_than_position(self) -> None:
-        self.store.record_trade(action="BUY", code="300358", name="楚天科技", shares=100, price=10)
-        with self.assertRaises(PalaceError):
-            self.store.record_trade(action="SELL", code="300358", shares=101, price=10)
-
-    def test_concurrent_buys_cannot_both_pass_cash_check(self) -> None:
-        self.store.record_snapshot(total_assets=100, cash=100, occurred_on="2026-07-31")
-        barrier = threading.Barrier(2)
-        original_cash = PalaceStore.broker_cash
-
-        def gated_cash(store: PalaceStore) -> float | None:
-            available = original_cash(store)
-            # 旧实现的余额读取在事务外；让两个请求都拿到同一余额，稳定重现透支。
-            if not store.conn.in_transaction:
-                barrier.wait(timeout=5)
-            return available
-
-        def buy() -> bool:
-            try:
-                with PalaceStore(self.db) as store:
-                    store.record_trade(
-                        action="BUY",
-                        code="300358",
-                        shares=10,
-                        price=10,
-                        occurred_on="2026-07-31",
-                    )
-                return True
-            except PalaceError:
-                return False
-
-        with mock.patch.object(PalaceStore, "broker_cash", gated_cash):
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                outcomes = list(executor.map(lambda _: buy(), range(2)))
-
-        self.assertEqual(sum(outcomes), 1)
-        self.assertEqual(self.store.broker_cash(), 0.0)
-        self.assertEqual(self.store.list_positions()[0].shares, 10)
-
-    def test_dashboard_connects_candidate_plan_and_review(self) -> None:
-        self.store.record_trade(action="BUY", code="300358", name="楚天科技", shares=100, price=8.3)
-        self.store.record_snapshot(total_assets=206400, occurred_on="2026-07-24")
-        candidate_id = self.store.record_candidate(
-            code="300358", name="楚天科技", score=81, decision="重点", timing="D-low",
-            reason="记录回踩确认条件", occurred_on="2026-07-24", pool_id="POOL-2026-07-24",
-        )
-        plan_id = self.store.record_plan(
-            code="300358", title="首仓预案", scenario="回踩企稳", entry_zone="8.10-8.30",
-            stop_price=7.76, target_price=9.1, layers=1, invalidation="跌破结构位", occurred_on="2026-07-24",
-        )
-        self.store.record_review(
-            entity_type="candidate", entity_id=candidate_id, outcome="T+5 回看", return_pct=3.2,
-            lesson="等待回踩确认", next_rule="保留 D-low", reviewed_on="2026-07-29",
-        )
-        dashboard = self.store.dashboard_markdown("2026-07-24")
-        self.assertIn("POOL-2026-07-24", dashboard)
-        self.assertIn(plan_id, dashboard)
-        self.assertIn("3.20%", dashboard)
-
-    def test_imports_skill_state_once_as_opening_snapshot(self) -> None:
-        state_path = Path(self.temp.name) / "state.json"
-        state_path.write_text(
-            json.dumps(
-                {
-                    "updatedAt": "2026-07-24",
-                    "totalAssets": 206400,
-                    "realizedPnlCumulative": -11104,
-                    "holdings": [{"name": "楚天科技", "code": "300358", "cost": 8.3, "shares": 3200, "layers": 1.29}],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        result = self.store.import_qianlong_state(state_path)
-        self.assertEqual(len(result["position_events"]), 1)
-        self.assertEqual(self.store.list_positions()[0].shares, 3200)
-        self.assertEqual(self.store.realized_pnl(), -11104.0)
-        dashboard = self.store.dashboard_payload("2026-07-24")
-        self.assertIsNone(dashboard["account"]["today_realized_pnl"])
-        self.assertIn("累计盈亏基线", dashboard["account"]["today_realized_note"])
-        with self.assertRaises(PalaceError):
-            self.store.import_qianlong_state(state_path)
-
-    def test_preview_qianlong_state_without_writes(self) -> None:
-        payload = {
-            "updatedAt": "2026-07-24",
-            "totalAssets": 206400,
-            "realizedPnlCumulative": -11104,
-            "holdings": [{"name": "楚天科技", "code": "300358", "cost": 8.3, "shares": 3200, "note": "首仓"}],
-        }
-        preview = self.store.preview_qianlong_state(payload)
-        self.assertTrue(preview["can_import"])
-        self.assertEqual(preview["block_reason"], "")
-        self.assertEqual(preview["holdings_count"], 1)
-        self.assertEqual(preview["holdings"][0]["code"], "300358")
-        self.assertEqual(self.store.list_positions(), [])
-
-        self.store.import_qianlong_payload(payload, source_label="state.json")
-        blocked = self.store.preview_qianlong_state(payload)
-        self.assertFalse(blocked["can_import"])
-        self.assertIn("账本已有仓位事件", blocked["block_reason"])
-
-    def test_batch_trades_and_qianlong_import_rollback_all_facts_on_failure(self) -> None:
-        with self.assertRaises(PalaceError):
-            self.store.record_trades([
-                {"action": "BUY", "code": "600001", "shares": 100, "price": 10},
-                {"action": "SELL", "code": "600002", "shares": 100, "price": 10},
-            ])
-        self.assertEqual(self.store.trades_payload(), [])
-        self.assertEqual(self.store.positions_payload(), [])
-
-        payload = {
-            "updatedAt": "2026-07-24",
-            "totalAssets": 100000,
-            "holdings": [
-                {"code": "600001", "shares": 100, "cost": 10},
-                {"code": "600001", "shares": 100, "cost": 11},
-            ],
-        }
-        with self.assertRaises(PalaceError):
-            self.store.import_qianlong_payload(payload)
-        self.assertEqual(self.store.trades_payload(), [])
-        self.assertEqual(self.store.positions_payload(), [])
-        meta = self.store.conn.execute(
-            "SELECT value FROM meta WHERE key = 'qianlong_state_import'"
-        ).fetchone()
-        self.assertIsNone(meta)
-
-    def test_journal_pool_review_and_analytics_payloads(self) -> None:
-        self.store.record_trade(
-            action="BUY", code="300358", name="楚天科技", shares=100, price=8.3, occurred_on="2026-07-20"
-        )
-        self.store.record_trade(
-            action="SELL", code="300358", shares=40, price=8.8, occurred_on="2026-07-22", reason="减仓"
-        )
+    def test_journal_pool_and_review_payloads(self) -> None:
         self.store.record_candidate(
             code="300358", name="楚天科技", score=81, decision="重点", timing="D-low",
             reason="结构回踩", occurred_on="2026-07-24", pool_id="POOL-2026-07-24",
@@ -556,11 +315,6 @@ class PalaceStoreTests(unittest.TestCase):
             reviewed_on="2026-07-27",
         )
 
-        trades = self.store.trades_payload()
-        self.assertEqual(len(trades), 2)
-        self.assertEqual(trades[0]["action"], "SELL")
-        self.assertEqual(trades[0]["realized_pnl"], 20.0)
-
         pools = self.store.pool_dates_payload()
         self.assertEqual(pools[0]["total"], 3)
         self.assertEqual(pools[0]["selected"], 1)
@@ -573,11 +327,6 @@ class PalaceStoreTests(unittest.TestCase):
 
         reviews = self.store.reviews_payload()
         self.assertEqual(reviews[0]["lesson"], "观察池也要记失效条件")
-
-        analytics = self.store.analytics_payload()
-        self.assertGreaterEqual(len(analytics["equity_curve"]), 1)
-        self.assertEqual(analytics["equity_curve"][-1]["cumulative_pnl"], 20.0)
-        self.assertTrue(any(item["decision"] == "精选" for item in analytics["decisions"]))
 
 
 if __name__ == "__main__":

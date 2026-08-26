@@ -1,24 +1,29 @@
 akshare>=1.12.0
+# Independent A-share daily OHLCV source (Vibe-aligned baostock fallback slot).
+baostock>=0.8.8
 # TDX protocol fallback for historical minute bars when web sources are unavailable.
 tdxpy>=0.2.5
 pandas>=2.0.0
 numpy>=1.24.0
-scipy>=1.10.0
 # market 只读分析旁路（可关；不替代 palace/market SQLite 权威）
 duckdb>=1.0.0
-# 可选回测加速（LOCI_BACKTEST_FAST=1）；缺省仍走经典引擎
-vectorbt>=0.26.0
+# 可选 Polars 只读面板 POC（LOCI_MARKET_POLARS=1）；未安装时自动回退
+polars>=1.0.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
 httpx2>=2.9.0
+# 无处直接 import：starlette SessionMiddleware 运行时依赖它签会话 cookie，删了登录即挂
 itsdangerous>=2.2.0
+# 同理无处直接 import：UploadFile/File 路由（账本导入、技能包、战法包）在
+# create_app 注册路由时就要求 python-multipart，缺了 app 直接起不来。
+python-multipart>=0.0.20
 
 # 定时任务调度（进程内单例，不引入 broker）
 apscheduler>=3.10.0
 # 技能包 SKILL.md 的 YAML frontmatter
 PyYAML>=6.0
-# API Key 静态加密（AES-256-GCM）
-cryptography>=42.0.0
+# 分享包 AES 加密 zip（设置 → 一键打包）
+pyzipper>=0.3.6
 
 # 桌面窗口（Loci.exe / python loci.py）
 pywebview>=5.0

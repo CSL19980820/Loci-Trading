@@ -34,9 +34,21 @@ from pathlib import Path
 import sys
 import time
 
-from src.ops import JobContext, JobScheduler, OpsStore, install_skill, run_job, uninstall_skill
-from src.ops.application.skills import DEFAULT_SKILL_ROOT
-from src.ops.infrastructure.store import DEFAULT_DB, JOB_KINDS
+from src.ops import (
+    DEFAULT_DB,
+    DEFAULT_SKILL_ROOT,
+    JOB_KINDS,
+    JobContext,
+    JobScheduler,
+    OpsStore,
+    SkillError,
+    discover_skills,
+    install_skill,
+    run_job,
+    set_skill_enabled,
+    uninstall_skill,
+    validate_cron,
+)
 
 DISCLAIMER = "本工具仅用于信息整理与方法论辅助，输出不构成任何投资建议。"
 
@@ -64,17 +76,11 @@ def cmd_skill_install(args: argparse.Namespace) -> int:
           + (" ..." if len(package.files) > 6 else ""))
     if package.allowed_tools:
         print(f"  声明工具  {', '.join(package.allowed_tools)}")
-    if package.default_cron:
-        print(f"  建议调度  {package.default_cron}")
-        print(f"  挂上定时：python ops.py job add {package.slug}-定时 skill "
-              f"--cron \"{package.default_cron}\" "
-              f"--config '{{\"skill\":\"{package.slug}\",\"provider\":\"<供应商名>\"}}'")
+    print("  调度方式  请在系统的「技能配置」中设置")
     return 0
 
 
 def cmd_skill_list(args: argparse.Namespace) -> int:
-    from src.ops.application.skills import discover_skills
-
     skills = discover_skills()
     if not skills:
         print("尚未安装任何技能。安装方式：python ops.py skill install <zip>")
@@ -84,8 +90,6 @@ def cmd_skill_list(args: argparse.Namespace) -> int:
         flag = "" if skill.enabled else "  [已停用]"
         print(f"{skill.slug:<24} {skill.name} v{skill.version or '—'}{flag}")
         print(f"  {skill.description}")
-        if skill.default_cron:
-            print(f"  建议调度 {skill.default_cron}")
     return 0
 
 
@@ -99,8 +103,6 @@ def cmd_skill_remove(args: argparse.Namespace) -> int:
 
 
 def cmd_skill_toggle(args: argparse.Namespace) -> int:
-    from src.ops.application.skills import SkillError, set_skill_enabled
-
     try:
         set_skill_enabled(args.slug, args.enabled == "on")
     except SkillError as exc:
@@ -113,7 +115,7 @@ def cmd_skill_toggle(args: argparse.Namespace) -> int:
 # ---- LLM 供应商 -----------------------------------------------------
 
 def cmd_provider_add(args: argparse.Namespace) -> int:
-    from src.ai.infrastructure.providers import save_provider
+    from src.ai import save_provider
 
     with _store(args) as store:
         record = save_provider(
@@ -158,7 +160,7 @@ def cmd_provider_list(args: argparse.Namespace) -> int:
 
 
 def cmd_provider_models(args: argparse.Namespace) -> int:
-    from src.ai.infrastructure.providers import refresh_models
+    from src.ai import refresh_models
 
     with _store(args) as store:
         catalog = refresh_models(store, args.name)
@@ -183,24 +185,10 @@ def cmd_provider_remove(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_genkey(args: argparse.Namespace) -> int:
-    from src.ai.infrastructure.crypto import MASTER_KEY_ENV, generate_master_key
-
-    print(f"{MASTER_KEY_ENV}={generate_master_key()}")
-    print()
-    print(
-        "本机：重启 Loci 会自动写入 .palace_ai_master_key；"
-        "或把上一行写进环境变量 / .env。生产须进 docker-compose environment。",
-        file=sys.stderr,
-    )
-    return 0
-
-
-
 # ---- MCP server -----------------------------------------------------
 
 def cmd_mcp_add(args: argparse.Namespace) -> int:
-    from src.intel.infrastructure.registry import save_server
+    from src.intel import save_server
 
     record = save_server(
         name=args.name,
@@ -225,7 +213,7 @@ def cmd_mcp_add(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp_list(args: argparse.Namespace) -> int:
-    from src.intel.infrastructure.registry import list_effective_mcp_servers
+    from src.intel import list_effective_mcp_servers
 
     servers = list_effective_mcp_servers(active_only=False)
     if not servers:
@@ -240,7 +228,7 @@ def cmd_mcp_list(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp_tools(args: argparse.Namespace) -> int:
-    from src.intel.infrastructure.registry import refresh_tools
+    from src.intel import refresh_tools
 
     tools = refresh_tools(args.name)
     print(f"共 {len(tools)} 个工具：")
@@ -251,7 +239,7 @@ def cmd_mcp_tools(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp_call(args: argparse.Namespace) -> int:
-    from src.intel.infrastructure.registry import build_client
+    from src.intel import build_client
 
     payload = json.loads(args.args) if args.args else {}
     client = build_client(args.name)
@@ -263,7 +251,7 @@ def cmd_mcp_call(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp_remove(args: argparse.Namespace) -> int:
-    from src.intel.infrastructure.registry import delete_server
+    from src.intel import delete_server
 
     if not delete_server(args.name):
         print(f"没有找到 MCP server：{args.name}", file=sys.stderr)
@@ -275,8 +263,6 @@ def cmd_mcp_remove(args: argparse.Namespace) -> int:
 # ---- 定时任务 -------------------------------------------------------
 
 def cmd_job_add(args: argparse.Namespace) -> int:
-    from src.ops.infrastructure.scheduler import validate_cron
-
     config = json.loads(args.config) if args.config else {}
     if args.cron:
         validate_cron(args.cron)  # 写错的 cron 当场报错，不留到不触发时才发现
@@ -435,9 +421,6 @@ def build_parser() -> argparse.ArgumentParser:
     premove = provider.add_parser("remove", help="删除供应商")
     premove.add_argument("name")
     premove.set_defaults(func=cmd_provider_remove)
-
-    sub.add_parser("genkey", help="生成 PALACE_AI_MASTER_KEY").set_defaults(func=cmd_genkey)
-
 
     mcp = sub.add_parser("mcp", help="外部 MCP 数据源").add_subparsers(dest="action", required=True)
     madd = mcp.add_parser("add", help="注册 MCP server（会当场握手并拉工具列表）")

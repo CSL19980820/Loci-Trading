@@ -7,14 +7,8 @@ import { getTimeline } from '@/shared/api/palace'
 import type { TimelineEvent } from '@/shared/types/palace'
 
 vi.mock('@/shared/api/palace', () => ({
-  createTrade: vi.fn(),
-  getAnalytics: vi.fn(),
-  getDashboard: vi.fn(),
-  getPoolDay: vi.fn(),
-  getPools: vi.fn(),
   getReviews: vi.fn(),
   getTimeline: vi.fn(),
-  getTrades: vi.fn(),
 }))
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {

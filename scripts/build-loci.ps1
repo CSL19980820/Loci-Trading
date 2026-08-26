@@ -1,4 +1,4 @@
-# Build portable Loci (onedir) and optionally deploy.
+﻿# Build portable Loci (onedir) and optionally deploy.
 # Usage:
 #   .\scripts\build-loci.ps1
 #   .\scripts\build-loci.ps1 -Mode frontend -DeployDir "E:\entertainment_software\Loci"
@@ -13,7 +13,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Set-Location $PSScriptRoot\..
+$ScriptRepoRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot\..").Path } else { (Get-Location).Path }
+Set-Location $ScriptRepoRoot
 
 if ($SrcOnly -and $Mode -ne "app") {
   throw "-SrcOnly only applies with -Mode app"
@@ -67,7 +68,7 @@ function Sync-Tree {
 
 function Deploy-Frontend {
   param([string]$TargetRoot)
-  $src = Join-Path (Get-Location) "frontend\dist"
+  $src = Join-Path $ScriptRepoRoot "frontend\dist"
   $dest = Join-Path $TargetRoot "_internal\frontend\dist"
   Write-Host "== sync frontend/dist -> $dest =="
   Sync-Tree -Source $src -Destination $dest
@@ -80,7 +81,8 @@ function Deploy-AppBits {
     [switch]$IncludeSrc,
     [switch]$IncludeAssets
   )
-  $localRoot = Join-Path (Get-Location) "Loci"
+  $repoRoot = if ($ScriptRepoRoot) { $ScriptRepoRoot } else { (Get-Location).Path }
+  $localRoot = Join-Path $repoRoot "Loci"
   $localInternal = Join-Path $localRoot "_internal"
 
   if ($IncludeExe) {
@@ -92,11 +94,11 @@ function Deploy-AppBits {
 
   if ($IncludeSrc) {
     # 必须以仓库 src 为准。本地 Loci\_internal\src 是上次 PyInstaller 快照，SrcOnly 时往往过期。
-    $srcFromRepo = Join-Path (Get-Location) "src"
+    $srcFromRepo = Join-Path $repoRoot "src"
     $srcFromBuild = Join-Path $localInternal "src"
-    if (Test-Path $srcFromRepo) {
+    if ($srcFromRepo -and (Test-Path -Path $srcFromRepo)) {
       $srcPath = $srcFromRepo
-    } elseif (Test-Path $srcFromBuild) {
+    } elseif ($srcFromBuild -and (Test-Path -Path $srcFromBuild)) {
       $srcPath = $srcFromBuild
       Write-Host "WARN: using bundled src (repo src missing): $srcPath"
     } else {
@@ -109,8 +111,8 @@ function Deploy-AppBits {
 
   if ($IncludeAssets) {
     $assetsFromBuild = Join-Path $localInternal "assets"
-    $assetsFromRepo = Join-Path (Get-Location) "assets"
-    $assetsPath = if (Test-Path $assetsFromBuild) { $assetsFromBuild } else { $assetsFromRepo }
+    $assetsFromRepo = Join-Path $repoRoot "assets"
+    $assetsPath = if ($assetsFromBuild -and (Test-Path $assetsFromBuild)) { $assetsFromBuild } else { $assetsFromRepo }
     $dest = Join-Path $TargetRoot "_internal\assets"
     Write-Host "== sync assets -> $dest =="
     Sync-Tree -Source $assetsPath -Destination $dest
@@ -118,13 +120,13 @@ function Deploy-AppBits {
 
   # akshare 静态资源（calendar.json 等）；缺了交易所列表会炸
   $akFromBuild = Join-Path $localInternal "akshare"
-  if (Test-Path $akFromBuild) {
+  if ($akFromBuild -and (Test-Path $akFromBuild)) {
     $akDest = Join-Path $TargetRoot "_internal\akshare"
     Write-Host "== sync akshare data -> $akDest =="
     Sync-Tree -Source $akFromBuild -Destination $akDest
   }
 
-  $readme = Join-Path (Get-Location) "使用说明.txt"
+  $readme = Join-Path $repoRoot "使用说明.txt"
   if (Test-Path $readme) {
     Copy-Item -Force $readme (Join-Path $TargetRoot "使用说明.txt")
   }

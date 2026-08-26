@@ -10,6 +10,7 @@ import {
 import { CanvasRenderer } from 'echarts/renderers'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { useChartTheme } from '@/shared/lib/useChartTheme'
 import { money } from '@/shared/lib/format'
 
 echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, DataZoomComponent, CanvasRenderer])
@@ -19,17 +20,23 @@ const props = defineProps<{
   values: number[]
   color?: string
   height?: number
+  /** money=金额；index=净值指数（如 1.0 起） */
+  formatMode?: 'money' | 'index'
   /** 叠在图上的角标文案，如「最大回撤 -3.2%」 */
   overlayText?: string
   overlayTone?: 'up' | 'down' | ''
 }>()
 
 const chartEl = ref<HTMLElement | null>(null)
+const { tokens } = useChartTheme()
 let chart: echarts.ECharts | null = null
 let resizeObs: ResizeObserver | null = null
 
-function fmtMoney(v: number): string {
+function fmtValue(v: number): string {
   if (!Number.isFinite(v)) return '—'
+  if (props.formatMode === 'index') {
+    return v.toFixed(3)
+  }
   const abs = Math.abs(v)
   if (abs >= 1e6) return `${(v / 1e4).toFixed(1)}万`
   return money(v)
@@ -46,7 +53,9 @@ function resolveChartColor(input: string | undefined, fallback: string): string 
 function buildOption(): echarts.EChartsCoreOption {
   const values = props.values
   const dates = props.dates
-  const color = resolveChartColor(props.color, '#16a34a')
+  // 兜底走 A 股涨色，而不是欧美绿涨口径
+  const t = tokens.value
+  const color = resolveChartColor(props.color, t.up)
   const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
   const showAllLabels = values.length > 0 && values.length <= 40
 
@@ -55,7 +64,7 @@ function buildOption(): echarts.EChartsCoreOption {
     grid: { left: 8, right: 16, top: 28, bottom: values.length > 40 ? 48 : 28, containLabel: true },
     tooltip: {
       trigger: 'axis',
-      valueFormatter: (v: unknown) => (typeof v === 'number' ? money(v) : String(v ?? '—')),
+      valueFormatter: (v: unknown) => (typeof v === 'number' ? fmtValue(v) : String(v ?? '—')),
     },
     dataZoom: values.length > 40
       ? [{ type: 'inside', start: 0, end: 100 }, { type: 'slider', height: 18, bottom: 4 }]
@@ -65,52 +74,55 @@ function buildOption(): echarts.EChartsCoreOption {
       data: dates,
       boundaryGap: false,
       axisLabel: {
-        color: '#8a8690',
+        color: t.mist,
         fontSize: 11,
+        fontFamily: t.mono,
         hideOverlap: true,
         formatter: (v: string) => (v.length >= 10 ? v.slice(5) : v),
       },
-      axisLine: { lineStyle: { color: '#ddd8e0' } },
+      axisLine: { lineStyle: { color: t.rule } },
     },
     yAxis: {
       type: 'value',
       scale: true,
       axisLabel: {
-        color: '#8a8690',
+        color: t.mist,
         fontSize: 11,
-        formatter: (v: number) => fmtMoney(v),
+        fontFamily: t.mono,
+        formatter: (v: number) => fmtValue(v),
       },
-      splitLine: { lineStyle: { color: '#eeeaf0', type: 'dashed' } },
+      splitLine: { lineStyle: { color: t.rule, type: 'dashed' } },
     },
     series: [
       {
         type: 'line',
-        name: '总资产',
+        name: props.formatMode === 'index' ? '诊断净值' : '总资产',
         data: values,
         smooth: 0.15,
         showSymbol: true,
         symbolSize: values.length <= 20 ? 8 : 5,
         lineStyle: { width: 2, color },
         itemStyle: { color },
-        areaStyle: { color: 'rgba(22, 163, 74, 0.10)' },
+        // 面积必须跟着线走：此前写死为绿色，账本盈利时是「红线罩着一片绿」
+        areaStyle: { color: `color-mix(in srgb, ${color} 12%, transparent)` },
         label: {
           show: showAllLabels,
           position: 'top',
           fontSize: 10,
-          color: '#5c5660',
-          formatter: (p: { value?: number | string }) => fmtMoney(Number(p.value)),
+          color: t.muted,
+          formatter: (p: { value?: number | string }) => fmtValue(Number(p.value)),
         },
         labelLayout: { hideOverlap: true },
         markLine: {
           silent: true,
           symbol: 'none',
           label: {
-            formatter: () => `均线 ${fmtMoney(avg)}`,
+            formatter: () => `均线 ${fmtValue(avg)}`,
             position: 'insideEndTop',
-            color: '#8a8690',
+            color: t.mist,
             fontSize: 11,
           },
-          lineStyle: { type: 'dashed', color: '#a39aa8', width: 1 },
+          lineStyle: { type: 'dashed', color: t.mist, width: 1 },
           data: [{ yAxis: avg }],
         },
       },
@@ -145,7 +157,11 @@ onBeforeUnmount(() => {
   chart = null
 })
 
-watch(() => [props.dates, props.values, props.color] as const, () => render(), { deep: true })
+watch(
+  () => [props.dates, props.values, props.color, props.formatMode, tokens.value] as const,
+  () => render(),
+  { deep: true },
+)
 </script>
 
 <template>

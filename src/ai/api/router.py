@@ -6,14 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from src.app.legacy.quant_common import (
-    AiJudgmentCreate,
-    ProviderCreate,
-    ProviderModelsUpdate,
-    missing_dependency,
-    ops_store,
-    palace_store,
-)
+from src.ai.api.schemas import AiJudgmentCreate, ProviderCreate, ProviderModelsUpdate
+from src.shared.api_deps import missing_dependency, ops_store, palace_store
 
 
 def build_ai_router(
@@ -40,7 +34,6 @@ def build_ai_router(
     @router.post("/api/providers", tags=["llm"], status_code=201)
     def save_provider_api(payload: ProviderCreate, _write: None = write_guard) -> dict[str, Any]:
         try:
-            from src.ai.infrastructure.crypto import CryptoError
             from src.ai.infrastructure.client import redact_text
             from src.ai.infrastructure.providers import save_provider
             from src.ops import OpsError
@@ -57,7 +50,7 @@ def build_ai_router(
                     discover_models=payload.discover_models,
                     is_default=payload.is_default,
                 )
-            except (OpsError, CryptoError) as exc:
+            except OpsError as exc:
                 raise HTTPException(
                     status_code=422,
                     detail=redact_text(str(exc), api_key=payload.api_key),
@@ -74,7 +67,6 @@ def build_ai_router(
     @router.post("/api/providers/{name}/models", tags=["llm"])
     def refresh_provider_models(name: str, _write: None = write_guard) -> dict[str, Any]:
         try:
-            from src.ai.infrastructure.crypto import CryptoError
             from src.ai.infrastructure.client import redact_text
             from src.ai.infrastructure.providers import refresh_models
             from src.ops import OpsError
@@ -84,7 +76,7 @@ def build_ai_router(
             try:
                 catalog = refresh_models(store, name)
                 record = store.get_provider(name)
-            except (OpsError, CryptoError) as exc:
+            except OpsError as exc:
                 raise HTTPException(status_code=422, detail=redact_text(str(exc))) from exc
         return {
             "models": (record or {}).get("models", []),
@@ -120,7 +112,6 @@ def build_ai_router(
         try:
             from src.ai import resolve_config
             from src.ai.infrastructure.client import LLMError, redact_text, validate
-            from src.ai.infrastructure.crypto import CryptoError
             from src.ops import OpsError
         except ImportError as exc:
             raise missing_dependency(exc) from exc
@@ -129,8 +120,6 @@ def build_ai_router(
                 provider = resolve_config(store, name)
             except OpsError as exc:
                 raise HTTPException(status_code=404, detail=redact_text(str(exc))) from exc
-            except CryptoError as exc:
-                raise HTTPException(status_code=422, detail=redact_text(str(exc))) from exc
         started = time.monotonic()
         try:
             response = validate(provider)

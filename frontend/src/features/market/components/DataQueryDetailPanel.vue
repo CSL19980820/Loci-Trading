@@ -11,11 +11,13 @@ import KlineChart, {
 } from '@/shared/components/charts/KlineChart.vue'
 import {
   DEFAULT_MA_PERIODS,
+  KLINE_GRID_TOPS,
   MA_LINE_COLORS,
   normalizeMaPeriods,
   type IndicatorKind,
   type KlineHoverPayload,
 } from '@/shared/lib/klineConfig'
+import { compactNumber } from '@/shared/lib/format'
 import type { KPeriod } from '@/shared/lib/indicators'
 import type { QuoteSeries } from '@/shared/types/quant'
 
@@ -61,6 +63,12 @@ const minutePrevClose = ref<number | null>(null)
 
 const activeMas = computed(() => normalizeMaPeriods(maPeriods.value))
 
+/** 读数浮层与 ECharts grid 同源，改一处不会错位 */
+const gridTopVars = computed(() => ({
+  '--kline-vol-top': `${KLINE_GRID_TOPS.vol}%`,
+  '--kline-ind-top': `${KLINE_GRID_TOPS.ind}%`,
+}))
+
 function totalHint(): string {
   const q = props.quote
   if (!q) return ''
@@ -75,11 +83,7 @@ function fmtPx(v: unknown): string {
 }
 
 function fmtVol(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(1)}万`
-  return n.toFixed(0)
+  return compactNumber(v)
 }
 
 
@@ -248,7 +252,7 @@ watch(
       <span v-else class="tdx-ma-rail__empty">移动十字光标查看均线</span>
     </div>
 
-    <div class="tdx-chart-wrap">
+    <div class="tdx-chart-wrap" :style="gridTopVars">
       <PageBusy overlay :busy="busy" label="加载行情…" />
       <KlineChart
         v-if="quote"
@@ -324,240 +328,4 @@ watch(
   />
 </template>
 
-<style scoped>
-.tdx-desk {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-  background: var(--panel);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-}
-
-.tdx-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem 0.75rem;
-  padding: 0.4rem 0.65rem;
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel-2);
-}
-
-.tdx-back {
-  flex-shrink: 0;
-  font-size: 0.8rem;
-  padding: 0.1rem 0.2rem;
-}
-
-.tdx-id {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.55rem;
-  min-width: 0;
-}
-
-.tdx-name {
-  font-family: var(--font-display);
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.tdx-code {
-  color: var(--mist);
-  font-size: 0.82rem;
-}
-
-.tdx-last {
-  font-size: 1.15rem;
-  font-weight: 700;
-}
-
-.tdx-pct {
-  font-size: 0.88rem;
-  font-weight: 600;
-}
-
-.tdx-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  margin-left: auto;
-}
-
-.tdx-meta {
-  font-size: 0.7rem;
-  color: var(--mist);
-}
-
-.tdx-ma-rail {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.75rem;
-  padding: 0.22rem 0.65rem;
-  border-bottom: 1px solid var(--rule);
-  font-size: 0.72rem;
-  min-height: 1.45rem;
-}
-
-.tdx-ma-rail__item {
-  font-weight: 600;
-}
-
-.tdx-ma-rail__empty {
-  color: var(--mist);
-}
-
-.tdx-ma-pop__title {
-  margin: 0 0 0.25rem;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.tdx-ma-pop__hint {
-  margin: 0 0 0.55rem;
-  font-size: 0.72rem;
-  color: var(--mist);
-  line-height: 1.4;
-}
-
-.tdx-ma-pop__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  max-height: 220px;
-  overflow: auto;
-}
-
-.tdx-ma-pop__row {
-  display: grid;
-  grid-template-columns: 2.4rem 1fr auto;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.tdx-ma-pop__label {
-  font-size: 0.72rem;
-  color: var(--mist);
-}
-
-.tdx-ma-pop__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0.65rem;
-  justify-content: flex-end;
-}
-
-.tdx-chart-wrap {
-  position: relative;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 0.25rem 0.35rem 0.4rem;
-}
-
-.tdx-chart {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-
-.tdx-pane {
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem 0.65rem;
-  padding: 0.12rem 0.35rem 0.12rem 3.2rem;
-  pointer-events: none;
-  font-size: 0.72rem;
-  background: color-mix(in srgb, var(--panel) 82%, transparent);
-}
-
-.tdx-pane--vol {
-  top: 51%;
-}
-
-.tdx-pane--ind {
-  top: 68.5%;
-  pointer-events: none;
-}
-
-.tdx-pane__tag {
-  font-weight: 700;
-  color: var(--mist);
-}
-
-.tdx-pane__item {
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.is-vma5 {
-  color: #d97706;
-}
-
-.is-vma60 {
-  color: #2563eb;
-}
-
-.is-dif,
-.is-k {
-  color: #2563eb;
-}
-
-.is-dea,
-.is-d {
-  color: #d97706;
-}
-
-.is-macd,
-.is-j {
-  color: #c41e3a;
-}
-
-.tdx-hint {
-  position: absolute;
-  right: 0.55rem;
-  bottom: 0.35rem;
-  margin: 0;
-  font-size: 0.68rem;
-  pointer-events: none;
-  opacity: 0.75;
-}
-
-.tdx-ind-switch {
-  pointer-events: auto;
-  margin-right: 0.25rem;
-}
-
-.tdx-ind-switch :deep(.el-radio-button__inner) {
-  padding: 0.15rem 0.45rem;
-  font-size: 0.7rem;
-}
-
-.mono {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.is-up {
-  color: var(--up);
-}
-
-.is-down {
-  color: var(--down);
-}
-</style>
+<style scoped src="./DataQueryDetailPanel.css"></style>

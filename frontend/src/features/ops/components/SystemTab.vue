@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 
-import SettingsPanel from './SettingsPanel.vue'
+import { APP_RELEASED_AT, APP_VERSION } from '@/shared/lib/release'
+import SettingsPanel, { type ReceiptPair } from './SettingsPanel.vue'
 import SettingsSection from './SettingsSection.vue'
 import SysAppearanceSection from './SysAppearanceSection.vue'
 import SysLocationSection from './SysLocationSection.vue'
@@ -50,6 +51,11 @@ const {
   testWecom: runTestWecom,
   saveAll: persistAll,
 } = useSystemSettings()
+
+const versionReceipt = computed((): ReceiptPair[] => [
+  { key: '版本', value: `v${APP_VERSION}`, hint: APP_RELEASED_AT },
+  { key: '发布', value: APP_RELEASED_AT },
+])
 
 const footStatus = () => {
   if (footNotice.value) return footNotice.value
@@ -110,7 +116,7 @@ defineExpose({
 </script>
 
 <template>
-  <SettingsPanel title="系统">
+  <SettingsPanel title="系统" :receipt="versionReceipt">
     <div class="sys-stack">
       <SettingsSection
         title="数据目录"

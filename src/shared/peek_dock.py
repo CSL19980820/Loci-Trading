@@ -9,26 +9,32 @@ from __future__ import annotations
 import threading
 import time
 import traceback
-from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
 from src.shared.desktop_prefs import load_desktop_prefs, save_desktop_prefs
+from src.shared.peek_dock_geometry import (
+    GHOST_PEEK_LR,
+    GHOST_PEEK_TB,
+    PEEK_H,
+    PEEK_W,
+    SNAP_PX,
+    STICK_PX,
+    Edge,
+    Rect,
+    collapsed_bounds,
+    docked_bounds,
+    edge_distances,
+    nearest_snap_edge,
+    should_undock,
+    work_area_for_point,
+)
 from src.shared.webview_ui import hide_peek_from_taskbar, run_on_ui_thread
 
-Edge = Literal["left", "right", "top", "bottom"]
 Phase = Literal["free", "collapsed"]
 
-PEEK_W = 340
-PEEK_H = 340
-# collapsed 探头要够大才能拖；过小（22×28）几乎抓不住。
-GHOST_SIZE = 40
-GHOST_PEEK_LR = 36
-GHOST_PEEK_TB = 36
-SNAP_PX = 24
-# 移开鼠标时：仍在此距离内视为「贴边」，自动缩回
-STICK_PX = 48
-UNDOCK_PX = 40
 SNAP_DEBOUNCE_MS = 280
+# WebView2 在 hidden -> shown + resize 期间会合成一组 enter/leave；避免刚打开就缩回。
+POINTER_LEAVE_GRACE_SECONDS = 1.25
 
 LogFn = Callable[[str], None]
 
@@ -40,25 +46,15 @@ __all__ = [
     "PeekDockApi",
     "PeekDockController",
     "Rect",
+    "collapsed_bounds",
+    "docked_bounds",
+    "edge_distances",
     "hide_peek_from_taskbar",
+    "nearest_snap_edge",
     "run_on_ui_thread",
+    "should_undock",
+    "work_area_for_point",
 ]
-
-
-@dataclass(frozen=True)
-class Rect:
-    left: int
-    top: int
-    right: int
-    bottom: int
-
-    @property
-    def width(self) -> int:
-        return self.right - self.left
-
-    @property
-    def height(self) -> int:
-        return self.bottom - self.top
 
 
 def default_peek_prefs() -> dict[str, Any]:
@@ -105,129 +101,6 @@ def save_peek_prefs(
     return load_peek_prefs(root)
 
 
-def work_area_for_point(x: int, y: int) -> Rect:
-    """Windows 多屏工作区；其它平台退回主屏近似。"""
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        class MONITORINFO(ctypes.Structure):
-            _fields_ = [
-                ("cbSize", wintypes.DWORD),
-                ("rcMonitor", wintypes.RECT),
-                ("rcWork", wintypes.RECT),
-                ("dwFlags", wintypes.DWORD),
-            ]
-
-        user32 = ctypes.windll.user32
-        monitor = user32.MonitorFromPoint(
-            wintypes.POINT(int(x), int(y)),
-            2,  # MONITOR_DEFAULTTONEAREST
-        )
-        info = MONITORINFO()
-        info.cbSize = ctypes.sizeof(MONITORINFO)
-        if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
-            r = info.rcWork
-            return Rect(int(r.left), int(r.top), int(r.right), int(r.bottom))
-    except Exception:
-        pass
-    try:
-        import ctypes
-
-        user32 = ctypes.windll.user32
-        return Rect(0, 0, int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1)))
-    except Exception:
-        return Rect(0, 0, 1920, 1080)
-
-
-def edge_distances(work: Rect, x: int, y: int, w: int, h: int) -> dict[Edge, int]:
-    return {
-        "left": abs(x - work.left),
-        "right": abs((x + w) - work.right),
-        "top": abs(y - work.top),
-        "bottom": abs((y + h) - work.bottom),
-    }
-
-
-def nearest_snap_edge(
-    work: Rect, x: int, y: int, w: int, h: int, *, threshold: int = SNAP_PX
-) -> Edge | None:
-    """四角死区：同时贴近两边时不吸附，避免抢边。"""
-    d = edge_distances(work, x, y, w, h)
-    near = {edge: dist for edge, dist in d.items() if dist <= threshold}
-    if not near:
-        return None
-    lr = "left" in near or "right" in near
-    tb = "top" in near or "bottom" in near
-    if lr and tb:
-        return None
-    return min(near.items(), key=lambda item: item[1])[0]
-
-
-def clamp(value: int, lo: int, hi: int) -> int:
-    return max(lo, min(hi, value))
-
-
-def docked_bounds(work: Rect, edge: Edge, *, y_hint: int | None = None) -> tuple[int, int, int, int]:
-    """贴边时完整浮窗矩形 (x, y, w, h) —— 用于滑出/吸附对齐。"""
-    w, h = PEEK_W, PEEK_H
-    if edge == "right":
-        x = work.right - w
-        y = clamp(
-            y_hint if y_hint is not None else work.top + (work.height - h) // 2,
-            work.top,
-            work.bottom - h,
-        )
-    elif edge == "left":
-        x = work.left
-        y = clamp(
-            y_hint if y_hint is not None else work.top + (work.height - h) // 2,
-            work.top,
-            work.bottom - h,
-        )
-    elif edge == "top":
-        x = clamp(
-            y_hint if y_hint is not None else work.left + (work.width - w) // 2,
-            work.left,
-            work.right - w,
-        )
-        y = work.top
-    else:
-        x = clamp(
-            y_hint if y_hint is not None else work.left + (work.width - w) // 2,
-            work.left,
-            work.right - w,
-        )
-        y = work.bottom - h
-    return x, y, w, h
-
-
-def collapsed_bounds(work: Rect, edge: Edge, *, y_hint: int | None = None) -> tuple[int, int, int, int]:
-    """缩进探头矩形 (x, y, w, h)——小圆图标嵌边露出。"""
-    if edge in {"left", "right"}:
-        w, h = GHOST_PEEK_LR, GHOST_SIZE
-        y = clamp(
-            y_hint if y_hint is not None else work.top + (work.height - h) // 2,
-            work.top,
-            work.bottom - h,
-        )
-        x = work.right - w if edge == "right" else work.left
-    else:
-        w, h = GHOST_SIZE, GHOST_PEEK_TB
-        x = clamp(
-            y_hint if y_hint is not None else work.left + (work.width - w) // 2,
-            work.left,
-            work.right - w,
-        )
-        y = work.top if edge == "top" else work.bottom - h
-    return x, y, w, h
-
-
-def should_undock(work: Rect, edge: Edge, x: int, y: int, w: int, h: int) -> bool:
-    d = edge_distances(work, x, y, w, h)
-    return d[edge] > UNDOCK_PX
-
-
 class PeekDockController:
     """绑定 pywebview Window：仅 collapsed ↔ free。"""
 
@@ -239,7 +112,9 @@ class PeekDockController:
         self.y_hint: int | None = None
         self._programmatic = False
         self._snap_timer: threading.Timer | None = None
+        self._snap_generation = 0
         self._hidden = True
+        self._ignore_pointer_leave_until = 0.0
 
     def attach(self, window: Any) -> None:
         self.window = window
@@ -250,6 +125,9 @@ class PeekDockController:
         # 前端会画透明缩进壳填满 340² → 托盘打开只见白块。
         # 贴边缩进只在可见态 collapse() 时发生；托盘打开走 reveal → free。
         self.phase = "free"
+        self._log(
+            f"peek dock attached phase={self.phase} edge={self.edge} y={self.y_hint}"
+        )
         try:
             window.events.moved += self._on_moved
         except Exception:
@@ -260,6 +138,7 @@ class PeekDockController:
             self._log("peek dock: loaded hook failed\n" + traceback.format_exc())
 
     def _on_loaded(self) -> None:
+        self._log(f"peek loaded phase={self.phase} edge={self.edge}")
         self._push_phase()
         # SPA 挂载晚于 loaded：再推几次，避免前端卡在 collapsed 透明空白壳。
         self._schedule_phase_push_retries()
@@ -270,6 +149,8 @@ class PeekDockController:
             return
         self._cancel_snap()
         self._hidden = False
+        self._ignore_pointer_leave_until = time.monotonic() + POINTER_LEAVE_GRACE_SECONDS
+        self._log(f"peek show requested phase={self.phase} edge={self.edge}")
 
         def _show() -> None:
             win.show()
@@ -304,6 +185,8 @@ class PeekDockController:
     def hide(self) -> None:
         self._cancel_snap()
         self._hidden = True
+        self._ignore_pointer_leave_until = 0.0
+        self._log(f"peek hide requested phase={self.phase} edge={self.edge}")
         win = self.window
         if win is None:
             return
@@ -314,7 +197,9 @@ class PeekDockController:
 
     def pointer_enter(self) -> None:
         if self._hidden:
+            self._log("peek pointer_enter ignored hidden=true")
             return
+        self._log(f"peek pointer_enter phase={self.phase} edge={self.edge}")
         if self.phase == "collapsed":
             self.reveal()
 
@@ -322,13 +207,19 @@ class PeekDockController:
         """移开鼠标：仍贴边则缩回；已拖出范围则保持自由。"""
         if self._hidden or self.phase == "collapsed":
             return
-        if self._near_edge() is not None:
+        if time.monotonic() < self._ignore_pointer_leave_until:
+            self._log("peek pointer_leave ignored during show grace")
+            return
+        near = self._near_edge()
+        self._log(f"peek pointer_leave phase={self.phase} near={near}")
+        if near is not None:
             self.collapse()
 
     def request_close(self) -> None:
         self.hide()
 
     def _cancel_snap(self) -> None:
+        self._snap_generation += 1
         if self._snap_timer is not None:
             self._snap_timer.cancel()
             self._snap_timer = None
@@ -361,25 +252,32 @@ class PeekDockController:
         if self._programmatic or self._hidden:
             return
         self._cancel_snap()
+        generation = self._snap_generation
 
         def after_drag() -> None:
-            if self._programmatic or self._hidden:
+            if generation != self._snap_generation or self._programmatic or self._hidden:
                 return
-            self._resolve_after_drag()
+            self._resolve_after_drag(generation)
 
         self._snap_timer = threading.Timer(SNAP_DEBOUNCE_MS / 1000.0, after_drag)
         self._snap_timer.daemon = True
         self._snap_timer.start()
 
-    def _resolve_after_drag(self) -> None:
+    def _resolve_after_drag(self, generation: int | None = None) -> None:
+        if generation is not None and generation != self._snap_generation:
+            return
         box = self._window_box()
         if box is None:
+            return
+        if generation is not None and generation != self._snap_generation:
             return
         x, y, w, h = box
         work = work_area_for_point(x + w // 2, y + h // 2)
 
         if self.phase == "collapsed":
             if should_undock(work, self.edge, x, y, w, h):
+                if generation is not None and generation != self._snap_generation:
+                    return
                 self.phase = "free"
                 self._apply_geometry(x, y, PEEK_W, PEEK_H)
                 self._push_phase()
@@ -390,16 +288,31 @@ class PeekDockController:
 
         edge = nearest_snap_edge(work, x, y, w, h)
         if edge is None:
+            if generation is not None and generation != self._snap_generation:
+                return
             self.phase = "free"
             if w < PEEK_W or h < PEEK_H:
                 self._apply_geometry(x, y, PEEK_W, PEEK_H)
             self._push_phase()
             self._persist()
             return
-        self.snap_align(edge, y_hint=y if edge in {"left", "right"} else x)
+        self.snap_align(
+            edge,
+            y_hint=y if edge in {"left", "right"} else x,
+            _generation=generation,
+        )
 
-    def snap_align(self, edge: Edge, *, y_hint: int | None = None) -> None:
+    def snap_align(
+        self,
+        edge: Edge,
+        *,
+        y_hint: int | None = None,
+        _generation: int | None = None,
+    ) -> None:
         """贴边对齐，保持 free（完整浮窗）；移开鼠标才会缩。"""
+        if _generation is not None and _generation != self._snap_generation:
+            return
+        self._cancel_snap()
         self.edge = edge
         if y_hint is not None:
             self.y_hint = y_hint
@@ -416,6 +329,7 @@ class PeekDockController:
 
     def reveal(self, *, persist: bool = True) -> None:
         """从缩进滑出 → 自由完整浮窗（贴边对齐）。"""
+        self._cancel_snap()
         box = self._window_box()
         if box is None:
             cx, cy = 100, 100
@@ -425,12 +339,16 @@ class PeekDockController:
         work = work_area_for_point(cx, cy)
         self.phase = "free"
         nx, ny, nw, nh = docked_bounds(work, self.edge, y_hint=self.y_hint)
+        self._log(
+            f"peek reveal edge={self.edge} y={self.y_hint} bounds=({nx},{ny},{nw},{nh})"
+        )
         self._apply_geometry(nx, ny, nw, nh)
         self._push_phase()
         if persist:
             self._persist()
 
     def collapse(self, *, edge: Edge | None = None, y_hint: int | None = None) -> None:
+        self._cancel_snap()
         if edge is not None:
             self.edge = edge
         if y_hint is not None:
@@ -451,6 +369,9 @@ class PeekDockController:
         work = work_area_for_point(cx, cy)
         self.phase = "collapsed"
         nx, ny, nw, nh = collapsed_bounds(work, self.edge, y_hint=self.y_hint)
+        self._log(
+            f"peek collapse edge={self.edge} y={self.y_hint} bounds=({nx},{ny},{nw},{nh})"
+        )
         self._apply_geometry(nx, ny, nw, nh)
         self._push_phase()
         self._persist()
@@ -510,7 +431,9 @@ class PeekDockController:
                 pass
 
         try:
-            run_on_ui_thread(win, push)
+            # EdgeChromium.evaluate_js 内部会 Invoke UI 并等待异步脚本结果；
+            # 外层再把它投到 UI 线程会让 continuation 无法回到 UI，形成死锁。
+            push()
         except Exception:
             pass
 

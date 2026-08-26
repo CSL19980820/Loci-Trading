@@ -20,6 +20,7 @@ import {
 import type { KPeriod, OhlcBar } from '@/shared/lib/indicators'
 import { buildKlineOption } from '@/shared/lib/klineChartOption'
 import { resolveKlineDblclickIndex } from '@/shared/lib/klineDblclick'
+import { useChartTheme } from '@/shared/lib/useChartTheme'
 import { prepChartOffthread } from '@/shared/lib/useChartPrep'
 
 echarts.use([
@@ -79,6 +80,7 @@ const emit = defineEmits<{
 
 const rootEl = ref<HTMLElement | null>(null)
 const chartEl = ref<HTMLElement | null>(null)
+const { tokens } = useChartTheme()
 let chart: echarts.ECharts | null = null
 let resizeObs: ResizeObserver | null = null
 let zoomStart = 0
@@ -156,6 +158,7 @@ function buildOption(prep: ChartPrepResult) {
     zoomEnd,
     stockCode: props.stockCode,
     stockName: props.stockName,
+    tokens: tokens.value,
   })
 }
 
@@ -356,6 +359,8 @@ watch(
       props.maPeriods,
       props.visibleBars,
       props.focusDate,
+      // canvas 颜色是 setOption 时的快照，主题变了必须重绘，否则深色下仍是浅色档轴线
+      tokens.value,
     ] as const,
   () => {
     const len = props.bars.length

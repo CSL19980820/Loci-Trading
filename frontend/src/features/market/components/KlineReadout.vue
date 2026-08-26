@@ -3,6 +3,7 @@ import { Close } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 
 import { chgClass } from '@/features/market/composables/dataQueryFormat'
+import { compactNumber } from '@/shared/lib/format'
 import { boardLimitRatio, detectLimitHit, limitLabel } from '@/shared/lib/limitBoard'
 import type { KlineHoverPayload } from '@/shared/lib/klineConfig'
 
@@ -21,19 +22,11 @@ function fmtPx(v: unknown): string {
 }
 
 function fmtVol(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(1)}万`
-  return n.toFixed(0)
+  return compactNumber(v)
 }
 
 function fmtAmt(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(1)}万`
-  return n.toFixed(0)
+  return compactNumber(v)
 }
 
 function fmtSignedPx(delta: number | null): string {

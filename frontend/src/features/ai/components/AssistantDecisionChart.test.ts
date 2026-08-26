@@ -41,7 +41,7 @@ describe('AssistantDecisionChart', () => {
       props: {
         artifact: {
           id: 'broken-1',
-          kind: 'qianlong_kline',
+          kind: 'candidate_verdict',
           title: '坏图',
           data: null as unknown as Record<string, unknown>,
         },

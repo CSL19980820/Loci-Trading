@@ -188,6 +188,33 @@ class FastEngineTests(unittest.TestCase):
         self.assertEqual(classic.trades[0].exit_date, fast.trades[0].exit_date)
         self.assertAlmostEqual(classic.trades[0].exit_price, fast.trades[0].exit_price, places=4)
 
+    def test_fallback_result_does_not_claim_numpy_fast_engine(self) -> None:
+        """回退经典引擎后仍自称 numpy_fast，会让"两条路径是否一致"的复核失效。"""
+        panels = _panels()
+        signals = _hold_signals(panels)
+        cfg = BacktestConfig(hold_days=5, stop_loss_pct=-1.0, benchmark=None)
+
+        fast = run_backtest_fast(
+            signals, panels, entry_timing="next_open", config=cfg, strategy_slug="t"
+        )
+        echo = fast.config.get("fast")
+        self.assertIsInstance(echo, dict)
+        self.assertEqual(echo["engine"], "classic")
+        self.assertIn("止损", echo["fallback_reason"])
+
+    def test_numpy_path_echo_reports_numpy_fast(self) -> None:
+        panels = _panels()
+        signals = _hold_signals(panels)
+        cfg = BacktestConfig(
+            hold_days=3, stop_loss_pct=None, take_profit_pct=None, benchmark=None
+        )
+
+        fast = run_backtest_fast(
+            signals, panels, entry_timing="next_open", config=cfg, strategy_slug="t"
+        )
+        self.assertEqual(fast.config.get("engine"), "numpy_fast")
+        self.assertNotIn("fast", fast.config)
+
     def test_stop_loss_falls_back_to_classic(self) -> None:
         """有细规则止损时应回退经典——结果与直接 run_backtest 一致。"""
         panels = _panels()

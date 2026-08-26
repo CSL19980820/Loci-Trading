@@ -6,13 +6,21 @@ import type { UniversePreset, UniverseStats } from '@/shared/types/quant'
 
 import type { ScreenSkillDraftModel } from '../composables/screenSkillDraft'
 
-const props = defineProps<{
-  draft: ScreenSkillDraftModel
-  fieldOptions: Array<{ label: string; value: string }>
-  requiredFields: string[]
-  presets: UniversePreset[]
-  stats: UniverseStats | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    draft: ScreenSkillDraftModel
+    fieldOptions: Array<{ label: string; value: string }>
+    requiredFields: string[]
+    presets: UniversePreset[]
+    stats: UniverseStats | null
+    fieldErrors?: Record<string, string>
+  }>(),
+  { fieldErrors: () => ({}) },
+)
+
+function err(field: string): string {
+  return props.fieldErrors[field] || ''
+}
 
 const emit = defineEmits<{
   applyPreset: [presetId: string]
@@ -43,7 +51,7 @@ const boardTags = computed(() =>
       </el-button>
     </div>
 
-    <el-form-item label="数据字段" required>
+    <el-form-item label="数据字段" required :error="err('dataFields')">
       <el-select
         v-model="props.draft.dataFields"
         multiple
@@ -86,7 +94,7 @@ const boardTags = computed(() =>
           <el-option v-for="item in presets" :key="item.id" :label="item.label" :value="item.id" />
         </el-select>
       </el-form-item>
-      <el-form-item label="上市天数下限">
+      <el-form-item label="上市天数下限" :error="err('minListDays')">
         <el-input-number v-model="props.draft.minListDays" :min="0" :controls="false" class="full" />
       </el-form-item>
     </div>

@@ -1,14 +1,9 @@
 /** ECharts option for KlineChart (split for file size). */
 import type { ChartPrepResult } from '@/shared/lib/chartPrep'
+import { readChartTokens, withAlpha, type ChartTokens } from '@/shared/lib/chartTokens'
 import { buildLimitMarks } from '@/shared/lib/klineLimitMarks'
-import type { IndicatorKind } from '@/shared/lib/klineConfig'
-
-const MA_COLORS = [
-  '#c41e3a', '#2563eb', '#d97706', '#7c3aed', '#0f6b5c', '#0891b2', '#be185d', '#ca8a04',
-]
-const VOL_MA_COLORS: Record<number, string> = { 5: '#d97706', 60: '#2563eb' }
-const CANDLE_UP = '#c41e3a'
-const CANDLE_DOWN = '#0f6b5c'
+import { KLINE_GRID_TOPS, type IndicatorKind } from '@/shared/lib/klineConfig'
+import { compactNumber } from '@/shared/lib/format'
 
 function fmtPx(v: unknown): string {
   const n = Number(v)
@@ -17,11 +12,7 @@ function fmtPx(v: unknown): string {
 }
 
 function fmtVol(v: unknown): string {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  if (Math.abs(n) >= 1e8) return `${(n / 1e8).toFixed(2)}亿`
-  if (Math.abs(n) >= 1e4) return `${(n / 1e4).toFixed(1)}万`
-  return n.toFixed(0)
+  return compactNumber(v)
 }
 
 function fmtInd(v: unknown): string {
@@ -39,6 +30,8 @@ export function buildKlineOption(opts: {
   zoomEnd: number
   stockCode: string
   stockName: string
+  /** 主题 token 快照；不传则即时读取（宿主需把它加进 watch 才能随主题重绘） */
+  tokens?: ChartTokens
 }): Record<string, unknown> {
   const {
     prep,
@@ -50,21 +43,28 @@ export function buildKlineOption(opts: {
     stockCode,
     stockName,
   } = opts
+  const t = opts.tokens ?? readChartTokens()
+  const MA_COLORS = t.maPalette
+  const VOL_MA_COLORS: Record<number, string> = { 5: t.warn, 60: t.info }
+  const CANDLE_UP = t.up
+  const CANDLE_DOWN = t.down
+  const axisText = t.mist
+  const axisLine = t.rule
   const { dates, candle, volumes: volRaw, volumeMas, maLines } = prep
   const bars = prep.seriesBars
   // K 线阴阳 strictly 跟开收（ECharts color/color0）；触板只打「涨停/跌停」钉，
   // 不再把冲高回落阴线整根染红。
   const volumes = volRaw.map((v) => ({
     value: v.value,
-    itemStyle: { color: v.up ? 'rgba(196,30,58,0.55)' : 'rgba(15,107,92,0.55)' },
+    itemStyle: { color: withAlpha(v.up ? CANDLE_UP : CANDLE_DOWN, 0.55) },
   }))
   const n = dates.length
 
   // 副图常驻：主图 / 量能 / 指标 三窗
   const grids = [
     { left: 52, right: 12, top: 22, height: '46%' },
-    { left: 52, right: 12, top: '52%', height: '14%' },
-    { left: 52, right: 12, top: '70%', height: '18%' },
+    { left: 52, right: 12, top: `${KLINE_GRID_TOPS.vol}%`, height: '14%' },
+    { left: 52, right: 12, top: `${KLINE_GRID_TOPS.ind}%`, height: '18%' },
   ]
 
   const xAxes = grids.map((_, idx) => ({
@@ -72,11 +72,12 @@ export function buildKlineOption(opts: {
     data: dates,
     gridIndex: idx,
     boundaryGap: true,
-    axisLine: { lineStyle: { color: '#c5ced9' } },
+    axisLine: { lineStyle: { color: axisLine } },
     axisLabel: {
       show: idx === grids.length - 1,
-      color: '#5b6b7c',
+      color: axisText,
       fontSize: 10,
+      fontFamily: t.mono,
       hideOverlap: true,
     },
     axisTick: { show: false },
@@ -88,11 +89,12 @@ export function buildKlineOption(opts: {
       scale: true,
       gridIndex: 0,
       axisLabel: {
-        color: '#5b6b7c',
+        color: axisText,
         fontSize: 10,
+        fontFamily: t.mono,
         formatter: (v: number) => fmtPx(v),
       },
-      splitLine: { lineStyle: { color: 'rgba(213,220,230,0.55)', type: 'dashed' } },
+      splitLine: { lineStyle: { color: withAlpha(axisLine, 0.55), type: 'dashed' } },
     },
     {
       scale: true,
@@ -105,8 +107,8 @@ export function buildKlineOption(opts: {
     {
       scale: true,
       gridIndex: 2,
-      axisLabel: { color: '#5b6b7c', fontSize: 9 },
-      splitLine: { lineStyle: { color: 'rgba(213,220,230,0.45)', type: 'dashed' } },
+      axisLabel: { color: axisText, fontSize: 9, fontFamily: t.mono },
+      splitLine: { lineStyle: { color: withAlpha(axisLine, 0.45), type: 'dashed' } },
       axisLine: { show: false },
       axisTick: { show: false },
     },
@@ -117,6 +119,7 @@ export function buildKlineOption(opts: {
     dates,
     stockCode,
     stockName,
+    t,
   )
 
   const series: Record<string, unknown>[] = [
@@ -140,7 +143,7 @@ export function buildKlineOption(opts: {
         distance: 1,
         fontSize: 9,
         fontFamily: 'IBM Plex Mono, Cascadia Code, ui-monospace, monospace',
-        color: '#3d4d5f',
+        color: t.muted,
         formatter: (p: { data?: number[] | { value?: number[] } }) => {
           const raw = p.data
           const arr = Array.isArray(raw) ? raw : raw?.value
@@ -172,7 +175,7 @@ export function buildKlineOption(opts: {
       xAxisIndex: 1,
       yAxisIndex: 1,
       showSymbol: false,
-      lineStyle: { width: 1.1, color: VOL_MA_COLORS[vm.period] ?? '#5b6b7c' },
+      lineStyle: { width: 1.1, color: VOL_MA_COLORS[vm.period] ?? axisText },
       emphasis: { disabled: true },
       tooltip: { valueFormatter: (v: number) => fmtVol(v) },
     })
@@ -203,7 +206,7 @@ export function buildKlineOption(opts: {
         xAxisIndex: 2,
         yAxisIndex: 2,
         showSymbol: false,
-        lineStyle: { width: 1, color: '#2563eb' },
+        lineStyle: { width: 1, color: t.info },
         tooltip: { valueFormatter: (v: number) => fmtInd(v) },
       },
       {
@@ -213,7 +216,7 @@ export function buildKlineOption(opts: {
         xAxisIndex: 2,
         yAxisIndex: 2,
         showSymbol: false,
-        lineStyle: { width: 1, color: '#d97706' },
+        lineStyle: { width: 1, color: t.warn },
         tooltip: { valueFormatter: (v: number) => fmtInd(v) },
       },
       {
@@ -222,7 +225,7 @@ export function buildKlineOption(opts: {
         data: m.hist.map((v) => ({
           value: v,
           itemStyle: {
-            color: v !== null && v >= 0 ? 'rgba(196,30,58,0.7)' : 'rgba(15,107,92,0.7)',
+            color: withAlpha(v !== null && v >= 0 ? CANDLE_UP : CANDLE_DOWN, 0.7),
           },
         })),
         xAxisIndex: 2,
@@ -241,7 +244,7 @@ export function buildKlineOption(opts: {
         xAxisIndex: 2,
         yAxisIndex: 2,
         showSymbol: false,
-        lineStyle: { width: 1, color: '#2563eb' },
+        lineStyle: { width: 1, color: t.info },
         tooltip: { valueFormatter: (v: number) => fmtInd(v) },
       },
       {
@@ -251,7 +254,7 @@ export function buildKlineOption(opts: {
         xAxisIndex: 2,
         yAxisIndex: 2,
         showSymbol: false,
-        lineStyle: { width: 1, color: '#d97706' },
+        lineStyle: { width: 1, color: t.warn },
         tooltip: { valueFormatter: (v: number) => fmtInd(v) },
       },
       {
@@ -261,7 +264,7 @@ export function buildKlineOption(opts: {
         xAxisIndex: 2,
         yAxisIndex: 2,
         showSymbol: false,
-        lineStyle: { width: 1, color: '#c41e3a' },
+        lineStyle: { width: 1, color: t.up },
         tooltip: { valueFormatter: (v: number) => fmtInd(v) },
       },
     )
@@ -294,7 +297,7 @@ export function buildKlineOption(opts: {
       link: [{ xAxisIndex: 'all' }],
       snap: true,
       label: {
-        backgroundColor: '#5b6b7c',
+        backgroundColor: axisText,
         formatter: (params: { axisDimension?: string; value?: unknown }) => {
           if (params.axisDimension === 'y') return fmtPx(params.value)
           return String(params.value ?? '')
@@ -323,10 +326,10 @@ export function buildKlineOption(opts: {
         filterMode: 'none',
         height: 14,
         bottom: 2,
-        borderColor: '#d5dce6',
-        fillerColor: 'rgba(196,30,58,0.1)',
-        handleStyle: { color: '#c41e3a' },
-        textStyle: { color: '#5b6b7c', fontSize: 9 },
+        borderColor: axisLine,
+        fillerColor: withAlpha(t.seal, 0.1),
+        handleStyle: { color: t.seal },
+        textStyle: { color: axisText, fontSize: 9, fontFamily: t.mono },
         start: zoomStart,
         end: zoomEnd,
       },

@@ -70,6 +70,16 @@ _FUNCTION_ROWS = (
 )
 
 
+#: 住在 indicators.py 而非 functions.py 的函数，用于 catalog 回显正确的溯源路径。
+_INDICATOR_FUNCTIONS = frozenset(
+    {
+        "TR", "ATR", "RSI", "ROC", "WR", "CCI", "OBV",
+        "MACD_DIF", "MACD_DEA", "MACD",
+        "BOLL_MID", "BOLL_UPPER", "BOLL_LOWER",
+    }
+)
+
+
 def formula_fields_catalog() -> list[dict[str, str]]:
     return [
         {"name": name, "label": label, "summary": summary, "source": source}
@@ -88,7 +98,11 @@ def formula_functions_catalog() -> list[dict[str, Any]]:
             "insert_text": insert_text,
             "examples": examples,
             "dialects": ["loci", "tdx", "ths"],
-            "source": f"src.formula.domain.functions:{source}",
+            "source": (
+                f"src.formula.domain.indicators:{source}"
+                if source in _INDICATOR_FUNCTIONS
+                else f"src.formula.domain.functions:{source}"
+            ),
         }
         for name, category, signature, summary, description, insert_text, examples, source in _FUNCTION_ROWS
     ]

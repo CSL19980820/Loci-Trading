@@ -28,38 +28,40 @@ class MarketSyncApiTests(unittest.TestCase):
         self.client.close()
         self.temp.cleanup()
 
-    def test_returns_completed_report_and_rejects_duplicate_run(self) -> None:
-        started = threading.Event()
-        release = threading.Event()
-        calls = 0
-        calls_lock = threading.Lock()
+    def test_returns_completed_report(self) -> None:
+        with patch(
+            "src.ops.application.jobs.execute_sync",
+            return_value={"total": 1, "succeeded": 1, "failed": 0},
+        ) as execute_sync:
+            response = self.client.post("/api/market/sync", json={"codes": ["600519"]})
 
-        def fake_execute_sync(*_args, **_kwargs):
-            nonlocal calls
-            with calls_lock:
-                calls += 1
-                call_number = calls
-            if call_number == 1:
-                started.set()
-                self.assertTrue(release.wait(timeout=3))
-            return {"total": 1, "succeeded": 1, "failed": 0}
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["succeeded"], 1)
+        self.assertEqual(execute_sync.call_count, 1)
 
-        with patch("src.ops.application.jobs.execute_sync", side_effect=fake_execute_sync):
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                first_future = executor.submit(
-                    self.client.post, "/api/market/sync", json={"codes": ["600519"]}
-                )
-                self.assertTrue(started.wait(timeout=3))
-                duplicate = self.client.post(
-                    "/api/market/sync", json={"codes": ["600519"]}
-                )
-                release.set()
-                first = first_future.result(timeout=3)
+    def test_duplicate_run_reports_skipped_not_conflict(self) -> None:
+        """已有同步在跑时返回 200 + status=skipped，不再报 409。
 
-        self.assertEqual(duplicate.status_code, 409, duplicate.text)
-        self.assertEqual(first.status_code, 200, first.text)
-        self.assertEqual(first.json()["succeeded"], 1)
-        self.assertEqual(calls, 1)
+        去重本身没丢，只是搬了家：唯一的并发闸门是 ``execute_sync`` 占的
+        ``ops.market_gate`` sync 写槽（HTTP / bootstrap / CLI / 调度四入口共用）。
+        HTTP 层过去再叠一层进程锁 + 409，等于同一件事判两次，还把「排队」
+        说成冲突错误——用户看到的就是「老是报冲突」。
+        """
+        from src.ops.application.jobs import JobSkipped
+
+        with patch(
+            "src.ops.application.jobs.execute_sync",
+            side_effect=JobSkipped("行情库正被占用（同步任务（sync:01）），本轮跳过"),
+        ):
+            duplicate = self.client.post("/api/market/sync", json={"codes": ["600519"]})
+
+        self.assertEqual(duplicate.status_code, 200, duplicate.text)
+        body = duplicate.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["status"], "skipped")
+        self.assertTrue(body["skipped"])
+        self.assertIn("未重复启动", body["detail"])
+        self.assertIn("本轮跳过", body["reason"])
 
     def test_validation_fails_before_execution(self) -> None:
         with patch("src.ops.application.jobs.execute_sync") as execute_sync:
@@ -87,4 +89,5 @@ class MarketSyncApiTests(unittest.TestCase):
     def test_openapi_lists_runtime_error_statuses(self) -> None:
         responses = self.client.app.openapi()["paths"]["/api/market/sync"]["post"]["responses"]
 
-        self.assertEqual(set(responses), {"200", "409", "422", "502"})
+        # 409 已撤：并发闸门只在 market_gate 一处，排队不是冲突错误。
+        self.assertEqual(set(responses), {"200", "422", "502"})

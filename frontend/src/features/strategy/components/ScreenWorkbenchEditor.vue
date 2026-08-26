@@ -10,8 +10,18 @@ interface EditorHandle {
   insertText: (text: string) => void
 }
 
+const ENTRY_TIMING_LABELS: Record<string, string> = {
+  open: '当日开盘',
+  close: '当日收盘',
+  next_open: '次日开盘',
+  next_dip: '次日低吸',
+}
+
 const props = defineProps<{
   draft: ScreenSkillDraftModel
+  statusLeft?: string
+  statusRight?: string
+  statusTone?: 'neutral' | 'ok' | 'error'
 }>()
 
 const editor = ref<EditorHandle | null>(null)
@@ -24,9 +34,10 @@ const editorContent = computed({
   },
 })
 
-const filename = computed(() => (props.draft.runtime === 'python' ? 'strategy.py' : 'formula.tdx'))
 const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'python' : 'plaintext'))
-const lineCount = computed(() => Math.max(1, editorContent.value.split('\n').length))
+const entryTimingLabel = computed(
+  () => ENTRY_TIMING_LABELS[props.draft.entryTiming] || props.draft.entryTiming,
+)
 
 function insertText(text: string): void {
   editor.value?.insertText(text)
@@ -41,18 +52,6 @@ defineExpose({ focusLine, insertText })
 
 <template>
   <section class="editor-stage" aria-label="策略执行源编辑器">
-    <header class="editor-stage__head">
-      <div class="editor-file">
-        <span class="editor-file__dot" aria-hidden="true" />
-        <strong>{{ filename }}</strong>
-        <el-tag size="small" effect="plain">{{ draft.dialect.toUpperCase() }}</el-tag>
-      </div>
-      <div class="editor-meta">
-        <span>{{ lineCount }} 行</span>
-        <span>{{ draft.dataFields.length }} 字段</span>
-        <span>{{ draft.params.filter((item) => item.key.trim()).length }} 参数</span>
-      </div>
-    </header>
     <div class="editor-stage__body">
       <CodeEditor
         ref="editor"
@@ -61,10 +60,18 @@ defineExpose({ focusLine, insertText })
         height="100%"
       />
     </div>
-    <footer class="editor-stage__status">
-      <span>{{ draft.runtime === 'python' ? draft.entrypoint : `主信号 ${draft.signal}` }}</span>
-      <span>最少 {{ draft.minBars }} 根 K 线</span>
-      <span>{{ draft.entryTiming }}</span>
+    <footer
+      class="editor-stage__status"
+      :class="{
+        'editor-stage__status--ok': statusTone === 'ok',
+        'editor-stage__status--error': statusTone === 'error',
+      }"
+    >
+      <span class="editor-stage__status-left">{{ statusLeft || '尚未编译' }}</span>
+      <span>主信号 {{ draft.signal }}</span>
+      <span>最少 {{ draft.minBars }} 根</span>
+      <span>{{ entryTimingLabel }}</span>
+      <span class="editor-stage__status-right">{{ statusRight || '尚未试跑' }}</span>
     </footer>
   </section>
 </template>
@@ -72,48 +79,21 @@ defineExpose({ focusLine, insertText })
 <style scoped>
 .editor-stage {
   display: grid;
-  grid-template-rows: 2.5rem minmax(15rem, 1fr) 1.9rem;
+  grid-template-rows: minmax(12rem, 1fr) 1.75rem;
   min-width: 0;
   min-height: 0;
-  border-inline: 1px solid var(--rule);
   background: var(--sheet);
 }
 
-.editor-stage__head,
-.editor-stage__status,
-.editor-file,
-.editor-meta {
+.editor-stage__status {
   display: flex;
   align-items: center;
-}
-
-.editor-stage__head {
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.75rem;
   padding: 0 0.75rem;
-  border-bottom: 1px solid var(--rule);
-}
-
-.editor-file,
-.editor-meta,
-.editor-stage__status {
-  gap: 0.55rem;
-}
-
-.editor-file {
-  min-width: 0;
-  font: 600 0.8rem var(--mono);
-}
-
-.editor-file__dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--lake);
-}
-
-.editor-meta,
-.editor-stage__status {
+  border-top: 1px solid var(--rule);
+  background: var(--panel-2);
+  overflow: hidden;
   color: var(--mist);
   font: 0.72rem var(--mono);
   white-space: nowrap;
@@ -121,24 +101,33 @@ defineExpose({ focusLine, insertText })
 
 .editor-stage__body {
   min-height: 0;
-  padding: 0.55rem;
+  padding: 0;
 }
 
 .editor-stage__body :deep(.code-editor) {
   min-height: 100%;
-  border-radius: 3px;
+  border-radius: 0;
+  border: 0;
 }
 
-.editor-stage__status {
-  justify-content: flex-end;
-  padding: 0 0.75rem;
-  border-top: 1px solid var(--rule);
-  background: var(--panel-2);
+.editor-stage__status-left {
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-stage__status--ok .editor-stage__status-left {
+  color: var(--lake);
+}
+
+.editor-stage__status--error .editor-stage__status-left {
+  color: var(--loss);
 }
 
 @media (max-width: 640px) {
-  .editor-meta span:not(:first-child),
-  .editor-stage__status span:nth-child(2) {
+  .editor-stage__status span:nth-child(2),
+  .editor-stage__status span:nth-child(3) {
     display: none;
   }
 }

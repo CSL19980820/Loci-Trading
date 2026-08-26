@@ -25,7 +25,6 @@ function skill(slug: string): Skill {
     install_path: `data/skills/${slug}`,
     source_filename: `${slug}.zip`,
     content_sha256: 'test-sha256',
-    default_cron: '',
     metadata: {},
     enabled: true,
     instructions: '',

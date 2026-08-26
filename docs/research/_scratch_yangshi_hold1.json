@@ -1,0 +1,250 @@
+{
+  "window": [
+    "2026-02-11",
+    "2026-08-12"
+  ],
+  "rows": [
+    {
+      "hold_days_from_buy": 1,
+      "sell": "T+2 close",
+      "stats": {
+        "trades": 62,
+        "win_rate": 50.0,
+        "wins": 31,
+        "losses": 31,
+        "avg_gross_return": 0.6646,
+        "avg_net_return": 0.3546,
+        "median_net_return": 0.0226,
+        "std_net_return": 5.0302,
+        "total_net_return": 21.9878,
+        "best": 25.0141,
+        "worst": -8.869,
+        "expectancy": 0.3546,
+        "profit_factor": 1.233,
+        "payoff_ratio": 1.233,
+        "avg_win": 3.7575,
+        "avg_loss": -3.0482,
+        "avg_mfe": 3.9659,
+        "avg_mae": -2.9912,
+        "avg_hold_days": 1.0,
+        "max_consecutive_wins": 6,
+        "max_consecutive_losses": 5,
+        "exit_reasons": {
+          "hold_expired": 62
+        },
+        "data_end_trades": 0,
+        "sample_confidence": "medium"
+      },
+      "portfolio": {
+        "sleeve_days": 2,
+        "portfolio_return_pct": 7.6175,
+        "max_drawdown_pct": -19.3504,
+        "occupancy_pct": 51.67,
+        "signal_days": 62,
+        "filled_trades": 62,
+        "month_end_nav": [
+          {
+            "month": "2026-02",
+            "nav": 103.8077
+          },
+          {
+            "month": "2026-03",
+            "nav": 94.2612
+          },
+          {
+            "month": "2026-04",
+            "nav": 95.5093
+          },
+          {
+            "month": "2026-05",
+            "nav": 92.8493
+          },
+          {
+            "month": "2026-06",
+            "nav": 92.7026
+          },
+          {
+            "month": "2026-07",
+            "nav": 107.6584
+          },
+          {
+            "month": "2026-08",
+            "nav": 107.6175
+          }
+        ]
+      },
+      "trade_months": [
+        {
+          "period": "2026-02",
+          "n": 2,
+          "win_rate": 100.0,
+          "avg": 3.0568,
+          "total": 6.1135
+        },
+        {
+          "period": "2026-03",
+          "n": 10,
+          "win_rate": 40.0,
+          "avg": -1.7492,
+          "total": -17.4924
+        },
+        {
+          "period": "2026-04",
+          "n": 9,
+          "win_rate": 44.44,
+          "avg": -0.5179,
+          "total": -4.661
+        },
+        {
+          "period": "2026-05",
+          "n": 10,
+          "win_rate": 50.0,
+          "avg": -0.1615,
+          "total": -1.6151
+        },
+        {
+          "period": "2026-06",
+          "n": 9,
+          "win_rate": 33.33,
+          "avg": -0.8959,
+          "total": -8.063
+        },
+        {
+          "period": "2026-07",
+          "n": 15,
+          "win_rate": 66.67,
+          "avg": 1.4863,
+          "total": 22.2945
+        },
+        {
+          "period": "2026-08",
+          "n": 7,
+          "win_rate": 42.86,
+          "avg": 3.6302,
+          "total": 25.4113
+        }
+      ]
+    },
+    {
+      "hold_days_from_buy": 2,
+      "sell": "T+3 close",
+      "stats": {
+        "trades": 61,
+        "win_rate": 52.46,
+        "wins": 32,
+        "losses": 29,
+        "avg_gross_return": 0.6189,
+        "avg_net_return": 0.3089,
+        "median_net_return": 0.3619,
+        "std_net_return": 5.5619,
+        "total_net_return": 18.8448,
+        "best": 17.4082,
+        "worst": -16.2363,
+        "expectancy": 0.3089,
+        "profit_factor": 1.165,
+        "payoff_ratio": 1.055,
+        "avg_win": 4.1653,
+        "avg_loss": -3.9464,
+        "avg_mfe": 4.9313,
+        "avg_mae": -3.5855,
+        "avg_hold_days": 2.0,
+        "max_consecutive_wins": 9,
+        "max_consecutive_losses": 7,
+        "exit_reasons": {
+          "hold_expired": 61
+        },
+        "data_end_trades": 1,
+        "sample_confidence": "medium"
+      },
+      "portfolio": {
+        "sleeve_days": 3,
+        "portfolio_return_pct": 4.9223,
+        "max_drawdown_pct": -14.8539,
+        "occupancy_pct": 50.83,
+        "signal_days": 61,
+        "filled_trades": 61,
+        "month_end_nav": [
+          {
+            "month": "2026-02",
+            "nav": 100.1134
+          },
+          {
+            "month": "2026-03",
+            "nav": 90.7327
+          },
+          {
+            "month": "2026-04",
+            "nav": 93.9193
+          },
+          {
+            "month": "2026-05",
+            "nav": 92.0398
+          },
+          {
+            "month": "2026-06",
+            "nav": 93.7055
+          },
+          {
+            "month": "2026-07",
+            "nav": 101.5378
+          },
+          {
+            "month": "2026-08",
+            "nav": 104.9223
+          }
+        ]
+      },
+      "trade_months": [
+        {
+          "period": "2026-02",
+          "n": 1,
+          "win_rate": 100.0,
+          "avg": 4.3684,
+          "total": 4.3684
+        },
+        {
+          "period": "2026-03",
+          "n": 10,
+          "win_rate": 40.0,
+          "avg": -3.2339,
+          "total": -32.3387
+        },
+        {
+          "period": "2026-04",
+          "n": 10,
+          "win_rate": 50.0,
+          "avg": 0.6827,
+          "total": 6.8272
+        },
+        {
+          "period": "2026-05",
+          "n": 10,
+          "win_rate": 60.0,
+          "avg": 0.2046,
+          "total": 2.0455
+        },
+        {
+          "period": "2026-06",
+          "n": 9,
+          "win_rate": 22.22,
+          "avg": -1.5242,
+          "total": -13.7176
+        },
+        {
+          "period": "2026-07",
+          "n": 14,
+          "win_rate": 57.14,
+          "avg": 1.5564,
+          "total": 21.7891
+        },
+        {
+          "period": "2026-08",
+          "n": 7,
+          "win_rate": 85.71,
+          "avg": 4.2673,
+          "total": 29.8709
+        }
+      ]
+    }
+  ]
+}

@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
@@ -35,7 +35,8 @@ def compose_trading_cron(
         return ""
     if mode == "once":
         _check_hour_minute(run_hour, run_minute)
-        return f"{int(run_minute)} {int(run_hour)} * * 1-5"
+        # mon-fri：APScheduler 0=周一；勿写 Unix 习惯的 1-5（会被当成周二–周六）
+        return f"{int(run_minute)} {int(run_hour)} * * mon-fri"
     if mode == "interval":
         interval = _interval_value(interval_minutes)
         start_h = int(window_start_hour)
@@ -46,7 +47,7 @@ def compose_trading_cron(
             end_h,
             window_end_minute,
         )
-        return f"*/{interval} {start_h}-{end_h} * * 1-5"
+        return f"*/{interval} {start_h}-{end_h} * * mon-fri"
     raise TradingScheduleError(f"未知调度方式：{mode}")
 
 
@@ -61,6 +62,7 @@ def preview_trading_runs(
     window_start_minute: int = 30,
     window_end_hour: int = 14,
     window_end_minute: int = 50,
+    sessions: Sequence[Mapping[str, Any]] | None = None,
     limit: int = 5,
 ) -> list[str]:
     """预览下次运行（完整 ``YYYY-MM-DD HH:MM``）。定点 1 条，间隔最多 limit 条。"""
@@ -76,14 +78,21 @@ def preview_trading_runs(
     start_h, start_m = int(window_start_hour), int(window_start_minute)
     end_h, end_m = int(window_end_hour), int(window_end_minute)
     start_min, end_min = _interval_window_bounds(start_h, start_m, end_h, end_m)
+    session_bounds = _session_window_bounds(sessions)
 
     out: list[str] = []
     day = cursor.date()
     # 最多向前看 14 个自然日，保证能凑满 limit 个工作日槽位
     for _ in range(14):
         if day.weekday() < 5:
+            day_slots: list[str] = []
             for minute_of_day in range(start_min, end_min + 1):
                 if minute_of_day % interval:
+                    continue
+                if session_bounds is not None and not any(
+                    session_start <= minute_of_day <= session_end
+                    for session_start, session_end in session_bounds
+                ):
                     continue
                 slot = datetime(
                     day.year,
@@ -93,11 +102,23 @@ def preview_trading_runs(
                     minute_of_day % 60,
                 )
                 if slot >= cursor:
-                    out.append(_fmt(slot))
-                    if len(out) >= limit:
-                        return out
+                    day_slots.append(_fmt(slot))
+            if day_slots:
+                # 同一天：先塞开头，最后强制带上末档（如 14:50），避免只看见 14:00
+                if len(day_slots) <= max(1, limit - len(out)):
+                    out.extend(day_slots)
+                else:
+                    remain = max(1, limit - len(out))
+                    head_n = max(1, remain - 1)
+                    chunk = day_slots[:head_n]
+                    last = day_slots[-1]
+                    if last not in chunk:
+                        chunk.append(last)
+                    out.extend(chunk[:remain])
+                if len(out) >= limit:
+                    return out[:limit]
         day = day + timedelta(days=1)
-    return out
+    return out[:limit]
 
 
 def is_interval_run_allowed(
@@ -120,10 +141,16 @@ def is_interval_run_allowed(
             int(schedule.get("window_end_hour", 14)),
             int(schedule.get("window_end_minute", 50)),
         )
+        session_bounds = _session_window_bounds(schedule.get("sessions"))
     except (TypeError, ValueError, TradingScheduleError):
         return False
     current_min = now.hour * 60 + now.minute
-    return start_min <= current_min <= end_min
+    if not start_min <= current_min <= end_min:
+        return False
+    return session_bounds is None or any(
+        session_start <= current_min <= session_end
+        for session_start, session_end in session_bounds
+    )
 
 
 def schedule_dict_from_payload(payload: Any) -> dict[str, Any]:
@@ -171,6 +198,28 @@ def _interval_window_bounds(
     if start_min > end_min:
         raise TradingScheduleError("时段起点不能晚于终点")
     return start_min, end_min
+
+
+def _session_window_bounds(
+    sessions: Any,
+) -> list[tuple[int, int]] | None:
+    if sessions is None:
+        return None
+    if not isinstance(sessions, Sequence) or isinstance(sessions, (str, bytes)) or not sessions:
+        raise TradingScheduleError("分段时段必须是非空列表")
+    bounds: list[tuple[int, int]] = []
+    for session in sessions:
+        if not isinstance(session, Mapping):
+            raise TradingScheduleError("分段时段格式非法")
+        bounds.append(
+            _interval_window_bounds(
+                int(session.get("start_hour", -1)),
+                int(session.get("start_minute", -1)),
+                int(session.get("end_hour", -1)),
+                int(session.get("end_minute", -1)),
+            )
+        )
+    return bounds
 
 
 def _next_weekday_at(now: datetime, hour: int, minute: int) -> datetime:

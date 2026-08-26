@@ -36,7 +36,7 @@ const runsRef = ref<InstanceType<typeof JobRecentRunsPanel> | null>(null)
 const bound = computed(() => isBoundManagedJob(props.job))
 
 async function reloadRuns(): Promise<void> {
-  await runsRef.value?.reload(true)
+  await runsRef.value?.reload()
 }
 
 defineExpose({ reloadRuns })
@@ -197,7 +197,7 @@ defineExpose({ reloadRuns })
   margin-left: 0.25rem;
 }
 .mono {
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--mono);
   font-size: 0.95em;
 }
 .dim {

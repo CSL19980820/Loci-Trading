@@ -27,6 +27,7 @@ except Exception:
 datas = [
     ("src", "src"),
     ("frontend/dist", "frontend/dist"),
+    ("templates/skills", "templates/skills"),
     ("assets/loci-icon.png", "assets"),
     ("assets/loci.ico", "assets"),
     ("使用说明.txt", "."),
@@ -49,6 +50,7 @@ hiddenimports = [
     "PIL.Image",
     "PIL.ImageDraw",
     "PIL.ImageFont",
+    "pyzipper",
 ]
 
 # webview / pystray 需要平台资源；不要对 PIL 用 collect_all（会拖进整包编解码器）
@@ -80,13 +82,16 @@ except Exception:
 # 仍收集子模块名供 Analysis 发现依赖；真正代码走 datas 松散 src/
 hiddenimports += collect_submodules("src")
 
-# 业务未直接 import scipy；pandas 也不依赖它运行本仓路径
+# 业务未直接 import；venv 里常有研究/开发残留，打进去会白白占体积
+# （当前安装里仅 numba+llvmlite 就约 116MB）
 excludes = [
     "tkinter",
     "matplotlib",
     "IPython",
     "notebook",
     "jupyter",
+    "ipywidgets",
+    "anywidget",
     "pytest",
     "scipy",
     "scipy.libs",
@@ -94,6 +99,15 @@ excludes = [
     "tensorflow",
     "sklearn",
     "cv2",
+    "numba",
+    "llvmlite",
+    "vectorbt",
+    "plotly",
+    "weasyprint",
+    "yfinance",
+    "mootdx",
+    "pdfminer",
+    "pdfplumber",
 ]
 
 a = Analysis(

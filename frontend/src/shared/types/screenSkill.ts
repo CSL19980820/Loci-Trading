@@ -32,6 +32,7 @@ export interface UniverseFunnel {
   after_industry: number
   panel_columns: number
   signals_true: number
+  watch_signals_true?: number
 }
 
 export interface UniversePreset {
@@ -333,12 +334,16 @@ export interface Pick {
   is_st?: boolean
   open: number | null
   close: number | null
+  pct_chg?: number | null
+  intent?: 'observe' | string
   factors: Record<string, number | boolean | null>
 }
 
 export interface ScreenRecorded {
   pool_id?: string
   written?: number
+  formal_written?: number
+  watch_written?: number
   failed?: { code: string; error: string }[]
   trade_date?: string
   written_total?: number
@@ -376,6 +381,7 @@ export interface MarketDataSnapshot {
 export interface ScreenRangeDay {
   trade_date: string
   picks: number
+  watch_picks?: number
   universe_size: number
   elapsed_seconds: number
   recorded?: ScreenRecorded | null
@@ -399,8 +405,11 @@ export interface ScreenResult {
   params: Record<string, unknown>
   effective_params: Record<string, unknown>
   picks: Pick[]
+  watch_picks: Pick[]
   picks_total?: number
   picks_truncated?: boolean
+  watch_picks_total?: number
+  watch_picks_truncated?: boolean
   universe?: UniverseSpec
   universe_funnel?: UniverseFunnel
   health?: Record<string, unknown>
@@ -429,20 +438,70 @@ export interface BacktestMetrics {
   avg_gross_return?: number
   avg_net_return?: number
   median_net_return?: number
+  std_net_return?: number
+  total_net_return?: number
   best?: number
   worst?: number
   expectancy?: number
   profit_factor?: number | null
+  payoff_ratio?: number | null
   avg_win?: number | null
   avg_loss?: number | null
   avg_mfe?: number
   avg_mae?: number
   avg_hold_days?: number
+  max_consecutive_wins?: number
+  max_consecutive_losses?: number
   exit_reasons?: Record<string, number>
   data_end_trades?: number
   avg_alpha?: number
   alpha_win_rate?: number
+  percentiles?: Record<string, number>
+  return_distribution?: Array<{ lo: number; hi: number; n: number }>
+  by_month?: Array<{ period: string; n: number; win_rate: number; avg: number; total?: number }>
+  by_year?: Array<{ period: string; n: number; win_rate: number; avg: number; total?: number }>
+  sample_confidence?: 'low' | 'medium' | 'high' | string
   caution?: string
+}
+
+export interface BacktestPerformancePoint {
+  date: string
+  equity: number
+  drawdown_pct: number
+  trade_count?: number
+  return_pct?: number
+  code?: string
+}
+
+export interface BacktestPerformance {
+  available: boolean
+  reason?: string
+  assumption?: {
+    model: string
+    description?: string
+    risk_free_rate_pct?: number
+    initial_equity?: number
+    excludes_data_end?: boolean
+  }
+  trades?: number
+  cumulative_return_pct?: number
+  cagr_pct?: number | null
+  max_drawdown_pct?: number
+  max_drawdown_peak_date?: string | null
+  max_drawdown_trough_date?: string | null
+  max_drawdown_recovery_days?: number | null
+  volatility_pct?: number
+  downside_volatility_pct?: number
+  sharpe?: number | null
+  sortino?: number | null
+  calmar?: number | null
+  years?: number | null
+  trades_per_year?: number | null
+  final_equity?: number
+  equity_curve?: BacktestPerformancePoint[]
+  drawdown_curve?: Array<{ date: string; drawdown_pct: number }>
+  peak_equity?: number
+  curve_peak_date?: string
 }
 
 export interface BacktestTrade {
@@ -467,6 +526,7 @@ export interface BacktestResult {
   mode?: 'trade' | 'horizon' | string
   config: Record<string, unknown>
   metrics: BacktestMetrics
+  performance?: BacktestPerformance
   skipped: Record<string, number>
   trades?: BacktestTrade[]
 }
@@ -483,12 +543,38 @@ export interface HorizonEventRef {
   mark_high?: number
 }
 
+export interface HorizonPeriodRow {
+  period: string
+  n: number
+  win_rate: number
+  avg: number
+}
+
 export interface HorizonStats {
   n: number
   win_rate: number
   avg: number
   best: number
   worst: number
+  median?: number
+  std?: number
+  avg_win?: number | null
+  avg_loss?: number | null
+  payoff_ratio?: number | null
+  percentiles?: Record<string, number>
+  distribution?: Array<{ lo: number; hi: number; n: number }>
+  by_month?: HorizonPeriodRow[]
+  sample_confidence?: 'low' | 'medium' | 'high' | string
+  caution?: string
+  mark_basis?: string
+  mark_basis_note?: string
+  close_n?: number
+  close_avg?: number
+  close_median?: number
+  close_win_rate?: number
+  close_best?: number
+  close_worst?: number
+  close_note?: string
   best_event?: HorizonEventRef | null
   worst_event?: HorizonEventRef | null
 }

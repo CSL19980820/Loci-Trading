@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
+import { pct as fmtPct, price as fmtPrice } from '@/shared/lib/format'
 
 import type { PulseTrackRow } from '../composables/usePulseHome'
 
@@ -22,17 +23,6 @@ const batch = computed(() => ({
   items: toBatchItems(props.rows),
 }))
 
-function fmtPct(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
-  const n = Number(value)
-  const sign = n > 0 ? '+' : ''
-  return `${sign}${n.toFixed(2)}%`
-}
-
-function fmtPrice(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
-  return Number(value).toFixed(2)
-}
 
 function tone(value: number | null | undefined): string {
   if (value == null || value === 0) return ''
@@ -63,44 +53,56 @@ function shortDate(value: string): string {
       class="pulse-table pulse-track__table"
       empty-text="—"
     >
-      <el-table-column label="名称" min-width="108">
+      <el-table-column label="名称" min-width="104" align="center" header-align="center">
         <template #default="{ row }">
-          <StockLink :code="row.code" :name="row.name" :batch="batch" />
+          <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
         </template>
       </el-table-column>
-      <el-table-column label="选股日" width="64" align="center">
+      <el-table-column label="选股日" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
           <span class="num pulse-muted">{{ shortDate(row.date) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="策略" min-width="88">
-        <template #default="{ row }">
-          <span class="pulse-muted pulse-track__strat">{{ row.strategyName }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="选入" width="72" align="right">
+      <el-table-column label="选入" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
           <span class="num">{{ fmtPrice(row.entryPrice) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="最新" width="72" align="right">
+      <el-table-column label="最新" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
           <span class="num">{{ fmtPrice(row.latestPrice) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="涨跌幅" width="78" align="right">
+      <el-table-column label="涨跌幅" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
           <span class="num" :class="tone(row.changePct)">{{ fmtPct(row.changePct) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="T+1" width="72" align="right">
+      <el-table-column label="低→高" min-width="66" align="center" header-align="center">
+        <template #default="{ row }">
+          <span class="num" :class="tone(row.swingPct)">{{ fmtPct(row.swingPct) }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="T+1" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
           <span class="num" :class="tone(row.t1)">{{ fmtPct(row.t1) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="T+3" width="72" align="right">
+      <el-table-column label="T+3" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
           <span class="num" :class="tone(row.t3)">{{ fmtPct(row.t3) }}</span>
+        </template>
+      </el-table-column>
+      <!-- 列宽合计需 ≤ 栅格分给本卡的宽度（约 730px），否则最右列被裁掉 -->
+      <el-table-column
+        label="战法"
+        min-width="96"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      >
+        <template #default="{ row }">
+          <span class="pulse-muted pulse-track__strat">{{ row.strategyName }}</span>
         </template>
       </el-table-column>
     </el-table>
@@ -158,7 +160,7 @@ function shortDate(value: string): string {
 
 .pulse-table {
   flex: 1;
-  min-height: 200px;
+  min-height: 140px;
 }
 
 .pulse-table :deep(.el-table__cell) {
@@ -186,10 +188,10 @@ function shortDate(value: string): string {
 }
 
 .is-up {
-  color: var(--up, #c23b3b);
+  color: var(--up, #c41e3a);
 }
 
 .is-down {
-  color: var(--down, #1a8f5c);
+  color: var(--down, #0f6b5c);
 }
 </style>

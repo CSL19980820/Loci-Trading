@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { parseBatchSource } from '@/shared/lib/batchBrowse'
+import { batchItemLabel, formatBatchPct, parseBatchSource } from '@/shared/lib/batchBrowse'
 import type { BatchItem } from '@/shared/stores/batchBrowse'
 
 const props = defineProps<{
@@ -23,14 +23,6 @@ const drawerTitle = computed(() => {
   const { title, date } = parsed.value
   return date ? `${title} · ${date}` : title
 })
-
-function pctText(pct: number | null | undefined): string {
-  if (pct == null || !Number.isFinite(pct)) return ''
-  // 兼容小数涨跌（0.01）与百分数（1.0）
-  const value = Math.abs(pct) <= 1 && pct !== 0 ? pct * 100 : pct
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(2)}%`
-}
 
 function pctClass(pct: number | null | undefined): string {
   if (pct == null || !Number.isFinite(pct) || pct === 0) return ''
@@ -61,13 +53,13 @@ function onSelect(code: string): void {
         native-type="button"
         class="batch-dock__row"
         :class="{ 'is-active': item.code === activeCode }"
+        :title="item.name ? `${batchItemLabel(item)} ${item.code}` : item.code"
         @click="onSelect(item.code)"
       >
         <span class="batch-dock__n mono">{{ i + 1 }}</span>
-        <span class="batch-dock__name">{{ item.name || item.code }}</span>
-        <span class="batch-dock__code mono">{{ item.code }}</span>
-        <span v-if="pctText(item.pct)" class="batch-dock__pct mono" :class="pctClass(item.pct)">
-          {{ pctText(item.pct) }}
+        <span class="batch-dock__name">{{ batchItemLabel(item) }}</span>
+        <span v-if="formatBatchPct(item.pct)" class="batch-dock__pct mono" :class="pctClass(item.pct)">
+          {{ formatBatchPct(item.pct) }}
         </span>
       </el-button>
     </div>
@@ -89,13 +81,13 @@ function onSelect(code: string): void {
         native-type="button"
         class="batch-dock__row"
         :class="{ 'is-active': item.code === activeCode }"
+        :title="item.name ? `${batchItemLabel(item)} ${item.code}` : item.code"
         @click="onSelect(item.code)"
       >
         <span class="batch-dock__n mono">{{ i + 1 }}</span>
-        <span class="batch-dock__name">{{ item.name || item.code }}</span>
-        <span class="batch-dock__code mono">{{ item.code }}</span>
-        <span v-if="pctText(item.pct)" class="batch-dock__pct mono" :class="pctClass(item.pct)">
-          {{ pctText(item.pct) }}
+        <span class="batch-dock__name">{{ batchItemLabel(item) }}</span>
+        <span v-if="formatBatchPct(item.pct)" class="batch-dock__pct mono" :class="pctClass(item.pct)">
+          {{ formatBatchPct(item.pct) }}
         </span>
       </el-button>
     </div>
@@ -214,12 +206,6 @@ function onSelect(code: string): void {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.78rem;
-}
-
-.batch-dock__code {
-  flex-shrink: 0;
-  font-size: 0.68rem;
-  color: var(--mist);
 }
 
 .batch-dock__pct {

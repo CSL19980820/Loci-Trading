@@ -53,9 +53,10 @@ def _seed_qianlong_pool(root: Path, *, day: str, pool_id: str) -> None:
 def test_static_catalog_excludes_dynamic_execution_surfaces(tmp_path: Path) -> None:
     bus = _bus(tmp_path)
     names = {item["name"] for item in bus.catalog()}
-    assert "ledger_dashboard" in names
+    assert "ledger_upsert_candidate" in names
     assert "market_kline" in names
     assert "qianlong_commit" in names
+    assert "ask_user" in names
     assert not any("sql" in name or "shell" in name or "mcp" in name or "cli" in name for name in names)
     assert not any(name.startswith("ops_setting") for name in names)
     assert bus.executor("unknown_tool", {})["is_error"]
@@ -152,32 +153,13 @@ def test_qianlong_evidence_includes_price_ma_and_volume_context(tmp_path: Path) 
 
 
 def test_write_tool_refuses_without_server_grant(tmp_path: Path) -> None:
-    result = _bus(tmp_path, grants=False).executor("ledger_record_trade", {"action": "BUY", "code": "600000", "shares": 100, "price": 10})
+    result = _bus(tmp_path, grants=False).executor("ledger_upsert_candidate", {"code": "600000", "decision": "观察", "reason": "等待确认"})
     assert result["is_error"]
     assert "凭据" in result["text"]
 
 
-def test_owner_tools_adjust_positions_and_cover_mutable_ledgers(tmp_path: Path) -> None:
+def test_owner_tools_cover_mutable_candidate_and_plan_ledgers(tmp_path: Path) -> None:
     bus = _bus(tmp_path)
-    adjusted = bus.executor(
-        "ledger_adjust_positions",
-        {
-            "trades": [
-                {"action": "BUY", "code": "600000", "shares": 200, "price": 10, "name": "浦发银行"},
-                {"action": "SELL", "code": "600000", "shares": 100, "price": 12, "name": "浦发银行"},
-            ]
-        },
-    )
-    assert not adjusted["is_error"]
-    assert adjusted["structured"]["records"][-1]["cost_after"] == 8
-    with PalaceStore(tmp_path / "palace.db") as palace:
-        position = palace.positions_payload()[0]
-        assert position["shares"] == 100
-        assert position["cost"] == 8
-
-    assert not bus.executor("ledger_record_cashflow", {"amount": 5000, "note": "入金"})["is_error"]
-    assert not bus.executor("ledger_record_daily_pnl", {"broker_pnl": 120})["is_error"]
-    assert not bus.executor("ledger_record_snapshot", {"total_assets": 30000, "cash": 18000})["is_error"]
     candidate = bus.executor(
         "ledger_upsert_candidate",
         {"code": "600001", "name": "样本", "decision": "观察", "reason": "等待确认"},
@@ -295,7 +277,7 @@ def test_assistant_job_trigger_uses_its_own_databases(tmp_path: Path) -> None:
         return {"status": "success"}
 
     bus = _bus(tmp_path)
-    with patch("src.ops.application.jobs.run_job", side_effect=run_job):
+    with patch("src.ops.run_job", side_effect=run_job):
         queued = bus.executor("ops_job_trigger", {"job_id": job_id})
         bus.wait_for_background_tasks()
     assert not queued["is_error"]
@@ -333,6 +315,20 @@ def test_assistant_job_trigger_rejects_config_changed_after_grant(tmp_path: Path
     assert any(event["type"] == "subagent_end" and not event["ok"] for event in events)
 
 
+def test_attach_mcp_false_skips_default_mount(tmp_path: Path) -> None:
+    with patch("src.ai.application.system_toolbus_mcp.mount_default_mcp") as mount:
+        bus = build_system_toolbus(
+            palace_db=str(tmp_path / "palace.db"),
+            market_db=str(tmp_path / "market.db"),
+            ops_db=str(tmp_path / "ops.db"),
+            read_only=True,
+            attach_mcp=False,
+        )
+    mount.assert_not_called()
+    assert bus._mcp_attached == 0
+    assert all(not spec.write for spec in bus._specs.values())
+
+
 def test_background_wait_detaches_after_cancellation(tmp_path: Path) -> None:
     events: list[dict] = []
     bus = _bus(tmp_path)
@@ -348,3 +344,64 @@ def test_background_wait_detaches_after_cancellation(tmp_path: Path) -> None:
 
     release.set()
     thread.join(timeout=1)
+
+
+def test_ask_user_pauses_with_hitl_meta(tmp_path: Path) -> None:
+    bus = _bus(tmp_path)
+    result = bus.executor(
+        "ask_user",
+        {"prompt": "是否提交潜龙精选？", "options": ["提交", "再看看"]},
+    )
+    assert not result["is_error"]
+    assert result["text"] == "是否提交潜龙精选？"
+    meta = result["meta"]
+    assert meta["pause"] is True
+    assert meta["needs_hitl"] is True
+    assert meta["ask"]["prompt"] == "是否提交潜龙精选？"
+    assert meta["ask"]["options"] == ["提交", "再看看"]
+    assert "questions" not in meta["ask"]
+
+
+def test_ask_user_multi_questions_persists_full_payload(tmp_path: Path) -> None:
+    bus = _bus(tmp_path)
+    result = bus.executor(
+        "ask_user",
+        {
+            "questions": [
+                {
+                    "id": "path",
+                    "prompt": "选路径？",
+                    "options": ["提交", "再看看"],
+                },
+                {
+                    "id": "note",
+                    "prompt": "补充说明？",
+                    "allow_free_text": True,
+                },
+            ],
+        },
+    )
+    assert not result["is_error"]
+    ask = result["meta"]["ask"]
+    assert ask["prompt"] == "选路径？"
+    assert ask["questions"] == [
+        {"id": "path", "prompt": "选路径？", "options": ["提交", "再看看"]},
+        {"id": "note", "prompt": "补充说明？", "allow_free_text": True},
+    ]
+
+
+def test_ask_user_errors_without_prompt_or_questions(tmp_path: Path) -> None:
+    bus = _bus(tmp_path)
+    result = bus.executor("ask_user", {"options": ["仅选项不够"]})
+    assert result["is_error"]
+    assert "prompt" in result["text"] or "questions" in result["text"]
+
+
+def test_catalog_includes_schema_tokens_for_context_usage(tmp_path: Path) -> None:
+    bus = _bus(tmp_path)
+    rows = {item["name"]: item for item in bus.catalog()}
+    ask = rows["ask_user"]
+    assert ask["schema_tokens"] > 0
+    assert "tags" not in ask or "mcp" not in ask.get("tags", [])
+    ledger = rows["ledger_upsert_candidate"]
+    assert ledger["schema_tokens"] >= ask["schema_tokens"] or ledger["schema_tokens"] > 0

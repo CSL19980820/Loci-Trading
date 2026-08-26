@@ -12,19 +12,6 @@ class WriteModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-class TradeInput(WriteModel):
-    action: Literal["BUY", "SELL"]
-    code: str = Field(pattern=r"^\d{6}$")
-    shares: int = Field(gt=0)
-    price: float = Field(ge=0)
-    occurred_on: str | None = None
-    name: str = ""
-    reason: str = ""
-    source: str = "web"
-    correlation_id: str = ""
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
 class CandidateInput(WriteModel):
     code: str = Field(pattern=r"^\d{6}$")
     name: str = ""
@@ -71,30 +58,3 @@ class ReviewInput(WriteModel):
     lesson: str = ""
     next_rule: str = ""
     source: str = "web"
-
-
-class SnapshotInput(WriteModel):
-    total_assets: float = Field(ge=0)
-    occurred_on: str | None = None
-    cash: float | None = Field(default=None, ge=0)
-    note: str = ""
-    source: str = "web"
-
-
-class CashflowInput(WriteModel):
-    amount: float
-    occurred_on: str | None = None
-    note: str = ""
-    source: str = "web"
-
-
-class DailyPnlInput(WriteModel):
-    """券商市值法当日盈亏（≠ 卖出价−成本 的已实现）。"""
-
-    broker_pnl: float
-    occurred_on: str | None = None
-    market_pnl: float | None = None
-    source: str = "broker"
-    note: str = ""
-    legs: list[dict[str, Any]] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)

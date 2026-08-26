@@ -16,15 +16,14 @@
   border-bottom: 1px solid var(--rule);
 }
 
+/*
+ * 侧栏在 980px 以下隐藏，栅格随之收成单列单行。
+ * 曾经这里留了一个 `auto` 首行给「侧栏变顶栏」，但那个顶栏并不存在，
+ * 于是 workspace 落进 auto 行按内容定高，在 100dvh + overflow:hidden 的壳里被裁。
+ */
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 768px) {
-  .app-shell {
     grid-template-rows: minmax(0, 1fr);
   }
 }
@@ -87,69 +86,6 @@
     animation: none !important;
     transition: none !important;
   }
-}
-
-/* —— 主题：data-appearance × data-primary —— */
-html[data-appearance='paper'] {
-  --paper: #f4f1ea;
-  --sheet: #fbf8f2;
-  --panel-2: #efebe3;
-  --rule: #ddd4c6;
-  --ink: #1c1917;
-  --mist: #78716c;
-}
-
-html[data-appearance='night'],
-html[data-appearance='ink'] {
-  color-scheme: dark;
-  --ink: #e8eef6;
-  --paper: #121820;
-  --sheet: #1a222d;
-  --panel: #1a222d;
-  --panel-2: #222b38;
-  --bg: var(--paper);
-  --rule: #2c3645;
-  --line: var(--rule);
-  --line-2: #3a4658;
-  --mist: #8b9aab;
-  --muted: #b7c3d1;
-  --seal-soft: rgba(196, 30, 58, 0.18);
-  --lake-soft: rgba(15, 107, 92, 0.2);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --el-bg-color: var(--sheet);
-  --el-bg-color-overlay: var(--sheet);
-  --el-fill-color-blank: var(--sheet);
-  --el-text-color-primary: var(--ink);
-  --el-text-color-regular: var(--muted);
-  --el-border-color: var(--rule);
-}
-
-html[data-appearance='ink'] {
-  --paper: #0d1117;
-  --sheet: #161b22;
-  --panel-2: #1c2330;
-  --rule: #30363d;
-}
-
-html[data-primary='lake'] {
-  --seal: #0f6b5c;
-  --seal-ink: #0a4f44;
-  --seal-soft: #e6f4f1;
-  --el-color-primary: #0f6b5c;
-}
-
-html[data-primary='blue'] {
-  --seal: #2563eb;
-  --seal-ink: #1d4ed8;
-  --seal-soft: #dbeafe;
-  --el-color-primary: #2563eb;
-}
-
-html[data-primary='amber'] {
-  --seal: #d97706;
-  --seal-ink: #b45309;
-  --seal-soft: #fef3c7;
-  --el-color-primary: #d97706;
 }
 
 a,

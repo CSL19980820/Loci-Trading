@@ -89,6 +89,43 @@ class DesktopShellHooks:
     run_browser_shell: Callable[..., int]
 
 
+def apply_webview2_browser_arguments(*, log: Any | None = None) -> str:
+    """为 WebView2 追加浏览器参数（须在创建窗口前设置环境变量）。
+
+    ``STATUS_BREAKPOINT`` 常见于 GPU 渲染进程崩溃。默认关闭硬件加速；
+    设 ``LOCI_WEBVIEW_DISABLE_GPU=0`` 可恢复 GPU。
+    """
+    extra: list[str] = []
+    disable_gpu = os.environ.get("LOCI_WEBVIEW_DISABLE_GPU", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    if disable_gpu:
+        extra.extend(
+            (
+                "--disable-gpu",
+                "--disable-gpu-compositing",
+            )
+        )
+    existing = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "").strip()
+    parts = [p for p in existing.split() if p]
+    for arg in extra:
+        if arg not in parts:
+            parts.append(arg)
+    joined = " ".join(parts)
+    if joined:
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = joined
+    if log is not None:
+        log(
+            "webview2 browser args: "
+            + (joined or "(none)")
+            + ("" if disable_gpu else " [GPU enabled via LOCI_WEBVIEW_DISABLE_GPU=0]")
+        )
+    return joined
+
+
 def run_desktop_shell(
     *,
     webview: Any,
@@ -169,55 +206,50 @@ def run_desktop_shell(
 
         def _create_and_show() -> None:
             from src.shared.peek_dock import PEEK_H, PEEK_W, PeekDockApi, PeekDockController
-            from src.shared.webview_ui import run_on_ui_thread
 
             main = state.get("window")
             if main is None:
                 raise RuntimeError("main window missing")
+            deadline = time.monotonic() + 20.0
+            while getattr(main, "native", None) is None and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if getattr(main, "native", None) is None:
+                raise TimeoutError("main window native not ready for peek")
+
             target = state.get("peek_url") or f"{url}/peek"
             state["peek_creating"] = True
-            done = threading.Event()
-            errors: list[BaseException] = []
 
-            def _build() -> None:
-                try:
-                    dock = state.get("peek_dock")
-                    if dock is None:
-                        dock = PeekDockController(log=hooks.log)
-                        state["peek_dock"] = dock
-                    api = PeekDockApi(dock)
-                    peek = webview.create_window(
-                        "Loci · 行情",
-                        url=str(target),
-                        js_api=api,
-                        width=PEEK_W,
-                        height=PEEK_H,
-                        on_top=True,
-                        focus=False,
-                    )
-                    state["peek"] = peek
-                    state["peek_loaded"] = True
-                    dock.attach(peek)
-                    try:
-                        peek.events.closing += on_peek_closing
-                    except Exception:
-                        hooks.log("peek closing hook failed:\n" + traceback.format_exc())
-                    hooks.log(f"peek window created on demand → {target}")
-                    dock.show_from_tray()
-                    hooks.log("peek shown from tray (dock)")
-                except BaseException as exc:
-                    errors.append(exc)
-                    hooks.log("peek UI create failed:\n" + traceback.format_exc())
-                finally:
-                    done.set()
-
-            # wait=False 避免托盘线程同步 Invoke 死锁；用 Event 收回成功/失败。
-            run_on_ui_thread(main, _build, wait=False)
-            if not done.wait(timeout=20.0):
-                raise TimeoutError("peek window create timed out on UI thread")
-            if errors:
-                state["peek"] = None
-                raise errors[0]
+            dock = state.get("peek_dock")
+            if dock is None:
+                dock = PeekDockController(log=hooks.log)
+                state["peek_dock"] = dock
+            api = PeekDockApi(dock)
+            # pywebview 6 在 start() 后由后台线程创建子窗，并自行切回 WinForms UI
+            # 线程。先 hidden 初始化可让 shown 事件完成，不能在 UI 回调里同步 show。
+            peek = webview.create_window(
+                "Loci · 行情",
+                url=str(target),
+                js_api=api,
+                width=PEEK_W,
+                height=PEEK_H,
+                hidden=True,
+                on_top=True,
+                focus=False,
+            )
+            if peek is None:
+                raise RuntimeError("peek window initialization was cancelled")
+            state["peek"] = peek
+            state["peek_loaded"] = True
+            dock.attach(peek)
+            try:
+                peek.events.closing += on_peek_closing
+                peek.events.closed += lambda: hooks.log("peek closed event")
+                peek.events.shown += lambda: hooks.log("peek shown event")
+            except Exception:
+                hooks.log("peek closing hook failed:\n" + traceback.format_exc())
+            hooks.log(f"peek window created on demand → {target}")
+            dock.show_from_tray()
+            hooks.log("peek shown from tray (dock)")
             _finish(True)
 
         def _run() -> None:
@@ -331,6 +363,7 @@ def run_desktop_shell(
         return False
 
     def on_peek_closing() -> bool:
+        hooks.log(f"peek closing event quitting={state['quitting']}")
         if decide_peek_close(quitting=bool(state["quitting"])) is CloseAction.ALLOW_CLOSE:
             return True
         dock = state.get("peek_dock")
@@ -396,6 +429,7 @@ def run_desktop_shell(
         os.environ.setdefault("WEBVIEW2_USER_DATA_FOLDER", str(storage))
         # 开发态也清缓存，避免改前端后仍吃旧 SPA（打包端 create_app 会再清一次）。
         os.environ.setdefault("LOCI_PURGE_WEBVIEW_CACHE", "1")
+        apply_webview2_browser_arguments(log=hooks.log)
         try:
             from src.shared.webview_cache import purge_webview_http_cache
 
@@ -427,6 +461,7 @@ def run_desktop_shell(
         state["peek"] = None
 
         def navigate_when_ready() -> None:
+            from src.shared.boot_splash import handoff_to_spa
             from src.shared.webview_ui import run_on_ui_thread
 
             def _wait_native(win: Any, *, timeout: float = 30.0) -> bool:
@@ -439,7 +474,24 @@ def run_desktop_shell(
                 return False
 
             try:
-                hooks.wait_ready(f"{url}/api/health", timeout=90.0)
+                deadline = time.monotonic() + 90.0
+                last_err = "未开始探测"
+                while time.monotonic() < deadline:
+                    if not server.is_alive():
+                        raise RuntimeError(
+                            "后台服务线程已退出（常见于 ops/palace 库 schema 迁移失败），"
+                            "详见 data/loci-startup.log"
+                        )
+                    try:
+                        hooks.wait_ready(f"{url}/api/health", timeout=2.0)
+                        break
+                    except Exception as probe_exc:  # noqa: BLE001
+                        last_err = f"{type(probe_exc).__name__}: {probe_exc}"
+                        time.sleep(0.35)
+                else:
+                    raise RuntimeError(
+                        f"服务未能在 90s 内就绪：{url}/api/health（{last_err}）"
+                    )
                 state["ready"] = True
                 boot = int(time.time())
                 target = f"{url}/?_boot={boot}"
@@ -447,9 +499,8 @@ def run_desktop_shell(
                 state["peek_loaded"] = False
                 if not _wait_native(window):
                     raise RuntimeError("main window native not ready for load_url")
-                hooks.log(f"server ready {url} → load_url {target} (peek on-demand)")
-                run_on_ui_thread(window, lambda: window.load_url(target), wait=False)
-                hooks.log("main load_url scheduled")
+                hooks.log(f"server ready {url} → finish splash then load_url (peek on-demand)")
+                handoff_to_spa(window, target, log=hooks.log)
             except Exception as exc:
                 hooks.log(f"navigate failed: {exc}")
                 try:
