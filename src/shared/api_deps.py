@@ -18,6 +18,7 @@ from src.shared.paths import palace_db as _default_palace_db
 
 #: 技能包等上传体积上限。
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+#: 兼容保留（外部可能导入）。**新代码不要用它**：import 期求值，不认租户。
 DEFAULT_PALACE_DB = str(_default_palace_db())
 
 CAPABILITY_MISSING_HEADER = "X-Loci-Reason"
@@ -61,7 +62,9 @@ def ops_store(ops_db: str | None) -> Any:
 def palace_store(palace_db: str | None) -> Any:
     from src.ledger import PalaceStore
 
-    return PalaceStore(palace_db or DEFAULT_PALACE_DB)
+    # 惰性解析：多租户下这一行决定了「谁的账本」。用 import 期常量等于
+  # 把所有人写进同一个文件，而且不报错。
+    return PalaceStore(palace_db or str(_default_palace_db()))
 
 
 def should_sync_today(market_db: str | Path | None = None) -> bool:

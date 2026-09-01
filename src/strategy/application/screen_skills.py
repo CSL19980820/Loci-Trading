@@ -31,7 +31,7 @@ from src.formula import (
     build_manifest_explanation,
     screen_skill_catalog,
 )
-from src.strategy.application.catalog import replace_screen_engines
+from src.strategy.application.catalog import replace_screen_engines, set_loader
 from src.strategy.application.screen_formula import (
     FormulaScreenEngine,
     ScreenFormulaError,
@@ -74,6 +74,12 @@ def refresh_screen_strategy_catalog() -> dict[str, Any]:
             )
     replace_screen_engines(engines, metadata_by_slug=metadata_by_slug)
     return {"count": len(engines), "rejected": rejected}
+
+
+# 惰性加载回调：catalog 不能 import 本模块（本模块已经 import 了它，会成环），
+# 所以在这里反向注册。某个租户第一次读战法目录 / get(slug) 时，catalog 会回调它，
+# 用**那个租户自己**的 skill_root() 刷出分片。进程启动时 main.py 只刷主租户。
+set_loader(refresh_screen_strategy_catalog)
 
 
 def get_screen_skill_catalog() -> dict[str, Any]:

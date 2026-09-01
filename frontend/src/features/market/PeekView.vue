@@ -186,12 +186,12 @@ onUnmounted(() => {
         aria-hidden="true"
         focusable="false"
       >
-        <circle cx="16" cy="16" r="16" fill="#c41e3a" />
-        <path fill="#fff" d="M8.4 7.8h4.1v11.2h6.4v3.9H8.4z" />
+        <circle cx="16" cy="16" r="16" fill="currentColor" />
+        <path class="app-badge__glyph" d="M8.4 7.8h4.1v11.2h6.4v3.9H8.4z" />
         <path
+          class="app-badge__glyph"
           d="M23.1 10.5a7.1 7.1 0 1 0 0 11"
           fill="none"
-          stroke="#fff"
           stroke-width="3.5"
           stroke-linecap="butt"
         />
@@ -242,63 +242,73 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/*
+* 探头窗是独立 WebView，窗体就是视口：满屏高度只在下方非 scoped 块里对
+* html/body/#app 声明一次。旧版在 .peek 与 .peek--ghost 各写一遍
+* min-height:100dvh，两态各撑一次，缩进态还要靠 !important 掰回来。
+*/
 .peek {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-1);
   height: 100%;
-  min-height: 100dvh;
-  padding: 0.55rem 0.7rem 0.65rem;
-  background: var(--paper, #eef2f6);
+  padding: var(--gap-1) var(--gap-2) var(--gap-2);
+  background: var(--paper);
   color: var(--ink);
   overflow: hidden;
 }
 .peek-chrome {
-  margin: -0.55rem -0.7rem 0.45rem;
-  padding: 0.45rem 0.7rem 0.35rem;
+  flex-shrink: 0;
+  margin: calc(var(--gap-1) * -1) calc(var(--gap-2) * -1) 0;
+  padding: var(--gap-1) var(--gap-2);
   cursor: move;
 }
 .peek-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: var(--gap-2);
 }
 .peek-head__left {
   display: flex;
   flex-direction: column;
-  gap: 0.12rem;
+  gap: 1px;
   min-width: 0;
 }
 .peek-kicker {
-  font: 650 0.72rem/1 var(--font-sans, system-ui);
+  font: 700 var(--fs-kicker) / 1.2 var(--font-sans);
   color: var(--ink);
   letter-spacing: 0.04em;
 }
 .peek-clock {
   color: var(--mist);
-  font: 500 0.7rem/1 var(--mono);
+  font: 500 var(--fs-kicker) / 1.2 var(--mono);
   font-variant-numeric: tabular-nums;
 }
 .peek-close {
   flex: 0 0 auto;
   margin-left: auto;
-  font-size: 1rem;
+  font-size: var(--fs-title);
   line-height: 1;
   color: var(--mist);
   cursor: pointer;
 }
 .peek-rail {
   display: flex;
+  flex: 0 0 auto;
   border: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--paper, #fff) 70%, #fff);
+  border-radius: var(--radius);
+  background: var(--sheet);
   overflow: hidden;
 }
 .peek-rail__cell {
   flex: 1;
   min-width: 0;
-  padding: 0.35rem 0.25rem;
+  padding: var(--gap-1) 2px;
   text-align: center;
   display: grid;
-  gap: 0.12rem;
+  gap: 1px;
   border-left: 1px solid var(--rule);
 }
 .peek-rail__cell:first-child {
@@ -306,16 +316,17 @@ onUnmounted(() => {
 }
 .peek-rail__cell .label {
   color: var(--mist);
-  font-size: 0.68rem;
+  font-size: var(--fs-kicker);
   font-weight: 500;
 }
+/* D2：探头窗里最大的字是点位 */
 .peek-rail__cell .px {
-  font: 600 0.78rem/1 var(--mono);
+  font: 700 var(--fs-body) / 1.15 var(--mono);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 .peek-rail__cell b {
-  font: 650 0.78rem/1 var(--mono);
+  font: 700 var(--fs-aux) / 1.15 var(--mono);
   font-variant-numeric: tabular-nums;
 }
 .is-up b,
@@ -331,21 +342,25 @@ onUnmounted(() => {
   color: var(--mist);
 }
 .peek-err {
-  margin-top: 0.8rem;
-  color: var(--seal-ink);
-  font-size: 0.85rem;
+  margin: 0;
+  color: var(--warn);
+  font-size: var(--fs-aux);
 }
-
 /* —— 贴边探头：矢量圆标（无位图毛边） —— */
 .peek--ghost {
+  display: block;
   margin: 0;
   padding: 0;
-  min-height: 100dvh;
-  width: 100%;
+  gap: 0;
   height: 100%;
   background: transparent;
   overflow: hidden;
   cursor: pointer;
+  /*
+  * 品牌印记必须无论明暗都是「印章红盘 + 亮字」：字形跟着 --sheet 走会在
+  * 夜盘翻成深色、直接消失在红盘里（参照 style.theme.css:117 的墨盘同款理由）。
+  */
+  --peek-badge-glyph: #fff;
 }
 .icon-shift {
   width: 2.25rem;
@@ -357,9 +372,7 @@ onUnmounted(() => {
 .peek--edge-right .icon-shift {
   margin-left: 0;
 }
-.peek--edge-top .icon-shift {
-  margin-top: -0.25rem;
-}
+.peek--edge-top .icon-shift,
 .peek--edge-bottom .icon-shift {
   margin-top: -0.25rem;
 }
@@ -367,25 +380,36 @@ onUnmounted(() => {
   width: 2.25rem;
   height: 2.25rem;
   display: block;
+  color: var(--stamp);
   pointer-events: none;
   user-select: none;
   shape-rendering: geometricPrecision;
+}
+.app-badge__glyph {
+  fill: var(--peek-badge-glyph);
+  stroke: var(--peek-badge-glyph);
 }
 </style>
 
 <!-- 缩进态透明嵌边；展开态强制不透明，避免竞态残留空白壳。探头窗取消 body min-width。 -->
 <style>
-html[data-peek-phase] body {
+/* 满屏高度的唯一声明处：scoped 里不再各态写一遍 min-height:100dvh */
+html[data-peek-phase],
+html[data-peek-phase] body,
+html[data-peek-phase] #app {
+  height: 100dvh;
   min-width: 0;
 }
+
 html[data-peek-phase='collapsed'],
 html[data-peek-phase='collapsed'] body,
 html[data-peek-phase='collapsed'] #app {
   background: transparent !important;
 }
+
 html[data-peek-phase='free'],
 html[data-peek-phase='free'] body,
 html[data-peek-phase='free'] #app {
-  background: #eef2f6 !important;
+  background: var(--paper) !important;
 }
 </style>

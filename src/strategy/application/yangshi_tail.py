@@ -72,8 +72,7 @@ class YangshiTailPickerV1:
     description = (
         "V1：流通股本<2亿股 + 现价<12元 + 涨幅 1%~5% + 换手>2% 四条素材闸门，"
         "叠加成交额/价格/非封板可交易底线；上涨家数<40% 整日空仓，"
-        "否则按当日涨幅降序取第一只；工作日 15:30 用已定型收盘价选股，"
-        "次日开盘买入，持有 2 日"
+        "否则按当日涨幅降序取第一只；次日开盘买入，持有 2 日"
     )
     entry_instructions = (
         "T 日收盘后 15:30 执行（素材原文是尾盘选股：用已定型的收盘价选股，不在尾盘买入）。"
@@ -83,8 +82,6 @@ class YangshiTailPickerV1:
     execution_adjust = "none"
     requires_raw_limit_price = True
     requires_instrument_names = True
-    # 用已定型的 T 日 OHLCV，等 15:00 收盘竞价结束；买入仍是 next_open。
-    screen_schedule = _once_schedule(15, 30)
     screen_force_spot_refresh = False
     screen_top_n = 1
     screen_rank_factor = "当日涨幅(%)"

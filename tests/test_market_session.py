@@ -138,3 +138,50 @@ def test_calendar_covers_today_but_holiday():
     )
     assert s["is_trading_day"] is False
     assert s["live_reason"] == "non_trading_day"
+
+
+def test_board_phase_names_every_intraday_segment():
+    """大屏时段词表。**午休必须是午休**——12:00 说「已收盘」正是用户拍下来的那张图。"""
+    from src.market.application.session import board_phase
+
+    cases = {
+        "09:00": "pre_open",
+        "09:20": "pre_market",
+        "09:29": "pre_market",
+        "10:30": "morning",
+        "12:00": "noon_break",
+        "13:30": "afternoon",
+        "14:58": "closing_auction",
+        "15:30": "closed",
+    }
+    for text, expected in cases.items():
+        hour, minute = (int(part) for part in text.split(":"))
+        assert board_phase(datetime(2026, 8, 31, hour, minute)) == expected, text
+
+
+def test_board_session_adds_phase_and_live_to_the_gate():
+    """SSE / REST 共用的 session 形状：闸门键之外还得有 phase 与 live。"""
+    from src.market.application.session import board_session
+
+    gate = {"live_allowed": True, "is_trading_day": True}
+    morning = board_session(gate, now=datetime(2026, 8, 31, 10, 30))
+    assert morning["phase"] == "morning" and morning["live"] is True
+
+    # 午休：闸门还开着（in_live_clock 判到 15:00），但没在撮合。
+    noon = board_session(gate, now=datetime(2026, 8, 31, 12, 0))
+    assert noon["phase"] == "noon_break" and noon["live"] is False
+
+    # 非交易日：时钟不知道今天休市，闸门知道 —— 一律 closed。
+    weekend = board_session(
+        {"live_allowed": False, "is_trading_day": False}, now=datetime(2026, 8, 29, 10, 30)
+    )
+    assert weekend["phase"] == "closed" and weekend["live"] is False
+
+
+def test_board_session_survives_a_missing_gate():
+    """闸门读不出来时只能保守：相位照报，live 判 False，不是整块崩掉。"""
+    from src.market.application.session import board_session
+
+    degraded = board_session(None, now=datetime(2026, 8, 31, 10, 30))
+    assert degraded["phase"] == "morning"
+    assert degraded["live"] is False

@@ -26,6 +26,7 @@ import {
 import type { LeaderRoleHistoryResponse } from '@/shared/types/quant'
 
 import PaperRoleReviewPanel from './PaperRoleReviewPanel.vue'
+import { cnStrategyName } from '../composables/opsLabels'
 
 const slug = ref('demo')
 const cabinBusy = ref(false)
@@ -102,7 +103,8 @@ const tradingDayGateAlert = computed(() => {
   return {
     type,
     title,
-    description: String(gate.note || '请同步 market.db 交易日历后再开仓'),
+    // el-alert 禁 description：闸门备注改挂 tooltip，页面上只留 ≤20 字的标题
+    note: String(gate.note || '请同步 market.db 交易日历后再开仓'),
   }
 })
 
@@ -330,7 +332,7 @@ onMounted(async () => {
   <div class="paper-quant" v-loading="cabinBusy">
     <el-card shadow="never" class="block">
       <template #header>通知策略（安静时段 / Bark）</template>
-      <el-form label-width="6rem" @submit.prevent>
+      <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
         <el-form-item label="安静时段">
           <el-input v-model="quietHours" placeholder="23:00-07:00，空为关闭" />
         </el-form-item>
@@ -358,9 +360,11 @@ onMounted(async () => {
 
     <el-card shadow="never" class="block">
       <template #header>纸面量化舱</template>
-      <el-form label-width="6rem" @submit.prevent>
+      <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
         <el-form-item label="战法标识">
-          <el-input v-model="slug" style="max-width: 16rem" />
+          <el-input v-model="slug" style="max-width: 12rem" />
+          <!-- slug 是英文编码，展示位必须给中文名：走共享词表（含拼音词根兜底） -->
+          <el-tag class="ml" size="small" effect="plain">{{ cnStrategyName('', slug.trim() || 'demo') }}</el-tag>
           <el-button class="ml" @click="loadCabin">刷新</el-button>
         </el-form-item>
         <el-form-item label="企微跟随">
@@ -381,8 +385,9 @@ onMounted(async () => {
           <el-input-number v-model="maxLayers" :min="1" :max="20" :step="0.5" />
         </el-form-item>
         <el-form-item label="高开可追">
-          <el-switch v-model="gapUpChase" />
-          <span class="muted ml">默认不追；开启后仅浅高开半层</span>
+          <el-tooltip placement="top-start" content="默认不追；开启后只在浅高开时买半层">
+            <el-switch v-model="gapUpChase" />
+          </el-tooltip>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="saveCabin">保存舱配置</el-button>
@@ -396,37 +401,46 @@ onMounted(async () => {
         · 观察 {{ String((unifiedPool as { counts?: { observe?: number } } | null)?.counts?.observe ?? 0) }}/5
         · 最近成交 {{ fills.length }} · 20万底仓 / 100%
       </p>
-      <el-alert
+      <!-- 交易日闸是真异常：留 el-alert，标题 ≤20 字；备注（note）进 tooltip -->
+      <el-tooltip
         v-if="tradingDayGateAlert"
-        class="mt"
-        :type="tradingDayGateAlert.type"
-        :closable="false"
-        show-icon
-        :title="tradingDayGateAlert.title"
-        :description="tradingDayGateAlert.description"
-      />
-      <el-alert
-        v-if="latestMarketGate"
-        class="mt"
-        :type="latestMarketGateType"
-        :closable="false"
-        :title="`龙空龙闸门：${String(latestMarketGate.mode || '观察')} · ${String(latestMarketGate.label || '')}`"
-        :description="String(latestMarketGate.reason || '这次没有给出闸门说明')"
-      />
+        placement="top-start"
+        :content="tradingDayGateAlert.note"
+      >
+        <el-alert
+          class="mt"
+          :type="tradingDayGateAlert.type"
+          :closable="false"
+          show-icon
+          :title="tradingDayGateAlert.title"
+        />
+      </el-tooltip>
+      <!-- 龙空龙闸门是状态读数，不报错：从 el-alert 降成一行 chip + 读数，理由进 tooltip -->
+      <p v-if="latestMarketGate" class="gate-row mt">
+        <el-tag size="small" effect="plain" :type="latestMarketGateType">
+          龙空龙闸门 {{ String(latestMarketGate.mode || '观察') }}
+        </el-tag>
+        <el-tooltip placement="top-start" :content="String(latestMarketGate.reason || '这次没有给出闸门说明')">
+          <span class="muted">{{ String(latestMarketGate.label || '—') }}</span>
+        </el-tooltip>
+      </p>
       <el-table :data="positions" size="small" empty-text="纸面舱还没有持仓，盯盘买进后会记在这里">
         <el-table-column prop="code" label="代码" width="100" />
         <el-table-column prop="name" label="名称" />
         <el-table-column prop="layers" label="层" width="80" />
         <el-table-column prop="mark_cost" label="标记成本" width="100" />
       </el-table>
-      <el-alert
-        v-if="plan"
-        class="mt plan-body"
-        type="info"
-        :closable="false"
-        :title="`次日情景预案 ${(plan as { plan_date?: string }).plan_date || ''}`"
-        :description="String((plan as { body_text?: string }).body_text || '')"
-      />
+      <!--
+        次日情景预案是**内容**，不是异常：原来塞进 el-alert 的 description 里。
+        改成正文块，标题与预案日期同一行，正文按原样保留换行。
+      -->
+      <section v-if="plan" class="plan-body mt">
+        <p class="plan-body__head">
+          <strong>次日情景预案</strong>
+          <span class="mono">{{ (plan as { plan_date?: string }).plan_date || '—' }}</span>
+        </p>
+        <pre class="plan-body__text">{{ String((plan as { body_text?: string }).body_text || '') }}</pre>
+      </section>
       <el-table
         v-if="planItems.length"
         class="mt"
@@ -454,10 +468,11 @@ onMounted(async () => {
 
     <el-card shadow="never" class="block">
       <template #header>
-        战法风格记忆 · rev {{ styleRevision }}
-        <span class="muted">（评头论足 / 该怎么买 / 该看哪些 / 教训）</span>
+        <el-tooltip placement="top-start" content="记的是：评头论足 / 该怎么买 / 该看哪些 / 教训">
+          <span>战法风格记忆 · rev {{ styleRevision }}</span>
+        </el-tooltip>
       </template>
-      <el-form label-width="6rem" @submit.prevent>
+      <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
         <el-form-item label="风格正文">
           <el-input v-model="styleMd" type="textarea" :rows="10" />
         </el-form-item>
@@ -475,7 +490,7 @@ onMounted(async () => {
           <el-button @click="rebuildMemory">重建记忆图</el-button>
         </el-form-item>
       </el-form>
-      <el-form inline class="mt" @submit.prevent>
+      <el-form inline label-position="left" label-width="6.5em" class="mt" @submit.prevent>
         <el-form-item label="探索词">
           <el-input v-model="memoryQuery" style="width: 14rem" placeholder="如：高开 教训" />
         </el-form-item>
@@ -484,21 +499,17 @@ onMounted(async () => {
           <span class="muted ml">{{ memoryStats }}</span>
         </el-form-item>
       </el-form>
-      <el-alert
-        v-if="memorySummary"
-        class="mt plan-body"
-        type="success"
-        :closable="false"
-        title="记忆知识图（类 codegraph explore）"
-        :description="memorySummary"
-      />
+      <!-- 记忆图摘要是内容不是异常：从 el-alert(success)+description 降成正文块 -->
+      <pre v-if="memorySummary" class="plan-body__text mt">{{ memorySummary }}</pre>
       <el-table :data="memoryNodes" size="small" class="mt" max-height="200" empty-text="还没有记忆节点，先点「重建记忆图」">
         <el-table-column prop="kind" label="类型" width="90" />
         <el-table-column prop="title" label="标题" min-width="120" show-overflow-tooltip />
         <el-table-column prop="body" label="内容" min-width="160" show-overflow-tooltip />
         <el-table-column prop="weight" label="权重" width="70" />
       </el-table>
-      <p class="muted">边 {{ memoryEdges.length }} 条（has_rule / watches / learned_from / absorbed_into / about…）</p>
+      <el-tooltip placement="top-start" content="边类型：has_rule / watches / learned_from / absorbed_into / about…">
+        <span class="muted">边 {{ memoryEdges.length }} 条</span>
+      </el-tooltip>
       <template v-if="roleAlertLessons.length">
         <p class="section dim">角色告警教训</p>
         <el-table
@@ -542,7 +553,7 @@ onMounted(async () => {
 
     <el-card shadow="never" class="block">
       <template #header>价格提醒规则</template>
-      <el-form inline @submit.prevent>
+      <el-form inline label-position="left" label-width="6.5em" @submit.prevent>
         <el-form-item label="代码">
           <el-input v-model="alertCode" style="width: 8rem" />
         </el-form-item>
@@ -567,29 +578,53 @@ onMounted(async () => {
 .paper-quant {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--gap-2);
   min-height: 0;
 }
 .block {
   flex: 0 0 auto;
 }
 .ml {
-  margin-left: 0.5rem;
+  margin-left: var(--gap-2);
 }
 .mt {
-  margin-top: 0.75rem;
+  margin-top: var(--gap-2);
 }
 .muted {
   color: var(--el-text-color-secondary);
-  font-size: 0.85rem;
+  font-size: var(--fs-aux);
 }
-.plan-body :deep(.el-alert__description) {
+/* 预案 / 记忆图摘要：正文块，保留原文换行 */
+.plan-body {
+  padding: var(--gap-2) 0 0;
+}
+.plan-body__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+  margin: 0 0 var(--gap-1);
+  font-size: var(--fs-aux);
+}
+.plan-body__text {
+  margin: 0;
   white-space: pre-wrap;
   line-height: 1.45;
+  font-family: inherit;
+  font-size: var(--fs-aux);
+  color: var(--el-text-color-regular);
+}
+.gate-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin: var(--gap-2) 0 0;
+}
+.mono {
+  font-family: var(--mono);
 }
 .section {
-  margin: 0.75rem 0 0.35rem;
-  font-size: 0.85rem;
+  margin: var(--gap-2) 0 var(--gap-1);
+  font-size: var(--fs-aux);
   color: var(--el-text-color-secondary);
 }
 .role-alert-table :deep(.el-table__row) {

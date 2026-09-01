@@ -128,7 +128,12 @@ watch(
       <p class="purpose">{{ dataset.summary || '上游未写说明' }}</p>
 
       <div class="block">
-        <div class="block-title">入参</div>
+        <!-- 入参 / 出参是弹窗里并列的两块，标题必须留着区分；但不让它空占一行：
+             和出参那行一样，条数读数压到同一行上 -->
+        <div class="block-head">
+          <span class="block-title">入参</span>
+          <span class="block-count">{{ paramRows.length }} 项</span>
+        </div>
         <el-table :data="paramRows" size="small" row-key="name" empty-text="该接口不需要入参">
           <el-table-column prop="name" label="参数" min-width="130">
             <template #default="{ row }"><span class="mono">{{ row.name }}</span></template>
@@ -206,6 +211,11 @@ watch(
 .block-title {
   font-size: 0.82rem;
   font-weight: 600;
+}
+.block-count {
+  font: var(--fs-aux)/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--mist);
 }
 .block-head {
   display: flex;

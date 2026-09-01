@@ -1,18 +1,13 @@
 """研究工作台 HTTP 接口。"""
 from __future__ import annotations
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
-import hashlib
-from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.backtest import BacktestConfig, TrainOOSSplit
 from src.market import MarketStore
 from src.research.application import (
-    ResearchBacktestError,
     ResearchNotFoundError,
     ResearchRunError,
     build_research_catalog,
@@ -20,20 +15,9 @@ from src.research.application import (
     create_research_run,
     read_research_run,
     resume_research_run,
-    run_research_backtest,
-    ResearchReplayError,
-    replay_research_backtest,
-    ResearchPublicationError,
-    manifest_sha256,
-    publish_research_backtest,
 )
-from src.research.api.backtest_models import (
-    ResearchBacktestPublicationRequest,
-    ResearchBacktestRequest,
-)
+from src.research.api.backtest_router import build_research_backtest_router
 from src.research.api.write_access import require_configured_research_write_access
-from src.research.domain import validate_relative_artifact_path
-from src.strategy import StrategyError, get as get_strategy
 from src.research.domain.hypothesis import (
     EvidenceLink,
     Hypothesis,
@@ -53,11 +37,7 @@ from src.research.infrastructure import (
     ResearchWorkflowStore,
     ResearchBacktestJobStore,
     RunCardError,
-    RunCardNotFoundError,
-    WorkflowStorageError,
 )
-
-_BACKTEST_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="research-backtest")
 
 
 class ResearchRunRequest(BaseModel):
@@ -144,110 +124,25 @@ def build_research_router(
     def _cards() -> ResearchRunCardStore:
         return run_card_store_factory() if run_card_store_factory else ResearchRunCardStore()
 
-    def _workflows() -> ResearchWorkflowStore:
-        return workflow_store_factory() if workflow_store_factory else ResearchWorkflowStore(_cards().root)
-
     def _hypotheses() -> HypothesisStore:
         return hypothesis_store_factory() if hypothesis_store_factory else HypothesisStore()
 
-    def _jobs() -> ResearchBacktestJobStore:
-        return backtest_job_store_factory() if backtest_job_store_factory else ResearchBacktestJobStore()
-
-    def _memberships() -> MembershipSnapshotStore:
-        return membership_store_factory() if membership_store_factory else MembershipSnapshotStore()
-
-    _jobs().recover_interrupted()
-
-    def _execute_backtest(request: ResearchBacktestRequest) -> dict[str, Any]:
-        split = TrainOOSSplit(**request.split.model_dump()) if request.split else None
-        config = BacktestConfig(**request.backtest_config.model_dump())
-        if request.hypothesis_id is not None:
-            hypothesis = _hypotheses().get(request.hypothesis_id)
-            if hypothesis is None:
-                raise ResearchBacktestError(f"假设不存在：{request.hypothesis_id}")
-            if request.hypothesis_revision != hypothesis.revision:
-                raise ResearchBacktestError("hypothesis revision 已变化或未提供")
-        with _market() as store:
-            outcome = run_research_backtest(
-                store, strategy=request.strategy, start=request.start, end=request.end,
-                params=request.params, backtest_config=config, universe=request.universe,
-                split=split, hypothesis_id=request.hypothesis_id,
-                hypothesis_revision=request.hypothesis_revision,
-                initial_capital=request.initial_capital, max_positions=request.max_positions,
-                lot_size=request.lot_size, seed=request.seed, random_repeats=request.random_repeats,
-                bootstrap_iterations=request.bootstrap_iterations,
-                monte_carlo_iterations=request.monte_carlo_iterations,
-                 historical_universe_id=request.historical_universe_id, strict_pit=request.strict_pit,
-                 membership_store=_memberships(),
-                 run_card_store=_cards(), workflow_store=_workflows(),
-            )
-        return outcome.to_dict()
-
-    def _submit_backtest_job(request: ResearchBacktestRequest) -> dict[str, Any]:
-        job_store = _jobs()
-        job = job_store.create(request.model_dump(mode="json"))
-
-        def execute_job() -> None:
-            try:
-                job_store.update(job["id"], status="running")
-                outcome = _execute_backtest(request)
-                job_store.update(
-                    job["id"],
-                    status="completed",
-                    run_id=str(outcome["run_card"]["run_id"]),
-                )
-            except Exception as exc:
-                job_store.update(
-                    job["id"], status="failed", error=f"{type(exc).__name__}: {exc}"
-                )
-
-        try:
-            _BACKTEST_EXECUTOR.submit(execute_job)
-        except Exception as exc:
-            job_store.update(job["id"], status="failed", error=f"submit_failed: {exc}")
-            raise ResearchBacktestError("研究回测后台任务提交失败") from exc
-        return job
+    router.include_router(
+        build_research_backtest_router(
+            write_dependency=write_dependency,
+            market_db=market_db,
+            market_store_factory=market_store_factory,
+            run_card_store_factory=run_card_store_factory,
+            workflow_store_factory=workflow_store_factory,
+            hypothesis_store_factory=hypothesis_store_factory,
+            backtest_job_store_factory=backtest_job_store_factory,
+            membership_store_factory=membership_store_factory,
+        )
+    )
 
     def _run_error(exc: ResearchRunError) -> HTTPException:
         status = 404 if str(exc).startswith("找不到") else 409
         return HTTPException(status_code=status, detail=str(exc))
-
-    def _current_market_revision() -> str | None:
-        try:
-            with _market() as store:
-                value = store.market_revision()
-        except (AttributeError, OSError, ValueError):
-            return None
-        return str(value) if value else None
-
-    def _current_strategy_revision(strategy_slug: str) -> str | None:
-        try:
-            return str(getattr(get_strategy(strategy_slug), "strategy_revision", "")) or None
-        except StrategyError:
-            return None
-
-    def _card_response(card: Any) -> dict[str, Any]:
-        digest = manifest_sha256(card)
-        return {
-            **card.to_dict(),
-            "artifact_manifest_sha256": digest,
-            "manifest_sha256": digest,
-        }
-
-    def _require_card(run_id: str) -> Any:
-        try:
-            stored = _cards()
-            existing = stored.require(run_id)
-            card = stored.require(
-                run_id,
-                current_strategy_revision=_current_strategy_revision(existing.strategy_slug),
-                current_market_revision=_current_market_revision(),
-            )
-        except (RunCardNotFoundError, ValueError) as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except RunCardError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return card
 
     def _evidence(
         values: list[EvidenceLinkRequest], *, hypothesis_id: str, hypothesis_revision: int
@@ -384,141 +279,6 @@ def build_research_router(
             raise _run_error(exc) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    @router.post("/api/research/backtest-runs", tags=["research"], status_code=202)
-    def create_backtest_run(
-        request: ResearchBacktestRequest,
-        _write: None = write_guard,
-    ) -> dict[str, Any]:
-        try:
-            return {"job": _submit_backtest_job(request)}
-        except ResearchBacktestError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        except (RunCardError, WorkflowStorageError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    @router.post("/api/research/backtest-jobs", tags=["research"], status_code=202)
-    def submit_backtest_job(
-        request: ResearchBacktestRequest,
-        _write: None = write_guard,
-    ) -> dict[str, Any]:
-        try:
-            return {"job": _submit_backtest_job(request)}
-        except ResearchBacktestError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    @router.get("/api/research/backtest-jobs/{job_id}", tags=["research"])
-    def get_backtest_job(job_id: str) -> dict[str, Any]:
-        job = _jobs().get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail=f"研究回测任务不存在：{job_id}")
-        return {"job": job}
-
-    @router.get("/api/research/backtest-runs", tags=["research"])
-    def list_backtest_runs() -> dict[str, Any]:
-        try:
-            cards = _cards()
-            market_revision = _current_market_revision()
-            items = [
-                _card_response(cards.require(
-                    card.run_id,
-                    current_strategy_revision=_current_strategy_revision(card.strategy_slug),
-                    current_market_revision=market_revision,
-                ))
-                for card in cards.list()
-            ]
-            return {"items": items, "total": len(items)}
-        except RunCardError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-    @router.get("/api/research/backtest-runs/{run_id}", tags=["research"])
-    def get_backtest_run(run_id: str) -> dict[str, Any]:
-        return _card_response(_require_card(run_id))
-
-    @router.get("/api/research/backtest-runs/{run_id}/workflow", tags=["research"])
-    def get_backtest_workflow(run_id: str) -> dict[str, Any]:
-        _require_card(run_id)
-        try:
-            workflow = _workflows().load(run_id)
-        except (WorkflowStorageError, ValueError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        if workflow is None:
-            raise HTTPException(status_code=404, detail=f"找不到研究工作流：{run_id}")
-        return workflow.to_dict()
-
-    @router.post("/api/research/backtest-runs/{run_id}/publish", tags=["research"])
-    def publish_backtest_run(
-        run_id: str,
-        request: ResearchBacktestPublicationRequest,
-        _write: None = write_guard,
-    ) -> dict[str, Any]:
-        try:
-            outcome = publish_research_backtest(
-                run_id,
-                reviewer=request.reviewer,
-                reason=request.reason,
-                manifest_digest=request.manifest_sha256,
-                run_card_store=_cards(),
-                workflow_store=_workflows(),
-            )
-            outcome["run_card"] = _card_response(_cards().require(run_id))
-            return outcome
-        except ResearchPublicationError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (RunCardError, WorkflowStorageError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    @router.post("/api/research/backtest-runs/{run_id}/replay", tags=["research"])
-    def replay_backtest_run(run_id: str, _write: None = write_guard) -> dict[str, Any]:
-        try:
-            with _market() as store:
-                replay = replay_research_backtest(store, run_id, run_card_store=_cards())
-            card = _cards().require(run_id)
-            workflow = _workflows().load(run_id)
-            return {
-                "run_card": _card_response(card),
-                "workflow": workflow.to_dict() if workflow else {},
-                **replay,
-            }
-        except ResearchReplayError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except (RunCardError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    @router.get("/api/research/backtest-runs/{run_id}/artifact", tags=["research"])
-    def get_backtest_artifact(
-        run_id: str,
-        path: str = Query(min_length=1, max_length=240),
-    ) -> Response:
-        card = _require_card(run_id)
-        try:
-            relative_path = validate_relative_artifact_path(path)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        entry = next((item for item in card.artifact_manifest if item.path == relative_path), None)
-        if entry is None:
-            raise HTTPException(status_code=404, detail=f"artifact 不存在：{relative_path}")
-        root = Path(_cards().root).resolve()
-        target = (root / card.run_id / relative_path).resolve()
-        if root not in target.parents or not target.is_file():
-            raise HTTPException(status_code=404, detail=f"artifact 不存在：{relative_path}")
-        try:
-            content = target.read_bytes()
-        except OSError as exc:
-            raise HTTPException(status_code=503, detail=f"artifact 读取失败：{relative_path}") from exc
-        actual_digest = hashlib.sha256(content).hexdigest()
-        if actual_digest != entry.sha256:
-            raise HTTPException(status_code=409, detail=f"artifact 完整性校验失败：{relative_path}")
-        return Response(
-            content=content,
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f'attachment; filename="{Path(relative_path).name}"',
-                "X-Research-Artifact-SHA256": entry.sha256,
-            },
-        )
 
     @router.get("/api/research/hypotheses", tags=["research"])
     def list_hypotheses(

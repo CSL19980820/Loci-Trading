@@ -11,7 +11,7 @@ defineProps<{
 </script>
 
 <template>
-  <el-form class="sys-form" label-position="left" label-width="5.5rem" @submit.prevent>
+  <el-form class="sys-form" label-position="right" label-width="6.5em" size="small" @submit.prevent>
     <el-form-item label="目录">
       <el-input v-model="dir" />
     </el-form-item>
@@ -41,7 +41,7 @@ defineProps<{
     </el-row>
     <el-alert
       v-if="pendingRestart"
-      title="请关闭并重新打开 Loci，新目录才会生效"
+      title="重启 Loci 后新目录才生效"
       type="warning"
       show-icon
       :closable="false"
@@ -54,29 +54,29 @@ defineProps<{
 .disc-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: var(--gap-1);
 }
 
 .disc-bytes {
-  margin-left: 0.35rem;
+  margin-left: var(--gap-1);
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .restart-alert {
-  margin-top: 0.1rem;
+  margin-top: 1px;
 }
 
 .mono {
   font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
   word-break: break-all;
 }
 
 .sys-form :deep(.el-form-item) {
-  margin-bottom: 0.45rem;
+  margin-bottom: var(--gap-2);
 }
 
 .sys-form :deep(.el-input) {

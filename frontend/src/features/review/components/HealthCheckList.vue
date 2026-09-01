@@ -31,6 +31,22 @@ const statusLabel: Record<HealthCheckRow['status'], string> = {
   block: '阻断',
 }
 
+/*
+ * 状态徽章用 el-tag 的语义档，不再自绘色块。
+ * 旧写法把「阻断」染成 --seal（品牌色）、「通过」染成 --lake（跌绿）、
+ * 「提示」写死 #c8a400，还得配 color:#fff —— 深色档下白字块会糊成一片。
+ * EP 的 danger/warning/success 已由令牌层挂到 --stamp/--warn/--success 上。
+ */
+type BadgeType = 'danger' | 'warning' | 'success' | 'primary' | 'info'
+
+const statusTagType: Record<HealthCheckRow['status'], BadgeType> = {
+  pending: 'info',
+  running: 'primary',
+  ok: 'success',
+  warn: 'warning',
+  block: 'danger',
+}
+
 const hasPending = computed(() => props.pendingRows.length > 0)
 
 /**
@@ -109,8 +125,11 @@ function goManual(row: HealthCheckRow): void {
   <div class="check-list">
     <template v-if="hasPending">
       <template v-if="pendingTitle === '待检'">
-        <h3 class="check-list__title">待检 · {{ pendingRows.length }} 项</h3>
-        <p class="check-list__idle-hint">点上方「一键扫描」开始核对；深度扫描会额外探数据源连通。</p>
+        <!-- 标题与提示压成一行：两行只说了「待检 N 项，点扫描」一件事 -->
+        <h3 class="check-list__title">
+          待检 · {{ pendingRows.length }} 项
+          <span class="check-list__hint">点「一键扫描」开始核对</span>
+        </h3>
         <div class="check-list__catalog" aria-label="检查目录">
           <template v-for="group in pendingGroups" :key="group.name">
             <p class="check-list__sub">{{ group.name }}（{{ group.rows.length }}）</p>
@@ -122,7 +141,9 @@ function goManual(row: HealthCheckRow): void {
               <div class="check-row__body">
                 <p class="check-row__label">{{ row.label }}</p>
               </div>
-              <span class="check-row__badge">{{ statusLabel[row.status] }}</span>
+              <el-tag class="check-row__badge" size="small" effect="plain" :type="statusTagType[row.status]">
+                {{ statusLabel[row.status] }}
+              </el-tag>
             </div>
           </template>
         </div>
@@ -140,7 +161,9 @@ function goManual(row: HealthCheckRow): void {
             <p class="check-row__label">{{ row.label }}</p>
             <p v-if="row.message" class="check-row__msg">{{ row.message }}</p>
           </div>
-          <span class="check-row__badge">{{ statusLabel[row.status] }}</span>
+          <el-tag class="check-row__badge" size="small" effect="plain" :type="statusTagType[row.status]">
+            {{ statusLabel[row.status] }}
+          </el-tag>
         </div>
       </template>
     </template>
@@ -202,7 +225,9 @@ function goManual(row: HealthCheckRow): void {
               {{ row.remediation.label || '去处理' }}
             </el-button>
           </div>
-          <span class="check-row__badge">{{ statusLabel[row.status] }}</span>
+          <el-tag class="check-row__badge" size="small" effect="plain" :type="statusTagType[row.status]">
+            {{ statusLabel[row.status] }}
+          </el-tag>
         </div>
       </template>
     </template>
@@ -223,7 +248,7 @@ function goManual(row: HealthCheckRow): void {
             <p class="check-row__label">{{ row.label }}</p>
             <p v-if="row.message" class="check-row__msg">{{ row.message }}</p>
           </div>
-          <span class="check-row__badge">通过</span>
+          <el-tag class="check-row__badge" size="small" effect="plain" type="success">通过</el-tag>
         </div>
       </template>
     </template>
@@ -234,174 +259,131 @@ function goManual(row: HealthCheckRow): void {
 .check-list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 0.35rem;
+  gap: var(--gap-1);
+  margin-top: var(--gap-1);
 }
-
 .check-list__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.65rem;
-  margin-top: 0.35rem;
+  gap: var(--gap-2);
+  margin-top: var(--gap-1);
 }
-
 .check-list__title {
-  margin: 0.2rem 0 0.25rem;
-  font-size: 0.78rem;
-  font-weight: 650;
+  margin: var(--gap-1) 0 2px;
+  font-size: var(--fs-aux);
+  font-weight: 700;
   color: var(--mist);
   letter-spacing: 0.04em;
 }
-
 .check-list__sub {
-  margin: 0.35rem 0 0.1rem;
-  font-size: 0.72rem;
-  font-weight: 650;
+  margin: var(--gap-1) 0 0;
+  font-size: var(--fs-kicker);
+  font-weight: 700;
   color: var(--mist);
   letter-spacing: 0.03em;
 }
-
-.check-list__idle-hint {
-  margin: 0 0 0.35rem;
-  font-size: 0.78rem;
+/* 提示与标题同行：小一号、常规字重，只做尾注 */
+.check-list__hint {
+  margin-left: var(--gap-2);
+  font-size: var(--fs-kicker);
+  font-weight: 400;
+  letter-spacing: 0;
   color: var(--mist);
-  line-height: 1.4;
 }
-
 .check-list__catalog {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: var(--gap-1);
 }
-
 .check-list__catalog .check-list__sub {
-  margin: 0.4rem 0 0.05rem;
+  margin: var(--gap-1) 0 0;
 }
-
 .check-list__catalog .check-list__sub:first-child {
   margin-top: 0;
 }
-
 .check-list__fold {
-  margin: 0.55rem 0 0.15rem;
+  margin: var(--gap-2) 0 0;
   padding: 0 !important;
   height: auto !important;
-  font-size: 0.78rem;
-  font-weight: 650;
+  font-size: var(--fs-aux);
+  font-weight: 700;
   color: var(--mist) !important;
   justify-content: flex-start;
 }
-
 .check-list__fold:focus-visible {
   outline: 2px solid var(--seal);
   outline-offset: 2px;
 }
-
+/* D3：1px hairline + 3px 圆角，无阴影；行高由内容驱动 */
 .check-row {
   display: grid;
-  grid-template-columns: 3.2rem 1fr auto;
-  gap: 0.55rem;
+  grid-template-columns: 3.2rem minmax(0, 1fr) auto;
+  gap: var(--gap-2);
   align-items: start;
-  padding: 0.55rem 0.65rem;
+  padding: var(--gap-1) var(--gap-2);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--sheet) 88%, #fff);
-  font-size: 0.86rem;
+  background: var(--sheet);
+  font-size: var(--fs-body);
   line-height: 1.45;
 }
-
 .check-row--selectable {
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
-
 .check-row--compact {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  padding: 0.35rem 0.65rem;
+  min-height: var(--row-h);
+  padding: 0 var(--gap-2);
 }
-
+/* 阻断 / 提示的边框走状态色（--stamp / --warn），不借品牌色也不借涨跌色 */
 .check-row--block {
-  border-color: color-mix(in srgb, var(--seal) 28%, var(--rule));
-  background: color-mix(in srgb, var(--seal-soft) 40%, var(--sheet));
+  border-color: color-mix(in srgb, var(--stamp) 32%, var(--rule));
+  background: color-mix(in srgb, var(--stamp) 5%, var(--sheet));
 }
-
 .check-row--warn {
-  border-color: color-mix(in srgb, #c8a400 30%, var(--rule));
+  border-color: color-mix(in srgb, var(--warn) 32%, var(--rule));
 }
-
 .check-row--running {
-  border-color: color-mix(in srgb, var(--seal) 22%, var(--rule));
+  border-color: color-mix(in srgb, var(--seal) 24%, var(--rule));
 }
-
 .check-row__group {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
-  padding-top: 0.12rem;
+  padding-top: 2px;
 }
-
 .check-row__group-inline {
   display: inline-block;
-  margin-right: 0.4rem;
-  font-size: 0.72rem;
+  margin-right: var(--gap-1);
+  font-size: var(--fs-kicker);
   font-weight: 500;
   color: var(--mist);
 }
-
 .check-row__body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.28rem;
+  gap: var(--gap-1);
   min-width: 0;
 }
-
 .check-row__label {
   margin: 0;
   font-weight: 600;
 }
-
 .check-row__msg,
 .check-row__hint {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
-
 .check-row__badge {
-  font-size: 0.68rem;
-  padding: 0.12rem 0.4rem;
-  border-radius: 3px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
   flex-shrink: 0;
-  background: var(--mist);
-  color: #fff;
+  align-self: start;
 }
-
-.check-row--ok .check-row__badge {
-  background: var(--lake);
-}
-
-.check-row--block .check-row__badge {
-  background: var(--seal);
-}
-
-.check-row--warn .check-row__badge {
-  background: #c8a400;
-}
-
-.check-row--running .check-row__badge {
-  background: var(--seal-ink);
-}
-
-.check-row--pending .check-row__badge {
-  background: color-mix(in srgb, var(--mist) 55%, var(--rule));
-}
-
 .dim {
   font-weight: 500;
-  margin-left: 0.35rem;
+  margin-left: var(--gap-1);
   opacity: 0.75;
 }
 </style>

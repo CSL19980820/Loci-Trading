@@ -276,7 +276,7 @@ def _ai_summary(
     if not provider_name:
         return ""
     try:
-        from src.ai import ChatMessage, chat, resolve_config
+        from src.ai import ChatMessage, chat, record_llm_usage, resolve_config
         from dataclasses import replace
 
         from src.ops.application.jobs.paper_quant_support import paper_llm_timeout_sec
@@ -306,6 +306,14 @@ def _ai_summary(
             max_tokens=512,
             temperature=0.2,
             thinking=str(config.get("thinking") or "off"),
+        )
+        # 盯盘摘要每轮都在烧 token，之前一次都没记账。
+        record_llm_usage(
+            provider=provider.name,
+            model=getattr(response, "model", "") or provider.model,
+            input_tokens=getattr(response, "input_tokens", 0),
+            output_tokens=getattr(response, "output_tokens", 0),
+            ops_db=str(getattr(store, "db_path", "") or ""),
         )
         return str(response.text or "").strip()
     except Exception as exc:  # noqa: BLE001 — AI 只是增强，失败不该毁掉信号

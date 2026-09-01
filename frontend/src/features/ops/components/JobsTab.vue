@@ -2,12 +2,13 @@
 /**
  * 工坊「定时」台：本机任务可 CRUD；战法/技能绑定（screen:/skill:）只读。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
   createJob,
   deleteJob,
+  getJobQuota,
   getProviders,
   getScheduleStatus,
   getSkills,
@@ -21,6 +22,7 @@ import { toErrorMessage } from '@/shared/lib/errors'
 import type {
   Job,
   JobKind,
+  JobQuota,
   LlmProvider,
   ScheduleStatus,
   Skill,
@@ -30,6 +32,7 @@ import type {
 import JobDetailPane from './JobDetailPane.vue'
 import JobEditorDialog from './JobEditorDialog.vue'
 import JobRunsDialog from './JobRunsDialog.vue'
+import JobsRail, { type JobRailRow } from './JobsRail.vue'
 import type { ReceiptPair } from './SettingsPanel.vue'
 import SettingsPanel from './SettingsPanel.vue'
 import {
@@ -40,7 +43,14 @@ import {
   skillSlugFromBoundJob,
   strategySlugFromBoundJob,
 } from '../composables/jobOwnership'
-import { formatNext, kindLabel } from '../composables/opsLabels'
+import {
+  cnStrategyName,
+  formatNext,
+  jobHealth,
+  jobHealthLabel,
+  kindLabel,
+  type JobHealth,
+} from '../composables/opsLabels'
 import { useJobsQuery } from '../composables/useJobsQuery'
 import { useOpsFeedback } from '../composables/useOpsFeedback'
 
@@ -58,10 +68,16 @@ const { busy, notice, errorText, guard } = useOpsFeedback()
 
 const { jobs, isPending: jobsPending, error: jobsQueryError, refetch: refetchJobs } = useJobsQuery()
 const schedule = ref<ScheduleStatus | null>(null)
+/** 自建任务额度：写在「新建」旁边，别让人填完一整张表才吃 429。 */
+const quota = ref<JobQuota | null>(null)
 const loadError = ref('')
 const selectedId = ref<string | null>(null)
 const kindFilter = ref<'all' | JobKind>('all')
+/** 只看失败：找「哪条挂了」以前只能逐条点开看，行上根本不显示 last_status。 */
+const statusFilter = ref<'all' | JobHealth>('all')
 const formOpen = ref(false)
+/** 弹窗内的提交错误：模态窗后面的页面 alert 等于没显示 */
+const formSubmitError = ref('')
 const editingJob = ref<Job | null>(null)
 const runsOpen = ref(false)
 const detailRef = ref<InstanceType<typeof JobDetailPane> | null>(null)
@@ -86,10 +102,31 @@ const strategies = ref<StrategyInfo[]>([])
 const skills = ref<Skill[]>([])
 const providers = ref<LlmProvider[]>([])
 
+/** 最近一条失败的任务：回执上的「上次失败 N」点进来就落在它身上。 */
+const latestFailedJob = computed(() => {
+  const failed = jobs.value.filter((j) => jobHealth(j) === 'failed')
+  const byRecency = (a: Job, b: Job): number =>
+    String(b.last_run_at || '').localeCompare(String(a.last_run_at || ''))
+  return [...failed].sort(byRecency)[0] ?? null
+})
+
+const quotaText = computed(() => {
+  const q = quota.value
+  if (!q) return ''
+  if (q.unlimited) return `自建 ${q.used} · 不限`
+  return `${q.used} / ${q.limit}`
+})
+
+/** 额度用满：新建按钮直接停用，省掉「填完表单→429」这一圈。 */
+const quotaFull = computed(() => {
+  const q = quota.value
+  return Boolean(q && !q.unlimited && q.used >= q.limit)
+})
+
 const receipt = computed((): ReceiptPair[] => {
   const list = jobs.value
   const enabled = list.filter((j) => j.enabled).length
-  const failed = list.filter((j) => j.last_status === 'failed').length
+  const failed = list.filter((j) => jobHealth(j) === 'failed').length
   const bound = list.filter((j) => isBoundManagedJob(j)).length
   const nextHits = schedule.value?.jobs
     .map((j) => j.next_run_at)
@@ -99,8 +136,17 @@ const receipt = computed((): ReceiptPair[] => {
     { key: '在册', value: String(list.length) },
     { key: '启用', value: String(enabled) },
     { key: '绑定', value: String(bound) },
-    { key: '上次失败', value: String(failed) },
+    {
+      key: '上次失败',
+      value: String(failed),
+      hint: failed ? '点开最近一条失败的原因全文' : '没有失败记录',
+      // 数字不是装饰：点它直接落到那条 run 的失败全文上
+      onClick: failed ? jumpToLatestFailure : undefined,
+    },
   ]
+  if (quotaText.value) {
+    pairs.push({ key: '自建额度', value: quotaText.value, hint: '系统托管任务不占额度' })
+  }
   if (nextHits?.[0]) {
     pairs.push({ key: '下次', value: nextHits[0].replace('T', ' ').slice(0, 16) })
   }
@@ -108,10 +154,30 @@ const receipt = computed((): ReceiptPair[] => {
 })
 
 const filteredJobs = computed(() => {
-  const list = jobs.value
-  if (kindFilter.value === 'all') return list
-  return list.filter((j) => j.kind === kindFilter.value)
+  let list = jobs.value
+  if (kindFilter.value !== 'all') list = list.filter((j) => j.kind === kindFilter.value)
+  if (statusFilter.value !== 'all') {
+    list = list.filter((j) => jobHealth(j) === statusFilter.value)
+  }
+  return list
 })
+
+/** 名册行：名字解析与状态归类都在这儿算完，左栏只管画。 */
+const railRows = computed((): JobRailRow[] =>
+  filteredJobs.value.map((job) => {
+    const health = jobHealth(job)
+    return {
+      id: job.id,
+      title: displayName(job),
+      kindText: kindLabel(job.kind),
+      originText: jobOriginLabel(job),
+      bound: isBoundManagedJob(job),
+      enabled: job.enabled,
+      health,
+      healthText: jobHealthLabel(health),
+    }
+  }),
+)
 
 const selected = computed(() => {
   const id = selectedId.value
@@ -146,12 +212,20 @@ watch(
 
 async function load(): Promise<void> {
   loadError.value = ''
-  const [jobsResult, scheduleResult, strategiesResult, skillsResult, providersResult] = await Promise.allSettled([
+  const [
+    jobsResult,
+    scheduleResult,
+    strategiesResult,
+    skillsResult,
+    providersResult,
+    quotaResult,
+  ] = await Promise.allSettled([
     refetchJobs(),
     getScheduleStatus(),
     getStrategies(),
     getSkills(),
     getProviders(),
+    getJobQuota(),
   ])
   const failures = [
     [jobsResult, '定时任务加载失败'],
@@ -168,32 +242,51 @@ async function load(): Promise<void> {
   if (strategiesResult.status === 'fulfilled') strategies.value = strategiesResult.value
   if (skillsResult.status === 'fulfilled') skills.value = skillsResult.value
   if (providersResult.status === 'fulfilled') providers.value = providersResult.value
+  // 额度问不到只是少显示一行「自建额度」，不该把整页判成加载失败：
+  // 老后端没有 /api/jobs/quota，报错会把一个能用的页面说成坏的。
+  quota.value = quotaResult.status === 'fulfilled' ? quotaResult.value : null
   emit('schedule-changed', schedule.value)
   emit('changed')
 }
 
 // displayName 由 v-for 每行调用，逐行 find 会随目录长度线性劣化；预建索引。
-const strategyNames = computed(() => new Map(strategies.value.map((s) => [s.slug, s.name])))
-const skillNames = computed(() => new Map(skills.value.map((s) => [s.slug, s.name])))
+// 存的是**已中文化**的名字：后端的 name 缺失或本身就是 slug 时，cnStrategyName
+// 会退回共享词表，界面上不会再冒出 `sanyuan-tail-v1` 这种英文编码。
+const strategyNames = computed(
+  () => new Map(strategies.value.map((s) => [s.slug, cnStrategyName(s.name, s.slug)])),
+)
+const skillNames = computed(
+  () => new Map(skills.value.map((s) => [s.slug, cnStrategyName(s.name, s.slug)])),
+)
 
+/**
+ * 名字一律走中文：后端没回 name 时，旧代码 `|| slug` 直接把 `sanyuan-tail-v1`
+ * 这种英文编码摆到界面上。现在统一过 cnStrategyName（含拼音词根兜底）。
+ */
 function displayName(job: Job): string {
   if (isStrategyBoundJob(job)) {
     const slug = strategySlugFromBoundJob(job)
-    return strategyNames.value.get(slug) || slug || job.name
+    return slug ? (strategyNames.value.get(slug) ?? cnStrategyName('', slug)) : job.name
   }
   if (isSkillBoundJob(job)) {
     const slug = skillSlugFromBoundJob(job)
-    return skillNames.value.get(slug) || slug || job.name
+    return slug ? (skillNames.value.get(slug) ?? cnStrategyName('', slug)) : job.name
   }
   return job.name
 }
 
+/**
+ * cron → 人话。托管任务写的是 `mon-fri`（APScheduler 口径），本机任务的历史
+ * 预设写的是 `1-5`，两种都要认得出来，否则同一个时点显示成两种样子。
+ */
 function cronLabel(job: Job): string {
   if (!job.cron) return '仅手动'
-  if (job.cron === '*/5 9-14 * * 1-5') return '盘中每 5 分钟'
-  if (job.cron === '30 15 * * 1-5') return '工作日 15:30'
-  if (job.cron === '35 15 * * 1-5') return '工作日 15:35'
-  if (job.cron === '0 16 * * 1-5') return '工作日 16:00'
+  const text = job.cron.replace(/\bmon-fri\b/i, '1-5')
+  if (text === '*/5 9-14 * * 1-5') return '盘中每 5 分钟'
+  const once = /^(\d{1,2}) (\d{1,2}) \* \* 1-5$/.exec(text)
+  if (once) {
+    return `工作日 ${once[2].padStart(2, '0')}:${once[1].padStart(2, '0')}`
+  }
   return job.cron
 }
 
@@ -208,30 +301,66 @@ function nextRunOf(job: Job): string {
 }
 
 function selectedStrategyText(job: Job): string {
-  return strategyLabel(String(job.config?.strategy || strategySlugFromBoundJob(job)))
+  const slug = String(job.config?.strategy || strategySlugFromBoundJob(job) || '')
+  if (!slug) return '—'
+  return strategyNames.value.get(slug) ?? cnStrategyName('', slug)
 }
 
 function selectedSkillText(job: Job): string {
-  return skillLabel(String(job.config?.skill || skillSlugFromBoundJob(job) || ''))
-}
-
-function strategyLabel(slug: string): string {
-  return strategies.value.find((s) => s.slug === slug)?.name || slug || '—'
-}
-
-function skillLabel(slug: string): string {
-  return skills.value.find((s) => s.slug === slug)?.name || slug || '—'
+  const slug = String(job.config?.skill || skillSlugFromBoundJob(job) || '')
+  if (!slug) return '—'
+  return skillNames.value.get(slug) ?? cnStrategyName('', slug)
 }
 
 function openCreate(): void {
+  if (quotaFull.value) {
+    const q = quota.value
+    errorText.value = `自建定时任务已达上限（${q?.used} / ${q?.limit} 条）。`
+      + '先删掉不用的，或让管理员抬高 job_slots；系统托管任务不占这个额度。'
+    return
+  }
+  formSubmitError.value = ''
   editingJob.value = null
   formOpen.value = true
 }
 
+/**
+ * 「上次失败 N」→ 那条 run 的失败全文。旧路径是：回执数字不可点 → 在左栏逐条
+ * 点（行上还看不出谁失败）→ 找到后在历史里悬停读半句。现在一步到位。
+ */
+function jumpToLatestFailure(): void {
+  const target = latestFailedJob.value
+  if (!target) return
+  kindFilter.value = 'all'
+  statusFilter.value = 'failed'
+  selectedId.value = target.id
+  void nextTick(() => {
+    void detailRef.value?.focusLatestFailure()
+  })
+}
+
 function openEdit(job: Job): void {
   if (isBoundManagedJob(job)) return
+  formSubmitError.value = ''
   editingJob.value = job
   formOpen.value = true
+}
+
+/**
+ * 写口三个闸门各有各的说法，别糊成一句「保存失败」：403 = 非主账号动系统级
+ * 任务；422 = cron 快过 5 分钟下限；429 = 自建条数超额。detail 是后端原文，
+ * 一个字不改地带出来，后面只补一句「这是什么」。
+ */
+function rethrowJobWriteError(caught: unknown): never {
+  const error = caught as Error & { status?: number }
+  const detail = error?.message?.trim() || '保存失败'
+  if (error?.status === 403) {
+    throw new Error(`${detail}（系统级任务只有主账号能建改：它们写的是全局共享的行情库）`)
+  }
+  if (error?.status === 429) {
+    throw new Error(`${detail}（这是账号的 job_slots 上限，系统托管任务不占）`)
+  }
+  throw caught
 }
 
 async function onFormSubmit(payload: {
@@ -241,15 +370,17 @@ async function onFormSubmit(payload: {
   cron: string
   config: Record<string, unknown>
 }): Promise<void> {
+  formSubmitError.value = ''
   if (payload.id) {
     const saved = await guard(() =>
-      updateJob(payload.id!, { cron: payload.cron, config: payload.config }),
+      updateJob(payload.id!, { cron: payload.cron, config: payload.config }).catch(
+        rethrowJobWriteError,
+      ),
     )
-    if (saved) {
-      notice.value = `已更新任务 ${saved.name}`
-      formOpen.value = false
-      await load()
-    }
+    if (!saved) return captureFormError()
+    notice.value = `已更新任务 ${saved.name}`
+    formOpen.value = false
+    await load()
     return
   }
   const created = await guard(() =>
@@ -258,14 +389,28 @@ async function onFormSubmit(payload: {
       kind: payload.kind,
       cron: payload.cron,
       config: payload.config,
-    }),
+    }).catch(rethrowJobWriteError),
   )
-  if (created) {
-    notice.value = `已创建任务 ${created.name}`
-    formOpen.value = false
-    selectedId.value = created.id
-    await load()
-  }
+  if (!created) return captureFormError()
+  notice.value = `已创建任务 ${created.name}`
+  formOpen.value = false
+  selectedId.value = created.id
+  await load()
+}
+
+/**
+ * 把 guard 落在页面 alert 上的报错搬进表单：弹窗是模态的，报错显示在弹窗
+ * **背后**等于没显示。错误只该有一处。
+ */
+function captureFormError(): void {
+  formSubmitError.value = errorText.value
+  errorText.value = ''
+  // 429 多半意味着本地那份额度已经过期了，顺手再问一次
+  void getJobQuota()
+    .then((next) => {
+      quota.value = next
+    })
+    .catch(() => undefined)
 }
 
 async function fire(job: Job): Promise<void> {
@@ -283,9 +428,30 @@ async function fire(job: Job): Promise<void> {
   emit('runs-changed')
 }
 
+/**
+ * 启停：绑定任务也走这条路。
+ *
+ * 以前这里对 `screen:` / `skill:` 直接 `return`，用户要停掉一条战法选股得跳去
+ * 工坊把整档调度关成 off。同一个 `PATCH /api/jobs/{id}` 明明就能做。
+ */
 async function toggle(job: Job): Promise<void> {
-  if (isBoundManagedJob(job)) return
   await guard(() => updateJob(job.id, { enabled: !job.enabled }))
+  await load()
+}
+
+/** 就地改时点：cron 与 config.schedule 一起写，免得下次 ensure 又把它算回去。 */
+async function saveSchedule(
+  job: Job,
+  payload: { cron: string; config: Record<string, unknown> },
+): Promise<void> {
+  const saved = await guard(() =>
+    updateJob(job.id, { cron: payload.cron, config: payload.config }),
+  )
+  if (saved) {
+    notice.value = payload.cron
+      ? `已改时点：${displayName(job)} · ${payload.cron}`
+      : `已改为仅手动：${displayName(job)}`
+  }
   await load()
 }
 
@@ -321,7 +487,14 @@ defineExpose({ load, schedule })
   <SettingsPanel title="定时任务" fill :receipt="receipt">
     <template #action>
       <el-button :disabled="busy" @click="runsOpen = true">全部历史</el-button>
-      <el-button type="primary" :disabled="busy" @click="openCreate">新建</el-button>
+      <el-button
+        type="primary"
+        :disabled="busy || quotaFull"
+        :title="quotaFull ? '自建任务额度已满' : '新建定时任务'"
+        @click="openCreate"
+      >
+        新建{{ quotaFull ? '（额度已满）' : '' }}
+      </el-button>
     </template>
 
     <el-alert
@@ -355,45 +528,12 @@ defineExpose({ load, schedule })
     </el-alert>
 
     <div v-else-if="jobs.length" class="jobs-desk">
-      <aside class="jobs-rail">
-        <el-select v-model="kindFilter" size="small" class="jobs-filter">
-          <el-option label="全部类型" value="all" />
-          <el-option label="同步行情" value="sync" />
-          <el-option label="选股" value="screen" />
-          <el-option label="技能" value="skill" />
-          <el-option label="企微推送" value="notify" />
-          <el-option label="其它" value="outcome" />
-        </el-select>
-        <el-scrollbar class="jobs-list-scroll">
-          <div
-            v-for="job in filteredJobs"
-            :key="job.id"
-            role="button"
-            tabindex="0"
-            class="job-row"
-            :class="{ active: job.id === selectedId }"
-            @click="selectedId = job.id"
-            @keydown.enter.prevent="selectedId = job.id"
-            @keydown.space.prevent="selectedId = job.id"
-          >
-            <div class="job-row-top">
-              <strong>{{ displayName(job) }}</strong>
-              <el-tag
-                size="small"
-                effect="light"
-                :type="isBoundManagedJob(job) ? 'info' : 'danger'"
-              >
-                {{ jobOriginLabel(job) }}
-              </el-tag>
-            </div>
-            <div class="job-row-meta">
-              <span>{{ kindLabel(job.kind) }}</span>
-              <span :class="job.enabled ? 'on' : 'off'">{{ job.enabled ? '启用' : '停用' }}</span>
-            </div>
-          </div>
-          <EmptyState v-if="!filteredJobs.length" description="这个类型下没有任务，换上面的筛选看看" />
-        </el-scrollbar>
-      </aside>
+      <JobsRail
+        v-model:selected-id="selectedId"
+        v-model:kind-filter="kindFilter"
+        v-model:status-filter="statusFilter"
+        :rows="railRows"
+      />
 
       <JobDetailPane
         v-if="selected"
@@ -410,6 +550,7 @@ defineExpose({ load, schedule })
         @toggle="toggle(selected)"
         @drop="confirmDrop(selected)"
         @go-bound="goBoundDetail(selected)"
+        @save-schedule="(payload) => saveSchedule(selected!, payload)"
       />
       <EmptyState v-else description="选择左侧一条任务查看详情" />
     </div>
@@ -431,6 +572,8 @@ defineExpose({ load, schedule })
     :skills="skills"
     :providers="providers"
     :busy="busy"
+    :submit-error="formSubmitError"
+    :quota="quota"
     @submit="onFormSubmit"
   />
 
@@ -456,82 +599,9 @@ defineExpose({ load, schedule })
   min-height: 0;
   overflow: auto;
 }
-.jobs-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  min-height: 0;
-  border-right: 1px solid var(--rule);
-  padding-right: 0.65rem;
-}
-.jobs-filter {
-  width: 100%;
-  flex-shrink: 0;
-}
-.jobs-list-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.job-row {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  color: inherit;
-  border-radius: 6px;
-  padding: 0.55rem 0.6rem;
-  margin-bottom: 0.25rem;
-  cursor: pointer;
-}
-.job-row:hover {
-  background: color-mix(in srgb, var(--panel) 80%, var(--rule));
-}
-/* 全局焦点环只覆盖原生控件，自绘行要自己补，否则键盘用户看不见选到了哪一行 */
-.job-row:focus-visible {
-  outline: 2px solid var(--seal);
-  outline-offset: -2px;
-}
-.job-row.active {
-  border-color: var(--rule);
-  background: var(--seal-soft);
-}
-.job-row-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem;
-}
-.job-row-top strong {
-  font-size: 0.92rem;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.job-row-meta {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 0.25rem;
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-.job-row-meta .on {
-  color: var(--success);
-}
-.job-row-meta .off {
-  color: var(--muted);
-}
 @media (max-width: 800px) {
   .jobs-desk {
     grid-template-columns: 1fr;
-  }
-  .jobs-rail {
-    border-right: none;
-    padding-right: 0;
-    border-bottom: 1px solid var(--rule);
-    padding-bottom: 0.65rem;
-    max-height: 14rem;
   }
 }
 </style>

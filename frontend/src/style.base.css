@@ -1,65 +1,292 @@
-/* 记忆宫殿 · 北窗账本台 */
+/*
+ * Loci · 盘口终端 v2 —— 令牌层 + 全局重置。
+ *
+ * 这里是令牌的**基线定义处**（= 日间档 day 的全套值）；其余三档外观与主色的覆写在
+ * style.theme.css。三条硬纪律见 docs/ui-spec.md：
+ *   D1 红绿只属于价格（--up/--down 只给涨跌数字与涨跌语义标记，永不跟随主色）
+ *   D2 页面上最大的字必须是数字（等宽 + tabular-nums；中文标题小而稳）
+ *   D3 密度优先（行高 28px、区块间距 8px、无阴影、圆角 3px、1px hairline）
+ *
+ * ── 三层令牌（Radix Colors / shadcn / Geist 的通行做法）──────────────────
+ *   ① 原色阶 primitive：--n-1..--n-12（中性 12 阶）。**页面不要直接用。**
+ *   ② 语义层 semantic：--surface* / --border-* / --text-* / --seal*。页面用这层。
+ *   ③ 组件层：EP 桥接变量、Sheet、表格皮肤（style.components.css）。
+ *
+ * ── --n-1..--n-12 的语义契约（改任何一档外观都要守住）───────────────────
+ *   1  浮起层 raised（弹层 / 下拉 / tooltip）      7  边框 subtle（分隔线）
+ *   2  面板 surface（Sheet 实底）             8  边框 default（控件描边）
+ *   3  画布 canvas（页面底 = --paper）             9  边框 strong（hover 描边 / 平盘灰）
+ *   4  下沉层 sunken（输入框底 / 表头 / 条纹）    10  三级文字（口径、时间戳）
+ *   5  交互底 hover             11  二级文字（说明、label）
+ *   6  交互底 active / selected     12  正文（最高对比）
+ *   1→4 亮度单调下降（明档从白到浅灰、暗档从浮起到最深），5→12 单调拉开对比度。
+ *   借鉴 Radix 的 12 阶契约，但把 1-4 让给**四档表面**——旧版只有 paper/sheet/sheet-alt
+ *   三档，弹层与输入框底没地方放，才逼出满仓的 rgba 堆叠。
+ *
+ * ── 为什么色阶写 oklch()：OKLCH 是感知均匀色空间，同一 L 下不同色相亮度一致
+ *   （HSL 做不到：hsl(60 100% 50%) 刺眼、hsl(240 100% 50%) 发黑）。中性阶只改 L
+ *   就能保证层级差稳定，主色换任何色相都不会忽明忽暗。
+ *
+ * ── 为什么少数令牌仍写 hex/rgba：ECharts/zrender 的颜色解析只认 hex/rgb/hsl
+ *（node_modules/zrender/lib/tool/color.js 的 parse），Monaco defineTheme 只认 hex。
+ *   它们通过 getComputedStyle 读令牌，而自定义属性的计算值是**原样 token 串**，
+ *   oklch() 不会被求值成 rgb。所以下面标了「sRGB 兑现」的那几个键必须是字面量，
+ *   注释里写着它对应哪一阶，改色阶时要一起改。JS 读取方清单见 shared/lib/chartTokens.ts。
+ */
 :root {
   color-scheme: light;
   --mobile-nav-h: 3.5rem;
-  --ink: #142033;
-  --paper: #eef2f6;
-  --sheet: #f7f9fc;
-  --rule: #d5dce6;
-  --seal: #c41e3a;
-  --seal-ink: #8f1529;
-  --seal-soft: #fce8ec;
-  --lake: #0f6b5c;
-  --lake-soft: #e6f4f1;
-  --mist: #5b6b7c;
-  --muted: #3d4d5f;
+
+  /* ①原色阶 —— day：冷中性灰（hue 250，低彩度），干净、现代、不发蓝 */
+  --n-1: oklch(1 0 250);
+  --n-2: oklch(0.988 0.003 250);
+  --n-3: oklch(0.97 0.005 250);
+  --n-4: oklch(0.948 0.007 250);
+  --n-5: oklch(0.928 0.008 250);
+  --n-6: oklch(0.903 0.01 250);
+  --n-7: oklch(0.872 0.011 250);
+  --n-8: oklch(0.82 0.013 250);
+  --n-9: oklch(0.735 0.016 250);
   /*
-   * 涨跌/状态色刻意不挂靠 --seal：主色可被 data-primary 换成湖绿/靛蓝/琥珀，
-   * 若涨跌跟着主色走，选「湖绿」主色时涨与跌会同为绿色。红涨绿跌是硬语义，不随主题变。
+* 10 / 11 档比 Radix 参考值压暗了一档，这是**刻意的**：
+   * 本仓 12px / 13px 的次要读数（口径、时间、代码、平盘价）大量走 --text-tertiary，
+   * 原来的 L0.62 在画布上只有 3.3:1、在表头下沉面上只有 3.1:1，AA 要求 4.5:1。
+   * 现在钉在「最暗的承载面（--surface-sunken）上仍 ≥4.5:1」这条线上，
+   * 同时保住 10↔11 之间 0.075 的 L 差，三档文字层次仍然分得开。
+   * 改这两个值前先跑 e2e/taste-audit.mjs，它会把对比度逐条量出来。
    */
-  --up: #c41e3a;
-  --up-soft: #fce8ec;
-  --down: #0f6b5c;
-  --down-soft: #e6f4f1;
+  --n-10: oklch(0.525 0.02 250);
+  --n-11: oklch(0.4525 0.022 250);
+  --n-12: oklch(0.258 0.024 250);
+
+  /* ②语义层 —— 表面四档 */
+  --surface-raised: var(--n-1);
+  --surface: var(--n-2);
+  --surface-canvas: var(--n-3);
+  --surface-sunken: var(--n-4);
+  --surface-hover: var(--n-5);
+  --surface-active: var(--n-6);
+
+  /* ②语义层 —— 边框三档 */
+  --border-subtle: var(--n-7);
+  --border-default: var(--n-8);
+  --border-strong: var(--n-9);
+
+  /* ②语义层 —— 文字四档 */
+  --text-primary: var(--n-12);
+  --text-secondary: var(--n-11);
+  --text-tertiary: var(--n-10);
+  --text-disabled: var(--n-9);
+
+  /* —— 统一底色体系（语义别名，存量页大量在用） —— */
+  --paper: var(--surface-canvas);
+  /* sRGB 兑现：= --n-2 @94%（JS 读取：chartTokens / CodeEditor） */
+  --sheet: rgba(250, 251, 253, 0.94);
+  --sheet-solid: var(--surface);
+  --sheet-alt: var(--surface-sunken);
+  /* sRGB 兑现：--rule = --n-7，--rule-strong = --n-8 */
+  --rule: #d0d6dc;
+  --rule-strong: #bec5cc;
+  /* 行级 hairline：表格行间、列表项之间，比 --rule 再淡一档，密表里不至于变成栅格纸 */
+  --rule-soft: color-mix(in oklab, var(--border-subtle) 55%, transparent);
+
+  /* —— 正文与文字阶梯（sRGB 兑现：= --n-12 / --n-11 / --n-10） —— */
+  --ink: #1b252f;
+  --muted: #4e5761;
+  --mist: #626c76;
+  --ink-soft: var(--text-secondary);
+
+  /*
+   * —— 品牌「主色/强调色」（默认朱红 / 随 data-primary 切换 / 可自定义） ——
+   * --seal 是实心主色（按钮底、图表主线）；派生档见 style.theme.css。
+   * --on-primary 是**落在实心主色上**的文字色，由 shared/lib/theme.ts 按
+   * OKLCH 亮度阈值决定黑白，保证对比度 ≥ 4.5:1。
+   */
+  --seal: #cc323e;
+  --on-primary: #ffffff;
+  /*
+   * 派生档一律从 --seal 用 oklab 混出来，**不写死白底**（旧版 --seal-soft 是
+   * `color-mix(... 12%, #fff)`，深色档只能另抄一份补救，一改就分叉）：
+   *   hover/active 混向 --n-12 —— 明档 n-12 是墨色所以压暗，暗档 n-12 是白色所以提亮，
+   *   同一行代码在四档外观里都对。
+   */
+  --seal-hover: color-mix(in oklab, var(--seal) 88%, var(--n-12));
+  --seal-active: color-mix(in oklab, var(--seal) 76%, var(--n-12));
+  /* 主色文字（落在表面上，不是落在实心主色上） */
+  --seal-ink: color-mix(in oklab, var(--seal) 78%, oklch(0.2 0 0));
+  /* 浅底/描边走半透明，任何表面上都成立 */
+  --seal-soft: color-mix(in oklab, var(--seal) 12%, transparent);
+  --seal-border: color-mix(in oklab, var(--seal) 45%, transparent);
+  /* 焦点：--focus-ring 是实心描边色，--focus-halo 是外圈柔光 */
+  --focus-ring: color-mix(in oklab, var(--seal) 70%, var(--border-strong));
+  --focus-halo: color-mix(in oklab, var(--seal) 16%, transparent);
+  /* 危险操作用印章红，与涨色分开：删除按钮和「涨」不该是同一个红 */
+  --stamp: oklch(0.53 0.19 20);
+
+  /* 辅助调色板（存量页的次要强调色） */
+  --peach: oklch(0.66 0.17 45);
+  --peach-soft: color-mix(in oklab, var(--peach) 12%, transparent);
+  --sand: oklch(0.62 0.13 72);
+  --lavender: oklch(0.58 0.19 295);
+
+  /*
+   * 涨跌色（金融标准：红涨绿跌）。D1：只在明暗之间换到对应对比度的红绿，
+   * **绝不跟随 data-primary**，自定义主色也污染不到这里。
+   *
+   * 亮度按「最暗的承载面（--surface-sunken，即表头/下沉块）上仍 ≥4.5:1」定：
+   * 涨跌幅是 12-14px 的小字且几乎全在表格里，表头底色比画布深一档，早先的
+   * L0.565 / L0.53 在那里只有 4.2:1 左右（暖纸档更低）。色阶 5 档随之对齐本色。
+   * sRGB 兑现（JS 读取）：--up = oklch(.542 .196 26)，--down = oklch(.5025 .135 152)。
+   */
+  --up: #c8282a;
+  --up-soft: color-mix(in oklab, var(--up) 10%, transparent);
+  --up-ink: oklch(0.465 0.17 26);
+  --down: #00793a;
+  --down-soft: color-mix(in oklab, var(--down) 10%, transparent);
+  --down-ink: oklch(0.45 0.115 152);
+  --flat: var(--n-10);
+
+  /*
+   * 涨跌浓淡阶（分布条 / 热力 / 筹码分布）。1 最淡、5 = --up / --down 本色。
+   * L 在 OKLCH 里等距（明档 ≈0.085 一档），所以「深一档」在视觉上真的均匀深一档——
+   * 用 sRGB 百分比混白做不到这点（同样 20% 在红上和绿上深浅差很多）。
+   * 明暗两档各自校准：深色档要从「刚好压过画布」起步，而不是从淡红起步。
+   */
+  --up-1: oklch(0.9 0.055 26);
+  --up-2: oklch(0.815 0.1 26);
+  --up-3: oklch(0.73 0.145 26);
+  --up-4: oklch(0.648 0.175 26);
+  --up-5: oklch(0.542 0.196 26);
+  --down-1: oklch(0.9 0.045 152);
+  --down-2: oklch(0.81 0.075 152);
+  --down-3: oklch(0.72 0.1 152);
+  --down-4: oklch(0.625 0.12 152);
+  --down-5: oklch(0.5025 0.135 152);
+
+  /* —— 状态色（sRGB 兑现：--warn = oklch(.545 .135 65)，--info = oklch(.54 .13 245)） —— */
+  --warn: #a05e00;
+  --warn-soft: color-mix(in oklab, var(--warn) 12%, transparent);
+  --warn-ink: oklch(0.47 0.12 65);
+  --info: #1174b4;
+  --info-soft: color-mix(in oklab, var(--info) 10%, transparent);
+  --info-ink: oklch(0.45 0.125 245);
+  /*
+   * --ok 是**非价格语义**的健康/成功色（连接正常、保存成功、校验通过）。
+   * 本仓的绿被 D1 占给了「跌」，所以健康色必须离开纯绿：取青绿 hue 195，
+   * 与 --down（152）和 --info（245）都拉开，扫一眼不会读成「跌了」或「提示」。
+   * sRGB 兑现：oklch(.53 .1 195)。
+   */
+  --ok: #007c7c;
+  --ok-soft: color-mix(in oklab, var(--ok) 12%, transparent);
+  /* --success 是存量别名，历史上就等于跌色，保持不动；新代码请用 --ok */
   --success: var(--down);
   --success-soft: var(--down-soft);
   --loss: var(--up);
-  --warn: #b45309;
-  --warn-soft: #fdf1dc;
-  --info: #2563eb;
-  --info-soft: #e8f0fe;
-  --blue: var(--info);
+
+  /* —— 形状与阴影 —— */
+  --radius-sm: 4px;
   --radius: 6px;
-  --shadow: 0 1px 2px rgba(20, 32, 51, 0.04);
-  --font-display: "Fraunces", "Noto Serif SC", "Songti SC", serif;
-  --font: "IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif;
-  --mono: "IBM Plex Mono", "Cascadia Code", "SF Mono", ui-monospace, monospace;
-  /* 误写别名收口：仓内曾有 --font-mono / --font-sans 引用，未定义会静默丢字体 */
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-pill: 9999px;
+  --shadow-sm: 0 1px 2px 0 color-mix(in oklab, var(--n-12) 6%, transparent);
+  --shadow: 0 1px 3px 0 color-mix(in oklab, var(--n-12) 7%, transparent),
+    0 1px 2px -1px color-mix(in oklab, var(--n-12) 6%, transparent);
+  --shadow-hover: 0 4px 12px -2px color-mix(in oklab, var(--n-12) 10%, transparent);
+  --shadow-watercolor: 0 4px 16px -2px color-mix(in oklab, var(--n-12) 8%, transparent);
+  --dur-fast: 0.15s;
+
+  /* —— 字体系统（无衬线现代金融终端标准） —— */
+  --font-serif: "Songti SC", "Source Han Serif SC", "Noto Serif SC", serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", sans-serif;
+  --font: var(--font-sans);
+  --mono: "JetBrains Mono", "SF Mono", "Roboto Mono", Consolas, Menlo, monospace;
   --font-mono: var(--mono);
-  --font-sans: var(--font);
+  --font-display: var(--font-sans);
+  --fs-tape: 26px;
+  --fs-hero: 20px;
+  --fs-title: 16px;
+  --fs-body: 14px;
+  --fs-aux: 12px;
+  --fs-kicker: 11px;
+  --fs-micro: 10px;
 
-  /* 字阶：页头衬线标题 → 区块标题 → 正文 → 辅助 → 印记 */
-  --fs-hero: 1.45rem;
-  --fs-title: 1.05rem;
-  --fs-body: 0.9rem;
-  --fs-aux: 0.8rem;
-  --fs-kicker: 0.7rem;
-
-  /* legacy aliases used across views */
+  /* 密度令牌：紧凑舒适，不高不矮 */
+  --row-h: 32px;
+  --row-h-sm: 28px;
+  --head-h: 30px;
+  --ctl-h: 30px;
+  /* 页面左右沟槽（右侧内容容器共用）。原先声明在 style.layout.css 顶部，
+     密度令牌统一归口到 base，值不变 */
+  --pad-page-x: 12px;
+  --gap-1: 4px;
+  --gap-2: 8px;
+  --gap-3: 12px;
+  --gap-4: 16px;
+  --pad-sheet-y: 10px;
+  --pad-sheet-x: 14px;
+  --pad-sheet: var(--pad-sheet-y) var(--pad-sheet-x);
+  --form-label-w: 7em;
+  /* legacy aliases：存量页仍在引用，一律指向新值，不要删（删了全仓塌） */
   --bg: var(--paper);
   --panel: var(--sheet);
-  --panel-2: #eef2f6;
+  --panel-2: var(--sheet-alt);
+  /* --panel-rgb 供 rgba(var(--panel-rgb), a) 用，只能是裸分量，取 --n-2 的兑现值 */
+  --panel-rgb: 250, 251, 253;
   --line: var(--rule);
-  --line-2: #c5ced9;
+  --line-2: var(--rule-strong);
   --text: var(--ink);
   --dim: var(--mist);
   --accent: var(--seal);
   --accent-soft: var(--seal-soft);
   --accent-text: var(--seal-ink);
+  --blue: var(--info);
+  /* --lake* 是旧「湖绿」第二主色的别名，存量页用于卖出/完成态：并入跌色，不再独立存在 */
+  --lake: var(--down);
+  --lake-soft: var(--down-soft);
 
-  /* EP 主色梯度由 --seal 派生，定义见 style.theme.css */
-  --el-border-radius-base: 6px;
+  /*
+   * EP 基础变量（主色梯度见 style.theme.css）。
+   * 全局 size 已改 'small'（shared/plugins/element.ts），控件高统一钉到 --ctl-h：
+   * EP small 档默认 24px，太矮会让 input 里的等宽数字挤成一条。
+   */
+  --el-border-radius-base: var(--radius);
+  --el-border-radius-small: var(--radius);
   --el-font-family: var(--font);
+  --el-font-size-base: var(--fs-body);
+  --el-component-size: var(--ctl-h);
+  --el-component-size-small: var(--ctl-h);
+  --el-component-size-large: calc(var(--ctl-h) + var(--gap-1));
+  /* 文字/边框/底色指回本仓 token：否则 EP 默认灰(#303133/#dcdfe6)与盘口墨色是两套黑 */
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-text-color-placeholder: var(--text-tertiary);
+  --el-text-color-disabled: var(--text-disabled);
+  --el-disabled-text-color: var(--text-disabled);
+  /* 输入框常态底已经是 sunken，禁用态必须再沉一档，否则「不让改」和「没数」长一样 */
+  --el-disabled-bg-color: var(--surface-active);
+  --el-disabled-border-color: var(--border-subtle);
+  --el-border-color: var(--border-default);
+  --el-border-color-light: var(--border-subtle);
+  --el-border-color-lighter: var(--border-subtle);
+  --el-border-color-extra-light: var(--border-subtle);
+  --el-border-color-dark: var(--border-strong);
+  --el-border-color-hover: var(--border-strong);
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--paper);
+  --el-bg-color-overlay: var(--surface-raised);
+  --el-fill-color-blank: var(--surface);
+  --el-fill-color: var(--surface-sunken);
+  --el-fill-color-light: var(--surface-sunken);
+  --el-fill-color-lighter: var(--surface-sunken);
+  --el-fill-color-extra-light: var(--n-3);
+  --el-fill-color-dark: var(--surface-hover);
+  --el-fill-color-darker: var(--surface-active);
+  --el-mask-color: color-mix(in oklab, var(--n-12) 42%, transparent);
+  --el-box-shadow: var(--shadow);
+  --el-box-shadow-light: var(--shadow-sm);
+  --el-box-shadow-lighter: var(--shadow-sm);
 }
 
 /* ElDialog 默认 top：EP 自带 15vh；ConfigProvider.dialog 无 top 项。
@@ -71,20 +298,20 @@
 
 /*
  * 弹窗 chrome 统一在这里管，不要每个弹窗自绘一套头。
- * 此前全仓 34 个弹窗只有「初始化行情」有衬线标题，其余吃 EP 默认无衬线字，
- * 于是「记成交」和「初始化」看着像两个产品。
+ * 标题与区块标题同档（14px / 700 / 字距 .03em），不用衬线也不放大——弹窗里最大的字
+ * 应该是它要你确认的那个数字。
  */
 .el-dialog__title {
-  font-family: var(--font-display);
+  font-family: var(--font);
   font-size: var(--fs-title);
-  font-weight: 650;
-  letter-spacing: 0.02em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   color: var(--ink);
 }
 
 .el-dialog__header {
   margin-right: 0;
-  padding-bottom: 0.75rem;
+  padding-bottom: var(--gap-2);
   border-bottom: 1px solid var(--rule);
 }
 
@@ -92,8 +319,8 @@
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 0.55rem;
-  padding-top: 0.85rem;
+  gap: var(--gap-2);
+  padding-top: var(--gap-3);
   border-top: 1px solid var(--rule);
 }
 
@@ -114,18 +341,23 @@
 html,
 body,
 #app {
+  width: 100%;
   height: 100%;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
 }
 
 body {
-  margin: 0;
-  min-width: 320px;
-  font: 400 15px/1.5 var(--font);
+  background-color: var(--paper);
   color: var(--ink);
-  background: var(--paper);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "tnum" 1, "cv01" 1;
 }
 
 button,
@@ -149,20 +381,26 @@ a {
 }
 
 :where(a, button, input, textarea, select):focus-visible {
-  outline: 2px solid var(--seal);
-  outline-offset: 2px;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* EP 控件与自绘交互层：清掉默认裸粗框，改用平滑的品牌焦点微光/柔和光晕，告别生硬突兀的红框 */
+:where(.el-button, .el-checkbox, .el-radio, .el-tabs__item):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .skip-link {
   position: fixed;
   z-index: 40;
-  top: 0.75rem;
-  left: 0.75rem;
+  top: var(--gap-3);
+  left: var(--gap-3);
   transform: translateY(-200%);
-  padding: 0.5rem 0.75rem;
+  padding: var(--gap-1) var(--gap-2);
   border-radius: var(--radius);
   background: var(--seal);
-  color: #fff;
+  color: var(--on-primary);
   font-weight: 600;
   text-decoration: none;
 }
@@ -193,8 +431,8 @@ a {
   height: 100%;
   height: 100dvh;
   overflow: hidden;
-  background: var(--bg, #f6f4ef);
-  color: var(--ink, #1c1917);
+  background: var(--paper);
+  color: var(--ink);
   isolation: isolate;
 }
 
@@ -212,10 +450,9 @@ a {
   .record-fab {
     display: block;
     position: fixed;
-    right: 1rem;
-    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0) + 0.75rem);
+    right: var(--gap-4);
+    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0) + var(--gap-3));
     z-index: 40;
-    box-shadow: var(--shadow);
   }
 
   .app-shell--with-mobile-nav {
@@ -244,16 +481,16 @@ a {
 }
 
 .banner {
-  margin: 0.55rem 0.85rem 0;
+  margin: var(--gap-2) var(--gap-2) 0;
   flex-shrink: 0;
 }
 
 .sync-banner-wrap {
   flex-shrink: 0;
-  margin: 0.55rem 0.85rem 0;
+  margin: var(--gap-2) var(--gap-2) 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--gap-1);
 }
 
 .sync-banner-wrap .banner {
@@ -261,21 +498,21 @@ a {
 }
 
 .sync-progress {
-  padding: 0 0.15rem;
+  padding: 0;
 }
 
-/* 印鉴进度尺：细轨 + 印章红填充 + 等宽百分比（体检修复 / 顶栏共用） */
+/* 进度尺：细轨 + 主色填充 + 等宽百分比（体检修复 / 顶栏共用）。D1：进度条不用红绿。 */
 .seal-meter {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--gap-3);
 }
 
 .seal-meter__track {
-  height: 0.45rem;
+  height: var(--gap-1);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--rule) 80%, var(--paper));
+  background: var(--surface-active);
   overflow: hidden;
 }
 
@@ -287,16 +524,16 @@ a {
 }
 
 .seal-meter--done .seal-meter__fill {
-  background: var(--lake);
+  background: var(--seal-ink);
 }
 
 .seal-meter--err .seal-meter__fill {
-  background: var(--seal-ink);
+  background: var(--warn);
 }
 
 .seal-meter__pct {
   color: var(--mist);
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
   font-family: var(--mono);
 }

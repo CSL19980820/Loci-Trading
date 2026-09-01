@@ -8,8 +8,9 @@ APScheduler / HTTP 同进程内，盘中同步若 SSL 重试拖很久，尾盘�
 - sync = 写者独占（与任何 screen/sync 互斥）
 - screen = 共享读（多路选股可并行；spot 单飞已在 market 层合并）
 这样不会出现「潜龙等三源选股 90s」这种假互斥。
-- 14:35–15:00 盘中增量（mode=full）在占锁前直接跳过，避免与杨氏/三源
-  14:50 同分钟抢锁；日终 today_refresh 不跳过（15:30 选股要吃定稿 spot）。
+- 14:35–15:00 盘中增量（mode=full）占锁前直接跳过，避免新开一轮写库撞上
+  14:50；盘中选股自己拉实时 overlay，不再依赖这次增量。日终 today_refresh
+  不跳过（15:30 选股要吃定稿 spot）。
 - **排队 ≠ 故障**。等不到锁时先看持锁者健不健康：还在租期内（sync 未超
   MARKET_SYNC_STUCK_SEC、screen 未超 MARKET_SCREEN_HOLD_LEASE_SEC）一律按
   JobSkipped 收场——本轮不插入、下一轮再跑，不刷红运维页也不推企微；
@@ -32,6 +33,7 @@ from zoneinfo import ZoneInfo
 
 from src.ops.application.jobs.context import JobError, JobSkipped
 from src.shared.observability import event, record_lock_wait
+from src.shared.tenancy import current_tenant, is_primary_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,8 @@ MARKET_SYNC_STUCK_SEC = 45 * 60.0
 MARKET_SCREEN_HOLD_LEASE_SEC = 45 * 60.0
 
 _TZ = ZoneInfo("Asia/Shanghai")
-#: 14:35 起不再新开盘中增量，给 14:50 尾盘选股让路。
+#: 14:35 起不再新开盘中增量。盘中选股已走独立实时 overlay，不再抢这次写库；
+#: 仍拦住 14:35 再开一轮，免得和 14:50 的 HTTP+面板在 3.7G 机器上叠内存。
 _TAIL_PROTECT_START_MIN = 14 * 60 + 35
 _TAIL_PROTECT_END_MIN = 15 * 60
 
@@ -103,7 +106,7 @@ _LOCAL = threading.local()
 
 
 def in_tail_screen_protect_window(now: datetime | None = None) -> bool:
-    """工作日 14:35–15:00：尾盘选股窗口，盘中增量不应再占行情库。"""
+    """工作日 14:35–15:00：不再新开盘中增量，给尾盘选股让出 CPU / 内存。"""
     if now is None:
         current = datetime.now(_TZ)
     elif now.tzinfo is None:
@@ -122,7 +125,11 @@ def skip_reason_for_intraday_sync(
     *,
     now: datetime | None = None,
 ) -> str | None:
-    """14:50 尾盘选股优先：盘中增量（非日终 today_refresh）在保护窗内不占锁。"""
+    """14:50 尾盘选股优先：盘中增量（非日终 today_refresh）在保护窗内不占锁。
+
+    保护窗是 14:35–15:00。只拦新开的 ``mode=full``；已经持锁的增量靠
+    ``execute_sync`` 在检查点再判一次，判到就 ``JobSkipped`` 放锁。
+    """
     if str(kind or "") != "sync":
         return None
     config = job.get("config") if isinstance(job, dict) else {}
@@ -149,12 +156,21 @@ def _wait_seconds(exclusive: bool) -> float:
 
 
 def _slot_label(kind: str, job_name: str) -> str:
-    """人话标签；避免 screen:screen:xxx 重复前缀。"""
+    """人话标签；避免 screen:screen:xxx 重复前缀。
+
+    **带租户前缀**：``_READERS`` / ``_READER_SINCE`` 是进程内全局字典，两个租户
+    的 ``screen:qianlong-close-v3`` 同名同姓。不加前缀的后果是
+    ``_READER_SINCE.setdefault`` 只记住第一个进来的时刻，租约一到
+    ``_evict_expired_readers`` 就把整个 label 连计数一起 pop 掉——**把后来者一起
+    误杀**，而它们其实刚开始跑几秒钟。主租户保持原样，日志与存量口径不变。
+    """
     name = str(job_name or "").strip() or "未命名"
     kind = str(kind or "").strip() or "?"
     if name == kind or name.startswith(f"{kind}:"):
-        return name
-    return f"{kind}:{name}"
+        label = name
+    else:
+        label = f"{kind}:{name}"
+    return label if is_primary_tenant() else f"[{current_tenant()}] {label}"
 
 
 def _describe_hold(label: str, since: float) -> str:

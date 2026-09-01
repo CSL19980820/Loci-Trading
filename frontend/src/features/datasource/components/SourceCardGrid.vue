@@ -34,10 +34,12 @@ function toggling(id: string): boolean {
       :class="{ 'src-card--off': !row.enabled }"
     >
       <header class="src-card__head">
-        <div class="src-card__name">
-          <strong>{{ row.label }}</strong>
-          <code>{{ row.id }}</code>
-        </div>
+        <el-tooltip :content="row.description || '本机内置源，无额外说明'" placement="top-start">
+          <div class="src-card__name">
+            <strong>{{ row.label }}</strong>
+            <code>{{ row.id }}</code>
+          </div>
+        </el-tooltip>
         <el-tag v-if="row.interfaceOnly" size="small" type="info" effect="plain">接口源</el-tag>
         <el-switch
           v-else
@@ -47,8 +49,6 @@ function toggling(id: string): boolean {
           @change="(next: string | number | boolean) => emit('toggle', { id: row.id, enabled: Boolean(next) })"
         />
       </header>
-
-      <p class="src-card__desc">{{ row.description || '本机内置源，无额外说明' }}</p>
 
       <ul v-if="row.tools.length" class="tool-rail" :aria-label="`${row.label} 的工具`">
         <li
@@ -149,6 +149,7 @@ function toggling(id: string): boolean {
   flex-direction: column;
   gap: 0.1rem;
   min-width: 0;
+  cursor: help;
 }
 
 .src-card__name strong {
@@ -160,17 +161,6 @@ function toggling(id: string): boolean {
 .src-card__name code {
   font: 0.72rem var(--mono);
   color: var(--mist);
-}
-
-.src-card__desc {
-  margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: var(--muted);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
 }
 
 .tool-rail {

@@ -3,12 +3,17 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.ops.application.job_stagger import staggered_cron
+
 MANAGED_INTEL_OPEN = "情报·开盘"
 MANAGED_INTEL_INTRADAY = "情报·盘中"
 MANAGED_INTEL_CLOSE = "情报·盘后"
 
 MANAGED_INTEL_OPEN_CRON = "26 9 * * mon-fri"
 MANAGED_INTEL_INTRADAY_CRON = "*/15 9-14 * * mon-fri"
+#: 盘后这一档是定点，50 个租户会全挤在 15:40。**首次创建**时按租户错峰到
+#: 15:40~15:54（主租户仍是 15:40）；已存在的任务不动 cron。开盘/盘中两档不
+#: 错峰：前者在集合竞价后的固定信息面，后者本来就是每 15 分钟的区间任务。
 MANAGED_INTEL_CLOSE_CRON = "40 15 * * mon-fri"
 
 
@@ -51,7 +56,10 @@ def ensure_managed_intel_jobs(store: Any, *, enabled: bool = True) -> dict[str, 
             store.create_job(
                 name=name,
                 kind="intel_fetch",
-                cron=cron,
+                # 只在首次创建时错峰，且只错盘后这一档：开盘 9:26 往后挪会挪进交易时段，
+                # 盘中 ``*/15`` 本来就摊在整个窗口里。已有任务的 cron 可能被用户改过，
+                # 托管合并语义是「只补缺失键」，不该反过来覆盖。
+                cron=staggered_cron(cron) if name == MANAGED_INTEL_CLOSE else cron,
                 config=managed_config,
                 enabled=enabled,
             )

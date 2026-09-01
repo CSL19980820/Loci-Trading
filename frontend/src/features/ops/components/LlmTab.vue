@@ -223,25 +223,14 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* auto-fill：只配 1 家供应商时不再撑出 2 个空位，也不用两级断点补救 */
 .prov-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-  padding: 0.65rem 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
   align-content: start;
   min-height: 0;
   overflow: auto;
-}
-
-@media (max-width: 1100px) {
-  .prov-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .prov-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

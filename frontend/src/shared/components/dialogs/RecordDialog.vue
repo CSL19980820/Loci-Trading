@@ -1,138 +1,248 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { createCandidate, createPlan, createReview } from '@/shared/api/palace'
-import { dialogWidth, localToday } from '@/shared/lib/format'
+import BasicForm from '@/shared/components/ui/BasicForm.vue'
+import type { BasicFormSchema } from '@/shared/components/ui/basicFormTypes'
+import { BUILTIN_STRATEGY_OPTIONS, localToday } from '@/shared/lib/format'
 
 export type RecordKind = 'candidate' | 'plan' | 'review'
 
-interface FieldSpec {
-  key: string
-  label: string
-  type: 'text' | 'number' | 'date' | 'select' | 'textarea'
-  required?: boolean
-  min?: number
-  max?: number
-  step?: number
-  maxlength?: number
-  pattern?: string
-  inputmode?: 'text' | 'numeric' | 'decimal' | 'tel'
-  placeholder?: string
-  rows?: number
-  options?: { value: string; label: string }[]
-  default?: string | number
-}
-
 interface SchemaSpec {
   title: string
+  /** 表单级说明：一行，跟随控件左缘（长口径说明请进字段 tooltip，别写介绍段落） */
   hint?: string
-  fields: FieldSpec[]
+  /** 主操作文案：动词短语，不用「确定/提交」 */
+  submitLabel: string
+  fields: BasicFormSchema[]
   submit: (values: Record<string, unknown>) => Promise<{ id: string }>
 }
 
 const today = (): string => localToday()
 
-const CODE_FIELD: FieldSpec = {
-  key: 'code',
+const CODE_FIELD: BasicFormSchema = {
+  field: 'code',
   label: '代码',
-  type: 'text',
-  required: true,
-  pattern: '\\d{6}',
-  maxlength: 6,
-  inputmode: 'numeric',
+  componentProps: { maxlength: 6, inputmode: 'numeric', placeholder: '6 位数字' },
+  rules: [
+    { required: true, message: '填 6 位代码', trigger: 'change' },
+    { pattern: /^\d{6}$/, message: '代码须为 6 位数字', trigger: 'change' },
+  ],
+}
+
+/*
+ * 战法选择：**下拉显示中文名，落库仍是 slug**。
+ *
+ * 以前这里是裸 input + placeholder="qianlong-close-v3"，等于要求用户背内部编码；
+ * 界面上任何位置都不该露出英文 slug。filterable + allowCreate 保住自定义 skill
+ * 的手填能力——装了工坊技能的用户仍可直接敲自己的 slug 回车。
+ */
+const STRATEGY_FIELD: BasicFormSchema = {
+  field: 'strategy_tag',
+  label: '战法',
+  component: 'select',
+  tooltip: '内置三档直接选；自定义技能可输入其 slug 后回车',
+  componentProps: {
+    placeholder: '选一个战法',
+    filterable: true,
+    allowCreate: true,
+    defaultFirstOption: true,
+    options: [...BUILTIN_STRATEGY_OPTIONS],
+  },
+  rules: [{ required: true, message: '选一个战法', trigger: 'change' }],
+}
+
+const TEXTAREA_ROWS = 3
+
+function textarea(field: string, label: string, rows = TEXTAREA_ROWS): BasicFormSchema {
+  return {
+    field,
+    label,
+    componentProps: { type: 'textarea', rows },
+    fullRow: true,
+  }
 }
 
 const SCHEMAS: Record<RecordKind, SchemaSpec> = {
   candidate: {
     title: '记候选',
-    hint: '同日同池同标的会覆盖上一次裁决，改判直接再记一次即可。',
+    hint: '同日同池同标的会覆盖上次裁决',
+    submitLabel: '记下候选',
     fields: [
       CODE_FIELD,
-      { key: 'name', label: '名称', type: 'text' },
+      { field: 'name', label: '名称' },
       {
-        key: 'decision',
+        field: 'decision',
         label: '裁决',
-        type: 'select',
-        required: true,
-        default: '精选',
-        options: [
-          { value: '精选', label: '精选' },
-          { value: '观察', label: '观察' },
-          { value: '落选', label: '落选' },
-        ],
+        component: 'select',
+        defaultValue: '精选',
+        rules: [{ required: true, message: '选一个裁决', trigger: 'change' }],
+        componentProps: {
+          options: [
+            { label: '精选', value: '精选' },
+            { label: '观察', value: '观察' },
+            { label: '落选', value: '落选' },
+          ],
+        },
       },
-      { key: 'score', label: '评分', type: 'number', min: 0, max: 100, step: 1 },
-      { key: 'timing', label: '时点', type: 'text', placeholder: '尾盘 / 低吸 / 平开 / 高开回踩 / 观望' },
-      { key: 'pool_id', label: '池', type: 'text', placeholder: '默认按日期归池' },
-      { key: 'occurred_on', label: '日期', type: 'date', default: today() },
-      { key: 'reason', label: '理由', type: 'textarea', required: true, rows: 3 },
+      {
+        field: 'score',
+        label: '评分',
+        component: 'input-number',
+        componentProps: { min: 0, max: 100, step: 1, controls: false },
+      },
+      {
+        field: 'timing',
+        label: '时点',
+        componentProps: { placeholder: '尾盘 / 低吸 / 平开 / 高开回踩' },
+      },
+      {
+        field: 'pool_id',
+        label: '池',
+        componentProps: { placeholder: '默认按日期归池' },
+      },
+      {
+        field: 'occurred_on',
+        label: '日期',
+        component: 'date-picker',
+        defaultValue: today(),
+        componentProps: { type: 'date', 'value-format': 'YYYY-MM-DD' },
+      },
+      {
+        ...textarea('reason', '理由'),
+        rules: [{ required: true, message: '写下理由', trigger: 'change' }],
+      },
     ],
     submit: (values) =>
-      createCandidate({
+    createCandidate({
         code: String(values.code),
         name: String(values.name ?? ''),
         decision: String(values.decision),
         reason: String(values.reason),
-        score: values.score === '' || values.score === undefined || values.score === null ? null : Number(values.score),
+        score: numberOrNull(values.score),
         timing: String(values.timing ?? ''),
         pool_id: String(values.pool_id ?? ''),
         occurred_on: String(values.occurred_on ?? '') || null,
-      }),
+    }),
   },
   plan: {
     title: '写预案',
-    hint: '止损、止盈、分批层数事后可以逐条核对是否兑现，填得越具体复盘越有效。',
+    hint: '止损 / 止盈 / 层数事后逐条核对',
+    submitLabel: '保存预案',
     fields: [
       CODE_FIELD,
-      { key: 'title', label: '标题', type: 'text', required: true },
-      { key: 'entry_zone', label: '买点区间', type: 'text', placeholder: '如 12.30-12.80' },
-      { key: 'stop_price', label: '止损价', type: 'number', min: 0, step: 0.001 },
-      { key: 'target_price', label: '目标价', type: 'number', min: 0, step: 0.001 },
-      { key: 'layers', label: '分批层数', type: 'number', min: 1, max: 10, step: 1 },
-      { key: 'occurred_on', label: '日期', type: 'date', default: today() },
-      { key: 'scenario', label: '情景', type: 'textarea', required: true, rows: 3 },
-      { key: 'invalidation', label: '失效条件', type: 'textarea', rows: 2 },
+      {
+        field: 'title',
+        label: '标题',
+        rules: [{ required: true, message: '填个标题', trigger: 'change' }],
+      },
+      {
+        field: 'entry_zone',
+        label: '买点区间',
+        componentProps: { placeholder: '如 12.30-12.80' },
+      },
+      {
+        field: 'stop_price',
+        label: '止损价',
+        component: 'input-number',
+        componentProps: { min: 0, step: 0.001, controls: false },
+      },
+      {
+        field: 'target_price',
+        label: '目标价',
+        component: 'input-number',
+        componentProps: { min: 0, step: 0.001, controls: false },
+      },
+      {
+        field: 'layers',
+        label: '分批层数',
+        component: 'input-number',
+        componentProps: { min: 1, max: 10, step: 1, controls: false },
+      },
+      {
+        field: 'occurred_on',
+        label: '日期',
+        component: 'date-picker',
+        defaultValue: today(),
+        componentProps: { type: 'date', 'value-format': 'YYYY-MM-DD' },
+      },
+      {
+        ...textarea('scenario', '情景'),
+        rules: [{ required: true, message: '写下情景', trigger: 'change' }],
+      },
+      textarea('invalidation', '失效条件', 2),
     ],
     submit: (values) =>
-      createPlan({
+    createPlan({
         code: String(values.code),
         title: String(values.title),
         scenario: String(values.scenario),
         entry_zone: String(values.entry_zone ?? ''),
-        stop_price: values.stop_price === '' || values.stop_price === undefined || values.stop_price === null ? null : Number(values.stop_price),
-        target_price:
-          values.target_price === '' || values.target_price === undefined || values.target_price === null ? null : Number(values.target_price),
-        layers: values.layers === '' || values.layers === undefined || values.layers === null ? null : Number(values.layers),
+        stop_price: numberOrNull(values.stop_price),
+        target_price: numberOrNull(values.target_price),
+        layers: numberOrNull(values.layers),
         invalidation: String(values.invalidation ?? ''),
         occurred_on: String(values.occurred_on ?? '') || null,
-      }),
+    }),
   },
   review: {
     title: '写复盘',
-    hint: '最高浮盈 / 最深浮亏看持有期内曾经到过的最好与最差；对象 ID 可后补。',
+    hint: '浮盈 / 浮亏取持有期内极值',
+    submitLabel: '保存复盘',
     fields: [
       {
-        key: 'entity_type',
+        field: 'entity_type',
         label: '对象',
-        type: 'select',
-        default: 'candidate',
-        options: [
-          { value: 'candidate', label: '候选' },
-          { value: 'plan', label: '预案' },
-        ],
+        component: 'select',
+        defaultValue: 'candidate',
+        componentProps: {
+          options: [
+            { label: '候选', value: 'candidate' },
+            { label: '预案', value: 'plan' },
+          ],
+        },
       },
-      { key: 'entity_id', label: '对象 ID（可选）', type: 'text', placeholder: 'CA-… / PL-…' },
-      { key: 'strategy_tag', label: '战法', type: 'text', required: true, placeholder: '如 qianlong-close-v3 / sanyuan-tail-v1' },
-      { key: 'return_pct', label: '收益 %', type: 'number', step: 0.01 },
-      { key: 'max_favorable_pct', label: '最高浮盈 %', type: 'number', step: 0.01 },
-      { key: 'max_adverse_pct', label: '最深浮亏 %', type: 'number', step: 0.01 },
-      { key: 'reviewed_on', label: '日期', type: 'date', default: today() },
-      { key: 'outcome', label: '结果', type: 'textarea', required: true, rows: 3 },
-      { key: 'lesson', label: '教训', type: 'textarea', rows: 2 },
-      { key: 'next_rule', label: '下次规则', type: 'textarea', rows: 2 },
+      {
+        field: 'entity_id',
+        label: '对象 ID',
+        hint: '可后补',
+        componentProps: { placeholder: 'CA-… / PL-…' },
+      },
+      STRATEGY_FIELD,
+      {
+        field: 'return_pct',
+        label: '收益 %',
+        component: 'input-number',
+        componentProps: { step: 0.01, controls: false },
+      },
+      {
+        field: 'max_favorable_pct',
+        label: '最高浮盈 %',
+        component: 'input-number',
+        componentProps: { step: 0.01, controls: false },
+      },
+      {
+        field: 'max_adverse_pct',
+        label: '最深浮亏 %',
+        component: 'input-number',
+        componentProps: { step: 0.01, controls: false },
+      },
+      {
+        field: 'reviewed_on',
+        label: '日期',
+        component: 'date-picker',
+        defaultValue: today(),
+        componentProps: { type: 'date', 'value-format': 'YYYY-MM-DD' },
+      },
+      {
+        ...textarea('outcome', '结果'),
+        rules: [{ required: true, message: '写下结果', trigger: 'change' }],
+      },
+      textarea('lesson', '教训', 2),
+      textarea('next_rule', '下次规则', 2),
     ],
     submit: (values) =>
-      createReview({
+    createReview({
         entity_type: values.entity_type as 'plan' | 'candidate',
         entity_id: String(values.entity_id || 'manual'),
         outcome: String(values.outcome),
@@ -143,7 +253,7 @@ const SCHEMAS: Record<RecordKind, SchemaSpec> = {
         lesson: String(values.lesson ?? ''),
         next_rule: String(values.next_rule ?? ''),
         reviewed_on: String(values.reviewed_on ?? '') || null,
-      }),
+    }),
   },
 }
 
@@ -161,22 +271,22 @@ const props = defineProps<{
 const model = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ saved: [id: string] }>()
 
+const formRef = ref<InstanceType<typeof BasicForm>>()
 const submitting = ref(false)
 const submitError = ref('')
-const form = reactive<Record<string, unknown>>({})
-const width = computed(() => dialogWidth())
+const form = ref<Record<string, unknown>>({})
 
 const schema = computed(() => SCHEMAS[props.kind])
-const inlineFields = computed(() => schema.value.fields.filter((f) => f.type !== 'textarea'))
-const blockFields = computed(() => schema.value.fields.filter((f) => f.type === 'textarea'))
 
+/** 打开即重置：BasicForm 用 destroy-on-close 重新挂载，会从这里读初值 */
 function reset(): void {
-  for (const key of Object.keys(form)) delete form[key]
+  const next: Record<string, unknown> = {}
   for (const field of schema.value.fields) {
-    form[field.key] = field.default ?? (field.type === 'number' ? undefined : '')
+    next[field.field] = field.defaultValue ?? (field.component === 'input-number' ? undefined : '')
   }
-  if (props.presetCode) form.code = props.presetCode
-  if (props.presetName) form.name = props.presetName
+  if (props.presetCode) next.code = props.presetCode
+  if (props.presetName) next.name = props.presetName
+  form.value = next
   submitError.value = ''
 }
 
@@ -192,24 +302,13 @@ function close(): void {
 }
 
 async function submit(): Promise<void> {
-  const missing = schema.value.fields.find(
-    (field) => field.required && (form[field.key] === undefined || form[field.key] === null || !String(form[field.key]).trim()),
-  )
-  if (missing) {
-    submitError.value = `请填写「${missing.label}」`
-    return
-  }
-  const badCode = schema.value.fields.find(
-    (field) => field.pattern === '\\d{6}' && !/^\d{6}$/.test(String(form[field.key] ?? '').trim()),
-  )
-  if (badCode) {
-    submitError.value = `「${badCode.label}」须为 6 位数字`
-    return
-  }
+  // 必填/格式由 BasicForm 的 rules 就地提示，这里只处理写入失败
+  const values = await formRef.value?.submit()
+  if (!values) return
   submitting.value = true
   submitError.value = ''
   try {
-    const { id } = await schema.value.submit({ ...form })
+    const { id } = await schema.value.submit(values)
     emit('saved', id)
     close()
   } catch (caught: unknown) {
@@ -224,79 +323,51 @@ async function submit(): Promise<void> {
   <el-dialog
     v-model="model"
     :title="schema.title"
-    :width="width"
+    width="min(92vw, 560px)"
+    class="record-dialog"
     destroy-on-close
     @closed="submitError = ''"
   >
-    <p v-if="schema.hint" class="form-hint">{{ schema.hint }}</p>
-    <el-form label-position="top" @submit.prevent="submit">
-      <div class="form-grid">
-        <el-form-item
-          v-for="field in inlineFields"
-          :key="field.key"
-          :label="field.label"
-          :required="field.required"
-        >
-          <el-select v-if="field.type === 'select'" v-model="form[field.key]" class="full">
-            <el-option
-              v-for="option in field.options"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
-          <el-date-picker
-            v-else-if="field.type === 'date'"
-            v-model="form[field.key]"
-            type="date"
-            value-format="YYYY-MM-DD"
-            class="full"
-          />
-          <el-input-number
-            v-else-if="field.type === 'number'"
-            v-model="form[field.key]"
-            :min="field.min"
-            :max="field.max"
-            :step="field.step ?? 1"
-            :controls="false"
-            class="full"
-          />
-          <el-input
-            v-else
-            v-model="form[field.key]"
-            :maxlength="field.maxlength"
-            :placeholder="field.placeholder"
-            :inputmode="field.inputmode"
-          />
-        </el-form-item>
-      </div>
-      <el-form-item
-        v-for="field in blockFields"
-        :key="field.key"
-        :label="field.label"
-        :required="field.required"
-      >
-        <el-input
-          v-model="form[field.key]"
-          type="textarea"
-          :rows="field.rows ?? 2"
-          :placeholder="field.placeholder"
-        />
-      </el-form-item>
-      <el-alert v-if="submitError" :title="submitError" type="error" show-icon :closable="false" />
-    </el-form>
+    <BasicForm
+      ref="formRef"
+      :key="kind"
+      v-model="form"
+      :schemas="schema.fields"
+      :hint="schema.hint"
+      :columns="2"
+      :input-debounce-ms="0"
+      @submit.prevent="submit"
+    />
+    <el-alert
+      v-if="submitError"
+      class="record-dialog__error"
+      :title="submitError"
+      type="error"
+      show-icon
+      :closable="false"
+    />
     <template #footer>
       <el-button @click="close">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit">写入</el-button>
+      <el-button type="primary" :loading="submitting" @click="submit">
+        {{ schema.submitLabel }}
+      </el-button>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
-.form-hint {
-  margin: 0 0 0.75rem;
-  color: var(--mist);
-  font-size: 0.82rem;
-  line-height: 1.5;
+.record-dialog__error {
+  margin-top: var(--gap-2);
+}
+</style>
+
+<style>
+/*
+ * 非 scoped：el-dialog teleport 到 body，scoped 选择器进不去。
+ * 长表单（复盘有 10 个字段）在 body 内滚，不许把滚动条顶到文档级。
+ */
+.record-dialog .el-dialog__body {
+  max-height: min(62vh, 30rem);
+  overflow: auto;
 }
 </style>

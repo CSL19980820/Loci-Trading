@@ -9,6 +9,22 @@
 - Screen Skill 已**整块搬出组合根**（2026-08）：编排在 `src.strategy.application.screen_skills`，HTTP 契约在 `src.strategy.api.screen_skills_router`，包读写经 `src.ops` 包根。组合根只负责 include 路由，不再持有任何业务编排
 - 可观测性：HTTP middleware 经 `src.shared.observability` 建 request span 与相关性字段；默认关闭。`LOCI_OBSERVABILITY=1` 才写本地 JSON/metrics；`LOCI_OBSERVABILITY_OTEL=1` 才桥接宿主 OTel（不配置 exporter）；`LOCI_OBSERVABILITY_EXPOSE=1` 才回 `X-Loci-Trace-ID`（见 [ADR-010](../../docs/adr/ADR-010-2026-08-baseline-observability-virtual-table.md)）
 
+## 文件清单
+
+`create_app()` 曾经一个函数就 500 多行。2026-08 按「同一类失败/同一类关注点」切开，**装配顺序仍然全部由 `main.py` 决定**——下面这些模块只提供步骤，不决定何时执行：
+
+| 文件 | 职责 | 边界 |
+|---|---|---|
+| `main.py` | 组合根本体：解析配置、建 `FastAPI`、按序装中间件、`include_router`、`lifespan` 调度器 | 唯一决定**顺序**的地方 |
+| `startup_migrations.py` | `run_startup_self_heal()`：LLM/MCP 旧加密凭据迁移、刷 Screen Skill 战法目录、清 WebView 缓存 | 每步 `try/except` + `logger.exception`，**失败一律不拖垮进程**。要「失败就拒绝启动」的校验请写进 `main.py` 正文 |
+| `security_middleware.py` | `install_secure_response_headers()` + `_split_hosts` / `_env_flag` / `_is_loopback_client` | 都在回答「这次部署/这个请求处在什么安全语境里」 |
+| `auth_guards.py` | `build_auth_guards()` → `has_browser_session` / `has_agent_token` / `require_write_access`；无状态的 `current_context` | **必须保持工厂返回闭包**：它们捕获每个 app 实例自己的 `require_write_auth` 与 `write_token`，改成全局变量会让同进程里两个 app 互相覆盖对方的令牌 |
+| `spa_mount.py` | `install_spa_cache_control()` + `mount_spa()` | `mount_spa` 是 catch-all，**必须在所有 API 路由 include 完之后**调用 |
+| `logging_setup.py` / `login_throttle.py` / `write_token_policy.py` / `tenant_middleware.py` | 原有拆分，未动 | |
+
+**搬走的名字一律在 `main.py` re-export**（含 `_split_hosts` / `_env_flag` / `_is_loopback_client` 这类下划线名与 `LoginThrottle`）。`tests/app/**` 有大量用例直接 `from src.app.main import ...` 并 monkeypatch `src.app.main` 上的名字；re-export 掉一个，monkeypatch 就会静默打到空处——测试照样绿，线上不生效。
+
+
 ## 对外入口
 - `src.app.main:create_app` / `app`
 - `python -m cli.serve` 或 `uvicorn src.app.main:app`

@@ -53,25 +53,6 @@ DEFAULT_SCAN: dict[str, float] = {
     "observe_max_age_days": 10,
 }
 
-#: 龙回头·二波监测。阈值全部来自回测分档，改动请同步
-#: `docs/research/2026-08-dragon-second-wave-live-alert-spec.md`。
-DEFAULT_SECOND_WAVE: dict[str, float] = {
-    #: 入池：20 日涨幅进过全市场前 N。**别调小**——收紧到 5 会让分档验证失去统计力
-    "pool_top_n": 10,
-    #: 入池后监控多少个交易日
-    "watch_days": 20,
-    #: 触发均线。MA5 太敏感、MA20/60 太迟钝，MA10 的两段皆正格最多
-    "ma_window": 10,
-    #: 市场宽度下限（全市场上涨家数占比 %）。单此一条把全期收益从 −3.72% 拉到 +80.02%
-    "breadth_min": 55.0,
-    #: 距 20 日最高价的天数上限。要新高附近洗盘，不是深回踩
-    "peak_days_max": 3,
-    #: 强度下限，低于此分不出提醒。实测 00-44 档均净 −0.962%、45+ 各档均为正
-    "min_strength": 45,
-    #: 成交额底线（万元），滤掉不可交易的票
-    "amount_min_wan": 3000,
-}
-
 DEFAULT_AUCTION: dict[str, float] = {
     #: 竞价高开超过这个幅度算强确认
     "strong_gap_pct": 3.0,
@@ -116,13 +97,6 @@ _RANGES: dict[str, tuple[float, float]] = {
     "strong_gap_pct": (0.0, 10.0),
     "downgrade_gap_pct": (-10.0, 0.0),
     "abandon_gap_pct": (-20.0, 0.0),
-    "pool_top_n": (3.0, 50.0),
-    "watch_days": (5.0, 60.0),
-    "ma_window": (3.0, 120.0),
-    "breadth_min": (0.0, 100.0),
-    "peak_days_max": (0.0, 20.0),
-    "min_strength": (0.0, 100.0),
-    "amount_min_wan": (0.0, 100_000.0),
 }
 
 _INT_KEYS = {
@@ -135,12 +109,6 @@ _INT_KEYS = {
     "observe_max_miss_days",
     "observe_max_same_theme",
     "observe_max_age_days",
-    "pool_top_n",
-    "watch_days",
-    "ma_window",
-    "peak_days_max",
-    "min_strength",
-    "amount_min_wan",
 }
 
 #: 段开关的中文名与含义。前端不再自己抄一份，避免加了开关界面看不到。
@@ -157,7 +125,6 @@ SECTION_META: dict[str, str] = {
     "gate": "闸门阈值",
     "roles": "角色判定",
     "auction": "竞价阈值",
-    "second_wave": "二波监测",
 }
 
 #: 三套命名预设。balanced 与 ``default_tuning()`` 一致；另两套在其上偏移。
@@ -249,13 +216,6 @@ FIELD_META: dict[str, tuple[str, float]] = {
     "strong_gap_pct": ("强确认高开%", 0.5),
     "downgrade_gap_pct": ("降级低开%", 0.5),
     "abandon_gap_pct": ("放弃低开%", 0.5),
-    "pool_top_n": ("入池·涨幅前N", 1),
-    "watch_days": ("监控交易日", 1),
-    "ma_window": ("触发均线", 1),
-    "breadth_min": ("市场宽度下限%", 1),
-    "peak_days_max": ("距高点天数上限", 1),
-    "min_strength": ("强度下限", 5),
-    "amount_min_wan": ("成交额下限(万)", 500),
 }
 
 _SECTIONS: dict[str, dict[str, float]] = {
@@ -263,7 +223,6 @@ _SECTIONS: dict[str, dict[str, float]] = {
     "roles": DEFAULT_ROLE_PARAMS,
     "scan": DEFAULT_SCAN,
     "auction": DEFAULT_AUCTION,
-    "second_wave": DEFAULT_SECOND_WAVE,
 }
 
 

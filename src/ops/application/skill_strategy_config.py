@@ -76,16 +76,9 @@ DRAGON_RETURN_WATCH_SCHEDULE: dict[str, Any] = {
     ],
 }
 
-#: 二波监测：交易时段每 5 分钟用当日现价扫一轮。
-SECOND_WAVE_WATCH_SCHEDULE: dict[str, Any] = {
-    **DEFAULT_WATCH_SCHEDULE,
-    "interval_minutes": 5,
-}
-
 #: slug → 系统托管的固定盘中时段。新增托管战法加一条，不写 if 丛林。
 MANAGED_WATCH_SCHEDULES: dict[str, dict[str, Any]] = {
     "dragon-return": DRAGON_RETURN_WATCH_SCHEDULE,
-    "dragon-second-wave": SECOND_WAVE_WATCH_SCHEDULE,
 }
 
 _SCHEDULE_FIELDS = (

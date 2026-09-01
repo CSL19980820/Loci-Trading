@@ -70,33 +70,6 @@ class SkillStrategyConfigTests(unittest.TestCase):
             cfg["watch_interval_minutes"], DEFAULT_WATCH_SCHEDULE["interval_minutes"]
         )
 
-    def test_second_wave_unbound_defaults_to_five_minutes(self) -> None:
-        from src.ops.application.skill_strategy_config import get_strategy_config
-
-        with OpsStore(self.ops_path) as store:
-            cfg = get_strategy_config(store, "dragon-second-wave")
-
-        self.assertEqual(cfg["watch_interval_minutes"], 5)
-
-    def test_save_second_wave_forces_five_minute_cron(self) -> None:
-        from src.ops.api.schemas import SkillStrategyConfig
-        from src.ops.application.skill_strategy_config import save_strategy_config
-
-        payload = SkillStrategyConfig(
-            provider="",
-            screen_schedule_mode="off",
-            watch_schedule_mode="interval",
-            watch_interval_minutes=10,
-            watch_use_ai=False,
-        )
-        with OpsStore(self.ops_path) as store:
-            save_strategy_config(store, "dragon-second-wave", payload)
-            watch = store.get_job_by_name("监测·二波监测")
-
-        self.assertEqual(watch["kind"], "skill_watch")
-        self.assertEqual(watch["cron"], "*/5 9-14 * * mon-fri")
-        self.assertEqual(watch["config"]["schedule"]["interval_minutes"], 5)
-
     def test_save_creates_screen_and_watch_jobs(self) -> None:
         from src.ops.api.schemas import SkillStrategyConfig
         from src.ops.application.skill_strategy_config import save_strategy_config

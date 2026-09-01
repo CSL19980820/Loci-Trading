@@ -1,15 +1,42 @@
 /** 首页盘面纯逻辑（可单测）。 */
-import type { BoardRow } from '@/shared/types/quant'
+import type { BoardRow, ScreenCandidate, ScreenHistory } from '@/shared/types/quant'
+import { strategyShortLabel } from '@/shared/lib/format'
 
 export type PulseBoardTab = 'gain' | 'turnover' | 'sector'
 
-export function localIsoDate(d = new Date()): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+export const PULSE_BOARD_TABS = [
+  { key: 'gain' as const, label: '涨幅' },
+  { key: 'turnover' as const, label: '换手' },
+  { key: 'sector' as const, label: '板块' },
+]
+
+const CJK = /[\u4e00-\u9fa5]/
+
+/**
+ * 战法展示名：盘面上任何位置都不许漏出 `sanyuan-tail-v1` 这类裸 slug。
+ *
+ * 兜底顺序：接口给的中文名 → `strategyShortLabel`（词表 / 拼音词根，窄列友好，
+ * 顺手去掉「（15:30）」这类括注）→ 仍是纯 ASCII 的自定义 slug 统一收成「自定义战法」。
+ * 入参既可以是 slug 也可以是已经算好的名字（幂等）。
+ */
+export function strategyDisplayName(
+  slug: string | null | undefined,
+  nameBySlug?: Map<string, string>,
+): string {
+  const raw = String(slug ?? '').trim()
+  if (!raw) return '—'
+  const named = (nameBySlug?.get(raw) ?? '').trim()
+  if (CJK.test(named)) return strategyShortLabel(named)
+  const label = strategyShortLabel(raw)
+  if (CJK.test(label)) return label
+  // 连字母数字都没有（'—' 这类占位）就照原样回；剩下的必然是没见过的英文 slug
+  return /[a-z0-9]/i.test(label) ? '自定义战法' : label
 }
 
+export function localIsoDate(d = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
 export function effectivePct(row: BoardRow): number | null {
   if (row.pct != null && Number.isFinite(Number(row.pct))) return Number(row.pct)
   if (row.local_pct != null && Number.isFinite(Number(row.local_pct))) return Number(row.local_pct)
@@ -225,4 +252,53 @@ export function dedupeTrackRowsByDayCode<T extends TrackDedupeRow>(rows: T[]): T
     if ((row.score ?? -1) > (prev.score ?? -1)) best.set(key, row)
   }
   return [...best.values()]
+}
+
+/** 今日选股行（首页「今日选股」表）。 */
+export type PulsePickRow = {
+  rank: number
+  code: string
+  name: string
+  strategy: string
+  strategyName: string
+  score: number | null
+  reason: string
+  pct: number | null
+  date: string
+}
+
+/**
+ * 合并各战法在 ``date`` 当天的入库候选：同 code 只留 score 更高的一行。
+ * rank/pct 留给调用方叠价后再定。
+ */
+export function collectPicksForDate(
+  histories: ScreenHistory[],
+  date: string,
+  nameBySlug: Map<string, string>,
+): PulsePickRow[] {
+  if (!date) return []
+  const merged: PulsePickRow[] = []
+  for (const h of histories) {
+    const rows: ScreenCandidate[] = h.by_date[date] || []
+    for (const row of rows) {
+      if (!row.code) continue
+      merged.push({
+        rank: 0,
+        code: row.code,
+        name: row.name || row.code,
+        strategy: h.strategy,
+        strategyName: strategyDisplayName(h.strategy, nameBySlug),
+        score: row.score,
+        reason: row.reason || '',
+        pct: null,
+        date,
+      })
+    }
+  }
+  const dedup = new Map<string, PulsePickRow>()
+  for (const row of merged) {
+    const prev = dedup.get(row.code)
+    if (!prev || (row.score ?? -1) > (prev.score ?? -1)) dedup.set(row.code, row)
+  }
+  return [...dedup.values()]
 }

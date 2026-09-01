@@ -8,7 +8,6 @@ import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
@@ -82,14 +81,12 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
     field: 'keyword',
     label: '关键词',
     component: 'input',
-    colSpan: 6,
     componentProps: { placeholder: '代码 / 名称', clearable: true },
   },
   {
     field: 'industry',
     label: '所属行业',
     component: 'select',
-    colSpan: 6,
     componentProps: {
       clearable: true,
       filterable: true,
@@ -103,7 +100,6 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
     field: 'turnoverMin',
     label: '换手≥%',
     component: 'input-number',
-    colSpan: 5,
     componentProps: {
       min: 0,
       max: 100,
@@ -116,7 +112,6 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
     field: 'sort',
     label: '排序',
     component: 'select',
-    colSpan: 5,
     componentProps: {
       options: [
         { label: '代码', value: 'code' },
@@ -128,53 +123,67 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
 ])
 
 const columns = ref<BasicTableColumn[]>([
-  { prop: 'code', label: '代码', width: 88, slotName: 'code' },
-  { prop: 'name', label: '名称', minWidth: 108, showOverflowTooltip: true },
+  { prop: 'code', label: '代码', width: 88, align: 'center', headerAlign: 'center', slotName: 'code' },
+  { prop: 'name', label: '名称', minWidth: 108, align: 'center', headerAlign: 'center', showOverflowTooltip: true },
   {
     prop: 'industry',
     label: '所属行业',
     minWidth: 110,
+    align: 'center',
+    headerAlign: 'center',
     showOverflowTooltip: true,
     formatter: (row) => String(row.industry || '—'),
   },
-  { prop: 'price', label: '最新', width: 92, slotName: 'price' },
-  { prop: 'pct', label: '涨跌%', width: 100, slotName: 'pct' },
-  { prop: 'change', label: '涨跌', width: 80, slotName: 'change' },
+  { prop: 'price', label: '最新', width: 92, align: 'center', headerAlign: 'center', slotName: 'price' },
+  { prop: 'pct', label: '涨跌%', width: 100, align: 'center', headerAlign: 'center', slotName: 'pct' },
+  { prop: 'change', label: '涨跌', width: 80, align: 'center', headerAlign: 'center', slotName: 'change' },
   {
     prop: 'turnover',
     label: '换手率',
     width: 92,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => fmtTurnover(row.turnover as number | null),
   },
   {
     prop: 'open',
     label: '今开',
     width: 84,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => fmtPrice(row.open as number | null),
   },
   {
     prop: 'high',
     label: '最高',
     width: 84,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => fmtPrice(row.high as number | null),
   },
   {
     prop: 'low',
     label: '最低',
     width: 84,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => fmtPrice(row.low as number | null),
   },
   {
     prop: 'amount',
     label: '成交额',
     minWidth: 100,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => fmtAmount(row.amount as number | null),
   },
-  { prop: 'ok', label: '来源', width: 72, slotName: 'source' },
+  { prop: 'ok', label: '来源', width: 72, align: 'center', headerAlign: 'center', slotName: 'source' },
   {
     prop: 'local_date',
     label: '本地日',
     width: 108,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => String(row.local_date || '—'),
   },
 ])
@@ -289,11 +298,6 @@ onMounted(async () => {
 
 <template>
   <div class="page-fill data-desk">
-    <PageHeader
-      title="行情"
-      :count="boardTotal ? `共 ${boardTotal} 只` : ''"
-      note="只读视图：行情由同步任务写入本机 market.db，这里只查不写。"
-    />
     <el-alert
       v-if="error"
       :title="error"
@@ -303,15 +307,17 @@ onMounted(async () => {
       class="desk-alert"
       @close="error = ''"
     />
-    <el-alert
-      v-if="liveError"
-      :title="`实时行情暂不可用，列表显示本机最新日线。${liveError}`"
-      type="warning"
-      show-icon
-      closable
-      class="desk-alert"
-      @close="liveError = ''"
-    />
+    <!-- 真实异常才上条：标题压到 12 字，原始报错进 tooltip（不写 description） -->
+    <el-tooltip v-if="liveError" :content="liveError" placement="bottom-start" :show-after="200">
+      <el-alert
+        title="实时行情不可用，改显日线"
+        type="warning"
+        show-icon
+        closable
+        class="desk-alert"
+        @close="liveError = ''"
+      />
+    </el-tooltip>
 
     <PageContainer>
       <template #search>
@@ -320,8 +326,10 @@ onMounted(async () => {
             ref="basicFormRef"
             v-model="filterModel"
             :schemas="filterSchemas"
-            :col-props="{ span: 6 }"
-            label-width="72px"
+            :columns="4"
+            label-position="left"
+            label-width="5em"
+            size="small"
           />
         </div>
         <div class="desk-search-actions">
@@ -333,7 +341,7 @@ onMounted(async () => {
         <EmptyState
           v-if="coverageLoaded && !hasMarket"
           description="还没有历史日 K"
-          reason="数据目录已就绪，但 market.db 里尚无行情。同步行情后才能查日线。"
+          reason="market.db 里还没有行情"
         >
           <el-button type="primary" @click="goBootstrapHint">去同步行情</el-button>
         </EmptyState>
@@ -399,72 +407,56 @@ onMounted(async () => {
 .data-desk {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: var(--gap-2);
+  /* height 由 .page-fill 给（layout.css:46 已 height:100%）；这里只要能收缩 */
   min-height: 0;
-  height: 100%;
   overflow: hidden;
 }
-
 .desk-alert {
   margin: 0;
   flex-shrink: 0;
 }
-
 .desk-search-form {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
 }
-
-.desk-search-form :deep(.el-col) {
-  min-width: 14rem;
+.desk-search-form :deep(.el-form-item) {
+  margin-bottom: 0;
 }
-
 .desk-search-form :deep(.el-form-item__content),
 .desk-search-form :deep(.el-input),
 .desk-search-form :deep(.el-select),
 .desk-search-form :deep(.el-input-number) {
   width: 100%;
-  min-width: 11rem;
+  min-width: 0;
 }
-
 .desk-search-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
+  gap: var(--gap-2);
   flex-shrink: 0;
-  padding-bottom: 0.65rem;
+  margin-left: auto;
 }
-
 @media (max-width: 700px) {
   :deep(.page-container__search) {
     flex-direction: column;
     flex-wrap: nowrap;
   }
-
   .desk-search-form,
   .desk-search-actions {
     width: 100%;
     flex: 0 0 auto;
   }
-
-  .desk-search-form :deep(.el-col) {
-    flex: 0 0 100%;
-    max-width: 100%;
-    min-width: 0;
-  }
-
   .desk-search-form :deep(.el-form-item__content),
   .desk-search-form :deep(.el-input),
   .desk-search-form :deep(.el-select),
   .desk-search-form :deep(.el-input-number) {
     min-width: 0;
   }
-
   .desk-search-actions {
     justify-content: flex-end;
   }
 }
-
 .desk-main {
   position: relative;
   flex: 1 1 auto;
@@ -473,20 +465,17 @@ onMounted(async () => {
   flex-direction: column;
   overflow: hidden;
 }
-
 .board-code {
   font-weight: 600;
 }
-
 .src {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
-
 .mono {
   font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
-
 :deep(.el-table__row) {
   cursor: pointer;
 }

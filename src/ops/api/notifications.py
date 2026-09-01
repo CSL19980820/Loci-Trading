@@ -90,6 +90,9 @@ def build_notification_settings_router(
             url = str(raw.get("url") or "")
         if not url:
             raise HTTPException(status_code=422, detail="尚未配置企业微信 Webhook")
+        #  这条不经 ``dispatch_text``，所以压根不过 60s 指纹限流——连点两次两次都真的
+        #  发，正是「测试」按钮该有的语义。它仍然过 ``notify_send_queue`` 的 20 条/分钟
+        #  令牌桶：那是官方硬限额，测试按钮也不能例外。
         try:
             send_wecom_text(
                 url,
@@ -199,6 +202,9 @@ def build_notification_settings_router(
                 title="Loci 连通测试",
                 body="通知分发已接通（可含企微/Bark）。安静时段测试会 bypass。",
                 bypass_quiet=True,
+                #  用户正盯着屏幕等回声：连点两次必须两次都真的发。被 60s 限流压住会被
+                #  读成「通道坏了」，然后他去改一个本来没坏的配置。业务推送不许传 True。
+                bypass_rate_limit=True,
             )
         if not outcome.get("sent"):
             raise HTTPException(
@@ -206,5 +212,55 @@ def build_notification_settings_router(
                 detail=outcome.get("error") or "; ".join(outcome.get("errors") or ["推送失败"]),
             )
         return {"ok": True, "notify": outcome}
+
+    #  ---- 多通道告警：可插拔通道注册表 ------------------------------------
+    #
+    #  与上面 /api/ops/settings/notify 的区别：那套是**旧的**两渠道（企微/Bark）
+    #  列表，键 ``notify_channels``；这套按通道名寻址，键 ``notify:<name>``，
+    #  六个通道一视同仁。两套并存是刻意的——老前端还在打旧口，删了就白屏。
+
+    @router.get("/api/ops/notify/channels", tags=["notify"])
+    def get_notify_channels() -> dict[str, Any]:
+        """六张通道名片。**绝不回显 secret**：webhook URL / 加签密钥只给末 6 位。"""
+        from src.ops.application.notify_registry import list_channels
+
+        with _ops() as store:
+            return {"channels": list_channels(store)}
+
+    @router.put("/api/ops/notify/channels/{name}", tags=["notify"])
+    def put_notify_channel(
+        name: str,
+        payload: dict[str, Any],
+        _write: None = write_guard,
+    ) -> dict[str, Any]:
+        """写一个通道的配置。空配置等于停用该通道。
+
+        请求体可以是 ``{"config": {...}}``，也可以直接是配置本身——前端两种写法
+        都出现过，在这里收敛比让两边对齐便宜。
+        """
+        from src.ops.application.notify_registry import NotifyChannelError, save_channel_config
+
+        raw = payload.get("config") if isinstance(payload.get("config"), dict) else payload
+        try:
+            with _ops() as store:
+                return save_channel_config(store, name, dict(raw))
+        except NotifyChannelError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @router.post("/api/ops/notify/channels/{name}/test", tags=["notify"])
+    def test_notify_channel(name: str, _write: None = write_guard) -> dict[str, Any]:
+        """给单个通道发一条测试消息。绕过限流，连点两次必须两次都真的发。"""
+        from src.ops.application.notify_registry import NotifyChannelError, test_channel
+
+        try:
+            with _ops() as store:
+                ok = test_channel(store, name)
+        except NotifyChannelError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not ok:
+            #  test_channel 不抛（通道契约就是吞异常返回 False），所以这里只能给
+            #  一句笼统的话；具体原因在服务端日志的 WARNING 里。
+            raise HTTPException(status_code=422, detail=f"{name} 推送失败：请检查配置或服务端日志")
+        return {"ok": True, "channel": name}
 
     return router

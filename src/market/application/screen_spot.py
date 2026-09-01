@@ -1,9 +1,11 @@
-"""选股前「当日行情就绪」：覆盖够就跳过 spot，根治与同步抢写。
+"""收盘后选股前「当日行情就绪」：覆盖够就跳过 spot，根治与同步抢写。
+
+盘中选今天走 ``screen_live``：自己拉实时、只叠内存，不进本模块。
 
 旧逻辑：每次选股都全市场 apply_today_spot，raise_on_failure=True。
 盘后同步/日终重刷已写好今日日 K 时，选股再硬写一遍 → SQLite locked → 选股失败。
 
-正确语义：选股要的是「今天有可用日 K」，不是「此刻必须再写一遍 spot」。
+正确语义（收盘后）：选股要的是「今天有可用日 K」，不是「此刻必须再写一遍 spot」。
 
 **盘中的覆盖率不足多半不是故障**。收盘门槛（min_coverage_ratio，默认 90%）是按
 「今天已经走完」定的；在 10:30 拿这条线去卡选股，缺的那几个点其实是「今天还没
@@ -89,14 +91,16 @@ def _is_trading_day(store: MarketStore, day: date) -> bool:
         days = store.trading_days()
     except Exception:  # noqa: BLE001 — 日历读不到不该连累选股，退回粗判
         days = []
-    if days:
+    if days and isinstance(days, Sequence) and len(days) > 0:
         if today in set(days):
             return True
-        if today <= max(days):
-            # 日历已经覆盖到今天及之后却没有今天 → 真节假日
-            return False
+        try:
+            if today <= max(days):
+                # 日历已经覆盖到今天及之后却没有今天 → 真节假日
+                return False
+        except Exception:
+            pass
     return day.weekday() < 5
-
 
 def in_open_session(store: MarketStore, *, now: datetime | None = None) -> bool:
     """是否「盘中」：今天是交易日，且还没收盘（[09:15, 15:00)）。"""

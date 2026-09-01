@@ -8,7 +8,7 @@ DEFAULT_DB = _default_market_db()
 #: 7:补 idx_source_receipts_recent。加索引必须配套 bump——`init_schema()` 只在
 #: `meta.schema_version` 与本常量不符时才跑 DDL,不 bump 的话新索引永远只出现在
 #: 新建的库上,已有的生产库一辈子享受不到(实测就踩了这一脚)。
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 #: 面板字段 -> quotes_daily 列名。价格类字段会按复权方式换算，量额类不换算。
 PRICE_FIELDS = ("open", "high", "low", "close")
@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS quotes_daily (
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_quotes_code_date ON quotes_daily(code, trade_date);
--- idx_quotes_receipt 在 migrate 里建：旧库先补列再索引，避免 CREATE INDEX 踩无列。
+-- idx_quotes_receipt 只在**热库**建（migrate 里按 keep_receipt_index 决定）：权威库上它
+-- 实测 1,049 MB 而没有热路径消费者，唯一的 NOT EXISTS 探测只跑在热库。v8 起权威库 DROP。
 
 -- 稀疏表：只有除权除息日才有行。读时前向填充。
 CREATE TABLE IF NOT EXISTS adjust_factors (

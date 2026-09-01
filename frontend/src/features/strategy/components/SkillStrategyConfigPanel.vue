@@ -143,15 +143,14 @@ defineExpose({ save, saving, load })
 
 <template>
   <div v-loading="loading" class="strategy-skill-config">
-    <el-alert
-      type="info"
-      show-icon
-      :closable="false"
-      class="mb"
-      title="盘后走 AI 全量选股，盘中走 MCP + 本地量化信号监测。战法本身不带时间，全在这里配。"
-    />
+    <el-tooltip
+      placement="bottom-start"
+      content="战法本身不带时间；盘中监测走 MCP + 本地量化信号"
+    >
+      <p class="config-lede mb">盘后走 AI 全量选股，盘中走 MCP 监测；时点在此配</p>
+    </el-tooltip>
 
-    <el-form label-position="left" label-width="5.5rem" size="small">
+    <el-form label-position="right" label-width="6.5em" size="small">
       <el-form-item label="LLM" :required="llmRequired">
         <el-select v-model="provider" filterable placeholder="选择供应商" class="full">
           <el-option
@@ -214,7 +213,14 @@ defineExpose({ save, saving, load })
 
 <style scoped>
 .mb {
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--gap-2);
+}
+
+/* 页头不写介绍段落：这一行是「这页配什么」，长解释挂在外层 el-tooltip 上 */
+.config-lede {
+  margin: 0;
+  font-size: var(--fs-aux);
+  color: var(--muted);
 }
 .full {
   width: 100%;
@@ -222,9 +228,9 @@ defineExpose({ save, saving, load })
 }
 .dim {
   color: var(--mist);
-  font-size: 0.76rem;
+  font-size: var(--fs-aux);
 }
 .hint {
-  margin-left: 0.5rem;
+  margin-left: var(--gap-2);
 }
 </style>

@@ -1,92 +1,49 @@
-"""即时选股进度快照（内存；仿 bootstrap，供前端轮询）。
+"""即时选股的**执行体**：按交易日循环选股 + 可选入库，全程写进度快照。
 
 支持单日与区间（≤31 自然日）：按交易日逐日调用通用 ``screen`` +
 ``persist_screen_candidates``，入库结构不变（同日同池覆盖）。
+``start_screen_run_thread`` 负责起后台线程——必须走 ``spawn_tenant_thread``，
+裸 ``threading.Thread`` 会丢掉租户 ContextVar。
+
+进度槽本身（``_STATES[tenant][strategy]`` 双层分片、LRU、快照/更新/互斥/取消
+旗）住在同目录的 ``screen_run_state.py``；本模块只是它最大的写入方，并负责在
+线程入口用 ``screen_run_slot_scope`` 认领「自己这个战法的槽」——**多战法并跑就
+靠这一层**，缺了它三条线程会往同一个槽里写。下面把那些符号**原样 re-export**，
+让历史导入（路由、``tests/strategy/test_screen_run_*.py``、``tests/conftest.py``）
+继续成立；``_STATES`` 是同一个对象而非拷贝。
 """
 from __future__ import annotations
 
 from contextlib import ExitStack
-import threading
 from datetime import date
 from typing import Any, Callable
 
+from src.shared.tenancy import spawn_tenant_thread
 from src.strategy.application.screen_dates import (
     ScreenDateError,
     resolve_from_opts,
     window_label,
 )
-
-_LOCK = threading.Lock()
-_STATE: dict[str, Any] = {
-    "status": "idle",
-    "phase": "",
-    "percent": 0.0,
-    "message": "",
-    "strategy": "",
-    "trade_date": "",
-    "log": [],
-    "result": None,
-    "error": "",
-}
-
-
-def screen_run_snapshot() -> dict[str, Any]:
-    with _LOCK:
-        snap = dict(_STATE)
-        snap["log"] = list(_STATE.get("log") or [])
-        return snap
-
-
-def screen_run_update(**kwargs: Any) -> None:
-    with _LOCK:
-        if "log_line" in kwargs:
-            line = str(kwargs.pop("log_line") or "").strip()
-            if line:
-                log = list(_STATE.get("log") or [])
-                log.append(line)
-                _STATE["log"] = log[-120:]
-        _STATE.update(kwargs)
-        if _STATE.get("status") == "done":
-            _STATE["percent"] = 100.0
-
-
-def _strategy_display_name(slug: str) -> str:
-    """用户可见战法名；解析失败时退回 slug（库内/路由仍用 slug）。"""
-    text = str(slug or "").strip()
-    if not text:
-        return ""
-    try:
-        from src.strategy.application.catalog import get
-
-        name = str(getattr(get(text), "name", "") or "").strip()
-        return name or text
-    except Exception:
-        return text
-
-
-def screen_run_try_begin(*, strategy: str, trade_date: str) -> dict[str, Any] | None:
-    """若已在 running 返回快照；否则置 running 并返回 None。"""
-    display = _strategy_display_name(strategy)
-    with _LOCK:
-        if _STATE.get("status") == "running":
-            return dict(_STATE)
-        _STATE.update(
-            {
-                "status": "running",
-                "phase": "start",
-                "percent": 2.0,
-                "message": "准备选股…",
-                "strategy": strategy,
-                "trade_date": trade_date or "",
-                "log": [
-                    f"▶ 开始选股 {display}"
-                    + (f" · {trade_date}" if trade_date else "")
-                ],
-                "result": None,
-                "error": "",
-            }
-        )
-    return None
+from src.strategy.application.screen_run_state import (  # noqa: F401 - 兼容 re-export
+    MAX_CONCURRENT_RUNS,
+    MAX_RUNS_PER_TENANT,
+    MAX_TENANT_STATES,
+    MAX_TOTAL_RUN_SLOTS,
+    _LOCK,
+    _STATES,
+    _blank_state,
+    _evict_locked,
+    _state_locked,
+    _strategy_display_name,
+    screen_run_cancel_requested,
+    screen_run_request_cancel,
+    screen_run_running_strategies,
+    screen_run_slot_scope,
+    screen_run_snapshot,
+    screen_run_snapshot_all,
+    screen_run_try_begin,
+    screen_run_update,
+)
 
 
 def _result_body(result: Any, recorded: dict[str, Any] | None) -> dict[str, Any]:
@@ -116,7 +73,30 @@ def execute_screen_run(
     palace_db: str | None,
     hot_db: str | None = None,
 ) -> None:
-    """后台线程入口：选股 + 可选入库，全程写进度快照。
+    """后台线程入口：把进度写进**本战法自己的槽**，再跑选股。
+
+    ``screen_run_slot_scope`` 是多战法并跑的关键：下面几十处
+    ``screen_run_update(...)`` 都不带 strategy，靠这层 ContextVar 认领槽位。
+    少了它，三个战法的线程会一起往「当前这一个」槽里写：进度条互相盖、日志
+    串成一锅，取消旗还会跨战法生效（A 点停止把 B 一起停掉）。
+    """
+    with screen_run_slot_scope(str(opts.get("strategy") or "")):
+        _execute_screen_run(
+            opts,
+            market_factory=market_factory,
+            palace_db=palace_db,
+            hot_db=hot_db,
+        )
+
+
+def _execute_screen_run(
+    opts: dict[str, Any],
+    *,
+    market_factory: Callable[[], Any],
+    palace_db: str | None,
+    hot_db: str | None = None,
+) -> None:
+    """选股 + 可选入库的循环体：槽已由上面的入口绑好，这里只管写进度。
 
     hot_db 非空时：日历计算与 spot 刷新写全量库（market_factory），随后把
     最近交易日镜像进热库，选股只读热库（近 700 交易日窗口）；策略声明
@@ -143,7 +123,12 @@ def execute_screen_run(
             uni = None
         record = bool(opts.get("record_candidates", True))
         health_check = not bool(opts.get("skip_health_check"))
+        from src.market import should_overlay_live
+
         refresh_spot = bool(opts.get("refresh_spot", True))
+        live_today = should_overlay_live(date.today().isoformat())
+        if live_today:
+            refresh_spot = False
 
         # 策略声明 requires_full_history（如递推/长窗口公式）时必须读全量库；
         # 否则默认读滚动热库（近 700 交易日窗口），与全量写库物理隔离。
@@ -245,13 +230,23 @@ def execute_screen_run(
             # 全量库。镜像失败不阻断：热库缺当日由哨兵/重建任务兜底。
             store = full
             if hot_db and not needs_full:
-                from src.market import hot_unusable_reason, mirror_recent_to_hot, open_market_hot
+                from src.market import (
+                    hot_unusable_reason,
+                    hot_window_shallow,
+                    mirror_recent_to_hot,
+                    open_market_hot,
+                )
 
                 try:
                     hot = open_market_hot(hot_db)
                     stack.enter_context(hot)
-                    mirror_recent_to_hot(full, hot)
-                    reason = hot_unusable_reason(full, hot)
+                    if live_today:
+                        reason = (
+                            "热库窗口偏浅" if hot_window_shallow(full, hot) else ""
+                        )
+                    else:
+                        mirror_recent_to_hot(full, hot)
+                        reason = hot_unusable_reason(full, hot)
                     if reason:
                         screen_run_update(log_line=f"⚠ {reason}，回退全量库")
                         store = full
@@ -288,6 +283,20 @@ def execute_screen_run(
             elapsed_total = 0.0
 
             for index, day in enumerate(days, start=1):
+                # 检查点：一个交易日的选股是一整段同步面板计算，中途插不进来。
+                # 放在日循环头 = 最坏等一天的耗时，这是不杀线程能给出的最短延迟。
+                if screen_run_cancel_requested():
+                    screen_run_update(
+                        status="cancelled",
+                        phase="cancelled",
+                        message=f"已停止 · 完成 {index - 1}/{total_days} 个交易日",
+                        log_line=(
+                            f"■ 已按请求停止 · 已完成 {index - 1}/{total_days} 个交易日"
+                            + ("，已完成的部分已入库" if record and written_total else "")
+                        ),
+                    )
+                    return
+
                 base = 8.0 + 84.0 * ((index - 1) / max(total_days, 1))
                 span = 84.0 / max(total_days, 1)
 
@@ -329,6 +338,7 @@ def execute_screen_run(
                         health_check=health_check and index == 1,
                         on_progress=on_progress,
                         data_snapshot=market_snapshot,
+                        live_overlay=should_overlay_live(day),
                     )
                 except DataQualityError as exc:
                     screen_run_update(
@@ -459,38 +469,44 @@ def start_screen_run_thread(
     palace_db: str | None,
     hot_db: str | None = None,
 ) -> dict[str, Any]:
-    """尝试启动；若已在跑则返回当前快照。"""
+    """尝试启动；占不到槽时返回占用者快照（带 ``busy_reason``）。
+
+    占不到只有两种情况：**这个战法自己**还在跑（``same_strategy``，防重复入库），
+    或本租户并发到顶（``tenant_limit``）。**别的战法在跑不算占用**——那是老的
+    「全局单槽」语义，已经废掉了。
+    """
+    slug = str(opts.get("strategy") or "")
     try:
         win_start, win_end = resolve_from_opts(opts)
         label = window_label(win_start, win_end)
     except ScreenDateError as exc:
         screen_run_update(
             status="error", phase="error", message=str(exc), error=str(exc),
-            strategy=str(opts.get("strategy") or ""),
+            strategy=slug,
             log=["✗ " + str(exc)],
             result=None,
         )
-        return screen_run_snapshot()
+        return screen_run_snapshot(slug)
 
-    busy = screen_run_try_begin(
-        strategy=str(opts.get("strategy") or ""),
-        trade_date=label,
-    )
+    busy = screen_run_try_begin(strategy=slug, trade_date=label)
     if busy is not None:
         return busy
 
     try:
-        threading.Thread(
-            target=execute_screen_run,
+        # 不能裸起 threading.Thread：ContextVar 不跨线程边界，线程里
+        # current_tenant() 会掉回主租户，于是 B 的选股候选被静默写进
+        # 管理员的 palace.db（不报错、单机形态下 100% 观察不到）。
+        spawn_tenant_thread(
+            execute_screen_run,
             kwargs={
                 "opts": opts,
                 "market_factory": market_factory,
                 "palace_db": palace_db,
                 "hot_db": hot_db,
             },
-            name="loci-screen-run",
-            daemon=True,
-        ).start()
+            # 线程名带 slug：多战法并跑时 py-spy / 线程栈里才认得出是谁在跑。
+            name=f"loci-screen-run-{slug or 'unknown'}",
+        )
     except Exception as exc:
         message = f"后台选股启动失败：{type(exc).__name__}: {exc}"
         screen_run_update(
@@ -498,6 +514,7 @@ def start_screen_run_thread(
             phase="error",
             message=message,
             error=message,
+            strategy=slug,
             log_line=f"✗ {message}",
         )
-    return screen_run_snapshot()
+    return screen_run_snapshot(slug)

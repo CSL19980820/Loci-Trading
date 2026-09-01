@@ -94,7 +94,7 @@ const hint = computed(() => {
   if (props.waitingUser) return '等待你的确认'
   if (!props.providerReady) return '模型未配置'
   if (activeSkill.value) return `技能 /${activeSkill.value.slug}`
-  return '行首 / 选技能 · Shift+Enter 换行'
+  return ''
 })
 
 const canSend = computed(
@@ -436,7 +436,7 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
             @click="emit('cancel')"
           />
         </el-tooltip>
-        <el-tooltip v-if="!busy" :content="waitingUser ? '回复并继续' : '发送'">
+        <el-tooltip v-if="!busy" :content="waitingUser ? '回复并继续' : '发送 · Shift+Enter 换行'">
           <el-button
             type="primary"
             circle

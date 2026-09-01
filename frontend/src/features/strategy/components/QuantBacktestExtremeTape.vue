@@ -70,11 +70,12 @@ function archiveTo(date: string) {
   background: color-mix(in srgb, var(--sheet) 88%, var(--paper));
   min-width: 0;
 }
-.extreme-tape--best {
-  border-left: 3px solid color-mix(in srgb, var(--up) 70%, var(--rule));
+/* 原为 border-left: 3px solid --up/--down：涨跌语义收进 __tag（D1 价格红绿），整块只留 hairline 外框 */
+.extreme-tape--best .extreme-tape__tag {
+  color: var(--up);
 }
-.extreme-tape--worst {
-  border-left: 3px solid color-mix(in srgb, var(--down) 70%, var(--rule));
+.extreme-tape--worst .extreme-tape__tag {
+  color: var(--down);
 }
 .extreme-tape__tag {
   font-size: 0.72rem;

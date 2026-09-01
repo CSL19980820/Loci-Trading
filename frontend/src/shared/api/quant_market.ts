@@ -25,6 +25,27 @@ export function getMarketCoverage(): Promise<MarketCoverage> {
   return quantRequest<MarketCoverage>('/market/coverage')
 }
 
+export interface MarketDistribution {
+  trade_date: string
+  prev_date: string
+  total_count: number
+  up_count: number
+  down_count: number
+  flat_count: number
+  limit_up: number
+  limit_down: number
+  buckets: Array<{
+    key: string
+    label: string
+    count: number
+    tone: 'down' | 'flat' | 'up'
+  }>
+}
+
+export function getMarketDistribution(date?: string): Promise<MarketDistribution> {
+  return quantRequest<MarketDistribution>(`/market/distribution${query({ date })}`)
+}
+
 export interface LiveTapeItem {
   code: string
   label: string

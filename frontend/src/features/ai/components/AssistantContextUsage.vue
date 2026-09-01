@@ -103,10 +103,10 @@ function close(): void {
 
       <div class="ctx-usage__panel" role="dialog" aria-label="上下文用量">
         <header class="ctx-usage__head">
-          <div>
-            <p class="ctx-usage__eyebrow">上下文用量</p>
-            <h3 class="ctx-usage__title">{{ title }}</h3>
-          </div>
+          <h3 class="ctx-usage__title">{{ title }}</h3>
+          <el-tooltip content="粗估喂模上下文（汉字≈1、其它≈4字/token），非供应商计费账单" placement="top">
+            <span class="ctx-usage__summary mono">{{ summary }}</span>
+          </el-tooltip>
           <el-button
             class="ctx-usage__close"
             text
@@ -118,7 +118,6 @@ function close(): void {
             ×
           </el-button>
         </header>
-        <p class="ctx-usage__summary">{{ summary }}</p>
         <p v-if="compactHint" class="ctx-usage__compact" role="status" data-testid="assistant-context-compacted">{{ compactHint }}</p>
         <p v-if="pressureHint" class="ctx-usage__pressure" role="status">{{ pressureHint }}</p>
         <div class="ctx-usage__bar" aria-hidden="true">
@@ -145,9 +144,6 @@ function close(): void {
             <span class="ctx-usage__tokens mono">{{ formatTokenCount(segment.tokens) }}</span>
           </li>
         </ul>
-        <p class="ctx-usage__footnote">
-          粗估喂模上下文（汉字≈1、其它≈4字/token），非供应商计费账单。
-        </p>
       </div>
     </el-popover>
   </div>
@@ -212,38 +208,36 @@ function close(): void {
 
 .ctx-usage__head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
   gap: .5rem;
 }
 
-.ctx-usage__eyebrow {
-  margin: 0;
-  color: var(--mist);
-  font-size: var(--ai-fs-meta);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
 .ctx-usage__title {
-  margin: .1rem 0 0;
+  margin: 0;
+  flex: 0 0 auto;
   font-size: var(--ai-fs-title);
   font-weight: 650;
   color: var(--ink);
   letter-spacing: -.01em;
 }
 
+.ctx-usage__summary {
+  margin: 0 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mist);
+  font-size: var(--ai-fs-aux);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .ctx-usage__close {
+  flex: 0 0 auto;
   margin: -.2rem -.2rem 0 0 !important;
   color: var(--mist) !important;
   font-size: var(--ai-fs-title) !important;
-}
-
-.ctx-usage__summary {
-  margin: 0;
-  color: var(--mist);
-  font-size: var(--ai-fs-body);
-  font-family: var(--mono);
 }
 
 .ctx-usage__pressure {
@@ -321,13 +315,6 @@ function close(): void {
   color: var(--mist);
   font-size: var(--ai-fs-aux);
   font-variant-numeric: tabular-nums;
-}
-
-.ctx-usage__footnote {
-  margin: .15rem 0 0;
-  color: var(--mist);
-  font-size: var(--ai-fs-meta);
-  line-height: 1.35;
 }
 
 .mono {

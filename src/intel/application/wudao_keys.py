@@ -27,6 +27,12 @@ from __future__ import annotations
 #: | limit_up_ladder | date | 实测 tradeDate 被拒（曾写错） |
 #: | broken_limit_up | date | 实测 tradeDate 被拒（曾写错） |
 #: | limit_up_filter | date | 实测 tradeDate 被拒（曾写错） |
+#: | limit_down | date | 实测 tradeDate 被拒（2026-08-31 双向验证） |
+#: | anomaly_detection | date | 实测 tradeDate 被拒（2026-08-31 双向验证） |
+#: | board_break_analysis | tradeDate | 实测 date 被拒（2026-08-31 双向验证） |
+#: | auction_theme_strength | tradeDate | 实测 date 被拒（2026-08-31 双向验证） |
+#: | margin_trading | tradeDate | 实测 date 被拒（2026-08-31 双向验证） |
+#: | northbound_holdings | tradeDate | 实测 date 被拒（2026-08-31 双向验证） |
 DATE_ARG_BY_TOOL: dict[str, str] = {
     "short_term_emotion": "tradeDate",
     "theme_intraday_capital": "tradeDate",
@@ -38,11 +44,30 @@ DATE_ARG_BY_TOOL: dict[str, str] = {
     "limit_up_ladder": "date",
     "broken_limit_up": "date",
     "limit_up_filter": "date",
+    "limit_down": "date",
+    "anomaly_detection": "date",
+    "board_break_analysis": "tradeDate",
+    "auction_theme_strength": "tradeDate",
+    "margin_trading": "tradeDate",
+    "northbound_holdings": "tradeDate",
 }
 
-#: **一个日期键都不收**的工具：补日期 = 整条 INVALID_ARGUMENTS。
-#: sector_analysis 实测 tradeDate 与 date 双双被拒，空参数才通。
-DATELESS_TOOLS: frozenset[str] = frozenset({"sector_analysis"})
+#: **一个日期键都不补**的工具。两类原因，别混：
+#:
+#: 1. **服务端不收任何日期键**：补了就是整条 INVALID_ARGUMENTS。
+#:    `sector_analysis` 实测 tradeDate 与 date 双双被拒，空参数才通；
+#:    `unlock_events` 实测 tradeDate 被拒（它只认 startDate/endDate 区间）。
+#: 2. **语义是「向前看的日历」**：`macro_calendar` / `market_catalyst_calendar`
+#:    的 schema 有单日 `date`，但我们要的是「今天起未来 N 天」那一段，补上今天
+#:    等于把日历砍成一天。两者实测 tradeDate 被拒；要单日请调用方显式传 `date`。
+DATELESS_TOOLS: frozenset[str] = frozenset(
+    {
+        "sector_analysis",
+        "unlock_events",
+        "macro_calendar",
+        "market_catalyst_calendar",
+    }
+)
 
 #: 表里没有的工具按多数派处理。新工具接入前先真打一次再登记。
 DEFAULT_DATE_ARG = "tradeDate"

@@ -35,10 +35,14 @@ const canGenerate = computed(() => Boolean(props.instruction.trim() && props.pro
 
 <template>
   <section class="copilot" :class="{ 'copilot--compact': compact }" aria-label="AI 策略助手">
+    <!--
+      compact（策稿台侧栏）里不再印「改公式」：外层侧栏头上已经写着「助手」，
+      两行说的是同一件事。这一行现在只留真正有信息量的来源状态 tag —— 它决定
+      能不能点「生成」，以前反而只在 compact 里被藏掉了。
+    -->
     <div class="copilot__head">
-      <strong>{{ compact ? '改公式' : '生成或修改中文策略脉络' }}</strong>
+      <strong v-if="!compact">生成或修改中文策略脉络</strong>
       <el-tag
-        v-if="!compact"
         size="small"
         :type="referencesReady ? 'success' : 'warning'"
         effect="plain"

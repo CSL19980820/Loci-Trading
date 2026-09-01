@@ -119,6 +119,12 @@ export function runScreen(payload: {
   })
 }
 
+/**
+ * 全部战法的进度：一条轮询拿回**聚合**快照（`runs` 是 slug → 槽）。
+ *
+ * 顶层字段是「当前这一个」槽，只为兼容老代码；判断「哪个战法在跑」必须看
+ * `runs` / `running_strategies`，否则又会退化成「引擎单槽」的错觉。
+ */
 export function getScreenRunStatus(): Promise<import('@/shared/types/quant').ScreenRunStatus> {
   return quantRequest('/screen/run')
 }
@@ -142,6 +148,35 @@ export function startScreenRun(payload: {
   })
 }
 
+/**
+ * 请求停止**指定战法**正在跑的选股。
+ *
+ * `strategy` 不是可选的装饰：后端进度槽按「租户 × 战法」分片，省略它等于
+ * 「停掉本账号全部在跑的选股」（那是老单槽时代的语义）。用户在潜龙的进度条上
+ * 点停止，不该把三源、杨氏一起停掉。
+ *
+ * **受理不等于停下**。后端的取消是协作式的：选股主体是一段同步的面板计算，
+ * 线程杀不得，只能在交易日循环头的检查点上退出。所以这里返回 `cancelled: true`
+ * 只说明「排上了」，真正的终态要靠 `getScreenRunStatus()` 轮询到
+ * `status === 'cancelled'`。界面文案在那之前应当写「正在停止」。
+ *
+ * 没有在跑的任务返回 `cancelled: false`（不是 404）——连点两次不该报错。
+ */
+export function cancelScreenRun(strategy?: string): Promise<{
+  cancelled: boolean
+  status: string
+  strategy: string
+  percent: number
+  /** 本次真的被立旗的战法；省略 strategy 时可能是多条 */
+  cancelled_strategies?: string[]
+}> {
+  return quantRequest(`/screen/run/cancel${query({ strategy })}`, { method: 'POST' })
+}
+
+/**
+ * 全市场回测是几十秒级的同步请求；`signal` 让调用方能在用户点「停止」时
+ * 断掉等待（`palace.ts` 的 request 已把调用方 signal 桥到自己的超时 controller）。
+ */
 export function runBacktest(payload: {
   strategy: string
   start?: string
@@ -160,10 +195,11 @@ export function runBacktest(payload: {
   universe?: UniverseSpec
   include_trades?: boolean
   include_events?: boolean
-}): Promise<BacktestResult> {
+}, options?: { signal?: AbortSignal }): Promise<BacktestResult> {
   return quantRequest<BacktestResult>('/backtest', {
     method: 'POST',
     body: JSON.stringify(payload),
+    signal: options?.signal,
   })
 }
 
@@ -176,10 +212,11 @@ export function runHorizonBacktest(payload: {
   params?: Record<string, unknown>
   universe?: UniverseSpec
   include_events?: boolean
-}): Promise<HorizonBacktestResult> {
+}, options?: { signal?: AbortSignal }): Promise<HorizonBacktestResult> {
   return quantRequest<HorizonBacktestResult>('/backtest', {
     method: 'POST',
     body: JSON.stringify({ ...payload, mode: 'horizon' }),
+    signal: options?.signal,
   })
 }
 

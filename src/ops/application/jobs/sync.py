@@ -6,8 +6,11 @@ from datetime import date
 import logging
 from typing import Any
 
-from src.ops.application.jobs.context import JobContext, JobError
-from src.ops.application.jobs.market_gate import market_heavy_slot
+from src.ops.application.jobs.context import JobContext, JobError, JobSkipped
+from src.ops.application.jobs.market_gate import (
+    market_heavy_slot,
+    skip_reason_for_intraday_sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +167,9 @@ def execute_sync(
 
     ``mode``:
     - ``full``（默认）：watermark 增量拉历史 + 当日 spot
-    - ``today_refresh``：只刷当日 OHLC（盘后重刷用，避免全市场历史重拉）
+    - ``today_refresh``：盘后重刷当日——复权因子 + 当日 spot + **权威源定稿**
+      （近窗 20 根，不重拉全市场历史）。定稿必须排在 spot 之后，理由见
+      ``_finalize_today_with_authoritative``。
     """
     from src.market import (
         MarketWriteBusy,
@@ -180,10 +185,18 @@ def execute_sync(
     # 闸门放在这里而不是只放在 run_job：HTTP /api/market/sync、首启 bootstrap
     # 回填、CLI 都直接调 execute_sync，绕开 run_job 就等于绕开闸门——2026-08-24
     # 的 bootstrap 同步正是这样在闸门视野之外占着写锁，把 15:30 三只选股拖死。
+    def _yield_for_tail() -> None:
+        reason = skip_reason_for_intraday_sync("sync", {"config": config})
+        if reason:
+            raise JobSkipped(reason)
+        context.check_cancelled()
+
     try:
+        _yield_for_tail()
         with market_heavy_slot("sync", f"sync:{mode}"), market_write_lock(
             market_db_path, label=f"sync:{mode}"
         ):
+            _yield_for_tail()
             instrument_refresh: dict[str, Any] = {"status": "disabled"}
             with context.market() as store:
                 force_refresh = bool(config.get("refresh_instruments"))
@@ -250,6 +263,64 @@ def execute_sync(
         raise JobError(str(exc)) from exc
 
 
+def _finalize_today_with_authoritative(
+    config: dict[str, Any],
+    context: JobContext,
+    *,
+    codes: list[str],
+    types: dict[str, str],
+    progress: Callable[[int, int, str], None] | None,
+) -> dict[str, Any]:
+    """日终定稿：用 hist_daily 权威源把当日重写成正式日 K。**必须排在 spot 之后。**
+
+    **为什么缺了这一步**：``quotes_daily`` 的 upsert 是 ``source=excluded.source``
+    （后写覆盖先写，见 ``store_rw._write_quote_payload``），而 ``apply_today_spot``
+    在**每一种** mode 里都是最后一个写库的，它写进去的 source 恒带 ``_spot``
+    后缀。于是只要 spot 这一趟成功，当日行在任何同步跑完之后都还是**临时行**；
+    正式日 K 要等第二天早上增量近窗（``sync._INCREMENTAL_MIN_BARS=20``）回头重写
+    才落。当天的 15:30 选股、当日回测与复盘读到的全是临时行：没有 source
+    receipt（``strict_pit`` 直接拒收），回退源的 ``amount`` 还是 ``close×volume``
+    合成的假值。
+
+    **证据**（开发机 2026-08-25 16:10 热库重建快照，``market_hot.db``）：当日
+    5542 行**全部**是 ``tencent_spot``，权威源 0 行。``market.db`` 现在能看到
+    4400 行 ``tencent``，是当晚 19:12 手工补跑一次 ``mode=full`` 才写进去的，
+    不是流水线的产出——``data_quality`` 把那个事后状态记成了「日终之后残留
+    20.6%」，实际的流水线终态是 100%。
+
+    代价：通达信本地二进制近窗 20 根，全市场约 2 分钟（ADR-013 实测增量
+    43.1 票/秒）。排在 spot 之后，不影响 15:30 选股吃当日快照。
+
+    失败只记录不抛：spot 行还在库里，有临时行比当天没有数据强，不该把整条
+    日终任务刷红。体检的 ``last_day_authoritative`` 会在 16 点之后把它报出来。
+    """
+    from src.market import MarketStore, sync_quotes
+
+    try:
+        report = sync_quotes(
+            lambda: MarketStore(context.market_db),
+            codes,
+            instrument_types=types or None,
+            workers=int(config.get("workers", 4)),
+            min_interval=float(config.get("interval", 0.15)),
+            # 复权因子上面已单独刷过；当日 spot 也已写过。这一趟只补正式日 K。
+            with_factors=False,
+            with_today_spot=False,
+            progress=progress,
+        )
+    except Exception as exc:
+        logger.warning("日终定稿（权威源重写当日）失败：%s", exc)
+        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"[:500]}
+    return {
+        "status": "ok",
+        "succeeded": report.succeeded,
+        "skipped": report.skipped,
+        "failed": report.failed,
+        "rows_written": report.rows_written,
+        "elapsed_seconds": round(report.elapsed_seconds, 2),
+    }
+
+
 def _execute_sync_locked(
     config: dict[str, Any],
     context: JobContext,
@@ -287,6 +358,11 @@ def _execute_sync_locked(
     }
     factors_refreshed = 0
     factors_error = ""
+
+    reason = skip_reason_for_intraday_sync("sync", {"config": config})
+    if reason:
+        raise JobSkipped(reason)
+    context.check_cancelled()
 
     if mode != "today_refresh":
         report = sync_quotes(
@@ -375,6 +451,14 @@ def _execute_sync_locked(
                 turnover_repair = {"error": f"{type(exc).__name__}: {exc}"}
                 logger.warning("回填换手率失败：%s", exc)
 
+    # 日终定稿必须排在 spot 之后：upsert 后写覆盖先写，反过来就会被 spot
+    # 重新盖成临时行——那正是这一步要修的形态。
+    finalize: dict[str, Any] = {}
+    if mode == "today_refresh":
+        finalize = _finalize_today_with_authoritative(
+            config, context, codes=codes, types=types, progress=progress
+        )
+
     # 全量库写事务全部结束后，把最近交易日增量镜像到滚动热读库。
     # 热库是派生缓存：镜像失败只记 warning + payload 字段，绝不把同步标记 failed。
     from src.market import mirror_recent_to_hot
@@ -391,11 +475,14 @@ def _execute_sync_locked(
     _compact_source_evidence(report_payload)
     return {
         **report_payload,
-        "rows_written": int(report_payload.get("rows_written") or 0) + spot_rows,
+        "rows_written": int(report_payload.get("rows_written") or 0)
+        + spot_rows
+        + int(finalize.get("rows_written") or 0),
         "spot_rows": spot_rows,
         "factors_refreshed": factors_refreshed,
         "factors_error": factors_error,
         "turnover_repair": turnover_repair,
+        "finalize": finalize,
         "hot_mirror": hot_mirror,
         "mode": mode,
     }

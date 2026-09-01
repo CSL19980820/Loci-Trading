@@ -33,6 +33,7 @@ export type JobKind =
   | 'hot_rebuild'
   | 'data_quality'
   | 'intel_fetch'
+  | 'intel_brief'
   | 'skill_watch'
   | 'alert_scan'
   | 'strategy_monitor'
@@ -70,6 +71,20 @@ export interface ScheduleStatus {
   running: boolean
   reason?: string
   jobs: { id: string; name: string; next_run_at: string | null }[]
+}
+
+/**
+ * 自建定时任务额度（`GET /api/jobs/quota`）。
+ *
+ * `used` 只数用户自建的；`managed` 是系统托管任务（选股 / 情报 / 候选跟踪等），
+ * **不占额度**——不把它报出来，用户看到「上限 5」却在列表里数出 12 条，
+ * 只会以为额度算错了。`unlimited`（= limit < 0）是管理员账号。
+ */
+export interface JobQuota {
+  used: number
+  limit: number
+  unlimited: boolean
+  managed: number
 }
 
 export interface WecomSettings {

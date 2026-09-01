@@ -13,6 +13,7 @@ from typing import Any, Callable, Literal
 
 from src.ai.application.agent import run_agent
 from src.ai.application.system_toolbus import build_system_toolbus
+from src.shared.tenancy import submit_with_tenant
 
 EventCallback = Callable[[dict[str, Any]], None]
 RoleName = Literal["market", "qianlong", "web", "research"]
@@ -339,8 +340,13 @@ def run_evidence_agents(
 
     results: list[dict[str, Any]] = []
     workers = min(2, len(roles))
+    # 这个池是**在助手 worker 线程里**临时起的，而 worker 已经带着发起用户的
+    # 租户上下文（AssistantManager 经 submit_with_tenant 投递）。子线程不继承
+    # ContextVar，裸 pool.submit 会让每个证据子 Agent 的工具面（行情/账本/研究，
+    # 全部按 current_tenant() 解析库）掉回主租户——子 Agent 会读到管理员的数据
+    # 并把它当成用户自己的证据讲出来。必须 submit_with_tenant。
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ai-evidence") as pool:
-        futures = {pool.submit(run_one, spec): spec for spec in roles}
+        futures = {submit_with_tenant(pool, run_one, spec): spec for spec in roles}
         for future in as_completed(futures):
             results.append(future.result())
     order = {spec.id: i for i, spec in enumerate(roles)}

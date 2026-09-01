@@ -32,6 +32,22 @@
 - **不是**真实多仓组合；真实槽位账本见 `analyze_portfolio` / `research_portfolio`
 - 禁止把该曲线冒充账户净值
 
+#### 组合账本的权益口径（`analyze_portfolio` / `research_portfolio`）
+
+**未实现盈亏不盯市。** 输入只有逐笔 `Trade`（入场价、退出价、净收益、MAE/MFE），
+没有逐日收盘价，所以 `equity = cash + Σ 入场名义额`：持仓期内曲线是平的，全部盈亏在
+退出日一次性落地。因此 `max_drawdown_pct` 量的是**已实现盈亏回撤**，不是账户回撤——
+一只票持仓中途跌 30% 又涨回来，这条曲线上一个点都看不到。
+
+读结果必须先读 `metrics.assumption`（`equity_basis="cost_until_exit"`、
+`marks_to_market=false`、`drawdown_basis="realized_only"`），再读回撤。另有
+`mae_bound_max_drawdown_pct`：用每笔**已测得**的 MAE 算的保守上界（假设所有持仓同时
+落在各自最差点），真实账户回撤介于两者之间。两者接近说明这条曲线可用；相差很大说明
+必须拿逐日行情重算。
+
+不变式 I1（现金守恒）由 `assert_cash_conservation` 在收口处强制：期末权益必须等于
+初始资金 + 全部已实现盈亏，破了直接抛 `PortfolioInvariantError`。
+
 默认成本（可经 `BacktestConfig` / `POST /api/backtest` 的 `commission_bps`·`stamp_duty_bps`·`slippage_bps` 改）：佣金单边 3bps、卖出印花税 10bps、滑点单边 5bps → 一趟约 0.26%。
 
 ### Horizon 口径

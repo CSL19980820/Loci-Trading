@@ -14,6 +14,9 @@ import {
 import { CanvasRenderer } from 'echarts/renderers'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { useChartTheme } from '@/shared/lib/useChartTheme'
+
 import {
   ROLE_AXIS_LABELS,
   roleLabelCn,
@@ -34,7 +37,11 @@ const props = defineProps<{
   height?: number
 }>()
 
-const PALETTE = ['#0f766e', '#b45309', '#1d4ed8', '#be123c', '#57534e', '#047857']
+/*
+ * 角色档不是涨跌，调色板要的是「彼此分得开」而不是红绿语义，
+ * 所以借 chartTokens 的定性色板（已按主题解析成字面量）。
+ */
+const { tokens } = useChartTheme()
 
 const chartEl = ref<HTMLElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -50,7 +57,7 @@ function buildOption(): echarts.EChartsCoreOption {
 
   return {
     animationDuration: 240,
-    color: PALETTE,
+    color: tokens.value.maPalette,
     grid: {
       left: 56,
       right: 16,
@@ -60,7 +67,7 @@ function buildOption(): echarts.EChartsCoreOption {
     legend: {
       top: 0,
       type: 'scroll',
-      textStyle: { color: '#5c5660', fontSize: 11 },
+      textStyle: { color: tokens.value.muted, fontSize: 11 },
     },
     tooltip: {
       trigger: 'axis',
@@ -99,12 +106,12 @@ function buildOption(): echarts.EChartsCoreOption {
       data: dates,
       boundaryGap: false,
       axisLabel: {
-        color: '#8a8690',
+        color: tokens.value.mist,
         fontSize: 11,
         hideOverlap: true,
         formatter: (v: string) => (v.length >= 10 ? v.slice(5) : v),
       },
-      axisLine: { lineStyle: { color: '#ddd8e0' } },
+      axisLine: { lineStyle: { color: tokens.value.rule } },
     },
     yAxis: {
       type: 'value',
@@ -112,11 +119,11 @@ function buildOption(): echarts.EChartsCoreOption {
       max: 4,
       interval: 1,
       axisLabel: {
-        color: '#8a8690',
+        color: tokens.value.mist,
         fontSize: 11,
         formatter: (v: number) => ROLE_AXIS_LABELS[v] ?? '',
       },
-      splitLine: { lineStyle: { color: '#eeeaf0', type: 'dashed' } },
+      splitLine: { lineStyle: { color: tokens.value.rule, type: 'dashed' } },
     },
     series: series.map((s) => ({
       type: 'line' as const,
@@ -170,17 +177,21 @@ watch(
   () => render(),
   { deep: true },
 )
+
+/* 换主题后 token 变了，canvas 是快照，必须重画 */
+watch(tokens, () => render())
 </script>
 
 <template>
   <div
     class="role-timeline"
+    :class="{ 'role-timeline--chart': hasPoints }"
     :style="height != null ? { height: `${height}px` } : undefined"
   >
-    <el-empty
+    <EmptyState
       v-if="!hasPoints"
-      description="这只票还没有留痕，盯盘或日终总结跑过后会出现观测点"
-      :image-size="56"
+      description="这只票还没有留痕"
+      reason="盯盘或日终总结跑过后出现观测点"
     />
     <div
       v-else
@@ -193,14 +204,20 @@ watch(
 </template>
 
 <style scoped>
+/*
+ * 只留一份高度，且只在真出图时生效：ECharts 量的是父容器高度，所以画布需要具体值；
+ * 但没有观测点时挂 16rem 就是一块死白。父层传 height 时内联样式优先级更高，仍然赢。
+ */
 .role-timeline {
   width: 100%;
-  min-height: 14rem;
+}
+
+.role-timeline--chart {
   height: 16rem;
 }
+
 .role-timeline__canvas {
   width: 100%;
   height: 100%;
-  min-height: 14rem;
 }
 </style>

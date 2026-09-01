@@ -127,8 +127,7 @@ defineExpose({ load })
       show-icon
       :closable="false"
       class="mb"
-      title="以下环节已关闭，本战法监测会按降级口径运行"
-      :description="disabledStages.map((s) => s.label).join('、')"
+      :title="`已关闭 ${disabledStages.map((s) => s.label).join('、')}，按降级口径运行`"
     />
 
     <template v-if="tuning">
@@ -147,7 +146,7 @@ defineExpose({ load })
       </div>
 
       <p class="section dim">流水线开关</p>
-      <el-form label-position="left" label-width="7rem" size="small">
+      <el-form label-position="right" label-width="6.5em" size="small">
         <el-form-item v-for="stage in stages" :key="stage.key" :label="stage.label">
           <el-switch
             v-model="tuning.stages[stage.key as keyof typeof tuning.stages]"
@@ -159,7 +158,7 @@ defineExpose({ load })
 
       <template v-for="group in sections" :key="group.name">
         <p class="section dim">{{ group.label }}</p>
-        <el-form label-position="left" label-width="10rem" size="small">
+        <el-form label-position="right" label-width="6.5em" size="small">
           <el-form-item v-for="field in group.fields" :key="field.key" :label="field.label">
             <el-input-number
               v-model="sectionValues(group.name)[field.key]"
@@ -187,17 +186,17 @@ defineExpose({ load })
 
 <style scoped>
 .mb {
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--gap-2);
 }
 .section {
-  margin: 0.5rem 0 0.35rem;
+  margin: var(--gap-2) 0 var(--gap-1);
 }
 .dim {
   color: var(--mist);
-  font-size: 0.76rem;
+  font-size: var(--fs-aux);
 }
 .hint {
-  margin-left: 0.5rem;
+  margin-left: var(--gap-2);
 }
 .num {
   width: 9rem;
@@ -205,14 +204,14 @@ defineExpose({ load })
 .bar {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  margin-top: 0.75rem;
+  gap: var(--gap-2);
+  margin-top: var(--gap-2);
   flex-wrap: wrap;
 }
 .preset-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--gap-2);
   flex-wrap: wrap;
 }
 </style>

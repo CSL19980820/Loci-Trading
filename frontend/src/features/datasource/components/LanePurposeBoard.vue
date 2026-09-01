@@ -155,7 +155,7 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
         row-key="id"
         class="lane-card__table"
       >
-        <el-table-column label="顺位" width="60" align="right">
+        <el-table-column label="顺位" width="60" align="center" header-align="center">
           <template #default="{ row: item }">
             <span class="ord">{{ asSource(item).order ?? '—' }}</span>
           </template>
@@ -208,9 +208,9 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
           </template>
         </el-table-column>
       </el-table>
-      <p v-else class="lane-card__empty">
-        这条用途还没有内置源。去「按接口」自己勾一个上桌，或等内置源接进来。
-      </p>
+      <el-tooltip v-else content="去「按接口」自己勾一个上桌，或等内置源接进来" placement="top-start">
+        <p class="lane-card__empty">这条用途还没有内置源</p>
+      </el-tooltip>
     </section>
   </div>
 </template>

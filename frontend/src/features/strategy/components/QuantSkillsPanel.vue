@@ -13,6 +13,7 @@ import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import RowActions from '@/shared/components/ui/RowActions.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import { zipFolderFiles } from '@/shared/lib/zipStore'
+import { strategyLabel } from '@/shared/lib/format'
 import type { Skill } from '@/shared/types/quant'
 
 import SkillDetailDialog from './SkillDetailDialog.vue'
@@ -80,6 +81,16 @@ const filterSchemas: BasicFormSchema[] = [
   },
 ]
 
+/**
+ * 名称列一律中文：后端 `name` 缺失、或它本身就是 slug 形状时退回共享词表。
+ * 搜索仍然吃 slug，那是标识不是展示。
+ */
+function displayName(name: unknown, slug: unknown): string {
+  const text = String(name || '').trim()
+  if (text && !/^[a-z0-9][a-z0-9._-]*$/.test(text)) return text
+  return strategyLabel(String(slug || '') || text)
+}
+
 const filteredRows = computed(() => {
   const q = nameQuery.value.trim().toLowerCase()
   const list = !q
@@ -122,13 +133,16 @@ const columns = ref<BasicTableColumn[]>([
     prop: 'description',
     label: '说明',
     minWidth: 180,
+    align: 'left',
+    headerAlign: 'left',
     showOverflowTooltip: true,
     formatter: (row) => String(row.description || '—'),
   },
   {
     prop: 'actions',
     label: '操作',
-    align: 'right',
+    align: 'center',
+    headerAlign: 'center',
     width: 132,
     fixed: 'right',
     slotName: 'actions',
@@ -256,7 +270,7 @@ async function onFolderSelected(event: Event): Promise<void> {
             :schemas="filterSchemas"
             :col-props="{ span: 8 }"
             :input-debounce-ms="0"
-            label-width="48px"
+            label-width="6.5em"
           />
         </div>
         <div class="skills-search-actions">
@@ -304,7 +318,7 @@ async function onFolderSelected(event: Event): Promise<void> {
             </el-dropdown>
           </template>
           <template #name="{ row }">
-            <strong>{{ row.name }}</strong>
+            <strong>{{ displayName(row.name, row.slug) }}</strong>
           </template>
           <template #enabled="{ row }">
             <el-tag

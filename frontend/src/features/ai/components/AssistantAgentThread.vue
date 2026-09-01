@@ -127,16 +127,14 @@ function close(): void {
       >
         <header class="assistant-agent-thread__block-head">
           <h4>工具回执</h4>
-          <span>{{ agent.tool_receipts.length }}</span>
+          <span>{{ agent.tool_receipts.length }} 条</span>
         </header>
         <AssistantToolReceiptList :tools="agent.tool_receipts" />
       </section>
 
       <section v-if="summary" class="assistant-agent-thread__block">
-        <header class="assistant-agent-thread__block-head">
-          <h4>摘要</h4>
-        </header>
         <div class="assistant-agent-thread__summary">
+          <h4>摘要</h4>
           <p>{{ summary }}</p>
         </div>
       </section>
@@ -307,12 +305,24 @@ function close(): void {
   overflow-wrap: anywhere;
 }
 .assistant-agent-thread__summary {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
   padding: .6rem .7rem;
   border: 1px solid color-mix(in srgb, var(--lake) 24%, var(--rule));
   border-radius: var(--ai-r-card);
   background: color-mix(in srgb, var(--lake-soft) 40%, var(--panel));
 }
+.assistant-agent-thread__summary h4 {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: var(--ai-fs-aux);
+  font-weight: 650;
+  color: var(--mist);
+}
 .assistant-agent-thread__summary p {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   font-size: var(--ai-fs-body);
   line-height: 1.45;

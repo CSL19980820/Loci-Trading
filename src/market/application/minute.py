@@ -70,7 +70,9 @@ def adjust_ratio_on_date(
     if not day:
         return 1.0
     latest = _latest_trade_date(store.conn, code) or day
-    dates = pd.Series([day, latest], dtype=str)
+    # 当 day == latest 时，单元素序列即可得到正确的复权比例且避免不必要的冗余
+    date_list = [day] if day == latest else [day, latest]
+    dates = pd.Series(date_list, dtype=str)
     factors = store._factor_series(code, dates)
     ratios = store._adjust_ratio(factors, adjust)
     value = float(ratios.iloc[0])

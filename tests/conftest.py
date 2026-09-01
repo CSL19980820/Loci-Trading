@@ -48,6 +48,10 @@ _ENV_KEYS = (
     "LOCI_EM_INDUSTRY_TTL_DAYS",
     "LOCI_SKIP_EM_INDUSTRY",
     "LOCI_MARKET_WRITE_WAIT_SEC",
+    # 这两条经 write_lock._env_seconds 间接读取，正则扫不到（它只认
+    # environ.get("字面量")），但导出值一样会改锁的行为，必须一起清。
+    "LOCI_MARKET_WRITE_STUCK_SEC",
+    "LOCI_MARKET_WRITE_DEAD_PID_GRACE_SEC",
     # 下面这些漏掉过：开发机导出过就会让整套测试在「另一条实现」上跑绿。
     # LOCI_BACKTEST_FAST 会让回测套走旁路引擎，
     # LOCI_PAPER_ALLOW_BYPASS_GATES 会让闸门测试在闸门已被绕过的状态下通过。
@@ -59,9 +63,60 @@ _ENV_KEYS = (
     "LOCI_WEBVIEW_DISABLE_GPU",
     "PALACE_WRITE_TOKEN_ISSUED_AT",
     "PALACE_STATIC_DIR",
+    # v2 群龙：身份 / 多租户 / 第三方登录 / 邮件。导出过任何一条都会让
+    # 「首启种子出哪个管理员」「登录页显示哪些 provider」在另一套配置上跑绿。
+    "LOCI_IDENTITY_DB",
+    "LOCI_COMMUNITY_DB",
+    "LOCI_ADMIN_USERNAME",
+    "LOCI_ADMIN_PASSWORD",
+    "LOCI_ADMIN_EMAIL",
+    "LOCI_AUTH_PROVIDERS",
+    # 自助注册开关：默认关。用例若开了它必须还原，否则后面的用例会以为站点开放注册。
+    "LOCI_ALLOW_SIGNUP",
+    "LOCI_PUBLIC_BASE_URL",
+    "LOCI_WECHAT_APPID",
+    "LOCI_WECHAT_SECRET",
+    "LOCI_QQ_APPID",
+    "LOCI_QQ_APPKEY",
+    "LOCI_SMTP_HOST",
+ "LOCI_SMTP_PORT",
+    "LOCI_SMTP_SSL",
+  "LOCI_SMTP_USER",
+  "LOCI_SMTP_PASSWORD",
+    "LOCI_SMTP_FROM",
+    # 多租户调度开关：导出过就会让「子租户任务到底装不装」在另一套配置上跑绿。
+    "LOCI_ENSURE_TENANT_JOBS",
+ "LOCI_TENANT_JOB_CONCURRENCY",
+    "LOCI_MAX_SCHEDULED_TENANTS",
 )
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(autouse=True)
+def _freeze_live_screen_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认关掉盘中实时 overlay，避免选股用例在 09:15–15:00 真去打行情源。
+
+    显式传入 ``now=`` 的用例走真实时钟判断，不受这里影响。
+    """
+    from src.market.application import screen_live
+    import src.market as market
+
+    real_clock = screen_live.in_live_screen_clock
+    real_should = screen_live.should_overlay_live
+
+    def _clock(now=None):
+        return False if now is None else real_clock(now)
+
+    def _should(trade_date=None, *, now=None):
+        return False if now is None else real_should(trade_date, now=now)
+
+    monkeypatch.setattr(screen_live, "in_live_screen_clock", _clock)
+    monkeypatch.setattr(screen_live, "should_overlay_live", _should)
+    monkeypatch.setattr(market, "in_live_screen_clock", _clock)
+    monkeypatch.setattr(market, "should_overlay_live", _should)
+    yield
+    screen_live.reset_live_spot_cache()
 
 
 @pytest.fixture(autouse=True)
@@ -111,14 +166,15 @@ def _isolate_loci_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     except Exception:
         pass
 
-    # Screen skill 引擎注册表同样是模块级全局：某个用例注册的自定义 slug 会跟着
-    # 进程流进下一个测试模块（tests/app 建的 python-screen 曾被 tests/strategy
-    # 的目录断言看到）。快照 + 还原，让结果不依赖模块执行顺序。
+    # Screen skill 引擎注册表同样是模块级全局（现在按租户分片）：某个用例注册的
+    # 自定义 slug 会跟着进程流进下一个测试模块（tests/app 建的 python-screen 曾被
+    # tests/strategy 的目录断言看到）。整张分片表快照 + 还原，让结果不依赖模块
+    # 执行顺序，也不让 A 租户的分片漏进下一个用例。
+    screen_state = None
     try:
         from src.strategy.application import catalog as strategy_catalog
 
-        screen_engines = list(strategy_catalog._SCREEN_ENGINES.values())
-        screen_metadata = dict(strategy_catalog._SCREEN_METADATA)
+        screen_state = strategy_catalog.snapshot_screen_state()
     except Exception:
         strategy_catalog = None
 
@@ -126,9 +182,7 @@ def _isolate_loci_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     if strategy_catalog is not None:
         try:
-            strategy_catalog.replace_screen_engines(
-                screen_engines, metadata_by_slug=screen_metadata
-            )
+            strategy_catalog.restore_screen_state(screen_state)
         except Exception:
             pass
 

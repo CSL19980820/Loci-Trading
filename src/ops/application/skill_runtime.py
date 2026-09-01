@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from src.ai import record_llm_usage
 from src.ai.application.agent import format_tool_trace, messages_from_json, run_agent
 from src.ai.application.multi_agent import format_subagent_briefs, run_ammo_agents
 from src.ai.application.toolbus import build_toolbus
@@ -206,6 +207,14 @@ def _drive(
         thinking=str(cfg.get("thinking") or ""),
         allow_hitl=allow_hitl,
         on_event=on_event,
+    )
+    # HITL 续跑会多次进到这里，每次都是一段真实的模型调用，逐次计费。
+    record_llm_usage(
+        provider=provider.name,
+        model=result.model or provider.model,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        ops_db=str(getattr(context.ops_store, "db_path", "") or ""),
     )
 
     state["messages"] = result.messages

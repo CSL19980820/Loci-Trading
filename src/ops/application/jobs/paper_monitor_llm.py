@@ -95,6 +95,8 @@ def _call_monitor_llm(
         thinking=thinking or "",
         max_tokens=4096,
         temperature=0.2,
+        # 计费落回这一舱自己那条 ops.db；helper 里两档 thinking 各记一笔。
+        ops_db=str(getattr(store, "db_path", "") or ""),
     )
     if text:
         return text

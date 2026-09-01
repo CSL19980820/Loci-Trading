@@ -2,19 +2,45 @@
 
 ```
 app (组合根)
+ ├── identity ──► shared（身份、角色、配额、审计、通知；写 identity.db）
+ ├── community ──► shared（策略广场、榜单、跟单、动态；写 community.db）
  ├── ledger ──► shared
  ├── market ──► shared
  ├── review ──► ledger, market（包根公开 API）
  ├── strategy ──► market, formula
  ├── backtest ──► strategy, market
- ├── ops ──► market, ai, intel, strategy, review（编排）, shared
- ├── ai ──► ledger, market, ops, intel, strategy, research（工具只读）, shared
+ ├── ops ──► market, ai, intel, strategy, review（编排）, identity（通知/配额）, shared
+ ├── ai ──► ledger, market, ops, intel, strategy, research（工具只读）, identity（配额）, shared
  ├── intel ──► market（缓存表经 MarketStore）, ops（配额经 OpsStore）
  ├── research ──► market, strategy（验证时）, intel（可选来源）
  └── formula (纯计算)
 ```
 
 产品名仍为 Loci / 潜龙记忆宫殿；代码包名 ledger 表示账本限界上下文。
+
+## v2 的两条新边界（先读这两条）
+
+**1. 租户维度是横切的，不属于任何上下文。**
+`src/shared/tenancy.py` 只回答「当前请求属于哪个租户」，`src/shared/paths.py`
+据此解析库路径。**任何上下文都不该自己拼租户目录**。
+
+| 库 | 归属 | 谁写 |
+|---|---|---|
+| `identity.db` | 全局 | 只有 identity |
+| `community.db` | 全局 | 只有 community |
+| `market.db` / `market_hot.db` | 全局共享 | market（+ ops 的同步 Job） |
+| `palace.db` | **每租户** | ledger |
+| `ops.db` | **每租户** | ops、ai（助手会话表） |
+
+**2.「当前用户」只能从组合根注入。**
+`identity` 提供 `build_auth_dependency()`，组合根把产出的依赖注给各上下文的
+router 工厂（形参 `auth_dependency`）。**上下文不得 import `src.app`**
+（`.importlinter` 的 `contexts-must-not-import-composition-root` 挡着），
+也不得深路径掏 `src.identity.infrastructure`（`protect-identity-infra`）。
+
+`community` 刻意用**鸭子类型**收敛 `auth_dependency` 的返回值（认 `.id` /
+`.user` / 字典 / 字符串），因此它对 identity 是零编译期依赖——换一套身份实现
+不用改社区一行代码。
 
 ## 允许的跨 BC 编排（经包根 `src.<context>`）
 

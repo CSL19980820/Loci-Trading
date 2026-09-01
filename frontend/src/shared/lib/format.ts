@@ -207,11 +207,15 @@ const STRATEGY_LABELS: Record<string, string> = {
   'qianlong-close-v2': '潜龙出海（优化版）',
   'qianfu-close': '潜伏（已下线）',
   'qianfu-1450': '潜伏（已下线）',
-  'qianlong-close-v3': '潜龙出海（V3）',
+  'qianlong-close-v3': '潜龙出海（V3.2）',
   'qianlong-tail-v1': '潜龙尾盘（已下线）',
   'rsi30-dip': 'RSI22 次日低吸（已下线）',
   'sanyuan-tail-v1': '三源尾盘共振（15:30）',
+  'sanyuan-tail-1450': '三源尾盘（已下线）',
   'yangshi-tail-v1': '杨氏尾盘选股（15:30）',
+  'yangshi-tail-1450': '杨氏尾盘（已下线）',
+  'yangshi-tail': '杨氏尾盘选股',
+  'sanyuan-tail': '三源尾盘共振',
   'qianlong-auction': '潜龙出海',
   潜龙出海: '潜龙出海',
   '潜龙出海·原版': '潜龙出海',
@@ -236,22 +240,77 @@ const STRATEGY_LABELS: Record<string, string> = {
   'lugw-chouma': '筹码峰突破',
 }
 
+/**
+ * 拼音词根 → 中文。放在精确表之后兜底：新版本号（`-v4`、`-2026`）、新变体
+ * （`sanyuan-open`）不会再漏成一串英文 slug 打到界面上。
+ *
+ * 顺序敏感：长词根在前，避免 `qianlong` 抢走 `qianfu` 之类的匹配。
+ */
+const STRATEGY_STEMS: readonly (readonly [RegExp, string])[] = [
+  [/yangshi[-_]?tail|yangshi/, '杨氏尾盘选股'],
+  [/sanyuan[-_]?tail|sanyuan|tail[-_]?resonance/, '三源尾盘共振'],
+  [/qianlong/, '潜龙出海'],
+  [/qianfu/, '潜伏'],
+  [/lugw[-_]?sanwai|sanwai/, '三外有三'],
+  [/lugw[-_]?tianyi|tianyi/, '天衣无缝'],
+  [/lugw[-_]?daoba|daoba/, '倒拔杨柳'],
+  [/lugw[-_]?haidi|haidi/, '海底捞月'],
+  [/lugw[-_]?fenshou|fenshou/, '分手快乐'],
+  [/lugw[-_]?chouma|chouma/, '筹码峰突破'],
+  [/rsi\d*[-_]?dip/, 'RSI 次日低吸'],
+]
+
+/**
+ * 战法 slug → 中文名。**界面上任何位置都不许再露出英文 slug**（用户已反复要求）。
+ *
+ * 兜底顺序：调用方词表 → 精确表 → 已是中文 → 小写精确表 → 拼音词根正则 →
+ * 最后才原样返回（此时说明真的是没见过的自定义名，返回原文比返回「—」有用）。
+ */
 export function strategyLabel(slug: string | null | undefined, fallbackMap?: Map<string, string>): string {
   if (!slug) return '—'
-  if (fallbackMap?.has(slug)) return fallbackMap.get(slug) || slug
-  if (STRATEGY_LABELS[slug]) return STRATEGY_LABELS[slug]
-  // 潜龙旧版规则版本常见写法
-  if (slug.startsWith('qianlong') || slug.includes('潜龙')) return '潜龙出海'
-  if (slug.startsWith('lugw') || slug.includes('卢高文')) {
-    if (slug.includes('sanwai') || slug.includes('三外')) return '三外有三'
-    if (slug.includes('haidi') || slug.includes('海底')) return '海底捞月（已下线）'
-    if (slug.includes('chouma') || slug.includes('筹码')) return '筹码峰突破'
-    if (slug.includes('tianyi') || slug.includes('天衣')) return '天衣无缝'
-    if (slug.includes('daoba') || slug.includes('倒拔')) return '倒拔杨柳'
-    if (slug.includes('fenshou') || slug.includes('分手')) return '分手快乐'
+  const raw = String(slug).trim()
+  if (!raw) return '—'
+  if (fallbackMap?.has(raw)) return fallbackMap.get(raw) || raw
+  if (STRATEGY_LABELS[raw]) return STRATEGY_LABELS[raw]
+  // 如果已经是包含中文的自定义完整策略名，直接使用
+  if (/[\u4e00-\u9fa5]/.test(raw)) return raw
+  const lower = raw.toLowerCase()
+  if (STRATEGY_LABELS[lower]) return STRATEGY_LABELS[lower]
+  for (const [pattern, label] of STRATEGY_STEMS) {
+    if (pattern.test(lower)) return label
   }
-  return slug
+  return raw
 }
+
+/**
+ * 窄位（表格列、check-tag、图例）用的短名：去掉「（15:30）」「（V3.2）」这类括注。
+ * 列宽 120px 放不下「三源尾盘共振（15:30）」，截断成「三源尾盘共振…」比直接给
+ * 短名更糟——短名本身已经是完整词组。「已下线」是状态不是括注，保留。
+ */
+export function strategyShortLabel(
+  slug: string | null | undefined,
+  fallbackMap?: Map<string, string>,
+): string {
+  const full = strategyLabel(slug, fallbackMap)
+  if (full === '—') return full
+  const stripped = full.replace(/（(?!已下线)[^）]*）/g, '').trim()
+  return stripped || full
+}
+
+/**
+ * 现役内置战法的下拉选项：**label 中文、value 仍是 slug**。
+ *
+ * 给「记一笔」「任务编辑」这类要用户指定战法的表单用——以前它们是裸 input +
+ * `placeholder="qianlong-close-v3"`，等于把内部编码摊到用户脸上。配合
+ * `filterable` + `allow-create` 仍可手填自定义 skill 的 slug。
+ *
+ * 只列现役三档；已下线的版本不进选项（但 `strategyLabel` 仍认得，历史数据照常显示中文）。
+ */
+export const BUILTIN_STRATEGY_OPTIONS: readonly { label: string; value: string }[] = [
+  { label: strategyLabel('qianlong-close-v3'), value: 'qianlong-close-v3' },
+  { label: strategyLabel('sanyuan-tail-v1'), value: 'sanyuan-tail-v1' },
+  { label: strategyLabel('yangshi-tail-v1'), value: 'yangshi-tail-v1' },
+]
 
 export function timingLabel(value: string | null | undefined): string {
   if (!value) return '—'
@@ -259,5 +318,5 @@ export function timingLabel(value: string | null | undefined): string {
 }
 
 export function dialogWidth(): string {
-  return 'min(36rem, 92vw)'
+  return 'min(52rem, 94vw)'
 }

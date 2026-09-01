@@ -1,10 +1,12 @@
 """notify 任务执行器与企微附带推送。"""
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from src.ops.application.jobs.context import DEFAULT_PALACE_DB, JobContext, JobError
+from src.ops.application.jobs.context import default_palace_db, JobContext, JobError
 from src.ops.infrastructure.store import OpsStore
 
 logger = logging.getLogger(__name__)
@@ -72,6 +74,10 @@ def execute_notify(config: dict[str, Any], context: JobContext) -> dict[str, Any
     )
     if outcome.get("skipped") == "quiet_hours":
         return {"skipped": True, "template": template, "reason": "quiet_hours"}
+    if outcome.get("skipped") == "rate_limited":
+        #  刻意没发（60s 内同指纹已出过声），不是失败：这里若 raise JobError，
+        #  一个每 5 分钟跑一次的推送任务会在运维页刷出一整列红叉。
+        return {"skipped": True, "template": template, "reason": "rate_limited"}
     if not outcome.get("sent") and outcome.get("error"):
         raise JobError(str(outcome.get("error")))
     if outcome.get("errors") and not outcome.get("sent"):
@@ -110,7 +116,7 @@ def _notify_alerts_content(context: JobContext) -> str:
     from src.ledger import PalaceStore
     from src.review.application.alerts import today_alerts_payload
 
-    with PalaceStore(context.palace_db or DEFAULT_PALACE_DB) as palace:
+    with PalaceStore(context.palace_db or default_palace_db()) as palace:
         try:
             with context.market_hot() as store:
                 return format_alerts(today_alerts_payload(palace, store))
@@ -123,7 +129,7 @@ def _notify_digest_content(context: JobContext) -> str:
     from src.ops.application.notify import format_digest
     from src.ledger import PalaceStore
 
-    with PalaceStore(context.palace_db or DEFAULT_PALACE_DB) as palace:
+    with PalaceStore(context.palace_db or default_palace_db()) as palace:
         candidates = palace.candidates_payload()
         summary = palace.candidate_day_summary(candidates)
     return format_digest(candidates=candidates, summary=summary)
@@ -175,20 +181,33 @@ def _maybe_push_wecom(
     elif kind == "screen" and status == "success" and isinstance(result, dict):
         from src.ops.application.wecom_push_mark import (
             adopt_push_mark_from_runs,
+            compute_push_fingerprint,
             is_screen_pushed,
             resolve_push_day,
+            shanghai_today,
         )
 
         push_day = resolve_push_day(result)
         job_id = str(job.get("id") or "")
+        strat_slug = str(result.get("strategy") or job_name or "")
+        time_slot = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+        picks_list = result.get("picks") if isinstance(result.get("picks"), list) else []
+        fingerprint = compute_push_fingerprint(
+            day=push_day,
+            job_id=job_id,
+            strategy=strat_slug,
+            time_slot=time_slot,
+            picks=picks_list,
+        )
         if job_id and (
-            is_screen_pushed(store, job_id=job_id, day=push_day)
-            or adopt_push_mark_from_runs(store, job_id=job_id, day=push_day)
+            is_screen_pushed(store, job_id=job_id, day=push_day, fingerprint=fingerprint)
+            or adopt_push_mark_from_runs(store, job_id=job_id, day=push_day, fingerprint=fingerprint)
         ):
             return {
                 "push_skipped": True,
                 "reason": "already_pushed",
                 "push_day": push_day,
+                "push_fingerprint": fingerprint,
             }
         content = format_screen_picks_text(
             result,
@@ -213,7 +232,7 @@ def _maybe_push_wecom(
         # 高频引擎静默：无可执行候选就不推。**不能靠下面那条 `not summary` 兜底**——
         # runner 给 summary 配了 "无新信号" 的默认值，它永远非空，那条分支进不去，
         # 结果就是盘中每 10 分钟推一条"无新信号"。失败/跳过仍推原因。
-        # 「仅观察」也不算可执行：二波引擎只出观察票，统一池缺 action 时默认
+        # 「仅观察」也不算可执行：只出观察票的引擎会刷屏，统一池缺 action 时默认
         # intent=observe，旧逻辑只要 picks 非空就刷「👀观察 N：…仅观察」。
         if status == "success" and slug and push_only_when_actionable(slug):
             from src.ops.application.paper_policy.eligibility import has_actionable_picks
@@ -240,20 +259,32 @@ def _maybe_push_wecom(
         if result.get("picks"):
             from src.ops.application.wecom_push_mark import (
                 adopt_push_mark_from_runs,
+                compute_push_fingerprint,
                 is_screen_pushed,
                 resolve_push_day,
             )
 
             push_day = resolve_push_day(result)
             job_id = str(job.get("id") or "")
+            strat_slug = str(result.get("skill") or job_name or "")
+            time_slot = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+            picks_list = result.get("picks") if isinstance(result.get("picks"), list) else []
+            fingerprint = compute_push_fingerprint(
+                day=push_day,
+                job_id=job_id,
+                strategy=strat_slug,
+                time_slot=time_slot,
+                picks=picks_list,
+            )
             if job_id and (
-                is_screen_pushed(store, job_id=job_id, day=push_day)
-                or adopt_push_mark_from_runs(store, job_id=job_id, day=push_day)
+                is_screen_pushed(store, job_id=job_id, day=push_day, fingerprint=fingerprint)
+                or adopt_push_mark_from_runs(store, job_id=job_id, day=push_day, fingerprint=fingerprint)
             ):
                 return {
                     "push_skipped": True,
                     "reason": "already_pushed",
                     "push_day": push_day,
+                    "push_fingerprint": fingerprint,
                 }
             content = format_screen_picks_text(
                 result,
@@ -270,6 +301,50 @@ def _maybe_push_wecom(
                 result=result,
                 template=screen_tpl,
             )
+    elif kind == "intel_brief":
+        # 简报正文由执行器自己按字节分片推（`jobs/intel_brief.py`），这里再推一条
+        # 「任务状态」就是纯噪音：四档 × 每档三个触发点 = 一天最多 12 条
+        # 「【任务✓ 简报推送】状态 已跳过」。这与 data_quality 全绿闭嘴、skill_watch
+        # 无信号闭嘴是同一条纪律：天天响的通知等于没有通知。
+        #
+        # **失败仍要推**：`status=failed` 只有两种来路——执行器整个抛异常，或简报取回来
+        # 了却一条都没发出去（`push_error`，见 registry 的状态判定）。两者都值得知道。
+        if status != "failed":
+            # 用 `push_reason` 而不是各分支惯用的 `reason`：执行器已经把「为什么跳过」
+            # （not_published / stale_briefing / already_pushed）写进 `reason`，而
+            # run_job 会把这份 push_meta 合并进 result——同名键会把那条取证信息盖掉。
+            return {"push_skipped": True, "push_reason": "brief_pushes_its_own_body"}
+        content = format_job_status(
+            job_name=job_name,
+            kind=kind,
+            status=status,
+            error=error,
+            result=result,
+            template=screen_tpl,
+        )
+    elif kind == "data_quality":
+        # 体检：``blocked`` 或有 ``alert`` 才出声，正文直接用体检自己写的中文
+        # 告警（``build_alert`` 已经带上【阻断】/【提醒】分级与处置建议）。
+        #
+        # **全绿必须不推**。体检是天天跑的托管任务，每天推一条「一切正常」，
+        # 两周之后没有人会再点开它——真出事那天的告警也一起被当噪音划过去。
+        # 这是本模块反复交过学费的失效模式（见 skill_watch 的
+        # ``push_only_when_actionable``、sync 的「仅失败才推」）。
+        #
+        # ``status != success`` 仍要推：体检自己不抛异常，能走到这里的失败是
+        # 打不开行情库之类的真故障，比任何一条判据都值得知道。
+        payload = result if isinstance(result, dict) else {}
+        alert = str(payload.get("alert") or "").strip()
+        if status == "success" and not alert and not payload.get("blocked"):
+            return {"push_skipped": True, "reason": "quality_all_green"}
+        content = alert or format_job_status(
+            job_name=job_name,
+            kind=kind,
+            status=status,
+            error=error,
+            result=result,
+            template=screen_tpl,
+        )
     else:
         content = format_job_status(
             job_name=job_name,
@@ -289,36 +364,71 @@ def _maybe_push_wecom(
         dispatch_title = _skill_title(result or {}, job_name)
         prepend_title_to_wecom = False
 
-    outcome = dispatch_text(
-        store,
-        title=dispatch_title,
-        body=content,
-        webhook_override=webhook,
-        prepend_title_to_wecom=prepend_title_to_wecom,
-    )
+    try:
+        outcome = dispatch_text(
+            store,
+            title=dispatch_title,
+            body=content,
+            webhook_override=webhook,
+            prepend_title_to_wecom=prepend_title_to_wecom,
+        )
+    except Exception as exc:
+        # 本函数的契约是「失败只记日志不抛」，但此前只兜住了 ``sent=False``：
+        # ``dispatch_text`` 自己抛出来（webhook 配置坏、底层 requests 抛的不是
+        # HTTPError、安静时段配置读崩）会一路穿出去。``run_job`` 调用它的那一行
+        # **不在**任何 try 里，异常会让这次运行卡在 ``running`` 上收不了尾——
+        # 一条推送顺带把它本该通知的那次体检记录也毁了。
+        logger.warning("附带推送异常：%s", exc, exc_info=True)
+        return {"push_error": str(exc)}
     if outcome.get("skipped") == "quiet_hours":
         return {"push_skipped": True, "reason": "quiet_hours"}
+    if outcome.get("skipped") == "rate_limited":
+        #  同上：被限流是降噪的**成功**，记 push_skipped。记成 push_error 会让
+        #  「告警太吵」在运维页伪装成「推送坏了」，下一个人就去关限流。
+        #  注意这条路径**不**写 wecom_push_mark：这次压根没发出去，同日重跑仍应尝试。
+        return {"push_skipped": True, "reason": "rate_limited"}
     if not outcome.get("sent"):
         err = outcome.get("error") or "; ".join(outcome.get("errors") or []) or "推送失败"
         logger.warning("附带推送失败：%s", err)
         return {"push_error": str(err)}
     if kind in {"screen", "skill"} and status == "success" and isinstance(result, dict):
-        from src.ops.application.wecom_push_mark import mark_screen_pushed, resolve_push_day
+        from src.ops.application.wecom_push_mark import (
+            compute_push_fingerprint,
+            mark_screen_pushed,
+            resolve_push_day,
+        )
 
         push_day = resolve_push_day(result)
         job_id = str(job.get("id") or "")
+        strat_slug = str(result.get("strategy" if kind == "screen" else "skill") or job_name or "")
+        time_slot = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+        picks_list = result.get("picks") if isinstance(result.get("picks"), list) else []
+        fingerprint = compute_push_fingerprint(
+            day=push_day,
+            job_id=job_id,
+            strategy=strat_slug,
+            time_slot=time_slot,
+            picks=picks_list,
+        )
         if job_id and (kind == "screen" or result.get("picks")):
             mark_screen_pushed(
                 store,
                 job_id=job_id,
                 day=push_day,
+                fingerprint=fingerprint,
                 meta={
                     "title": _screen_title(result, job_name)
                     if kind == "screen"
                     else _skill_title(result, job_name)
                 },
             )
-        return {"pushed": True, "msgtype": "text", "push_day": push_day, "notify": outcome}
+        return {
+            "pushed": True,
+            "msgtype": "text",
+            "push_day": push_day,
+            "push_fingerprint": fingerprint,
+            "notify": outcome,
+        }
     return {"pushed": True, "msgtype": "text", "notify": outcome}
 
 

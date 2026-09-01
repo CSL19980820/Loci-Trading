@@ -21,6 +21,12 @@ const emit = defineEmits<{
 
 const multi = computed(() => isMultiAsk(props.ask))
 const questions = computed<AiHitlQuestion[]>(() => props.ask?.questions ?? [])
+/** 操作说明不占常驻段落，挂在「?」标记的 tooltip 里 */
+const interactionHint = computed(() => {
+  if (multi.value) return '逐题点选或填写，再点「提交全部」；数字键作用于当前/首个未答选择题。'
+  if (props.fallback && !props.ask?.prompt) return '助手已暂停。点选项或按数字键直接继续，也可在输入框回复 / 取消本轮。'
+  return '点选项或按 1–9 即提交；也可在输入框改写后发送。'
+})
 const answers = reactive<Record<string, string>>({})
 const focusedId = ref<string>('')
 const submitError = ref('')
@@ -113,23 +119,12 @@ onUnmounted(() => {
     :aria-label="ask?.prompt || '等待你的确认'"
   >
     <header class="assistant-ask__head">
-      <span class="assistant-ask__mark" aria-hidden="true">?</span>
-      <div class="assistant-ask__copy">
-        <p class="assistant-ask__prompt">
-          {{ ask?.prompt || (multi ? '请回答下列问题' : '等待你的确认') }}
-        </p>
-        <p class="assistant-ask__hint">
-          <template v-if="multi">
-            逐题点选或填写，再点「提交全部」；数字键作用于当前/首个未答选择题。
-          </template>
-          <template v-else-if="fallback && !ask?.prompt">
-            助手已暂停。点选项或按数字键直接继续，也可在输入框回复 / 取消本轮。
-          </template>
-          <template v-else>
-            点选项或按 1–9 即提交；也可在输入框改写后发送。
-          </template>
-        </p>
-      </div>
+      <el-tooltip :content="interactionHint" placement="top">
+        <span class="assistant-ask__mark" role="img" :aria-label="interactionHint">?</span>
+      </el-tooltip>
+      <p class="assistant-ask__prompt">
+        {{ ask?.prompt || (multi ? '请回答下列问题' : '等待你的确认') }}
+      </p>
       <el-tag v-if="ask?.risk" size="small" type="danger" effect="plain" class="assistant-ask__risk">
         {{ ask.risk }}
       </el-tag>
@@ -233,23 +228,15 @@ onUnmounted(() => {
   background: var(--warn);
   line-height: 1;
 }
-.assistant-ask__copy {
+.assistant-ask__prompt {
   flex: 1 1 auto;
   min-width: 0;
-}
-.assistant-ask__prompt {
   margin: 0;
   font-size: var(--ai-fs-body);
   font-weight: 600;
   line-height: 1.4;
   color: var(--ink);
   letter-spacing: .01em;
-}
-.assistant-ask__hint {
-  margin: .28rem 0 0;
-  color: var(--mist);
-  font-size: var(--ai-fs-aux);
-  line-height: 1.45;
 }
 .assistant-ask__risk {
   flex: 0 0 auto;

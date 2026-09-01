@@ -42,7 +42,12 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
 </script>
 
 <template>
-  <Sheet :title="showEditor === false ? '运行与参数' : '代码高级视图'" padded margin>
+  <!--
+    不留块标题：这块在策稿台是 PageTabs 的「参数」分区（showEditor=false），
+    高亮的 tab 已经交代了身份；带编辑器的另一形态里，下面的「脚本源码 / 公式正文」
+    form-item label 也已经说清楚了。两种取值都属于白占一行。
+  -->
+  <Sheet padded margin>
     <div class="meta-grid">
       <el-form-item label="运行时">
         <el-select
@@ -75,10 +80,10 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
     </el-form-item>
 
     <div class="section-head">
-      <div>
-        <strong>参数表</strong>
-        <div class="dim">编译、保存、试跑共用同一份参数定义。</div>
-      </div>
+      <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
+      <el-tooltip placement="bottom-start" content="编译、保存、试跑共用同一份参数定义">
+        <strong class="section-head__title">参数表</strong>
+      </el-tooltip>
       <el-button size="small" @click="emit('addParam')">新增参数</el-button>
     </div>
     <el-alert
@@ -161,9 +166,12 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
   margin-bottom: 0.55rem;
 }
 
-.dim {
-  color: var(--mist);
-  font-size: 0.82rem;
+/* 小节标题压成一行：标题与它的操作按钮同高同行，不再是标题一行、介绍一行 */
+.section-head__title {
+  font-size: var(--fs-title);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: help;
 }
 
 @media (max-width: 640px) {

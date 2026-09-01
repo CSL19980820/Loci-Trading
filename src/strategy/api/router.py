@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
-import threading
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,7 +21,9 @@ from src.strategy.api.schemas import (
     StrategyDocUpsert,
     StrategyJobConfig,
 )
+from src.strategy.api.screen_universe import effective_screen_universe
 from src.shared.paths import market_hot_db
+from src.shared.tenancy import spawn_tenant_thread
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +40,20 @@ def build_strategy_router(
     write_guard = Depends(write_dependency)
     from src.strategy.api.screen_history_router import build_screen_history_router
     from src.strategy.api.version_router import build_strategy_version_router
+    from src.strategy.api.screen_run_router import build_screen_run_router
 
     router.include_router(build_screen_history_router(palace_db=palace_db))
     router.include_router(
         build_strategy_version_router(
             write_dependency=write_dependency, market_db=market_db, ops_db=ops_db
+        )
+    )
+    router.include_router(
+        build_screen_run_router(
+            write_dependency=write_dependency,
+            market_db=market_db,
+            ops_db=ops_db,
+            palace_db=palace_db,
         )
     )
 
@@ -67,20 +77,6 @@ def build_strategy_router(
         if scheduler is not None and scheduler.running:
             scheduler.reload()
 
-    def _effective_screen_universe(
-        slug: str, requested: Any
-    ) -> dict[str, Any] | None:
-        """请求体优先；未传则用详情页保存到 ``screen:{slug}`` 的行情范围。"""
-        from src.ops.application.screen_job_config import resolve_screen_universe
-
-        raw = (
-            requested.model_dump(exclude_none=True)
-            if requested is not None and hasattr(requested, "model_dump")
-            else requested
-        )
-        with _ops() as store:
-            return resolve_screen_universe(slug, raw if isinstance(raw, dict) else None, store=store)
-
     @router.post("/api/strategies/screen", tags=["strategy"])
     def run_screen(payload: ScreenRequest, _write: None = write_guard) -> dict[str, Any]:
         try:
@@ -101,7 +97,9 @@ def build_strategy_router(
                 detail="多日选股请使用异步接口 POST /api/screen/run",
             )
         trade_date = win_end or payload.date
-        universe = _effective_screen_universe(payload.strategy, payload.universe)
+        universe = effective_screen_universe(
+            payload.strategy, payload.universe, ops_db=ops_db
+        )
 
         # 与 screen_run / job:screen 对齐：默认镜像后读热库；
         # requires_full_history 或镜像失败时回退全量库。
@@ -180,26 +178,6 @@ def build_strategy_router(
             )
         return body
 
-    @router.get("/api/screen/run", tags=["strategy"])
-    def screen_run_status() -> dict[str, Any]:
-        """即时选股进度（轮询）。"""
-        from src.strategy.application.screen_run import screen_run_snapshot
-
-        return screen_run_snapshot()
-
-    @router.post("/api/screen/run", tags=["strategy"], status_code=202)
-    def screen_run_start(payload: ScreenRequest, _write: None = write_guard) -> dict[str, Any]:
-        """后台选股：带阶段进度与日志；默认写入候选池。"""
-        from src.strategy.application.screen_run import start_screen_run_thread
-
-        opts = payload.model_dump()
-        opts["universe"] = _effective_screen_universe(payload.strategy, payload.universe)
-        return start_screen_run_thread(
-            opts,
-            market_factory=_market,
-            palace_db=palace_db,
-            hot_db=str(market_hot_db()),
-        )
     # ---- 分析任务（异步）---------------------------------------------
     # 横向对比与退出扫描都是分钟级的：对比 8 个战法 × 2 个持有期要跑 16 次
     # 全市场回测，扫描 48 组更久。同步返回必然被 Nginx 的 60s 超时掐断，
@@ -254,7 +232,11 @@ def build_strategy_router(
                 )
 
         try:
-            threading.Thread(target=worker, name=f"analysis-{kind}-{run_id}", daemon=True).start()
+            # 必须走 spawn_tenant_thread：worker 里 run_job 会经 JobContext 落 job_runs、
+            # 并按当前租户解析选股产物目录。裸 threading.Thread 丢掉 ContextVar 之后，
+            # 即时对比 / 退出扫描的运行记录会写进**主租户**的运维库，发起人那边只看到
+            # 一条永远停在 running 的 run（他的库里没有收口写入）。别改回去。
+            spawn_tenant_thread(worker, name=f"analysis-{kind}-{run_id}")
         except Exception as exc:
             message = f"后台分析启动失败：{type(exc).__name__}: {exc}"
             logger.exception("即时分析任务 %s 无法启动", run_id)

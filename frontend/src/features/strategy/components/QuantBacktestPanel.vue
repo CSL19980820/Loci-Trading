@@ -3,6 +3,8 @@ import { computed, toRef } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { copyText } from '@/shared/lib/clipboard'
+import { strategyLabel } from '@/shared/lib/format'
 import type { StrategyInfo } from '@/shared/types/quant'
 
 import {
@@ -22,6 +24,22 @@ const props = defineProps<{
 }>()
 
 const strategiesRef = computed(() => props.strategies)
+
+/**
+ * 下拉与锁定框的文案一律中文：后端 name 缺失、或它本身就是 slug 形状
+ * （`sanyuan-tail-v1`）时退回共享词表。value 仍是 slug，接口契约不变。
+ */
+function cnName(name: string | null | undefined, slug: string): string {
+  const text = String(name || '').trim()
+  if (text && !/^[a-z0-9][a-z0-9._-]*$/.test(text)) return text
+  return strategyLabel(slug || text)
+}
+
+const strategyOptions = computed(() =>
+  props.strategies.map((s) => ({ slug: s.slug, label: cnName(s.name, s.slug) })),
+)
+
+const lockedLabel = computed(() => cnName(props.lockedName, String(props.lockedSlug || '')))
 const lockedSlugRef = toRef(props, 'lockedSlug')
 
 const {
@@ -29,6 +47,8 @@ const {
   range,
   mode,
   busy,
+  elapsedSec,
+  expectedHint,
   horizonResult,
   tradeResult,
   errorText,
@@ -52,6 +72,7 @@ const {
   onRangeChange,
   disabledDate,
   run,
+  stop,
   skippedText,
 } = useQuantBacktestPanel({
   strategies: strategiesRef,
@@ -67,33 +88,36 @@ async function copyHorizonSummary(): Promise<void> {
     t1: horizonResult.value.horizons.t1 ?? null,
     t3: horizonResult.value.horizons.t3 ?? null,
   })
-  try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制 Horizon 摘要')
-  } catch {
-    ElMessage.error('复制失败')
-  }
+  if (await copyText(text)) ElMessage.success('已复制 Horizon 摘要')
+  else ElMessage.error('复制失败，请手动选中摘要文本复制')
 }
 </script>
 
 <template>
-  <div class="bt" v-loading="busy" element-loading-text="正在回测全市场信号，请稍候…">
+  <div
+    class="bt"
+    v-loading="busy"
+    :element-loading-text="`正在回测全市场信号 · 已跑 ${elapsedSec}s · ${expectedHint}`"
+  >
+    <!--
+      不留「战法回测」标题：这块只出现在工坊的「回测」Tab 与策稿台底坞的「回测」页里，
+      两处高亮的分区名已经说完了。原来标题下面那行口径副标题（subtitle）也不留在版面上，
+      挂到「口径」切换器的 tooltip 上 —— 它本来就是解释这个切换器的。
+    -->
     <header class="bt-rail">
-      <div class="bt-rail__title">
-        <h2>战法回测</h2>
-        <p>{{ subtitle }}</p>
-      </div>
-      <el-form class="bt-rail__form" inline @submit.prevent="run">
+      <el-form class="bt-rail__form" inline label-position="left" label-width="6.5em" @submit.prevent="run">
         <el-form-item label="口径">
-          <el-radio-group v-model="mode" :disabled="busy" size="default">
-            <el-radio-button value="horizon">Horizon T+N</el-radio-button>
-            <el-radio-button value="trade">成交回测</el-radio-button>
-          </el-radio-group>
+          <el-tooltip placement="bottom-start" :content="subtitle">
+            <el-radio-group v-model="mode" :disabled="busy" size="default">
+              <el-radio-button value="horizon">Horizon T+N</el-radio-button>
+              <el-radio-button value="trade">成交回测</el-radio-button>
+            </el-radio-group>
+          </el-tooltip>
         </el-form-item>
         <el-form-item label="战法">
           <el-input
             v-if="lockedSlug"
-            :model-value="lockedName || lockedSlug"
+            :model-value="lockedLabel"
             readonly
             style="width: 180px"
           />
@@ -106,9 +130,9 @@ async function copyHorizonSummary(): Promise<void> {
             :disabled="loading || !strategies.length || busy"
           >
             <el-option
-              v-for="s in strategies"
+              v-for="s in strategyOptions"
               :key="s.slug"
-              :label="s.name"
+              :label="s.label"
               :value="s.slug"
             />
           </el-select>
@@ -156,11 +180,17 @@ async function copyHorizonSummary(): Promise<void> {
           <el-button type="primary" :loading="busy" :disabled="!strategies.length" @click="run">
             跑回测
           </el-button>
+          <el-button v-if="busy" type="warning" plain @click="stop">停止回测</el-button>
+        </el-form-item>
+        <el-form-item>
+          <span class="bt-eta">
+            {{ busy ? `已跑 ${elapsedSec}s · ${expectedHint}` : `预计：${expectedHint}` }}
+          </span>
         </el-form-item>
       </el-form>
 
       <div v-if="mode === 'trade'" class="bt-trade-cfg">
-        <el-form inline>
+        <el-form inline label-position="left" label-width="6.5em">
           <el-form-item label="持有日">
             <el-input-number v-model="holdDays" :min="1" :max="60" :disabled="busy" controls-position="right" />
           </el-form-item>
@@ -184,7 +214,7 @@ async function copyHorizonSummary(): Promise<void> {
             <span class="bt-trip">一趟约 {{ tripCostPct.toFixed(2) }}%</span>
           </el-form-item>
         </el-form>
-        <el-form v-if="showCost" inline class="bt-cost">
+        <el-form v-if="showCost" inline label-position="left" label-width="6.5em" class="bt-cost">
           <el-form-item label="佣金bps">
             <el-input-number v-model="commissionBps" :min="0" :max="50" :step="0.5" :disabled="busy" controls-position="right" />
           </el-form-item>
@@ -218,7 +248,8 @@ async function copyHorizonSummary(): Promise<void> {
 
     <EmptyState
       v-if="!activeHasResult && !busy"
-      description="选口径与战法，用近一月 / 三月 / 六月再跑。全市场可能要几十秒。"
+      description="还没有回测结果"
+      reason="选好口径与战法后点「跑回测」"
     />
 
     <div v-if="mode === 'horizon' && horizonResult" class="bt-result" :key="`${resultMeta}-hz`">
@@ -260,52 +291,47 @@ async function copyHorizonSummary(): Promise<void> {
 .bt {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
-  min-height: 14rem;
-  padding: 0.15rem 0.35rem 0.5rem;
+  gap: var(--gap-2);
+  min-height: 0;
+  padding: 0 var(--gap-1) var(--gap-2);
   position: relative;
 }
 .bt-rail {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.85rem 1rem;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
   border: 1px solid var(--rule);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--sheet) 92%, var(--paper)) 0%, var(--sheet) 100%);
 }
-.bt-rail__title h2 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 650;
-  color: var(--ink);
-}
-.bt-rail__title p {
-  margin: 0.2rem 0 0;
-  font-size: 0.8rem;
-  color: var(--mist);
-}
+
 .bt-rail__form {
   margin: 0;
 }
 .bt-rail__form :deep(.el-form-item),
 .bt-trade-cfg :deep(.el-form-item),
 .bt-cost :deep(.el-form-item) {
-  margin-bottom: 0.35rem;
+  margin-bottom: var(--gap-1);
 }
 .bt-trade-cfg {
-  padding-top: 0.15rem;
+  padding-top: var(--gap-1);
   border-top: 1px dashed var(--rule);
 }
+.bt-eta {
+  font-size: var(--fs-aux);
+  color: var(--mist);
+}
+
 .bt-trip {
-  margin-left: 0.5rem;
-  font: 0.78rem/1.4 var(--mono);
+  margin-left: var(--gap-2);
+  font: var(--fs-aux)/1.4 var(--mono);
   color: var(--mist);
 }
 .bt-rail__meta {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
   line-height: 1.45;
 }
@@ -314,7 +340,7 @@ async function copyHorizonSummary(): Promise<void> {
   font-weight: 600;
 }
 .bt-rail__meta .dot {
-  margin: 0 0.35rem;
+  margin: 0 var(--gap-1);
   opacity: 0.5;
 }
 .bt-alert {
@@ -323,7 +349,7 @@ async function copyHorizonSummary(): Promise<void> {
 .bt-result {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--gap-2);
   min-height: 0;
   animation: bt-in 0.28s ease both;
 }
@@ -332,23 +358,23 @@ async function copyHorizonSummary(): Promise<void> {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.45rem;
+  gap: var(--gap-1);
 }
 .bt-result__meta {
   margin: 0;
-  font: 0.78rem/1.4 var(--mono);
+  font: var(--fs-aux)/1.4 var(--mono);
   color: var(--mist);
 }
 .bt-horizons {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.85rem;
+  gap: var(--gap-2);
   min-height: 0;
 }
 .bt-footnote,
 .bt-skip {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
   line-height: 1.45;
 }

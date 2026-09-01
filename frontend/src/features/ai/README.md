@@ -17,12 +17,12 @@
 - 主时间线含**活动条**（Evidence lane）：派生的子进程以卡片列出，可点开线程弹窗查看加载过程；结论仍置底。
 - **思考块**：流式时对话区贴底跟滚（含 `thinking` 增量）；块内限高并内滚跟最新句。思考阶段一结束（出工具 / 正文 / 收口）自动收起，视口留给最新过程与结论。
 - 输入坞使用 EP-X **`XSender`**（`AssistantSenderDock`）+ 底栏 `AssistantRuntimeBar`（分组模型 + 思考程度 `off/low/medium/high/xhigh/max`，默认 `medium`，偏好存 `localStorage`）+ 图片上传/粘贴 + **行首 `/` 斜杠**（内置 `/compact` + 技能包；Cursor 式，仅当本行左右无其它文字）+ 发送/中止。
-- **上下文用量**：输入坞右侧环状百分比（对齐 Cursor Context Usage）：点开看分段条与分类（系统提示 / 工具 / 规则 / 记忆 / MCP / 技能 / 会话 / 草稿）。窗口取当前模型 `context_window`（缺省 128k）；`GET /api/ai/tools` 回 `system_prompt_tokens` + 工具 `schema_tokens`/`tags` + `model_catalog`。粗估汉字≈1、其它≈4字/token，非计费账单；≥70%/90% 弹出压力提示。有最近一轮 `input_tokens` 时按比例校准环上 used；`context_compacted.tokens_after` 写入消息后会话段按喂模体积收缩。后端超阈值自动压缩喂模历史时发 `context_compacted`，用量环与时间线显示「已压缩」（库内原文仍在；无事件不显示）。**手动 `/compact`**：`POST /api/ai/sessions/{id}/compact` 强制压缩喂模快照写入 `session.metadata.context_feed`（不删库原文）；会话占用中拒绝；成功后末条助手加 warning 并刷新 `context_feed_tokens`。
+- **上下文用量**：输入坞右侧环状百分比（对齐 Cursor Context Usage）：点开看分段条与分类（系统提示 / 工具 / 规则 / 记忆 / MCP / 技能 / 会话 / 草稿）。窗口取当前模型 `context_window`（缺省 128k）；`GET /api/ai/tools` 回 `system_prompt_tokens` + 工具 `schema_tokens`/`tags` + `model_catalog`。粗估汉字≈1、其它≈4字/token（口径写在读数 tooltip，不占常驻脚注）；≥70%/90% 弹出压力提示。有最近一轮 `input_tokens` 时按比例校准环上 used；`context_compacted.tokens_after` 写入消息后会话段按喂模体积收缩。后端超阈值自动压缩喂模历史时发 `context_compacted`，用量环与时间线显示「已压缩」（库内原文仍在；无事件不显示）。**手动 `/compact`**：`POST /api/ai/sessions/{id}/compact` 强制压缩喂模快照写入 `session.metadata.context_feed`（不删库原文）；会话占用中拒绝；成功后末条助手加 warning 并刷新 `context_feed_tokens`。
 - **主柱 Activity**：忙态仅末条用 Host `agents`；历史轮有 `message.agents` 也展示折叠子进程条。子进程线程弹窗可展示嵌套 **工具回执**（SSE `subagent_tool` → `agent.tool_receipts`）。
 - 对话中柱助手回合 **横向拉满**：Activity / 回执 / Markdown 气泡 `width:100%`；表用 `table-layout:fixed` 换行，对话区 `overflow-x:hidden`，避免无谓横滚。
-- 空状态为 Instrument Stage：Ink Ribbon「落点」标横排 + 「今天想落在哪？」+ **列表式范例**（含「记录当日交割 / 昨日交割补充」等，点击填入输入框）。范例行是 `el-button`，忙态 / 未配模型时置灰（父级 `pickPrompt` 此时会丢弃点击）。**交割范例只写 `<价格>买入<数量>股<标的>` 这类占位**，禁止填看着像真实持仓的价格与股数——范例进输入框后离「回车写进账本」只差一步。
+- 空状态为 Instrument Stage：Ink Ribbon「落点」标 + 「今天想落在哪？」**同一行** + 一行下一步（「点一条范例，改完再发」）+ **列表式范例**（含「记录当日交割 / 昨日交割补充」等，点击填入输入框）。范例行是 `el-button`，忙态 / 未配模型时置灰（父级 `pickPrompt` 此时会丢弃点击）。**交割范例只写 `<价格>买入<数量>股<标的>` 这类占位**，禁止填看着像真实持仓的价格与股数——范例进输入框后离「回车写进账本」只差一步。
 - 助手弹窗相对视口顶部 **5vh**（`top=5vh`，遮罩顶部对齐，不再垂直居中）；高度仍为 `90dvh`，`el-dialog__body` 无内边距。
-- 子进程线程弹窗贴顶 **5vh**、加宽约 **52rem**：单行标题（名称 + 状态 + 进度），自定义关闭钮；有摘要才展示摘要块，无空话占位；有嵌套工具时展示回执列表。
+- 子进程线程弹窗贴顶 **5vh**、加宽约 **52rem**：单行标题（名称 + 状态 + 进度），自定义关闭钮；小节标题一律单行（「加载过程 N 步」/「工具回执 N 条」/摘要标签与正文同框）；有摘要才展示摘要块，无空话占位；有嵌套工具时展示回执列表。
 - 浮球默认位置在移动端抬高避开 `--mobile-nav-h`；拖拽后的 inline `bottom`/`right` 生效，clamp 下限含底栏净空。
 - 浮球视觉为 Ink Ribbon Disc（深色盘 + 浅色丝带结 + `--seal` 落点；打开变 X；忙态虚线轨道环）。
 - 助手回复用 `marked` + `DOMPurify` 渲染 Markdown；**流式中**（`status===streaming`）结论区用纯文本追加，收口后再 Markdown；用户消息保持纯文本。`applyAiRunEvent` 对 `token`/`think` 等只替换末条 assistant（O(末条)），不深拷贝整表。
@@ -103,3 +103,14 @@ Artifact 大包：`kline`（兼容 `qianlong_kline`，复用 `KlineChart` + `pre
 ## 相关测试
 
 `frontend/src/features/ai/**/*.test.ts`
+
+Host 级用例按主题分文件，单文件不超 600 行：
+
+| 文件 | 覆盖 |
+|---|---|
+| `AssistantHost.run.stream.test.ts` | SSE 流、断流/失败后回落 JSON 轮询、`active_run` 续跑 |
+| `AssistantHost.run.hitl.test.ts` | `waiting_user` 还原与答复、中止收口（含取消 API 失败的本机强收） |
+| `AssistantHost.run.sync.test.ts` | 发送护栏（建会话中重复发送、发送中卸载）、`finishRun` 后的会话回填与旧轮延迟 sync |
+| `AssistantHost.session.test.ts` / `AssistantHost.resume.test.ts` | 会话列表/归档删除、刷新恢复 |
+
+**共享 mock 与 fixture 都在 `AssistantHost.test.helpers.ts`**：`vi.mock('@/shared/api/ai_assistant' | 'vue-router' | 'element-plus')` 是模块级提升的，只能待在该文件（或各测试文件）顶部；`toolsReady` / `sessionDetail` / `aiRun` / `primeAssistantReady` / `primeNewSession` / `transcriptPanel` 等是纯 fixture 与面板 stub 工厂。改后端报文契约只改这一处，别把 mock 复制进各测试文件。

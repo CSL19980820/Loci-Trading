@@ -93,9 +93,21 @@ function onInputUpdate(value: unknown): void {
   }
   if (inputTimer) clearTimeout(inputTimer)
   inputTimer = setTimeout(() => {
-    setValue(next)
     inputTimer = undefined
+    setValue(next)
   }, ms)
+}
+
+/**
+ * 立刻落地防抖中的草稿。
+ * el-input 的 `change`（失焦 / 回车）与父级 `submit()` 都会调：不然「打完字立刻点
+ * 保存」会丢掉最后 500ms 的输入 —— 弹窗表单里这就是丢一整个字段。
+ */
+function flushInput(): void {
+  if (!inputTimer) return
+  clearTimeout(inputTimer)
+  inputTimer = undefined
+  setValue(inputDraft.value)
 }
 
 function slotVNode() {
@@ -148,7 +160,7 @@ onScopeDispose(() => {
   requestGeneration += 1
 })
 
-defineExpose({ getRequest: loadRequest })
+defineExpose({ getRequest: loadRequest, flush: flushInput })
 
 onMounted(() => {
   const immediate = props.schema.componentProps?.immediate
@@ -194,6 +206,7 @@ const isTextarea = computed(
     clearable
     class="basic-form__full"
     @update:model-value="onInputUpdate"
+    @change="flushInput"
     v-on="bindEvents()"
   />
   <el-input-number

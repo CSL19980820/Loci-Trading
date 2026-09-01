@@ -181,7 +181,7 @@ function onConfirmReply(text: string): void {
 async function onCopyMessage(text: string): Promise<void> {
   const ok = await copyTextToClipboard(text)
   if (ok) ElMessage.success('已复制')
-  else ElMessage.error('复制失败')
+  else ElMessage.error('复制失败，请手动选中消息文本复制')
 }
 
 function onRerunMessage(payload: { text: string; images?: string[] }): void {
@@ -235,7 +235,7 @@ function setTaskSidebarOpen(value: boolean): void {
           class="assistant-panel__alert"
           type="warning"
           :closable="false"
-          title="尚未配置可用模型，请先到运维完成供应商配置。"
+          title="尚未配置可用模型"
           show-icon
         />
         <el-button data-testid="assistant-configure-provider" type="primary" plain size="small" @click="emit('configure')">
@@ -340,10 +340,14 @@ function setTaskSidebarOpen(value: boolean): void {
 
 .assistant-panel__provider-empty {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: .55rem;
-  padding: 0 .85rem .45rem;
+  padding: .45rem .85rem;
+}
+
+.assistant-panel__provider-empty .assistant-panel__alert {
+  flex: 1 1 auto;
+  margin: 0;
 }
 
 .assistant-panel__body {

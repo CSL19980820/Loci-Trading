@@ -12,6 +12,7 @@ import type { LlmProvider, ScreenResult } from '@/shared/types/quant'
 
 import ScreenCatalogRail from './components/ScreenCatalogRail.vue'
 import ScreenHistoryPanel from './components/ScreenHistoryPanel.vue'
+import ScreenRunBanners from './components/ScreenRunBanners.vue'
 import ScreenRunPanel from './components/ScreenRunPanel.vue'
 import SkillDetailDialog from './components/SkillDetailDialog.vue'
 import StrategyDetailDialog from './components/StrategyDetailDialog.vue'
@@ -24,6 +25,7 @@ import {
 } from './composables/tradeDateRange'
 import { useScreenCatalog } from './composables/useScreenCatalog'
 import { useScreenHistoryQuery } from './composables/useScreenHistoryQuery'
+import { useWorkbenchAbandon } from './composables/useWorkbenchAbandon'
 import { useWorkbenchSkillRun } from './composables/useWorkbenchSkillRun'
 
 const route = useRoute()
@@ -44,13 +46,39 @@ const {
 
 const screenRun = useScreenRunStore()
 const {
-  snap,
-  running,
-  busyStrategy,
-  percent,
-  result: runResult,
+  runningStrategies,
+  runningLabels,
+  atCapacity,
   lastError: screenLastError,
 } = storeToRefs(screenRun)
+
+/**
+ * 当前选中的战法 slug（技能不占进度槽，给空串）。
+ *
+ * 页面上所有「在跑吗 / 到几 % / 日志 / 结果」都从**这个战法自己的槽**取：后端
+ * 进度槽已经是「租户 × 战法」双层，别的战法在跑与本页无关。
+ */
+const engineSlug = computed(() =>
+  selected.value?.kind === 'engine' ? selected.value.slug : '',
+)
+const engineSnap = computed(() => screenRun.runFor(engineSlug.value))
+const engineRunning = computed(() => screenRun.isRunning(engineSlug.value))
+const enginePercent = computed(() => screenRun.percentFor(engineSlug.value))
+const engineResult = computed(() => screenRun.resultFor(engineSlug.value))
+const engineElapsed = computed(() => screenRun.elapsedTextFor(engineSlug.value))
+const engineAbandoned = computed(() => screenRun.abandonedFor(engineSlug.value))
+
+/** 并行跑着的**其它**战法：只是告知，不阻塞本页开跑 */
+const parallelRuns = computed(() =>
+  runningStrategies.value
+    .filter((slug) => slug !== engineSlug.value)
+    .map((slug) => ({
+      slug,
+      label: strategyLabel(slug),
+      percent: screenRun.percentFor(slug),
+      detail: screenRun.detailFor(slug),
+    })),
+)
 
 const dateRange = ref<TradeDateRange | null>(null)
 const lastTradingDay = ref<string | null>(null)
@@ -76,8 +104,21 @@ const {
   error: skillError,
   reset: resetSkill,
   start: startSkill,
+  skillActive,
+  skillElapsedText,
+  skillAbandoned,
   reply: sendSkillReply,
+  abandon: abandonSkill,
 } = useWorkbenchSkillRun()
+
+const { abandonEngineRun, abandonActiveRun } = useWorkbenchAbandon({
+  screenRun,
+  engineSlug: () => engineSlug.value,
+  engineRunning,
+  skillActive,
+  abandonSkill,
+  selectedKind: () => selected.value?.kind ?? null,
+})
 
 const {
   history,
@@ -97,12 +138,11 @@ const pageError = computed(
 const primaryLabel = computed(() => {
   if (!selected.value) return '选股'
   if (selected.value.kind === 'skill') {
-    return skillBusy.value ? '技能运行中' : '跑技能'
+    return skillActive.value ? '技能运行中' : '跑技能'
   }
-  if (running.value && busyStrategy.value === selected.value.slug) {
-    return `选股中 ${percent.value}%`
-  }
-  if (running.value) return '其它选股进行中'
+  if (engineRunning.value) return `选股中 ${enginePercent.value}%`
+  // 并发到顶才等；别的战法在跑不再挡住这一个（后端已是战法级多槽）
+  if (atCapacity.value) return '等一个跑完'
   const days =
     dateRange.value && dateRange.value[0] !== dateRange.value[1] ? '区间' : ''
   return days ? '区间选股' : '选股'
@@ -114,10 +154,37 @@ const primaryDisabled = computed(() => {
   if (selected.value.kind === 'skill') {
     return !selected.value.enabled || skillBusy.value || !skillProvider.value
   }
-  return running.value
+  // 只禁「正在跑的这一个战法」+ 并发到顶；这就是多槽改造要的效果
+  return !screenRun.canStart(engineSlug.value)
 })
 
 const detailDisabled = computed(() => !selected.value)
+
+/**
+ * 并发到顶时的提示。
+ *
+ * 这里**不再**说「引擎在跑，什么都点不了」——后端进度槽是战法级的，只有真的
+ * 到了同时在跑的上限才需要等，而且要说清「谁在跑、先停哪一个」。
+ */
+const capacityNotice = computed(() =>
+  atCapacity.value && !engineRunning.value
+    ? `同时最多 ${screenRun.maxConcurrentRuns} 个选股在跑（${runningLabels.value}），先停一个或等一个跑完`
+    : '',
+)
+
+const runPanelElapsed = computed(() =>
+  selected.value?.kind === 'skill' ? skillElapsedText.value : engineElapsed.value,
+)
+
+const runPanelCanAbandon = computed(() =>
+  selected.value?.kind === 'skill' ? skillActive.value : engineRunning.value,
+)
+
+/** 跳到某个并行跑着的战法去看它的进度 */
+function focusRun(slug: string): void {
+  if (!slug) return
+  select(`engine:${slug}`)
+}
 
 const historyTitle = computed(() => {
   const name = selected.value?.name || '入库历史'
@@ -211,19 +278,23 @@ watch(
 )
 
 watch(
-  runResult,
+  engineResult,
   (value) => {
     if (value?.picks) lastResult.value = value
   },
   { immediate: true },
 )
 
-watch(running, (isRunning, wasRunning) => {
-  if (wasRunning && !isRunning && snap.value?.status === 'done') {
-    void refetchHistory()
-    void loadCatalog()
-  }
-})
+// 只关心**本战法**跑完：并行的其它战法结束不该刷这一页的历史
+watch(
+  () => engineSnap.value?.status,
+  (status, prev) => {
+    if (prev === 'running' && status === 'done') {
+      void refetchHistory()
+      void loadCatalog()
+    }
+  },
+)
 
 watch(historyError, (err) => {
   if (err) runError.value = err instanceof Error ? err.message : String(err)
@@ -273,12 +344,11 @@ async function runPrimary(): Promise<void> {
 
 async function runEngine(slug: string, override?: TradeDateRange | string): Promise<void> {
   runError.value = ''
-  if (!screenRun.canStartEngine()) {
-    runError.value =
-      screenLastError.value ||
-      `选股进行中：${busyStrategy.value ? strategyLabel(busyStrategy.value) : '…'}，请等待结束`
+  if (!screenRun.canStart(slug)) {
+    // 「等一下」不是答复：说清是谁在跑、先停哪一个
+    runError.value = screenRun.blockedReason(slug)
     ElMessage.warning(runError.value)
-    if (busyStrategy.value) select(`engine:${busyStrategy.value}`)
+    if (screenRun.isRunning(slug)) focusRun(slug)
     return
   }
 
@@ -403,6 +473,17 @@ onMounted(() => {
       @close="runError = ''"
     />
 
+    <ScreenRunBanners
+      :parallel-runs="parallelRuns"
+      :capacity-notice="capacityNotice"
+      :abandoned-percent="engineAbandoned?.percent ?? null"
+      :abandoned-stopping="engineAbandoned?.stopping ?? false"
+      :skill-abandoned="skillAbandoned && !skillActive"
+      @focus-run="focusRun"
+      @abandon-run="abandonEngineRun"
+      @dismiss-abandoned="screenRun.dismissAbandoned(engineSlug)"
+    />
+
     <div class="screen-desk__body">
       <aside class="screen-desk__rail">
         <ScreenCatalogRail
@@ -418,14 +499,18 @@ onMounted(() => {
         <ScreenRunPanel
           :kind="selected?.kind ?? null"
           :selected-name="selected?.name ?? ''"
-          :snap="snap"
-          :running="running"
-          :percent="percent"
+          :snap="engineSnap"
+          :running="engineRunning"
+          :percent="enginePercent"
           :last-result="lastResult"
           :skill-busy="skillBusy"
           :skill-log="skillLog"
           :skill-run="skillRun"
           v-model:skill-reply="skillReply"
+          :skill-active="skillActive"
+          :elapsed-text="runPanelElapsed"
+          :can-abandon="runPanelCanAbandon"
+          @abandon="abandonActiveRun"
           @reply="sendSkillReply"
         />
       </div>
@@ -452,7 +537,7 @@ onMounted(() => {
         :capability-name="selected?.name ?? ''"
         :history="history"
         :loading="historyPending"
-        :running="running"
+      :running="engineRunning"
         @rerun="onRerun"
         @refresh="refetchHistory"
       />
@@ -467,96 +552,7 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
-.screen-desk {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  min-height: 0;
-}
-
-.screen-history-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-}
-
-.screen-desk__bar {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.3rem 0.1rem;
-  border-bottom: 1px solid var(--rule);
-  min-height: 2.4rem;
-  overflow: visible;
-}
-
-.screen-desk__bar-left,
-.screen-desk__bar-right {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.screen-desk__bar-spacer {
-  display: none;
-}
-
-.screen-desk__alert {
-  flex-shrink: 0;
-  margin: 0;
-}
-
-.screen-desk__body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
-  gap: 0.55rem;
-  overflow: hidden;
-}
-
-.screen-desk__rail {
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-}
-
-.screen-desk__main {
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-@media (max-width: 900px) {
-  .screen-desk__body {
-    grid-template-columns: 1fr;
-  }
-
-  .screen-desk__rail {
-    max-height: 12rem;
-  }
-
-  .screen-desk__bar {
-    grid-template-columns: 1fr;
-  }
-
-  .screen-desk__bar-left {
-    width: 100%;
-  }
-
-  .screen-desk__bar-right {
-    justify-content: flex-start;
-  }
-}
-</style>
+<style scoped src="./ScreenHistoryView.css"></style>
 
 <style>
 .screen-history-dialog.el-dialog {

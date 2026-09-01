@@ -42,6 +42,11 @@ function activeVersion(row: StrategyVersion): boolean {
 </script>
 
 <template>
+  <!--
+    两块 el-descriptions 而不是一块：短读数走两列，长文本走单列整宽。
+    合成一块时，前面 9 个短项把第 5 行占掉一格，紧跟着的「回测口径」`:span="2"`
+    会被 EP 裁成 1 格 —— 那段几百字的等宽回测参数于是挤在 296px 的窄栏里排十几行。
+  -->
   <el-descriptions :column="2" border size="small" class="detail-desc">
     <el-descriptions-item label="来源">{{ sourceLabel }}</el-descriptions-item>
     <el-descriptions-item label="入场">{{ entryLabel }}</el-descriptions-item>
@@ -52,14 +57,20 @@ function activeVersion(row: StrategyVersion): boolean {
     <el-descriptions-item label="回测胜率">{{ formatPercent(backtestMetrics?.win_rate) }}</el-descriptions-item>
     <el-descriptions-item label="平均净收益">{{ formatPercent(backtestMetrics?.avg_net_return) }}</el-descriptions-item>
     <el-descriptions-item label="PF">{{ formatProfitFactor(backtestMetrics?.profit_factor) }}</el-descriptions-item>
-    <el-descriptions-item label="回测口径" :span="2">{{ backtestConfigLabel }}</el-descriptions-item>
-    <el-descriptions-item v-if="strategy?.entry_instructions" label="买入说明" :span="2">
-      {{ strategy.entry_instructions }}
+  </el-descriptions>
+
+  <!-- margin-top:-1px：两张表的边框各 1px，叠在一起才是一条线，不是两条 -->
+  <el-descriptions :column="1" border size="small" class="detail-desc detail-desc--prose">
+    <el-descriptions-item label="回测口径">
+      <div class="desc-text mono-text">{{ backtestConfigLabel }}</div>
     </el-descriptions-item>
-    <el-descriptions-item label="说明" :span="2">
-      {{ strategy?.description || '—' }}
+    <el-descriptions-item v-if="strategy?.entry_instructions" label="买入说明">
+      <div class="desc-text">{{ strategy.entry_instructions }}</div>
     </el-descriptions-item>
-    <el-descriptions-item label="所需字段" :span="2">
+    <el-descriptions-item label="说明">
+      <div class="desc-text">{{ strategy?.description || '—' }}</div>
+    </el-descriptions-item>
+    <el-descriptions-item label="所需字段">
       <div v-if="fieldRows.length" class="field-tags">
         <el-tag
           v-for="row in fieldRows"
@@ -111,7 +122,22 @@ function activeVersion(row: StrategyVersion): boolean {
 
 <style scoped>
 .detail-desc { width: 100%; }
-.detail-desc :deep(.el-descriptions__label) { color: var(--mist); width: 5.5rem; }
+/*
+ * 列宽由这里定，不许内容抢。
+ * el-descriptions 默认是 `table-layout: auto`：「回测口径」那段等宽长串的 max-content
+ * 有几千 px，auto 布局按 max-content 分配富余宽度，右列吃干抹净；再叠上
+ * `word-break: break-word`（等价 overflow-wrap: anywhere，会把 min-content 压到一个字），
+ * 左边的「内置」「56.00%」就被挤成一字一行的竖排。
+ * fixed 布局下四列写死：两条 label 各 6.5rem，两条 value 平分剩下的宽度。
+ */
+.detail-desc :deep(.el-descriptions__table) { table-layout: fixed; }
+.detail-desc :deep(.el-descriptions__label) { color: var(--mist); width: 6.5rem; text-align: right; }
+/* 断行只在「一个词真的放不下」时发生：不再逐字断，中文与百分数才不会竖排 */
+.detail-desc :deep(.el-descriptions__content) { min-width: 0; word-break: normal; overflow-wrap: break-word; }
+/* 长文本块紧贴上一张表：两张表各带 1px 边框，-1px 才收成一条线 */
+.detail-desc--prose { margin-top: -1px; }
+.desc-text { line-height: 1.5; font-size: 0.82rem; white-space: pre-wrap; overflow-wrap: break-word; }
+.mono-text { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.76rem; color: var(--ink); }
 .field-tags, .version-row__meta, .version-row__actions { display: flex; flex-wrap: wrap; align-items: center; }
 .field-tags { gap: 0.35rem; }
 .field-key { margin-left: 0.35rem; color: var(--mist); font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.72rem; }

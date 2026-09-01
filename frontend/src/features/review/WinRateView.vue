@@ -6,8 +6,9 @@ import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
+import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import Sheet from '@/shared/components/layout/Sheet.vue'
+import { strategyLabel, strategyShortLabel } from '@/shared/lib/format'
 import {
   sampleBadgeLabel,
   sampleConfidence,
@@ -16,6 +17,10 @@ import {
   winRateText,
 } from '@/shared/lib/winrate'
 import type { WinRateSummary, WinRateTrendPoint } from '@/shared/types/quant'
+
+/** 口径说明只写一份：顶栏 ⓘ 与表内说明共用，避免手抄出两个版本 */
+const CALIBER_HINT =
+  '主表取精选候选 T+5（另列 T+1/T+3），无候选样本时回退手工复盘；盘后「候选T+N跟踪」每日重算 5 个交易日窗口。下方趋势仍按手工复盘的月/周聚合。'
 
 const summary = ref<WinRateSummary[]>([])
 const chartData = ref<WinRateTrendPoint[]>([])
@@ -92,15 +97,15 @@ const overallAvgText = computed(() =>
 )
 
 const summaryColumns: BasicTableColumn[] = [
-  { prop: 'strategy_tag', label: '战法', minWidth: 120, slotName: 'tag' },
-  { prop: 'source', label: '口径', width: 100, slotName: 'source' },
-  { prop: 'total', label: 'T+5样本', align: 'right', width: 100 },
-  { prop: 'wins', label: '盈利次数', align: 'right', width: 100 },
-  { prop: 'win_rate', label: 'T+5胜率', align: 'right', minWidth: 120, slotName: 'winRate' },
-  { prop: 't1', label: 'T+1', align: 'right', minWidth: 90, slotName: 't1' },
-  { prop: 't3', label: 'T+3', align: 'right', minWidth: 90, slotName: 't3' },
-  { prop: 'avg_return', label: 'T+5均收益', align: 'right', minWidth: 110, slotName: 'avgReturn' },
-  { prop: 'last_reviewed', label: '最近样本', minWidth: 120, slotName: 'lastReviewed' },
+  { prop: 'strategy_tag', label: '战法', minWidth: 120, align: 'center', headerAlign: 'center', slotName: 'tag' },
+  { prop: 'source', label: '口径', width: 100, align: 'center', headerAlign: 'center', slotName: 'source' },
+  { prop: 'total', label: 'T+5样本', align: 'center', headerAlign: 'center', width: 100 },
+  { prop: 'wins', label: '盈利次数', align: 'center', headerAlign: 'center', width: 100 },
+  { prop: 'win_rate', label: 'T+5胜率', align: 'center', headerAlign: 'center', minWidth: 120, slotName: 'winRate' },
+  { prop: 't1', label: 'T+1', align: 'center', headerAlign: 'center', minWidth: 90, slotName: 't1' },
+  { prop: 't3', label: 'T+3', align: 'center', headerAlign: 'center', minWidth: 90, slotName: 't3' },
+  { prop: 'avg_return', label: 'T+5均收益', align: 'center', headerAlign: 'center', minWidth: 110, slotName: 'avgReturn' },
+  { prop: 'last_reviewed', label: '最近样本', minWidth: 120, align: 'center', headerAlign: 'center', slotName: 'lastReviewed' },
 ]
 
 const trendColumns = computed<BasicTableColumn[]>(() => {
@@ -109,14 +114,17 @@ const trendColumns = computed<BasicTableColumn[]>(() => {
       prop: 'period',
       label: granularity.value === 'month' ? '月份' : '周',
       width: 120,
+      align: 'center',
+      headerAlign: 'center',
       slotName: 'period',
     },
   ]
   for (const tag of activeTags.value) {
     cols.push({
       prop: tag,
-      label: tag,
-      align: 'right',
+      label: strategyShortLabel(tag),
+      align: 'center',
+      headerAlign: 'center',
       minWidth: 110,
       slotName: `tag_${tag}`,
     })
@@ -206,10 +214,11 @@ onUnmounted(() => {
 
 <template>
   <div class="page-fill">
-  <PageHeader
-    title="胜率统计"
-    note="胜率 = 精选候选 T+5 口径（另列 T+1/T+3），无候选样本时回退手工复盘；样本少于 5 仅供参考"
-  >
+  <!--
+    顶栏只剩「读数 + 操作」：页面标题由侧栏高亮的菜单项交代，正文顶上不再印一遍；
+    口径全文沉进这一枚 ⓘ，不占正文行（任务 3/7）。
+  -->
+  <PageToolbar :note="CALIBER_HINT">
     <template #stats>
       <HeaderStat label="综合胜率" lead :tone="overallWinRateTone">
         {{ winRateText(overallWinRate) }}
@@ -220,12 +229,13 @@ onUnmounted(() => {
     <template #actions>
       <el-button size="small" :disabled="busy" @click="reload">刷新</el-button>
     </template>
-  </PageHeader>
+  </PageToolbar>
 
   <div class="page-scroll">
   <el-alert v-if="error" :title="error" type="error" show-icon closable class="mb" @close="error = ''" />
 
-  <Sheet title="综合胜率（精选候选 T+N · 复盘兜底）" margin>
+  <!-- 标题「综合胜率」删除：下面就是一张胜率表，遮住标题也认得出（任务 7） -->
+  <Sheet margin>
     <BasicTable
       v-if="summary.length"
       :columns="summaryColumns"
@@ -234,7 +244,12 @@ onUnmounted(() => {
       row-key="strategy_tag"
     >
       <template #tag="{ row }">
-        <strong>{{ row.strategy_tag }}</strong>
+        <el-tooltip
+          placement="top"
+          :content="`${strategyLabel(String(row.strategy_tag ?? ''))} · ${row.strategy_tag}`"
+        >
+          <strong>{{ strategyShortLabel(String(row.strategy_tag ?? '')) }}</strong>
+        </el-tooltip>
       </template>
       <template #source="{ row }">
         <span class="dim">{{ row.source === 'candidates' ? '候选T+N' : row.source === 'reviews' ? '手工复盘' : (row.source || '—') }}</span>
@@ -303,7 +318,7 @@ onUnmounted(() => {
         :checked="activeTags.has(tag)"
         @change="() => toggleTag(tag)"
       >
-        {{ tag }}
+        {{ strategyShortLabel(tag) }}
       </el-check-tag>
     </template>
     <BasicTable
@@ -333,11 +348,6 @@ onUnmounted(() => {
     </BasicTable>
     <PageBusy v-else-if="busy" />
     <EmptyState v-else description="无周期明细" :image-size="64" />
-    <p class="form-hint">
-      主表胜率默认来自精选候选的 T+5（另列 T+1/T+3）；无候选样本时回退手工复盘。
-      盘后托管任务「候选T+N跟踪」会每日重算 5 个交易日内窗口。
-      下方趋势仍为手工复盘按月/周聚合。笔数少于 5 时仅供参考。
-    </p>
   </Sheet>
   </div>
   </div>
@@ -348,8 +358,7 @@ onUnmounted(() => {
   width: 7rem;
   flex-shrink: 0;
 }
-
 .mb {
-  margin-bottom: 0.65rem;
+  margin-bottom: var(--gap-2);
 }
 </style>

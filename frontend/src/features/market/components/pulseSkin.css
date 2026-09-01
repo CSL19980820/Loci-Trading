@@ -1,0 +1,207 @@
+/**
+ * 盘面页共用皮肤：卡片、密度表、数字/涨跌类（feature 局部；令牌只消费 var(--token)）。
+ *
+ * 选择器一律 `.pulse-*` 前缀开头：本文件由盘面各子组件 import，是全局注入的，
+ * 前缀是它不污染别的页的唯一保证。行高 28 / 表头 26 / hairline 1px / 无阴影 / 圆角 3。
+ */
+
+.pulse-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg, 10px);
+  box-shadow: var(--shadow);
+  transition: border-color 200ms ease;
+}
+
+.pulse-panel:hover {
+  border-color: var(--rule-strong);
+}
+
+.pulse-panel__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2, 10px);
+  min-height: 36px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sheet-alt);
+}
+
+.pulse-panel__lead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2, 10px);
+  min-width: 0;
+}
+
+.pulse-panel__title {
+  font-family: var(--font);
+  font-size: 14.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+/* 元信息一律 11px 次要色单行：解释性长句进 tooltip，不占版面 */
+.pulse-panel__meta {
+  font-family: var(--mono);
+  font-size: var(--fs-kicker, 11px);
+  color: var(--mist);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.pulse-panel__empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-2, 8px);
+  padding: var(--gap-2, 8px);
+  font-size: var(--fs-aux, 12px);
+  color: var(--mist);
+}
+
+.pulse-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-1, 4px);
+  flex: 0 0 auto;
+}
+
+/* 全局把 .el-button--small 的 min-height 钉到 --ctl-h(28px)，密表里的 link 按钮
+   必须连 min-height 一起压，否则卡片头会被撑到 30px 以上 */
+.pulse-tabs .el-button {
+  height: 18px;
+  min-height: 18px;
+  padding: 0 3px;
+  font-size: var(--fs-kicker, 11px);
+  border-radius: 0;
+}
+
+.pulse-tabs .el-button + .el-button {
+  margin-left: 0;
+}
+
+.pulse-tabs .pulse-tab--on {
+  border-bottom: 1px solid var(--seal);
+}
+
+.pulse-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  --el-table-border-color: var(--rule);
+  --el-table-border: 1px solid var(--rule);
+  --el-table-bg-color: var(--sheet);
+  --el-table-tr-bg-color: var(--sheet);
+  --el-table-header-bg-color: var(--sheet-alt, var(--sheet));
+  --el-table-header-text-color: var(--mist);
+  --el-table-text-color: var(--ink);
+  --el-table-row-hover-bg-color: var(--seal-soft, var(--sheet-alt));
+}
+
+/* EP 的 `.el-table--small td.el-table__cell` 自带 padding，且比单纯 `.pulse-table
+   .el-table__cell` 更特异；这里必须带元素选择器压过去，否则行高会退回 38px */
+.pulse-table td.el-table__cell,
+.pulse-table th.el-table__cell {
+  padding: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* 行高含那条 hairline：内容盒取 row-h - 1，舒适不拥挤 */
+.pulse-table .el-table__row,
+.pulse-table td.el-table__cell {
+  height: calc(var(--row-h, 42px) - 1px);
+}
+
+.pulse-table th.el-table__cell {
+  height: calc(var(--head-h, 38px) - 1px);
+}
+
+.pulse-table .cell {
+  padding: 0 var(--gap-2, 12px);
+  height: calc(var(--row-h, 42px) - 1px);
+  line-height: calc(var(--row-h, 42px) - 1px);
+  font-size: var(--fs-body, 14px);
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.pulse-table th.el-table__cell .cell {
+  height: calc(var(--head-h, 38px) - 1px);
+  line-height: calc(var(--head-h, 38px) - 1px);
+  font-size: var(--fs-aux, 13px);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.pulse-table .el-table__row--striped td.el-table__cell {
+  background: var(--sheet-alt, var(--sheet));
+}
+
+.pulse-table .el-table__inner-wrapper::before {
+  background: var(--rule);
+}
+
+/* 数字列：等宽 + tabular-nums（对齐靠列或全局规则） */
+.pulse-num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.pulse-up {
+  color: var(--up);
+}
+
+.pulse-down {
+  color: var(--down);
+}
+
+.pulse-flat {
+  color: var(--flat, var(--muted));
+}
+
+.pulse-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pulse-name .el-link,
+.pulse-name .stock-link {
+  color: inherit;
+}
+
+.pulse-code {
+  font-family: var(--mono);
+  font-size: var(--fs-kicker, 11px);
+  color: var(--mist);
+}
+
+.pulse-dim {
+  color: var(--mist);
+}
+
+.pulse-clip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}

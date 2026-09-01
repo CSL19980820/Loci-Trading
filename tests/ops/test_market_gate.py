@@ -296,15 +296,19 @@ class TailScreenProtectTests(unittest.TestCase):
         )
 
         tz = ZoneInfo("Asia/Shanghai")
+
         at_1450 = datetime(2026, 8, 17, 14, 50, tzinfo=tz)
-        at_1430 = datetime(2026, 8, 17, 14, 30, tzinfo=tz)
+        at_1435 = datetime(2026, 8, 17, 14, 35, tzinfo=tz)
+        at_1420 = datetime(2026, 8, 17, 14, 20, tzinfo=tz)
         at_1525 = datetime(2026, 8, 17, 15, 25, tzinfo=tz)
         self.assertTrue(in_tail_screen_protect_window(at_1450))
-        self.assertFalse(in_tail_screen_protect_window(at_1430))
+        self.assertTrue(in_tail_screen_protect_window(at_1435))
+        self.assertFalse(in_tail_screen_protect_window(at_1420))
         self.assertFalse(in_tail_screen_protect_window(at_1525))
         job = {"kind": "sync", "config": {"mode": "full"}}
         self.assertIsNotNone(skip_reason_for_intraday_sync("sync", job, now=at_1450))
-        self.assertIsNone(skip_reason_for_intraday_sync("sync", job, now=at_1430))
+        self.assertIsNotNone(skip_reason_for_intraday_sync("sync", job, now=at_1435))
+        self.assertIsNone(skip_reason_for_intraday_sync("sync", job, now=at_1420))
         eod = {"kind": "sync", "config": {"mode": "today_refresh"}}
         self.assertIsNone(skip_reason_for_intraday_sync("sync", eod, now=at_1450))
 

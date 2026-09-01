@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -17,15 +17,30 @@ import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { MarketCoverage, Skill, StrategyInfo } from '@/shared/types/quant'
-import DataSourcePanel from '@/features/datasource/DataSourcePanel.vue'
-import MarketPanel from '@/features/marketplace/components/MarketPanel.vue'
-import JobsTab from '@/features/ops/components/JobsTab.vue'
-
-import QuantBacktestPanel from './components/QuantBacktestPanel.vue'
-import QuantSkillsPanel from './components/QuantSkillsPanel.vue'
+import ScreenSkillBundleImportDialog from './components/ScreenSkillBundleImportDialog.vue'
 import QuantStrategiesPanel from './components/QuantStrategiesPanel.vue'
-import ResearchPanel from '@/features/research/ResearchPanel.vue'
-import PaperQuantPanel from '@/features/ops/components/PaperQuantPanel.vue'
+
+/**
+ * 八个 Tab 里只有「战法」是落地就要看的，其余七块面板各自 onMounted 就拉数
+ * （数据源目录、定时任务、货架、纸面舱…）。静态 import 会把它们全塞进 /quant
+ * 这一个分片，进工坊先解析一堆本次会话根本不会点开的代码；配合下面的
+ * mountedTabs 门闩，现在是「点进去才下载、才挂载」（frontend/AGENTS.md §1.2 第 3 条）。
+ */
+const DataSourcePanel = defineAsyncComponent(
+  () => import('@/features/datasource/DataSourcePanel.vue'),
+)
+const MarketPanel = defineAsyncComponent(
+  () => import('@/features/marketplace/components/MarketPanel.vue'),
+)
+const JobsTab = defineAsyncComponent(() => import('@/features/ops/components/JobsTab.vue'))
+const PaperQuantPanel = defineAsyncComponent(
+  () => import('@/features/ops/components/PaperQuantPanel.vue'),
+)
+const ResearchPanel = defineAsyncComponent(() => import('@/features/research/ResearchPanel.vue'))
+const QuantBacktestPanel = defineAsyncComponent(
+  () => import('./components/QuantBacktestPanel.vue'),
+)
+const QuantSkillsPanel = defineAsyncComponent(() => import('./components/QuantSkillsPanel.vue'))
 
 type WorkshopTab =
   | 'engines'
@@ -57,6 +72,14 @@ function parseTab(raw: unknown): WorkshopTab {
 }
 
 const activeTab = ref<WorkshopTab>(parseTab(route.query.tab))
+/**
+ * 「进过才挂、挂上就留」。工坊过去把 6 块 v-show 面板一次性挂满：首帧要建 6 份
+ * DOM，它们各自的 onMounted 还同时打十来个请求，落地 /quant 明显卡一下，而用户
+ * 当次通常只看一个 Tab。这里只记「哪些 Tab 进过」——进过的仍旧 v-show 常挂，
+ * 保住切 Tab 不丢状态（滚动位置、填一半的表单、跑完的回测结果）。
+ * 技能与研究台不在此列：它们带轮询，离开必须整块卸掉，模板里照旧 v-if。
+ */
+const mountedTabs = reactive(new Set<WorkshopTab>([activeTab.value]))
 /** 运维旧链接会带 view=interfaces 直落「按接口」 */
 const sourceView = computed(() => String(route.query.view || ''))
 /** 选股/行情等入口可通过 query 直接打开对应研究标的 */
@@ -82,9 +105,13 @@ const busy = ref(false)
 const syncBusy = ref(false)
 const unavailable = ref('')
 const jobsTab = ref<{ load: () => Promise<void> } | null>(null)
+/** 工坊的粘贴入口：别人导出的克隆包（JSON）在这里落地成本地战法。 */
+const bundleImportOpen = ref(false)
 
 const needsBootstrap = computed(() =>
-  /行情仓是空的|没有可同步的标的|数据体检未通过|empty_store|请先刷新证券列表/i.test(unavailable.value),
+  /行情仓是空的|没有可同步的标的|数据体检未通过|empty_store|请先刷新证券列表/i.test(
+    unavailable.value,
+  ),
 )
 
 watch(
@@ -95,10 +122,14 @@ watch(
 )
 
 watch(activeTab, (tab) => {
+  const revisit = mountedTabs.has(tab)
+  mountedTabs.add(tab)
   const next = tab === 'engines' ? undefined : tab
-  if (parseTab(route.query.tab) === tab) return
-  void router.replace({ query: { ...route.query, tab: next } })
-  if (tab === 'jobs') void jobsTab.value?.load()
+  if (parseTab(route.query.tab) !== tab) {
+    void router.replace({ query: { ...route.query, tab: next } })
+  }
+  // 首次进入那次是 JobsTab 自己的 onMounted 在拉，别再补第二枪
+  if (tab === 'jobs' && revisit) void jobsTab.value?.load()
 })
 
 async function guard<T>(task: () => Promise<T>): Promise<T | null> {
@@ -164,6 +195,15 @@ async function uninstallSkill(skill: Skill): Promise<void> {
   }
 }
 
+/**
+ * 克隆包导入成功后刷新战法列表，并确保停在「战法」Tab——
+ * 新建出来的东西必须当场看得见，否则用户不知道到底成没成。
+ */
+function onBundleImported(): void {
+  activeTab.value = 'engines'
+  void reload()
+}
+
 async function bootstrapMarket(): Promise<void> {
   syncBusy.value = true
   unavailable.value = ''
@@ -194,7 +234,10 @@ onMounted(() => {
 
 <template>
   <div class="page-fill">
-    <PageBusy overlay :busy="activeTab !== 'research' && busy && !coverage && !strategies.length && !skills.length" />
+    <PageBusy
+      overlay
+      :busy="activeTab !== 'research' && busy && !coverage && !strategies.length && !skills.length"
+    />
     <el-alert
       v-if="unavailable"
       :title="unavailable"
@@ -204,9 +247,11 @@ onMounted(() => {
       class="mb"
       @close="unavailable = ''"
     >
+      <!-- alert 里只留能点的东西：那句「先同步行情」按钮自己就说完了（AGENTS.md 禁常驻说明） -->
       <template v-if="needsBootstrap" #default>
-        <p class="hint">行情仓为空或过期时选股会被拒绝。先同步行情。</p>
-        <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket">同步行情</el-button>
+        <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket"
+          >同步行情</el-button
+        >
       </template>
     </el-alert>
 
@@ -218,17 +263,25 @@ onMounted(() => {
       class="mb"
       title="行情仓为空：选股会失败"
     >
-      <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket">同步行情</el-button>
+      <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket"
+        >同步行情</el-button
+      >
     </el-alert>
 
     <PageTabs v-model="activeTab" :items="workshopTabs" aria-label="工坊分区" />
 
     <div class="page-scroll workshop-scroll">
-      <div v-show="activeTab === 'engines'" class="page-pane">
+      <!-- v-if 只管「进过没」，v-show 才是当前 Tab：见 mountedTabs 的注释 -->
+      <div
+        v-if="mountedTabs.has('engines')"
+        v-show="activeTab === 'engines'"
+        class="page-pane"
+      >
         <QuantStrategiesPanel
           :strategies="strategies"
           :loading="busy && !strategies.length"
           @open-screen="goScreen('engine', $event)"
+          @import-bundle="bundleImportOpen = true"
         />
       </div>
 
@@ -243,14 +296,22 @@ onMounted(() => {
         />
       </div>
 
-      <div v-show="activeTab === 'sources'" class="page-pane sources-pane">
+      <div
+        v-if="mountedTabs.has('sources')"
+        v-show="activeTab === 'sources'"
+        class="page-pane sources-pane"
+      >
         <DataSourcePanel
           :initial-view="sourceView"
           @count-changed="(count) => (sourceCount = count)"
         />
       </div>
 
-      <div v-show="activeTab === 'jobs'" class="page-pane jobs-pane">
+      <div
+        v-if="mountedTabs.has('jobs')"
+        v-show="activeTab === 'jobs'"
+        class="page-pane jobs-pane"
+      >
         <JobsTab
           ref="jobsTab"
           @enable-recommended-sync="goRecommendedSync"
@@ -258,15 +319,20 @@ onMounted(() => {
         />
       </div>
 
-      <div v-show="activeTab === 'market'" class="page-pane market-pane">
+      <div
+        v-if="mountedTabs.has('market')"
+        v-show="activeTab === 'market'"
+        class="page-pane market-pane"
+      >
         <MarketPanel embedded @catalog-changed="reload" />
       </div>
 
-      <div v-show="activeTab === 'backtest'" class="page-pane backtest-pane">
-        <QuantBacktestPanel
-          :strategies="strategies"
-          :loading="busy && !strategies.length"
-        />
+      <div
+        v-if="mountedTabs.has('backtest')"
+        v-show="activeTab === 'backtest'"
+        class="page-pane backtest-pane"
+      >
+        <QuantBacktestPanel :strategies="strategies" :loading="busy && !strategies.length" />
       </div>
 
       <!-- 研究台有 job 轮询：v-if 离开 Tab 才停；勿用 v-show 常挂 -->
@@ -274,10 +340,17 @@ onMounted(() => {
         <ResearchPanel :initial-code="researchCode" />
       </div>
 
-      <div v-show="activeTab === 'paper'" class="page-pane paper-pane">
+      <div
+        v-if="mountedTabs.has('paper')"
+        v-show="activeTab === 'paper'"
+        class="page-pane paper-pane"
+      >
         <PaperQuantPanel />
       </div>
     </div>
+
+    <!-- 粘贴模式：没有 bundle prop，用户自己贴克隆时复制的 JSON -->
+    <ScreenSkillBundleImportDialog v-model="bundleImportOpen" paste @imported="onBundleImported" />
   </div>
 </template>
 
@@ -285,11 +358,7 @@ onMounted(() => {
 .mb {
   margin-bottom: 0.65rem;
 }
-.hint {
-  margin: 0.35rem 0 0.65rem;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
+
 .workshop-scroll {
   padding-bottom: 0;
   position: relative;

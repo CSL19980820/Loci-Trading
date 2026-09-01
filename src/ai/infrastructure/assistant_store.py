@@ -1,20 +1,36 @@
-"""AI 会话在 ops.db 的可清理持久化。"""
+"""AI 会话在 ops.db 的可清理持久化。
+
+实现拆分（同目录，沿用同一套 `assistant_store_*` 命名）：
+- `assistant_store_util` — 脱敏 / JSON / 哈希 / 时钟等共享小工具
+- `assistant_store_schema` — 六张表的建表 DDL 常量
+- `assistant_store_lifecycle` — run 生命周期 mixin（取消 / HITL 等待 / 中断恢复 / 收口）
+- `assistant_store_profile` — 画像与双仓记忆 mixin（含自己的 schema 补建）
+- `assistant_store_grants` — ExecutionGrant mixin（签发 / 消费 / 收口）
+
+本文件是门面：连接与事务，以及会话 / 消息 / run / 事件 / 用量的直接读写。
+"""
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 import sqlite3
 from typing import Any, Iterator
 from uuid import uuid4
 
 from src.ai.domain.assistant import AssistantError
+from src.ai.infrastructure.assistant_store_grants import AssistantStoreGrantsMixin
 from src.ai.infrastructure.assistant_store_lifecycle import AssistantStoreLifecycleMixin
 from src.ai.infrastructure.assistant_store_profile import AssistantStoreProfileMixin
+from src.ai.infrastructure.assistant_store_schema import ASSISTANT_SCHEMA_DDL
 from src.ai.infrastructure.assistant_store_util import _dump, _hash, _load, _now, redact
 
 
-class AssistantStore(AssistantStoreLifecycleMixin, AssistantStoreProfileMixin):
+class AssistantStore(
+    AssistantStoreGrantsMixin,
+    AssistantStoreLifecycleMixin,
+    AssistantStoreProfileMixin,
+):
     """会话、消息、运行事件、画像记忆及用量。每个线程使用自己的 Store 实例。"""
 
     def __init__(self, db_path: str | Path | None) -> None:
@@ -53,55 +69,7 @@ class AssistantStore(AssistantStoreLifecycleMixin, AssistantStoreProfileMixin):
 
     def _init_schema(self) -> None:
         with self.conn:
-            self.conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS ai_sessions (
-                    id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
-                    status TEXT NOT NULL DEFAULT 'idle', provider TEXT NOT NULL DEFAULT '',
-                    model TEXT NOT NULL DEFAULT '', metadata_json TEXT NOT NULL DEFAULT '{}',
-                    last_error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_ai_sessions_updated ON ai_sessions(updated_at DESC);
-                CREATE TABLE IF NOT EXISTS ai_messages (
-                    id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
-                    seq INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
-                    metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
-                    UNIQUE(session_id, seq)
-                );
-                CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, seq);
-                CREATE TABLE IF NOT EXISTS ai_agent_runs (
-                    id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
-                    status TEXT NOT NULL, provider TEXT NOT NULL DEFAULT '', model TEXT NOT NULL DEFAULT '',
-                    cancel_requested INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0,
-                    output_tokens INTEGER NOT NULL DEFAULT 0, error_text TEXT NOT NULL DEFAULT '',
-                    result_json TEXT NOT NULL DEFAULT '{}', user_message_hash TEXT NOT NULL DEFAULT '',
-                    started_at TEXT NOT NULL, finished_at TEXT NOT NULL DEFAULT ''
-                );
-                CREATE INDEX IF NOT EXISTS idx_ai_agent_runs_session ON ai_agent_runs(session_id, started_at DESC);
-                CREATE TABLE IF NOT EXISTS ai_agent_events (
-                    id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES ai_agent_runs(id) ON DELETE CASCADE,
-                    seq INTEGER NOT NULL, event_type TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL, UNIQUE(run_id, seq)
-                );
-                CREATE INDEX IF NOT EXISTS idx_ai_agent_events_run ON ai_agent_events(run_id, seq);
-                CREATE TABLE IF NOT EXISTS ai_usage_daily (
-                    day TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
-                    input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
-                    calls INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(day, provider, model)
-                );
-                CREATE TABLE IF NOT EXISTS ai_execution_grants (
-                    id TEXT PRIMARY KEY, session_id TEXT NOT NULL, run_id TEXT NOT NULL,
-                    message_hash TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL,
-                    params_hash TEXT NOT NULL, params_redacted_json TEXT NOT NULL DEFAULT '{}',
-                    idempotency_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL,
-                    expires_at TEXT NOT NULL, result_json TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL, consumed_at TEXT NOT NULL DEFAULT ''
-                );
-                CREATE INDEX IF NOT EXISTS idx_ai_grants_run ON ai_execution_grants(run_id, status);
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_grants_identity
-                    ON ai_execution_grants(run_id, action, target, params_hash);
-                """
-            )
+            self.conn.executescript(ASSISTANT_SCHEMA_DDL)
             self._ensure_profile_schema(self.conn)
 
     def create_session(
@@ -472,78 +440,6 @@ class AssistantStore(AssistantStoreLifecycleMixin, AssistantStoreProfileMixin):
             (start.isoformat(), end.isoformat()),
         ).fetchone()
         return int(row["total"] if row else 0)
-
-    def issue_grant(
-        self, *, session_id: str, run_id: str, user_message: str, action: str, target: str,
-        parameters: dict[str, Any], ttl_seconds: int = 120,
-    ) -> dict[str, Any]:
-        """签发只绑定本轮的短期 grant；实际参数仅存哈希和脱敏副本。"""
-        if not 1 <= ttl_seconds <= 300:
-            raise AssistantError("ExecutionGrant TTL 必须在 1-300 秒之间")
-        run = self.get_run(run_id)
-        if run is None or run["session_id"] != session_id or run["status"] != "running":
-            raise AssistantError("ExecutionGrant 绑定的运行无效")
-        message_hash = _hash(user_message)
-        if run["user_message_hash"] != message_hash:
-            raise AssistantError("ExecutionGrant 原始用户消息不匹配")
-        now = datetime.now(timezone.utc)
-        expires = now.timestamp() + ttl_seconds
-        grant_id = f"AIG-{uuid4().hex[:16].upper()}"
-        key = _hash({"grant": grant_id, "run": run_id, "action": action, "params": parameters})
-        with self._tx() as cur:
-            existing = cur.execute(
-                "SELECT id, idempotency_key, expires_at, status FROM ai_execution_grants"
-                " WHERE run_id=? AND action=? AND target=? AND params_hash=?",
-                (run_id, action, target, _hash(parameters)),
-            ).fetchone()
-            if existing is not None:
-                if str(existing["status"]) == "issued" and str(existing["expires_at"]) > _now():
-                    return {"id": str(existing["id"]), "idempotency_key": str(existing["idempotency_key"]), "expires_at": str(existing["expires_at"])}
-                raise AssistantError("相同动作已签发或执行，拒绝重复写入")
-            cur.execute(
-                "INSERT INTO ai_execution_grants(id,session_id,run_id,message_hash,action,target,params_hash,"
-                "params_redacted_json,idempotency_key,status,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?, 'issued',?,?)",
-                (grant_id, session_id, run_id, message_hash, action, target, _hash(parameters),
-                 _dump(redact(parameters)), key, datetime.fromtimestamp(expires, timezone.utc).isoformat(timespec="seconds"), _now()),
-            )
-        return {"id": grant_id, "idempotency_key": key, "expires_at": datetime.fromtimestamp(expires, timezone.utc).isoformat(timespec="seconds")}
-
-    def consume_grant(
-        self, *, grant_id: str, session_id: str, run_id: str, user_message: str,
-        action: str, target: str, parameters: dict[str, Any],
-    ) -> str:
-        """原子地消费 grant，任何绑定不一致或重放均拒绝。"""
-        with self._tx() as cur:
-            row = cur.execute("SELECT * FROM ai_execution_grants WHERE id = ?", (grant_id,)).fetchone()
-            if row is None:
-                raise AssistantError("ExecutionGrant 不存在")
-            run = cur.execute("SELECT cancel_requested FROM ai_agent_runs WHERE id = ?", (run_id,)).fetchone()
-            valid = (
-                run is not None and not bool(run["cancel_requested"]) and
-                str(row["status"]) == "issued"
-                and str(row["session_id"]) == session_id
-                and str(row["run_id"]) == run_id
-                and str(row["message_hash"]) == _hash(user_message)
-                and str(row["action"]) == action
-                and str(row["target"]) == target
-                and str(row["params_hash"]) == _hash(parameters)
-                and str(row["expires_at"]) > _now()
-            )
-            if not valid:
-                raise AssistantError("ExecutionGrant 缺失、过期、已使用或与本会话参数不匹配")
-            cur.execute("UPDATE ai_execution_grants SET status='consumed', consumed_at=? WHERE id=?", (_now(), grant_id))
-            return str(row["idempotency_key"])
-
-    def complete_grant(
-        self, grant_id: str, result: dict[str, Any], *, status: str = "completed",
-    ) -> None:
-        if status not in {"completed", "failed", "interrupted"}:
-            raise AssistantError("ExecutionGrant 结束状态无效")
-        with self._tx() as cur:
-            cur.execute(
-                "UPDATE ai_execution_grants SET status=?, result_json=? WHERE id=? AND status='consumed'",
-                (status, _dump(redact(result)), grant_id),
-            )
 
     @staticmethod
     def _ensure_session_startable(session: sqlite3.Row | None) -> None:

@@ -194,25 +194,35 @@ onUnmounted(() => {
           >
             刷新工具
           </el-button>
-          <el-button
-            size="small"
-            :loading="probingServer"
-            @click="probeServer"
-          >
-            测连通
-          </el-button>
+          <!-- 「只验握手、不执行工具」原来是正文里的一段常驻说明，挪到它解释的那颗按钮上 -->
+          <el-tooltip placement="bottom-end" content="只验握手与工具发现，不执行工具">
+            <el-button
+              size="small"
+              :loading="probingServer"
+              @click="probeServer"
+            >
+              测连通
+            </el-button>
+          </el-tooltip>
         </div>
       </div>
     </template>
 
     <div class="mcp-tools-body">
       <template v-if="isBuiltin">
-        <p class="mcp-detail-note">
-          内置行情能力目录：线路工具为 Loci 已支持的全部入口（无源时标「线路停用」）；AkShare
-          为已在数据源「按接口」上桌的接口。测连通只验证服务握手和工具发现，不执行工具。
-        </p>
         <section class="mcp-detail-group">
-          <h4>线路工具 <b>{{ laneTools.length }}</b></h4>
+          <!-- 两组同屏并列，标题必须留；压成一行：标题 + 计数 chip，解释进 tooltip -->
+          <header class="mcp-detail-group__head">
+            <el-tooltip
+              placement="bottom-start"
+              content="Loci 已支持的全部入口；无源的标「线路停用」"
+            >
+              <h4>线路工具</h4>
+            </el-tooltip>
+            <el-tag size="small" type="info" effect="plain" class="group-count">
+              {{ laneTools.length }}
+            </el-tag>
+          </header>
           <el-table
             v-if="laneTools.length"
             :data="laneTools"
@@ -247,7 +257,14 @@ onUnmounted(() => {
           />
         </section>
         <section class="mcp-detail-group">
-          <h4>AkShare 接口 <b>{{ akshareTools.length }}</b></h4>
+          <header class="mcp-detail-group__head">
+            <el-tooltip placement="bottom-start" content="数据源里已上桌的 AkShare 接口">
+              <h4>AkShare 接口</h4>
+            </el-tooltip>
+            <el-tag size="small" type="info" effect="plain" class="group-count">
+              {{ akshareTools.length }}
+            </el-tag>
+          </header>
           <el-table
             v-if="akshareTools.length"
             :data="akshareTools"
@@ -329,13 +346,6 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-.mcp-detail-note {
-  margin: 0 0 0.75rem;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
 .mcp-detail-group {
   margin-bottom: 1rem;
 }
@@ -344,18 +354,23 @@ onUnmounted(() => {
   margin-bottom: 0;
 }
 
+/* 组标题恒为一行：标题 + 计数 chip */
+.mcp-detail-group__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.45rem;
+}
+
 .mcp-detail-group h4 {
-  margin: 0 0 0.45rem;
+  margin: 0;
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--ink);
 }
 
-.mcp-detail-group h4 b {
-  margin-left: 0.25rem;
+.group-count {
   font-family: var(--mono);
-  font-weight: 500;
-  color: var(--mist);
 }
 
 .desc,

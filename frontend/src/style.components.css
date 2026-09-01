@@ -1,9 +1,14 @@
-/* Sheet — unified panel (replaces .panel / heavy el-card look) */
+/*
+ * 组件层：Sheet（去卡片化的区块壳）、表格皮肤、表单默认、legacy 原子类。
+ * 主题（data-appearance × data-primary）统一在 style.theme.css，本文件不写任何配色副本。
+ */
+
+/* —— Sheet：区块壳。无阴影、1px hairline、圆角 3px（D3） —— */
 .sheet,
 .panel {
-  border: 1px solid var(--rule);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  background: var(--sheet);
+  background: var(--surface);
   box-shadow: none;
   overflow: hidden;
 }
@@ -19,10 +24,11 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.72rem 1rem;
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet);
+  gap: var(--gap-2);
+  min-height: var(--head-h);
+  padding: var(--gap-1) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
 }
 
 .sheet-bar h2,
@@ -30,42 +36,66 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--gap-2);
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--fs-title);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+/* 区块标题右侧的口径/时间戳：12px 弱色等宽，永远不抢标题 */
+.sheet-bar .sheet-meta,
+.panel-bar .sheet-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
 }
 
 .sheet-actions .el-button {
-  --el-button-size: 28px;
-  font-size: 0.82rem;
+  --el-button-size: var(--ctl-h);
+  font-size: var(--fs-aux);
 }
 
 .sheet-body {
-  padding: 0.75rem 1rem;
+  padding: var(--pad-sheet);
+}
+
+/*
+ * 表格贴 sheet 边：表格自己有行分隔线与表头底色，再叠一圈 12px 纸边会读成「卡中卡」。
+ * 只在表格是 sheet-body 唯一子节点时反推，避免把带说明文字的混排也拽出去。
+ */
+.sheet-body > .el-table:only-child,
+.sheet-body > .basic-table:only-child,
+.sheet-body > .table-wrap:only-child {
+  width: auto;
+  margin: calc(var(--pad-sheet-y) * -1) calc(var(--pad-sheet-x) * -1);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  padding: 0.1rem 0.45rem;
-  border-radius: 4px;
+  padding: 0 var(--gap-1);
+  border-radius: var(--radius);
   background: var(--seal-soft);
   color: var(--seal-ink);
-  font: 600 0.78rem var(--mono);
+  font: 600 var(--fs-aux) / 1.5 var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .muted-chip {
-  background: #e8edf3;
-  color: var(--mist);
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
   font-weight: 500;
 }
 
-/* 胜率样本诚实展示 */
+/* 胜率样本诚实展示：高/低只是价格语义的延伸（胜率是收益方向），沿用涨跌色 */
 .wr-muted {
-  color: var(--mist);
+  color: var(--text-tertiary);
   font-weight: 600;
 }
 
@@ -74,7 +104,7 @@
 }
 
 .wr-mid {
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .wr-low {
@@ -84,113 +114,359 @@
 .sample-badge {
   display: inline-flex;
   align-items: center;
-  margin-left: 0.3rem;
-  padding: 0.05rem 0.35rem;
-  border-radius: 4px;
-  font-size: 0.68rem;
+  margin-left: var(--gap-1);
+  padding: 0 var(--gap-1);
+  border-radius: var(--radius);
+  font-size: var(--fs-kicker);
   font-weight: 500;
-  line-height: 1.3;
+  line-height: 1.4;
   white-space: nowrap;
 }
 
 .sample-badge-low {
-  background: #eef2f6;
-  color: var(--mist);
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
 }
 
 .sample-badge-medium {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 
 .default-tag {
-  margin-left: 0.35rem;
-  font-size: 0.72rem;
+  margin-left: var(--gap-1);
+  font-size: var(--fs-aux);
 }
 
 .chart-box {
-  padding: 0.75rem 1rem 0.9rem;
+  padding: var(--pad-sheet);
   min-height: 5rem;
 }
 
 .chart-box.compact-chart {
   min-height: 4rem;
-  padding-top: 0.55rem;
-  padding-bottom: 0.55rem;
+  padding-top: var(--gap-1);
+  padding-bottom: var(--gap-1);
 }
 
 .chart-box.mb,
 .panel.mb,
 .sheet.mb {
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--gap-2);
 }
 
 .quiet-bar {
   background: transparent;
-  padding-top: 0.55rem;
-  padding-bottom: 0.55rem;
+  padding-top: var(--gap-1);
+  padding-bottom: var(--gap-1);
 }
 
 .quiet-bar h2 {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--muted);
+  font-size: var(--fs-title);
+  font-weight: 700;
+  color: var(--text-secondary);
 }
 
-/* Legacy button aliases → match EP hierarchy until pages fully migrate */
-.primary-button,
-.quiet-button,
-.icon-button {
-  border: 0;
+/* —— Element Plus 控件与表单输入：高度钉到 --ctl-h，边框与焦点光晕优雅统一 —— */
+.el-button,
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.el-input-number,
+.el-date-editor {
   border-radius: var(--radius);
-  transition: transform 80ms ease, background 80ms ease;
+  transition:
+    border-color var(--dur-fast, 0.15s) ease,
+    box-shadow var(--dur-fast, 0.15s) ease,
+    background-color var(--dur-fast, 0.15s) ease;
 }
 
-.primary-button:active,
-.quiet-button:active {
-  transform: scale(0.98);
+/* 基础状态边框与背景，去重高亮与突兀死黑/突兀朱红 */
+.el-input__wrapper,
+.el-select__wrapper {
+  background-color: var(--surface-sunken);
+  box-shadow: 0 0 0 1px var(--border-default) inset;
 }
 
-.primary-button {
-  padding: 0.5rem 0.95rem;
-  background: var(--seal);
-  color: #fff;
-  font-size: 0.9rem;
-  font-weight: 650;
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--seal) 45%, var(--border-default)) inset;
 }
 
-.primary-button:hover {
-  background: var(--seal-ink);
+/* 聚焦/激活状态：细腻的微内描边 + 柔和品牌光晕，禁止生硬突兀的外挂粗红框 */
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-select__wrapper.is-focus,
+.el-select.is-focus .el-select__wrapper {
+  outline: none !important;
+  box-shadow:
+    0 0 0 1.5px var(--focus-ring) inset,
+    0 0 0 3px var(--focus-halo) !important;
 }
 
-.quiet-button {
-  padding: 0.45rem 0.8rem;
-  border: 1px solid var(--line-2);
-  background: var(--sheet);
-  color: var(--muted);
-  font-size: 0.88rem;
+.el-button--small,
+.el-input--small .el-input__wrapper,
+.el-select--small .el-select__wrapper,
+.el-input-number--small,
+.el-date-editor--small {
+  --el-input-height: var(--ctl-h);
+  min-height: var(--ctl-h);
+  font-size: var(--fs-body);
 }
 
-.quiet-button:hover {
-  color: var(--ink);
-  border-color: var(--mist);
+.el-button--small {
+  height: var(--ctl-h);
+  padding: 0 var(--gap-3);
 }
 
-.text-link {
-  color: var(--seal-ink);
-  font-size: 0.88rem;
+/* 下拉弹层菜单（el-select-dropdown / popper）：背景、圆角、阴影、选项 hover 与 active 状态调优 */
+.el-select-dropdown {
+  border-radius: calc(var(--radius) + 2px);
+  background: var(--surface-raised) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--shadow) !important;
+}
+
+.el-select-dropdown .el-select-dropdown__item {
+  font-size: var(--fs-body);
+  height: var(--ctl-h);
+  line-height: var(--ctl-h);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  margin: 1px var(--gap-1);
+  padding: 0 var(--gap-2);
+}
+
+.el-select-dropdown .el-select-dropdown__item.is-hovering {
+  background-color: var(--surface-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.el-select-dropdown .el-select-dropdown__item.is-selected {
+  color: var(--seal) !important;
   font-weight: 600;
-  text-decoration: none;
+  background-color: var(--seal-soft) !important;
 }
 
-.text-link:hover,
-.stock-link:hover,
-a:hover {
-  text-decoration: none;
-  opacity: 0.9;
+.el-select-dropdown .el-select-dropdown__item.is-selected.is-hovering {
+  background-color: color-mix(in oklab, var(--seal-soft) 80%, var(--surface-hover)) !important;
 }
 
-/* 主题（data-appearance × data-primary）统一定义在 style.theme.css，此处不再重复 */
+.el-tag--small {
+  height: var(--row-h-sm);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* alert 只报当前真实异常：单行标题，不给 description 留视觉重量（见 docs/ui-spec.md 文案规范） */
+.el-alert {
+  padding: var(--gap-1) var(--gap-2);
+  border-radius: var(--radius);
+}
+
+.el-alert__title {
+  font-size: var(--fs-body);
+  line-height: 1.4;
+}
+
+.el-alert__description {
+  margin: 0;
+  font-size: var(--fs-aux);
+  line-height: 1.4;
+}
+
+/*
+ * 存量 el-empty 收敛（新代码用 shared/components/ui/EmptyState.vue）：
+ * 插图尺寸是 :image-size 写进内联 style 的，只能用 !important 压掉；
+ * 一块空态不该比它要解释的那张表还高。
+ */
+.el-empty {
+  padding: var(--gap-3) var(--gap-2);
+}
+
+.el-empty__image {
+  width: 40px !important;
+  opacity: 0.5;
+}
+
+.el-empty__description {
+  margin-top: var(--gap-1);
+}
+
+.el-empty__description p {
+  font-size: var(--fs-body);
+  line-height: 1.4;
+  color: var(--text-tertiary);
+}
+
+.el-empty__bottom {
+  margin-top: var(--gap-2);
+}
+
+/* —— 表单对齐：label 右对齐 + 定宽，form-item 间距 8px —— */
+.el-form {
+  --el-form-label-font-size: var(--fs-body);
+}
+
+.el-form .el-form-item {
+  margin-bottom: var(--gap-2);
+}
+
+/*
+ * label 定宽只作用于「没显式设 label-width」的表单：EP 设了 label-width 会写内联
+ * style="width:..."，内联优先级更高，页面自定义仍生效。label-position=top / inline 不套。
+ */
+.el-form:not(.el-form--label-top):not(.el-form--inline) .el-form-item__label {
+  width: var(--form-label-w);
+  justify-content: flex-end;
+  padding-right: var(--gap-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+  line-height: var(--ctl-h);
+}
+
+.el-form-item__content {
+  line-height: var(--ctl-h);
+  font-size: var(--fs-body);
+}
+
+.el-form-item__error {
+  padding-top: 1px;
+  font-size: var(--fs-kicker);
+  color: var(--stamp);
+}
+
+/* 两/三列自适应表单：列宽 260px 起，label 宽度全表一致，换行不错位 */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0 var(--gap-3);
+  align-items: start;
+}
+
+.form-grid .full-span,
+.form-grid .full-row {
+  grid-column: 1 / -1;
+}
+
+.form-grid .full {
+  width: 100%;
+}
+
+/* —— 表格皮肤：el-table / BasicTable / 存量 table.dense 共用一套密度 —— */
+.el-table {
+  --el-table-border-color: var(--border-subtle);
+  --el-table-bg-color: var(--surface);
+  --el-table-tr-bg-color: var(--surface);
+  --el-table-header-bg-color: var(--surface-sunken);
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-text-color: var(--text-primary);
+  /* 行 hover 用中性层（表格滑过去不该整行刷成品牌色），选中行才用主色浅底 */
+  --el-table-row-hover-bg-color: var(--surface-hover);
+  --el-table-current-row-bg-color: var(--seal-soft);
+  --el-table-fixed-box-shadow: none;
+  font-size: var(--fs-body);
+  box-shadow: none;
+}
+
+.el-table th.el-table__cell {
+  height: var(--head-h);
+  padding: 0;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.el-table td.el-table__cell {
+  height: var(--row-h);
+  padding: var(--gap-1) 0;
+  text-align: center;
+}
+
+.el-table th.el-table__cell {
+  height: var(--head-h);
+  padding: 0;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/*
+ * 斑马纹：条纹取画布档（比面板深一点点），表头取下沉档（更深）——
+ * 三档表面拉开，长表格扫行时不用靠边框找位置。只改颜色，不动行高。
+ */
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: var(--surface-canvas);
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped:hover td.el-table__cell {
+  background: var(--surface-hover);
+}
+
+.el-table .cell {
+  padding-left: var(--gap-2);
+  padding-right: var(--gap-2);
+  line-height: 1.35;
+  word-break: normal;
+  text-align: center;
+}
+
+.el-table th.el-table__cell .cell {
+  text-align: center;
+}
+
+/* 只有明确为 left 或 right 时允许覆盖全局默认居中 */
+.el-table td.is-left .cell,
+.el-table th.is-left .cell,
+.el-table .cell.text-left {
+  text-align: left;
+}
+
+/*
+ * 等宽与数字/代码列字体：等宽 + tabular-nums，默认居中展示
+ */
+.el-table td.is-num .cell,
+.el-table .mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 代码列：等宽 + 略放字距 */
+.el-table td.is-code .cell {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* 涨跌语义标记（D1：只有这三个类允许上红绿） */
+.el-table .is-up,
+.el-table .cell .is-up {
+  color: var(--up);
+}
+
+.el-table .is-down,
+.el-table .cell .is-down {
+  color: var(--down);
+}
+
+.el-table .is-flat {
+  color: var(--flat);
+}
+
+.el-table__empty-block {
+  min-height: 96px;
+}
+
+.el-table__empty-text {
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
 
 .table-wrap {
   overflow-x: auto;
@@ -202,11 +478,25 @@ table {
   text-align: left;
 }
 
-table.dense th,
+/*
+ * table.dense 是存量自绘业务表（新代码一律 el-table，见 AGENTS.md §3.3.1）。
+ * 选择器保留只为存量页不塌，视觉分叉已经收掉：这里与上面 el-table 同一套密度。
+ */
+table.dense th {
+  height: var(--head-h);
+  padding: 0 var(--gap-2);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 table.dense td {
-  padding: 0.65rem 1rem;
-  border-top: 1px solid var(--rule);
-  font-size: 0.9rem;
+  height: var(--row-h);
+  padding: var(--gap-1) var(--gap-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-body);
   vertical-align: middle;
 }
 
@@ -215,13 +505,110 @@ table.dense tbody tr.click-row {
 }
 
 table.dense tbody tr.click-row:hover {
-  background: #eef2f6;
+  background: var(--surface-hover);
 }
 
 table.dense tfoot td {
-  border-top: 1px solid var(--rule);
-  background: var(--panel-2);
-  font-weight: 650;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  font-weight: 700;
+}
+
+table.dense .r,
+table.dense .mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * —— 管理后台分区壳 ——
+ * 五个分区（总览 / 用户 / 配额 / 日志 / 公告）共用同一套「筛选行 + 表体」骨架。
+ * 收在全局层是因为它们本来就该长一样：此前每个 Tab 各写一份 `.xxx-tab`，
+ * 于是 padding 有 1.25rem 也有 0、筛选条有的贴边有的悬空、分页有的干脆没有。
+ */
+.admin-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.admin-pane__filters {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 筛选条里的 form-item 不带底距：行高由 PageContainer 的 search 槽统一给 */
+.admin-pane__filters .el-form-item {
+  margin-bottom: 0;
+}
+
+.admin-pane__filter-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-shrink: 0;
+}
+
+/* 非表格分区（总览 / 配额 / 公告）：滚动下沉到这里，不许出文档级滚动条 */
+.admin-pane__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+}
+
+/* —— legacy 原子类：新代码用 EP + token，这些只维持存量页不塌 —— */
+.primary-button,
+.quiet-button,
+.icon-button {
+  border: 0;
+  border-radius: var(--radius);
+  height: var(--ctl-h);
+  transition: background 80ms ease;
+}
+
+.primary-button {
+  padding: 0 var(--gap-3);
+  background: var(--seal);
+  color: var(--on-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.primary-button:hover {
+  background: var(--seal-hover);
+}
+
+.quiet-button {
+  padding: 0 var(--gap-2);
+  border: 1px solid var(--border-default);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+
+.quiet-button:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.text-link {
+  color: var(--seal-ink);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.text-link:hover,
+.stock-link:hover,
+a:hover {
+  text-decoration: none;
+  opacity: 0.9;
 }
 
 .r {
@@ -234,16 +621,17 @@ table.dense tfoot td {
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--text-secondary);
 }
 
 .dim {
-  color: var(--mist);
+  color: var(--text-tertiary);
 }
 
 .code {
-  color: var(--mist);
-  font: 0.82rem var(--mono);
+  color: var(--text-tertiary);
+  font: var(--fs-aux) / 1.4 var(--mono);
+  letter-spacing: 0.02em;
 }
 
 .stock-link {
@@ -253,4 +641,35 @@ table.dense tfoot td {
 
 .stock-link:hover {
   color: var(--seal-ink);
+}
+
+/* 涨跌语义标记的全局版本（表格外的数字同样只用这三个类上色） */
+.tone-up,
+.is-up {
+  color: var(--up);
+}
+
+.tone-down,
+.is-down {
+  color: var(--down);
+}
+
+.tone-flat,
+.is-flat {
+  color: var(--flat);
+}
+
+/* 报价字号：页面上最大的字必须是数字（D2） */
+.tape-num {
+  font: 700 var(--fs-tape) / 1.05 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 微标：11px 大写 + 字距，等宽——中文小标签也走它，不再放大标题充层级 */
+.kicker {
+  font: 600 var(--fs-kicker) / 1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-tertiary);
 }

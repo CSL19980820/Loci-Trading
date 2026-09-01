@@ -34,8 +34,12 @@ def _session_status(store) -> tuple[dict[str, Any], dict[str, Any]]:
 
     日历读不出时降级为空日历，但必须留痕：静默空列表会让 ``build_session_status``
     报「休市」，和真的休市无法区分。
+
+    出口统一过一道 ``board_session``：闸门键之外再补 ``phase`` / ``live``，
+    与 SSE 的 ``session`` 块**同一个形状**。少了这一道，前端就得为 REST 和 SSE
+    各写一套时段判断——大屏那次「连续竞价里显示已收盘」正是这么来的。
     """
-    from src.market.application.session import build_session_status
+    from src.market.application.session import board_session, build_session_status
 
     coverage = store.coverage()
     try:
@@ -43,7 +47,9 @@ def _session_status(store) -> tuple[dict[str, Any], dict[str, Any]]:
     except sqlite3.Error as exc:
         logger.warning("交易日历读取失败，按空日历降级：%s", exc)
         days = []
-    return coverage, build_session_status(coverage=coverage, trading_days=days)
+    return coverage, board_session(
+        build_session_status(coverage=coverage, trading_days=days)
+    )
 
 
 def build_market_router(
@@ -67,6 +73,14 @@ def build_market_router(
     def market_coverage() -> dict[str, Any]:
         with _hot() as store:
             return store.coverage()
+
+    @router.get("/api/market/distribution", tags=["market"])
+    def market_distribution(
+        date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    ) -> dict[str, Any]:
+        """全市场 5000+ 家股票涨跌分布统计（跌停/各跌幅档/平/各涨幅档/涨停）。"""
+        with _hot() as store:
+            return store.market_distribution(trade_date=date)
 
     @router.get("/api/market/session", tags=["market"])
     def market_session() -> dict[str, Any]:
@@ -236,52 +250,59 @@ def build_market_router(
                 days=days,
                 trade_date=date,
             )
+            name = ""
+            prev_close: float | None = None
+            actual_trade_date = date or ""
+            if not actual_trade_date:
+                for raw in frame.get("datetime", []):
+                    datetime_text = str(raw or "")
+                    if len(datetime_text) >= 10:
+                        actual_trade_date = datetime_text[:10]
+                        break
+            with _hot() as store:
+                row = store.conn.execute(
+                    "SELECT name FROM instruments WHERE code = ?",
+                    (code,),
+                ).fetchone()
+                if row:
+                    name = str(row["name"] or "")
+                if actual_trade_date:
+                    prev_close = unadjusted_prev_close(
+                        store.conn, code, actual_trade_date
+                    )
+                    frame, prev_close = apply_minute_adjust(
+                        store,
+                        code,
+                        actual_trade_date,
+                        frame,
+                        adjust=adjust,
+                        prev_close=prev_close,
+                    )
+            bars = frame.to_dict("records")
+            for bar in bars:
+                dt = bar.get("datetime")
+                if dt is not None and not isinstance(dt, str):
+                    bar["datetime"] = str(dt)
+            return {
+                "code": code,
+                "name": name,
+                "trade_date": actual_trade_date,
+                "period": period,
+                "adjust": adjust,
+                "source": source,
+                "prev_close": prev_close,
+                "rows": len(bars),
+                "bars": bars,
+            }
         except MinuteQueryError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        name = ""
-        prev_close: float | None = None
-        actual_trade_date = date or ""
-        if not actual_trade_date:
-            for raw in frame.get("datetime", []):
-                datetime_text = str(raw or "")
-                if len(datetime_text) >= 10:
-                    actual_trade_date = datetime_text[:10]
-                    break
-        with _hot() as store:
-            row = store.conn.execute(
-                "SELECT name FROM instruments WHERE code = ?",
-                (code,),
-            ).fetchone()
-            if row:
-                name = str(row["name"] or "")
-            if actual_trade_date:
-                prev_close = unadjusted_prev_close(
-                    store.conn, code, actual_trade_date
-                )
-                frame, prev_close = apply_minute_adjust(
-                    store,
-                    code,
-                    actual_trade_date,
-                    frame,
-                    adjust=adjust,
-                    prev_close=prev_close,
-                )
-        bars = frame.to_dict("records")
-        for bar in bars:
-            dt = bar.get("datetime")
-            if dt is not None and not isinstance(dt, str):
-                bar["datetime"] = str(dt)
-        return {
-            "code": code,
-            "name": name,
-            "trade_date": actual_trade_date,
-            "period": period,
-            "adjust": adjust,
-            "source": source,
-            "prev_close": prev_close,
-            "rows": len(bars),
-            "bars": bars,
-        }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("拉取分时走带异常 (%s): %s", code, exc, exc_info=True)
+            raise HTTPException(
+                status_code=422, detail=f"拉取分时走带失败：{exc}"
+            ) from exc
 
     @router.get("/api/market/bootstrap", tags=["market"])
     def market_bootstrap_status() -> dict[str, Any]:
@@ -405,5 +426,17 @@ def build_market_router(
 
     from src.market.api.quality_router import build_quality_router
     router.include_router(build_quality_router(write_dependency=write_dependency, market_db=market_db))
+
+    # 大屏推流（SSE）：纯读路径，挂在这里让组合根不用改。
+    from src.market.api.stream_router import build_market_stream_router
+    router.include_router(
+        build_market_stream_router(write_dependency=write_dependency, market_db=market_db)
+    )
+
+    # 实时信号的维护面（规则开关 / 阈值 / 历史）：普通 JSON，落 ops.db。
+    # 与推流分文件的理由见 signal_rules_router 模块 docstring；同样挂在这里，
+    # 组合根不用改。
+    from src.market.api.signal_rules_router import build_signal_rules_router
+    router.include_router(build_signal_rules_router(write_dependency=write_dependency))
 
     return router

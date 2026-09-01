@@ -44,7 +44,7 @@ function setBoard(id: BoardId, checked: boolean): void {
 </script>
 
 <template>
-  <el-form label-position="left" label-width="5.5rem" class="detail-form" size="small" v-loading="loadingJob">
+  <el-form v-loading="loadingJob" class="detail-form" label-position="right" label-width="6.5em" size="small">
     <el-form-item v-if="paramRows.length" label="默认参数">
       <el-descriptions :column="2" size="small" class="param-desc">
         <el-descriptions-item v-for="row in paramRows" :key="row.key" :label="row.label">

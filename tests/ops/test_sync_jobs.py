@@ -49,8 +49,21 @@ class MarketSyncSettingsStoreTests(unittest.TestCase):
 
 
 class TodayRefreshSyncTests(unittest.TestCase):
-    def test_today_refresh_skips_sync_quotes(self) -> None:
+    def test_today_refresh_finalizes_with_authoritative_after_spot(self) -> None:
+        """日终必须在 spot 之后再用权威源把当日重写成正式日 K。
+
+        这里原先断言的是「today_refresh 不调 sync_quotes」——那条断言把 bug 本身锁成了
+        契约。``quotes_daily`` 的 upsert 是后写覆盖先写，而 ``apply_today_spot`` 写进去
+        的 source 恒带 ``_spot``：少了收尾这一趟，当日行在日终跑完之后仍然是临时行，
+        正式日 K 要等第二天早上增量近窗回头重写才落。当天的 15:30 选股、当日回测与
+        复盘读到的就是没有 source receipt、``amount`` 还可能是 ``close×volume`` 合成
+        假值的行。
+
+        **顺序也是断言的一部分**：反过来跑，spot 会把刚写好的正式日 K 重新盖成临时行，
+        等于没修。
+        """
         called = {"sync_quotes": 0, "spot": 0}
+        order: list[str] = []
 
         class FakeStore:
             def __init__(self, *_args, **_kwargs):
@@ -77,10 +90,19 @@ class TodayRefreshSyncTests(unittest.TestCase):
 
         def fake_sync_quotes(*_args, **_kwargs):
             called["sync_quotes"] += 1
-            raise AssertionError("today_refresh should not call sync_quotes")
+            order.append("sync_quotes")
+            return SimpleNamespace(
+                total=1,
+                succeeded=1,
+                skipped=0,
+                failed=0,
+                rows_written=7,
+                elapsed_seconds=1.5,
+            )
 
         def fake_spot(_store, _codes, **_kwargs):
             called["spot"] += 1
+            order.append("spot")
             return 3
 
         ctx = JobContext(market_db=":memory:")
@@ -103,8 +125,13 @@ class TodayRefreshSyncTests(unittest.TestCase):
 
         self.assertEqual(result["mode"], "today_refresh")
         self.assertEqual(result["spot_rows"], 3)
-        self.assertEqual(called["sync_quotes"], 0)
         self.assertEqual(called["spot"], 1)
+        self.assertEqual(called["sync_quotes"], 1)
+        self.assertEqual(order, ["spot", "sync_quotes"])
+        self.assertEqual(result["finalize"]["status"], "ok")
+        self.assertEqual(result["finalize"]["rows_written"], 7)
+        # spot 3 行 + 定稿 7 行都要计进任务总写入，否则运维页少报一半
+        self.assertEqual(result["rows_written"], 10)
         self.assertEqual(result["factors_error"], "")
 
     def test_factor_refresh_failure_is_reported_in_result(self) -> None:

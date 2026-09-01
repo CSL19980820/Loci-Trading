@@ -54,7 +54,21 @@ class MarketStore(
 ):
     """行情仓连接。每个请求或同步 worker 持有独立连接。"""
 
-    def __init__(self, db_path: Path | str | None = None) -> None:
+    def __init__(
+        self,
+        db_path: Path | str | None = None,
+        *,
+        keep_receipt_index: bool = False,
+    ) -> None:
+        """``keep_receipt_index`` 只有热库该开。
+
+        ``idx_quotes_receipt`` 唯一的热路径消费者是 ``store_hot._purge_orphan_receipts``
+        的 ``NOT EXISTS`` 逐行探测，而那段只跑在热库。在权威库上它实测占
+        **1,049 MB**（2026-08-25 dbstat，全库 5,740 MB 的 18%），却只服务
+        「无范围 DISTINCT receipt_id」这一条本就被禁止的全库扫。
+        见 docs/research/2026-08-mainstream-quant-benchmark.md §2.1。
+        """
+        self._keep_receipt_index = bool(keep_receipt_index)
         self.db_path = Path(db_path or DEFAULT_DB)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         # 选股与同步可能并发碰同一 market.db；60s busy 比默认 30s 更扛得住短写锁。
@@ -228,8 +242,7 @@ class MarketStore(
         revision = str(row["value"] if row else "0")
         return hashlib.sha256(f"{key}:{revision}".encode("utf-8")).hexdigest()
 
-    @staticmethod
-    def _migrate_schema(cursor: sqlite3.Cursor) -> None:
+    def _migrate_schema(self, cursor: sqlite3.Cursor) -> None:
         """兼容旧库的追加式列迁移；receipt 表的完整 DDL 位于 store_schema。"""
         instrument_cols = {str(row[1]) for row in cursor.execute("PRAGMA table_info(instruments)")}
         if "industry" not in instrument_cols:
@@ -237,9 +250,14 @@ class MarketStore(
         quote_cols = {str(row[1]) for row in cursor.execute("PRAGMA table_info(quotes_daily)")}
         if "receipt_id" not in quote_cols:
             cursor.execute("ALTER TABLE quotes_daily ADD COLUMN receipt_id TEXT")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_quotes_receipt ON quotes_daily(receipt_id)"
-        )
+        # 权威库上这个索引实测 1,049 MB 却没有热路径消费者，schema v8 起只在热库建。
+        # DROP 只把页归还给库内空闲链；要真正缩小文件得 `python -m cli.market reclaim`。
+        if self._keep_receipt_index:
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quotes_receipt ON quotes_daily(receipt_id)"
+            )
+        else:
+            cursor.execute("DROP INDEX IF EXISTS idx_quotes_receipt")
         receipt_cols = {
             str(row[1]) for row in cursor.execute("PRAGMA table_info(source_route_receipts)")
         }

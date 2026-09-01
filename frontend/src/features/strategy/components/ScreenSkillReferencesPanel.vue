@@ -30,14 +30,17 @@ function rowRequired(row: ScreenSkillDraftModel['references'][number]): boolean 
 </script>
 
 <template>
-  <Sheet title="资料来源" padded margin>
+  <!--
+    不留块标题：策略 / 数据 / 参数 / 资料这四块是 PageTabs 的互斥分区，
+    高亮的那枚 tab 已经把「你在哪一块」交代完了，Sheet 再印一遍标题只是白占
+    一行（用户原话：毫无意义的标题还丑）。Sheet 只留边框与内边距。
+  -->
+  <Sheet padded margin>
     <div class="section-head">
-      <div>
-        <strong>引用台账</strong>
-        <div class="dim">
-          资料为可选项，不填也能试跑与保存。只有动手填写某条资料时，才需要补齐编号、标题，以及链接 / 路径 / 章节 / 引文之一；逻辑里写了引用编号时也要能对应到这里。AI 生成草稿时才强制要求资料。
-        </div>
-      </div>
+      <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
+      <el-tooltip placement="bottom-start" content="资料选填；填了就要补齐编号、标题与来源（链接 / 路径 / 章节 / 引文之一），逻辑里的引用编号要能对上这里。AI 生成草稿时必填">
+        <strong class="section-head__title">引用台账</strong>
+      </el-tooltip>
       <el-button size="small" @click="emit('addReference')">新增资料</el-button>
     </div>
     <el-alert
@@ -148,9 +151,16 @@ function rowRequired(row: ScreenSkillDraftModel['references'][number]): boolean 
   margin-bottom: 0.75rem;
 }
 
-.dim {
-  color: var(--mist);
-  font-size: 0.82rem;
+/* 小节标题压成一行：标题与它的操作按钮同高同行，不再是标题一行、介绍一行 */
+.section-head__title {
+  font-size: var(--fs-title);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: help;
+}
+
+.section-head {
+  margin-bottom: var(--gap-2);
 }
 
 @media (max-width: 640px) {

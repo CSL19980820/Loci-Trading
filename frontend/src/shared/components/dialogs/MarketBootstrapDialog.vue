@@ -41,12 +41,6 @@ const dialogTitle = computed(() => (isCatchup.value ? '补齐行情' : '初始�
 const running = computed(() => status.value === 'running')
 const isDone = computed(() => status.value === 'done')
 const isError = computed(() => status.value === 'error')
-const phaseLabel = computed(() => {
-  if (isDone.value) return '已完成'
-  if (isError.value) return '失败'
-  if (running.value) return '同步中'
-  return isCatchup.value ? '待补齐' : '待初始化'
-})
 
 /** 将补区间文案：单日或 from → to */
 const rangeLabel = computed(() => {
@@ -64,22 +58,15 @@ const lagLabel = computed(() => {
   return `${n} 个交易日`
 })
 
+/** 一行状态。日期/区间已在事实格里，这里不再重复念一遍 */
 const leadText = computed(() => {
   if (isDone.value) return '行情已就绪'
   if (running.value) {
     if (message.value && !/Error|Exception/i.test(message.value)) return message.value
-    if (isCatchup.value) {
-      return rangeLabel.value ? `正在补齐 ${rangeLabel.value}` : '正在补齐落后交易日…'
-    }
-    return '正在拉取历史日线…'
+    return isCatchup.value ? '正在补齐落后交易日…' : '正在拉取历史日线…'
   }
-  if (isCatchup.value) {
-    if (coverageLast.value && rangeLabel.value) {
-      return `库内最新到 ${coverageLast.value}，将补齐 ${rangeLabel.value}。`
-    }
-    return '库内最新行情落后，需要补齐最近交易日。'
-  }
-  return '本机还没有历史日 K，选股与回测暂时不可用。'
+  if (isCatchup.value) return '库内行情落后，补齐后再选股'
+  return '本机还没有历史日 K，选股与回测不可用'
 })
 
 let timer: number | undefined
@@ -371,25 +358,12 @@ onUnmounted(() => {
 <template>
   <el-dialog
     v-model="visible"
-    width="560px"
+    :title="dialogTitle"
+    width="min(92vw, 520px)"
     align-center
-    :close-on-click-modal="true"
-    :close-on-press-escape="true"
-    :show-close="true"
     destroy-on-close
     class="boot-dialog"
-    :aria-label="dialogTitle"
   >
-    <template #header>
-      <div class="boot-head">
-        <span class="boot-seal" aria-hidden="true">LC</span>
-        <div class="boot-head-text">
-          <p class="boot-kicker">{{ phaseLabel }}</p>
-          <h2 class="boot-title">{{ dialogTitle }}</h2>
-        </div>
-      </div>
-    </template>
-
     <MarketBootstrapStatusPanel
       :is-catchup="isCatchup"
       :coverage-last="coverageLast"
@@ -408,171 +382,41 @@ onUnmounted(() => {
     />
 
     <template #footer>
-      <div class="boot-foot">
-        <template v-if="!running && !isDone">
-          <el-button
-            v-if="!isCatchup"
-            native-type="button"
-            class="boot-btn boot-btn--ghost"
-            @click="dismiss"
-          >
-            稍后再说
-          </el-button>
-          <el-button
-            native-type="button"
-            class="boot-btn boot-btn--seal"
-            :disabled="starting"
-            @click="start"
-          >
-            {{ starting ? '启动中…' : isCatchup ? (error ? '重新补齐' : '开始补齐') : '开始初始化' }}
-          </el-button>
-        </template>
-        <template v-else-if="isDone || isError">
-          <el-button
-            v-if="isError"
-            native-type="button"
-            class="boot-btn boot-btn--ghost"
-            :disabled="starting"
-            @click="start"
-          >
-            重试
-          </el-button>
-          <el-button native-type="button" class="boot-btn boot-btn--seal" @click="close">
-            {{ isDone ? '完成' : '关闭' }}
-          </el-button>
-        </template>
-        <template v-else>
-          <el-button native-type="button" class="boot-btn boot-btn--ghost" @click="close">
-            后台继续
-          </el-button>
-          <p class="boot-foot-note">关闭弹窗后顶栏仍显示进度</p>
-        </template>
-      </div>
+      <template v-if="!running && !isDone">
+        <el-button v-if="!isCatchup" class="is-leading" @click="dismiss">稍后再说</el-button>
+        <el-button type="primary" :loading="starting" @click="start">
+          {{ isCatchup ? (error ? '重新补齐' : '开始补齐') : '开始初始化' }}
+        </el-button>
+      </template>
+      <template v-else-if="isDone || isError">
+        <el-button v-if="isError" class="is-leading" :disabled="starting" @click="start">
+          重新补齐
+        </el-button>
+        <el-button type="primary" @click="close">{{ isDone ? '完成' : '关闭' }}</el-button>
+      </template>
+      <template v-else>
+        <span class="boot-foot-note is-leading">关闭后顶栏继续显示进度</span>
+        <el-button type="primary" @click="close">后台继续</el-button>
+      </template>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
-.boot-head {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-}
-
-.boot-seal {
-  flex-shrink: 0;
-  width: 2.4rem;
-  height: 2.4rem;
-  display: grid;
-  place-items: center;
-  border: 1.5px solid var(--seal);
-  border-radius: 50%;
-  color: var(--seal-ink);
-  background: var(--seal-soft);
-  font: 700 0.72rem/1 var(--font-display);
-  letter-spacing: 0.04em;
-}
-
-.boot-kicker {
-  margin: 0 0 0.15rem;
-  color: var(--mist);
-  font: 500 0.72rem/1.2 var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.boot-title {
-  margin: 0;
-  color: var(--ink);
-  font: 650 1.15rem/1.2 var(--font-display);
-  letter-spacing: 0.02em;
-}
-
-.boot-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.55rem;
-  width: 100%;
-}
-
 .boot-foot-note {
-  margin: 0;
   color: var(--mist);
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
 }
-
-.boot-btn.el-button {
-  appearance: none;
-  height: auto;
-  margin: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  padding: 0.45rem 0.95rem;
-  font: 550 0.88rem/1.2 var(--font);
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.boot-btn.el-button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.boot-btn--ghost.el-button {
-  border-color: var(--rule);
-  background: var(--sheet);
-  color: var(--ink);
-}
-
-.boot-btn--ghost.el-button:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--seal) 35%, var(--rule));
-  background: var(--panel-2, var(--paper));
-}
-
-.boot-btn--seal.el-button {
-  border-color: color-mix(in srgb, var(--seal) 55%, transparent);
-  background: var(--seal);
-  color: #fff;
-}
-
-.boot-btn--seal.el-button:hover:not(:disabled) {
-  background: var(--seal-ink);
-}
-
 </style>
 
 <style>
-/* 非 scoped：收束 Element Plus 对话框壳，贴合账本纸感 */
-.boot-dialog.el-dialog {
-  --el-dialog-bg-color: var(--sheet);
-  --el-dialog-padding-primary: 1.15rem 1.25rem;
-  border: 1px solid var(--rule);
-  border-radius: calc(var(--radius) + 2px);
-  box-shadow: 0 18px 48px rgba(20, 32, 51, 0.12);
-  overflow: hidden;
-}
-
-.boot-dialog .el-dialog__header {
-  margin: 0;
-  padding: 1rem 1.25rem 0.85rem;
-  border-bottom: 1px solid var(--rule);
-  background: linear-gradient(180deg, var(--sheet) 0%, color-mix(in srgb, var(--paper) 55%, var(--sheet)) 100%);
-}
-
-.boot-dialog .el-dialog__headerbtn {
-  top: 1rem;
-  right: 1rem;
-}
-
+/*
+ * 非 scoped：el-dialog teleport 到 body，scoped 选择器进不去。
+ * 弹窗 chrome（标题字号 / 页眉页脚分隔线 / footer 布局）全在 style.base.css 统一管，
+ * 这里只补一条：正文超长时在 dialog body 内滚，不许把滚动条顶到文档级。
+ */
 .boot-dialog .el-dialog__body {
-  padding: 1rem 1.25rem 0.35rem;
-}
-
-.boot-dialog .el-dialog__footer {
-  padding: 0.85rem 1.25rem 1.1rem;
-  border-top: 1px solid var(--rule);
-  background: var(--panel-2, var(--paper));
+  max-height: min(56vh, 26rem);
+  overflow: auto;
 }
 </style>

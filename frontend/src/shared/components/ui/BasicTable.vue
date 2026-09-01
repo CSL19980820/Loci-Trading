@@ -456,25 +456,28 @@ defineExpose({
   background: transparent;
 }
 
+/*
+ * 放大态：整屏浮层。不加投影——终端里的层级靠边框与底色区分（D3 卡片无阴影），
+ * 一圈 40px 的模糊阴影只会让下面的行看起来发灰。
+ */
 .basic-table--zoom {
   position: fixed;
-  inset: 0.75rem;
+  inset: var(--gap-2);
   z-index: 50;
-  padding: 0.75rem;
+  padding: var(--gap-2);
   background: var(--sheet);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
-  box-shadow: 0 12px 40px rgba(20, 32, 51, 0.12);
 }
 
 .basic-table__toolbar {
   display: flex;
   justify-content: flex-start;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  gap: var(--gap-2);
+  padding: var(--gap-1) var(--pad-sheet-x);
   border-bottom: 1px solid var(--rule);
-  background: var(--panel-2);
+  background: var(--sheet-alt);
   flex-shrink: 0;
 }
 
@@ -483,7 +486,7 @@ defineExpose({
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .basic-table__toolbar-right {
@@ -502,17 +505,17 @@ defineExpose({
 
 .basic-table__toolbar-right :deep(.el-button) {
   --el-button-bg-color: var(--sheet);
-  --el-button-border-color: var(--line-2);
+  --el-button-border-color: var(--rule-strong);
   --el-button-text-color: var(--ink);
-  --el-button-hover-bg-color: var(--panel-2);
-  --el-button-hover-border-color: var(--line-2);
+  --el-button-hover-bg-color: var(--sheet-alt);
+  --el-button-hover-border-color: var(--rule-strong);
   --el-button-hover-text-color: var(--ink);
 }
 
 .basic-table__cols {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: var(--gap-1);
   max-height: 16rem;
   overflow: auto;
 }
@@ -523,40 +526,65 @@ defineExpose({
   overflow: auto;
 }
 
+/* 表格皮肤的真相在 style.components.css（el-table 与 BasicTable 同一套）；
+   这里只补作用域内必须的几项：行高、表头字色、贴边 padding。 */
 .basic-table__el {
   width: 100%;
-  --el-table-header-bg-color: var(--panel-2);
-  --el-table-row-hover-bg-color: color-mix(in srgb, var(--panel-2) 70%, var(--sheet));
+  --el-table-header-bg-color: var(--sheet-alt);
+  --el-table-row-hover-bg-color: var(--seal-soft);
   --el-table-border-color: var(--rule);
   background: transparent;
 }
 
 .basic-table__el :deep(.el-table__header-wrapper th.el-table__cell) {
-  background: var(--panel-2);
-  color: var(--mist);
+  height: var(--head-h);
+  background: var(--sheet-alt);
+  color: var(--muted);
+  font-size: var(--fs-aux);
   font-weight: 600;
+  text-align: center;
 }
 
-.basic-table__el :deep(.el-table__header .el-table__cell),
-.basic-table__el :deep(.el-table__body .el-table__cell) {
-  padding-left: 0.75rem;
-  padding-right: 0.65rem;
+.basic-table__el :deep(.el-table__body td.el-table__cell) {
+  height: var(--row-h);
+  padding: var(--gap-1) 0;
+  text-align: center;
+}
+
+.basic-table__el :deep(.el-table__header .cell),
+.basic-table__el :deep(.el-table__body .cell) {
+  padding-left: var(--gap-2);
+  padding-right: var(--gap-2);
+  text-align: center;
+}
+
+.basic-table__el :deep(.el-table__cell.is-left .cell) {
+  text-align: left;
+}
+
+.basic-table__el :deep(.el-table__cell.is-right .cell) {
+  text-align: right;
 }
 
 .basic-table__el :deep(.el-table__row--striped td.el-table__cell) {
-  background: color-mix(in srgb, var(--panel-2) 55%, var(--sheet));
+  background: var(--sheet-alt);
 }
 
 .basic-table__el :deep(.el-table__inner-wrapper::before) {
   background-color: var(--rule);
 }
 
+/* D1：表内只有这三类语义可以上红绿 */
 .basic-table__el :deep(.is-up) {
   color: var(--up);
 }
 
 .basic-table__el :deep(.is-down) {
   color: var(--down);
+}
+
+.basic-table__el :deep(.is-flat) {
+  color: var(--flat);
 }
 
 .basic-table__el :deep(.is-frozen) {
@@ -567,7 +595,7 @@ defineExpose({
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
-  padding: 0.45rem 1rem;
+  padding: var(--gap-1) var(--pad-sheet-x);
   border-top: 1px solid var(--rule);
   background: var(--sheet);
 }

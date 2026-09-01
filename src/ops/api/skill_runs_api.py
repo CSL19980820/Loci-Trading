@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 
 import logging
-import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -12,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from src.ops.api.schemas import SkillRunCreate, SkillRunReply
 from src.shared.api_deps import missing_dependency
+from src.shared.tenancy import spawn_tenant_thread
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,12 @@ def register_skill_run_routes(
                         skill_runs.save_run(failed)
                         skill_runs.append_event(run_id, {"type": "error", "message": str(exc)})
 
-            threading.Thread(target=worker, daemon=True, name=f"skill-run-{run_id}").start()
+            # 不能写成 threading.Thread(target=worker, ...)：ContextVar 不跨线程边界，
+            # worker 里的 skill_runs.*（skill_runs_dir()，租户私有）与 resolve_skill
+            # （skill_root()，同样租户私有）会全部解析到主租户目录，于是 run 记录建在
+            # B 的目录、执行与回写落在管理员目录（split-brain），而且真正被执行的是
+            # **管理员的技能包**——B 的同名技能改了什么都不作数。不报错，只是错人。
+            spawn_tenant_thread(worker, name=f"skill-run-{run_id}")
             return {"run": _public_run(state)}
 
         with _ops() as store:
@@ -188,7 +193,9 @@ def register_skill_run_routes(
                         failed["error"] = str(exc)
                         skill_runs.save_run(failed)
 
-            threading.Thread(target=worker, daemon=True, name=f"skill-reply-{run_id}").start()
+            # 同 start_skill_run_api：HITL 续跑仍要落在**发起回复那个租户**的目录里，
+            # 裸 threading.Thread 会把续跑写进管理员目录。见 src/shared/tenancy.py。
+            spawn_tenant_thread(worker, name=f"skill-reply-{run_id}")
             refreshed = skill_runs.load_run(run_id) or state
             return {"run": _public_run(refreshed)}
 

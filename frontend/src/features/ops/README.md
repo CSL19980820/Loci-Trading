@@ -3,7 +3,8 @@
 运维页（侧栏「设置」）：模型与本机系统配置。
 
 - 壳：`OpsView.vue` — **左脊索引**（`SettingsRail`）+ 右面板；`?tab=` 路由；按当前 tab 按需 `load`；窄屏折成单条 `PageTabs`
-- 面板壳：`SettingsPanel.vue`（标题 / 主操作 / body / foot）；联内壳 `SettingsSection.vue`（左槽联名 + 印章状态；无选中粉底）
+- 面板壳：`SettingsPanel.vue`（**头恒为一行**：标题 + 回执读数 + 主操作，回执超宽省略；标题保留是因为 ≤900px rail 隐藏、且 `/quant` 的 `JobsTab` 复用同一个壳）；联内壳 `SettingsSection.vue`（左槽联名 + 印章状态，窄屏只收窄左槽不塌成单列；无选中粉底）
+- **`SignalRulesTab`**（rail「模型与工具」分区，`?tab=signals`）：大屏实时信号的规则维护。**一条两行**：第一行只放控件（`el-switch` + 中文名 + `code` + 可调参数 `el-input-number` + 文字按钮「恢复默认」），第二行整宽给口径说明（单行截断 + `el-tooltip` 全文，ui-spec §8）。参数轨吃弹性并**右对齐收口**，所以 1~3 个参数的行右缘一致——旧版把弹性留给口径之外的空隙，参数块会随参数个数左右横跳，六行右缘全是锯齿；壳也别再传 `fill`（那会把 body padding 置 0，内容贴边）。**改完即时 PUT**，失败整条回滚并 `ElMessage.error` 报后端原话。参数口径优先用后端 `param_specs`（键 / 中文名 / 上下限 / 单位 / 整数），缺席才退到 `composables/signalRuleMeta.ts` 的静态表。接口：`GET /api/market/signals/rules`、`PUT /api/market/signals/rules/{rule_id}`（早期契约 `/market/signal-rules` 作 404 回退）。rail 尾注「N/M 启用」由面板 `@summary` 回传，不进 `useSettingsSummaries` 的全局批量拉取
 - Tab：`McpTab` · `LlmTab`（供应商**卡片名册** + 分区编辑 `LlmProviderDialog` + `LlmModelCatalogDrawer`）· **`SystemTab`**（四联纵向；标题回执含版本号；页脚「保存全部」）· **`PackTab`**（一键打包 → 加密 zip）
 - `PackTab` **默认出脱敏包**：运维库与 MCP 只带骨架，API Key / Webhook / 纸面交易记录都不进包。勾了「账本」或「包含我的密钥与个人记录」会变红条警告并高亮该行；打包完成的提示会说明是脱敏包还是含个人数据（读响应头 `X-Loci-Sanitized`）
 - `LlmModelCatalogDrawer`：宽 `min(64rem, 92vw)`；表体单行（开 / id·徽标 / 展示名 / 上下文·hint / 输出 / 操作）；默认行印泥浅底；表 min-width 960px 可横滚
@@ -29,4 +30,8 @@
 - 有未保存系统改动时切分区 / 离开路由会确认
 - `McpTab` 内置 `loci-market` 详情用 `tools_catalog`；生效调用仍走 `tools`（按 lane 过滤）
 - MCP Server 仅支持直连服务；界面与前端请求不提供代理字段，旧客户端传入代理会由服务端明确拒绝
-- MCP 工具弹窗：`McpToolsDialog`
+- MCP 工具弹窗：`McpToolsDialog`（两组标题压成一行：标题 + 计数 chip；线路/AkShare 口径与「测连通只验握手」都进 tooltip）
+
+- 文案纪律：ops 下不留常驻介绍段（规则进 `el-tooltip` / placeholder），`el-alert` 只报真实异常、标题 ≤20 字且禁 `description`；读数（下次触发 / 今日剩余额度 / 告警证据行）留在页面上，必要时用 `HeaderStat`
+- `McpTab`「添加外部 MCP」按钮在「外部 MCP」那一行（标题 + 计数 chip + 按钮同排），面板头只留「配置悟道」
+- slug 不上展示位：`JobRunsDialog` 任务列与 `JobRunErrorDialog` 把 `screen:{slug}` / `skill:{slug}` 过一遍 `cnStrategyName`；`PaperQuantPanel`「战法标识」输入框旁挂中文名 chip

@@ -67,10 +67,7 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(engine.screen_top_n, 1)
         self.assertEqual(engine.screen_hold_days, 2)
         self.assertEqual(engine.screen_rank_factor, "当日涨幅(%)")
-        self.assertEqual(engine.screen_schedule["run_hour"], 15)
-        self.assertEqual(engine.screen_schedule["run_minute"], 30)
         self.assertFalse(engine.screen_force_spot_refresh)
-
     def test_1450_variant_is_gone_for_good(self) -> None:
         """14:50 档已整体下线：注册表不认这个 slug，也不再挂任何定时。"""
         with self.assertRaises(StrategyError):

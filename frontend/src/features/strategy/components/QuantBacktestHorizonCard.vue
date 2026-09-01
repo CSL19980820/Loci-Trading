@@ -39,7 +39,8 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 <template>
   <section class="hz-card">
     <header class="hz-card__head">
-      <div>
+      <!-- 标题与样本读数同一行：两块 T+N 卡片并排，标题要留着区分，但不许占两行 -->
+      <div class="hz-card__id">
         <h3>{{ title }}</h3>
         <span class="hz-card__n">
           有效样本 {{ stats?.n ?? 0 }}
@@ -148,16 +149,23 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
   justify-content: space-between;
   gap: 0.65rem 1rem;
 }
+/* 标题 + 样本读数同一行 */
+.hz-card__id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-2);
+  min-width: 0;
+}
 .hz-card__head h3 {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: var(--fs-hero);
   font-weight: 700;
+  letter-spacing: .03em;
   color: var(--ink);
 }
 .hz-card__n {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 .hz-hero {

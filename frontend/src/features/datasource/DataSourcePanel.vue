@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
@@ -100,10 +101,14 @@ function openDetail(id: string): void {
   detailOpen.value = true
 }
 
-function clearNotice(): void {
+// 成功回执是一次性反馈，不配占一条常驻横条：弹 toast 后立刻把 notice 清干净
+watch([notice, akshareNotice], ([main, akshare]) => {
+  const text = main || akshare
+  if (!text) return
+  ElMessage.success(text)
   notice.value = ''
   akshareNotice.value = ''
-}
+})
 
 watch(
   () => stats.value.total,
@@ -188,16 +193,14 @@ function setAkshareBatchOpen(open: boolean): void {
       </div>
     </header>
 
-    <el-alert
+    <!-- 常驻故障条：标题压到 8 字，后果与线路名进 tooltip（不写 description） -->
+    <el-tooltip
       v-if="brokenRequiredLanes.length"
-      type="error"
-      show-icon
-      :closable="false"
-      class="ds-alert"
-      :title="`必需线路已无可用源：${brokenText}`"
+      :content="`${brokenText}：这几条线路已无可用源，同步与选股会直接失败`"
+      placement="bottom-start"
     >
-      同步与选股会在这些线路上直接失败。给它至少启用一家源。
-    </el-alert>
+      <el-alert type="error" show-icon :closable="false" class="ds-alert" title="必需线路无可用源" />
+    </el-tooltip>
     <el-alert
       v-if="error"
       :title="error"
@@ -206,15 +209,6 @@ function setAkshareBatchOpen(open: boolean): void {
       closable
       class="ds-alert"
       @close="error = ''"
-    />
-    <el-alert
-      v-if="notice || akshareNotice"
-      :title="notice || akshareNotice"
-      type="success"
-      show-icon
-      closable
-      class="ds-alert"
-      @close="clearNotice()"
     />
 
     <el-alert
@@ -293,17 +287,17 @@ function setAkshareBatchOpen(open: boolean): void {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* flex:1 已经吃满父级高度；再写 height:100% 会与它互相打架（体检 §4.4） */
   flex: 1 1 auto;
-  height: 100%;
 }
 
 .ds-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
+  gap: var(--gap-2) var(--gap-3);
   flex-shrink: 0;
-  padding: 0 0.1rem 0.55rem;
+  padding: 0 var(--gap-1) var(--gap-2);
 }
 
 /* 视图切换是这一页的主导航，比工具条更该被一眼看到 */
@@ -317,9 +311,9 @@ function setAkshareBatchOpen(open: boolean): void {
 }
 
 .ds-views :deep(.el-segmented__item) {
-  padding: 0 0.85rem;
-  font-size: 0.83rem;
-  line-height: 1.85rem;
+  padding: 0 var(--gap-3);
+  font-size: var(--fs-body);
+  line-height: var(--ctl-h);
 }
 
 .ds-views :deep(.el-segmented__item.is-selected) {
@@ -331,25 +325,25 @@ function setAkshareBatchOpen(open: boolean): void {
   align-items: center;
   gap: 0.3rem;
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .ds-readout b {
-  margin-left: 0.1rem;
-  font: 700 1.05rem/1 var(--mono);
+  margin-left: 2px;
+  font: 700 var(--fs-hero)/1 var(--mono);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 
 .ds-mcp {
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
 }
 
 .ds-readout__sep {
   width: 1px;
   height: 0.85rem;
-  margin: 0 0.35rem;
+  margin: 0 var(--gap-1);
   background: var(--rule);
 }
 
@@ -357,7 +351,7 @@ function setAkshareBatchOpen(open: boolean): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--gap-1);
   margin-left: auto;
 }
 
@@ -370,7 +364,7 @@ function setAkshareBatchOpen(open: boolean): void {
 }
 
 .ds-alert {
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--gap-2);
   flex-shrink: 0;
 }
 
@@ -381,6 +375,6 @@ function setAkshareBatchOpen(open: boolean): void {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 0.1rem 0.1rem 0.5rem;
+  padding: var(--gap-1) var(--gap-1) var(--gap-2);
 }
 </style>

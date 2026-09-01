@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  copyTextToClipboard,
   messagePlainText,
   previousUserMessage,
 } from './assistantMessageActions'
@@ -30,5 +31,37 @@ describe('assistantMessageActions', () => {
   it('trims plain text for copy', () => {
     expect(messagePlainText(msg({ id: 'u', role: 'user', content: '  hello  ' }))).toBe('hello')
     expect(messagePlainText(msg({ id: 'u', role: 'user', content: '   ' }))).toBe('')
+  })
+
+  // 线上纯 HTTP 访问时 navigator.clipboard 是 undefined（secure context 专属 API）。
+  describe('copyTextToClipboard 在非安全上下文', () => {
+    const realClipboard = navigator.clipboard
+
+    afterEach(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: realClipboard,
+        configurable: true,
+      })
+      Reflect.deleteProperty(document, 'execCommand')
+      document.body.innerHTML = ''
+    })
+
+    it('navigator.clipboard 缺失时仍复制成功', async () => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: undefined,
+        configurable: true,
+      })
+      let copied = ''
+      document.execCommand = vi.fn((command: string) => {
+        if (command !== 'copy') return false
+        const active = document.activeElement
+        copied = active instanceof HTMLTextAreaElement ? active.value : ''
+        return true
+      })
+
+      await expect(copyTextToClipboard('  盈亏 +3.2%  ')).resolves.toBe(true)
+      expect(copied).toBe('盈亏 +3.2%')
+      expect(document.querySelector('textarea')).toBeNull()
+    })
   })
 })

@@ -1,103 +1,174 @@
 <script setup lang="ts">
+/**
+ * 报价带：本页字号最大的东西，且必须是数字。
+ * 指数报价 26px 等宽 + tabular-nums；涨跌带符号并只在这里用红绿。
+ */
+import { computed } from 'vue'
+
 import type { LiveTapeItem } from '@/shared/api/quant'
-import { pct as fmtPct, price as fmtPrice } from '@/shared/lib/format'
+import { price as fmtPrice, signedPct } from '@/shared/lib/format'
+
+import './pulseSkin.css'
 
 const props = defineProps<{
   indices: LiveTapeItem[]
   alertCount: number
-  asOf: string
-  sessionText: string
+  /** 情报缓存里的涨停/跌停家数；读不到给 null，显示「—」不猜 */
+  limitUp?: number | null
+  limitDown?: number | null
+  /** 情报缓存不可用时的说明，进 tooltip */
+  breadthNote?: string
 }>()
 
-
 function tone(value: number | null | undefined): string {
-  if (value == null || value === 0) return ''
-  return value > 0 ? 'is-up' : 'is-down'
+  if (value == null || !Number.isFinite(Number(value))) return 'pulse-flat'
+  if (Number(value) > 0) return 'pulse-up'
+  if (Number(value) < 0) return 'pulse-down'
+  return 'pulse-flat'
 }
 
+function count(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(Number(value))) return '—'
+  return String(Math.round(Number(value)))
+}
+
+const cells = computed(() =>
+  props.indices.map((item) => ({
+    key: item.code || item.label,
+    name: item.name || item.label,
+    price: fmtPrice(item.price),
+    pct: signedPct(item.pct),
+    tone: tone(item.pct),
+  })),
+)
+
+const breadthTip = computed(
+  () => props.breadthNote || '涨停/跌停来自情报缓存（GET /intel/brief），只读不现算',
+)
 </script>
 
 <template>
-  <div class="pulse-strip" aria-label="指数与触价提醒">
-    <div
-      v-for="item in props.indices"
-      :key="item.code || item.label"
-      class="pulse-strip__cell"
-    >
-      <span class="pulse-strip__k">{{ item.name || item.label }}</span>
-      <div class="pulse-strip__v">
-        <strong>{{ fmtPrice(item.price) }}</strong>
-        <span :class="tone(item.pct)">{{ fmtPct(item.pct) }}</span>
-      </div>
+  <div class="tape" aria-label="指数报价与盘面广度">
+    <div v-for="cell in cells" :key="cell.key" class="tape__cell">
+      <span class="tape__k">{{ cell.name }}</span>
+      <span class="tape__row">
+        <strong class="tape__price" :class="cell.tone">{{ cell.price }}</strong>
+        <span class="tape__pct" :class="cell.tone">{{ cell.pct }}</span>
+      </span>
     </div>
-    <div class="pulse-strip__cell pulse-strip__cell--alerts">
-      <span class="pulse-strip__k">{{ props.asOf || '—' }} · {{ props.sessionText }}</span>
-      <div class="pulse-strip__v">
-        <strong :class="props.alertCount > 0 ? 'is-down' : ''">
-          {{ props.alertCount > 0 ? `触价 ${props.alertCount}` : '无触价' }}
-        </strong>
+
+    <el-tooltip :content="breadthTip" placement="bottom" :show-after="200">
+      <div class="tape__cell tape__cell--aux">
+        <span class="tape__k">涨停 / 跌停</span>
+        <span class="tape__row">
+          <strong class="tape__stat">{{ count(limitUp) }}</strong>
+          <span class="tape__slash">/</span>
+          <strong class="tape__stat">{{ count(limitDown) }}</strong>
+        </span>
       </div>
+    </el-tooltip>
+
+    <div class="tape__cell tape__cell--aux">
+      <span class="tape__k">触价提醒</span>
+      <span class="tape__row">
+        <strong class="tape__stat" :class="{ 'is-hot': alertCount > 0 }">{{ alertCount }}</strong>
+      </span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.pulse-strip {
+.tape {
+  flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  flex-shrink: 0;
+  align-items: stretch;
   border: 1px solid var(--rule);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg, 10px);
   background: var(--sheet);
-  overflow: hidden;
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
-.pulse-strip__cell {
-  flex: 1 1 96px;
-  min-width: 88px;
-  padding: 0.4rem 0.65rem;
-  border-left: 1px solid var(--rule);
+.tape__cell {
+  flex: 1 1 0;
+  min-width: 150px;
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px 18px;
+  border-left: 1px solid var(--rule);
+  transition: background-color 300ms ease;
 }
 
-.pulse-strip__cell:first-child {
+.tape__cell:first-child {
   border-left: none;
 }
 
-.pulse-strip__cell--alerts {
-  flex: 1.3 1 160px;
+.tape__cell:hover {
+  background: rgba(74, 111, 165, 0.04);
 }
 
-.pulse-strip__k {
-  font-size: 0.68rem;
-  color: var(--mist);
+.tape__cell--aux {
+  flex: 0 0 auto;
+  min-width: 120px;
+}
+
+.tape__k {
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted);
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
-
-.pulse-strip__v {
-  display: flex;
-  flex-wrap: wrap;
+.tape__row {
   align-items: baseline;
-  gap: 0.4rem;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tape__price {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
 }
 
-.pulse-strip__v strong {
-  font-size: 0.92rem;
-  font-weight: 650;
+.tape__pct {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.pulse-strip__v span {
-  font-size: 0.78rem;
+.tape__stat {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--seal-ink);
+  line-height: 1.3;
 }
 
-.is-up {
-  color: var(--up, #c41e3a);
+.tape__stat.is-hot {
+  color: var(--warn);
 }
 
-.is-down {
-  color: var(--down, #0f6b5c);
+.tape__slash {
+  font-family: var(--font-mono);
+  color: var(--mist);
+}
+
+@media (max-width: 900px) {
+  .tape__cell {
+    min-width: 132px;
+    padding: 8px 12px;
+  }
 }
 </style>

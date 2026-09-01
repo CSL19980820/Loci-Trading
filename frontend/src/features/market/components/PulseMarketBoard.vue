@@ -1,13 +1,16 @@
 <script setup lang="ts">
+/** 库内样本榜：涨幅 / 换手 / 板块。口径解释一律进 tooltip，不占版面。 */
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
-import { pct as fmtPct } from '@/shared/lib/format'
+import { signedPct } from '@/shared/lib/format'
 import type { BoardRow } from '@/shared/types/quant'
 
 import type { PulseBoardTab, SectorBoardRow } from '../composables/usePulseHome'
+
+import './pulseSkin.css'
 
 const props = defineProps<{
   tab: PulseBoardTab
@@ -40,8 +43,7 @@ const batch = computed(() => ({
 const clockText = computed(() => {
   const raw = (props.asOf || '').trim()
   if (!raw) return ''
-  const match = raw.match(/(\d{2}:\d{2}:\d{2})/)
-  return match?.[1] ?? ''
+  return raw.match(/(\d{2}:\d{2}:\d{2})/)?.[1] ?? ''
 })
 
 const tabs: { id: PulseBoardTab; label: string }[] = [
@@ -56,40 +58,49 @@ const hasRows = computed(() =>
   isSector.value ? sectorList.value.length > 0 : props.rows.length > 0,
 )
 
+/** 口径 + 降级原因都进 tooltip：榜是「库内样本」不是全市场领涨。 */
+const scopeTip = computed(() =>
+  ['库内样本排序，非全市场领涨', props.note].filter(Boolean).join(' · '),
+)
 
 function fmtTurnover(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(Number(value))) return '—'
+  if (value == null || !Number.isFinite(Number(value))) return '—'
   return `${(Number(value) * 100).toFixed(2)}%`
 }
 
-function tone(value: number | null): string {
-  if (value == null || value === 0) return ''
-  return value > 0 ? 'is-up' : 'is-down'
+function tone(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(Number(value))) return 'pulse-flat'
+  if (Number(value) > 0) return 'pulse-up'
+  if (Number(value) < 0) return 'pulse-down'
+  return 'pulse-flat'
 }
 </script>
 
 <template>
   <section class="pulse-panel">
     <header class="pulse-panel__head">
-      <div class="pulse-board__title">
-        <strong>库内样本榜</strong>
-        <span class="pulse-board__scope">非全市场领涨</span>
-        <span v-if="clockText" class="pulse-board__clock">{{ clockText }}</span>
+      <div class="pulse-panel__lead">
+        <h2 class="pulse-panel__title">样本榜</h2>
+        <el-tooltip :content="scopeTip" placement="bottom-start" :show-after="200">
+          <span class="pulse-panel__meta">库内 · {{ clockText || '—' }}</span>
+        </el-tooltip>
       </div>
       <div class="pulse-tabs">
         <el-button
           v-for="t in tabs"
           :key="t.id"
+          link
           size="small"
           :type="tab === t.id ? 'primary' : 'default'"
-          plain
+          :class="{ 'pulse-tab--on': tab === t.id }"
+          :aria-pressed="tab === t.id"
           @click="emit('update:tab', t.id)"
         >
           {{ t.label }}
         </el-button>
       </div>
     </header>
-    <p v-if="note" class="pulse-panel__note">{{ note }}</p>
+
     <el-table
       v-if="hasRows && isSector"
       :data="sectorList"
@@ -98,29 +109,23 @@ function tone(value: number | null): string {
       height="100%"
       class="pulse-table"
     >
-      <el-table-column
-        type="index"
-        label="序号"
-        width="60"
-        align="center"
-        header-align="center"
-      />
-      <el-table-column label="板块" min-width="120" align="center" header-align="center">
+      <el-table-column label="板块" min-width="96" align="center" header-align="center">
         <template #default="{ row }">
-          <span>{{ row.name }}</span>
+          <span class="pulse-name">{{ row.name }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="涨幅" min-width="120" align="center" header-align="center">
+      <el-table-column label="涨幅" width="76" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num" :class="tone(row.pct)">{{ fmtPct(row.pct) }}</span>
+          <span class="pulse-num" :class="tone(row.pct)">{{ signedPct(row.pct) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="成分" min-width="80" align="center" header-align="center">
+      <el-table-column label="成分" width="56" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num pulse-muted">{{ row.count }}</span>
+          <span class="pulse-num pulse-dim">{{ row.count }}</span>
         </template>
       </el-table-column>
     </el-table>
+
     <el-table
       v-else-if="hasRows"
       :data="rows"
@@ -129,132 +134,42 @@ function tone(value: number | null): string {
       height="100%"
       class="pulse-table"
     >
-      <el-table-column
-        type="index"
-        label="序号"
-        width="60"
-        align="center"
-        header-align="center"
-      />
-      <el-table-column label="名称" min-width="120" align="center" header-align="center">
+      <el-table-column label="名称" width="96" align="center" header-align="center">
         <template #default="{ row }">
-          <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
+          <span class="pulse-name">
+            <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
+          </span>
         </template>
       </el-table-column>
       <el-table-column
         :label="tab === 'turnover' ? '换手' : '涨幅'"
-        min-width="120"
+        width="76"
         align="center"
         header-align="center"
       >
         <template #default="{ row }">
-          <span
-            v-if="tab === 'turnover'"
-            class="num"
-          >{{ fmtTurnover(row.turnover) }}</span>
-          <span v-else class="num" :class="tone(pctOf(row))">{{ fmtPct(pctOf(row)) }}</span>
+          <span v-if="tab === 'turnover'" class="pulse-num">{{ fmtTurnover(row.turnover) }}</span>
+          <span v-else class="pulse-num" :class="tone(pctOf(row))">
+            {{ signedPct(pctOf(row)) }}
+          </span>
         </template>
       </el-table-column>
-      <el-table-column label="板块" min-width="120" align="center" header-align="center">
+      <el-table-column label="板块" min-width="76" align="center" header-align="center" show-overflow-tooltip>
         <template #default="{ row }">
-          <span class="pulse-muted">{{ row.industry || '—' }}</span>
+          <span class="pulse-dim pulse-clip">{{ row.industry || '—' }}</span>
         </template>
       </el-table-column>
     </el-table>
-    <el-empty
-      v-else
-      :description="isSector ? '暂无行业样本，请先同步行情并补全行业' : '暂无榜单，请先同步行情'"
-      :image-size="56"
-    />
+
+    <div v-else class="pulse-panel__empty">
+      <span>{{ isSector ? '暂无行业样本' : '暂无榜单' }}</span>
+      <el-button link type="primary" size="small" @click="emit('update:tab', tab)">重新取数</el-button>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.pulse-panel {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.pulse-panel__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.4rem 0.55rem;
-  border-bottom: 1px solid var(--rule);
-}
-
-.pulse-board__title {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.pulse-panel__head strong {
-  font-size: 0.88rem;
-}
-
-.pulse-board__scope {
-  font-size: 0.68rem;
-  color: var(--mist);
-  font-weight: normal;
-}
-
-.pulse-board__clock {
-  font-size: 0.7rem;
-  color: var(--mist);
-  font-variant-numeric: tabular-nums;
-  font-family: var(--mono, ui-monospace, monospace);
-}
-
-.pulse-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.08rem;
-}
-
-.pulse-tabs :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-.pulse-panel__note {
+.pulse-panel__title {
   margin: 0;
-  padding: 0.25rem 0.65rem 0;
-  font-size: 0.7rem;
-  color: var(--mist);
-}
-
-.pulse-table {
-  flex: 1;
-  min-height: 140px;
-}
-
-.pulse-table :deep(.el-table__cell) {
-  padding: 4px 0;
-}
-
-.num {
-  font-variant-numeric: tabular-nums;
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 0.8rem;
-}
-
-.pulse-muted {
-  color: var(--mist);
-  font-size: 0.78rem;
-}
-
-.is-up {
-  color: var(--up, #c41e3a);
-}
-
-.is-down {
-  color: var(--down, #0f6b5c);
 }
 </style>

@@ -24,6 +24,22 @@
 | GET / POST | `/api/research/point-in-time-facts` | 查询或追加带 `available_at`、披露来源和 revision 的财务/事件事实 |
 | POST | `/api/research/point-in-time-facts/import` | 原子导入多条 PIT 事实；同 observation id 仅允许幂等重放 |
 
+### 文件清单
+
+| 文件 | 工厂 | 负责的端点 |
+|---|---|---|
+| `router.py` | `build_research_router` | `catalog` / `profile/{code}` / `runs*` / `hypotheses*`；并 `include_router(build_research_backtest_router(...))`，store factory 形参原样透传 |
+| `backtest_router.py` | `build_research_backtest_router` | `backtest-runs*` / `backtest-jobs*`（提交、查状态、run card、workflow、artifact、publish、replay） |
+| `factor_router.py` | `build_research_factor_router` | `factor-jobs*`（PTH252 固定合同） |
+| `publication_router.py` | `build_research_publication_router` | `backtest-runs/{run_id}/reject` |
+| `temporal.py` | `build_research_temporal_router` | `membership-snapshots*` / `point-in-time-facts*` |
+| `backtest_models.py` / `factor_models.py` / `temporal_models.py` / `write_access.py` | — | 请求模型与写权限依赖 |
+
+`backtest_router.py` 从 `router.py` 拆出来的理由不是行数，是它自带一份**进程级线程池** `_BACKTEST_EXECUTOR` 与围绕它的 job 状态机；`router.py` 剩下的都是同步请求，两拨东西的失败模式与并发约束完全不同（`factor_router.py` 更早因同样理由拆出）。
+
+⚠️ **持有线程池的文件必须登记在 `tests/ai/test_tenant_threads.py::_GUARDED_FILES`**（那条 AST 守卫逐文件扫 `x.submit(...)` / `threading.Thread(...)`）。`router.py`、`backtest_router.py`、`factor_router.py` 都在清单里；**再拆时清单要跟着走**，否则守卫出现盲区，而且清单里写了不存在的路径会让用例直接 `FileNotFoundError`。投递一律走 `submit_with_tenant`：worker 线程的 Context 停在线程创建那一刻，裸 `.submit(...)` 会把 B 的实验产物写进管理员的 `research_runs_dir()`。
+
+
 所有 GET 均为只读。`POST /runs`、temporal 写入和研究回测只写 `data/research_runs/` 的 JSON 产物，不写三套业务数据库；`profile` 和 run 均不调用外部网络。temporal 的单条和批量写入均需组合根注入的写权限，且只允许追加或幂等重放。标的/run 不存在返回 `404`，代码格式或预算不合法返回 `422`，不可恢复的缺失阶段或 manifest 不匹配返回 `409`。
 
 研究回测的异步 job 使用研究域 JSON 状态文件，不依赖 `ops` 的 infrastructure。所有写入口都通过组合根注入的 `write_dependency`。回测 run 读取响应给出 `artifact_manifest_sha256`；人工批准或否决请求都需回传该值以及 `reviewer`、`reason`。相同结论可用签署时 manifest 重试；发布后刷新页面得到的当前 manifest 也可重试，但服务端会核验其恰好由签署前产物和固定终态回执组成。终态 run 只允许写入 `workflow-final.json`、`run_card.md`、`replay-comparison.json` 三类审计收尾 artifact；同一路径只有相同 hash 可幂等重放。`replay-comparison.json` 的 artifact hash、回放前完整 manifest、冻结输入 hash 和人工签署时 manifest hash 必须全部匹配；其他新增 artifact、回执结构错误或任一内容篡改都会拒绝重试。`strict_pit=true` 必须提交 `historical_universe_id`，且每个已选成功行情 receipt 都必须有实际来源、`source_url`、`fetched_at`、`as_of`、64 位 `payload_sha256`、`parser_revision`、`published_at`/`available_at`，并将 `publication_status`、`availability_status` 标为 `observed`；缺少完整历史证据会被拒绝。非严格运行保留 warnings 并处于 `degraded/exploratory`，不能作为 hypothesis 通过依据。hypothesis 的人工审核仍独立在服务端核对 completed run、validation、manifest hash、run card 指标和 hypothesis revision。

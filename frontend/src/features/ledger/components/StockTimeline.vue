@@ -36,88 +36,82 @@ function candidateSummary(event: TimelineEvent): string {
   display: flex;
   flex-direction: column;
 }
-
+/* D3：行高钉 --row-h，1px hairline 分隔 */
 .sw-tl__item {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  min-height: 2rem;
-  padding: 0.35rem 0.55rem;
+  gap: var(--gap-2);
+  min-height: var(--row-h);
+  padding: 0 var(--gap-2);
   border-bottom: 1px solid var(--rule);
-  border-left: 2px solid transparent;
 }
-
 .sw-tl__item:last-child {
   border-bottom: 0;
 }
-
+/* 候选轨命中态：整行底色 + 印章字色（对齐 style.content.css 的 .day-item.active），不再画左侧色条 */
 .sw-tl__item.is-cand {
-  border-left-color: #2563eb;
+  background: var(--seal-soft);
+  color: var(--seal-ink);
 }
-
 .sw-tl__date {
   flex: 0 0 6.2rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
   color: var(--mist);
   white-space: nowrap;
 }
-
+/* 描边徽章：不再用实心色块 + 白字，深色档下也不会糊成白块 */
 .sw-tl__tag {
   flex: 0 0 auto;
-  font-size: 0.7rem;
-  line-height: 1.2;
-  padding: 0.08rem 0.35rem;
-  border-radius: 3px;
-  background: #2563eb;
-  color: #fff;
+  font-size: var(--fs-kicker);
+  line-height: 1.4;
+  padding: 0 var(--gap-1);
+  border: 1px solid color-mix(in srgb, var(--seal) 42%, var(--rule));
+  border-radius: var(--radius);
+  background: var(--seal-soft);
+  color: var(--seal-ink);
   white-space: nowrap;
 }
-
 .sw-tl__title {
   flex: 0 0 auto;
   max-width: 8rem;
-  font-size: 0.84rem;
-  font-weight: 650;
+  font-size: var(--fs-body);
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .sw-tl__body {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 0.84rem;
+  font-size: var(--fs-body);
   line-height: 1.35;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .sw-tl__foot {
   flex: 0 0 auto;
-  font-size: 0.7rem;
+  font-size: var(--fs-kicker);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-
 @media (max-width: 720px) {
   .sw-tl__item {
     flex-wrap: wrap;
-    gap: 0.2rem 0.45rem;
-    padding: 0.45rem 0.5rem;
+    gap: var(--gap-1) var(--gap-2);
+    padding: var(--gap-1) var(--gap-2);
   }
-
   .sw-tl__date {
     flex-basis: auto;
   }
-
   .sw-tl__body {
     flex: 1 1 100%;
     order: 4;
     white-space: normal;
   }
-
   .sw-tl__foot {
     margin-left: auto;
   }

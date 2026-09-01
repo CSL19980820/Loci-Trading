@@ -4,6 +4,7 @@ import type {
   Job,
   JobKind,
   JobRun,
+  JobQuota,
   LanesCatalog,
   LanePolicy,
   LanePolicyPayload,
@@ -94,42 +95,6 @@ export function previewSkillWatch(slug: string): Promise<SkillWatchPreview> {
   return quantRequest<SkillWatchPreview>(`/skills/${encodeURIComponent(slug)}/watch-preview`, {
     method: 'POST',
   })
-}
-
-export type SecondWaveTrigger = {
-  code: string
-  name?: string
-  strength?: number
-  price?: number
-  live_price?: number
-  pct?: number | null
-  day_low?: number
-  tags?: string[]
-  quote_trade_date?: string
-}
-
-export type SecondWaveLatest = {
-  available: boolean
-  slug: string
-  trade_date: string
-  observed_at: string
-  quote_source: string
-  quote_trade_date?: string
-  breadth_pct: number | null
-  gate_pass: boolean | null
-  pool_size: number
-  pool_checked: number
-  min_strength: number | null
-  triggered: SecondWaveTrigger[]
-  picks: Array<Record<string, unknown>>
-  below_min_strength: number
-}
-
-/** 首页挂载：上一轮二波扫描 + 列表票当日现价。不重跑扫描。 */
-export function getSecondWaveLatest(
-  slug = 'dragon-second-wave',
-): Promise<SecondWaveLatest> {
-  return quantRequest<SecondWaveLatest>(`/skills/${encodeURIComponent(slug)}/second-wave`)
 }
 
 export function getWatchTuning(slug: string): Promise<WatchTuningResponse> {
@@ -283,6 +248,16 @@ export function batchDeleteJobRuns(ids: string[]): Promise<{ removed: number }> 
 
 export function getScheduleStatus(): Promise<ScheduleStatus> {
   return quantRequest<ScheduleStatus>('/jobs/schedule')
+}
+
+/**
+ * 自建任务额度。`limit < 0` = 不限（管理员）。
+ *
+ * 建之前就要问一次：否则用户填完整张表单才在提交时吃一个 429，
+ * 而那时他已经想好了名字、选好了战法。
+ */
+export function getJobQuota(): Promise<JobQuota> {
+  return quantRequest<JobQuota>('/jobs/quota')
 }
 
 export function getWecomSettings(): Promise<WecomSettings> {

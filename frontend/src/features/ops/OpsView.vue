@@ -9,6 +9,7 @@ import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import LlmTab from './components/LlmTab.vue'
 import McpTab from './components/McpTab.vue'
 import PackTab from './components/PackTab.vue'
+import SignalRulesTab from './components/SignalRulesTab.vue'
 import SettingsRail, {
   type SettingsRailGroup,
 } from './components/SettingsRail.vue'
@@ -16,6 +17,7 @@ import SystemTab from './components/SystemTab.vue'
 import { provideOpsFeedback } from './composables/useOpsFeedback'
 import {
   type OpsTab,
+  type RailSummary,
   useSettingsSummaries,
 } from './composables/useSettingsSummaries'
 
@@ -25,7 +27,7 @@ type SystemTabExpose = TabLoadable & {
   isDirty: () => boolean
 }
 
-const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'pack'])
+const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'signals', 'pack'])
 
 const SYSTEM_LEGACY: Record<string, string> = {
   'data-dir': 'sys-location',
@@ -72,10 +74,24 @@ const activeTab = ref<OpsTab>(normalizeTab(route.query.tab))
 const visited = reactive<Record<OpsTab, boolean>>({
   mcp: false,
   llm: false,
+  signals: false,
   system: false,
   pack: false,
 })
 visited[activeTab.value] = true
+
+/**
+ * 「系统」页里的四个锚点段。
+ *
+ * 它们此前只存在于页面内部：rail 上只有一个「系统」，想配企微就得进去从头
+ * 滚——四段里企微在第三段，滚过头就得往回找。摆到 rail 上才是能点的导航。
+ */
+const SYSTEM_ANCHORS: { label: string; anchor: string }[] = [
+  { label: '数据目录', anchor: 'sys-location' },
+  { label: '行情同步', anchor: 'sys-sync' },
+  { label: '推送', anchor: 'sys-notify' },
+  { label: '外观与窗口', anchor: 'sys-appearance' },
+]
 
 const railGroups = computed((): SettingsRailGroup[] => [
   {
@@ -84,16 +100,32 @@ const railGroups = computed((): SettingsRailGroup[] => [
       // 缩写降为副标：主标说人话，MCP / LLM 仍留着，老用户才认得出是同一处
       { name: 'mcp', label: '工具连接', ...summaries.mcp, tail: `MCP · ${summaries.mcp.tail}` },
       { name: 'llm', label: 'AI 模型', ...summaries.llm, tail: `LLM · ${summaries.llm.tail}` },
+      // 信号规则：大屏那条信号流按什么口径报，得能在系统里改，不能只活在后端代码里
+      { name: 'signals', label: '信号规则', ...summaries.signals },
     ],
   },
   {
     title: '本机',
     items: [
-      { name: 'system', label: '系统', ...summaries.system },
+      { name: 'system', label: '系统', ...summaries.system, children: SYSTEM_ANCHORS },
       { name: 'pack', label: '一键打包', ...summaries.pack },
     ],
   },
 ])
+
+const activeAnchor = computed(() => route.hash.replace(/^#/, ''))
+
+/** 点二级项：切到系统页 + 落到那一段，并把 hash 写进地址栏（可分享、可回退）。 */
+async function goAnchor(anchor: string): Promise<void> {
+  if (activeTab.value !== 'system') {
+    activeTab.value = 'system'
+    // 先让 activeTab 的 watcher 把它那次 router.replace 打完，否则它会把 hash 抹掉
+    await nextTick()
+  }
+  await router.replace({ query: { ...route.query, tab: 'system' }, hash: `#${anchor}` })
+  await nextTick()
+  document.getElementById(anchor)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
 
 const mobileTabs = computed(() =>
   railGroups.value.flatMap((g) => g.items.map((i) => ({ name: i.name, label: i.label }))),
@@ -101,13 +133,20 @@ const mobileTabs = computed(() =>
 
 const mcpTab = ref<TabLoadable | null>(null)
 const llmTab = ref<TabLoadable | null>(null)
+const signalsTab = ref<TabLoadable | null>(null)
 const systemTab = ref<SystemTabExpose | null>(null)
 const packTab = ref<TabLoadable | null>(null)
+
+/** 规则面板自己知道「几条启用」，直接回填 rail，不走全局 summary 拉取。 */
+function applySignalSummary(next: RailSummary): void {
+  Object.assign(summaries.signals, next)
+}
 
 function tabLoader(tab: OpsTab): TabLoadable | null {
   const map: Record<OpsTab, { value: TabLoadable | null }> = {
     mcp: mcpTab,
     llm: llmTab,
+    signals: signalsTab,
     system: systemTab,
     pack: packTab,
   }
@@ -223,6 +262,8 @@ onMounted(() => {
         v-model="activeTab"
         class="ops-rail"
         :groups="railGroups"
+        :active-anchor="activeAnchor"
+        @select-anchor="goAnchor"
       />
 
       <div
@@ -236,6 +277,9 @@ onMounted(() => {
         </div>
         <div v-if="visited.llm" v-show="activeTab === 'llm'" class="ops-pane">
           <LlmTab ref="llmTab" @changed="refreshSummaries" />
+        </div>
+        <div v-if="visited.signals" v-show="activeTab === 'signals'" class="ops-pane">
+          <SignalRulesTab ref="signalsTab" @summary="applySignalSummary" />
         </div>
         <div v-if="visited.system" v-show="activeTab === 'system'" class="ops-pane">
           <SystemTab
@@ -306,7 +350,7 @@ onMounted(() => {
 
 .ops-body {
   position: relative;
-  min-height: 12rem;
+  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;

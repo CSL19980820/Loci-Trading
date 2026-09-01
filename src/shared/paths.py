@@ -221,12 +221,37 @@ def data_dir() -> Path:
     return default_data_dir().resolve()
 
 
+def _tenant_dir() -> Path:
+    """当前租户的私有目录。主租户就是 ``data/`` 本身，存量单机零迁移。
+
+    多租户不是「把每张表加一列 user_id」，而是「换一个 data 根」：
+    行情是公共事实（全局共享一份），账本/运维/技能/研究产物是私人事实（分库）。
+    见 ``src/shared/tenancy.py`` 的取舍说明。
+    """
+    from src.shared.tenancy import tenant_root
+
+    return tenant_root(data_dir())
+
+
+def _tenant_scoped(env_key: str, filename: str) -> Path:
+    """环境变量只对主租户生效——它表达的是「这台机器的那一份库」。
+
+    子租户若也认这个变量，所有人会写进同一个文件，隔离当场失效。
+    """
+    from src.shared.tenancy import is_primary_tenant
+
+    raw = os.environ.get(env_key, "").strip()
+    if raw and is_primary_tenant():
+        return Path(raw)
+    return _tenant_dir() / filename
+
+
 def palace_db() -> Path:
-    raw = os.environ.get("PALACE_DB", "").strip()
-    return Path(raw) if raw else data_dir() / "palace.db"
+    return _tenant_scoped("PALACE_DB", "palace.db")
 
 
 def market_db() -> Path:
+    """行情全量库：全局共享，不随租户切换。"""
     raw = os.environ.get("PALACE_MARKET_DB", "").strip()
     return Path(raw) if raw else data_dir() / "market.db"
 
@@ -235,33 +260,43 @@ def market_hot_db() -> Path:
     """滚动热读库：近 N 交易日行情窗口，选股/面板只读它，与全量写库物理隔离。
 
     全量库被同步写时，热库读路径不受写锁影响；数据从全量库镜像派生，可随时重建。
+  与 ``market_db`` 一样是全局共享资源。
     """
     raw = os.environ.get("PALACE_MARKET_HOT_DB", "").strip()
     return Path(raw) if raw else data_dir() / "market_hot.db"
 
 
+def identity_db() -> Path:
+    """账号 / 身份 / 会话库：跨租户全局唯一，绝不分库。"""
+    raw = os.environ.get("LOCI_IDENTITY_DB", "").strip()
+    return Path(raw) if raw else data_dir() / "identity.db"
+
+
+def community_db() -> Path:
+    """社区库（策略广场、榜单、跟单、动态）：跨租户全局唯一。"""
+    raw = os.environ.get("LOCI_COMMUNITY_DB", "").strip()
+    return Path(raw) if raw else data_dir() / "community.db"
+
+
 def ops_db() -> Path:
-    raw = os.environ.get("PALACE_OPS_DB", "").strip()
-    return Path(raw) if raw else data_dir() / "ops.db"
+    return _tenant_scoped("PALACE_OPS_DB", "ops.db")
 
 
 def skill_root() -> Path:
-    raw = os.environ.get("PALACE_SKILL_ROOT", "").strip()
-    return Path(raw) if raw else data_dir() / "skills"
+    return _tenant_scoped("PALACE_SKILL_ROOT", "skills")
 
 
 def skill_runs_dir() -> Path:
-    return data_dir() / "skill_runs"
+    return _tenant_dir() / "skill_runs"
 
 
 def research_runs_dir() -> Path:
     """研究 run 的 JSON 产物目录；不与运维 run 或业务数据库混用。"""
-    return data_dir() / "research_runs"
+    return _tenant_dir() / "research_runs"
 
 
 def mcp_json_path() -> Path:
-    raw = os.environ.get("PALACE_MCP_JSON", "").strip()
-    return Path(raw) if raw else data_dir() / "mcp.json"
+    return _tenant_scoped("PALACE_MCP_JSON", "mcp.json")
 
 
 def setup_done() -> bool:

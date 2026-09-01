@@ -81,8 +81,9 @@ export function isExploratoryRun(run: ResearchBacktestRun | null): boolean {
     || membership.survivorship_bias === true
 }
 
+/** el-alert 标题：≤20 字、只报当前真实风险；完整口径由 runEvidenceDescription 走 tooltip。 */
 export function runEvidenceTitle(run: ResearchBacktestRun | null): string {
-  return isExploratoryRun(run) ? '降级 / 探索性研究' : '严格 PIT 证据门禁'
+  return isExploratoryRun(run) ? '降级 / 探索性 run，不能作为证据' : '严格 PIT 证据门禁'
 }
 
 export function runEvidenceDescription(run: ResearchBacktestRun | null): string {

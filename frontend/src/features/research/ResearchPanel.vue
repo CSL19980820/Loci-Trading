@@ -9,7 +9,9 @@ import {
   WarningFilled,
 } from '@element-plus/icons-vue'
 
+import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import type {
   ResearchBudget,
@@ -221,12 +223,16 @@ onMounted(() => {
   <div class="research-panel" aria-label="研究剖面">
     <PageBusy v-if="catalogLoading && !catalog" label="加载研究目录…" />
 
-    <header class="research-head">
-      <div class="research-title">
-        <span class="research-kicker">EVIDENCE DESK · {{ dimensionsCount || 21 }} DIMENSIONS</span>
-        <h2>研究剖面</h2>
-        <p>事实、来源、缺口分开呈现；研究标签不直接生成生产信号。</p>
-      </div>
+    <!--
+      页头不印「研究剖面」：上层 PageTabs 的「研究」高亮着就已经交代了身份，
+      英文 kicker 与那句介绍段各再占一行 —— 三行只干一行的事。标题删掉，
+      口径进 note 的 ⓘ，维度数变行内读数，代码框 / 预算档 / 读取 / 归档 / 刷新
+      全部压在同一条功能行上。
+    -->
+    <PageToolbar
+      dense
+      note="事实、来源、缺口分开呈现；研究标签不直接生成生产信号"
+    >
       <form class="research-query" @submit.prevent="submit">
         <el-input
           v-model="code"
@@ -247,7 +253,10 @@ onMounted(() => {
         <el-button :icon="DocumentChecked" :loading="archiveLoading" :disabled="!profile || loading" @click="archive">归档</el-button>
         <el-button text :icon="RefreshRight" :disabled="loading" aria-label="刷新研究剖面" @click="refresh" />
       </form>
-    </header>
+      <template #stats>
+        <HeaderStat label="维度" :value="dimensionsCount || 21" />
+      </template>
+    </PageToolbar>
 
     <el-alert
       v-if="error"
@@ -270,7 +279,7 @@ onMounted(() => {
     <template v-if="profile">
       <section class="research-summary" aria-label="研究摘要">
         <div class="subject-lockup">
-          <span class="research-kicker">SUBJECT</span>
+          <!-- 「SUBJECT」这行英文 kicker 删掉：下面就是标的名 + 代码 + 行业，遮住它也认得出来 -->
           <strong>{{ subjectName }}</strong>
           <code>{{ profile.code }}</code>
           <span>{{ subjectIndustry }}</span>
@@ -299,7 +308,8 @@ onMounted(() => {
       </section>
 
       <section v-if="profile.source_attempts.length || profile.artifact_id" class="source-receipts" aria-label="来源回执">
-        <span class="research-kicker">SOURCE RECEIPTS</span>
+        <!-- 英文 kicker 换成中文行内标签：这排 tag 没有别的东西说明它是什么，所以留，但不占整行 -->
+        <span class="research-kicker">来源回执</span>
         <el-tag
           v-if="profile.artifact_id"
           :type="profile.artifact_status === 'stale' ? 'warning' : 'success'"
@@ -320,6 +330,10 @@ onMounted(() => {
         </el-tag>
       </section>
 
+      <!--
+        不用 description（AGENTS.md §3.9 文案规范）：title 只报「出了什么事」，
+        具体是哪几条降级用 el-tag 列出来 —— 那是结构化证据，不是说明文字。
+      -->
       <el-alert
         v-if="sourceTelemetryWarnings.length"
         class="research-alert"
@@ -327,19 +341,31 @@ onMounted(() => {
         show-icon
         :closable="false"
         title="行情来源 telemetry 不完整或已降级"
-        :description="sourceTelemetryWarnings.join('；')"
-      />
-
-      <el-alert
-        v-if="quality?.blocked"
-        class="research-alert"
-        type="warning"
-        show-icon
-        :closable="false"
-        title="研究结果未通过核验门禁"
       >
-        <template #default>可查看中间事实；不要把它标记为完整研究或直接用于生产信号。</template>
+        <el-tag
+          v-for="warning in sourceTelemetryWarnings"
+          :key="warning"
+          size="small"
+          type="warning"
+          effect="plain"
+          class="telemetry-tag"
+        >{{ warning }}</el-tag>
       </el-alert>
+
+      <!-- 那句「可查看中间事实但别当结论」是口径解释，进 tooltip；alert 只报异常本身 -->
+      <el-tooltip
+        v-if="quality?.blocked"
+        placement="bottom-start"
+        content="可查看中间事实；不要标记为完整研究，也不要直接用于生产信号"
+      >
+        <el-alert
+          class="research-alert"
+          type="warning"
+          show-icon
+          :closable="false"
+          title="研究结果未通过核验门禁"
+        />
+      </el-tooltip>
 
       <ResearchEvidencePanel :profile="profile" :run="activeRun || archivedRun" />
 
@@ -359,7 +385,7 @@ onMounted(() => {
         reason="目录已就绪；当前只读取本地行情，不触发外部来源。"
       />
       <div class="source-band">
-        <span class="research-kicker">SOURCE REGISTRY</span>
+        <span class="research-kicker">来源登记</span>
         <el-tag v-for="source in catalog.sources" :key="source.id" size="small" effect="plain">
           {{ source.name_cn }} · {{ source.health }}
         </el-tag>
@@ -384,52 +410,26 @@ onMounted(() => {
   color: var(--ink);
 }
 
-.research-head,
 .research-summary {
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--sheet);
 }
 
-.research-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.95rem 1rem;
-}
-
-.research-title {
-  min-width: 13rem;
-}
-
+/* 行内：kicker 以前是 display:block，硬把标签和它标注的那排 tag 拆成两行 */
 .research-kicker {
-  display: block;
   color: var(--mist);
-  font: 0.68rem/1.2 var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
-.research-title h2 {
-  margin: 0.22rem 0 0;
-  color: var(--ink);
-  font-size: 1.18rem;
-  font-weight: 700;
-  letter-spacing: 0;
-}
-
-.research-title p {
-  margin: 0.28rem 0 0;
-  color: var(--mist);
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
+/* 页头这条功能行：控件挤在一起，靠 PageToolbar 的左槽吃宽度 */
 .research-query {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  flex: 1 1 auto;
+  min-width: 0;
   flex-wrap: wrap;
   gap: 0.45rem;
 }
@@ -444,6 +444,10 @@ onMounted(() => {
 
 .research-alert {
   margin: 0;
+}
+
+.telemetry-tag {
+  margin: 0 var(--gap-1) var(--gap-1) 0;
 }
 
 .research-summary {
@@ -467,9 +471,6 @@ onMounted(() => {
   border-inline-end: 1px solid var(--rule);
 }
 
-.subject-lockup .research-kicker {
-  flex-basis: 100%;
-}
 
 .subject-lockup strong {
   font-size: 1.05rem;

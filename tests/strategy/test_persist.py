@@ -230,23 +230,26 @@ class ScreenRunStateTests(unittest.TestCase):
         self.assertIsNone(first)
         snap = screen_run_snapshot()
         self.assertEqual(snap["status"], "running")
-        busy = screen_run_try_begin(strategy="other", trade_date="")
+        # 同一战法防重；换个战法则并行放行（见 test_screen_run_multi.py）。
+        busy = screen_run_try_begin(strategy="demo", trade_date="")
         self.assertIsNotNone(busy)
         self.assertEqual(busy["strategy"], "demo")
+        self.assertEqual(busy["busy_reason"], "same_strategy")
+        self.assertIsNone(screen_run_try_begin(strategy="other", trade_date=""))
+        screen_run_update(status="idle", result=None, error="", log=[], strategy="other")
         screen_run_update(status="idle", result=None, error="", log=[])
 
     def test_thread_start_failure_moves_run_to_error(self) -> None:
         """线程资源耗尽时不能把选股进度永久留在 running。"""
-        class BrokenThread:
-            def __init__(self, *args: object, **kwargs: object) -> None:
-                pass
-
-            def start(self) -> None:
-                raise RuntimeError("no thread slots")
+        def broken_spawn(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("no thread slots")
 
         screen_run_update(status="idle", result=None, error="", log=[])
         try:
-            with patch("src.strategy.application.screen_run.threading.Thread", BrokenThread):
+            with patch(
+                "src.strategy.application.screen_run.spawn_tenant_thread",
+                broken_spawn,
+            ):
                 snap = start_screen_run_thread(
                     {"strategy": "demo", "date": "2026-07-28"},
                     market_factory=lambda: None,

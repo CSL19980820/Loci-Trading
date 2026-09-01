@@ -88,12 +88,57 @@
 | `duckdb_panel.py` | 可选 DuckDB 只读旁路（`LOCI_MARKET_DUCKDB=1`；失败回退 pandas） |
 | `polars_panel.py` | 可选 Polars 只读 POC（`LOCI_MARKET_POLARS=1`；未安装/失败回退 pandas 或 DuckDB） |
 | `sync.py` / `sync_spot.py` | 历史日 K / 当日 spot 同步；后者维护单飞（key = **代码集合 sha1 指纹**＋交易日＋batch_size，board/screen/sync/ops 请求同一批代码时能合流；**失败只负缓存 3s**、成功才留 30s，一次抽风不会被重放半分钟）、**跨进程 spot 文件锁**、逐代码回执与失败终态；写库遇 locked/busy 有限退避，错误用人话中文 |
-| `application/screen_spot.py` | 选股前「当日行情就绪」：覆盖率≥门禁下限则**跳过 spot**；spot 失败但覆盖已够则软放行；真正不足才阻断 |
+| `application/screen_spot.py` | **收盘后**选股前「当日行情就绪」：覆盖率≥门禁下限则**跳过 spot**；spot 失败但覆盖已够则软放行；真正不足才阻断 |
+| `application/screen_live.py` | **盘中**选股（09:15–15:00 选今天）：自己拉 `spot_batch` 叠内存面板，**不写** `market.db`、不拿写锁。历史只读热库。拉不到实时就中止，不回退昨日本地日 K |
 | `em_industry.py` | 东财行业板块 → `code→行业名`:磁盘缓存 + 7 天 TTL + **失败兑现旧缓存** + **30 分钟失败冷却**。从 `sources.py` 拆出——那边是「证券列表与回退链」,行业名只是路上一步锦上添花,却带着自己一整套缓存/冷却/并发取数 |
-| `application/data_quality.py` | 行情库体检:权威源占比、合成成交额、缺回执、当日覆盖、基准指数量级、非权威源水位。**只读只判不改库**;由运维托管任务 `data_quality`(工作日 16:30)天天跑,超阈值出中文告警。合成成交额判据**只在会合成的源上算**(`FABRICATING_SOURCES`)——1990 年代单一价格成交日真实 amount 本来就等于 `close×volume`,在通达信行上套这条判据会把真数据当假值 |
-| `infrastructure/write_lock.py` | 跨进程行情写锁（`.market.db.write.lock`）：sync/spot 互斥，杜绝 Loci 与 CLI 双写把库顶成 locked；**同线程可重入，跨线程等待与文件锁共用 `_LOCK_WAIT_SEC` deadline**（等不到抛 `MarketWriteBusy` 并指名持锁者，绝不无限期挂起）；`current_write_holder()` 供诊断；`LOCI_OBSERVABILITY=1` 时记 `loci.lock.wait_ms`（busy/reentrant/local_deadline）。**fd 与锁文件必须成对归还**：`os.open(..., O_CREAT\|O_EXCL)` 一成功磁盘上就已经躺着锁文件，所以从那行到 `yield` 整段都包在 try/finally 里走 `_release_lock_file()`（先 close 后 unlink，顺序不能反，Windows 上文件开着删不掉）。以前只有 `os.write` 一行裸露在外，它抛 OSError（磁盘满 / 只读挂载 / 杀软拦截）时本进程漏 fd，更贵的是残留锁的 holder 前缀不是别人的 pid、age 又不到 `_LOCK_STALE_SEC`，于是**把其它进程整整挡满 30 分钟**——一次写失败换来半小时行情库瘫痪。保护范围覆盖整段而非只包 `os.write`：中间的 `record_lock_wait` / logger 抛错是同一种双重泄漏。回归测试 `tests/market/test_write_lock_fd_leak.py`（修复前 5 条失败，其中「下一次取锁」直接等满 deadline） |
+| `application/data_quality.py` | 行情库体检（阈值与 `Finding` 见下一行的 `data_quality_thresholds.py`，本文件是判据与编排）:权威源占比(全库)、**最后一个交易日的权威源占比**、合成成交额、缺回执、当日覆盖、基准指数量级、非权威源水位。**只读只判不改库**;由运维托管任务 `data_quality`(工作日 16:30)天天跑,超阈值出中文告警。合成成交额判据有**两道排除**,都是为了不把真数据报成假值:①只在会合成的源上算(`FABRICATING_SOURCES`),通达信给的是真实成交额;②**跳过 `high == low` 的单一价格成交日**——整天只成交在一个价位时 `amount = close×volume` 是算术恒等。②是实测逼出来的:生产库曾报 8128 行,其中 **7721 行(95%)当日 `high==low`**(1990 年代薄成交、北交所/新三板低流动性个股),而通达信自己的单一价格日里也有 33% 满足该等式——**是物理规律,不是某个源在造假**;且它给的处置建议(跑 resync)实测**修正 0 行**,因为 98.4% 的日期通达信根本够不到。**当日覆盖判据用比率不用绝对行数**(`min_last_day_coverage=0.95`,分母取 `instruments` 里的 STOCK 只数):曾写死 `min_last_day_rows=5000`(注释称「全市场约 5540」),而生产库实际只有 4932 只,覆盖 4935 行已是 **100.1%** 却天天报警。**天天响、照着做又没用的告警比没有告警更糟**,它会把整张体检表训练成噪音。`instruments` 读不到时退回绝对地板 `min_last_day_rows_floor=500` 并写明,不让空库蒙混过关;辅助探测走 `_scalar_optional`(容错),主判据仍走严格的 `_scalar` |
+| `application/data_quality_thresholds.py` | 体检的**阈值与结论载体**:`QualityThresholds`(每个默认值都带标定依据)、`Finding`、`FABRICATING_SOURCES` / `AUTHORITATIVE_PREFIX` / `PROVISIONAL_SUFFIX`。**只有数据定义,不碰库**。从 `data_quality.py`(638 行)拆出:改阈值的人要读满屏「这个数字是怎么标定出来的」,改判据的人要读 SQL 与分支,两拨读者原先谁来都得先翻过另一半。`data_quality.py` 原样 re-export 全部符号,`from src.market.application.data_quality import QualityThresholds / Finding` 继续成立。**取证归属**那段注释(开发机 2026-08-26 只读实测 / 同日生产库健康 / 别把开发机数字写成生产实测;根 AGENTS.md §3.5 指着它)仍在 `data_quality.py::_check_last_day_authoritative` 的 docstring 里,没有搬走 |
+| `infrastructure/write_lock.py` | 跨进程行情写锁（`.market.db.write.lock`）：sync/spot 互斥，杜绝 Loci 与 CLI 双写把库顶成 locked；**同线程可重入，跨线程等待与文件锁共用 `_LOCK_WAIT_SEC` deadline**（等不到抛 `MarketWriteBusy` 并指名持锁者，绝不无限期挂起）；`current_write_holder()` 供诊断；`LOCI_OBSERVABILITY=1` 时记 `loci.lock.wait_ms`（busy/reentrant/local_deadline）。**fd 与锁文件必须成对归还**：`os.open(..., O_CREAT\|O_EXCL)` 一成功磁盘上就已经躺着锁文件，所以从那行到 `yield` 整段都包在 try/finally 里走 `_release_lock_file()`（先 close 后 unlink，顺序不能反，Windows 上文件开着删不掉）。以前只有 `os.write` 一行裸露在外，它抛 OSError（磁盘满 / 只读挂载 / 杀软拦截）时本进程漏 fd，更贵的是残留锁的 holder 前缀不是别人的 pid、age 又不到 `_LOCK_STALE_SEC`，于是**把其它进程整整挡满 30 分钟**——一次写失败换来半小时行情库瘫痪。保护范围覆盖整段而非只包 `os.write`：中间的 `record_lock_wait` / logger 抛错是同一种双重泄漏。回归测试 `tests/market/test_write_lock_fd_leak.py`（修复前 5 条失败，其中「下一次取锁」直接等满 deadline）。**残留锁按 pid 探活立刻接管**（`_holder_pid_is_dead` + `src.shared.process_alive.pid_alive`）：旧逻辑只认「holder 是本进程 pid」或「锁文件超过 `_LOCK_STALE_SEC`(30 分钟)」两条接管理由，于是一次崩溃 = 半小时行情库全面瘫痪（2026-08-26 现场：锁里躺着 `18848:sync:full`，而 18848 在 08-25 就没了，同步/spot/选股补数全部 `MarketWriteBusy`）。现在 pid 明确已死即接管，留 `_LOCK_DEAD_PID_GRACE_SEC`(30s) 宽限挡住「刚 `os.open` 还没 `os.write`」和 pid 复用；**探不出来一律当还活着**（回落时间窗）——误判活着只是多等，误判已死会把正在写库的进程踢掉。接管会打 WARNING + `market_write_lock_dead_holder_evicted` 事件，「谁掀了锁」必须留痕。 |
 | `adapters/router.py` / `router_live.py` / `daily_merge.py` | 日线协作拉取（排队取齐 → 交叉优先序校验/互补合并 → 再交同步落库）、spot/live 竞速、粘性与来源门闩 |
 | `store.py` | `MarketStore` 组合、连接生命周期、schema 迁移与 re-export |
+
+### 「主源今天开始退化」为什么要单独一条判据
+
+`_check_authoritative` 的分母是**全部历史**,对单天回落基本失明。**开发机**只读实测
+(2026-08-26,该机通达信自 07-28 起被限流):全库 16,966,403 行里 tdx 占 16,376,434
+行 = **96.5%**,判绿;而同一时刻最后一个交易日的 5542 行里 tdx **0 行**——主源当天
+一行都没写进来。要把全库压到 95% 以下还得再灌 271,948 行非权威数据,按每天 5542 行
+算是 **49 个交易日**;那台机器从 07-28 起当日权威源占比就从 ~98% 掉到 ~20.7%、后来
+归零,20 个交易日过去全库口径一声没吭。所以
+`_check_last_day_authoritative`(key `last_day_authoritative`)只看最后一个交易日。
+
+> **取证归属**:同一天的**生产库是健康的**(全库 97.1%,近 8 个交易日逐日 99.9%~100%
+> tdx)。上面那组数字来自开发机。这条判据补的是**算术上必然存在**的盲区——分母十六年、
+> 分子一天,比值天生对单天不敏感——不是在修某次生产事故。两台机器当天一好一坏,把开发机
+> 的数字写成「生产实测」会让后来人照着一个不存在的故障去排查。
+
+- **spot 临时行单独归一类**(`PROVISIONAL_SUFFIX = "_spot"`),这是不误报的关键。盘中
+  spot 落的行 source 带 `_spot` 后缀,日终同步收尾才用正式日 K 覆盖;体检虽然托管在 16:30,
+  但人随时会手动点。于是占比**只在已定稿的行之间算**,`tdx_spot` 也算临时行——盘中
+  spot 走了通达信、日终正式日 K 根本没落,恰恰是要抓的形态,不能拿它把占比洗绿。
+- **临时行占比 > `max_last_day_provisional_ratio`(0.5)= 当天还没定稿**,此时不判占比,
+  结论里写明「尚未定稿」。但这个豁免**带时限**(`last_day_settle_hour=16`,依据:日终重刷
+  15:10、热库重建 16:10、体检 16:30):过点还满屏 spot 就报,否则「日终同步整个失败」
+  会被当成「还没定稿」白白放过,而那恰恰最该当天知道。
+
+  > **这条判据上线当天(2026-08-26)就抓到了真问题,而且不在体检这一侧**:`today_refresh`
+  > 只刷复权因子 + `apply_today_spot`,从不调 `sync_quotes`;而 `quotes_daily` 的 upsert 是
+  > 后写覆盖先写,`apply_today_spot` 又是每种 mode 里最后一个写库的。于是 spot 只要成功,
+  > **当日必然 100% 临时行**,正式日 K 得等第二天早上增量近窗回头重写才落——当天的 15:30
+  > 选股、当日回测与复盘读到的全是没有回执、`amount` 可能是 `close×volume` 合成假值的行。
+  > 修在流水线侧:`ops/application/jobs/sync.py::_finalize_today_with_authoritative`,日终在
+  > spot **之后**再用权威源重写当日(通达信近窗 20 根,全市场约 2 分钟)。**顺序不能反**,
+  > 反过来 spot 会把刚定稿的正式日 K 重新盖成临时行。
+- **阈值 `min_last_day_authoritative_ratio=0.90`** 的依据是日水位实测:2026-01-01~07-27
+  的 135 个交易日,当日权威源占比稳定在 **97.85%~98.24%**(够不到的 2% 是通达信代码段
+  不支持的票,归 `watermark_source` 管)。0.90 留了 8 个百分点、约 430 行/日的余量;
+  真退化那一侧是 20.7% 与 0%,离阈值很远。**不用绝对行数**——旧的 `min_last_day_rows=5000`
+  已经在 4932 只的库上天天误报过一次;全市场只数还在漂,而且**两台机器同一天都不一样**
+  (生产 4932、开发机 5544)——绝对阈值连「此刻全市场有多少只」都锚不住。
+- **级别是 `warn` 不是 `block`**:block 在本模块表示「库整体不可信」(全库权威源塌了、
+  基准指数串成同号个股),会让每一次回测与选股都错;单天走回退源是可以定点重灌补回来
+  的。而 `warn` 一样进 `build_alert`、企微推送的判据是「`blocked` 或有 `alert`」,
+  **定成 warn 不会少通知一个人**,只是不把「库不能用」那面旗插上。
 
 ## 热读库（market_hot.db）
 滚动热读库是近 `HOT_WINDOW_TRADING_DAYS`（700）交易日的行情窗口镜像，与全量库物理隔离。决策见 [ADR-007](../../docs/adr/ADR-007-market-hot-readonly-window.md)。
@@ -137,9 +182,130 @@
 
 该源的 `amount` 由 `close * volume` 合成，所以 `amount/(volume*close)` 恒为 1，`scale_lot_volumes` 的比值判据识别不出这类错位；修复走 `rescale_star_daily_volumes`（代码级判据：隐含换手 > 100%，或历史线量级比自身 spot 行高 20 倍以上）。**检测与更新同处一把 `market_write_lock`**——判据只在串行下幂等，并发副本会各除一次 100。
 
+## 盘中留存带（intraday）
+
+**这是本仓唯一「丢了就永远拿不回来」的缓存。** AkShare 侧 21 个接口只有当天快照、
+东财 `trends2` 的 `ndays` 上限是 5，集合竞价在 AkShare 全库没有第二个入口——不每天
+自己落盘就永久没有历史。口径与威胁模型见
+[ADR-014](../../docs/adr/ADR-014-encrypted-intraday-tape-retention.md)。
+
+- 落点：`<data_dir>/intraday/<YYYY-MM-DD>/<dataset>.parquet.enc` + 明文 `manifest.json`。
+**不进 `market.db`**：行存会把同一份数据放大 5.6~5.7 倍，而按天分目录让过期删除退化
+  成 `rmtree`（实测删 30 天 0.011 秒，零碎片、无 2× 磁盘峰值）。
+- 加密：DuckDB 原生 Parquet Modular Encryption（`AES_GCM_V1` 256-bit）+ 每库一个随机
+  DEK，DEK 经 **Windows DPAPI**（带 entropy）包裹落 `intraday/.dek`。实测无密钥与错密钥
+  读取均 **硬失败**（`InvalidInputException`），不会静默返回空表。非 Windows 无 DPAPI 时
+  **如实降级为明文并标注 `protection="none"`**——不拿明文 keyfile 冒充加密。
+- 入口：`capture_snapshots(data_dir, specs)` / `default_specs()` / `write_intraday_snapshot`
+  / `read_intraday_snapshot` / `read_intraday_manifest` / `list_intraday_days`
+  / `describe_intraday` / `intraday_status` / `prune_intraday`。
+- **空表即失败**：上游返空与「今天真的没有涨停股」在下游是同一个形状（AkShare 涨停池
+  越界时就是静默返空表），所以 `write_snapshot` 对空表直接报错，让它落进 `failures`。
+- **存原始不存归一**：`pipeline.normalize` 对选填列缺席是静默丢列、对坏值是静默 NaN。
+  快照的价值在于「当时上游到底返回了什么」。`manifest.json` 记录本次实际列名，同时就是
+  AkShare 上游列漂移的比对基线。
+- `spot_close` 先要东财 23 列原表，`RemoteDisconnected` 时回退本仓 `fetch_spot_routed`
+  多源路由（列会变少，但**宁可列少也不要今天这一格是空的**）；实际来源写进 manifest。
+- 保留窗口 60 天，由 `prune` 托管任务顺带执行（不新建任务类型）。三道安全闸门：根必须
+  是 `<data_dir>/intraday`、只删严格 `YYYY-MM-DD` 目录、单次删除上限 30。
+- 采集由托管任务「托管盘中留存采集」（`intraday_capture`，工作日 15:35）执行；
+  CLI：`python -m cli.market intraday-capture | intraday-prune | intraday-status`。
+
+## 磁盘回收（reclaim）
+
+`idx_quotes_receipt` 只服务热库 `_purge_orphan_receipts` 的 `NOT EXISTS` 逐行探测，
+在权威库上实测占 **1,049 MB** 却没有热路径消费者。**schema v8 起权威库不再建它**
+（`MarketStore(..., keep_receipt_index=True)` 只有 `open_market_hot()` 传）。
+
+`DROP INDEX` 只把页归还库内空闲链，要真正缩小文件得 `VACUUM`：
+`python -m cli.market reclaim`。生产库实测 **5,740.2 MB → 4,172.3 MB（释放 1,567.9 MB）**，
+`quick_check` 通过、16,966,403 行一行不少。VACUUM 需要约等于库大小的额外磁盘且持写锁，
+因此它是显式命令，不塞进启动迁移。
+
 ## Live TTL（盯盘快照）
 - `application/live_cache.py`：进程内 quote/minute TTL 缓存与 `build_monitor_snapshot`；供纸面 `strategy_monitor` 使用。
 - **不写** `market.db` / 热库权威表；不进 research run card / 回测证据。数字以适配器现价为准，AI 不得编造 snapshot 外价格。见 [ADR-008](../../docs/adr/ADR-008-paper-quant-cabin.md)。
+
+## 实时推流与实时信号（大屏）
+
+**铁律：大屏是纯读路径。** `live_hub` / `watchlist` / `live_bars` / `realtime_signals`
+以及 `/api/market/stream/*` 三个端点**都不写 `market.db`**：不调 `apply_today_spot`、
+不走 `board?persist=true`、不落 research run card。要落盘走
+`POST /api/market/board/spot`（写鉴权），与推流彻底解耦。
+
+### 为什么是「一个进程一个采集线程」
+
+改造前每个客户端 tick 各自触发一次上游取数，而 `(spot_batch, sina/tencent)` 的
+在途名额门闩默认只有 **1**（`infrastructure/adapters/router_live.py:25
+DEFAULT_ADAPTER_CONCURRENCY`）。多客户端大屏把同一条 lane 排成长队，上游看到的
+却是同一个 IP 的高频重复整表下载——直接被打成 403 / 截断。
+`application/live_hub.py` 因此改成 **N 个订阅者共享一条 feed、一份快照**：
+`get_live_hub().subscribe(preset, codes)` 拿上下文管理器，`Subscription.wait()` 靠
+`threading.Condition` 唤醒；订阅者归零**自动停表**，不留常驻空转线程。
+
+### 刷新频率预算（被上游缓存卡死的物理上限，不是拍脑袋）
+
+| 场景 | 周期 | 依据 |
+| --- | --- | --- |
+| 指数 / 自选（≤400 只） | **3s** | `infrastructure/live_tape.py:28 _CACHE_TTL` 就是 3s，更快只会拿到同一份 payload |
+| 全市场截面（东财整表 ~5500 行 23 列） | **6s** | 东财原始表 TTL 4s（`adapters/eastmoney_adapter.py:44 _SPOT_RAW_TTL_SEC`），整表归一还要百毫秒级 |
+| 非交易时段 | **60s** | 只刷一份收盘快照，不空转 |
+| SSE 侧轮询共享快照 | 0.25s | 纯内存读，与 `assistant_stream.py` 对齐 |
+
+全速档要 `build_session_status(...)["live_allowed"]` **且** `board_phase() ∈ LIVE_PHASES`
+（`pre_market` / `morning` / `afternoon` / `closing_auction`）同时点头——闸门不判午休、
+相位判，只看闸门会在 11:30–13:00 照样 3s 打上游。
+**相位词表只有一份**（`application/session.py`）：采集周期、SSE 的 `session.live` 与前端
+`sessionCopy.PHASE_LABELS` 共用它。曾经后端发 `session_clock()` 的 `regular`、前端认
+`morning`，而 `build_session_status` 压根没有 `phase` / `live` 两个键，于是每一帧都被读成
+「已收盘」：大屏在连续竞价里挂着「已收盘·展示最近快照」，实时看门狗也永不触发。
+单次取数异常不带死线程：记 `errors` + 指数退避（上限 30s）；**解析失败还会退回上一轮的
+代码表改走逐票线路**（`source=fallback_live_quotes`），一条上游挂掉不该让整块大屏停摆。
+指标走 `shared/observability` 的 `loci.market.stream.*`。
+
+#### 全市场截面的瞬时重试（2026-08）
+
+`watchlist.default_cross_section()` 是大屏与 `signals` 预设的**唯一**数据源，且只有东财一家
+（`eastmoney_spot_all`，没有回退源）。它一抛异常，这一 tick 就没有帧可发——生产日志曾连续数小时刷
+`东财全市场截面失败：ConnectionError: RemoteDisconnected`，对端偶发掐连接，而我们一次都不重试，
+于是大屏整片空白，用户报成「动不动就连接中断」。
+
+现在 `EastmoneyAdapter._fetch_spot_em_resilient()` 对**瞬时连接类**错误
+（`ConnectionError` / `TimeoutError`，含 requests 同名子类）重试**一次**，间隔
+`_SPOT_RETRY_SLEEP_SEC=0.4s`。业务错（空表、字段缺失）不重试——重试解决不了，只会把一次失败
+拖成两倍延迟。用例：`tests/market/test_adapters_eastmoney_retry.py`。
+
+前端侧对应的是「链路 ≠ 数据」：链路好但没帧时界面报「数据源暂无更新·链路正常」而不是「连接中断」，
+见 `frontend/src/features/live/README.md`。
+
+### 模块职责
+
+- `application/watchlist.py`：preset → 代码。`index`（静态指数篮子，`instrument_type=INDEX`）、
+  `gainers`/`losers`/`turnover`/`amount`（东财全市场截面排序 Top N，**解析时顺带把行带回**，
+  全链只取一次数）、`watchlist`（显式 codes）。**硬上限 400 只**，对齐新浪 hq 单批。
+  `all` / `signals` 走 `movers_universe()`：**四榜合集**（涨幅 120 / 跌幅 80 / 成交额 120 /
+  换手 80，去重后按 |涨跌幅| 补满 400）。**不许再写 `rows[:400]`**——
+  `ak.stock_zh_a_spot_em()` 按代码倒序发表（`fid=f12` + `po=1`），表头 400 行清一色北交所，
+  信号引擎整天盯着一批与用户无关的标的跑规则，涨停就在屏幕上而信号栏永远「无信号」。
+  `all` 另带 `index_codes`（指数不在东财截面里，由 hub 单独补一次，指数带才跟着推流跳）。
+- `application/live_hub.py`：单采集器 + 广播；`Snapshot(seq, as_of, source, rows, session)`，
+  `seq` 单调递增供 `Last-Event-ID` 续传；`stats()` 喂 `/api/market/stream/stats`。
+- `application/live_bars.py`：live 报价 → 内存分钟 bar（环形缓冲，按交易日重置）。
+  **不走 `minute_bars` lane**——那是逐票 HTTP，几百只票的热循环里跑不动。
+  分钟量取相邻快照的累计差；当日第一笔没有前值可减，记 0（不造假巨量柱）。
+- `application/realtime_signals.py`：6 条轻量规则（均线金叉 / MACD 金叉 / 放量突破 /
+  快速拉升 / 临近涨停 / 炸板），**注册表驱动**（`RULES`），不调重的选股引擎。
+
+### 实时信号的三条口径
+
+1. **每条信号带 `provisional: true`**：盘中 close 每 tick 都在变，CROSS 类信号会被下一
+   tick 抹掉又长出来，只能当候选。
+2. **去抖**：同 `(code, rule, 交易日)` 只报一次；标为可重复的规则（临近涨停 / 快速拉升）
+   再叠 cooldown（默认 300s）。语义抄 `ops/application/alert_rules.py:120 _can_trigger`，
+   **内存实现，不写库**。
+3. **复权口径整条链 `adjust="none"`**：面板默认 qfq 而 live 报价不复权，两者接在一起会在
+   除权日附近造出假金叉。历史面板经 `open_market_hot()` + `load_panel(adjust="none")` 取，
+   **日 K 当日不变，整个交易日只加载一次并缓存复用**，尾部再追一根「今日未完成 bar」。
 
 ## 盘口情报 tape
 - `domain/tape.py` 定义 `TapeRequest` / `TapeResult` / `TapeProvenance` 及情绪、涨停池、炸板、题材、竞价 DTO；`provenance.provider_id` 只有一个赢家，其他尝试只留在 `attempts`。
@@ -226,6 +392,7 @@
 - 新源：写 fetcher + 契约 FieldSpec，注册到 lane；禁止在 adapter 手写 rename / 乘除 100。只有契约稳定、入库策略明确后才接入同步。
 - HTTP：`infrastructure/http_client.py` — 行情域名默认直连 / 遇 `ProxyError` 直连重试；`market_get` 把 `timeout` 拆成「握手 ≤6s + 读取」，并对连接/超时类失败重试一次（幂等 GET 才可以），避免全市场同步时单点丢包整票失败；腾讯日 K 先打 `proxy.finance.qq.com` 的 fqkline，主 path 被 WAF/5xx 时换同 host 的 kline path；握手超时则跳过该 host 上的其余 path，直连 `web.ifzq.gtimg.cn` 用 2s 快败（该主机常被 WAF 拦成 501 或 SYN 黑洞）；近窗再失败才走 `data.gtimg.cn` flashdata。打包必须带上 `py_mini_racer` 原生库（`loci.spec` collect_all）
 - 实时条：`/api/market/live-tape`（`infrastructure/live_tape.py`）**只回指数**——实盘账本下线后路由不再读 palace 持仓（`build_live_tape(use_cache=…)`，`build_market_router` 也不再接 `palace_db`）；`position_codes` 形参保留给托盘/调用方自带的自选清单。指数主展示为**今日涨跌 `pct`**。托盘悬停文案由包根导出的 `format_tray_title` 生成（**总长 ≤128**，对齐 Windows `NotifyIcon` tip，超长 pystray 会抛错并被误显示成「行情暂不可用」；CLI/桌面勿深掏 `live_tape`）。
+- 大屏推流：`/api/market/stream/{quotes,signals,stats}`（`api/stream_router.py` + `application/live_hub.py`）。包根导出 `get_live_hub` / `LiveHub` / `LiveSnapshot` / `get_signal_engine` / `resolve_preset` / `MAX_PRESET_CODES`。**纯读，不写库**；频率预算见上文表格。
 - HTTP 前缀见 `api/README.md`（现多由 `app.legacy.quant_router` 挂载）
 - 禁忌：写 palace.db；在 adapter 外写死厂商 if-else；跨上下文深掏 `infrastructure`
 
@@ -233,4 +400,4 @@
 改同步语义、适配器契约、公开导出或 store 拆分边界时必须更新本文。
 
 ## 相关测试
-`tests/market/`（含 `test_duckdb_panel.py` 与可选 `test_polars_panel.py`：旁路只读且与经典面板对齐；显式基准见 `tests/benchmarks/polars_benchmark.py`；`test_http_client.py`：行情代理回退与握手重试；`test_daily_window.py`：日 K 增量近窗；`test_bounded_reads.py`：`load_panel` 范围护栏与热库窗口分批搬运的峰值内存对照）
+`tests/market/`（含 `test_duckdb_panel.py` 与可选 `test_polars_panel.py`：旁路只读且与经典面板对齐；显式基准见 `tests/benchmarks/polars_benchmark.py`；`test_http_client.py`：行情代理回退与握手重试；`test_daily_window.py`：日 K 增量近窗；`test_bounded_reads.py`：`load_panel` 范围护栏与热库窗口分批搬运的峰值内存对照；`test_live_hub.py`：单采集器 / N 订阅者只取一次数、周期预算、失败退避与自动停表、SSE 首帧形状；`test_realtime_signals.py`：去抖与 cooldown、`provisional`/`adjust=none` 口径、面板日缓存；`test_watchlist.py`：preset 排序与 400 只硬上限）

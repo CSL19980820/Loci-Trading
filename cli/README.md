@@ -36,3 +36,18 @@ import-linter 合约 `cli-no-infra-deep` 覆盖 `cli/` 包。桌面入口 `loci.
 
 ## 相关测试
 手工 / 对应上下文单测；`lint-imports`（含 `cli-no-infra-deep`）
+
+## 行情库维护与盘中留存
+
+```powershell
+python -m cli.market reclaim   # 删权威库无用索引 + VACUUM（显式命令，持写锁）
+python -m cli.market reclaim --no-vacuum     # 只删索引，不缩小文件
+python -m cli.market intraday-capture        # 采集今日盘中快照（加密落盘）
+python -m cli.market intraday-capture --only spot_close,limit_up_pool
+python -m cli.market intraday-status  # 留存带现状（天数/体积/DPAPI 可用性）
+python -m cli.market intraday-prune --dry-run --keep-days 60
+```
+
+`reclaim` 的 VACUUM 需要约等于库大小的额外磁盘且全程持写锁，**别和行情同步同时跑**。
+盘中留存的口径见 [ADR-014](../docs/adr/ADR-014-encrypted-intraday-tape-retention.md)；
+日常不必手动跑 `intraday-capture`，托管任务已在工作日 15:35 执行。

@@ -95,6 +95,9 @@ const pctTone = computed(() => {
 
 const dayStats = computed(() => computeMinuteDayStats(bars.value))
 
+/** 只有真有走带时舞台才吃高度；空 / 报错时跟着内容缩 */
+const hasBars = computed(() => !busy.value && !error.value && bars.value.length > 0)
+
 function disposeChart(): void {
   resizeObs?.disconnect()
   resizeObs = null
@@ -149,12 +152,12 @@ async function load(): Promise<void> {
     sessionPrevClose.value =
       Number.isFinite(apiPrev) && apiPrev > 0 ? apiPrev : props.prevClose
     if (!bars.value.length) {
-      error.value = `${props.tradeDate} 暂无分时数据，换个交易日再试`
+      error.value = `${props.tradeDate} 无分时数据，换个交易日`
     } else {
       // 防错日：源若返回其它交易日的走带，不静默展示
       const sample = String(bars.value[0]?.datetime || '').slice(0, 10)
       if (/^\d{4}-\d{2}-\d{2}$/.test(sample) && sample !== props.tradeDate) {
-        error.value = `请求 ${props.tradeDate}，源返回 ${sample} 分时，已拒绝展示`
+        error.value = `源返回 ${sample} 而非 ${props.tradeDate}，已拒绝展示`
         bars.value = []
       }
     }
@@ -226,7 +229,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div class="minute-stage">
+      <div class="minute-stage" :class="{ 'minute-stage--charted': hasBars }">
         <div v-if="busy" class="tape-load" aria-live="polite" aria-busy="true">
           <div class="tape-load__track">
             <div class="tape-load__stitch" />
@@ -239,66 +242,84 @@ onBeforeUnmount(() => {
             <span>15:00</span>
           </div>
         </div>
-        <el-empty v-else-if="error" :description="error" :image-size="64" />
-        <div v-show="!busy && !error && bars.length" ref="chartEl" class="minute-chart" />
+        <div v-else-if="error" class="minute-error-wrap">
+          <el-empty :description="error" :image-size="64">
+            <template #extra>
+              <el-button type="primary" size="small" :loading="busy" @click="load">
+                重新拉取
+              </el-button>
+            </template>
+          </el-empty>
+        </div>
+        <div v-show="hasBars" ref="chartEl" class="minute-chart" />
       </div>
     </div>
   </el-dialog>
 </template>
 
 <style scoped>
+/*
+* 高度：外壳给一个 55vh 的舞台上限（不是下限），图表用 flex 吃满。
+* 旧写法是 .minute-shell{min-height:420px} + .minute-stage{min-height:360px}
+* + .minute-chart{height:360px} 三重定高叠加：无数据时近 800px 死白。
+*/
 .minute-shell {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  min-height: 420px;
+  gap: var(--gap-2);
+  min-height: 0;
 }
 .minute-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.5rem 1rem;
+  gap: var(--gap-1) var(--gap-3);
+  flex-shrink: 0;
 }
+/* D2：弹窗里最大的字是当前价 */
 .minute-head__price {
-  font-size: 1.45rem;
+  font-size: var(--fs-tape);
   font-weight: 700;
+  line-height: 1.05;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 .minute-head__pct {
-  margin-left: 0.45rem;
-  font-size: 0.95rem;
-  font-weight: 600;
+  margin-left: var(--gap-2);
+  font-size: var(--fs-title);
+  font-weight: 700;
 }
 .minute-head__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem 0.85rem;
-  font-size: 0.78rem;
+  gap: var(--gap-1) var(--gap-3);
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
 }
 .minute-stage {
   position: relative;
   flex: 1 1 auto;
-  min-height: 360px;
+  min-height: 0;
   border: 1px solid var(--rule);
-  border-radius: var(--radius, 6px);
-  background:
-    radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--sheet) 70%, transparent), transparent),
-    var(--paper, #fff);
+  border-radius: var(--radius);
+  background: var(--sheet);
   overflow: hidden;
+}
+/* 有数据时才占高度；空 / 报错时舞台跟着 el-empty 缩到内容高 */
+.minute-stage--charted {
+  height: 55vh;
+  max-height: 26rem;
 }
 .minute-chart {
   width: 100%;
-  height: 360px;
+  height: 100%;
 }
 .tape-load {
-  position: absolute;
-  inset: 0;
   display: grid;
   place-content: center;
-  gap: 0.85rem;
-  padding: 1.5rem;
+  gap: var(--gap-2);
+  padding: var(--gap-4);
   text-align: center;
 }
 .tape-load__track {
@@ -307,7 +328,7 @@ onBeforeUnmount(() => {
   height: 3px;
   margin: 0 auto;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--rule) 80%, transparent);
+  background: var(--rule);
   overflow: hidden;
 }
 .tape-load__stitch {
@@ -315,17 +336,12 @@ onBeforeUnmount(() => {
   inset: 0 auto 0 0;
   width: 38%;
   border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in srgb, #3b82f6 85%, var(--ink)),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, var(--seal), transparent);
   animation: tape-sweep 1.35s cubic-bezier(0.45, 0.05, 0.25, 1) infinite;
 }
 .tape-load__label {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 .tape-load__slots {
@@ -333,18 +349,27 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   width: min(420px, 88%);
   margin: 0 auto;
-  font: 0.7rem/1 var(--mono);
-  color: color-mix(in srgb, var(--mist) 85%, transparent);
+  font: var(--fs-kicker) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--mist);
   letter-spacing: 0.04em;
 }
 .tone-up {
-  color: var(--up, #c41e3a);
+  color: var(--up);
 }
 .tone-down {
-  color: var(--down, #0f6b5c);
+  color: var(--down);
 }
+/* 均价线不是涨跌语义，用状态橙（D1：红绿只留给涨跌） */
 .tone-avg {
-  color: #d97706;
+  color: var(--warn);
+}
+.minute-error-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap-4) var(--gap-2);
 }
 @media (prefers-reduced-motion: reduce) {
   .tape-load__stitch {

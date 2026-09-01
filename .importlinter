@@ -116,6 +116,30 @@ allowed_importers =
     src.research.domain
     src.research.infrastructure
 
+[importlinter:contract:protect-community-infra]
+name = Protect community.infrastructure
+type = protected
+protected_modules =
+    src.community.infrastructure
+allowed_importers =
+    src.community
+    src.community.api
+    src.community.application
+    src.community.domain
+    src.community.infrastructure
+
+[importlinter:contract:protect-identity-infra]
+name = Protect identity.infrastructure
+type = protected
+protected_modules =
+    src.identity.infrastructure
+allowed_importers =
+    src.identity
+    src.identity.api
+    src.identity.application
+    src.identity.domain
+    src.identity.infrastructure
+
 [importlinter:contract:cli-no-infra-deep]
 name = CLI must not deep-import infrastructure
 type = forbidden
@@ -131,6 +155,8 @@ forbidden_modules =
     src.strategy.infrastructure
     src.backtest.infrastructure
     src.research.infrastructure
+    src.community.infrastructure
+    src.identity.infrastructure
 allow_indirect_imports = true
 
 [importlinter:contract:domain-no-web-framework]
@@ -147,6 +173,8 @@ source_modules =
     src.backtest.domain
     src.formula.domain
     src.research.domain
+    src.community.domain
+    src.identity.domain
 forbidden_modules =
     fastapi
     starlette
@@ -177,6 +205,8 @@ source_modules =
     src.backtest
     src.research
     src.formula
+    src.community
+    src.identity
 forbidden_modules =
     src.app
 allow_indirect_imports = false

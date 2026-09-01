@@ -279,8 +279,8 @@ onMounted(() => { if (props.open) void load() })
 </template>
 
 <style scoped>
+/* 高度内容驱动：设置项少时不撑半屏空白，长内容仍在 dialog 内滚（体检 §4.2） */
 .assistant-settings {
-  min-height: 16rem;
   max-height: min(72dvh, 44rem);
   overflow: auto;
 }

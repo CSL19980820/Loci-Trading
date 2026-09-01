@@ -136,29 +136,30 @@ async function runPreview(): Promise<void> {
 
 <template>
   <div v-loading="running" class="watch-preview">
+    <!--
+      原来这里恒定挂着两条 el-alert：一条报「悟道没装」，一条只是解释「预览是只读的」。
+      后者不是异常、永远在，就是被禁的常驻说明条 —— 整条删掉，那句话挂到「立即预览」
+      按钮的 tooltip 上。前者留下，但 title 收进 20 字、description 改走 tooltip。
+    -->
+    <!-- title 直接说后端给的真实原因，不再拆成 title + description 两层 -->
     <el-alert
       v-if="!available"
       type="warning"
       show-icon
       :closable="false"
       class="mb"
-      title="悟道 MCP 未装配，盘中监测与预览已停用"
-      :description="unavailableReason || '请先在设置 → MCP 配置悟道 API Key 并探测工具列表'"
-    />
-    <el-alert
-      v-else
-      type="info"
-      show-icon
-      :closable="false"
-      class="mb"
-      title="预览用实时数据试跑一次，只读：不写纸面舱、不推送、不调 AI"
-      description="结果一律标注未经过前向验证，不构成买卖建议"
+      :title="unavailableReason || '悟道 MCP 未装配，预览已停用'"
     />
 
     <div class="bar">
-      <el-button type="primary" :disabled="!available" :loading="running" @click="runPreview">
-        立即预览
-      </el-button>
+      <el-tooltip
+        placement="bottom-start"
+        content="用实时数据只读试跑一次：不写纸面舱、不推送、不调 AI；结果一律标注未经过前向验证，不构成买卖建议"
+      >
+        <el-button type="primary" :disabled="!available" :loading="running" @click="runPreview">
+          立即预览
+        </el-button>
+      </el-tooltip>
       <span v-if="preview?.trade_date" class="dim">交易日 {{ preview.trade_date }}</span>
       <el-tag v-if="preview" size="small" type="warning" effect="plain">
         {{ preview.validation_label || '未经过前向验证' }}
@@ -185,7 +186,6 @@ async function runPreview(): Promise<void> {
               {{ item.message }}
             </p>
           </div>
-          <el-tag size="small" type="info" effect="plain">仅建议，不会自动改参</el-tag>
         </template>
       </el-alert>
 
@@ -195,18 +195,17 @@ async function runPreview(): Promise<void> {
         show-icon
         :closable="false"
         class="mb"
-        title="本次未产生扫描结果"
-        :description="skippedReason"
+        :title="skippedReason"
       />
 
+      <!-- 闸门理由是真实判定依据，必须看得见：并进 title，不用 description -->
       <el-alert
         v-if="gate"
         class="mb"
         :type="gateType"
         :closable="false"
         show-icon
-        :title="`龙空龙闸门：${gate.mode || '观察'} · ${gate.label || ''}`"
-        :description="gate.reason || '暂无闸门说明'"
+        :title="`龙空龙闸门：${gate.mode || '观察'} · ${gate.label || ''} · ${gate.reason || '后端没给理由'}`"
       />
       <p v-if="gate?.data_status === 'degraded'" class="dim mb">
         数据不完整，已按空仓处理：{{ (gate.quality_warnings || []).join('、') || '缺少关键指标' }}

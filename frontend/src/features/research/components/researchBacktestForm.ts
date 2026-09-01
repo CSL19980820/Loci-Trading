@@ -23,7 +23,8 @@ function validPair(value: readonly string[]): value is readonly [string, string]
  * 在请求前拒绝无法形成严格、预先声明样本的输入；服务端仍是最终门禁。
  */
 export function validateResearchBacktestForm(input: ResearchBacktestFormInput): string {
-  if (!input.strategy.trim()) return '请填写策略 slug'
+  // 「策略 slug」是给开发看的词：界面上一律说「战法」
+  if (!input.strategy.trim()) return '请选择战法'
   if (!validPair(input.range)) return '请填写格式正确的完整回测区间'
 
   const [start, end] = input.range

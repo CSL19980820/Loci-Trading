@@ -8,7 +8,7 @@ import {
   getStrategies,
 } from '@/shared/api/quant'
 import { toErrorMessage } from '@/shared/lib/errors'
-import { entryTimingLabel } from '@/shared/lib/format'
+import { entryTimingLabel, strategyLabel } from '@/shared/lib/format'
 import type {
   AkshareCatalogSource,
   LaneProvider,
@@ -59,12 +59,23 @@ export function parseMarketTab(raw: unknown): MarketTab {
   return 'browse'
 }
 
+/**
+ * 货架名一律中文。后端 `name` 缺失、或它本身就是 slug 形状
+ * （`sanyuan-tail-v1`）时退回共享词表，货架、详情弹窗与卸载确认里都不会
+ * 再冒出英文编码。
+ */
+function displayName(name: string | null | undefined, slug: string): string {
+  const text = String(name || '').trim()
+  if (text && !/^[a-z0-9][a-z0-9._-]*$/.test(text)) return text
+  return strategyLabel(slug || text)
+}
+
 function fromStrategy(row: StrategyInfo): MarketPackage {
   return {
     id: `strategy:${row.slug}`,
     kind: 'strategy',
     slug: row.slug,
-    name: row.name,
+    name: displayName(row.name, row.slug),
     description: row.description || '',
     version: 'bundled',
     trust: 'official',
@@ -90,7 +101,7 @@ function fromSkill(row: Skill): MarketPackage {
     id: `skill:${row.slug}`,
     kind: 'skill',
     slug: row.slug,
-    name: row.name,
+    name: displayName(row.name, row.slug),
     description: row.description || '',
     version: row.version || '—',
     trust: 'local',

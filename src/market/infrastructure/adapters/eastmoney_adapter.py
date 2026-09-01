@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import logging
 import math
 import threading
 import time
@@ -41,7 +42,11 @@ from src.market.infrastructure.store import guess_market, normalize_code
 #: 为什么是 4 秒：对齐 ``application/live_cache._QUOTE_TTL_SEC``（5s）的量级——
 #: 盘中报价在几秒内复用不会让人看到「卡住的价格」，却足以把同一轮里的重复整表
 #: 下载并成一次。再长就会影响盯盘手感，再短就等于没缓存。
+logger = logging.getLogger(__name__)
+
 _SPOT_RAW_TTL_SEC = 4.0
+#: 整表瞬时失败后的重试间隔。够对端喘一口气，又远小于 live_hub 的 tick 周期。
+_SPOT_RETRY_SLEEP_SEC = 0.4
 #: 只缓存一份全市场表：它本身就是最大的那个对象，多留几份只白吃内存。
 _SPOT_RAW_CACHE_MAX = 1
 _SPOT_RAW_LOCK = threading.Lock()
@@ -269,7 +274,7 @@ class EastmoneyAdapter(MarketAdapter):
             if cached is not None:
                 return cached
         try:
-            raw = self._fetch_spot_em()
+            raw = self._fetch_spot_em_resilient()
         except Exception as exc:
             raise AdapterError(
                 f"东财{who}失败：{type(exc).__name__}: {exc}"
@@ -294,6 +299,27 @@ class EastmoneyAdapter(MarketAdapter):
     def _fetch_spot_em() -> pd.DataFrame:
         ak = _import_akshare()
         return ak.stock_zh_a_spot_em()
+
+    def _fetch_spot_em_resilient(self) -> pd.DataFrame:
+        """整表取数 + **一次**瞬时重试。
+
+        为什么非加不可：这张表是盯盘大屏与信号预设的唯一数据来源
+        (``application/watchlist.py:default_cross_section``)，取数一抛异常，
+        整个 tick 就没有帧可发。生产日志里连续数小时刷
+        ``东财全市场截面失败：ConnectionError: RemoteDisconnected``——
+        对端偶发掐连接，而我们一次都不重试，于是大屏整片空白，
+        用户看到的是「动不动就连接中断」。
+
+        只重试**瞬时连接类**错误（``ConnectionError`` / ``TimeoutError``，
+        含 requests 的同名子类）：这类重发一次通常就成。业务错（空表、字段缺失）
+        不在此列——重试解决不了，只会把一次失败拖成两倍延迟。
+        """
+        try:
+            return self._fetch_spot_em()
+        except (ConnectionError, TimeoutError) as exc:
+            logger.warning("东财整表瞬时失败，重试一次：%s: %s", type(exc).__name__, exc)
+            time.sleep(_SPOT_RETRY_SLEEP_SEC)
+            return self._fetch_spot_em()
 
     @classmethod
     def _normalize_spot(

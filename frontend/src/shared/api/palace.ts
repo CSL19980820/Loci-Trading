@@ -251,6 +251,7 @@ export function getCandidates(
 }
 
 export function listCandidates(options: {
+  code?: string
   strategy?: string
   decision?: string
   start?: string
@@ -260,6 +261,7 @@ export function listCandidates(options: {
   include_backfill?: boolean
 } = {}): Promise<Candidate[]> {
   const params = new URLSearchParams()
+  if (options.code) params.set('code', options.code)
   if (options.strategy) params.set('strategy', options.strategy)
   if (options.decision) params.set('decision', options.decision)
   if (options.start) params.set('start', options.start)

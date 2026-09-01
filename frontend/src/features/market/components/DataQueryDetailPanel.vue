@@ -9,6 +9,7 @@ import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import KlineChart, {
   type KlineBarDblclickPayload,
 } from '@/shared/components/charts/KlineChart.vue'
+import type { StrategySignalMark } from '@/shared/lib/klineStrategyMarks'
 import {
   DEFAULT_MA_PERIODS,
   KLINE_GRID_TOPS,
@@ -38,8 +39,9 @@ const props = defineProps<{
   embedded?: boolean
   /** 锚定日 K 到该交易日 */
   focusDate?: string
+  /** 策略选股信号标记 */
+  strategySignals?: StrategySignalMark[]
 }>()
-
 const emit = defineEmits<{
   'update:period': [KPeriod]
   'update:indicator': [IndicatorKind]
@@ -191,15 +193,19 @@ watch(
         <el-radio-group
           :model-value="period"
           size="small"
+          class="tdx-btn-group"
           @update:model-value="emit('update:period', $event as KPeriod)"
         >
-          <el-radio-button value="day">日K</el-radio-button>
+          <el-tooltip content="日 K 上双击某根 K 线可打开该日分时" placement="bottom" :show-after="300">
+            <el-radio-button value="day">日K</el-radio-button>
+          </el-tooltip>
           <el-radio-button value="week">周K</el-radio-button>
           <el-radio-button value="month">月K</el-radio-button>
         </el-radio-group>
         <el-radio-group
           :model-value="adjust"
           size="small"
+          class="tdx-btn-group"
           @update:model-value="
             emit('update:adjust', $event as 'qfq' | 'hfq' | 'none');
             emit('adjustChange')
@@ -211,7 +217,7 @@ watch(
         </el-radio-group>
         <el-popover v-model:visible="maPopover" placement="bottom-end" :width="280" trigger="click">
           <template #reference>
-            <el-button size="small">均线设置</el-button>
+            <el-button size="small" class="tdx-ma-btn">均线设置</el-button>
           </template>
           <p class="tdx-ma-pop__title">主图均线周期</p>
           <p class="tdx-ma-pop__hint">可改成 5 / 13 / 21 等；留空并应用 = 不画该线。全部清空则不显示均线。</p>
@@ -266,12 +272,12 @@ watch(
         :stock-name="detailName"
         :has-more-history="hasMoreHistory"
         :focus-date="focusDate || ''"
+        :strategy-signals="strategySignals"
         @hover="onHover"
         @need-history="emit('needHistory')"
         @bar-dblclick="onBarDblclick"
       />
       <EmptyState v-else-if="!busy" description="该证券暂无本机日线。" />
-      <p v-if="quote && period === 'day'" class="tdx-hint mist">日 K 双击打开该日分时</p>
 
       <KlineReadout
         v-if="showFloat && locked"

@@ -19,7 +19,15 @@ defineProps<{
   sync: SyncDraft
   wecom: WecomSettings
   clearPending: boolean
+  /** 真的点不动的情况：正在忙、或压根没有可测的地址 */
   testDisabled: boolean
+  /**
+   * 有未保存的推送改动。
+   *
+   * 以前这种情况下「测试」是**灰的**，用户得自己悟出「先滚到底保存、再滚回来测」
+   * 这条三段式。现在按钮不灰，改成「保存并测试」，一次点击把两步做完。
+   */
+  testWillSave: boolean
 }>()
 
 const emit = defineEmits<{
@@ -67,7 +75,7 @@ function resetTemplate(): void {
 </script>
 
 <template>
-  <el-form class="sys-form" label-position="left" label-width="5.5rem" @submit.prevent>
+  <el-form class="sys-form" label-position="right" label-width="6.5em" size="small" @submit.prevent>
     <el-form-item label="企微机器人">
       <div class="wecom-row">
         <el-input
@@ -95,20 +103,22 @@ function resetTemplate(): void {
 
     <el-form-item label="选股样式">
       <div class="preset-wrap">
-        <el-radio-group
-          :model-value="screenTemplate.preset"
-          size="small"
-          @change="onPresetChange"
-        >
-          <el-radio-button
-            v-for="opt in WECOM_PRESET_OPTIONS"
-            :key="opt.value"
-            :value="opt.value"
+        <!-- 各档样式的说明原本常驻在旁边一行，改挂到这组单选上（内容随选中档位变） -->
+        <el-tooltip placement="top-start" :content="presetHint" :disabled="!presetHint">
+          <el-radio-group
+            :model-value="screenTemplate.preset"
+            size="small"
+            @change="onPresetChange"
           >
-            {{ opt.label }}
-          </el-radio-button>
-        </el-radio-group>
-        <span class="hint">{{ presetHint }}</span>
+            <el-radio-button
+              v-for="opt in WECOM_PRESET_OPTIONS"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-tooltip>
       </div>
     </el-form-item>
 
@@ -167,8 +177,10 @@ function resetTemplate(): void {
               @change="onCustomFieldEdit"
             />
             <div class="token-row">
-              <el-button size="small" @click="insertToken('skill_pick', '{note}')">{note}</el-button>
-              <span class="hint">说明 ≤40 字</span>
+              <!-- 「说明 ≤40 字」是规则：不留常驻文字，挂到插入 {note} 的那颗按钮上 -->
+              <el-tooltip placement="top" content="{note} 取技能给出的说明，超过 40 字会被截断">
+                <el-button size="small" @click="insertToken('skill_pick', '{note}')">{note}</el-button>
+              </el-tooltip>
             </div>
           </el-form-item>
         </el-col>
@@ -212,7 +224,15 @@ function resetTemplate(): void {
             >
               清除
             </el-button>
-            <el-button size="small" :disabled="testDisabled" @click="emit('test')">测试</el-button>
+            <el-button
+              size="small"
+              :type="testWillSave ? 'primary' : 'default'"
+              :disabled="testDisabled"
+              data-testid="wecom-test"
+              @click="emit('test')"
+            >
+              {{ testWillSave ? '保存并测试' : '测试' }}
+            </el-button>
           </div>
         </el-form-item>
       </el-col>
@@ -238,7 +258,7 @@ function resetTemplate(): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem 0.55rem;
+  gap: var(--gap-1) var(--gap-2);
   width: 100%;
 }
 
@@ -248,8 +268,8 @@ function resetTemplate(): void {
 }
 
 .fail-label {
-  margin-left: 0.15rem;
-  font-size: 0.82rem;
+  margin-left: 1px;
+  font-size: var(--fs-aux);
   color: var(--mist);
   white-space: nowrap;
 }
@@ -258,47 +278,44 @@ function resetTemplate(): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem 0.7rem;
-}
-
-.hint {
-  color: var(--mist);
-  font-size: 0.76rem;
-  line-height: 1.35;
+  gap: var(--gap-1) var(--gap-2);
 }
 
 .token-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-top: 0.3rem;
+  gap: var(--gap-1);
+  margin-top: var(--gap-1);
 }
 
 .inline-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem 0.4rem;
+  gap: var(--gap-1);
 }
 
 .preview-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--gap-2) var(--gap-3);
   width: 100%;
 }
 
 .preview-tape {
   margin: 0;
-  padding: 0.35rem 0 0.15rem 0.65rem;
-  border-left: 2px solid color-mix(in srgb, var(--seal, var(--ink)) 35%, var(--rule));
+  /* 原为 border-left: 2px solid color-mix(--seal/--rule)：左竖条改为 1px hairline 外框 + 极淡印章底色 */
+  padding: var(--gap-1) var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--seal, var(--ink)) 6%, transparent);
   min-width: 0;
 }
 
 .preview-label {
-  margin: 0 0 0.25rem;
+  margin: 0 0 var(--gap-1);
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: var(--fs-kicker);
   letter-spacing: 0.06em;
   color: var(--mist);
   text-transform: uppercase;
@@ -309,13 +326,13 @@ function resetTemplate(): void {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   line-height: 1.45;
   color: var(--ink);
 }
 
 .sys-form :deep(.el-form-item) {
-  margin-bottom: 0.45rem;
+  margin-bottom: var(--gap-2);
 }
 
 @media (max-width: 720px) {

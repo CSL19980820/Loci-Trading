@@ -25,6 +25,18 @@ class CronValidationTests(unittest.TestCase):
             with self.subTest(expression=expression):
                 self.assertIsNotNone(validate_cron(expression))
 
+    def test_accepts_multiline_and_semicolon_expressions(self) -> None:
+        """支持一个定时任务配置多个时间点（多行或分号）。"""
+        multi1 = "50 14 * * mon-fri\n30 15 * * mon-fri"
+        triggers1 = validate_cron(multi1)
+        self.assertIsInstance(triggers1, list)
+        self.assertEqual(len(triggers1), 2)
+
+        multi2 = "50 14 * * mon-fri; 30 15 * * mon-fri"
+        triggers2 = validate_cron(multi2)
+        self.assertIsInstance(triggers2, list)
+        self.assertEqual(len(triggers2), 2)
+
     def test_cron_uses_shanghai_timezone(self) -> None:
         trigger = validate_cron("35 15 * * 1-5")
         self.assertEqual(str(trigger.timezone), "Asia/Shanghai")
@@ -42,8 +54,6 @@ class CronValidationTests(unittest.TestCase):
     def test_rejects_empty(self) -> None:
         with self.assertRaises(SchedulerError):
             validate_cron("   ")
-
-
 class StoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -178,7 +188,12 @@ class StoreTests(unittest.TestCase):
         self.assertNotEqual(run_id, stale_id)
         runs = {run["id"]: run for run in self.store.list_runs(job_id=job_id, limit=10)}
         self.assertEqual(runs[stale_id]["status"], "failed")
-        self.assertIn("已按中断回收", runs[stale_id]["error_text"])
+        self.assertTrue(
+            any(
+                token in runs[stale_id]["error_text"]
+                for token in ("已按中断回收", "PID 复用", "占槽已回收")
+            )
+        )
 
     def test_claim_run_recovers_stale_sync_after_time_window(self) -> None:
         job_id = self.store.create_job(name="sync-stale", kind="sync")
@@ -197,7 +212,12 @@ class StoreTests(unittest.TestCase):
         self.assertNotEqual(run_id, stale_id)
         runs = {run["id"]: run for run in self.store.list_runs(job_id=job_id, limit=10)}
         self.assertEqual(runs[stale_id]["status"], "failed")
-        self.assertIn("sync", runs[stale_id]["error_text"])
+        self.assertTrue(
+            any(
+                token in runs[stale_id]["error_text"]
+                for token in ("sync", "PID 复用", "占槽已回收", "已按中断回收")
+            )
+        )
 
     def test_claim_run_recovers_dead_owner_pid_immediately(self) -> None:
         job_id = self.store.create_job(name="dead-pid", kind="screen")
@@ -217,6 +237,32 @@ class StoreTests(unittest.TestCase):
         runs = {run["id"]: run for run in self.store.list_runs(job_id=job_id, limit=10)}
         self.assertEqual(runs[stale_id]["status"], "failed")
         self.assertIn("进程已退出", runs[stale_id]["error_text"])
+
+    def test_reclaim_same_pid_from_previous_process(self) -> None:
+        """容器 Recreate 后 uvicorn 仍是 PID 1，旧 running 必须立刻腾槽。
+
+        2026-09-01 线上硬重启后三条 run 的 owner_pid 全是 1，自动收尸以为
+        「进程还活着」，盘中增量 / 选股槽被假占用到时间窗到期。
+        """
+        from datetime import timedelta
+
+        from src.ops.infrastructure import store_runs as runs_mod
+
+        job_id = self.store.create_job(name="pid-reuse", kind="sync")
+        job = self.store.get_job(job_id)
+        stale_id = self.store.start_run(job)
+        prior = (runs_mod.PROCESS_STARTED_AT - timedelta(minutes=5)).isoformat()
+        with self.store._transaction() as cursor:
+            cursor.execute(
+                "UPDATE job_runs SET started_at = ?, heartbeat_at = ? WHERE id = ?",
+                (prior, prior, stale_id),
+            )
+
+        n = self.store.reclaim_stale_runs()
+        self.assertGreaterEqual(n, 1)
+        row = self.store.list_runs(job_id=job_id, limit=1)[0]
+        self.assertEqual(row["status"], "failed")
+        self.assertIn("重启", row["error_text"])
 
     def test_reclaim_stale_runs_clears_other_jobs(self) -> None:
         sync_id = self.store.create_job(name="sync-a", kind="sync")

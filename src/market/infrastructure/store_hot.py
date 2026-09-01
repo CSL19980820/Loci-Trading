@@ -38,7 +38,8 @@ _SQL_IN_CHUNK = 900
 
 def open_market_hot(hot_db: str | None = None) -> MarketStore:
     """打开热库；路径默认 ``data_dir()/market_hot.db``。"""
-    return MarketStore(Path(hot_db) if hot_db else _default_hot_db())
+    # 热库必须留 idx_quotes_receipt：_purge_orphan_receipts 的 NOT EXISTS 靠它逐行探测。
+    return MarketStore(Path(hot_db) if hot_db else _default_hot_db(), keep_receipt_index=True)
 
 
 def _window_start(full: MarketStore, window_trading_days: int) -> str:

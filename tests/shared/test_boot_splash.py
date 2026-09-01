@@ -42,7 +42,8 @@ def test_error_and_exit_phases() -> None:
     # 退出不得再跑分时回撤动画
     assert "PHASE === \"exit\" ? 18" not in ex
     enter = render_splash_html("启动中", phase="enter")
-    assert "开账进行中" in enter
+    # 启动图文案 2026-08 改成直白状态（与 frontend/index.html 对齐），不再是「开账进行中」
+    assert "启动中" in enter
     assert "var pct = 0" in enter
     assert "var FINISH_MS = 1000" in enter
     assert 'class="loci-boot-map"' in enter

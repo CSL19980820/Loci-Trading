@@ -105,7 +105,7 @@ class EnsureScreenJobsTests(unittest.TestCase):
                 self.assertEqual(updated["config"]["schedule"]["run_hour"], SCREEN_EOD_HOUR)
                 self.assertEqual(updated["config"]["schedule"]["run_minute"], SCREEN_EOD_MINUTE)
 
-    def test_yangshi_job_reconverges_to_eod_schedule(self) -> None:
+    def test_yangshi_job_preserves_custom_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "ops.db"
             with OpsStore(str(db)) as store:
@@ -113,26 +113,22 @@ class EnsureScreenJobsTests(unittest.TestCase):
                 job = store.get_job_by_name("screen:yangshi-tail-v1")
                 self.assertIsNotNone(job)
                 assert job is not None
+                multi_cron = "50 14 * * mon-fri\n30 15 * * mon-fri"
                 store.update_job(
                     job["id"],
-                    cron="50 14 * * 1-5",
+                    cron=multi_cron,
                     config={
                         **job["config"],
-                        "force_spot_refresh": True,
-                        "schedule": {"mode": "once", "run_hour": 14, "run_minute": 50},
+                        "schedule": {"mode": "once", "cron": multi_cron},
                     },
                 )
 
                 plan = ensure_managed_screen_jobs(store)
                 updated = store.get_job_by_name("screen:yangshi-tail-v1")
-                self.assertEqual(plan["job_crons"]["yangshi-tail-v1"], "30 15 * * mon-fri")
+                self.assertEqual(plan["job_crons"]["yangshi-tail-v1"], multi_cron)
                 self.assertIsNotNone(updated)
                 assert updated is not None
-                self.assertEqual(updated["cron"], "30 15 * * mon-fri")
-                self.assertEqual(updated["config"]["schedule"]["run_hour"], SCREEN_EOD_HOUR)
-                self.assertEqual(updated["config"]["schedule"]["run_minute"], SCREEN_EOD_MINUTE)
-                self.assertFalse(updated["config"].get("force_spot_refresh"))
-
+                self.assertEqual(updated["cron"], multi_cron)
     def test_preserves_user_universe_and_custom_schedule_without_engine_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "ops.db"

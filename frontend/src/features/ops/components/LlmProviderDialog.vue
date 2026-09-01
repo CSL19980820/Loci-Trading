@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import { formatContextWindow } from '@/shared/lib/llm'
 import type { LlmProvider } from '@/shared/types/quant'
 
@@ -207,11 +208,14 @@ function submit(): void {
                 />
               </el-form-item>
               <el-form-item label="Base URL" required>
-                <el-input
-                  v-model.trim="form.base_url"
-                  placeholder="https://openrouter.ai/api/v1"
-                  :disabled="busy"
-                />
+                <!-- 「填服务端点，不是官网首页」原来是块尾一行常驻说明，挪到这个输入框上 -->
+                <el-tooltip placement="top-start" content="填服务端点（.../v1），不是官网首页">
+                  <el-input
+                    v-model.trim="form.base_url"
+                    placeholder="https://openrouter.ai/api/v1"
+                    :disabled="busy"
+                  />
+                </el-tooltip>
               </el-form-item>
               <el-form-item :label="isEdit ? 'API Key（留空保持）' : 'API Key'">
                 <el-input
@@ -234,7 +238,6 @@ function submit(): void {
                 <el-button link type="info" @click="advancedOpen = true">+ 专用代理</el-button>
               </div>
             </div>
-            <p class="field-hint sec-foot">Base URL 填服务端点，不是官网首页。</p>
           </section>
         </div>
 
@@ -259,7 +262,7 @@ function submit(): void {
                   <span class="preview-ctx mono">{{ row.ctx }}</span>
                 </div>
               </div>
-              <p v-else class="field-hint">目录为空。</p>
+              <EmptyState v-else description="目录为空" reason="点下方「打开完整目录」拉一次" />
               <el-button
                 class="side-cta"
                 :disabled="busy"
@@ -268,24 +271,29 @@ function submit(): void {
                 打开完整目录
               </el-button>
             </template>
-            <p v-else class="field-hint side-empty">
-              保存并校验后可拉取模型目录。
-            </p>
+            <EmptyState
+              v-else
+              description="还没有模型目录"
+              reason="先保存并校验，再拉取"
+            />
           </div>
         </aside>
       </div>
-
-      <p v-if="isEdit" class="foot-note">
-        改动对新请求立即生效；进行中的选股 / Agent 会话需重连后换线。
-      </p>
     </el-form>
 
     <template #footer>
       <el-button :disabled="busy" @click="visible = false">取消</el-button>
       <el-button v-if="isEdit" :loading="busy" @click="emit('test')">测试连接</el-button>
-      <el-button type="primary" :loading="busy" @click="submit">
-        {{ isEdit ? '保存' : '保存并校验' }}
-      </el-button>
+      <!-- 「改动何时生效」原是表单末尾的常驻说明段，挪到它描述的那颗保存按钮上 -->
+      <el-tooltip
+        placement="top-end"
+        content="改动对新请求立即生效；进行中的选股 / Agent 会话需重连后换线"
+        :disabled="!isEdit"
+      >
+        <el-button type="primary" :loading="busy" @click="submit">
+          {{ isEdit ? '保存' : '保存并校验' }}
+        </el-button>
+      </el-tooltip>
     </template>
   </el-dialog>
 </template>
@@ -354,10 +362,6 @@ function submit(): void {
   padding: 0.35rem 0.65rem 0;
 }
 
-.sec-foot {
-  padding: 0 0.65rem 0.45rem;
-}
-
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -372,13 +376,6 @@ function submit(): void {
   width: 100%;
 }
 
-.field-hint {
-  margin: 0;
-  font-size: 0.7rem;
-  color: var(--mist);
-  line-height: 1.35;
-}
-
 .adv {
   padding: 0 0 0.45rem;
 }
@@ -389,10 +386,6 @@ function submit(): void {
   flex: 1;
   padding-bottom: 0.55rem;
   min-height: 0;
-}
-
-.side-empty {
-  padding: 0.35rem 0;
 }
 
 .side-cta {
@@ -437,19 +430,12 @@ function submit(): void {
 }
 
 .preview-badge.seal {
-  color: var(--seal);
+  color: var(--seal-ink);
   font-weight: 600;
 }
 
 .preview-ctx {
   color: var(--mist);
-}
-
-.foot-note {
-  margin: 0.55rem 0 0;
-  font-size: 0.7rem;
-  color: var(--mist);
-  line-height: 1.35;
 }
 
 :deep(.el-form-item) {

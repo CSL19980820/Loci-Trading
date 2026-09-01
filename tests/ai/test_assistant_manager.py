@@ -222,7 +222,7 @@ def test_owner_full_executes_inferred_write_without_field_echo(tmp_path: Path) -
         )
 
     try:
-        with patch("src.ai.application.assistant_manager.run_agent", side_effect=run_with_inferred_write):
+        with patch("src.ai.application.assistant_run_executor.run_agent", side_effect=run_with_inferred_write):
             manager._run(run_id, session_id, "把这只记下来", config)
         assert results and not results[0]["is_error"]
         assert results[0]["structured"]["code"] == "600000"
@@ -257,7 +257,7 @@ def test_evidence_brief_enters_main_system_without_write_tool_names(tmp_path: Pa
 
     try:
         with patch(
-            "src.ai.application.assistant_manager.run_evidence_agents",
+            "src.ai.application.assistant_run_executor.run_evidence_agents",
             return_value=[
                 {
                     "id": "candidate-evidence",
@@ -268,7 +268,7 @@ def test_evidence_brief_enters_main_system_without_write_tool_names(tmp_path: Pa
                 }
             ],
         ), patch(
-            "src.ai.application.assistant_manager.run_agent",
+            "src.ai.application.assistant_run_executor.run_agent",
             side_effect=run_with_system,
         ):
             manager._run(run_id, session_id, "查询今日候选", config)
@@ -311,8 +311,8 @@ def test_background_run_persists_events_and_does_not_need_client_lifetime(tmp_pa
 
     manager = AssistantManager(ops_db=str(tmp_path / "ops.db"))
     with patch("src.ai.application.assistant_manager.resolve_config", return_value=config), patch(
-        "src.ai.application.assistant_manager.run_agent", side_effect=run_without_terminal
-    ), patch("src.ai.application.assistant_manager.build_system_toolbus", return_value=WaitingBus()), patch.object(
+        "src.ai.application.assistant_run_executor.run_agent", side_effect=run_without_terminal
+    ), patch("src.ai.application.assistant_run_executor.build_system_toolbus", return_value=WaitingBus()), patch.object(
         AssistantStore, "finish_run", new=tracked_finish
     ):
         run_id = manager.start_run(session_id, message="你好")
@@ -356,8 +356,8 @@ def test_cancelled_run_stops_waiting_for_background_jobs(tmp_path: Path) -> None
     manager = AssistantManager(ops_db=str(tmp_path / "ops.db"))
     try:
         with patch("src.ai.application.assistant_manager.resolve_config", return_value=config), patch(
-            "src.ai.application.assistant_manager.run_agent", return_value=outcome
-        ), patch("src.ai.application.assistant_manager.build_system_toolbus", return_value=WaitingBus()):
+            "src.ai.application.assistant_run_executor.run_agent", return_value=outcome
+        ), patch("src.ai.application.assistant_run_executor.build_system_toolbus", return_value=WaitingBus()):
             run_id = manager.start_run(session_id, message="你好")
             assert waiting.wait(timeout=1)
             assert manager.cancel_run(run_id)

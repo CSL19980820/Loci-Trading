@@ -42,6 +42,23 @@
 | 美股 SEC / 转债 / ETF | `sec_*` / `convertible_bond_market` / `etf_market` | 非当前 A 股短线主产品边界 |
 | 监管异动 | `anomaly_detection` | niche；无明确产品故事前不做 |
 
+## 2026-08-31 更新：本文两条结论已被 ADR-017 修订
+
+见 [`docs/adr/ADR-017-wudao-briefing-relay-and-intel-widening.md`](../adr/ADR-017-wudao-briefing-relay-and-intel-widening.md)。
+
+| 本文原判定 | 现状 |
+|---|---|
+| 「配方增量（可选，未做）」：close 加 `board_break_analysis`、open 加 `auction_theme_strength` | **已落地**，并另加 `limit_down` / `margin_trading` / `unlock_events`（close）与 `market_catalyst_calendar`（open）。合计 +8 次/日，structured 池 1755 → 1763 |
+| 「AI 简报 `briefings`：**不建议入库当事实**」 | **这条不变**，但增加了一条**只转发不入账**的用途：四档简报转成纯文本推企微（`kind=intel_brief`，比悟道出稿晚 10 分钟）。不进复盘数字、不喂选股引擎、不写权威表，正文首行固定标注「悟道 AI 生成，仅作旁注」 |
+| 「情绪复盘面板 `board_break_analysis`：可选」 | 已进 close 档并投影进 `GET /api/intel/brief` 的 `board_break` 段（断板率 / 高标杀 / `sentimentSignal`）|
+| 「竞价题材聚合 `auction_theme_strength`：可选」 | 已进 open 档，`detailLevel=summary`（standard 档实测单次 63KB，summary 5KB）|
+| 「催化/解禁日历：可选·低频」 | `market_catalyst_calendar` 进 open、`unlock_events` 进 close，各一天一次；`macro_calendar` **未采**（其 `country` 字段实测装的是分类名，与催化日历的经济数据段重叠）|
+| 「基本面包 / 自选股写入 / SEC / 转债 ETF / 一键工作流」 | **判定不变**，一个都没接 |
+| 「Agent allowlist（未做）」 | **仍未做**。悟道 63 个工具目前经 `collect_tools` 全量暴露给助手 |
+
+补一条本文当时没有量到的事实：全仓 `rg` 统计，63 个工具里代码中出现过的只有 21 个；
+`briefings` 一次都没调过。这也是本轮扩面的直接由来。
+
 ## 若只加三刀（优先级）
 
 1. **消费侧（已落地）**：`GET /api/intel/brief` + 盘面 `PulseIntelStrip` 只读当日 `intel_snapshots`（情绪、题材、梯队）；未跑 `intel_fetch` 时空态。Insights/Assistant 可后续同口径复用 brief。  
@@ -58,4 +75,4 @@
 
 ## 决策一句话
 
-悟道接口面宽，本仓已经把**短线决策所需的高价值子集**接进配方与战法；下一步价值在「吃缓存、补 1～2 个复盘缺口、收紧 Agent 白名单」，而不是「全面利用」。
+悟道接口面宽，本仓已经把**短线决策所需的高价值子集**接进配方与战法；下一步价值在「吃缓存、补 1～2 个复盘缺口、收紧 Agent 白名单」，而不是「全面利用」。（**2026-08-31 补**：这三件里「吃缓存」与「补复盘缺口」已按 ADR-017 落地，Agent 白名单仍未收紧。）

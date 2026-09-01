@@ -574,8 +574,8 @@ class MarketRwMixin:
             index=pd.Index([str(row["trade_date"]) for row in rows]),
         )
         # 除权日之前用最早一个因子；之后逐段前向填充。
-        merged = sparse.reindex(sparse.index.union(index)).ffill().bfill()
-        return merged.reindex(index)
+        merged = sparse.reindex(sparse.index.union(index.unique())).ffill().bfill()
+        return merged.reindex(index.unique()).reindex(index)
 
     @staticmethod
     def _adjust_ratio(factors: pd.Series, adjust: str) -> pd.Series:

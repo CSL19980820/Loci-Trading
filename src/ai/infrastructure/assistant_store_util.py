@@ -1,4 +1,4 @@
-"""assistant_store 共享小工具，供主 Store 与 lifecycle mixin 复用。"""
+"""assistant_store 共享小工具，供门面与 lifecycle / profile / grants 各 mixin 复用。"""
 from __future__ import annotations
 
 from src.shared.clock import utc_now as utc_now

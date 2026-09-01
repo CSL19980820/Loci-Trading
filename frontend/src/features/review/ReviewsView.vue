@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { InfoFilled } from '@element-plus/icons-vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import RecordDialog from '@/shared/components/dialogs/RecordDialog.vue'
 import Sparkline from '@/shared/components/charts/Sparkline.vue'
 import { useClientPagination } from '@/shared/composables/useClientPagination'
@@ -16,6 +16,9 @@ import { usePalaceStore } from '@/shared/stores/palace'
 const store = usePalaceStore()
 const route = useRoute()
 const recordOpen = ref(false)
+
+/** 口径不占正文行：只作表格工具行上的一枚 ⓘ */
+const PAGE_NOTE = '手工补记的样本与教训'
 
 const { currentPage, pageSize, total, paginated: paginatedReviews } = useClientPagination(
   () => store.reviews,
@@ -60,15 +63,6 @@ function onSaved(): void {
 
 <template>
   <div class="page-fill">
-    <PageHeader
-      title="复盘记录"
-      :count="`共 ${store.reviews.length} 条`"
-      note="手工补记的买卖样本与教训；无候选样本时，胜率统计回退到这批复盘"
-    >
-      <template #actions>
-        <el-button type="primary" size="small" @click="recordOpen = true">新增</el-button>
-      </template>
-    </PageHeader>
     <PageContainer>
       <template v-if="returnSeries.length" #topExpand>
         <div class="spark-wrap">
@@ -97,6 +91,13 @@ function onSaved(): void {
           row-key="id"
           @current-change="(page) => { currentPage = page }"
         >
+          <!-- 主动作与口径并进表格自带的工具行：页面不再单开一条页头（任务 3） -->
+          <template #toolbarButtons>
+            <el-button type="primary" size="small" @click="recordOpen = true">补记一笔</el-button>
+            <el-tooltip :content="PAGE_NOTE" placement="bottom-start" :show-after="200">
+              <el-icon class="toolbar-note" tabindex="0" :aria-label="PAGE_NOTE"><InfoFilled /></el-icon>
+            </el-tooltip>
+          </template>
           <template #entity="{ row }">
             <el-tag size="small" effect="plain" :type="entityTagType(String(row.entity_type))">
               {{ entityLabel(String(row.entity_type)) }}
@@ -126,10 +127,9 @@ function onSaved(): void {
         <EmptyState
           v-else
           description="还没有复盘记录"
-          reason="卖出或减仓后可补记一笔样本；后续会接 AI 复盘"
-          eta="点新增写入"
+          reason="卖出或减仓后可补记一笔"
         >
-          <el-button type="primary" @click="recordOpen = true">新增</el-button>
+          <el-button type="primary" @click="recordOpen = true">补记一笔</el-button>
         </EmptyState>
       </template>
     </PageContainer>
@@ -140,12 +140,26 @@ function onSaved(): void {
 
 <style scoped>
 .spark-wrap {
-  padding: 0.55rem 1rem 0.35rem;
+  padding: var(--gap-1) var(--gap-3);
   border-bottom: 1px solid var(--rule);
 }
 
 .lesson-cell {
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
   color: var(--muted);
+}
+
+/* 口径提示：一枚 ⓘ，不占文本宽度 */
+.toolbar-note {
+  flex-shrink: 0;
+  font-size: var(--fs-aux);
+  color: var(--mist);
+  cursor: help;
+}
+
+.toolbar-note:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+  border-radius: var(--radius);
 }
 </style>

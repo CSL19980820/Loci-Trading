@@ -254,7 +254,7 @@ async function saveCatalog(): Promise<void> {
                 </template>
               </el-table-column>
 
-              <el-table-column label="操作" width="100" align="right" fixed="right">
+              <el-table-column label="操作" width="100" align="center" header-align="center" fixed="right">
                 <template #default="{ row }">
                   <el-button
                     v-if="row.id !== defaultModel"
@@ -376,7 +376,7 @@ async function saveCatalog(): Promise<void> {
 }
 
 .catalog-table :deep(tr.is-default > td.el-table__cell) {
-  background: color-mix(in srgb, var(--seal-soft, #fce8ec) 70%, var(--sheet)) !important;
+  background: color-mix(in srgb, var(--seal-soft) 70%, var(--sheet)) !important;
 }
 
 .id-cell {

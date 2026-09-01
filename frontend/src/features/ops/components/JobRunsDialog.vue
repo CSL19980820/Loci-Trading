@@ -15,6 +15,7 @@ import { confirmDangerous } from '@/shared/lib/confirm'
 import type { JobRun } from '@/shared/types/quant'
 
 import {
+  cnStrategyName,
   firstLine,
   formatLlmMeta,
   formatRunDuration,
@@ -45,35 +46,51 @@ const basicTableRef = ref<InstanceType<typeof BasicTable> | null>(null)
 const selectedIds = ref<string[]>([])
 const tableRows = computed(() => runs.value as unknown as Record<string, unknown>[])
 
+/**
+ * 历史表的 `job_name` 是后端原样字段：战法/技能绑定任务叫 `screen:sanyuan-tail-v1`，
+ * 直接摆进单元格就是把英文 slug 甩给用户。统一过 cnStrategyName（含拼音词根兜底）。
+ */
+function runJobLabel(raw: unknown): string {
+  const name = String(raw ?? '').trim()
+  if (!name) return '—'
+  const bound = /^(?:screen|skill):(.+)$/.exec(name)
+  return bound ? cnStrategyName('', bound[1]) : name
+}
+
 const columns = ref<BasicTableColumn[]>([
   { type: 'selection', width: 48, fixed: 'left' },
   {
     prop: 'job_name',
     label: '任务',
     minWidth: 200,
-    align: 'left',
-    headerAlign: 'left',
+    align: 'center',
+    headerAlign: 'center',
     showOverflowTooltip: true,
     fixed: 'left',
+    formatter: (row) => runJobLabel(row.job_name),
   },
   {
     prop: 'started_at',
     label: '时间',
     minWidth: 160,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => String(row.started_at ?? '—'),
   },
   {
     prop: 'trigger',
     label: '触发',
     width: 72,
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => triggerLabel(String(row.trigger ?? '')),
   },
   {
     prop: 'duration_ms',
     label: '耗时',
     width: 96,
-    align: 'right',
-    headerAlign: 'right',
+    align: 'center',
+    headerAlign: 'center',
     slotName: 'duration',
   },
   {
@@ -187,7 +204,6 @@ defineExpose({ load })
 <style scoped>
 .runs-body {
   height: min(68vh, 36rem);
-  min-height: 16rem;
   display: flex;
   flex-direction: column;
 }
@@ -208,11 +224,11 @@ defineExpose({ load })
 .runs-duration {
   font-variant-numeric: tabular-nums;
   font-family: var(--mono);
-  font-size: 0.88em;
+  font-size: var(--fs-body);
 }
 
 .dim {
-  margin-left: 0.35rem;
+  margin-left: var(--gap-1);
   color: var(--muted);
 }
 </style>
@@ -223,6 +239,6 @@ defineExpose({ load })
 }
 
 .job-runs-dialog .el-dialog__body {
-  padding-top: 0.5rem;
+  padding-top: var(--gap-2);
 }
 </style>

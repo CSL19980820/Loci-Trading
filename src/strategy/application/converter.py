@@ -34,6 +34,7 @@ from src.shared.paths import ops_db as _default_ops_db
 # 自定义策略的落地目录。固定在这里，不接受外部传入路径。
 CUSTOM_DIR = Path(__file__).resolve().parent.parent / "infrastructure" / "custom"
 # OpsStore 路径，用于保存版本历史。
+#: 兼容保留。**不要用**：import 期求值，多租户下会把版本历史写进别人的库。
 DEFAULT_OPS_DB = _default_ops_db()
 
 # prompt 里注入的函数速查表，帮 LLM 选正确的 formula 函数
@@ -256,7 +257,7 @@ def save_and_load(
     # 版本历史（失败不影响主流程）
     try:
         from src.ops import OpsStore
-        with OpsStore(ops_db or DEFAULT_OPS_DB) as ops:
+        with OpsStore(ops_db or _default_ops_db()) as ops:
             version = ops.save_strategy_version(slug, code, file_path=rel_path)
         logger.info("策略版本 v%s 已保存", version)
     except Exception as exc:
@@ -286,7 +287,7 @@ def restore_custom_strategy_version(
     """恢复指定代码版本；运行时加载成功后才原子切换 active 标记。"""
     from src.ops import OpsError, OpsStore
 
-    with OpsStore(ops_db or DEFAULT_OPS_DB) as ops:
+    with OpsStore(ops_db or _default_ops_db()) as ops:
         target_version = ops.get_strategy_version(slug, version)
     if target_version is None:
         raise OpsError(f"策略 {slug} 不存在版本 {version}")
@@ -297,7 +298,7 @@ def restore_custom_strategy_version(
     previous_code = target.read_text(encoding="utf-8") if target.exists() else None
     _replace_and_load_custom_strategy(target, slug, code)
     try:
-        with OpsStore(ops_db or DEFAULT_OPS_DB) as ops:
+        with OpsStore(ops_db or _default_ops_db()) as ops:
             restored = ops.rollback_strategy_version(slug, version)
     except Exception:
         logger.exception("策略 %s 运行时已恢复，但 active 标记切换失败", slug)

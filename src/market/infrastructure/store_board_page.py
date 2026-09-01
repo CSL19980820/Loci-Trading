@@ -189,6 +189,62 @@ class MarketBoardPageMixin:
             [*join_params, max(1, int(limit)), max(0, int(offset))],
         ).fetchall()
         return total, [dict(row) for row in rows]
+    def page_instruments_by_amount(
+        self,
+        *,
+        q: str = "",
+        instrument_type: str | None = "STOCK",
+        status: str = "normal",
+        industry: str | None = None,
+        sort: str = "amount_desc",
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """按最近一根日线成交额排序分页（库内口径，非全市场实时扫盘）。"""
+        where, params = self._instrument_where(
+            q=q,
+            instrument_type=instrument_type,
+            status=status,
+            industry=industry,
+            table="i",
+        )
+        lookback = int(getattr(self, "_LATEST_BARS_LOOKBACK_DAYS", 20))
+        clause = " AND ".join(where)
+        sort_key = (sort or "amount_desc").strip().lower()
+        if sort_key == "amount_asc":
+            order = (
+                "CASE WHEN q.amount IS NULL THEN 1 ELSE 0 END, q.amount ASC, i.code"
+            )
+        elif sort_key == "code":
+            order = "i.code"
+        else:
+            order = (
+                "CASE WHEN q.amount IS NULL THEN 1 ELSE 0 END, q.amount DESC, i.code"
+            )
+        base_from = f"""
+            FROM instruments i
+            LEFT JOIN (
+                SELECT code, MAX(trade_date) AS trade_date
+                FROM quotes_daily
+                WHERE trade_date IN (
+                    SELECT trade_date FROM trading_calendar
+                    ORDER BY trade_date DESC LIMIT ?
+                )
+                GROUP BY code
+            ) d ON i.code = d.code
+            LEFT JOIN quotes_daily q
+                ON q.code = d.code AND q.trade_date = d.trade_date
+            WHERE {clause}
+        """
+        join_params: list[Any] = [lookback, *params]
+        total = int(
+            self.conn.execute(f"SELECT COUNT(*) {base_from}", join_params).fetchone()[0]
+        )
+        rows = self.conn.execute(
+            f"SELECT i.* {base_from} ORDER BY {order} LIMIT ? OFFSET ?",
+            [*join_params, max(1, int(limit)), max(0, int(offset))],
+        ).fetchall()
+        return total, [dict(row) for row in rows]
 
     def instruments_by_codes(
         self, codes: list[str], *, instrument_type: str | None = "STOCK"

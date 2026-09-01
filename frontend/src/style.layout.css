@@ -1,16 +1,42 @@
+/*
+ * 布局层：主区 / 路由页骨架 / 滚动契约 / 栅格。
+ * 视口契约见 AGENTS.md §3.7.1；密度尺度一律用 --gap-* 令牌，不写魔法 rem。
+ *
+ * —— 右侧容器的左右沟槽（--pad-page-x）——
+ *
+ * 令牌本身定义在 style.base.css 的密度令牌区（沟槽是密度尺度，与字号行高同源）。
+ * 本层只负责**施加**它。
+ *
+ * 唯一施加点是 .main-content 的左右内边距——只加一处，才不会出现「有的页 12px、
+ * 有的页 0」的不对称。因此页内**不要**再各自补 padding-inline：
+ *   - .page-fill > .page-scroll 的左右 padding 在下面被清零，避免 12+8 的双重沟槽；
+ *   - 需要真·满幅的页（大屏 LiveBoardView 一类）在根节点加 .page-fill--flush，
+ *     main-content 会整条撤掉沟槽（见下面的 :has() 逃生舱）。
+ */
 .main-content {
   flex: 1 1 auto;
   min-height: 0;
   max-width: none;
   margin: 0;
   width: 100%;
-  /* 仅左右留白作纸色沟槽；上下贴边，内容区自有底色 */
-  padding: 0 0.85rem;
+  /*
+   * 左右留一条对称沟槽：内容不再死贴侧栏与窗口右缘。纵向仍然 0——
+   * 顶边由状态轨/进度线接管，页头自己有内边距，垫高只会白吃一行。
+   */
+  padding: 0 var(--pad-page-x);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   overscroll-behavior: contain;
   background: var(--paper);
+}
+
+/*
+ * 满幅逃生舱：路由页根节点（或其浅层壳）挂 .page-fill--flush 即撤掉沟槽。
+ * 大屏一类「像素全给数据」的页面走这条，不要去改 .main-content 本身。
+ */
+.main-content:has(.page-fill--flush) {
+  padding: 0;
 }
 
 .page-host {
@@ -36,11 +62,8 @@
 }
 
 /*
- * 页面根：占满主区；纸色沟槽内的内容卡（底色异于 main-content）。
- *
- * 账页衬线：内容不足半屏时，此前整块下半页是死白，看着像没加载完。
- * 这里给页底铺极淡的横线，把留白变成「这张账页还没写满」——线距对齐 EP small
- * 行高 40px，内容区（sheet / 表格 / 页头）自带不透明底色会盖住它，只在真空处露出。
+ * 页面根：占满主区。背景就是 --paper 纯色——旧版在这里铺了「账页衬线」横纹
+ * 把空白伪装成留白，终端风不需要：空就是空，该做的是把内容排满，不是画格子。
  */
 .page-fill {
   display: flex;
@@ -55,19 +78,10 @@
    * 蒙版会一路上溯到视口，把侧栏一起罩灰（工坊/设置/体检/策稿四页都中过）。
    */
   position: relative;
-  background-color: var(--sheet);
-  background-image: repeating-linear-gradient(
-    to bottom,
-    transparent 0,
-    transparent 39px,
-    color-mix(in srgb, var(--rule) 45%, transparent) 39px,
-    color-mix(in srgb, var(--rule) 45%, transparent) 40px
-  );
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
+  background: var(--paper);
 }
 
-/* 列表主区贴合内容卡，避免 Sheet 再套一层框 */
+/* 列表主区贴合页面，避免 Sheet 再套一层框 */
 .page-fill > .sheet.list-sheet,
 .page-fill > .page-container {
   border: none;
@@ -97,7 +111,18 @@
   overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
-  padding: 0.65rem 0.85rem;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+}
+
+/*
+ * 页级滚动器不再自带左右内边距：沟槽已经由 .main-content 统一给了（--pad-page-x），
+ * 这里再补 8px 就是 20px 的双重沟槽，而同页的页头（page-fill 直接子）只有 12px，
+ * 两者左缘对不齐。只清直接子——嵌在 dock / 面板里的 .page-scroll 保留自己的内边距。
+ */
+.page-fill > .page-scroll {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .page-scroll--flush-top {
@@ -109,7 +134,7 @@
  * - html/body/#app 禁止出现文档级滚动条；滚动只发生在 page-scroll / 表体 / 侧栏等内层。
  * - 路由页须含 .page-fill（根或浅层壳均可），把主区高度吃满；禁止内容撑破视口再靠 page-host 当「浏览器滚动」。
  * - page-host 用 :has(.page-fill) 关外层滚动，包一层壳不再破契约。
- * - 疏密：区块间距用 .mb / filter-bar / page-tabs 既有尺度；禁止大块空白垫高，也禁止把可读区压成窄条。
+ * - 疏密：区块间距一律 --gap-2（8px）；禁止用 padding / min-height 垫高空白，也禁止把可读区压成窄条。
  * - PageTabs：优先放在 page-scroll 外（与 Ops 一致）；短内容 Tab 面板加 .page-pane 让 Sheet 拉满剩余高度。
  */
 .page-pane {
@@ -158,28 +183,61 @@
   height: 100%;
 }
 
+/* —— 筛选条：inline 控件基线对齐、高度统一、换行不错位 —— */
 .filter-bar {
-  margin-bottom: 0.55rem !important;
+  margin-bottom: var(--gap-2) !important;
 }
 
 .filter-bar .sheet-body {
-  padding-top: 0.55rem;
-  padding-bottom: 0.55rem;
+  padding: var(--gap-1) var(--pad-sheet-x);
 }
 
 .filter-bar .el-form-item {
   margin-bottom: 0;
 }
 
+/*
+ * 一行控件带 label 时：label 不定宽（inline 场景 6.5em 会把「代码」拉出一片空档），
+ * 但每个控件的高度必须等于 --ctl-h，换行后上下两行才对得齐。
+ */
+.filter-bar .filters,
+.filter-bar .el-form--inline,
+.filter-bar .filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-1) var(--gap-2);
+  min-height: var(--ctl-h);
+}
+
+.filter-bar .filters > *,
+.filter-bar .el-form--inline .el-form-item {
+  margin: 0;
+}
+
+.filter-bar .el-form--inline .el-form-item__label,
+.filter-bar .inline-label {
+  width: auto;
+  padding-right: var(--gap-1);
+  color: var(--mist);
+  font-size: var(--fs-aux);
+  line-height: var(--ctl-h);
+  white-space: nowrap;
+}
+
+.filter-bar :is(.el-input, .el-select, .el-date-editor, .el-input-number) {
+  --el-input-height: var(--ctl-h);
+}
+
 .mb {
-  margin-bottom: 0.65rem;
+  margin-bottom: var(--gap-2);
 }
 
 .stat-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.65rem;
-  margin-bottom: 0.9rem;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
 }
 
 .stat-strip.cols-3 {
@@ -201,8 +259,8 @@
 .grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
 }
 
 .hold-plan {

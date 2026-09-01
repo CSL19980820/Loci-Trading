@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.ops.application.jobs.context import (
-    DEFAULT_PALACE_DB,
+    default_palace_db,
     JobContext,
 )
 
@@ -27,7 +27,7 @@ def execute_outcome(config: dict[str, Any], context: JobContext) -> dict[str, An
     else:
         benchmark = "000300"
 
-    palace_path = context.palace_db or DEFAULT_PALACE_DB
+    palace_path = context.palace_db or default_palace_db()
     with PalaceStore(palace_path) as palace, context.market() as market:
         payload = track_candidate_outcomes(
             palace,

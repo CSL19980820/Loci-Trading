@@ -6,6 +6,7 @@ import {
   patchWudaoSettings,
   saveWudaoMcp,
 } from '@/shared/api/quant'
+import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
 import { dialogWidth } from '@/shared/lib/format'
 import type { McpQuotaSnapshot, McpServer } from '@/shared/types/quant'
 
@@ -34,10 +35,14 @@ const form = reactive({
   per_minute: 50,
 })
 
-const quotaText = computed(() => {
+/**
+ * 今日剩余额度是**读数**，不是异常：原先用 el-alert(info) 常驻在弹窗顶上，
+ * 现在改成「配额上限」那一行的行内读数（HeaderStat）。
+ */
+const quotaRemain = computed(() => {
   if (!quota.value) return ''
   const r = quota.value.remaining
-  return `今日剩余 ${r.total}（结构化 ${r.structured} · Skill ${r.skill}）`
+  return `${r.total}（结构化 ${r.structured} · Skill ${r.skill}）`
 })
 
 watch(open, (visible) => {
@@ -96,24 +101,28 @@ async function submit(): Promise<void> {
     :width="dialogWidth()"
     destroy-on-close
   >
-    <p class="hint">
-      与 Cursor / Codex 用同一份凭据：Key 存在本机配置里，配额与日 K 优先级也记在本机。未配
-      Key 时自动跳过，不影响其它数据源。
-    </p>
-    <el-alert v-if="quotaText" :title="quotaText" type="info" show-icon :closable="false" class="mb" />
+    <!--
+      开篇那段「与 Cursor / Codex 同一份凭据…」是常驻介绍段，已删：
+      它解释的是 API Key，就挂到 API Key 输入框的 tooltip 上。
+    -->
 
     <el-form label-position="top">
       <el-form-item label="MCP 地址">
         <el-input v-model.trim="form.url" />
       </el-form-item>
       <el-form-item label="API Key">
-        <el-input
-          v-model.trim="form.token"
-          type="password"
-          show-password
-          autocomplete="off"
-          placeholder="留空则保留现有 Key"
-        />
+        <el-tooltip
+          placement="top-start"
+          content="与 Cursor / Codex 同一份凭据，只存本机；未配 Key 时自动跳过，不影响其它数据源"
+        >
+          <el-input
+            v-model.trim="form.token"
+            type="password"
+            show-password
+            autocomplete="off"
+            placeholder="留空则保留现有 Key"
+          />
+        </el-tooltip>
       </el-form-item>
       <el-form-item label="套餐到期日">
         <el-date-picker
@@ -137,11 +146,15 @@ async function submit(): Promise<void> {
         />
       </el-form-item>
 
-      <h4 class="section">配额上限</h4>
-      <div class="quota-grid">
-        <el-form-item label="日总上限">
+      <!-- 标题压成一行：配额上限 + 今日剩余读数 + 第一条控件（日总上限） -->
+      <div class="quota-head">
+        <h4 class="section">配额上限</h4>
+        <HeaderStat v-if="quotaRemain" label="今日剩余" :value="quotaRemain" />
+        <el-form-item label="日总上限" class="quota-head__item">
           <el-input-number v-model="form.daily_total" :min="0" :max="50000" />
         </el-form-item>
+      </div>
+      <div class="quota-grid">
         <el-form-item label="结构化采集">
           <el-input-number v-model="form.daily_structured" :min="0" :max="50000" />
         </el-form-item>
@@ -165,20 +178,35 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
-.hint {
-  margin: 0 0 0.75rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-.mb {
-  margin-bottom: 0.75rem;
+/* 标题 + 读数 + 第一条控件同排；表单项自身的下边距在这一行里清掉 */
+.quota-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.5rem 0 0.25rem;
 }
 
 .section {
-  margin: 0.5rem 0;
+  margin: 0;
   font-size: 0.9rem;
+}
+
+/* 表单是 label-position="top"，这一项要横过来，才能与标题真的同一行 */
+.quota-head__item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0 auto;
+}
+
+.quota-head__item :deep(.el-form-item__label) {
+  padding: 0;
+  line-height: 1.2;
+}
+
+.quota-head__item :deep(.el-form-item__content) {
+  margin: 0;
 }
 
 .quota-grid {

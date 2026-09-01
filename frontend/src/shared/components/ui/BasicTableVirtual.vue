@@ -9,6 +9,7 @@ import {
 } from 'element-plus'
 
 import BasicTableCell from './BasicTableCell.vue'
+import EmptyState from './EmptyState.vue'
 import type { BasicTableColumn } from './basicTableTypes'
 import { distributeVirtualColumnWidths } from './basicTableVirtualSupport'
 
@@ -293,7 +294,7 @@ defineExpose({
           class="basic-table__virtual-el"
         >
           <template #empty>
-            <span class="basic-table__virtual-empty">{{ emptyText }}</span>
+            <EmptyState :description="emptyText" />
           </template>
         </el-table-v2>
       </template>
@@ -382,9 +383,5 @@ defineExpose({
 .basic-table__virtual-el :deep([tabindex='0']:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-}
-
-.basic-table__virtual-empty {
-  color: var(--muted);
 }
 </style>

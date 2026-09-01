@@ -116,13 +116,13 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
   display: inline-flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .header-actions :deep(.el-button) {
   margin: 0;
   background: var(--sheet);
-  border-color: var(--line-2);
+  border-color: var(--rule-strong);
   color: var(--ink);
 }
 
@@ -132,10 +132,11 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
   color: #fff;
 }
 
+/* 破坏性操作用印章红（--stamp），不用涨跌红：删除和「涨」不该是同一个红 */
 .header-actions :deep(.el-button--danger.is-plain) {
-  background: var(--seal-soft);
-  border-color: color-mix(in srgb, var(--seal) 35%, var(--rule));
-  color: var(--seal-ink);
+  background: transparent;
+  border-color: color-mix(in srgb, var(--stamp) 45%, var(--rule));
+  color: var(--stamp);
 }
 
 .header-actions :deep(.el-button + .el-button) {
@@ -143,8 +144,8 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
 }
 
 .header-actions__caret {
-  margin-left: 0.2rem;
-  font-size: 0.7em;
+  margin-left: var(--gap-1);
+  font-size: var(--fs-kicker);
   opacity: 0.75;
 }
 </style>

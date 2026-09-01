@@ -1,5 +1,5 @@
 /** 工作台右侧：Agent 技能后台跑 + 事件流 / HITL */
-import { onActivated, onDeactivated, onUnmounted, ref } from 'vue'
+import { computed, onActivated, onDeactivated, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import {
@@ -23,6 +23,21 @@ export function useWorkbenchSkillRun() {
   const skillReply = ref('')
   const skillEventAfter = ref(0)
   const error = ref('')
+  /** 技能跑起来的时刻；后端 run 里没有可靠的开始时间，这里只记前端观测点。 */
+  const skillSince = ref(0)
+  const skillNow = ref(Date.now())
+  /** 前端放弃跟踪：后端没有中止技能的接口，那条 run 会继续跑。 */
+  const skillAbandoned = ref(false)
+
+  const skillElapsedText = computed(() => {
+    if (!skillSince.value) return ''
+    const total = Math.max(0, Math.floor((skillNow.value - skillSince.value) / 1000))
+    if (total < 60) return `已跑 ${total} 秒`
+    const minutes = Math.floor(total / 60)
+    const seconds = total % 60
+    return seconds ? `已跑 ${minutes} 分 ${seconds} 秒` : `已跑 ${minutes} 分`
+  })
+
   let skillPoll: ReturnType<typeof setInterval> | null = null
   let terminalLogged = false
   let lifecycleGeneration = 0
@@ -55,6 +70,8 @@ export function useWorkbenchSkillRun() {
     skillEventAfter.value = 0
     error.value = ''
     terminalLogged = false
+    skillSince.value = 0
+    skillAbandoned.value = false
   }
 
   async function refreshEvents(runId: string, generation = lifecycleGeneration): Promise<void> {
@@ -75,6 +92,7 @@ export function useWorkbenchSkillRun() {
     stopPoll()
     skillPoll = setInterval(() => {
       if (generation !== lifecycleGeneration) return
+      skillNow.value = Date.now()
       void refreshEvents(runId, generation)
       void (async () => {
         try {
@@ -89,6 +107,7 @@ export function useWorkbenchSkillRun() {
             }
             stopPoll()
             skillBusy.value = false
+            skillSince.value = 0
           } else if (st === 'error') {
             if (!terminalLogged) {
               terminalLogged = true
@@ -97,6 +116,7 @@ export function useWorkbenchSkillRun() {
             }
             stopPoll()
             skillBusy.value = false
+            skillSince.value = 0
           }
         } catch {
           /* ignore */
@@ -113,8 +133,34 @@ export function useWorkbenchSkillRun() {
     lifecycleGeneration += 1
     const generation = lifecycleGeneration
     skillBusy.value = true
+    if (!skillSince.value) skillSince.value = Date.now()
+    skillNow.value = Date.now()
     void refreshEvents(run.id, generation)
     beginPoll(run.id, generation)
+  }
+
+  /**
+   * 技能是否真的还在跑。`skillBusy` 只覆盖「请求在途」那几百毫秒，拿它当
+   * 「运行中」会让跑道在后台还在推进时显示待命。
+   */
+  const skillActive = computed(() => {
+    if (skillBusy.value) return true
+    return ACTIVE_STATUSES.has(String(skillRun.value?.status || ''))
+  })
+
+  /**
+   * 放弃跟踪这次技能运行。
+   *
+   * 后端没有中止 skill-run 的接口（`/api/skill-runs/{id}` 只有查询、事件与
+   * 回复），所以这里只停轮询、清本地进度；那条 run 会继续跑到底。日志里照实写。
+   */
+  function abandon(): void {
+    if (!skillActive.value) return
+    invalidate()
+    skillBusy.value = false
+    skillAbandoned.value = true
+    skillSince.value = 0
+    pushLog('■ 已停止跟踪 · 该次技能仍在后台继续')
   }
 
   async function start(opts: {
@@ -137,6 +183,9 @@ export function useWorkbenchSkillRun() {
     const generation = lifecycleGeneration
     stopPoll()
     pushLog(`▶ 启动技能 · ${opts.name}`)
+    skillSince.value = Date.now()
+    skillNow.value = Date.now()
+    skillAbandoned.value = false
     try {
       const started = await startSkillRun(opts.slug, {
         provider: opts.provider,
@@ -198,9 +247,13 @@ export function useWorkbenchSkillRun() {
     skillLog,
     skillReply,
     error,
+    skillActive,
+    skillElapsedText,
+    skillAbandoned,
     reset,
     start,
     reply,
+    abandon,
     stopPoll,
     resumePolling,
   }

@@ -38,3 +38,24 @@ def _freeze_out_of_tail_protect_window(monkeypatch: pytest.MonkeyPatch) -> None:
         return False if now is None else real(now)
 
     monkeypatch.setattr(market_gate, "in_tail_screen_protect_window", _outside_window)
+
+
+@pytest.fixture(autouse=True)
+def _reset_notify_global_state() -> None:
+    """通知侧的三张进程级表：限流指纹、企微令牌桶、社区信号去重。
+
+    它们都是模块级全局，不清就会跨用例互相顶掉——而且症状是「某个用例单跑绿、
+    全量跑红」，最难查的那一类。加限流之后受影响的用例比以前多得多，所以放在
+    ops 的公共 conftest 里，而不是让每个通知测试文件各写一遍。
+    """
+    from src.ops.application.notify_registry import reset_rate_limiter
+    from src.ops.application.notify_send_queue import reset_rate_limits
+    from src.ops.application.notify_subscribers import reset_signal_dedup
+
+    reset_rate_limiter()
+    reset_rate_limits()
+    reset_signal_dedup()
+    yield
+    reset_rate_limiter()
+    reset_rate_limits()
+    reset_signal_dedup()

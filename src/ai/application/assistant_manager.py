@@ -1,40 +1,40 @@
-"""全局助手的后台运行编排。断开 HTTP 客户端不会取消已提交运行。"""
+"""全局助手的后台运行编排。断开 HTTP 客户端不会取消已提交运行。
+
+本文件只留「进池之前」的编排：会话校验、provider 解析、配额、建 run 行、投递。
+worker 线程里真正跑的那一段在 `assistant_run_executor.AssistantRunExecutorMixin`
+（`_run` / `_run_with_event_store`）；喂模历史与 `context_feed` 快照的读写在
+`assistant_context_feed.py`。三者共用同一套惰性库路径属性，见 `ops_db`。
+"""
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
-import json
 import os
 from typing import Any
 
 from src.ai import resolve_config
-from src.ai.application.agent import ChatMessage, apply_hitl_tool_result, run_agent
-from src.ai.application.assistant_evidence_agents import (
-    format_evidence_briefs,
-    run_evidence_agents,
+from src.ai.application.assistant_context_feed import (
+    context_feed_payload,
+    history_to_chat_messages,
 )
-from src.ai.application.assistant_images import images_from_metadata, normalize_user_images
-from src.ai.application.assistant_memory import maybe_auto_consolidate_memory
-from src.ai.application.assistant_prompt import build_assistant_system_prompt
-from src.ai.application.assistant_rich_state import (
-    events_after_latest_resume,
-    fold_run_rich_metadata,
-)
-from src.ai.application.assistant_session_title import (
-    maybe_apply_provisional_title,
-    maybe_summarize_session_title,
-)
+from src.ai.application.assistant_images import normalize_user_images
+from src.ai.application.assistant_run_executor import AssistantRunExecutorMixin
+from src.ai.application.assistant_session_title import maybe_apply_provisional_title
 from src.ai.application.assistant_skill_prompt import skill_prompt_block
-from src.ai.application.assistant_stream_buffer import StreamEventBuffer
-from src.ai.application.context_compact import DEFAULT_CONTEXT_WINDOW, compact_feed_messages
-from src.ai.application.context_usage import estimate_tokens
-from src.ai.application.system_toolbus import build_system_toolbus
+from src.ai.application.context_compact import compact_feed_messages
+from src.ai.application.quota import (
+    QuotaExceeded,
+    check_llm_quota,
+    current_llm_quota,
+    env_llm_quota,
+)
 from src.ai.domain.assistant import AssistantError, AssistantUnavailableError
 from src.ai.infrastructure.assistant_store import AssistantStore
+from src.ai.infrastructure.tenant_db import ops_db_for, palace_db_for
 from src.ops import OpsError, OpsStore
+from src.shared.tenancy import submit_with_tenant
 
 
-DEFAULT_MONTHLY_TOKEN_BUDGET = 1_000_000
 _THINKING_LEVELS = frozenset({"off", "low", "medium", "high", "xhigh", "max"})
 
 
@@ -48,62 +48,20 @@ def _normalize_run_thinking(value: str) -> str:
     return ""
 
 
-def _history_to_chat_messages(history: list[dict[str, Any]]) -> list[ChatMessage]:
-    messages: list[ChatMessage] = []
-    for item in history:
-        role = str(item.get("role") or "")
-        if role not in {"user", "assistant"}:
-            continue
-        content = str(item.get("content") or "")
-        images = images_from_metadata(
-            item.get("metadata") if isinstance(item.get("metadata"), dict) else None
-        )
-        if role == "assistant" and not content.strip() and not images:
-            continue
-        messages.append(ChatMessage(role=role, content=content, images=images))
-    for msg in messages:
-        if msg.role == "user" and msg.images and msg.content.strip() == "（附图）":
-            msg.content = ""
-    return messages
-
-
-def _feed_messages_for_session(
-    session_row: dict[str, Any],
-    history: list[dict[str, Any]],
-) -> list[ChatMessage]:
-    """优先用手动/上次压缩写入的 context_feed，再拼 through_seq 之后的新消息。"""
-    meta = session_row.get("metadata") if isinstance(session_row.get("metadata"), dict) else {}
-    feed = meta.get("context_feed") if isinstance(meta, dict) else None
-    if not isinstance(feed, dict):
-        return _history_to_chat_messages(history)
-    raw_rows = feed.get("messages")
-    if not isinstance(raw_rows, list) or not raw_rows:
-        return _history_to_chat_messages(history)
-    base: list[ChatMessage] = []
-    for row in raw_rows:
-        if not isinstance(row, dict):
-            continue
-        role = str(row.get("role") or "")
-        if role not in {"user", "assistant"}:
-            continue
-        base.append(ChatMessage(role=role, content=str(row.get("content") or "")))
-    through_seq = int(feed.get("through_seq") or 0)
-    newer = [row for row in history if int(row.get("seq") or 0) > through_seq]
-    if not newer:
-        return base
-    return [*base, *_history_to_chat_messages(newer)]
-
-
 def _resolve_monthly_token_budget(value: int | None) -> int:
-    raw = value if value is not None else os.getenv(
-        "LOCI_AI_MONTHLY_TOKEN_BUDGET", str(DEFAULT_MONTHLY_TOKEN_BUDGET)
-    )
+    """显式传入的月度 Token 硬顶。
+
+    只服务「调用方自己钉死预算」这一种情况（测试、单机固定额度）。没显式传就
+    不该走这里——每用户配额在 ``application/quota.current_llm_quota()``，
+    环境变量只是它拿不到身份库时的兜底。
+    """
+    raw = value if value is not None else env_llm_quota()["llm_monthly_tokens"]
     try:
         budget = int(raw)
     except (TypeError, ValueError) as exc:
-        raise ValueError("LOCI_AI_MONTHLY_TOKEN_BUDGET 必须是正整数") from exc
+        raise ValueError("月度 Token 预算必须是正整数") from exc
     if budget < 1:
-        raise ValueError("LOCI_AI_MONTHLY_TOKEN_BUDGET 必须是正整数")
+        raise ValueError("月度 Token 预算必须是正整数")
     return budget
 
 
@@ -119,7 +77,7 @@ def _resolve_monthly_assistant_run_quota(value: int | None = None) -> int:
     return quota
 
 
-class AssistantManager:
+class AssistantManager(AssistantRunExecutorMixin):
     """进程内有限线程池；每个 worker 自建 SQLite 连接，避免跨线程连接复用。"""
 
     def __init__(
@@ -127,14 +85,59 @@ class AssistantManager:
         max_workers: int = 2, scheduler_reloader: Callable[[], None] | None = None,
         monthly_token_budget: int | None = None,
     ) -> None:
-        self.ops_db, self.palace_db, self.market_db = ops_db, palace_db, market_db
+        # 只留「显式覆盖」。None = 随当前租户惰性解析（见 ops_db / palace_db 属性）。
+        # 这个 manager 是 build_assistant_router 里 new 出来的**进程内单例**：构造期
+        # 把路径解析成字符串存下来，等于让所有用户共用装配那一刻那个租户的库。
+        self._ops_db_override = ops_db
+        self._palace_db_override = palace_db
+        self.market_db = market_db
         self.scheduler_reloader = scheduler_reloader
-        self.monthly_token_budget = _resolve_monthly_token_budget(monthly_token_budget)
+        # 同理：预算不能在构造期定死。显式传值仍然优先（测试 / 单机固定额度）。
+        self._monthly_token_budget_override = (
+            _resolve_monthly_token_budget(monthly_token_budget)
+            if monthly_token_budget is not None
+            else None
+        )
         self.monthly_assistant_run_quota = _resolve_monthly_assistant_run_quota()
+        # 池子本身是进程内共享的，**工作线程的 Context 是线程创建那一刻的快照**，
+        # 与提交任务的那个请求毫无关系。所以任何投递都必须经 submit_with_tenant，
+        # 见 start_run 里那段注释——直接 self._pool.submit(...) 会让 self.ops_db
+        # 在线程内解析成主租户的库。
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ai-assistant")
-        if self.ops_db:
-            with AssistantStore(self.ops_db) as store:
-                store.recover_interrupted_runs()
+        # 已经收口过遗留 running 的库。key 是**解析后的库路径**（已含租户），
+        # 不是租户 id：单机钉库与多租户共用同一套判断。
+        self._recovered: set[str] = set()
+        self._recover_interrupted_once()
+
+    def _recover_interrupted_once(self) -> None:
+        """当前租户的库第一次被本进程用到时，把跨进程续不了的 running 收成失败。
+
+        原来只在构造期做一次，等于只救得了装配那一刻的那个租户；别人的中断 run
+        会永远挂在 running 上，那个会话再也发不出下一轮。
+        """
+        path = self.ops_db
+        if path in self._recovered:
+            return
+        self._recovered.add(path)
+        with AssistantStore(path) as store:
+            store.recover_interrupted_runs()
+
+    @property
+    def ops_db(self) -> str:
+        """当前租户的 ops.db。**每次读取都重新解析**，绝不缓存。"""
+        return ops_db_for(self._ops_db_override)
+
+    @property
+    def palace_db(self) -> str:
+        """当前租户的 palace.db；账本工具面要用，PalaceStore 不接受 None。"""
+        return palace_db_for(self._palace_db_override)
+
+    @property
+    def monthly_token_budget(self) -> int:
+        """本次调用生效的月度 Token 硬顶：显式覆盖 > 每用户配额 > 环境变量。"""
+        if self._monthly_token_budget_override is not None:
+            return self._monthly_token_budget_override
+        return current_llm_quota()["llm_monthly_tokens"]
 
     def compact_session(self, session_id: str) -> dict[str, Any]:
         """手动 /compact：强制压缩喂模快照写入 session.metadata.context_feed（不删库原文）。"""
@@ -146,7 +149,7 @@ class AssistantManager:
                 raise AssistantError("会话占用中，请先结束或取消本轮再压缩")
             history = store.list_messages(session_id, limit=200)
             through_seq = max((int(row.get("seq") or 0) for row in history), default=0)
-            messages = _history_to_chat_messages(history)
+            messages = history_to_chat_messages(history)
             if len(messages) < 2:
                 raise AssistantError("对话太短，无需压缩")
             compact = compact_feed_messages(messages, force=True)
@@ -154,17 +157,7 @@ class AssistantManager:
                 # force 仍可能因单轮无法切分而走 few_turns；若仍未压则回报
                 raise AssistantError("当前上下文无法进一步压缩")
             meta = dict(session.get("metadata") or {})
-            meta["context_feed"] = {
-                "messages": [
-                    {"role": msg.role, "content": str(msg.content or "")}
-                    for msg in compact.messages
-                ],
-                "through_seq": through_seq,
-                "tokens_before": compact.tokens_before,
-                "tokens_after": compact.tokens_after,
-                "message": compact.event_payload().get("message"),
-                "method": compact.method,
-            }
+            meta["context_feed"] = context_feed_payload(compact, through_seq=through_seq)
             store.update_session(session_id, metadata=meta)
             return {
                 "compacted": True,
@@ -187,6 +180,7 @@ class AssistantManager:
         images: list[str] | None = None,
         skill_slug: str = "",
     ) -> str:
+        self._recover_interrupted_once()
         prompt = message.strip()
         attached = normalize_user_images(images)
         if not prompt and not attached:
@@ -224,12 +218,22 @@ class AssistantManager:
                 store.finish_run(run_id, status="failed", error=f"LLM provider 不可用：{exc}")
             raise AssistantError(f"LLM provider 不可用：{exc}") from exc
         with AssistantStore(self.ops_db) as store:
-            used_tokens = store.monthly_token_usage()
-            if used_tokens >= self.monthly_token_budget:
-                raise AssistantError(
-                    "本月 Token 预算已用尽"
-                    f"（{used_tokens} / {self.monthly_token_budget}），请下月再试或提高 LOCI_AI_MONTHLY_TOKEN_BUDGET"
-                )
+            # 配额按**人**判，不再按进程。显式钉了预算的调用方（测试 / 单机固定额度）
+            # 只走那一条硬顶；否则交给 quota 模块，它同时管月度 Token 与日调用次数，
+            # 并在身份库不可用时自动退回环境变量。
+            if self._monthly_token_budget_override is not None:
+                used_tokens = store.monthly_token_usage()
+                budget = self._monthly_token_budget_override
+                if used_tokens >= budget:
+                    raise AssistantError(
+                        "本月 Token 预算已用尽"
+                        f"（{used_tokens} / {budget}），请下月再试或提高该额度"
+                    )
+            else:
+                try:
+                    check_llm_quota(ops_db=self.ops_db)
+                except QuotaExceeded as exc:
+                    raise AssistantError(str(exc)) from exc
             if self.monthly_assistant_run_quota > 0:
                 used_runs = store.monthly_assistant_run_count()
                 if used_runs >= self.monthly_assistant_run_quota:
@@ -278,7 +282,15 @@ class AssistantManager:
                 if titled:
                     store.append_event(run_id, "session_title", titled)
         try:
-            self._pool.submit(
+            # **不要改回 self._pool.submit(self._run, ...)。**
+            # 上面那条 run 行是在**请求线程**里建的，用的是发起用户的 ops.db；
+            # 而 ThreadPoolExecutor 的工作线程不继承 ContextVar，裸 submit 之后
+            # `self.ops_db`（每次读取现解析）在 worker 里会落回主租户的老 data/。
+            # 后果不是报错而是静默错库：`_run` 开头的 store.get_run(run_id) 在主
+            # 租户库里查不到这条 run，直接 return，于是**会话永久卡在 running**、
+            # 用户再也发不出下一轮，日志里一行红都没有。
+            submit_with_tenant(
+                self._pool,
                 self._run,
                 run_id,
                 session_id,
@@ -304,327 +316,3 @@ class AssistantManager:
     def close(self) -> None:
         """不取消已提交的未来任务，进程退出策略由组合根决定。"""
         self._pool.shutdown(wait=False, cancel_futures=False)
-
-    def _run(
-        self,
-        run_id: str,
-        session_id: str,
-        prompt: str,
-        config: Any,
-        thinking: str = "",
-        skill_block: str = "",
-        resume_hitl: bool = False,
-    ) -> None:
-        # 同 run 复用一条 ops 连接写事件，避免每次 flush 开库 + _init_schema。
-        event_store = AssistantStore(self.ops_db)
-        try:
-            self._run_with_event_store(
-                event_store,
-                run_id=run_id,
-                session_id=session_id,
-                prompt=prompt,
-                config=config,
-                thinking=thinking,
-                skill_block=skill_block,
-                resume_hitl=resume_hitl,
-            )
-        finally:
-            event_store.close()
-
-    def _run_with_event_store(
-        self,
-        event_store: AssistantStore,
-        *,
-        run_id: str,
-        session_id: str,
-        prompt: str,
-        config: Any,
-        thinking: str,
-        skill_block: str,
-        resume_hitl: bool = False,
-    ) -> None:
-        def persist(event_type: str, payload: dict[str, Any]) -> None:
-            event_store.append_event(run_id, event_type, payload)
-
-        # token/think 内存批写；其它事件立即落库（SSE/轮询仍读持久化流）
-        stream_buf = StreamEventBuffer(persist)
-
-        def event(payload: dict[str, Any]) -> None:
-            stream_buf.emit(payload)
-
-        def issue(action: str, target: str, parameters: dict[str, Any]) -> dict[str, Any] | None:
-            stream_buf.flush()
-            with AssistantStore(self.ops_db) as store:
-                run = store.get_run(run_id)
-                if run is None or run["cancel_requested"]:
-                    return None
-                grant = store.issue_grant(session_id=session_id, run_id=run_id, user_message=prompt, action=action, target=target, parameters=parameters)
-                store.append_event(run_id, "execution_grant", {"action": action, "target": target, "grant_id": grant["id"]})
-                return grant
-
-        def consume(grant_id: str, action: str, target: str, parameters: dict[str, Any]) -> str:
-            with AssistantStore(self.ops_db) as store:
-                return store.consume_grant(grant_id=grant_id, session_id=session_id, run_id=run_id, user_message=prompt, action=action, target=target, parameters=parameters)
-
-        def complete(grant_id: str, result: dict[str, Any], status: str = "completed") -> None:
-            with AssistantStore(self.ops_db) as store:
-                store.complete_grant(grant_id, result, status=status)
-
-        bus = build_system_toolbus(
-            palace_db=self.palace_db,
-            market_db=self.market_db,
-            ops_db=self.ops_db,
-            protocol=config.protocol,
-            grant_issuer=issue,
-            grant_consumer=consume,
-            grant_completer=complete,
-            on_event=event,
-            scheduler_reloader=self.scheduler_reloader,
-        )
-        try:
-            with AssistantStore(self.ops_db) as store:
-                profile = store.get_profile()
-                memories = store.list_memories() if profile.get("memory_enabled") else []
-                run_row = store.get_run(run_id) or {}
-                run_result = run_row.get("result") if isinstance(run_row.get("result"), dict) else {}
-
-            resume_messages: list[ChatMessage] | None = None
-            if resume_hitl:
-                raw_messages = run_result.get("agent_messages")
-                reply = str(run_result.get("hitl_reply") or prompt)
-                if isinstance(raw_messages, list) and raw_messages:
-                    resume_messages = apply_hitl_tool_result(raw_messages, reply)
-                evidence_brief = ""
-            else:
-                # 角色化只读取证：侧栏 subagent_* + 截断 brief 注入主环 system（非终裁）。
-                evidence_rows = run_evidence_agents(
-                    config=config,
-                    prompt=prompt,
-                    palace_db=self.palace_db,
-                    market_db=self.market_db,
-                    ops_db=self.ops_db,
-                    on_event=event,
-                )
-                evidence_brief = format_evidence_briefs(evidence_rows)
-                with AssistantStore(self.ops_db) as store:
-                    session_row = store.get_session(session_id) or {}
-                    history = store.list_messages(session_id, limit=200)
-                messages = _feed_messages_for_session(session_row, history)
-                resume_messages = messages or None
-
-            system = build_assistant_system_prompt(profile=profile, memories=memories)
-            if skill_block.strip():
-                system = f"{system}\n\n{skill_block.strip()}"
-            if evidence_brief:
-                system = f"{system}\n\n{evidence_brief}"
-            # 同 run HITL 续环用 agent 快照，不压；仅会话喂模历史超阈值才 compact
-            if not resume_hitl and resume_messages:
-                reserve = estimate_tokens(system)
-                try:
-                    reserve += estimate_tokens(json.dumps(bus.schemas or [], ensure_ascii=False))
-                except (TypeError, ValueError):
-                    pass
-                window = int(getattr(config, "context_window", None) or DEFAULT_CONTEXT_WINDOW)
-                compact = compact_feed_messages(
-                    resume_messages,
-                    context_window=window,
-                    reserve_tokens=reserve,
-                )
-                if compact.compacted:
-                    event(compact.event_payload())
-                    resume_messages = compact.messages
-                    # 同步写入 session 喂模快照，用量环与下次手动 /compact 共用
-                    with AssistantStore(self.ops_db) as store:
-                        session_row = store.get_session(session_id) or {}
-                        hist = store.list_messages(session_id, limit=200)
-                        through_seq = max((int(row.get("seq") or 0) for row in hist), default=0)
-                        meta = dict(session_row.get("metadata") or {})
-                        meta["context_feed"] = {
-                            "messages": [
-                                {"role": msg.role, "content": str(msg.content or "")}
-                                for msg in compact.messages
-                            ],
-                            "through_seq": through_seq,
-                            "tokens_before": compact.tokens_before,
-                            "tokens_after": compact.tokens_after,
-                            "message": compact.event_payload().get("message"),
-                            "method": compact.method,
-                        }
-                        store.update_session(session_id, metadata=meta)
-            outcome = run_agent(
-                config,
-                system=system,
-                user_prompt=prompt or "请根据附图回答。",
-                messages=resume_messages,
-                tool_schemas=bus.schemas,
-                tool_executor=bus.executor,
-                on_event=event,
-                emit_terminal_event=False,
-                allow_hitl=True,
-                thinking=thinking,
-            )
-            stream_buf.flush()
-            with AssistantStore(self.ops_db) as store:
-                run = store.get_run(run_id) or {}
-                cancelled = bool(run.get("cancel_requested")) or str(run.get("status") or "") != "running"
-                if not cancelled:
-                    # 收口前折叠本 run 事件进 metadata，供 GET session 刷新复盘（ADR-006）
-                    events = store.poll_events(run_id, limit=500)
-                    # 同 run HITL 续跑：只 fold resume 之后，避免把暂停前 hitl 灌进续写气泡
-                    if resume_hitl:
-                        events = events_after_latest_resume(events)
-                    rich = fold_run_rich_metadata(events)
-                    ask_meta = (
-                        outcome.pending_ask
-                        if outcome.stopped_reason == "waiting_user"
-                        and isinstance(outcome.pending_ask, dict)
-                        else None
-                    )
-                    metadata: dict[str, Any] = {
-                        "run_id": run_id,
-                        "stopped_reason": outcome.stopped_reason,
-                        **rich,
-                    }
-                    if ask_meta:
-                        # 优先保留 fold 出的 hitl；否则用 pending_ask 兜底（刷新后仍能还原选项）
-                        metadata["hitl"] = rich.get("hitl") if isinstance(rich.get("hitl"), dict) else ask_meta
-                    # 原子：仅 running 未取消时写入，避免取消释放会话后迟到助手消息插到新 user 后
-                    stored = store.append_assistant_if_run_active(
-                        run_id,
-                        session_id,
-                        content=outcome.text,
-                        metadata=metadata,
-                    )
-                    if stored is None:
-                        cancelled = True
-
-            def is_cancelled() -> bool:
-                with AssistantStore(self.ops_db) as store:
-                    current = store.get_run(run_id)
-                    return bool(current and current.get("cancel_requested"))
-
-            # HITL：先暂停给用户，再收口后台 Job，避免「等 Job 才出现等待条」。
-            if outcome.stopped_reason == "waiting_user" and not cancelled:
-                ask = outcome.pending_ask if isinstance(outcome.pending_ask, dict) else {}
-                with AssistantStore(self.ops_db) as store:
-                    current = store.get_run(run_id) or {}
-                    if current.get("cancel_requested") or str(current.get("status") or "") != "running":
-                        cancelled = True
-                    else:
-                        raw_msgs = getattr(outcome, "messages", None)
-                        store.pause_run_waiting_user(
-                            run_id,
-                            ask=ask,
-                            agent_messages=raw_msgs if isinstance(raw_msgs, list) else None,
-                        )
-                if not cancelled:
-                    bus.wait_for_background_tasks(is_cancelled=is_cancelled)
-                    stream_buf.flush()
-                    return
-
-            # 后台 Job 已经向侧栏发出 subagent 事件；取消或超时后不无限占用 AI worker。
-            background_complete = bus.wait_for_background_tasks(is_cancelled=is_cancelled)
-            stream_buf.flush()
-            with AssistantStore(self.ops_db) as store:
-                run = store.get_run(run_id) or {}
-                cancelled = bool(run.get("cancel_requested")) or str(run.get("status") or "") == "cancelled"
-                if cancelled:
-                    store.record_usage(
-                        provider=config.name,
-                        model=outcome.model or config.model,
-                        input_tokens=outcome.input_tokens,
-                        output_tokens=outcome.output_tokens,
-                    )
-                    store.finish_run(
-                        run_id,
-                        status="cancelled",
-                        result={
-                            "rounds": outcome.rounds,
-                            "stopped_reason": outcome.stopped_reason,
-                            "background_pending": not background_complete,
-                        },
-                        input_tokens=outcome.input_tokens,
-                        output_tokens=outcome.output_tokens,
-                    )
-                    store.append_event(run_id, "cancelled", {"stopped_reason": outcome.stopped_reason, "cancelled": True})
-                    return
-
-                store.record_usage(
-                    provider=config.name,
-                    model=outcome.model or config.model,
-                    input_tokens=outcome.input_tokens,
-                    output_tokens=outcome.output_tokens,
-                )
-                reason = str(outcome.stopped_reason or "completed")
-                # 工具后 LLM 失败 / 空终稿不应伪装成成功 completed
-                failed = reason.startswith("llm_error") or reason == "empty_completion"
-                store.finish_run(
-                    run_id,
-                    status="failed" if failed else "completed",
-                    result={
-                        "rounds": outcome.rounds,
-                        "stopped_reason": reason,
-                        "background_pending": not background_complete,
-                    },
-                    error=outcome.text if failed else "",
-                    input_tokens=outcome.input_tokens,
-                    output_tokens=outcome.output_tokens,
-                )
-                # 若取消已抢先收口，finish_run 为 no-op，禁止再发 done / 标题
-                current = store.get_run(run_id) or {}
-                current_status = str(current.get("status") or "")
-                if current_status == "cancelled":
-                    return
-                if failed:
-                    if current_status != "failed":
-                        return
-                    store.append_event(
-                        run_id,
-                        "error",
-                        {
-                            "message": str(outcome.text or reason),
-                            "stopped_reason": reason,
-                        },
-                    )
-                    return
-                if current_status != "completed":
-                    return
-                final_text = str(outcome.text or "")
-                # done 必须先于标题 LLM：否则 SSE 见 completed 会提前关流，前端停在「正在整理回复…」
-                store.append_event(
-                    run_id,
-                    "done",
-                    {
-                        "stopped_reason": reason,
-                        "cancelled": False,
-                        "text": final_text,
-                        "content": final_text,
-                    },
-                )
-            # 标题 / 记忆在 done 之后另开短连接，避免 LLM 占库拖死 SSE
-            with AssistantStore(self.ops_db) as store:
-                titled = maybe_summarize_session_title(
-                    store,
-                    session_id,
-                    config,
-                    user_message=prompt,
-                    assistant_text=str(outcome.text or ""),
-                )
-                if titled:
-                    store.append_event(run_id, "session_title", titled)
-                consolidate = maybe_auto_consolidate_memory(
-                    store, session_id=session_id, config=config
-                )
-                if consolidate.get("status") == "ok":
-                    store.append_event(run_id, "memory_auto", consolidate)
-        except Exception as exc:
-            stream_buf.flush()
-            with AssistantStore(self.ops_db) as store:
-                run = store.get_run(run_id) or {}
-                if run.get("cancel_requested"):
-                    store.finish_run(run_id, status="cancelled", result={"cancelled_during_failure": True})
-                    store.append_event(run_id, "cancelled", {"cancelled": True})
-                else:
-                    error = f"{type(exc).__name__}: {exc}"
-                    store.append_event(run_id, "error", {"message": error})
-                    store.finish_run(run_id, status="failed", error=error)

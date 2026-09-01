@@ -67,7 +67,9 @@ describe('ResearchPanel source telemetry', () => {
           PageBusy: true, EmptyState: true, ResearchDimensionDetail: true, ResearchDimensionRail: true,
           ResearchEvidencePanel: true, ResearchBacktestPanel: BacktestStub, ResearchFactorPanel: true,
           ResearchHypothesisPanel: HypothesisStub, ResearchRunPanel: true, ResearchTemporalDataPanel: true,
-          'el-alert': { props: ['title', 'description'], template: '<div>{{ title }} {{ description }}</div>' },
+          // el-alert 现在不再用 description（AGENTS.md 禁）：降级明细走默认插槽里的 el-tag，
+          // stub 必须渲染 slot，否则断言看不到那几条证据。
+          'el-alert': { props: ['title'], template: '<div>{{ title }}<slot /></div>' },
           'el-tag': { template: '<span><slot /></span>' },
         },
       },

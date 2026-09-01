@@ -173,8 +173,8 @@ function onDiagClick(line?: number | null): void {
   padding: 0.55rem 0.7rem 0.7rem;
 }
 
+/* 只留 height:100%：与 min-height 并存时空面板会被 8rem 顶出一块白 */
 .dock-pane {
-  min-height: 8rem;
   height: 100%;
 }
 

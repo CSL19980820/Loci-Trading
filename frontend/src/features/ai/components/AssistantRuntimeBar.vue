@@ -169,7 +169,7 @@ function onThinkingChange(raw: string): void {
 /* EP select 默认 box-shadow 当边框；清掉内层 input 再描边，避免双线 */
 .assistant-runtime__model :deep(.el-select__wrapper),
 .assistant-runtime__thinking :deep(.el-select__wrapper) {
-  min-height: 28px;
+  min-height: var(--ctl-h);
   padding: 0 .55rem;
   border: 1px solid var(--rule);
   border-radius: var(--ai-r-card);

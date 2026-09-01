@@ -45,7 +45,7 @@ def remove_jobs_for_slug(store: Any, slug: str) -> list[str]:
     if not key:
         return []
     removed: list[str] = []
-    # 只精确匹配纸面舱任务名。禁止用「龙回头」子串——「龙回头·二波监测」会误伤。
+    # 只精确匹配纸面舱任务名。禁止用「龙回头」子串——同族战法的任务名都带这三个字。
     watch_names = (
         {
             RETIRED_JOB_NAME,
@@ -63,8 +63,6 @@ def remove_jobs_for_slug(store: Any, slug: str) -> list[str]:
         cfg = job.get("config") if isinstance(job.get("config"), dict) else {}
         job_slug = str(cfg.get("skill") or cfg.get("slug") or "").strip()
         name = str(job.get("name") or "").strip()
-        if job_slug == "dragon-second-wave" or "二波" in name:
-            continue
         hit = job_slug == key or name in watch_names
         if not hit:
             continue

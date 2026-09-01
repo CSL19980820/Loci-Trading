@@ -143,7 +143,8 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
 .report__eyebrow { color: var(--mist); font: .72rem/1.25 var(--mono); }
 .report__summary { margin: 0; color: var(--muted); font-size: .84rem; }
 .report__steps { display: flex; flex-direction: column; gap: .45rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
-.report__step { position: relative; padding: .55rem .6rem .55rem 2rem; border-left: 2px solid var(--seal); background: color-mix(in srgb, var(--sheet) 72%, transparent); counter-increment: step; }
+/* 原为 border-left: 2px solid var(--seal)：左竖条改为 1px hairline 外框；padding-left 保持 2rem 以免 ::before 序号压字 */
+.report__step { position: relative; padding: .55rem .6rem .55rem 2rem; border: 1px solid var(--rule); border-radius: var(--radius); background: color-mix(in srgb, var(--sheet) 72%, transparent); counter-increment: step; }
 .report__step::before { position: absolute; top: .58rem; left: .55rem; color: var(--seal-ink); content: counter(step); font: 600 .72rem/1.4 var(--mono); }
 .report__step-head span, .report__diagnostic small, .report__hits span { color: var(--mist); font: .72rem/1.3 var(--mono); }
 .report__step code { display: block; margin-top: .28rem; color: var(--ink); font: .76rem/1.4 var(--mono); overflow-wrap: anywhere; }
@@ -152,7 +153,8 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
 .report__sources { display: flex; flex-direction: column; gap: .45rem; padding-top: .55rem; border-top: 1px solid var(--rule); }
 .report__sources-head, .report__logic-head, .report__citation-head { display: flex; align-items: baseline; justify-content: space-between; gap: .55rem; }
 .report__sources-head span, .report__logic-head code, .report__citation-head span { color: var(--mist); font: .7rem/1.35 var(--mono); }
-.report__logic-source { display: flex; flex-direction: column; gap: .35rem; padding-left: .55rem; border-left: 2px solid var(--rule); }
+/* 原为 border-left: 2px solid var(--rule)：纯装饰竖分隔已删，缩进收成 --gap-2 */
+.report__logic-source { display: flex; flex-direction: column; gap: .35rem; padding-left: var(--gap-2); }
 .report__citation-list { display: flex; flex-direction: column; gap: .35rem; }
 .report__citation { display: flex; flex-direction: column; gap: .2rem; padding: .4rem .5rem; background: color-mix(in srgb, var(--panel-2) 78%, transparent); }
 .report__citation-head strong { font-size: .78rem; }

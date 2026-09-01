@@ -7,6 +7,7 @@ import {
   artifactShellTitle,
   parseKlineBars,
 } from '../assistantArtifacts'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import KlineChart from '@/shared/components/charts/KlineChart.vue'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
@@ -36,7 +37,7 @@ const visibleBars = computed(() => Math.max(ASSISTANT_KLINE_MIN_VISIBLE, Math.mi
       type="warning"
       :closable="false"
       show-icon
-      :title="`数据不足（${bars.length} 根，至少 ${ASSISTANT_KLINE_MIN_VISIBLE} 根才适合展示）`"
+      :title="`数据不足 ${bars.length}/${ASSISTANT_KLINE_MIN_VISIBLE} 根`"
     />
     <div v-else-if="bars.length" class="assistant-kline-card__chart">
       <KlineChart
@@ -49,7 +50,7 @@ const visibleBars = computed(() => Math.max(ASSISTANT_KLINE_MIN_VISIBLE, Math.mi
         indicator="macd"
       />
     </div>
-    <el-empty v-else :image-size="48" description="工具未返回可展示的 K 线" />
+    <EmptyState v-else description="工具未返回 K 线" reason="换个标的或重问一次" />
   </section>
 </template>
 
@@ -62,13 +63,18 @@ const visibleBars = computed(() => Math.max(ASSISTANT_KLINE_MIN_VISIBLE, Math.mi
   display: flex; align-items: center; justify-content: space-between; gap: .4rem; margin-bottom: .4rem;
 }
 .assistant-kline-card h3 { margin: 0; font-size: var(--ai-fs-body); }
+/*
+ * 单一高度来源：此前 height:16rem + min-height:14rem 写了三遍互相打架（体检 §4.2/§4.4）。
+ * K 线改用宽高比定高，窄屏自动变矮，小卡片里不再留死白。
+ */
 .assistant-kline-card__chart {
-  height: 16rem; min-height: 14rem; width: 100%;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 16rem;
 }
 .assistant-kline-card__chart :deep(.kline-chart),
 .assistant-kline-card__chart :deep(.kline-chart__canvas),
 .assistant-kline-card__chart :deep([class*='chart']) {
   height: 100%;
-  min-height: 14rem;
 }
 </style>

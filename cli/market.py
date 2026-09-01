@@ -26,8 +26,14 @@ from src.market import (
     MarketStore,
     MarketWriteBusy,
     market_write_lock,
+    reclaim_market_db,
     sync_instruments,
     sync_quotes,
+)
+from cli.market_intraday import (
+    cmd_intraday_capture,
+    cmd_intraday_prune,
+ cmd_intraday_status,
 )
 from src.strategy import describe_all, get, screen
 
@@ -307,9 +313,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
     worst = max(rows, key=lambda item: (item[1].get("avg_mfe") or 0) - (item[1].get("avg_net_return") or 0))
     gap = (worst[1].get("avg_mfe") or 0) - (worst[1].get("avg_net_return") or 0)
     print()
-    print(f"「回吐」= MFE 均值 − 净收益均值：持有期内的浮盈最终没拿住多少。")
+    print("「回吐」= MFE 均值 − 净收益均值：持有期内的浮盈最终没拿住多少。")
     print(f"全场最严重的是 {worst[0]}（{gap:.2f} 个百分点）。若多数战法回吐都大，")
-    print(f"说明问题在退出纪律而不在选股——换战法解决不了，得先加止盈或缩短持有期。")
+    print("说明问题在退出纪律而不在选股——换战法解决不了，得先加止盈或缩短持有期。")
     print()
     print(DISCLAIMER)
     return 0
@@ -465,7 +471,59 @@ def build_parser() -> argparse.ArgumentParser:
     bt.add_argument("--params", default="", help="覆盖策略参数的 JSON")
     bt.add_argument("--trades", action="store_true", help="逐笔打印交易明细")
     bt.set_defaults(func=cmd_backtest)
+    rec = sub.add_parser("reclaim", help="删掉权威库无用索引并回收磁盘")
+    rec.add_argument("--no-vacuum", action="store_true", help="只删索引，不 VACUUM")
+    rec.add_argument("--force", action="store_true", help="跳过磁盘余量检查")
+    rec.add_argument("--json", action="store_true", help="输出 JSON")
+    rec.set_defaults(func=cmd_reclaim)
+    cap = sub.add_parser("intraday-capture", help="采集今日盘中快照（加密落盘）")
+    cap.add_argument("--date", help="交易日 YYYY-MM-DD，默认今天")
+    cap.add_argument("--only", help="只采这些数据集，逗号分隔")
+    cap.add_argument("--json", action="store_true", help="输出 JSON")
+    cap.set_defaults(func=cmd_intraday_capture)
+    prn = sub.add_parser("intraday-prune", help="删掉过期的盘中留存目录")
+    prn.add_argument("--keep-days", type=int, default=60, help="保留自然日数，默认 60")
+    prn.add_argument("--max-delete", type=int, default=30, help="单次删除上限")
+    prn.add_argument("--dry-run", action="store_true", help="只报要删什么，不动盘")
+    prn.add_argument("--json", action="store_true", help="输出 JSON")
+    prn.set_defaults(func=cmd_intraday_prune)
+    sta = sub.add_parser("intraday-status", help="盘中留存带现状")
+    sta.add_argument("--json", action="store_true", help="输出 JSON")
+    sta.set_defaults(func=cmd_intraday_status)
     return parser
+
+
+def cmd_reclaim(args: argparse.Namespace) -> int:
+    """删掉权威库上无消费者的索引，并可选 VACUUM 真正缩小文件。"""
+    import shutil
+
+    db_path = Path(args.db) if args.db else Path(DEFAULT_DB)
+    if not db_path.exists():
+        print(f"行情库不存在：{db_path}")
+        return 1
+    free_bytes = None if args.force else shutil.disk_usage(db_path.parent).free
+    print(f"行情库：{db_path}")
+    print(f"当前大小：{db_path.stat().st_size / 1e6:,.1f} MB")
+    if not args.no_vacuum:
+        print("VACUUM 需要约等于库大小的额外磁盘，且全程持写锁，请勿同时同步行情。")
+    report = reclaim_market_db(
+        db_path,
+        vacuum=not args.no_vacuum,
+        free_bytes=free_bytes,
+    )
+    body = report.to_dict()
+    if args.json:
+        print(json.dumps(body, ensure_ascii=False, indent=2))
+        return 0
+    dropped = "、".join(body["dropped_indexes"]) or "（无可删索引）"
+    print(f"已删索引：{dropped}")
+    print(f"删除前空闲页：{body['freelist_pages_before']:,}")
+    if body["skipped_reason"]:
+        print(f"未 VACUUM：{body['skipped_reason']}")
+    else:
+        print(f"已 VACUUM：{body['vacuumed']}")
+    print(f"回收后大小：{body['size_after_mb']:,.1f} MB（释放 {body['freed_mb']:,.1f} MB）")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

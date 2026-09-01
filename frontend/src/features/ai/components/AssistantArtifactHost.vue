@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 
-import { artifactShellTitle, isKlineKind } from '../assistantArtifacts'
+import { isKlineKind } from '../assistantArtifacts'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 import AssistantCodeCard from './AssistantCodeCard.vue'
 import AssistantDataTable from './AssistantDataTable.vue'
@@ -35,8 +35,7 @@ const kind = computed(() => props.artifact.kind)
       type="error"
       :closable="false"
       show-icon
-      :title="artifactShellTitle(artifact)"
-      description="产物加载失败"
+      title="产物加载失败"
     />
     <AssistantKlineCard v-else-if="isKlineKind(kind)" :artifact="artifact" />
     <AssistantDataTable v-else-if="kind === 'table'" :artifact="artifact" />

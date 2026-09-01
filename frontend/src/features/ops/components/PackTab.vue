@@ -20,11 +20,17 @@ const lastFile = ref('')
 const passwordInput = ref('')
 const selected = reactive<Record<string, boolean>>({})
 
+/**
+ * 清单卡片上那块「Loci v1.x + 封箱印章」删了：版本 / 发布日 / 能不能封箱
+ * 都是读数，读数归面板头的回执行，不该在正文里再摆一遍标题。
+ */
 const receipt = computed((): ReceiptPair[] => {
   const s = status.value
   if (!s) return [{ key: '版本', value: '—' }]
   return [
     { key: '版本', value: `v${s.version}` },
+    { key: '发布', value: s.released_at || '—' },
+    { key: '状态', value: s.can_pack ? '可封箱' : '缺编译', hint: s.reason },
     { key: '运行时', value: s.can_pack ? formatBytes(s.runtime_bytes) : '未编译' },
     {
       key: '可选',
@@ -120,24 +126,25 @@ defineExpose({ load })
       />
 
       <section v-if="status" class="pack-manifest" aria-label="分享打包">
-        <header class="pack-manifest__head">
-          <div>
-            <h3 class="pack-manifest__title">
-              Loci
-              <span class="pack-manifest__ver">v{{ status.version }}</span>
-            </h3>
-          </div>
-          <div class="pack-manifest__stamp" :class="{ 'is-ready': status.can_pack }">
-            <span>{{ status.can_pack ? '可封箱' : '缺编译' }}</span>
-            <small>{{ status.released_at || '—' }}</small>
-          </div>
-        </header>
-
-        <p v-if="!status.can_pack" class="pack-block-reason">{{ status.reason }}</p>
-        <p v-else class="pack-runtime">
-          运行时底座（必含）
-          <code>{{ status.bundle_root }}</code>
-          · {{ formatBytes(status.runtime_bytes) }}
+        <!--
+          标题「Loci v1.x」与封箱印章一并删除：内容全是读数，已迁到面板头回执
+          （版本 / 发布 / 状态 / 运行时）。这里只留一条功能行：封箱状态 chip +
+          运行时底座路径与体积；封不了箱时同一行直接说原因。
+        -->
+        <p class="pack-lead">
+          <el-tag
+            :type="status.can_pack ? 'success' : 'info'"
+            size="small"
+            effect="plain"
+          >
+            {{ status.can_pack ? '可封箱' : '缺编译' }}
+          </el-tag>
+          <template v-if="status.can_pack">
+            <span class="pack-lead__k">运行时底座</span>
+            <code>{{ status.bundle_root }}</code>
+            <span class="mono">{{ formatBytes(status.runtime_bytes) }}</span>
+          </template>
+          <span v-else class="pack-lead__reason">{{ status.reason }}</span>
         </p>
 
         <EmptyState
@@ -153,18 +160,17 @@ defineExpose({ load })
             show-icon
             :closable="false"
             class="pack-alert"
-            :title="`这份包会带走你的${personalOn.join('、')}——只适合自己换机器`"
-            description="要发给别人的话，取消这些勾选；其余项默认已抹掉 API Key、Webhook 与纸面交易记录。"
+            :title="`带走${personalOn.join('、')}，要外发请取消勾选`"
           />
-          <el-alert
+          <el-tooltip
             v-else
-            type="success"
-            show-icon
-            :closable="false"
-            class="pack-alert"
-            title="当前是可分享的脱敏包"
-            description="运维库与 MCP 只带骨架：任务定义、战法档案、推送模板、调参档位；API Key、Webhook、纸面舱与教训留痕都不会进包。"
-          />
+            placement="bottom-start"
+            content="只带骨架（任务 / 战法 / 模板 / 档位）；密钥与纸面记录不进包"
+          >
+            <el-tag class="pack-flag" type="success" effect="plain" size="small">
+              当前是可分享的脱敏包
+            </el-tag>
+          </el-tooltip>
 
           <div class="pack-options" role="group" aria-label="可选附件">
             <label
@@ -191,7 +197,7 @@ defineExpose({ load })
           </div>
 
           <aside class="pack-seal" aria-label="打包密码">
-            <el-form label-position="left" label-width="5.5rem" @submit.prevent>
+            <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
               <el-form-item label="打包密码" required>
                 <el-input
                   v-model="passwordInput"
@@ -237,92 +243,50 @@ defineExpose({ load })
   min-height: 0;
 }
 
-.pack-alert {
-  margin: 0.55rem 0.85rem 0;
+.pack-alert,
+.pack-flag {
+  margin: var(--gap-2) var(--gap-3) 0;
 }
 
 .pack-manifest {
   border: 0;
   background: var(--sheet);
   position: relative;
-  min-height: 100%;
 }
 
-.pack-manifest__head {
+/* 一条功能行：状态 chip + 运行时底座路径 + 体积（或封不了箱的原因） */
+.pack-lead {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1rem 0.65rem;
-  border-bottom: 1px dashed var(--rule);
-}
-
-.pack-manifest__title {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-1) var(--gap-2);
   margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.35rem;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-}
-
-.pack-manifest__ver {
-  margin-left: 0.35rem;
-  font-family: var(--mono);
-  font-size: 0.95rem;
-  color: var(--seal-ink);
-}
-
-.pack-manifest__stamp {
-  flex: 0 0 auto;
-  align-self: flex-start;
-  min-width: 5.5rem;
-  padding: 0.45rem 0.55rem;
-  border: 1.5px solid color-mix(in srgb, var(--mist) 55%, var(--rule));
-  color: var(--mist);
-  text-align: center;
-  transform: rotate(-4deg);
-}
-
-.pack-manifest__stamp.is-ready {
-  border-color: var(--seal);
-  color: var(--seal-ink);
-  background: var(--seal-soft);
-}
-
-.pack-manifest__stamp span {
-  display: block;
-  font-weight: 700;
-  font-size: 0.92rem;
-  letter-spacing: 0.08em;
-}
-
-.pack-manifest__stamp small {
-  display: block;
-  margin-top: 0.15rem;
-  font-family: var(--mono);
-  font-size: 0.68rem;
-}
-
-.pack-block-reason,
-.pack-runtime {
-  margin: 0;
-  padding: 0.65rem 1rem;
-  font-size: 0.82rem;
+  padding: var(--gap-2) var(--gap-4);
+  font-size: var(--fs-aux);
   color: var(--mist);
   border-bottom: 1px dashed var(--rule);
 }
 
-.pack-runtime code {
+.pack-lead__k {
+  color: var(--muted);
+}
+
+.pack-lead code {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-aux);
   word-break: break-all;
   color: var(--ink);
+}
+
+.pack-lead__reason {
+  color: var(--seal-ink);
 }
 
 .pack-options {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 0.35rem 0;
+  padding: var(--gap-1) 0;
   background: var(--rule);
   border-bottom: 1px dashed var(--rule);
 }
@@ -330,9 +294,9 @@ defineExpose({ load })
 .pack-opt {
   display: grid;
   grid-template-columns: minmax(7rem, 10rem) 1fr auto;
-  gap: 0.5rem 0.75rem;
+  gap: var(--gap-2) var(--gap-3);
   align-items: center;
-  padding: 0.55rem 1rem;
+  padding: var(--gap-2) var(--gap-4);
   background: var(--sheet);
   cursor: pointer;
 }
@@ -357,37 +321,37 @@ defineExpose({ load })
 }
 
 .pack-opt__desc {
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
   line-height: 1.35;
 }
 
 .pack-opt__size {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
   white-space: nowrap;
 }
 
 .pack-seal {
-  margin: 0.75rem 1rem;
-  padding: 0.55rem 0.85rem 0.15rem;
+  margin: var(--gap-3) var(--gap-4);
+  padding: var(--gap-2) var(--gap-3) 1px;
   border: 1px solid var(--rule);
 }
 
 .pack-seal :deep(.el-form-item) {
-  margin-bottom: 0.45rem;
+  margin-bottom: var(--gap-2);
 }
 
 .pack-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.65rem 1rem 0.9rem;
+  gap: var(--gap-3);
+  padding: var(--gap-2) var(--gap-4) var(--gap-3);
 }
 
 .pack-estimate {
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
@@ -398,26 +362,12 @@ defineExpose({ load })
 @media (max-width: 720px) {
   .pack-opt {
     grid-template-columns: 1fr;
-    gap: 0.2rem;
-  }
-
-  .pack-manifest__head {
-    flex-direction: column;
-  }
-
-  .pack-manifest__stamp {
-    transform: none;
+    gap: var(--gap-1);
   }
 
   .pack-foot {
     flex-direction: column;
     align-items: stretch;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pack-manifest__stamp {
-    transform: none;
   }
 }
 </style>

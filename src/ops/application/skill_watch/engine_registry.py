@@ -76,23 +76,6 @@ _LEADER_MAP = EngineSpec(
     default_push_wecom=False,
     signals=_LEADER_MAP_SIGNALS,
 )
-_SECOND_WAVE_SIGNALS = frozenset({"paper_candidate", "gate_empty", "watch_only"})
-
-_SECOND_WAVE = EngineSpec(
-    target="second_wave:scan_second_wave",
-    needs_market_store=True,
-    # 自己写只追加留痕（second_wave_signals），需要 ops store
-    needs_ops_store=True,
-    # 用自己的市场宽度闸（本地全市场涨家数占比），不走龙空龙那套 MCP 闸门
-    uses_market_gate=False,
-    emits_observe=False,
-    eod_rescan=False,
-    label_zh="二波监测",
-    default_push_wecom=True,
-    # 一天最多触发几只、多数轮次为空，必须静默
-    push_only_when_actionable=True,
-    signals=_SECOND_WAVE_SIGNALS,
-)
 _LIMIT_UP = EngineSpec(
     target="limit_up_momentum:scan_limit_up_momentum",
     needs_market_store=False,
@@ -114,8 +97,6 @@ ENGINE_REGISTRY: dict[str, EngineSpec] = {
     "theme-leader-rotation": _LEADER_MAP,
     "limit_up_momentum": _LIMIT_UP,
     "limit-up-momentum": _LIMIT_UP,
-    "second_wave": _SECOND_WAVE,
-    "dragon-second-wave": _SECOND_WAVE,
 }
 
 

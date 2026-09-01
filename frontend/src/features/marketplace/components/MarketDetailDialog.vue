@@ -72,7 +72,6 @@ function onRemove(): void {
         <div class="meta-cell"><span class="dim">版本</span><strong>{{ versionLabel }}</strong></div>
         <div class="meta-cell"><span class="dim">状态</span><strong>{{ stateLabel }}</strong></div>
       </div>
-      <p class="slug">{{ item.id }}</p>
       <div v-if="item.kind === 'source'" class="meta-desc">
         <span class="dim">来源地址</span>
         <strong class="url">{{ item.baseUrl || '未登记' }}</strong>
@@ -83,7 +82,6 @@ function onRemove(): void {
       </div>
 
       <section v-if="item.kind === 'source'" class="section" aria-label="数据列表">
-        <div class="section-title">数据列表</div>
         <SourceDatasetList :source-id="item.slug" @select="onPickDataset" />
       </section>
     </template>
@@ -115,20 +113,10 @@ function onRemove(): void {
   color: var(--mist);
   font-size: 0.76rem;
 }
-.slug {
-  margin: 0.45rem 0 0;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  color: var(--mist);
-}
 .section {
   margin-top: 1rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--el-border-color-lighter);
-}
-.section-title {
-  font-size: 0.82rem;
-  font-weight: 600;
 }
 .url {
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);

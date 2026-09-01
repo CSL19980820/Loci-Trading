@@ -4,6 +4,8 @@ import { Link } from '@element-plus/icons-vue'
 
 import type { ResearchProfile, ResearchQualitySnapshot, ResearchRun } from '@/shared/types/quant'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+
 const props = defineProps<{
   profile: ResearchProfile
   run: ResearchRun | null
@@ -24,23 +26,30 @@ const pitLabel = computed(() => {
   const health = quality.value.market_health || {}
   if ('pit_degraded' in health) return health.pit_degraded ? '降级' : '已提供'
   if ('survivorship_bias' in health) return health.survivorship_bias ? '存在风险' : '未发现'
-  return '未在当前 profile 契约提供'
+  return ''
 })
+/**
+ * 「字段缺失保持空缺不补零」= 整项不渲染，而不是留一个空格子。
+ * 后端没给的口径（例如 profile 契约里根本没有的风险透视）直接不进列表。
+ */
+const riskItems = computed(() => [
+  { key: 'pit', label: 'PIT / 生存者偏差', value: pitLabel.value },
+  { key: 'gate', label: '验证失败 / 门禁', value: quality.value.findings.length ? `${quality.value.findings.length} 项` : '未发现' },
+  { key: 'revision', label: '行情快照', value: String(props.profile.market_snapshot.market_revision || quality.value.market_revision || '') },
+].filter((item) => item.value))
 </script>
 
 <template>
   <section class="evidence-panel" aria-label="证据与风险透视">
     <header class="section-head">
-      <div><span class="research-kicker">REVIEW & RISK</span><h3>证据与风险透视</h3></div>
+      <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
+      <h3>证据与风险透视</h3>
       <el-tag size="small" effect="plain" :type="quality.blocked ? 'danger' : 'success'">
         {{ quality.blocked ? 'blocked' : '可查看' }}
       </el-tag>
     </header>
-    <div class="risk-grid">
-      <div><span>PIT / 生存者偏差</span><strong>{{ pitLabel }}</strong></div>
-      <div><span>验证失败 / 门禁</span><strong>{{ quality.findings.length ? `${quality.findings.length} 项` : '未发现' }}</strong></div>
-      <div><span>风险透视</span><strong>未在当前 profile 契约提供</strong></div>
-      <div><span>行情快照</span><strong>{{ props.profile.market_snapshot.market_revision || quality.market_revision || '—' }}</strong></div>
+    <div v-if="riskItems.length" class="risk-grid">
+      <div v-for="item in riskItems" :key="item.key"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
     </div>
     <div v-if="snapshotEntries.length" class="snapshot-list">
       <span class="subhead">MARKET SNAPSHOT</span>
@@ -56,7 +65,7 @@ const pitLabel = computed(() => {
       <el-table-column prop="message" label="事实" min-width="240" show-overflow-tooltip />
       <el-table-column prop="suggested_fix" label="缺口处理" min-width="190" show-overflow-tooltip />
     </el-table>
-    <el-empty v-else description="当前没有验证问题" :image-size="48" />
+    <EmptyState v-else description="没有验证问题" reason="门禁通过，无需处理" />
     <div class="evidence-head"><span class="subhead">SOURCE EVIDENCE · {{ evidence.length }}</span><span v-if="props.run">run {{ props.run.id }}</span></div>
     <el-table v-if="evidence.length" :data="evidence" size="small" class="finding-table">
       <el-table-column prop="dimension" label="维度" width="120" show-overflow-tooltip />
@@ -67,29 +76,24 @@ const pitLabel = computed(() => {
           <el-link v-if="row.source_url" :href="row.source_url" target="_blank" rel="noopener noreferrer" :icon="Link">{{ row.title || row.source_id }}</el-link>
           <code v-else :title="row.payload_sha256">{{ row.payload_sha256 || '无 hash' }}</code>
         </template>
-      </el-table-column>
-    </el-table>
-    <el-empty v-else description="当前没有来源证据" :image-size="48" />
-  </section>
+</el-table-column>
+</el-table>
+<EmptyState v-else description="没有来源证据" reason="读取剖面后由后端回执填入" />
+</section>
 </template>
 
 <style scoped>
 .evidence-panel { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); overflow: hidden; }
-.section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; padding: 0.82rem 0.9rem; border-bottom: 1px solid var(--rule); }
-.section-head h3 { margin: 0.22rem 0 0; font-size: 0.98rem; letter-spacing: 0; }
-.research-kicker { display: block; color: var(--mist); font: 0.68rem/1.2 var(--mono); letter-spacing: 0.08em; }
-.risk-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--rule); border-bottom: 1px solid var(--rule); }
-.risk-grid > div { min-width: 0; padding: 0.68rem 0.72rem; background: var(--sheet); }
-.risk-grid span, .subhead { display: block; color: var(--mist); font-size: 0.72rem; }
-.risk-grid strong { display: block; margin-top: 0.25rem; color: var(--ink); font: 600 0.8rem/1.3 var(--mono); overflow-wrap: anywhere; }
-.health-list { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--rule); color: var(--mist); font-size: 0.74rem; }
-.health-list .subhead { flex-basis: 100%; }
-.snapshot-list { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--rule); color: var(--mist); font-size: 0.74rem; }
-.snapshot-list .subhead { flex-basis: 100%; }
+.section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gap-3); padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); }
+.section-head h3 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: .03em; }
+.risk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1px; background: var(--rule); border-bottom: 1px solid var(--rule); }
+.risk-grid > div { min-width: 0; padding: var(--gap-2) var(--gap-3); background: var(--sheet); }
+.risk-grid span, .subhead { display: block; color: var(--mist); font-size: var(--fs-aux); }
+.risk-grid strong { display: block; margin-top: var(--gap-1); color: var(--ink); font: 700 var(--fs-body)/1.3 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.health-list, .snapshot-list { display: flex; flex-wrap: wrap; gap: var(--gap-1) var(--gap-3); padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); color: var(--mist); font-size: var(--fs-aux); }
+.health-list .subhead, .snapshot-list .subhead { flex-basis: 100%; }
 .snapshot-item { max-width: 100%; overflow-wrap: anywhere; }
-.health-item code, code { font-family: var(--mono); font-size: 0.72rem; overflow-wrap: anywhere; }
+.health-item code, code { font-family: var(--mono); font-size: var(--fs-aux); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .finding-table { width: 100%; }
-.evidence-head { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.7rem 0.9rem 0.4rem; border-top: 1px solid var(--rule); color: var(--mist); font-size: 0.72rem; }
-@media (max-width: 900px) { .risk-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .risk-grid { grid-template-columns: 1fr; } }
+.evidence-head { display: flex; justify-content: space-between; gap: var(--gap-3); padding: var(--gap-2) var(--pad-sheet-x) var(--gap-1); border-top: 1px solid var(--rule); color: var(--mist); font-size: var(--fs-aux); }
 </style>

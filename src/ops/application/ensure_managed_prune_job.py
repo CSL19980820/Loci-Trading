@@ -12,6 +12,12 @@ PRUNE_CRON = "30 2 * * mon-fri"
 DEFAULT_PRUNE_CONFIG: dict[str, Any] = {
     "keep_per_job": 200,
     "leader_role_keep_days": 60,
+    # 盘中留存带 60 天不动（ADR-014）：上游取不到历史，删早了永久没有。
+    "intraday_keep_days": 60,
+    # 跨租户全局库。identity 只删过期会话/票据（没有天数概念，开关而已）；
+    # community 只删动态流 / 榜单快照 / 当日信号广播三张可重建表。
+    "identity_purge": True,
+    "community_keep_days": 15,
 }
 
 

@@ -2,6 +2,10 @@
 import type { ChartPrepResult } from '@/shared/lib/chartPrep'
 import { readChartTokens, withAlpha, type ChartTokens } from '@/shared/lib/chartTokens'
 import { buildLimitMarks } from '@/shared/lib/klineLimitMarks'
+import {
+  buildStrategySignalMarks,
+  type StrategySignalMark,
+} from '@/shared/lib/klineStrategyMarks'
 import { KLINE_GRID_TOPS, type IndicatorKind } from '@/shared/lib/klineConfig'
 import { compactNumber } from '@/shared/lib/format'
 
@@ -30,6 +34,7 @@ export function buildKlineOption(opts: {
   zoomEnd: number
   stockCode: string
   stockName: string
+  strategySignals?: StrategySignalMark[]
   /** 主题 token 快照；不传则即时读取（宿主需把它加进 watch 才能随主题重绘） */
   tokens?: ChartTokens
 }): Record<string, unknown> {
@@ -42,8 +47,10 @@ export function buildKlineOption(opts: {
     zoomEnd,
     stockCode,
     stockName,
+    strategySignals,
+    tokens,
   } = opts
-  const t = opts.tokens ?? readChartTokens()
+  const t = tokens ?? readChartTokens()
   const MA_COLORS = t.maPalette
   const VOL_MA_COLORS: Record<number, string> = { 5: t.warn, 60: t.info }
   const CANDLE_UP = t.up
@@ -121,7 +128,13 @@ export function buildKlineOption(opts: {
     stockName,
     t,
   )
-
+  const strategyMarks = buildStrategySignalMarks(
+    prep.seriesBars,
+    dates,
+    strategySignals ?? [],
+    t,
+  )
+  const allMarks = [...limitMarks, ...strategyMarks]
   const series: Record<string, unknown>[] = [
     {
       name: 'K线',
@@ -151,9 +164,7 @@ export function buildKlineOption(opts: {
         },
       },
       markPoint: {
-        symbol: 'rect',
-        symbolSize: [44, 16],
-        data: [...limitMarks],
+        data: allMarks,
       },
     },
     {

@@ -187,6 +187,11 @@
   white-space: nowrap;
 }
 
+/* 闲时无状态可播报：空文案不占位（说明已移进发送键 tooltip） */
+.assistant-sender__hint:empty {
+  display: none;
+}
+
 @media (max-width: 639px) {
   .assistant-sender__bar {
     flex-wrap: wrap;

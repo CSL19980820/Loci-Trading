@@ -1,21 +1,32 @@
 <script setup lang="ts">
+/** 近选跟踪（T～T+4）：密度表，数字列等宽右对齐，涨跌带符号。 */
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
-import { pct as fmtPct, price as fmtPrice } from '@/shared/lib/format'
+import { price as fmtPrice, signedPct } from '@/shared/lib/format'
 
+import { strategyDisplayName } from '../composables/pulseHomeLogic'
 import type { PulseTrackRow } from '../composables/usePulseHome'
+
+import './pulseSkin.css'
 
 const props = defineProps<{
   title: string
+  /** 单行元信息（12px 次要色）；长解释请走 `hint` */
   note?: string
+  /** 进 tooltip 的口径说明 */
+  hint?: string
   rows: PulseTrackRow[]
+  /** 空态一行短句（≤14 字） */
   empty: string
+  /** 空态长解释，进 tooltip */
+  emptyHint?: string
 }>()
 
 const route = useRoute()
+const router = useRouter()
 
 const batch = computed(() => ({
   source: props.title,
@@ -23,26 +34,39 @@ const batch = computed(() => ({
   items: toBatchItems(props.rows),
 }))
 
-
 function tone(value: number | null | undefined): string {
-  if (value == null || value === 0) return ''
-  return value > 0 ? 'is-up' : 'is-down'
+  if (value == null || !Number.isFinite(Number(value))) return 'pulse-flat'
+  if (Number(value) > 0) return 'pulse-up'
+  if (Number(value) < 0) return 'pulse-down'
+  return 'pulse-flat'
 }
 
 function shortDate(value: string): string {
   if (!value || value.length < 10) return value || '—'
   return value.slice(5)
 }
+
+/** 战法列窄：短名 + 中文兜底（数据层已收口，这里再挡一次裸 slug）。 */
+function strategyText(row: PulseTrackRow): string {
+  return strategyDisplayName(row.strategyName || row.strategy)
+}
+
+function openScreen(): void {
+  void router.push('/screen-history')
+}
 </script>
 
 <template>
-  <section class="pulse-panel pulse-track">
+  <section class="pulse-panel">
     <header class="pulse-panel__head">
-      <div class="pulse-track__title">
-        <strong>{{ title }}</strong>
-        <em class="pulse-track__chip">T～T+4</em>
+      <div class="pulse-panel__lead">
+        <h2 class="pulse-panel__title">{{ title }}</h2>
+        <span class="pulse-panel__meta">T～T+4</span>
       </div>
-      <span v-if="note" class="pulse-panel__note">{{ note }}</span>
+      <el-tooltip v-if="hint" :content="hint" placement="bottom-end" :show-after="200">
+        <span class="pulse-panel__meta">{{ note }}</span>
+      </el-tooltip>
+      <span v-else class="pulse-panel__meta">{{ note }}</span>
     </header>
     <el-table
       v-if="rows.length"
@@ -50,148 +74,70 @@ function shortDate(value: string): string {
       size="small"
       stripe
       height="100%"
-      class="pulse-table pulse-track__table"
+      class="pulse-table"
       empty-text="—"
     >
-      <el-table-column label="名称" min-width="104" align="center" header-align="center">
+      <el-table-column label="名称" width="96" align="center" header-align="center">
         <template #default="{ row }">
-          <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
+          <span class="pulse-name">
+            <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
+          </span>
+          <span class="pulse-code"> {{ row.code }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="选股日" min-width="66" align="center" header-align="center">
+      <el-table-column label="选股日" width="64" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num pulse-muted">{{ shortDate(row.date) }}</span>
+          <span class="pulse-num pulse-dim">{{ shortDate(row.date) }}</span>
         </template>
       </el-table-column>
       <el-table-column label="选入" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num">{{ fmtPrice(row.entryPrice) }}</span>
+          <span class="pulse-num">{{ fmtPrice(row.entryPrice) }}</span>
         </template>
       </el-table-column>
       <el-table-column label="最新" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num">{{ fmtPrice(row.latestPrice) }}</span>
+          <span class="pulse-num">{{ fmtPrice(row.latestPrice) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="涨跌幅" min-width="66" align="center" header-align="center">
+      <el-table-column label="涨跌幅" min-width="78" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num" :class="tone(row.changePct)">{{ fmtPct(row.changePct) }}</span>
+          <span class="pulse-num" :class="tone(row.changePct)">{{ signedPct(row.changePct) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="低→高" min-width="66" align="center" header-align="center">
+      <el-table-column label="低→高" min-width="78" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num" :class="tone(row.swingPct)">{{ fmtPct(row.swingPct) }}</span>
+          <span class="pulse-num" :class="tone(row.swingPct)">{{ signedPct(row.swingPct) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="T+1" min-width="66" align="center" header-align="center">
+      <el-table-column label="T+1" min-width="70" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num" :class="tone(row.t1)">{{ fmtPct(row.t1) }}</span>
+          <span class="pulse-num" :class="tone(row.t1)">{{ signedPct(row.t1) }}</span>
         </template>
       </el-table-column>
       <el-table-column label="T+3" min-width="66" align="center" header-align="center">
         <template #default="{ row }">
-          <span class="num" :class="tone(row.t3)">{{ fmtPct(row.t3) }}</span>
+          <span class="pulse-num" :class="tone(row.t3)">{{ signedPct(row.t3) }}</span>
         </template>
       </el-table-column>
-      <!-- 列宽合计需 ≤ 栅格分给本卡的宽度（约 730px），否则最右列被裁掉 -->
-      <el-table-column
-        label="战法"
-        min-width="96"
-        align="center"
-        header-align="center"
-        show-overflow-tooltip
-      >
+      <el-table-column label="战法" min-width="110" align="center" header-align="center" show-overflow-tooltip>
         <template #default="{ row }">
-          <span class="pulse-muted pulse-track__strat">{{ row.strategyName }}</span>
+          <span class="pulse-dim pulse-clip">{{ strategyText(row as PulseTrackRow) }}</span>
         </template>
       </el-table-column>
     </el-table>
-    <el-empty v-else :description="empty" :image-size="56" />
+    <div v-else class="pulse-panel__empty">
+      <el-tooltip v-if="emptyHint" :content="emptyHint" placement="top">
+        <span>{{ empty }}</span>
+      </el-tooltip>
+      <span v-else>{{ empty }}</span>
+      <el-button link type="primary" size="small" @click="openScreen">去选股</el-button>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.pulse-panel {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.pulse-panel__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.65rem;
-  border-bottom: 1px solid var(--rule);
-}
-
-.pulse-track__title {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.pulse-panel__head strong {
-  font-size: 0.88rem;
-}
-
-.pulse-track__chip {
-  font-style: normal;
-  font-size: 0.62rem;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  color: var(--seal-ink, #8f1529);
-  background: color-mix(in srgb, var(--seal-soft, #fce8ec) 70%, #fff);
-  border: 1px solid color-mix(in srgb, var(--seal, #c41e3a) 28%, var(--rule));
-  padding: 0.08rem 0.32rem;
-  line-height: 1.2;
-}
-
-.pulse-panel__note {
-  font-size: 0.72rem;
-  color: var(--mist);
-}
-
-.pulse-table {
-  flex: 1;
-  min-height: 140px;
-}
-
-.pulse-table :deep(.el-table__cell) {
-  padding: 4px 0;
-}
-
-.pulse-track__strat {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-}
-
-.num {
-  font-variant-numeric: tabular-nums;
-  font-family: var(--mono, ui-monospace, monospace);
-  font-size: 0.8rem;
-}
-
-.pulse-muted {
-  color: var(--mist);
-  font-size: 0.78rem;
-}
-
-.is-up {
-  color: var(--up, #c41e3a);
-}
-
-.is-down {
-  color: var(--down, #0f6b5c);
+.pulse-panel__title {
+  margin: 0;
 }
 </style>

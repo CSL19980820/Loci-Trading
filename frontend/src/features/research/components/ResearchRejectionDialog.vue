@@ -84,10 +84,8 @@ async function reject(): Promise<void> {
       type="error"
       show-icon
       :closable="false"
-      title="否决会写入可审计回执，不会改变生产策略默认参数。"
-    >
-      <template #default>页面将原样回传后端提供的 artifact manifest SHA-256，不在浏览器生成摘要。</template>
-    </el-alert>
+      title="否决写入可审计回执，不改生产参数"
+    />
     <el-descriptions class="manifest-facts" :column="1" border size="small">
       <el-descriptions-item label="run id"><code>{{ run?.run_id || '未提供' }}</code></el-descriptions-item>
       <el-descriptions-item label="artifact manifest SHA-256"><code>{{ manifestSha256 || '后端未提供' }}</code></el-descriptions-item>
@@ -98,11 +96,11 @@ async function reject(): Promise<void> {
       type="error"
       show-icon
       :closable="false"
-      title="当前 run 不满足否决条件：需要 awaiting_human_review、validation=passed 和后端 manifest 摘要。"
+      title="不满足否决条件：需待签署 + 验证通过 + manifest 摘要"
       class="dialog-alert"
     />
     <el-alert v-if="error" type="error" show-icon :closable="false" :title="error" class="dialog-alert" />
-    <el-form class="rejection-form" label-position="top" @submit.prevent="reject">
+    <el-form class="rejection-form" label-position="right" label-width="6.5em" size="small" @submit.prevent="reject">
       <el-form-item label="否决人" required>
         <el-input v-model="form.reviewer" maxlength="128" show-word-limit />
       </el-form-item>
@@ -120,8 +118,8 @@ async function reject(): Promise<void> {
 </template>
 
 <style scoped>
-.manifest-facts { margin-top: .8rem; }
-.manifest-facts code { font: .72rem var(--mono); overflow-wrap: anywhere; }
-.dialog-alert { margin-top: .75rem; }
-.rejection-form { margin-top: .8rem; }
+.manifest-facts { margin-top: var(--gap-2); }
+.manifest-facts code { font: var(--fs-aux) var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dialog-alert { margin-top: var(--gap-2); }
+.rejection-form { margin-top: var(--gap-2); }
 </style>

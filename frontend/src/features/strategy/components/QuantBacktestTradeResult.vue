@@ -6,6 +6,7 @@ import EquityLineChart from '@/shared/components/charts/EquityLineChart.vue'
 import StatCard from '@/shared/components/ui/StatCard.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
+import { copyText } from '@/shared/lib/clipboard'
 import type { BacktestResult, BacktestTrade } from '@/shared/types/quant'
 
 import { buildTradeSummaryText } from '../composables/quantBacktestSummary'
@@ -98,12 +99,8 @@ async function copySummary(): Promise<void> {
     metrics: metrics.value,
     performance: performance.value,
   })
-  try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制摘要')
-  } catch {
-    ElMessage.error('复制失败')
-  }
+  if (await copyText(text)) ElMessage.success('已复制摘要')
+  else ElMessage.error('复制失败，请手动选中摘要文本复制')
 }
 
 function archiveDate(row: BacktestTrade): string {
@@ -114,8 +111,10 @@ function archiveDate(row: BacktestTrade): string {
 <template>
   <div class="tr">
     <div class="tr-toolbar">
-      <el-button size="small" @click="copySummary">复制摘要</el-button>
-      <span class="tr-toolbar__hint">便于粘贴到笔记 / 对话</span>
+      <!-- 「便于粘贴到笔记 / 对话」是常驻说明，不占版面：进按钮 tooltip -->
+      <el-tooltip placement="bottom-start" content="复制成纯文本摘要，便于粘贴到笔记或对话">
+        <el-button size="small" @click="copySummary">复制摘要</el-button>
+      </el-tooltip>
     </div>
 
     <el-alert
@@ -161,17 +160,15 @@ function archiveDate(row: BacktestTrade): string {
         <StatCard label="Calmar" :value="fmtNum(performance.calmar, 2)" layout="row" />
       </div>
 
-      <el-alert
-        type="info"
-        :closable="false"
-        show-icon
-        class="tr-alert"
-        :title="performance.assumption?.description || '顺序复利诊断曲线，非真实多仓账户净值'"
-      />
-
+      <!--
+        那条常驻的 info alert 删了：它永远在、不报任何异常，是被禁的常驻说明条。
+        口径（顺序复利诊断曲线、非真实多仓净值）挂到它解释的那张图的标题上。
+      -->
       <div class="tr-charts">
         <div class="tr-chart">
-          <header>诊断资金曲线</header>
+          <el-tooltip placement="top-start" :content="performance.assumption?.description || '顺序复利诊断曲线，非真实多仓账户净值'">
+            <header>诊断资金曲线</header>
+          </el-tooltip>
           <EquityLineChart
             :dates="equityDates"
             :values="equityValues"
@@ -289,17 +286,13 @@ function archiveDate(row: BacktestTrade): string {
   align-items: center;
   gap: 0.65rem;
 }
-.tr-toolbar__hint {
-  font-size: 0.75rem;
-  color: var(--mist);
-}
 .tr-alert {
   margin: 0;
 }
 .tr-hero,
 .tr-perf {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.45rem;
 }
 .tr-charts {

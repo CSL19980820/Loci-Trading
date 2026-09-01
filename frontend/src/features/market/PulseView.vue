@@ -1,14 +1,31 @@
 <script setup lang="ts">
+/**
+ * 盘面：开盘 5 秒内回答三件事——大盘怎么走 / 我的池子今天怎么样 / 系统有没有坏。
+ *
+ * 版面纪律：单行页头 + 刻度尺 + 报价带 + 主区（近选跟踪 | 样本榜）+ 底区（今日选股）。
+ * 异常收成一行状态条；作业健康降级成页头一枚点；情报压成一行 tape。
+ */
 import { computed } from 'vue'
-
+import { useRouter } from 'vue-router'
+import PulseHealthDot from './components/PulseHealthDot.vue'
 import PulseIndexStrip from './components/PulseIndexStrip.vue'
 import PulseMarketBoard from './components/PulseMarketBoard.vue'
 import PulsePickTable from './components/PulsePickTable.vue'
+import PulseStatusBar, { type PulseIssue } from './components/PulseStatusBar.vue'
 import PulseTrackTable from './components/PulseTrackTable.vue'
 import PulseWatchRail from './components/PulseWatchRail.vue'
+import SessionRuler from './components/SessionRuler.vue'
+import {
+  todayEmptyShort,
+  todayEmptyText,
+  todayNoteText,
+  trackEmptyShort,
+  trackEmptyText,
+  type PulseEmptyInput,
+} from './composables/pulseEmptyState'
 import { usePulseHome } from './composables/usePulseHome'
 import { usePulseIntelBrief } from './composables/usePulseIntelBrief'
-import { usePulseSecondWave } from './composables/usePulseSecondWave'
+import { usePulseOpsHealth } from './composables/usePulseOpsHealth'
 
 const {
   loading,
@@ -25,6 +42,7 @@ const {
   todayRows,
   trackNote,
   todayDate,
+  screenHistoryTotal,
   boardTab,
   boardRows,
   sectorRows,
@@ -39,107 +57,153 @@ const {
 } = usePulseHome()
 
 const intelTradeDate = computed(
-  () =>
-    session.value?.last_trading_day ||
-    session.value?.today ||
-    '',
+  () => session.value?.last_trading_day || session.value?.today || '',
 )
 const { brief, briefError, briefLoading, loadBrief } = usePulseIntelBrief(intelTradeDate)
-const { wave, waveError, waveLoading, loadWave } = usePulseSecondWave()
+
+const {
+  loading: healthLoading,
+  error: healthError,
+  hasEnabledScreenJob,
+  nextScreenRunAt,
+  lastFailedRun,
+  load: loadOpsHealth,
+} = usePulseOpsHealth()
+
+const router = useRouter()
+
+function goLive(): void {
+  void router.push({ name: 'live' })
+}
+// 空态按真实状态说话：没跑过就别提定时任务，有任务就报后端算出的下次触发时间
+const emptyInput = computed<PulseEmptyInput>(() => ({
+  screenHistoryTotal: screenHistoryTotal.value,
+  hasEnabledScreenJob: hasEnabledScreenJob.value,
+  nextScreenRunAt: nextScreenRunAt.value,
+}))
 
 async function refreshAll(): Promise<void> {
-  await Promise.all([reload(), loadBrief(), loadWave()])
+  await Promise.all([reload(), loadBrief(), loadOpsHealth()])
 }
+
+/** 四条错误收成一行；全文进 popover。顺序＝严重度。 */
+const issues = computed<PulseIssue[]>(() => {
+  const list: PulseIssue[] = []
+  if (error.value) list.push({ key: 'main', label: '盘面加载失败', detail: error.value })
+  if (tapeError.value) {
+    list.push({ key: 'tape', label: '行情更新失败', detail: tapeError.value })
+  }
+  if (alertsError.value) {
+    list.push({
+      key: 'alerts',
+      label: '触价提醒不可用',
+      detail: `请勿据此判断今日无止损：${alertsError.value}`,
+    })
+  }
+  if (historyError.value) {
+    list.push({ key: 'history', label: '选股数据不全', detail: historyError.value })
+  }
+  return list
+})
 
 const pickPctNote = computed(() => {
   if (pickPctMode.value === 'live') return '叠实时价'
   if (pickPctMode.value === 'local') return '本地日线价'
   return '价格待取'
 })
+
+const trackMeta = computed(() => (trackNote.value ? trackNote.value : '近 5 日'))
+const trackHint = computed(() =>
+  [`口径：${pickPctNote.value}`, trackNote.value, '同日同代码去重，当日选出的票只进「今日选股」']
+    .filter(Boolean)
+    .join(' · '),
+)
+
+const todayMeta = computed(() =>
+  todayDate.value ? `${todayDate.value} · ${pickPctNote.value}` : '尚未落库',
+)
+const todayHint = computed(() =>
+  todayDate.value
+    ? `各战法合并 · 同代码取高分 · ${pickPctNote.value}`
+    : todayNoteText(emptyInput.value),
+)
+
+const trackEmpty = computed(() => trackEmptyShort(emptyInput.value))
+const trackEmptyHint = computed(() => trackEmptyText(emptyInput.value))
+const todayEmpty = computed(() => todayEmptyShort(emptyInput.value))
+const todayEmptyHint = computed(() => todayEmptyText(emptyInput.value))
+
+const tradeDateText = computed(() => session.value?.today || '—')
 </script>
 
 <template>
-  <div class="page-fill pulse-home" v-loading="loading">
-    <div class="pulse-home__toolbar">
-      <div class="pulse-home__title">
-        <span class="pulse-home__eyebrow">LOCI · TAPE</span>
-        <strong>盘面</strong>
-        <span class="pulse-home__meta">
-          {{ session?.today || '—' }} · {{ asOfText }} · {{ sessionText }}
-        </span>
+  <div class="page-fill pulse" v-loading="loading">
+    <header class="pulse__bar">
+      <div class="pulse__bar-brand">
+        <h1 class="pulse__title">盘面全景</h1>
+        <div class="pulse__meta-group">
+          <span class="pulse__day">{{ tradeDateText }}</span>
+          <span class="pulse__phase-tag" :class="session?.live_allowed ? 'is-live' : 'is-closed'">
+            {{ sessionText }}
+          </span>
+          <span class="pulse__clock">{{ asOfText || '--:--:--' }}</span>
+        </div>
       </div>
-      <div class="pulse-home__actions">
+      <span class="pulse__spacer" />
+      <div class="pulse__actions">
+        <PulseHealthDot
+          :loading="healthLoading"
+          :error="healthError"
+          :last-failed-run="lastFailedRun"
+          :has-enabled-screen-job="hasEnabledScreenJob"
+          :next-screen-run-at="nextScreenRunAt"
+        />
         <el-button
-          size="small"
+          class="pulse-act-btn"
+          @click="goLive"
+        >
+          实时大屏
+        </el-button>
+        <el-button
+          class="pulse-act-btn"
           :loading="spotPersistBusy"
           :disabled="loading"
           @click="persistSpot"
         >
           同步现价
         </el-button>
-        <el-button size="small" type="primary" plain :loading="loading" @click="refreshAll">
-          刷新
+        <el-button type="primary" class="pulse-act-btn pulse-act-btn--primary" :loading="loading" @click="refreshAll">
+          刷新数据
         </el-button>
       </div>
-    </div>
+    </header>
+    <SessionRuler :is-trading-day="session?.is_trading_day ?? null" />
 
-    <el-alert
-      v-if="error"
-      class="pulse-home__alert"
-      type="error"
-      :closable="false"
-      :title="error"
-      show-icon
-    />
-    <el-alert
-      v-if="tapeError"
-      class="pulse-home__alert"
-      type="warning"
-      :closable="false"
-      :title="`指数/持仓行情更新失败：${tapeError}`"
-      show-icon
-    />
-    <el-alert
-      v-if="historyError"
-      class="pulse-home__alert"
-      type="warning"
-      :closable="false"
-      :title="historyError"
-      show-icon
-    />
-    <el-alert
-      v-if="alertsError"
-      class="pulse-home__alert"
-      type="warning"
-      :closable="false"
-      :title="`触价提醒不可用，请勿据此判断今日无止损：${alertsError}`"
-      show-icon
-    />
+    <PulseStatusBar :issues="issues" :busy="loading" @retry="refreshAll" />
 
-    <PulseIndexStrip
-      :indices="indices"
-      :alert-count="alertCount"
-      :as-of="asOfText"
-      :session-text="sessionText"
-    />
+    <div class="page-scroll pulse__body">
+      <PulseIndexStrip
+        :indices="indices"
+        :alert-count="alertCount"
+        :limit-up="brief?.emotion?.limit_up_count ?? null"
+        :limit-down="brief?.emotion?.limit_down_count ?? null"
+        :breadth-note="briefError ? `涨停/跌停读不到：${briefError}` : ''"
+      />
 
-    <PulseWatchRail
-      class="pulse-home__watch"
-      :brief="brief"
-      :brief-loading="briefLoading"
-      :brief-error="briefError"
-      :wave="wave"
-      :wave-loading="waveLoading"
-      :wave-error="waveError"
-    />
+      <PulseWatchRail
+        :brief="brief"
+        :brief-loading="briefLoading"
+        :brief-error="briefError"
+      />
 
-    <div class="page-scroll pulse-home__body">
-      <div class="pulse-home__grid page-pane">
+      <div class="pulse__grid">
         <PulseTrackTable
           title="近选跟踪"
-          :note="trackNote ? `${pickPctNote} · ${trackNote}` : '暂无近 5 日精选'"
+          :note="trackMeta"
+          :hint="trackHint"
           :rows="trackRows"
-          empty="近 5 个交易日还没有精选入库。工作日 15:30 会自动跑盘后选股。"
+          :empty="trackEmpty"
+          :empty-hint="trackEmptyHint"
         />
         <PulseMarketBoard
           :tab="boardTab"
@@ -153,15 +217,13 @@ const pickPctNote = computed(() => {
       </div>
 
       <PulsePickTable
-        class="pulse-home__today"
+        class="pulse__today"
         title="今日选股"
-        :note="
-          todayDate
-            ? `${todayDate} · 各战法合并 · ${pickPctNote}`
-            : '今日尚未落库 · 默认 15:30 盘后自动跑'
-        "
+        :note="todayMeta"
+        :hint="todayHint"
         :rows="todayRows"
-        empty="今日还没有选股记录。可到选股工作台手动跑，或等 15:30 定时任务。"
+        :empty="todayEmpty"
+        :empty-hint="todayEmptyHint"
         show-strategy
       />
     </div>
@@ -169,103 +231,128 @@ const pickPctNote = computed(() => {
 </template>
 
 <style scoped>
-.pulse-home {
+.pulse {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.5rem 0.85rem 0.5rem;
+  gap: 0;
   min-height: 0;
+  position: relative;
+  background: var(--paper);
+  overflow: hidden;
 }
 
-.pulse-home__body.page-scroll {
-  padding-left: 0;
-  padding-right: 0;
-  padding-top: 0;
-}
-
-.pulse-home__toolbar {
+.pulse__bar {
+  flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem 0.75rem;
+  gap: var(--gap-3, 16px);
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sheet);
+  min-width: 0;
+  z-index: 10;
 }
 
-.pulse-home__title {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-  flex-wrap: wrap;
-}
-
-.pulse-home__eyebrow {
-  font: 600 var(--fs-kicker) / 1 var(--mono);
-  letter-spacing: 0.08em;
-  color: var(--seal);
-}
-
-/* 与其它页的账页页头同一套字：衬线标题，别再和正文一样粗细字号 */
-.pulse-home__title strong {
-  font-family: var(--font-display);
-  font-size: 1.3rem;
-  font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: 0.01em;
-}
-
-.pulse-home__meta {
-  font-size: var(--fs-aux);
-  color: var(--mist);
-  font-variant-numeric: tabular-nums;
-}
-
-.pulse-home__actions {
+.pulse__bar-brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 14px;
+  min-width: 0;
 }
 
-.pulse-home__alert {
-  flex: 0 0 auto;
+.pulse__title {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  white-space: nowrap;
 }
 
-.pulse-home__watch {
-  flex-shrink: 0;
+.pulse__meta-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.pulse-home__body {
+.pulse__day,
+.pulse__clock {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--mist);
+  white-space: nowrap;
+}
+
+.pulse__phase-tag {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.pulse__phase-tag.is-live {
+  background: var(--down-soft);
+  color: var(--down);
+  border: 1px solid rgba(22, 163, 74, 0.25);
+}
+.pulse__phase-tag.is-closed {
+  background: var(--seal-soft);
+  color: var(--seal-ink);
+  border: 1px solid var(--rule);
+}
+
+.pulse__spacer {
   flex: 1 1 auto;
-  min-height: 0;
+  min-width: 0;
+}
+
+.pulse__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-act-btn {
+  height: 28px !important;
+  padding: 0 12px !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  border-radius: var(--radius) !important;
+}
+
+.pulse__body.page-scroll {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-}
-
-.pulse-home__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(0, 0.9fr);
-  gap: 0.45rem;
-  /* 近选/榜样吃主要剩余高度；今日选股压低 */
-  min-height: 200px;
-  flex: 1 1 auto;
-  max-height: none;
-}
-
-.pulse-home__today {
-  flex: 0 0 auto;
+  gap: var(--gap-3, 16px);
+  padding: 16px 20px 24px;
   min-height: 0;
-  height: min(22vh, 11.5rem);
-  max-height: min(22vh, 11.5rem);
+  z-index: 1;
+}
+.pulse__grid {
+  flex: 1 1 58%;
+  min-height: 280px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.68fr) minmax(0, 0.92fr);
+  gap: var(--gap-3, 18px);
 }
 
-@media (max-width: 900px) {
-  .pulse-home__grid {
+.pulse__today {
+  flex: 1 1 42%;
+  min-height: 240px;
+}
+
+@media (max-width: 960px) {
+  .pulse__bar {
+    padding: 10px 16px;
+  }
+  .pulse__grid {
     grid-template-columns: 1fr;
   }
-
-  .pulse-home__today {
-    height: auto;
-    max-height: min(28vh, 14rem);
+  .pulse__body.page-scroll {
+    padding: 14px 16px;
   }
 }
 </style>

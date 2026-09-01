@@ -26,6 +26,7 @@ import type { BoardRow, ScreenCandidate, StrategyInfo } from '@/shared/types/qua
 import {
   boardRowsToSpotMap,
   changeFromEntry,
+  collectPicksForDate,
   dedupeTrackRowsByDayCode,
   effectivePct,
   excludeTodayFromTrack,
@@ -35,25 +36,15 @@ import {
   rankSectorRows,
   screenSessionDay,
   splitScreenDates,
+  strategyDisplayName,
   swingFromLowHigh,
   trackAsOfDate,
   type PulseBoardTab,
+  type PulsePickRow,
   type SectorBoardRow,
 } from './pulseHomeLogic'
 
-export type { PulseBoardTab, SectorBoardRow }
-
-export type PulsePickRow = {
-  rank: number
-  code: string
-  name: string
-  strategy: string
-  strategyName: string
-  score: number | null
-  reason: string
-  pct: number | null
-  date: string
-}
+export type { PulseBoardTab, PulsePickRow, SectorBoardRow }
 
 /** 近选跟踪行：选入价/最新/累计涨跌 + 后端 T+1/T+3。 */
 export type PulseTrackRow = {
@@ -107,6 +98,8 @@ export function usePulseHome() {
   const todayRows = ref<PulsePickRow[]>([])
   const trackNote = ref('')
   const todayDate = ref('')
+  // null = 尚未加载/加载失败；0 才是「一次都没跑过」的真·新用户
+  const screenHistoryTotal = ref<number | null>(null)
   const boardTab = ref<PulseBoardTab>('gain')
   const boardRows = ref<BoardRow[]>([])
   const sectorRows = ref<SectorBoardRow[]>([])
@@ -350,6 +343,9 @@ export function usePulseHome() {
       historyError.value = parts.length ? `部分数据加载失败：${parts.join('；')}` : ''
 
       const histories = historyBatch.histories
+      screenHistoryTotal.value = historyBatch.failed
+        ? null
+        : histories.reduce((sum, h) => sum + h.dates.length, 0)
       const dateSet = new Set<string>()
       for (const h of histories) {
         for (const d of h.dates) dateSet.add(d)
@@ -358,45 +354,15 @@ export function usePulseHome() {
       const { todayHit } = splitScreenDates(dates, calendarToday, sessionDay)
       todayDate.value = todayHit
 
-      function collectToday(date: string): PulsePickRow[] {
-        if (!date) return []
-        const merged: PulsePickRow[] = []
-        for (const h of histories) {
-          for (const row of h.by_date[date] || []) {
-            if (!row.code) continue
-            merged.push({
-              rank: 0,
-              code: row.code,
-              name: row.name || row.code,
-              strategy: h.strategy,
-              strategyName: nameBySlug.get(h.strategy) || h.strategy,
-              score: row.score,
-              reason: row.reason || '',
-              pct: null,
-              date,
-            })
-          }
-        }
-        const dedup = new Map<string, PulsePickRow>()
-        for (const row of merged) {
-          const prev = dedup.get(row.code)
-          if (!prev || (row.score ?? -1) > (prev.score ?? -1)) dedup.set(row.code, row)
-        }
-        return [...dedup.values()]
-      }
-
-      let today = collectToday(todayHit)
+      let today = collectPicksForDate(histories, todayHit, nameBySlug)
       const trackDrafts = trackResult.outcomes.map((o) => ({
         rank: 0,
         code: o.code,
         name: o.name || o.code,
         date: o.base_date,
         strategy: o.strategy_slug || o.rule_version || '',
-        strategyName:
-          nameBySlug.get(o.strategy_slug || '') ||
-          o.strategy_slug ||
-          o.rule_version ||
-          '—',
+        // 中文名兜底一处收口：接口名 → 词表/拼音词根 → 「自定义战法」，绝不漏 slug
+        strategyName: strategyDisplayName(o.strategy_slug || o.rule_version, nameBySlug),
         entryPrice: o.base_close,
         latestPrice: null as number | null,
         changePct: null as number | null,
@@ -467,6 +433,7 @@ export function usePulseHome() {
       todayRows.value = []
       todayDate.value = ''
       trackNote.value = ''
+      screenHistoryTotal.value = null
       error.value = toErrorMessage(caught, '选股记录加载失败')
     }
   }
@@ -586,6 +553,7 @@ export function usePulseHome() {
     todayRows,
     trackNote,
     todayDate,
+    screenHistoryTotal,
     boardTab,
     boardRows,
     sectorRows,

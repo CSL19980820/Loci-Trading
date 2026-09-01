@@ -16,6 +16,9 @@ const error = ref('')
 let active = true
 let loadVersion = 0
 
+const laneQuery = ref('')
+const akQuery = ref('')
+
 const tools = computed(() => server.value?.tools ?? [])
 const laneTools = computed(() =>
   tools.value.filter((item) => item.name !== 'akshare_call' && !item.name.startsWith('ak_')),
@@ -23,6 +26,20 @@ const laneTools = computed(() =>
 const akshareTools = computed(() =>
   tools.value.filter((item) => item.name === 'akshare_call' || item.name.startsWith('ak_')),
 )
+
+function match(list: McpServer['tools'], keyword: string): McpServer['tools'] {
+  const key = keyword.trim().toLowerCase()
+  if (!key) return list
+  return list.filter((item) => `${item.name} ${item.description ?? ''}`.toLowerCase().includes(key))
+}
+
+const laneShown = computed(() => match(laneTools.value, laneQuery.value))
+const akshareShown = computed(() => match(akshareTools.value, akQuery.value))
+
+/** 清单口径原来是抽屉顶上一整段常驻说明，压进标题旁的 tooltip。 */
+const scopeTip =
+  'AI 技能声明 mcp_servers: [loci-market] 后拿到的就是这份清单：' +
+  '线路工具跟着数据源启停走；AkShare 只挂 akshare_call 一个工具，按名调用目录内任意 stock_*。'
 
 async function load(): Promise<void> {
   const version = ++loadVersion
@@ -60,25 +77,41 @@ onUnmounted(() => {
     <template #header="{ titleId, titleClass }">
       <div class="mcp-head">
         <h4 :id="titleId" :class="titleClass">MCP 工具清单</h4>
-        <code>{{ BUILTIN_NAME }}</code>
+        <el-tooltip :content="scopeTip" placement="bottom-start">
+          <code>{{ BUILTIN_NAME }}</code>
+        </el-tooltip>
       </div>
     </template>
-
-    <p class="mcp-note">
-      AI 技能声明 <code>mcp_servers: [loci-market]</code> 后拿到的就是这份清单：
-      线路工具跟着数据源启停走；AkShare 通过单一工具 <code>akshare_call</code> 按名调用目录内任意
-      <code>stock_*</code>（不再逐接口上桌）。
-    </p>
 
     <el-alert v-if="error" :title="error" type="warning" show-icon :closable="false" class="mcp-alert" />
 
     <el-skeleton v-if="loading && !tools.length" :rows="4" animated />
     <template v-else>
+      <!-- 两块并列清单要区分，标题保留；但压成一行：标题 + 计数 + 本块筛选控件同行 -->
       <section class="mcp-group">
-        <h5>线路工具 <b>{{ laneTools.length }}</b></h5>
-        <el-empty v-if="!laneTools.length" description="所有取数线路都被停用了" :image-size="56" />
+        <header class="mcp-group__head">
+          <h5 class="mcp-group__title">
+            线路工具 <b>{{ laneShown.length }}</b>
+            <span v-if="laneShown.length !== laneTools.length" class="mcp-group__total">
+              / {{ laneTools.length }}
+            </span>
+          </h5>
+          <el-input
+            v-model="laneQuery"
+            class="mcp-group__filter"
+            size="small"
+            clearable
+            placeholder="筛线路工具"
+            aria-label="筛选线路工具"
+          />
+        </header>
+        <el-empty
+          v-if="!laneShown.length"
+          :description="laneTools.length ? '没有匹配的工具' : '所有取数线路都被停用了'"
+          :image-size="56"
+        />
         <ul v-else class="mcp-list">
-          <li v-for="item in laneTools" :key="item.name">
+          <li v-for="item in laneShown" :key="item.name">
             <code>{{ item.name }}</code>
             <span>{{ item.description }}</span>
           </li>
@@ -86,14 +119,29 @@ onUnmounted(() => {
       </section>
 
       <section class="mcp-group">
-        <h5>AkShare 接口 <b>{{ akshareTools.length }}</b></h5>
+        <header class="mcp-group__head">
+          <h5 class="mcp-group__title">
+            AkShare 接口 <b>{{ akshareShown.length }}</b>
+            <span v-if="akshareShown.length !== akshareTools.length" class="mcp-group__total">
+              / {{ akshareTools.length }}
+            </span>
+          </h5>
+          <el-input
+            v-model="akQuery"
+            class="mcp-group__filter"
+            size="small"
+            clearable
+            placeholder="筛 AkShare 工具"
+            aria-label="筛选 AkShare 工具"
+          />
+        </header>
         <el-empty
-          v-if="!akshareTools.length"
-          description="未挂载 akshare_call（检查内置 MCP）"
+          v-if="!akshareShown.length"
+          :description="akshareTools.length ? '没有匹配的工具' : '未挂载 akshare_call（检查内置 MCP）'"
           :image-size="56"
         />
         <ul v-else class="mcp-list">
-          <li v-for="item in akshareTools" :key="item.name">
+          <li v-for="item in akshareShown" :key="item.name">
             <code>{{ item.name }}</code>
             <span>{{ item.description }}</span>
           </li>
@@ -120,17 +168,7 @@ onUnmounted(() => {
 .mcp-head code {
   font: 0.76rem var(--mono);
   color: var(--mist);
-}
-
-.mcp-note {
-  margin: 0 0 0.7rem;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-.mcp-note code {
-  font: 0.76rem var(--mono);
+  cursor: help;
 }
 
 .mcp-alert {
@@ -141,16 +179,36 @@ onUnmounted(() => {
   margin-bottom: 0.9rem;
 }
 
-.mcp-group h5 {
-  margin: 0 0 0.4rem;
-  font-family: var(--font-display);
-  font-size: 0.92rem;
+/* 标题不独占一行：计数与本块筛选框都挂在同一条功能行上 */
+.mcp-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  min-width: 0;
 }
 
-.mcp-group h5 b {
+.mcp-group__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.mcp-group__title b {
   margin-left: 0.25rem;
   font: 650 0.9rem var(--mono);
   color: var(--ink);
+}
+
+.mcp-group__total {
+  font: 0.78rem var(--mono);
+  color: var(--mist);
+}
+
+.mcp-group__filter {
+  max-width: 13rem;
 }
 
 .mcp-list {

@@ -66,27 +66,20 @@ def test_retire_removes_cabin_jobs_and_pool(tmp_path: Path) -> None:
     assert out["removed_skill"] is True
 
 
-def test_retire_keeps_second_wave_jobs(tmp_path: Path) -> None:
+def test_retire_keeps_other_strategy_jobs(tmp_path: Path) -> None:
+    """退役清理只能删自己那条：同族战法的监测任务名也带「龙回头」，不许误伤。"""
     with OpsStore(tmp_path / "ops.db") as store:
         store.create_job(
-            name="监测·二波监测",
+            name="监测·龙头地图",
             kind="skill_watch",
             cron="*/10 9-14 * * mon-fri",
-            config={"skill": "dragon-second-wave"},
-            enabled=True,
-        )
-        store.create_job(
-            name="龙回头·二波监测",
-            kind="skill_watch",
-            cron="*/10 9-14 * * mon-fri",
-            config={"skill": "dragon-second-wave"},
+            config={"skill": "market-leader-map"},
             enabled=True,
         )
         with patch("src.ops.application.skills.uninstall_skill", return_value=False):
             retire_dragon_return(store)
 
-        assert store.get_job_by_name("监测·二波监测") is not None
-        assert store.get_job_by_name("龙回头·二波监测") is not None
+        assert store.get_job_by_name("监测·龙头地图") is not None
 
 
 def test_retire_is_idempotent(tmp_path: Path) -> None:

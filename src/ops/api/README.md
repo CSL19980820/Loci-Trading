@@ -20,15 +20,12 @@
 **只读**——不写纸面舱、不推送、不调 LLM；悟道不可用时返回 `skipped/reason=mcp_unavailable`，不消耗配额。
 （`role_history` 段开启时仍会追加角色留痕，那是观测事实不是交易动作。）
 
-二波监测首页快照：`GET /api/skills/dragon-second-wave/second-wave` 返回上一轮扫描
-（池/触发/宽度/名单）并给列表票叠当日现价。不重跑扫描。其它 slug → 404。
-达标观察票只上首页，不刷企微（`push_only_when_actionable` 把仅观察当无信号）。
-
 龙头角色留痕：`GET /api/skills/{slug}/leader-roles?code=&trade_date=&limit=` 回 `history` 与 `transitions`
 （角色变化）。只追加的观测流，可整表清空重建。
 
 挂载：
-- `src.ops.api.jobs.build_jobs_router`（含 `GET /api/jobs/runs`、`POST /api/jobs/runs/batch-delete`、`GET /api/jobs/schedule`：未启调度器时仍按 cron 推算 `next_run_at`）
+- `src.ops.api.jobs.build_jobs_router`（含 `GET /api/jobs/runs`、`POST /api/jobs/runs/batch-delete`、`GET /api/jobs/schedule`：未启调度器时仍按 cron 推算 `next_run_at`；`GET /api/jobs/quota`：自建任务额度 `{used, limit, unlimited, managed}`）
+  - **写口三道闸门**（`create` / `update` / `trigger`）：非主租户拒绝系统级 kind（403）、cron 不得快于 5 分钟一档（422）、自建条数超 `job_slots` 拒绝（429）。主租户行为不变。理由见 `src/ops/README.md` 的「并发与配额」
 - `src.ops.api.skills.build_skills_router`
 - `src.ops.api.settings.build_ops_settings_router`（lanes / 数据目录 / 桌面偏好 / 企微 / 通知策略 / 行情同步 / 版本 / 一键打包 / 纸面量化）
 

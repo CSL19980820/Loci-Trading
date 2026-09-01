@@ -27,6 +27,15 @@ _DATE_REQUIRED = _WUDAO_DATE_ARG_BY_TOOL
 #: 取近一个月窗口才有胜率意义。
 _PREMIUM_WINDOW_DAYS = 30
 
+#: unlock_events 默认窗口是「近 30 天 ~ 未来 365 天」，一年的解禁全塞进来只会把
+#: 排雷信号淹掉。收盘档只要「未来一个月」这一段：短线关心的是马上要砸下来的
+#: 那批限售股，更远的等它走近了再采。
+_UNLOCK_WINDOW_DAYS = 30
+
+#: 两融回看窗口（自然日）。两融是 T+1 数据，收盘档问当天必空；七天足够跨过周末与
+#: 小长假，取最新一天由 `brief._margin` 负责。
+_MARGIN_WINDOW_DAYS = 7
+
 #: 盘中题材扇出上限。盘中题材榜单十几分钟内不会翻天：top 40 与 top 120 对决策的
 #: 差别，远小于每天多打 (120-40)×轮数 ≈ 1900 次、把 structured 池打穿的代价。
 #: open / close 仍用完整 ``theme_top_n``——开盘与收盘的截面才是复盘要用的那两张。
@@ -115,12 +124,25 @@ def _resolve_trade_date(trade_date: str | None) -> str:
 def _with_dates(tool: str, args: dict[str, Any], trade_date: str) -> dict[str, Any]:
     """补齐 schema 必填的日期；调用方已显式给过就不覆盖。"""
     out = dict(args)
+    if tool == "margin_trading":
+        # 两融是 **T+1 才发布**的数据：拿 15:40 收盘档去问当天，服务端返回「融资融券汇总」
+        # 但一行都没有（线上实测过）。所以给一个七天窗口，由消费侧
+        # （`brief._margin`）取窗口里最新那一天——周一与节后也不会落到没有数据的日子上。
+        # schema 明写 `tradeDate` 与 `startDate`/`endDate` **二选一**，所以这里直接 return，
+        # 不再走下面补 `tradeDate` 的那一步。
+        out.setdefault("endDate", trade_date)
+        out.setdefault("startDate", _shift_days(trade_date, -_MARGIN_WINDOW_DAYS))
+        return out
     date_key = _DATE_REQUIRED.get(tool)
     if date_key:
         out.setdefault(date_key, trade_date)
     if tool == "limit_up_premium":
         out.setdefault("endDate", trade_date)
         out.setdefault("startDate", _shift_days(trade_date, -_PREMIUM_WINDOW_DAYS))
+    if tool == "unlock_events":
+        # 它不收 tradeDate/date（实测被拒，见 wudao_keys.DATELESS_TOOLS），只认区间。
+        out.setdefault("startDate", trade_date)
+        out.setdefault("endDate", _shift_days(trade_date, _UNLOCK_WINDOW_DAYS))
     return out
 
 
@@ -145,6 +167,15 @@ _STATIC_OPEN: list[tuple[str, dict[str, Any]]] = [
     # 同花顺单平台榜与上面的综合榜并存：热度尾盘战法要的是两榜交集，且 MCP 不返回
     # hot_rank_chg，只能靠 open / close 两档快照差分算注意力增量。见 ADR-011 决策 3、4。
     ("smart_hotlist", {"limit": 50, "platform": "ths"}),
+    # 竞价题材强度：把全市场竞价数据按开盘啦题材聚合，回答「今天竞价资金打哪条
+    # 主线」。**必须 summary 档**：standard 档正文默认吐 JSON 明细，实测单次载荷
+    # 63KB（summary 5KB），每天一张快照进 intel_snapshots，不值这个体积；明细
+    # 要看时由助手临机点调。9:25 前调会返回 AUCTION_DATA_NOT_READY，本档 9:26 跑。
+    ("auction_theme_strength", {"limit": 12, "detailLevel": "summary"}),
+    # 短线催化日历：未来两周的政策会议/行业大会/指数调整/经济数据。盘前排雷用，
+    # 一天一张就够。**不传 country**：服务端过滤值对不上就是静默 0 行，行里本来
+    # 就带 country 字段，按「中国」筛在消费侧做（brief）。
+    ("market_catalyst_calendar", {"limit": 60}),
     ("cls_news", {"limit": 40}),
 ]
 
@@ -166,6 +197,20 @@ _STATIC_CLOSE: list[tuple[str, dict[str, Any]]] = [
     ("limit_up_premium", {}),
     ("limit_event_summary", {}),
     ("dragon_tiger", {}),
+    # 断板分析：昨涨停 × 今日的交叉面板（断板率 / 断板平均涨跌 / 高标杀名单 /
+    # sentimentSignal=cooling|neutral|warming）。这是短线复盘最缺的那张表——本地
+    # 日 K 能算「有没有涨停」，算不出「昨天的涨停今天活着几只」。focus=all 一次
+    # 拿续板与断板两侧，省一次调用。
+    ("board_break_analysis", {"focus": "all", "limit": 80}),
+    # 跌停池：权威跌停口径 + stats 里今日/昨日封板率与炸板数。情绪段此前只能靠
+    # short_term_emotion 的 sealedLimitDown 兜底，缺跌停原因与负反馈明细。
+    ("limit_down", {}),
+    # 两融汇总：不传 code = 交易所汇总（SSE/SZSE/BSE 三行）。杠杆资金是「谁在
+    # 加/减杠杆」这一层，本地库完全没有。**注意**：返回的 `latest` 只是第一行
+    # （实测是 BSE），全市场余额要把三行加起来，别拿 latest 当全市场。
+    ("margin_trading", {}),
+    # 限售解禁：未来一个月（区间在 `_with_dates` 里补）。盘前/盘后排雷，本地无源。
+    ("unlock_events", {"limit": 60}),
     ("theme_intraday_capital", {"limit": 100, "includeBoomReason": True}),
     ("sector_analysis", {"source": "kpl"}),
     ("index_market", {}),

@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref } from 'vue'
 
 import { getDecay, getSkills, getStrategies, getWinRateSummary } from '@/shared/api/quant'
 import { toErrorMessage } from '@/shared/lib/errors'
+import { strategyLabel } from '@/shared/lib/format'
 import type { Skill, StrategyInfo, WinRateSummary } from '@/shared/types/quant'
 
 export type ScreenKind = 'engine' | 'skill'
@@ -24,6 +25,17 @@ export type ScreenCatalogItem = {
   recentWinRate: number | null
   decaySignal: string | null
   lastReviewed: string
+}
+
+/**
+ * 目录名一律中文。这里是选股工作台的唯一名字源头：左栏 rail、历史弹窗标题、
+ * 底坞都吃它。后端 `name` 缺失、或它本身就是 slug 形状（`sanyuan-tail-v1`）时
+ * 退回共享词表（含拼音词根兜底），界面上不会再冒出英文编码。
+ */
+function cnName(name: string | null | undefined, slug: string): string {
+  const text = String(name || '').trim()
+  if (text && !/^[a-z0-9][a-z0-9._-]*$/.test(text)) return text
+  return strategyLabel(slug || text)
 }
 
 function matchSummary(
@@ -115,7 +127,7 @@ export function useScreenCatalog() {
           id: `engine:${s.slug}`,
           kind: 'engine',
           slug: s.slug,
-          name: s.name,
+          name: cnName(s.name, s.slug),
           description: s.description || '',
           enabled: true,
           entryTiming: s.entry_timing,
@@ -136,7 +148,7 @@ export function useScreenCatalog() {
           id: `skill:${sk.slug}`,
           kind: 'skill',
           slug: sk.slug,
-          name: sk.name,
+          name: cnName(sk.name, sk.slug),
           description: sk.description || '',
           enabled: sk.enabled !== false,
           winRate: wr?.win_rate ?? null,

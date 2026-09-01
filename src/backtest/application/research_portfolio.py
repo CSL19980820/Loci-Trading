@@ -16,7 +16,13 @@ from datetime import date
 from math import floor, isfinite
 from typing import Any, Iterable, Sequence
 
-from src.backtest.application.engine import Trade, compute_metrics
+from src.backtest.application.engine import Trade
+from src.backtest.application.research_portfolio_marks import (
+    assert_cash_conservation,
+    drawdown_pct,
+    equity_assumption,
+    mae_floor_value,
+)
 from src.shared.jsonify import jsonable as _jsonable
 
 
@@ -96,6 +102,9 @@ class PortfolioAllocation:
     gross_return_pct: float
     net_return_pct: float
     turnover_notional: float
+    #: 该笔在持有期内的最不利偏移（负数百分比）。只用于算保守盯市下界，
+    #: 不参与现金结算——现金一律按 net_return_pct 结。
+    mae_pct: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         body = asdict(self)
@@ -106,6 +115,7 @@ class PortfolioAllocation:
             "gross_return_pct",
             "net_return_pct",
             "turnover_notional",
+            "mae_pct",
         ):
             body[key] = _round(body[key])
         return body
@@ -281,6 +291,9 @@ def analyze_portfolio(
     cash = float(cfg.initial_capital)
     daily: list[PortfolioDay] = []
     equity_curve: list[float] = [cash]
+    # 保守盯市下界：持仓期内假设每笔都落在自己的 MAE 最差点。真实回撤的上界，
+    # 不是真实路径——见 research_portfolio_marks 模块 docstring。
+    floor_curve: list[float] = [cash]
     for day in dates:
         # 退出日当天不能在开盘前释放槽位；只释放更早已经结算的持仓。
         for slot, allocation in list(occupied.items()):
@@ -337,6 +350,7 @@ def analyze_portfolio(
                 gross_return_pct=float(trade.gross_return_pct),
                 net_return_pct=float(trade.net_return_pct),
                 turnover_notional=entry_notional + exit_notional,
+                mae_pct=float(getattr(trade, "mae_pct", 0.0) or 0.0),
             )
             if allocation.exit_date < day:
                 skipped["退出日在入场日前"] += 1
@@ -366,6 +380,9 @@ def analyze_portfolio(
             del occupied[allocation.slot]
         equity = cash + sum(item.entry_notional for item in occupied.values())
         equity_curve.append(equity)
+        floor_curve.append(
+            mae_floor_value(cash, [(i.entry_notional, i.mae_pct) for i in occupied.values()])
+        )
         daily.append(
             PortfolioDay(
                 date=day,
@@ -394,12 +411,15 @@ def analyze_portfolio(
     turnover_total = sum(item.turnover_notional for item in accepted)
     util_values = [item.capital_in_use / initial * 100.0 for item in daily]
     idle_values = [item.idle_cash / initial * 100.0 for item in daily]
-    peak = initial
-    max_drawdown = 0.0
-    for value in equity_curve:
-        peak = max(peak, value)
-        if peak > 0:
-            max_drawdown = min(max_drawdown, (value / peak - 1.0) * 100.0)
+    # 现金守恒（不变式 I1）：期末所有持仓都已结算回现金，权益必须等于
+    # 初始资金 + 全部已实现盈亏。破了说明槽位释放或退出结算漏了一处。
+    assert_cash_conservation(
+        initial_capital=initial,
+        final_equity=final_equity,
+        realized_pnl_total=sum(item.pnl for item in accepted),
+    )
+    max_drawdown = drawdown_pct(equity_curve, peak_floor=initial)
+    mae_bound_drawdown = drawdown_pct(floor_curve, peak_floor=initial)
     capital_days = sum(item.capital_in_use for item in daily)
     idle_days = sum(1 for item in daily if item.idle_cash > 1e-8)
     metrics = {
@@ -423,6 +443,11 @@ def analyze_portfolio(
         "idle_cash_pct": _round(idle_days / len(daily) * 100.0 if daily else 100.0, 4),
         "avg_idle_cash_pct": _round(sum(idle_values) / len(idle_values) if idle_values else 100.0, 4),
         "max_drawdown_pct": _round(max_drawdown, 4),
+        "mae_bound_max_drawdown_pct": _round(mae_bound_drawdown, 4),
+        "assumption": equity_assumption(
+            max_drawdown_pct=_round(max_drawdown, 4),
+            mae_bound_pct=_round(mae_bound_drawdown, 4),
+        ),
         "exit_reasons": _count_allocations_by_reason(accepted, candidates),
     }
     segments = _build_segments(accepted, daily, cfg, initial)

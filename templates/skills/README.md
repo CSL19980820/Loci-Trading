@@ -6,7 +6,7 @@
 
 | 类型 | 识别 | 例子 | 运行方式 |
 |---|---|---|---|
-| **专属战法** | `strategy_skill: true` / `signal_engine` / `signals` | `dragon-second-wave`、`market-leader-map`、`limit-up-momentum` | 工坊战法配置 → 盘后选股 + 盘中监测双 Job。`dragon-return` 纸面舱已退役，模板同步会跳过 |
+| **专属战法** | `strategy_skill: true` / `signal_engine` / `signals` | `market-leader-map`、`limit-up-momentum` | 工坊战法配置 → 盘后选股 + 盘中监测双 Job。`dragon-return` 纸面舱已退役，模板同步会跳过 |
 | **Agent 技能** | 普通 SKILL（无上述战法键） | 暂无内置模板 | 对话 Skill Run，或运维里建 `kind=skill` 任务 |
 
 ## 约定：Skill 不写调度
@@ -38,10 +38,13 @@ python -c "from src.ops.application.skills import sync_skills_from_templates; pr
 
 打包/便携版从包内 `templates/skills` 解析（与 `PROJECT_ROOT` 一致）。
 
+部署产物必须带上 `templates/`：容器镜像的 `COPY templates`、发布包的
+`Copy-Tree templates`、PyInstaller 的 `loci.spec` 三处都已包含，别在瘦身时删掉。
+
 ### 单包安装
 
 ```powershell
-python -c "from src.ops.application.skills import install_skill_dir; print(install_skill_dir('templates/skills/dragon-second-wave'))"
+python -c "from src.ops.application.skills import install_skill_dir; print(install_skill_dir('templates/skills/market-leader-map'))"
 ```
 
 ## 启用战法

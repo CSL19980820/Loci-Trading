@@ -27,7 +27,12 @@ function logicErr(index: number, id: string, part: string): string {
 </script>
 
 <template>
-  <Sheet title="策略与逻辑" padded margin>
+  <!--
+    不留块标题：策略 / 数据 / 参数 / 资料这四块是 PageTabs 的互斥分区，
+    高亮的那枚 tab 已经把「你在哪一块」交代完了，Sheet 再印一遍标题只是白占
+    一行（用户原话：毫无意义的标题还丑）。Sheet 只留边框与内边距。
+  -->
+  <Sheet padded margin>
     <div class="meta-grid">
       <el-form-item label="标识" required :error="err('slug')">
         <el-input
@@ -84,10 +89,10 @@ function logicErr(index: number, id: string, part: string): string {
     </el-form-item>
 
     <div class="section-head">
-      <div>
-        <strong>逻辑卡片</strong>
-        <div class="dim">每条逻辑单独记录表达式、解释与引用编号。</div>
-      </div>
+      <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
+      <el-tooltip placement="bottom-start" content="每条逻辑单独记录表达式、解释与引用编号">
+        <strong class="section-head__title">逻辑卡片</strong>
+      </el-tooltip>
       <el-button size="small" @click="emit('addLogic')">新增逻辑</el-button>
     </div>
 
@@ -175,9 +180,16 @@ function logicErr(index: number, id: string, part: string): string {
   border-color: var(--el-color-danger);
 }
 
-.dim {
-  color: var(--mist);
-  font-size: 0.82rem;
+/* 小节标题压成一行：标题与它的操作按钮同高同行，不再是标题一行、介绍一行 */
+.section-head {
+  margin-bottom: var(--gap-2);
+}
+
+.section-head__title {
+  font-size: var(--fs-title);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: help;
 }
 
 @media (max-width: 640px) {

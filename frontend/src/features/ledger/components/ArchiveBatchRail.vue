@@ -65,7 +65,7 @@ const dockLabel = computed(() => (props.dockOpen ? '收起本批' : '本批'))
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem 0.5rem;
+  gap: var(--gap-1) var(--gap-2);
   flex-shrink: 0;
   margin-left: auto;
 }
@@ -73,8 +73,8 @@ const dockLabel = computed(() => (props.dockOpen ? '收起本批' : '本批'))
 .batch-rail__stepper {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
-  padding: 0.12rem 0.28rem;
+  gap: var(--gap-1);
+  padding: 0 var(--gap-1);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--sheet);
@@ -83,19 +83,20 @@ const dockLabel = computed(() => (props.dockOpen ? '收起本批' : '本批'))
 .batch-rail__pos {
   min-width: 2.6rem;
   text-align: center;
-  font-size: 0.78rem;
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   font-weight: 600;
 }
 
 .batch-rail__chip {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   font-weight: 600;
   color: var(--ink);
-  padding: 0.12rem 0.4rem;
+  padding: 0 var(--gap-1);
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--sheet);
   font-variant-numeric: tabular-nums;
   cursor: default;

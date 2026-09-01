@@ -19,5 +19,7 @@ import 'element-plus/dist/index.css'
  * 弹窗默认 top 见 style.css（`--el-dialog-margin-top: 5vh`）。
  */
 export function setupElement(app: App): void {
-  provideGlobalConfig({ locale: zhCn, size: 'default' }, app, true)
+  // size='small' 是密度提升最省力的一刀：全站控件从 32px 降到 EP small 档，
+  // 高度再由 CSS 的 --el-component-size-small 钉到 --ctl-h(28px)（见 style.base.css）。
+  provideGlobalConfig({ locale: zhCn, size: 'small' }, app, true)
 }

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { CircleCheck } from '@element-plus/icons-vue'
 
 import type { ResearchQuality } from '@/shared/types/quant'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 import type { ResearchDimensionRow } from '../researchTypes'
 
@@ -97,11 +98,11 @@ function sourceText(row: ResearchDimensionRow): string {
           <span>{{ formatValue(values.bars) }} 根样本</span>
         </div>
         <el-table :data="recentRows" size="small" height="250" stripe>
-          <el-table-column prop="trade_date" label="日期" width="112" />
-          <el-table-column prop="close" label="收盘" align="right" />
-          <el-table-column prop="ma20" label="MA20" align="right" />
-          <el-table-column prop="rsi14" label="RSI14" align="right" />
-          <el-table-column prop="macd_hist" label="MACD 柱" align="right" />
+          <el-table-column prop="trade_date" label="日期" width="112" align="center" header-align="center" />
+          <el-table-column prop="close" label="收盘" align="center" header-align="center" />
+          <el-table-column prop="ma20" label="MA20" align="center" header-align="center" />
+          <el-table-column prop="rsi14" label="RSI14" align="center" header-align="center" />
+          <el-table-column prop="macd_hist" label="MACD 柱" align="center" header-align="center" />
         </el-table>
       </div>
     </template>
@@ -115,9 +116,7 @@ function sourceText(row: ResearchDimensionRow): string {
       </div>
     </template>
 
-    <div v-else class="gap-empty">
-      <el-empty description="当前没有可核验事实" :image-size="58" />
-    </div>
+    <EmptyState v-else description="没有可核验事实" reason="换个维度，或重新读取剖面" />
 
     <div v-if="result?.data_gaps.length" class="gap-strip">
       <span class="gap-title">缺口</span>
@@ -145,8 +144,8 @@ function sourceText(row: ResearchDimensionRow): string {
 .research-kicker {
   display: block;
   color: var(--mist);
-  font: 0.68rem/1.2 var(--mono);
-  letter-spacing: 0.08em;
+  font: var(--fs-kicker)/1.2 var(--mono);
+  letter-spacing: .08em;
   text-transform: uppercase;
 }
 
@@ -154,8 +153,8 @@ function sourceText(row: ResearchDimensionRow): string {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.82rem 0.9rem;
+  gap: var(--gap-3);
+  padding: var(--pad-sheet);
   border-bottom: 1px solid var(--rule);
 }
 
@@ -164,29 +163,29 @@ function sourceText(row: ResearchDimensionRow): string {
 }
 
 .detail-head h3 {
-  margin: 0.22rem 0 0;
+  margin: 0;
   color: var(--ink);
-  font-size: 0.98rem;
+  font-size: var(--fs-title);
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: .03em;
 }
 
 .detail-head p {
   max-width: 70ch;
-  margin: 0.28rem 0 0;
+  margin: var(--gap-1) 0 0;
   color: var(--mist);
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   line-height: 1.4;
 }
 
 .detail-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem 1rem;
-  padding: 0.6rem 0.9rem;
+  gap: var(--gap-1) var(--gap-4);
+  padding: var(--gap-2) var(--pad-sheet-x);
   border-bottom: 1px solid var(--rule);
   color: var(--mist);
-  font-size: 0.76rem;
+  font-size: var(--fs-aux);
 }
 
 .detail-meta strong {
@@ -197,9 +196,9 @@ function sourceText(row: ResearchDimensionRow): string {
 .technical-grid,
 .value-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1px;
-  margin: 0.8rem 0.9rem;
+  margin: var(--gap-2) var(--pad-sheet-x);
   border: 1px solid var(--rule);
   background: var(--rule);
 }
@@ -208,45 +207,44 @@ function sourceText(row: ResearchDimensionRow): string {
 .value-cell {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--gap-1);
   min-width: 0;
-  padding: 0.62rem 0.7rem;
+  padding: var(--gap-2) var(--gap-3);
   background: var(--sheet);
 }
 
 .technical-cell span,
 .value-cell span {
   color: var(--mist);
-  font-size: 0.72rem;
+  font-size: var(--fs-aux);
 }
 
+/* D2：最大的字是数字 */
 .technical-cell strong,
 .value-cell strong {
   overflow-wrap: anywhere;
   color: var(--ink);
-  font: 700 0.92rem/1.25 var(--mono);
+  font: 700 var(--fs-hero)/1.25 var(--mono);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
+/* 缺失字段保持空缺：占一行「—」，不补零、也不留空卡 */
 .technical-cell strong.is-null {
   color: var(--mist);
 }
 
 .detail-block {
-  margin: 0 0.9rem 0.8rem;
+  margin: 0 var(--pad-sheet-x) var(--gap-2);
 }
 
 .block-heading {
   display: flex;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.4rem;
+  gap: var(--gap-3);
+  margin-bottom: var(--gap-1);
   color: var(--mist);
-  font-size: 0.76rem;
-}
-
-.gap-empty {
-  padding: 0.5rem 0;
+  font-size: var(--fs-aux);
 }
 
 .gap-strip,
@@ -254,13 +252,15 @@ function sourceText(row: ResearchDimensionRow): string {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.35rem 0.6rem;
-  margin: 0 0.9rem 0.75rem;
-  padding: 0.6rem 0.7rem;
-  border-inline-start: 3px solid var(--seal);
+  gap: var(--gap-1) var(--gap-2);
+  margin: 0 var(--pad-sheet-x) var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  /* 原为 border-inline-start: 3px solid var(--seal)：左竖条改为 1px hairline 外框 */
+  border: 1px solid color-mix(in srgb, var(--seal) 24%, var(--rule));
+  border-radius: var(--radius);
   background: var(--seal-soft);
   color: var(--seal-ink);
-  font-size: 0.76rem;
+  font-size: var(--fs-aux);
   line-height: 1.45;
 }
 
@@ -268,23 +268,18 @@ function sourceText(row: ResearchDimensionRow): string {
   font-weight: 700;
 }
 
+/* 证据已绑定是「完成」而非「下跌」：走品牌靛，不借涨跌色（D1） */
 .evidence-strip {
-  border-inline-start-color: var(--lake);
-  background: var(--lake-soft);
-  color: var(--lake);
+  /* 同上：去掉左竖条，改用中性 hairline 外框 */
+  border-color: var(--rule);
+  background: var(--sheet-alt);
+  color: var(--muted);
 }
 
 .evidence-strip code {
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: var(--fs-aux);
   overflow-wrap: anywhere;
-}
-
-@media (max-width: 560px) {
-  .technical-grid,
-  .value-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 </style>

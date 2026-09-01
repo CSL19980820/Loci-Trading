@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import { InfoFilled, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 
 import { batchDeleteCandidates, deleteCandidate } from '@/shared/api/palace'
 import { getStrategies } from '@/shared/api/quant'
@@ -13,7 +13,6 @@ import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import RecordDialog from '@/shared/components/dialogs/RecordDialog.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
@@ -25,6 +24,9 @@ import type { Candidate } from '@/shared/types/palace'
 import type { StrategyInfo } from '@/shared/types/quant'
 
 import { useCandidatesQuery } from './composables/useCandidatesQuery'
+
+/** 口径不占正文行：只作这条功能行末端的一枚 ⓘ */
+const PAGE_NOTE = '候选为当时快照，不随行情变动'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,7 +65,6 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
     field: 'strategy',
     label: '战法',
     component: 'select',
-    colSpan: 6,
     componentProps: {
       clearable: true,
       filterable: true,
@@ -75,7 +76,6 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
     field: 'decision',
     label: '裁决',
     component: 'select',
-    colSpan: 5,
     componentProps: {
       clearable: true,
       placeholder: '全部',
@@ -90,7 +90,6 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
     field: 'dateRange',
     label: '日期',
     component: 'date-picker',
-    colSpan: 8,
     componentProps: {
       type: 'daterange',
       'value-format': 'YYYY-MM-DD',
@@ -213,6 +212,38 @@ const columns = ref<BasicTableColumn[]>([
 function strategyLabel(slug: string): string {
   if (!slug) return '—'
   return strategyNameBySlug.value.get(slug) || formatStrategyLabel(slug)
+}
+
+/**
+ * 池号形如 `sanyuan-tail-v1@2026-08-20`：拆出 slug 落中文，日期原样留。
+ * 用户要求界面任何位置都不许再出现英文 slug（含这个详情抽屉）。
+ */
+function poolLabel(value: string | null | undefined): string {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '—'
+  const [slug, day] = raw.split('@')
+  const name = strategyLabel(slug)
+  return day ? `${name} · ${day}` : name
+}
+
+/** 写入来源同理：内部编码不外露 */
+const SOURCE_LABELS: Record<string, string> = {
+  'job:screen': '盘后选股任务',
+  'api:screen': '接口选股',
+  'api:screen_today': '盘中选股',
+  'api:screen_backfill': '历史回补',
+  ai_assistant: '助手写入',
+  manual: '手工录入',
+}
+
+function sourceLabel(value: string | null | undefined): string {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '—'
+  if (SOURCE_LABELS[raw]) return SOURCE_LABELS[raw]
+  if (raw.includes('backfill')) return '历史回补'
+  if (raw.startsWith('job:')) return '定时任务'
+  if (raw.startsWith('api:')) return '接口写入'
+  return raw
 }
 
 function decisionType(decision: string): 'info' | 'danger' {
@@ -339,34 +370,47 @@ onMounted(async () => {
 
 <template>
   <div class="page-fill">
-    <PageHeader
-      title="候选池"
-      :count="rows.length ? `共 ${rows.length} 条` : ''"
-      note="选股产出与手动记录的候选；裁决与理由为当时快照，不随行情变动"
-    >
-      <template #stats>
-        <HeaderStat label="精选" :value="decisionCounts.selected" tone="up" />
-        <HeaderStat label="观察" :value="decisionCounts.watching" />
-        <HeaderStat label="落选" :value="decisionCounts.rejected" />
-      </template>
-      <template #actions>
-        <el-button type="primary" :icon="Plus" @click="recordOpen = true">新增</el-button>
-      </template>
-    </PageHeader>
     <PageContainer>
+      <!--
+        页头已删。原来表格上方堆着三条横栏（页头 / 筛选 / 表格工具栏），
+        现在压成这一条：左边筛选，右边「查询 · 重置 · 读数 · 批量删除 · 记一条候选 · ⓘ口径」。
+      -->
       <template #search>
         <div class="pool-search-form">
+          <!--
+            筛选条统一档（shared BasicForm 契约）：columns 栅格 + label-position="left" + 定宽
+            label，换行/退列后各列控件左缘仍对齐。DataQueryView 用同一组参数。
+          -->
           <BasicForm
             ref="basicFormRef"
             v-model="filterModel"
             :schemas="filterSchemas"
-            :col-props="{ span: 6 }"
-            label-width="72px"
+            :columns="3"
+            label-position="left"
+            label-width="5.5em"
+            size="small"
           />
         </div>
         <div class="pool-search-actions">
-          <el-button type="primary" :icon="Search" :loading="!!busy" @click="handleSubmit">查询</el-button>
-          <el-button :icon="RefreshRight" :loading="!!busy" @click="handleReset">重置</el-button>
+          <el-button type="primary" size="small" :icon="Search" :loading="!!busy" @click="handleSubmit">
+            查询
+          </el-button>
+          <el-button size="small" :icon="RefreshRight" :loading="!!busy" @click="handleReset">
+            重置
+          </el-button>
+          <span class="pool-stats">
+            <HeaderStat label="共" :value="rows.length" />
+            <HeaderStat label="精选" :value="decisionCounts.selected" tone="up" />
+            <HeaderStat label="观察" :value="decisionCounts.watching" />
+            <HeaderStat label="落选" :value="decisionCounts.rejected" />
+          </span>
+          <ListToolbar :config="listToolbar" />
+          <el-button type="primary" size="small" :icon="Plus" @click="recordOpen = true">
+            记一条候选
+          </el-button>
+          <el-tooltip :content="PAGE_NOTE" placement="bottom-end" :show-after="200">
+            <el-icon class="pool-note" tabindex="0" :aria-label="PAGE_NOTE"><InfoFilled /></el-icon>
+          </el-tooltip>
         </div>
       </template>
       <template #main>
@@ -386,18 +430,13 @@ onMounted(async () => {
           :data-source="tableRows"
           :pagination="false"
           virtualized
-          :toolbar-config="{ refresh: true, custom: true }"
           :loading="!!busy"
           stripe
           row-key="id"
           empty-text="暂无候选"
           @row-click="openDetail"
           @selection-change="onSelectionChange"
-          @refresh="load"
         >
-          <template #toolbarButtons>
-            <ListToolbar :config="listToolbar" />
-          </template>
           <template #stock="{ row }">
             <StockLink
               :code="String(row.code)"
@@ -437,10 +476,10 @@ onMounted(async () => {
         <EmptyState
           v-else
           description="暂无候选"
-          reason="候选来自选股产出与手动记录；当前筛选下暂无数据"
-          eta="跑一次选股，或用侧栏「记一笔 → 候选」手动写入"
+          reason="当前筛选下没有记录"
+          eta="跑一次选股，或手动写入一条"
         >
-          <el-button type="primary" @click="recordOpen = true">新增</el-button>
+          <el-button type="primary" @click="recordOpen = true">记一条候选</el-button>
         </EmptyState>
       </template>
     </PageContainer>
@@ -459,7 +498,7 @@ onMounted(async () => {
         :column="2"
         border
         size="small"
-        label-width="4.5rem"
+        label-width="var(--form-label-w)"
       >
         <el-descriptions-item label="日期">{{ detail.date }}</el-descriptions-item>
         <el-descriptions-item label="标的">
@@ -474,8 +513,8 @@ onMounted(async () => {
         <el-descriptions-item label="裁决">{{ decisionLabel(detail.decision) }}</el-descriptions-item>
         <el-descriptions-item label="时点">{{ timingLabel(detail.timing) }}</el-descriptions-item>
         <el-descriptions-item label="评分">{{ detail.score ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="池">{{ detail.pool_id }}</el-descriptions-item>
-        <el-descriptions-item label="来源">{{ detail.source }}</el-descriptions-item>
+        <el-descriptions-item label="池">{{ poolLabel(detail.pool_id) }}</el-descriptions-item>
+        <el-descriptions-item label="来源">{{ sourceLabel(detail.source) }}</el-descriptions-item>
         <el-descriptions-item label="理由" :span="2">{{ detail.reason }}</el-descriptions-item>
       </el-descriptions>
       <pre v-if="evidenceText" class="evidence">{{ evidenceText }}</pre>
@@ -495,17 +534,37 @@ onMounted(async () => {
   flex: 1;
   min-width: 0;
 }
-
-/* 与表单末行输入框底对齐：form-item 自带 0.65rem 下间距，这里用同拍 margin 而非 padding 补丁 */
+/* 与表单末行输入框底对齐：form-item 自带 --gap-2 下间距，这里用同拍 margin 而非 padding 补丁 */
 .pool-search-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: var(--gap-2);
   flex-shrink: 0;
   align-self: flex-end;
-  margin-bottom: 0.65rem;
+  margin-bottom: var(--gap-2);
 }
-
+/* 读数并进这一行：不再为「精选/观察/落选」单开一条页头 */
+.pool-stats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-1) var(--gap-3);
+  min-width: 0;
+  align-self: center;
+}
+/* 口径提示：一枚 ⓘ，不占文本宽度 */
+.pool-note {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: var(--fs-aux);
+  color: var(--mist);
+  cursor: help;
+}
+.pool-note:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
 .pool-reason-text {
   display: inline-block;
   max-width: 100%;
@@ -514,37 +573,32 @@ onMounted(async () => {
   white-space: nowrap;
   vertical-align: middle;
 }
-
 .pool-alert {
-  margin: 0.55rem 1rem 0;
+  margin: var(--gap-1) var(--gap-3) 0;
   flex-shrink: 0;
 }
-
 .evidence {
-  margin: 0.75rem 0 0;
-  padding: 0.75rem;
+  margin: var(--gap-2) 0 0;
+  padding: var(--gap-2);
   border-radius: var(--radius);
-  background: var(--panel-2);
-  font: 0.8rem/1.45 var(--mono);
+  background: var(--sheet-alt);
+  font: var(--fs-aux) / 1.45 var(--mono);
   overflow: auto;
   max-height: 16rem;
   white-space: pre-wrap;
   word-break: break-word;
 }
-
 .pool-detail-desc :deep(.el-descriptions__label) {
-  width: 4.5rem;
-  min-width: 4.5rem;
-  max-width: 4.5rem;
+  width: var(--form-label-w);
+  min-width: var(--form-label-w);
+  max-width: var(--form-label-w);
   white-space: nowrap;
   vertical-align: top;
 }
-
 .pool-detail-desc :deep(.el-descriptions__content) {
   min-width: 0;
   word-break: break-word;
 }
-
 :deep(.el-table__row),
 :deep(.el-table-v2__row) {
   cursor: pointer;

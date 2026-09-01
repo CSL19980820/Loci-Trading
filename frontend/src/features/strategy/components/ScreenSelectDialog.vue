@@ -66,7 +66,7 @@ function submit(): void {
     <p class="select-dialog__hint">
       公式：{{ formulaName || '未命名公式' }} · 试跑已通过
     </p>
-    <el-form label-width="5rem" @submit.prevent="submit">
+    <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent="submit">
       <el-form-item label="选股日">
         <el-radio-group v-model="form.mode">
           <el-radio value="single">单日</el-radio>

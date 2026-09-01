@@ -224,3 +224,80 @@ def build_session_status(
         "live_reason": live_reason,
         "in_live_clock": in_live_clock,
     }
+
+
+# ---- 盯盘大屏的时段词表 ----------------------------------------------------
+#
+# 这段存在的理由，是一次「两边各写一半」的契约事故：
+# ``build_session_status`` 只吐闸门（``live_allowed`` / ``in_live_clock``），从来
+# 没有 ``phase`` 与 ``live`` 两个键；而 SSE 前端契约要的正是它们，于是
+# ``session?.phase ?? 'closed'`` 常年兜底成「已收盘」——大屏在连续竞价里也挂着
+# 「已收盘·展示最近快照」，实时看门狗（判 isLive）永远不触发，一屏冻住的数字
+# 没有任何一处告诉用户「这不是实时价」。
+#
+# 所以：**词表只此一份**，后端发什么键，前端 `sessionCopy.PHASE_LABELS` 就认什么键。
+
+#: 09:15 前
+PHASE_PRE_OPEN = "pre_open"
+#: 09:15–09:30 集合竞价（含 09:25–09:30 撮合后待开盘）
+PHASE_PRE_MARKET = "pre_market"
+#: 09:30–11:30
+PHASE_MORNING = "morning"
+#: 11:30–13:00
+PHASE_NOON_BREAK = "noon_break"
+#: 13:00–14:57
+PHASE_AFTERNOON = "afternoon"
+#: 14:57–15:00
+PHASE_CLOSING_AUCTION = "closing_auction"
+#: 15:00 后 / 非交易日
+PHASE_CLOSED = "closed"
+
+#: 「真的在撮合」的相位。只有它们算 ``live``，也只有它们值得全速采集。
+LIVE_PHASES = frozenset(
+  {PHASE_PRE_MARKET, PHASE_MORNING, PHASE_AFTERNOON, PHASE_CLOSING_AUCTION}
+)
+
+
+def board_phase(now: datetime | None = None) -> str:
+    """纯时钟相位；**不判是否交易日**（那是闸门的活，见 ``board_session``）。
+
+    与 ``ops.session_clock()`` 的差别正是大屏需要的两刀：
+    **判午休**（11:30–13:00 → ``noon_break``，session_clock 归 closed，于是
+    12:00 的大屏会自称「已收盘」）、**单切收盘竞价**（14:57–15:00）。
+    """
+    current = now or datetime.now()
+    mins = current.hour * 60 + current.minute
+    if mins < 9 * 60 + 15:
+        return PHASE_PRE_OPEN
+    if mins < 9 * 60 + 30:
+        return PHASE_PRE_MARKET
+    if mins < 11 * 60 + 30:
+        return PHASE_MORNING
+    if mins < 13 * 60:
+        return PHASE_NOON_BREAK
+    if mins < 14 * 60 + 57:
+        return PHASE_AFTERNOON
+    if mins < 15 * 60:
+        return PHASE_CLOSING_AUCTION
+    return PHASE_CLOSED
+
+
+def board_session(
+    session: dict[str, Any] | None,
+    *,
+    phase: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """闸门 dict → 对外会话契约：补上 ``phase`` 与 ``live``。
+
+    非交易日一律 ``closed``：时钟不知道今天是不是交易日，闸门知道。
+    闸门缺失（库读不出来）时退化为「相位照报、live=False」——宁可说保守话，
+    也不要因为读不到 coverage 就把周三上午说成休市。
+    """
+    gate = dict(session or {})
+    resolved = str(phase or board_phase(now))
+    if not bool(gate.get("is_trading_day", True)):
+        resolved = PHASE_CLOSED
+    gate["phase"] = resolved
+    gate["live"] = bool(gate.get("live_allowed")) and resolved in LIVE_PHASES
+    return gate

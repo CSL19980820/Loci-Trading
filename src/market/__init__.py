@@ -82,6 +82,13 @@ from src.market.infrastructure.store_hot import (
     open_market_hot,
     open_screen_store,
 )
+from src.market.application.screen_live import (
+    ScreenLiveError,
+    fetch_live_spot_bars,
+    in_live_screen_clock,
+    overlay_live_day,
+    should_overlay_live,
+)
 from src.market.application.screen_spot import (
     ScreenSpotError,
     ensure_today_quotes_for_screen,
@@ -148,14 +155,74 @@ from src.market.infrastructure.tape.router import (
 )
 from src.market.infrastructure import sina, tencent
 
+from src.market.application.intraday import (
+    CaptureReport,
+    CaptureSpec,
+    capture_snapshots,
+  default_specs,
+    intraday_status,
+)
+from src.market.infrastructure.intraday_archive import (
+    IntradayArchiveError,
+    describe as describe_intraday,
+    list_days as list_intraday_days,
+    read_manifest as read_intraday_manifest,
+    read_snapshot as read_intraday_snapshot,
+    write_snapshot as write_intraday_snapshot,
+)
+from src.market.infrastructure.intraday_prune import (
+    DEFAULT_RETENTION_DAYS,
+    IntradayPruneError,
+    prune_intraday,
+)
+from src.market.application.reclaim import (
+    RECLAIMABLE_INDEXES,
+    ReclaimReport,
+    reclaim_market_db,
+)
 from src.market.application.data_quality import (
     QualityThresholds,
     inspect_market_data,
 )
 
+# 实时推流与实时信号（大屏纯读路径）。
+from src.market.application.live_bars import LiveBarBook, get_live_bars
+from src.market.application.live_hub import (
+    LiveHub,
+    Snapshot as LiveSnapshot,
+    Subscription as LiveSubscription,
+    get_live_hub,
+)
+from src.market.application.realtime_signals import (
+    RULES as REALTIME_RULES,
+    RealtimeSignalEngine,
+    get_signal_engine,
+)
+from src.market.application.watchlist import (
+    ALL_PRESETS,
+    MAX_PRESET_CODES,
+    WatchlistError,
+    list_watchlist_presets,
+    resolve_preset,
+)
+
 __all__ = [
     "QualityThresholds",
     "inspect_market_data",
+    "ALL_PRESETS",
+    "LiveBarBook",
+    "LiveHub",
+    "LiveSnapshot",
+    "LiveSubscription",
+    "MAX_PRESET_CODES",
+    "REALTIME_RULES",
+    "RealtimeSignalEngine",
+    "WatchlistError",
+    "get_live_bars",
+    "get_live_hub",
+    "get_signal_engine",
+    "list_watchlist_presets",
+    "resolve_preset",
     "ALL_LANES",
     "AdapterError",
     "AdapterMeta",
@@ -210,13 +277,35 @@ __all__ = [
     "adapters_for_lane",
     "all_adapters",
     "MarketWriteBusy",
+    "ScreenLiveError",
     "ScreenSpotError",
     "apply_today_spot",
     "ensure_today_quotes_for_screen",
+    "fetch_live_spot_bars",
+    "in_live_screen_clock",
+    "overlay_live_day",
+    "should_overlay_live",
     "market_write_lock",
     "measure_day_coverage",
     "refresh_adjust_factors",
     "backfill_missing_turnover",
+    "CaptureReport",
+    "CaptureSpec",
+    "DEFAULT_RETENTION_DAYS",
+    "IntradayArchiveError",
+    "IntradayPruneError",
+    "capture_snapshots",
+    "default_specs",
+    "describe_intraday",
+    "intraday_status",
+    "list_intraday_days",
+    "prune_intraday",
+    "read_intraday_manifest",
+    "read_intraday_snapshot",
+    "write_intraday_snapshot",
+    "RECLAIMABLE_INDEXES",
+    "ReclaimReport",
+    "reclaim_market_db",
     "catalog_entries",
     "check_akshare_version",
     "check_market_health",

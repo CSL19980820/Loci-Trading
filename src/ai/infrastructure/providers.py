@@ -17,6 +17,7 @@ from src.ai.infrastructure.client import (
     validate as probe_provider,
 )
 from src.ai.infrastructure.crypto import mask_secret
+from src.ai.infrastructure.tenant_db import open_ops_store
 from src.ops import (
     OpsError,
     OpsStore,
@@ -64,10 +65,15 @@ def decode_provider_secret(blob: bytes | memoryview | None, *, aad: str = "") ->
 
 
 def migrate_encrypted_llm_keys(store: OpsStore | None = None) -> int:
-    """清掉非明文的旧 ``encrypted_key``（废弃主密钥密文），迫使运维页重录。"""
+    """清掉非明文的旧 ``encrypted_key``（废弃主密钥密文），迫使运维页重录。
+
+    不传 store 时按**当前租户**开库：``llm_providers`` 是每租户一份，
+    ``OpsStore()`` 的默认库历来是 import 期常量（见 README 审计表），
+    在这里用它等于只迁移了进程启动时那一个人的库。
+    """
     own = False
     if store is None:
-        store = OpsStore()
+        store = open_ops_store()
         own = True
     changed = 0
     try:

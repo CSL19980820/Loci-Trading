@@ -1,76 +1,86 @@
 <script setup lang="ts">
-withDefaults(
+import { computed } from 'vue'
+
+/**
+ * 空态 —— 一行主文案 + 最多一个主操作，整块不超过 96px。
+ *
+ * 旧版是「大插图 + 三行解释 + 96px 图」，在密表页里一块空态比它要解释的表还高。
+ * 规范（docs/ui-spec.md 空态规范）：主文案 ≤14 字讲「为什么空」，`reason` 一行讲
+ * 「下一步」，两者合计 ≤24 字；插图一律不要——空不是异常，不需要一张图来渲染情绪。
+ */
+const props = withDefaults(
   defineProps<{
+    /** 为什么空，≤14 字 */
     description?: string
+    /** 下一步做什么；与 description 合计 ≤24 字，单行显示 */
     reason?: string
+    /** 可选：预计恢复/产出时间，接在 reason 后同一行 */
     eta?: string
+    /** @deprecated 空态不再有插图，保留仅为不破坏存量调用 */
     imageSize?: number
   }>(),
   {
     // 默认值不该是一句可以直接交付的墓碑：调用方应当讲清「这里会出现什么」
     description: '这里还没有记录',
-    imageSize: 96,
   },
 )
+
+const hint = computed(() => {
+  const parts = [props.reason, props.eta ? `预计 ${props.eta}` : ''].filter(Boolean)
+  return parts.join('；')
+})
 </script>
 
 <template>
-  <el-empty :description="description" :image-size="imageSize">
-    <!--
-      不用 EP 自带插图：那张灰蓝色团块落在纸面上像污渍，且不跟主题走。
-      换成一枚空账页——留白处的横线与页面底纹同源，空态因此读作「还没写」而非「坏了」。
-    -->
-    <template #image>
-      <svg class="empty-mark" viewBox="0 0 64 64" role="img" aria-hidden="true" focusable="false">
-        <rect
-          x="12.5"
-          y="6.5"
-          width="39"
-          height="51"
-          rx="3"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-        />
-        <g stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.55">
-          <line x1="20" y1="21" x2="44" y2="21" />
-          <line x1="20" y1="30" x2="44" y2="30" />
-          <line x1="20" y1="39" x2="36" y2="39" />
-        </g>
-        <rect class="empty-mark__seal" x="36" y="44" width="8" height="8" rx="1.5" />
-      </svg>
-    </template>
-    <template v-if="reason || eta || $slots.default" #default>
-      <p v-if="reason" class="empty-reason">{{ reason }}</p>
-      <p v-if="eta" class="empty-eta">预计：{{ eta }}</p>
+  <div class="empty-state">
+    <p class="empty-state__main">{{ description }}</p>
+    <p v-if="hint" class="empty-state__hint" :title="hint">{{ hint }}</p>
+    <div v-if="$slots.default" class="empty-state__act">
       <slot />
-    </template>
-  </el-empty>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.empty-mark {
-  width: 100%;
-  height: 100%;
-  color: var(--rule);
+/*
+ * 不用 el-empty：它自带插图槽与 40px 上下留白，收到 96px 以内要逐条对抗它的默认值，
+ * 收完也只剩三个纯文本节点——那就直接三个节点。交互仍由调用方传 el-button。
+ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-1);
+  max-height: 96px;
+  padding: var(--gap-3) var(--gap-2);
+  overflow: hidden;
+  text-align: center;
 }
 
-.empty-mark__seal {
-  fill: var(--seal);
-  opacity: 0.32;
+.empty-state__main {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
-.empty-reason {
-  margin: 0 0 0.35rem;
+.empty-state__hint {
+  margin: 0;
+  max-width: 48ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-aux);
+  line-height: 1.4;
   color: var(--mist);
-  font-size: 0.875rem;
-  line-height: 1.5;
 }
 
-.empty-eta {
-  margin: 0 0 0.75rem;
-  color: var(--dim);
-  font-size: 0.8125rem;
-  line-height: 1.45;
+.empty-state__act {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin-top: 1px;
 }
 </style>

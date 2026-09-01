@@ -1,18 +1,23 @@
 <script setup lang="ts">
 /**
- * 定时任务右侧详情：元信息 + 当前任务最近执行。
+ * 定时任务右侧详情：元信息 + 就地改时点 + 当前任务最近执行。
+ *
+ * 绑定任务（`screen:` / `skill:`）在这里**不再只读**：改时点与启停走的是和本机
+ * 任务同一个 `PATCH /api/jobs/{id}`。要跳去工坊的只剩战法专属配置（股票池、
+ * top_n、AI 精选等）——那些确实长在战法那边。
  */
 import { computed, ref } from 'vue'
 
 import type { Job } from '@/shared/types/quant'
 
 import JobRecentRunsPanel from './JobRecentRunsPanel.vue'
+import JobScheduleInline from './JobScheduleInline.vue'
 import {
   isBoundManagedJob,
   isSkillBoundJob,
   jobOriginLabel,
 } from '../composables/jobOwnership'
-import { kindLabel, statusLabel } from '../composables/opsLabels'
+import { jobHealth, jobHealthLabel, kindLabel, statusLabel } from '../composables/opsLabels'
 
 const props = defineProps<{
   job: Job
@@ -30,56 +35,61 @@ const emit = defineEmits<{
   toggle: []
   drop: []
   goBound: []
+  saveSchedule: [payload: { cron: string; config: Record<string, unknown> }]
 }>()
 
 const runsRef = ref<InstanceType<typeof JobRecentRunsPanel> | null>(null)
 const bound = computed(() => isBoundManagedJob(props.job))
+const health = computed(() => jobHealth(props.job))
 
 async function reloadRuns(): Promise<void> {
   await runsRef.value?.reload()
 }
 
-defineExpose({ reloadRuns })
+/** 回执上的「上次失败 N」一路点到这里：直接摊开最近一条失败的全文。 */
+async function focusLatestFailure(): Promise<void> {
+  await runsRef.value?.focusLatestFailure()
+}
+
+defineExpose({ reloadRuns, focusLatestFailure })
 </script>
 
 <template>
   <section class="job-detail">
+    <!--
+      标题与那排标签原来是上下两行。合成一行：标题 + 类型/来源/停用 chip + 操作按钮。
+      原先跟在下面的常驻 info 提示条也删了——它讲的是「其余配置去哪改」，
+      已经挂到那颗「去工坊/去技能改配置」按钮的 tooltip 上。
+    -->
     <header class="job-detail__head">
-      <div>
-        <h3>{{ title }}</h3>
-        <p class="job-detail__sub">
-          <el-tag size="small" effect="plain">{{ kindLabel(job.kind) }}</el-tag>
-          <el-tag
-            size="small"
-            effect="light"
-            :type="bound ? 'info' : 'danger'"
-            class="ml"
-          >
-            {{ jobOriginLabel(job) }}
-          </el-tag>
-          <el-tag
-            v-if="!job.enabled"
-            size="small"
-            type="info"
-            effect="light"
-            class="ml"
-          >
-            停用
-          </el-tag>
-        </p>
-      </div>
+      <h3 class="job-detail__title">{{ title }}</h3>
+      <el-tag size="small" effect="plain">{{ kindLabel(job.kind) }}</el-tag>
+      <el-tag size="small" effect="light" :type="bound ? 'info' : 'danger'">
+        {{ jobOriginLabel(job) }}
+      </el-tag>
+      <el-tag v-if="!job.enabled" size="small" type="info" effect="light">停用</el-tag>
       <div class="job-detail__actions">
         <el-button :disabled="busy" @click="emit('fire')">立即执行</el-button>
+        <!-- 启停对绑定任务同样开放：它和改时点是同一件事的两半 -->
+        <el-button :disabled="busy" @click="emit('toggle')">
+          {{ job.enabled ? '停用' : '启用' }}
+        </el-button>
         <template v-if="bound">
-          <el-button type="primary" plain @click="emit('goBound')">
-            {{ isSkillBoundJob(job) ? '去技能改' : '去战法改' }}
-          </el-button>
+          <el-tooltip
+            placement="top-end"
+            :content="
+              isSkillBoundJob(job)
+                ? '时点与启停在这里改；其余配置在技能详情'
+                : '时点与启停在这里改；其余配置在工坊'
+            "
+          >
+            <el-button plain :disabled="busy" @click="emit('goBound')">
+              {{ isSkillBoundJob(job) ? '去技能改配置' : '去工坊改配置' }}
+            </el-button>
+          </el-tooltip>
         </template>
         <template v-else>
           <el-button :disabled="busy" @click="emit('edit')">编辑</el-button>
-          <el-button :disabled="busy" @click="emit('toggle')">
-            {{ job.enabled ? '停用' : '启用' }}
-          </el-button>
           <el-button type="danger" plain :disabled="busy" @click="emit('drop')">
             删除
           </el-button>
@@ -87,17 +97,11 @@ defineExpose({ reloadRuns })
       </div>
     </header>
 
-    <el-alert
-      v-if="bound"
-      type="info"
-      :closable="false"
-      show-icon
-      :title="
-        isSkillBoundJob(job)
-          ? '技能绑定：在此只读。改定时 / 推送请到技能详情。'
-          : '战法绑定：在此只读。改定时 / 推送请到战法配置弹窗。'
-      "
-      class="job-detail__hint"
+    <JobScheduleInline
+      :key="job.id"
+      :job="job"
+      :busy="busy"
+      @save="(payload) => emit('saveSchedule', payload)"
     />
 
     <el-descriptions :column="2" border class="job-detail__desc">
@@ -106,21 +110,25 @@ defineExpose({ reloadRuns })
         <span class="mono">{{ job.cron || '—' }}</span>
       </el-descriptions-item>
       <el-descriptions-item label="下次触发">
-        <span class="mono">{{ nextRunText }}</span>
+        <el-tooltip
+          v-if="bound"
+          placement="top-start"
+          content="托管任务默认时点按账号错峰（选股 15:30~15:44、情报 15:40~15:54、候选跟踪 15:45~15:59），不同账号分钟不同属正常"
+        >
+          <span class="mono">{{ nextRunText }}</span>
+        </el-tooltip>
+        <span v-else class="mono">{{ nextRunText }}</span>
       </el-descriptions-item>
       <el-descriptions-item label="上次">
+        <span class="job-detail__dot" :class="`job-detail__dot--${health}`" aria-hidden="true" />
         <el-tag
           size="small"
           effect="light"
           :type="
-            job.last_status === 'failed'
-              ? 'danger'
-              : job.last_status === 'success'
-                ? 'success'
-                : 'info'
+            health === 'failed' ? 'danger' : health === 'ok' ? 'success' : 'info'
           "
         >
-          {{ statusLabel(job.last_status) }}
+          {{ job.last_status ? statusLabel(job.last_status) : jobHealthLabel(health) }}
         </el-tag>
         <span class="mono dim"> {{ job.last_run_at || '—' }}</span>
       </el-descriptions-item>
@@ -152,34 +160,26 @@ defineExpose({ reloadRuns })
   min-height: 0;
   flex: 1 1 auto;
 }
+/* 一行到底：标题 + chip + 按钮；按钮靠右 */
 .job-detail__head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
   flex-wrap: wrap;
   flex-shrink: 0;
 }
-.job-detail__head h3 {
+.job-detail__title {
   margin: 0;
+  margin-right: 0.15rem;
   font-size: 1.25rem;
   font-weight: 600;
-}
-.job-detail__sub {
-  margin: 0.35rem 0 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.25rem;
 }
 .job-detail__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.35rem;
-}
-.job-detail__hint {
-  margin: 0;
-  flex-shrink: 0;
+  margin-left: auto;
 }
 .job-detail__desc {
   width: 100%;
@@ -193,8 +193,31 @@ defineExpose({ reloadRuns })
 .job-detail__desc :deep(.el-descriptions__content) {
   font-size: 0.95rem;
 }
-.ml {
-  margin-left: 0.25rem;
+/* 状态点与左栏同一套语义色，别在两处各挑一个红 */
+.job-detail__dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: var(--rule);
+  vertical-align: middle;
+}
+.job-detail__dot--ok {
+  background: var(--el-color-success);
+}
+.job-detail__dot--failed {
+  background: var(--el-color-danger);
+}
+.job-detail__dot--skipped {
+  background: var(--el-color-warning);
+}
+.job-detail__dot--running {
+  background: var(--info);
+}
+.job-detail__dot--never {
+  background: transparent;
+  border: 1px solid var(--line-2);
 }
 .mono {
   font-family: var(--mono);

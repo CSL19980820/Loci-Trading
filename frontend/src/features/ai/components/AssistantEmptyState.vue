@@ -21,8 +21,8 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
 
 <template>
   <div class="assistant-empty" data-testid="assistant-empty">
-    <div class="assistant-empty__brand" aria-hidden="true">
-      <svg class="assistant-empty__mark" viewBox="0 0 48 48" focusable="false">
+    <div class="assistant-empty__brand">
+      <svg class="assistant-empty__mark" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
         <circle cx="24" cy="24" r="22" fill="var(--ai-disc-face)" />
         <g fill="none" stroke="var(--ai-disc-ribbon)" stroke-linecap="round" stroke-linejoin="round">
           <path stroke-width="2.2" d="M16.5 28.5 C17.8 18.5 24.5 15 29.5 19.5 C34.8 24.2 32.2 33.5 24.5 33.5 C19.5 33.5 16.2 30.8 16.5 28.5 Z" />
@@ -30,10 +30,10 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
         </g>
         <circle cx="24" cy="24" r="2.2" fill="var(--seal)" />
       </svg>
-      <span class="assistant-empty__wordmark">落点</span>
+      <span class="assistant-empty__wordmark" aria-hidden="true">落点</span>
+      <h3 class="assistant-empty__headline">今天想落在哪？</h3>
     </div>
-    <h3 class="assistant-empty__headline">今天想落在哪？</h3>
-    <p class="assistant-empty__sub">点一条范例填入输入框，可再改再发。数字都来自本机工具。</p>
+    <p class="assistant-empty__sub">点一条范例，改完再发</p>
     <ul class="assistant-empty__list" role="list">
       <li v-for="card in prompts" :key="card.id" role="listitem">
         <el-button
@@ -58,8 +58,8 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
-  padding: 1.25rem 0 1.75rem;
+  gap: .55rem;
+  padding: 1rem 0 1.25rem;
   width: 100%;
   box-sizing: border-box;
   text-align: center;
@@ -73,8 +73,8 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
 }
 
 .assistant-empty__mark {
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 2.2rem;
+  height: 2.2rem;
   display: block;
   flex: 0 0 auto;
 }
@@ -88,6 +88,7 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
 
 .assistant-empty__headline {
   margin: 0;
+  /* 原为 padding-left + border-left: 1px solid var(--rule)：纯装饰竖分隔已删，层级交给上方 gap */
   font-size: clamp(var(--ai-fs-title), 2.4vw, var(--fs-hero));
   font-weight: 650;
   letter-spacing: -.02em;
@@ -96,10 +97,9 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
 
 .assistant-empty__sub {
   margin: 0;
-  max-width: 28rem;
   color: var(--muted);
-  font-size: var(--ai-fs-body);
-  line-height: 1.55;
+  font-size: var(--ai-fs-aux);
+  line-height: 1.4;
 }
 
 .assistant-empty__list {

@@ -109,8 +109,8 @@ function onSelect(code: string): void {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.45rem;
-  padding: 0.55rem 0.65rem;
+  gap: var(--gap-1);
+  padding: var(--gap-1) var(--gap-2);
   border-bottom: 1px solid var(--rule);
   flex-shrink: 0;
   cursor: default;
@@ -119,20 +119,20 @@ function onSelect(code: string): void {
 .batch-dock__meta {
   display: flex;
   flex-direction: column;
-  gap: 0.18rem;
+  gap: 2px;
   min-width: 0;
 }
 
 .batch-dock__title {
-  font-size: 0.82rem;
-  font-weight: 650;
+  font-size: var(--fs-body);
+  font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.25;
   word-break: break-word;
 }
 
 .batch-dock__date {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   font-weight: 600;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
@@ -140,7 +140,7 @@ function onSelect(code: string): void {
 }
 
 .batch-dock__count {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
@@ -162,9 +162,9 @@ function onSelect(code: string): void {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.28rem 0.55rem;
-  min-height: 1.85rem;
+  gap: var(--gap-1);
+  padding: 0 var(--gap-2);
+  min-height: var(--row-h);
   border: 0;
   border-bottom: 1px solid var(--rule);
   background: transparent;
@@ -182,20 +182,20 @@ function onSelect(code: string): void {
   --el-button-text-color: var(--ink);
   --el-button-hover-text-color: var(--ink);
   --el-button-bg-color: transparent;
-  --el-button-hover-bg-color: color-mix(in srgb, var(--accent, #c41e3a) 8%, transparent);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--seal) 8%, transparent);
   --el-button-border-color: transparent;
   --el-button-hover-border-color: transparent;
 }
 
 .batch-dock__row.is-active {
-  background: color-mix(in srgb, var(--accent, #c41e3a) 12%, transparent);
+  background: var(--seal-soft);
   font-weight: 600;
 }
 
 .batch-dock__n {
   width: 1.1rem;
   flex-shrink: 0;
-  font-size: 0.68rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 
@@ -205,21 +205,22 @@ function onSelect(code: string): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
 
 .batch-dock__pct {
   flex-shrink: 0;
-  font-size: 0.68rem;
+  font-size: var(--fs-kicker);
+  font-variant-numeric: tabular-nums;
   min-width: 3.2rem;
   text-align: right;
 }
 
 .batch-dock__pct.is-up {
-  color: var(--up, #c41e3a);
+  color: var(--up);
 }
 
 .batch-dock__pct.is-down {
-  color: var(--down, #0f6b5c);
+  color: var(--down);
 }
 </style>

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -52,6 +53,18 @@ class DailyInstrumentRefreshTests(unittest.TestCase):
             patch("src.market.open_market_hot", FakeStore),
             patch("src.market.sync_instruments", refresh),
             patch("src.market.apply_today_spot", spot),
+            # 日终收尾会用权威源重写当日；本用例只关心目录刷新，桩掉即可。
+            patch(
+                "src.market.sync_quotes",
+                lambda *_a, **_k: SimpleNamespace(
+                    total=1,
+                    succeeded=1,
+                    skipped=0,
+                    failed=0,
+                    rows_written=0,
+                    elapsed_seconds=0.0,
+                ),
+            ),
             patch("src.market.backfill_missing_turnover", lambda *_a, **_k: {}),
             patch(
                 "src.market.mirror_recent_to_hot",

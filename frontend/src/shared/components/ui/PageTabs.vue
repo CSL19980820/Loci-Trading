@@ -71,16 +71,17 @@ function onUpdate(name: string | number): void {
 <style scoped>
 .page-tabs {
   --page-tabs-sticky-top: 0px;
-  --el-tabs-header-height: 2.35rem;
-  margin: 0 0 0.75rem;
-  padding: 0 0.85rem;
+  /* 分区条就是一条 28px 的控件行，不是导航横幅 */
+  --el-tabs-header-height: var(--ctl-h);
+  margin: 0 0 var(--gap-2);
+  padding: 0 var(--pad-sheet-x);
   background: var(--paper);
 }
 
 .page-tabs__row {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--gap-3);
   min-width: 0;
 }
 
@@ -93,9 +94,9 @@ function onUpdate(name: string | number): void {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: var(--gap-2);
   color: var(--mist);
-  font: 0.72rem var(--mono);
+  font: var(--fs-aux) / 1.4 var(--mono);
   white-space: nowrap;
 }
 
@@ -105,12 +106,12 @@ function onUpdate(name: string | number): void {
   z-index: 5;
   margin-left: 0;
   margin-right: 0;
-  box-shadow: 0 1px 0 var(--rule);
+  border-bottom: 1px solid var(--rule);
 }
 
 .page-tabs--dense {
-  --el-tabs-header-height: 2rem;
-  margin-bottom: 0.55rem;
+  --el-tabs-header-height: var(--row-h-sm);
+  margin-bottom: var(--gap-1);
 }
 
 .page-tabs__el :deep(.el-tabs__header) {
@@ -125,16 +126,16 @@ function onUpdate(name: string | number): void {
 .page-tabs__el :deep(.el-tabs__item) {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0 0.9rem;
+  gap: var(--gap-1);
+  padding: 0 var(--gap-3);
   color: var(--mist);
-  font: 500 0.9rem/1.25 var(--font);
-  letter-spacing: 0.02em;
+  font: 500 var(--fs-body) / 1.25 var(--font);
+  letter-spacing: 0.03em;
 }
 
 .page-tabs--dense .page-tabs__el :deep(.el-tabs__item) {
-  padding: 0 0.7rem;
-  font-size: 0.84rem;
+  padding: 0 var(--gap-2);
+  font-size: var(--fs-aux);
 }
 
 .page-tabs__el :deep(.el-tabs__item:hover) {
@@ -143,7 +144,7 @@ function onUpdate(name: string | number): void {
 
 .page-tabs__el :deep(.el-tabs__item.is-active) {
   color: var(--ink);
-  font-weight: 650;
+  font-weight: 700;
 }
 
 .page-tabs__el :deep(.el-tabs__active-bar) {
@@ -160,16 +161,17 @@ function onUpdate(name: string | number): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.1rem;
-  padding: 0.05rem 0.3rem;
-  border-radius: 3px;
+  min-width: var(--gap-4);
+  padding: 0 var(--gap-1);
+  border-radius: var(--radius);
   background: var(--sheet);
   border: 1px solid var(--rule);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-kicker);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.4;
 }
 
 .page-tabs__el :deep(.el-tabs__item.is-active) .page-tabs__badge {

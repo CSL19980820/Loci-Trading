@@ -176,7 +176,7 @@ defineExpose({ save, saving, load })
 
 <template>
   <div v-loading="loading" class="skill-job-config">
-    <el-form label-position="left" label-width="5.5rem" size="small">
+    <el-form label-position="right" label-width="6.5em" size="small">
       <el-form-item label="定时运行">
         <el-switch v-model="scheduleEnabled" />
       </el-form-item>

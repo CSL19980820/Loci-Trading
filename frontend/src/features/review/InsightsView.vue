@@ -15,7 +15,8 @@ import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicT
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import Sheet from '@/shared/components/layout/Sheet.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
-import { RefreshRight } from '@element-plus/icons-vue'
+import { strategyShortLabel } from '@/shared/lib/format'
+import { InfoFilled, RefreshRight } from '@element-plus/icons-vue'
 
 type InsightTab = 'health' | 'overlap'
 
@@ -114,17 +115,58 @@ function overlapRowClass({ row }: { row: Record<string, unknown>; rowIndex: numb
   return ''
 }
 
+/** 重叠口径长句只写一份，放 tooltip，不常驻页面（连同原来占一行的导语一起） */
+const OVERLAP_HINT =
+  '看多套选股是否天天撞同一批票。只看选股信号是否互相重合，不算持仓风险（成交账本没有战法字段）。' +
+  '策略是否失效看选股目录「近期胜率」；前视偏差由测试与生成链自动拦，不在本页。'
+
+const OVERLAP_LEVEL_LABELS: Record<string, string> = { low: '低', medium: '中', high: '高' }
+
+function overlapLevelLabel(level: string): string {
+  return OVERLAP_LEVEL_LABELS[level] ?? level
+}
+
+/*
+ * 程度徽章走 EP 语义档，不再自绘 .chip-red/.chip-yellow/.chip-green。
+ * 旧写法把「高重叠」染成 --seal（品牌色）、「低」染成 --lake（跌绿）——
+ * 既占了品牌色，又把绿色借给了非价格语义，两条都违反 D1。
+ */
+function overlapTagType(level: string): 'danger' | 'warning' | 'info' {
+  if (level === 'high') return 'danger'
+  if (level === 'medium') return 'warning'
+  return 'info'
+}
+
 const overlapColumns: BasicTableColumn[] = [
-  { prop: 'strategy_a', label: '战法 A', minWidth: 100 },
-  { prop: 'strategy_b', label: '战法 B', minWidth: 100 },
-  { prop: 'avg_jaccard', label: '日均重合', align: 'right', minWidth: 100, slotName: 'jaccard' },
-  { prop: 'collision_days', label: '撞车日', align: 'right', minWidth: 80 },
-  { prop: 'days_compared', label: '可比日', align: 'right', minWidth: 80 },
-  { prop: 'top_shared_codes', label: '常撞代码', minWidth: 180, slotName: 'codes' },
-  { prop: 'overlap_level', label: '程度', align: 'right', minWidth: 80, slotName: 'level' },
+  /* 战法列展示中文短名；slug 只留在 row-key 里，界面不露英文（任务 8） */
+  {
+    prop: 'strategy_a',
+    label: '战法 A',
+    minWidth: 100,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: (row) => strategyShortLabel(String(row.strategy_a ?? '')),
+  },
+  {
+    prop: 'strategy_b',
+    label: '战法 B',
+    minWidth: 100,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: (row) => strategyShortLabel(String(row.strategy_b ?? '')),
+  },
+  { prop: 'avg_jaccard', label: '日均重合', align: 'center', headerAlign: 'center', minWidth: 100, slotName: 'jaccard' },
+  { prop: 'collision_days', label: '撞车日', align: 'center', headerAlign: 'center', minWidth: 80 },
+  { prop: 'days_compared', label: '可比日', align: 'center', headerAlign: 'center', minWidth: 80 },
+  { prop: 'top_shared_codes', label: '常撞代码', minWidth: 180, align: 'center', headerAlign: 'center', slotName: 'codes' },
+  { prop: 'overlap_level', label: '程度', align: 'center', headerAlign: 'center', minWidth: 80, slotName: 'level' },
 ]
 
 const overlapRows = computed(() => overlap.value)
+
+const hasHighOverlap = computed(() =>
+  overlap.value.some((row) => row.overlap_level === 'high'),
+)
 
 async function loadOverlap(): Promise<void> {
   const version = ++overlapVersion
@@ -204,6 +246,18 @@ onUnmounted(() => {
 
     <div class="insights-tabs-row">
       <PageTabs v-model="activeTab" :items="insightTabs" :sticky="false" aria-label="体检分区" />
+      <!-- 重叠查询的天数与口径也并进这一行：Sheet 头与正文说明各省一行 -->
+      <template v-if="activeTab === 'overlap'">
+        <span class="inline-label">近</span>
+        <el-input-number
+          v-model="overlapDays"
+          :min="10"
+          :max="250"
+          size="small"
+          class="days-input"
+        />
+        <span class="inline-label">天</span>
+      </template>
       <el-button
         v-if="showHeaderAction"
         type="primary"
@@ -215,6 +269,14 @@ onUnmounted(() => {
       >
         {{ headerLabel }}
       </el-button>
+      <el-tooltip
+        v-if="activeTab === 'overlap'"
+        :content="OVERLAP_HINT"
+        placement="bottom-end"
+        :show-after="200"
+      >
+        <el-icon class="tabs-note" tabindex="0" :aria-label="OVERLAP_HINT"><InfoFilled /></el-icon>
+      </el-tooltip>
     </div>
 
     <div class="page-scroll page-scroll--busy">
@@ -222,14 +284,6 @@ onUnmounted(() => {
 
       <div v-show="activeTab === 'health'" class="health-pane page-pane">
         <div class="health-hero">
-          <header class="health-hero__bar">
-            <strong class="health-hero__title">数据体检</strong>
-            <span class="health-hero__meta" :class="heroBarMetaClass">{{ heroBarMeta }}</span>
-            <span v-if="subtitle" class="health-hero__meta health-hero__meta--sub">{{
-              subtitle
-            }}</span>
-          </header>
-
           <div class="health-hero__body">
             <HealthSealDial
               :score="score"
@@ -239,7 +293,10 @@ onUnmounted(() => {
             />
 
             <div class="health-hero__copy">
-              <h2 class="health-hero__headline">{{ headline }}</h2>
+              <h2 class="health-hero__headline">
+                {{ headline }}
+                <span class="health-hero__meta" :class="heroBarMetaClass">{{ heroBarMeta }}</span>
+              </h2>
               <p class="health-hero__sub">{{ subtitle }}</p>
 
               <div class="health-cta">
@@ -249,27 +306,26 @@ onUnmounted(() => {
                 </template>
 
                 <template v-else-if="phase === 'scanning'">
-                  <el-button size="large" @click="cancelScan">取消扫描</el-button>
+                  <el-button @click="cancelScan">取消扫描</el-button>
                 </template>
 
                 <template v-else-if="phase === 'repairing'">
-                  <el-button type="primary" size="large" loading disabled>正在修复…</el-button>
-                  <el-button size="large" @click="cancelRepair">停止等待</el-button>
+                  <el-button type="primary" loading disabled>正在修复…</el-button>
+                  <el-button @click="cancelRepair">停止等待</el-button>
                 </template>
 
                 <template v-else-if="phase === 'result' || showRepairActions">
                   <el-button
                     v-if="canOneClickRepair || hasRepairableIssues"
                     type="primary"
-                    size="large"
                     :loading="repairBusy === '__all__'"
                     :disabled="!!repairBusy || !selectedRepairIds.length"
                     @click="onRepairSelected"
                   >
                     一键修复{{ selectedRepairIds.length ? `（${selectedRepairIds.length}）` : '' }}
                   </el-button>
-                  <el-button size="large" :disabled="!!repairBusy" @click="scan()">再次扫描</el-button>
-                  <el-button size="large" :disabled="!!repairBusy" @click="scan({ includeNetwork: true })">
+                  <el-button :disabled="!!repairBusy" @click="scan()">再次扫描</el-button>
+                  <el-button :disabled="!!repairBusy" @click="scan({ includeNetwork: true })">
                     深度扫描
                   </el-button>
                   <p v-if="repairPlan?.labels?.length" class="health-cta__hint">
@@ -279,13 +335,13 @@ onUnmounted(() => {
                     v-else-if="hasRepairableIssues && !selectedRepairIds.length"
                     class="health-cta__hint"
                   >
-                    勾选下方可修项后再一键修复；人工项请点「去处理」。
+                    勾选可修项后一键修复；人工项点「去处理」
                   </p>
                 </template>
 
                 <template v-else>
-                  <el-button type="primary" size="large" @click="scan()">再次扫描</el-button>
-                  <el-button size="large" @click="scan({ includeNetwork: true })">深度扫描</el-button>
+                  <el-button type="primary" @click="scan()">再次扫描</el-button>
+                  <el-button @click="scan({ includeNetwork: true })">深度扫描</el-button>
                 </template>
               </div>
             </div>
@@ -312,17 +368,8 @@ onUnmounted(() => {
       </div>
 
       <div v-show="activeTab === 'overlap'">
-        <Sheet title="选股信号重叠">
-          <template #actions>
-            <span class="inline-label">近</span>
-            <el-input-number v-model="overlapDays" :min="10" :max="250" size="small" />
-            <span class="inline-label">天</span>
-            <el-button size="small" :disabled="busy" @click="loadOverlap">查询</el-button>
-          </template>
-          <p class="form-hint overlap-intro">
-            看多套选股是否天天撞同一批票（假分散）。不算持仓风险——成交账本没有战法字段。
-            策略是否失效请看选股目录「近期胜率」。前视偏差由测试与生成链自动拦，不在本页。
-          </p>
+        <!-- 标题「选股信号重叠」= 当前 Tab 名，删；天数/刷新/口径全部并进上方分区行（任务 7） -->
+        <Sheet>
           <BasicTable
             v-if="overlap.length"
             :columns="overlapColumns"
@@ -347,34 +394,19 @@ onUnmounted(() => {
               <span v-else class="dim">—</span>
             </template>
             <template #level="{ row }">
-              <span
-                class="chip"
-                :class="
-                  row.overlap_level === 'high'
-                    ? 'chip-red'
-                    : row.overlap_level === 'medium'
-                      ? 'chip-yellow'
-                      : 'chip-green'
-                "
-              >
-                {{
-                  ({ low: '低', medium: '中', high: '高' } as Record<string, string>)[
-                    String(row.overlap_level)
-                  ] ?? row.overlap_level
-                }}
-              </span>
+              <el-tag size="small" effect="plain" :type="overlapTagType(String(row.overlap_level))">
+                {{ overlapLevelLabel(String(row.overlap_level)) }}
+              </el-tag>
             </template>
           </BasicTable>
           <PageBusy v-else-if="busy" label="加载重叠度…" />
           <EmptyState
             v-else
-            description="无数据：需要至少两套战法的 core 候选记录（选股并落库后可见）"
+            description="无重叠数据"
+            reason="需至少两套战法的 core 候选记录"
           />
-          <p
-            v-if="overlap.some((o) => o.overlap_level === 'high')"
-            class="form-hint form-error"
-          >
-            高重叠 = 信号源几乎相同；建议合并战法或拉开参数/宇宙，别当成分散。
+          <p v-if="hasHighOverlap" class="form-hint form-error">
+            高重叠 = 信号源几乎相同，别当成分散
           </p>
         </Sheet>
       </div>
@@ -386,30 +418,25 @@ onUnmounted(() => {
 .insights-tabs-row {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 0.55rem;
-  padding-right: 0.85rem;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-1);
+  padding-right: var(--gap-3);
 }
-
 .insights-tabs-row :deep(.page-tabs) {
   flex: 1;
   min-width: 0;
   margin-bottom: 0;
 }
-
+/* 只做 PageBusy 蒙版的定位锚点：不再写 min-height:12rem —— 空数据时那是 12rem 死白 */
 .page-scroll--busy {
   position: relative;
-  min-height: 12rem;
 }
-
 .health-pane {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding: 0.15rem 0.25rem 0.85rem;
+  gap: var(--gap-2);
   min-height: 0;
 }
-
 .health-hero {
   flex-shrink: 0;
   display: flex;
@@ -419,145 +446,106 @@ onUnmounted(() => {
   background: var(--sheet);
   overflow: hidden;
 }
-
-.health-hero__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.45rem 0.75rem;
-  padding: 0.55rem 0.9rem;
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel-2);
-}
-
-.health-hero__title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--ink);
-}
-
+/* 状态字并进标题行：原来它独占一条 hero 头栏，标题还与 Tab 名重复 */
 .health-hero__meta {
-  font-size: 0.75rem;
-  font-weight: 650;
+  margin-left: var(--gap-2);
+  font-size: var(--fs-aux);
+  font-weight: 600;
   color: var(--mist);
 }
-
+/* 通过态走 --success（令牌层已把它挂在跌绿上），待处理是告警不是亏损 */
 .health-hero__meta--ok {
-  color: var(--lake);
+  color: var(--success);
 }
-
 .health-hero__meta--loss {
-  color: var(--loss);
+  color: var(--warn);
 }
-
-.health-hero__meta--sub {
-  font-weight: 500;
-  color: var(--mist);
-  min-width: 0;
-}
-
 .health-hero__body {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 1.1rem 1.5rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--gap-3) var(--gap-4);
   align-items: center;
-  padding: 1rem 1.1rem 1.15rem;
+  padding: var(--gap-3);
 }
-
 .health-hero__copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35rem;
+  gap: var(--gap-1);
 }
-
+/* 中文标题上限 --fs-hero(17px)：旧版 1.35rem 大标题违反 D2 */
 .health-hero__headline {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: var(--fs-hero);
   font-weight: 700;
-  line-height: 1.25;
+  letter-spacing: 0.03em;
+  line-height: 1.3;
   color: var(--ink);
 }
-
 .health-hero__sub {
-  margin: 0 0 0.35rem;
-  font-size: 0.84rem;
+  margin: 0;
+  font-size: var(--fs-aux);
   line-height: 1.45;
   color: var(--mist);
 }
-
 .health-cta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.55rem;
+  gap: var(--gap-2);
   width: 100%;
+  margin-top: var(--gap-1);
 }
-
 .health-cta__hint {
   margin: 0;
   width: 100%;
-  font-size: 0.75rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
   line-height: 1.4;
 }
-
 @media (max-width: 720px) {
   .health-hero__body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     justify-items: center;
     text-align: center;
   }
-
   .health-hero__copy {
     align-items: center;
   }
-
   .health-cta {
     justify-content: center;
   }
-
-  .health-hero__meta--sub {
-    display: none;
-  }
 }
-
-.chip-red {
-  background: var(--seal) !important;
-  color: #fff !important;
-}
-
-.chip-green {
-  background: var(--lake) !important;
-  color: #fff !important;
-}
-
-.chip-yellow {
-  background: #c8a400 !important;
-  color: #fff !important;
-}
-
 .inline-label {
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
-
-.overlap-intro {
-  margin: 0 0 0.65rem;
-  line-height: 1.45;
+.days-input {
+  width: 7.5rem;
+  flex-shrink: 0;
 }
-
+/* 口径提示：一枚 ⓘ，不占文本宽度 */
+.tabs-note {
+  flex-shrink: 0;
+  font-size: var(--fs-aux);
+  color: var(--mist);
+  cursor: help;
+}
+.tabs-note:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
 .codes {
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   word-break: break-all;
 }
-
+/* 行底纹用状态色而不是价格红：高重叠是「配置问题」，不是跌 */
 :deep(.row-critical) {
-  background: rgba(196, 30, 58, 0.05);
+  background: color-mix(in srgb, var(--stamp) 7%, transparent);
 }
-
 :deep(.row-warning) {
-  background: rgba(200, 164, 0, 0.06);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
 }
 </style>

@@ -182,6 +182,9 @@ Element Plus 已**按需注册**（§1.1，模板照常写 `<el-xxx>`，无需�
 3. 图表容器（ECharts / Lightweight Charts）内部 DOM
 4. Monaco `CodeEditor` 编辑区
 5. 极薄封装壳（如 `PageTabs`/`SegmentSwitch`）——**内部应优先 `el-segmented` / `el-radio-group` / `el-tabs`，禁止无限期留裸 `<button>`**
+6. `shared/components/ui/EmptyState.vue` 内部是三个纯文本节点，不再包 `el-empty`——把 el-empty
+   收进 96px 要逐条对抗它的插图槽与 40px 留白，收完也只剩这三个节点（见 `docs/ui-spec.md` §7）。
+   业务页**仍然禁止**自绘空态：一律用 `EmptyState`（或存量 `el-empty`，已被全局压密）。
 
 **封装规矩：**
 
@@ -226,9 +229,9 @@ export const usePalaceStore = defineStore('palace', () => {
 
 ### 3.7 模板与 UI
 
-- 空态：`EmptyState`（原因 + 下一步）。
+- 空态：`EmptyState`（为什么空 + 下一步，合计 ≤24 字，整块 ≤96px）。
 - 数字：`shared/lib/format` 的 `pct` / `signedPct` / `price` / `money` / `compactNumber`；涨跌色用现有 tone class。**不要在 feature 里另写一份格式化**——此前 `fmtPct` 被手抄了 9 份、`fmtPrice` 5 份，精度和正负号口径已经开始分叉。
-- 样式：CSS 变量（`style.css`）；少写魔法色值。
+- 样式：只用 `style.*.css` 的 CSS 令牌（见 §3.9 与 [`docs/ui-spec.md`](docs/ui-spec.md)）；禁止魔法色值/字号。
 - 列表 `v-for` 必须稳定 `:key`；慎用 `v-html`。
 - 保持 a11y 底线：`skip-link`、主内容 `id`、按钮有文案。
 
@@ -255,6 +258,25 @@ export const usePalaceStore = defineStore('palace', () => {
 | 普通 ts | camelCase | `format.ts` |
 | 类型/接口 | PascalCase | `ReviewRecord` |
 
+### 3.9 视觉与密度规范（v2 盘口）
+
+产品形态是**专业行情终端**（密度对标通达信 / 同花顺 / 悟道），不是内容站。
+完整令牌表、表单/表格/空态/文案规范与禁止清单见 **[`docs/ui-spec.md`](docs/ui-spec.md)**（施工依据）。
+三条硬纪律与硬性尺度：
+
+| 项 | 硬性要求 | 令牌 / 位置 |
+|---|---|---|
+| D1 红绿只属于价格 | `--up` / `--down` 只用于涨跌数字与涨跌语义标记；品牌色、按钮、选中态、进度条、tab 下划线、事件点一律不用红绿 | 强调用 `--seal`；破坏性操作用 `--stamp` |
+| D2 最大的字是数字 | 数字 `--mono` + `font-variant-numeric: tabular-nums`；中文标题 ≤18px / 700 / `letter-spacing:.03em`，不换字族、禁衬线 | `--fs-tape` 26 / `--fs-hero` 17 / `--fs-title` 14 / `--fs-body` 13 / `--fs-aux` 12 / `--fs-kicker` 11 |
+| D3 密度优先 | 表格行高 28px、表头 26px、控件 28px、区块间距 8px、圆角 3px、阴影 none、分隔一律 1px hairline | `--row-h` / `--head-h` / `--ctl-h` / `--gap-1..4` / `--pad-sheet` / `--radius` / `--shadow` |
+| 令牌唯一真相 | 日盘 `:root` 在 `style.base.css`；夜盘 `night`/`ink`/`html.dark` **同一个选择器列表**在 `style.theme.css`；同一选择器不得在两个 `style.*.css` 里各写一份 | 六层：base → layout → components → content → tail → theme |
+| EP 尺寸 | 全局 `size: 'small'`（`shared/plugins/element.ts`），控件高由 `--el-component-size-small` 钉到 `--ctl-h` | 不在页面里逐个传 `size` |
+| 表格 | `el-table` / `BasicTable`；数字列 `align="right"`（自动等宽 + tabular-nums），代码列 `class-name="is-code"`，涨跌用 `is-up`/`is-down`/`is-flat`；表格贴 Sheet 边 | 皮肤在 `style.components.css`，SFC 不重写行高与配色 |
+| 表单 | `el-form` + `el-form-item`；多列用 `.form-grid`（`auto-fit minmax(260px,1fr)`）；筛选条用 `.filter-bar .filters`（控件同高 `--ctl-h`）；label 宽 `--form-label-w` | 禁止自绘 label 行、禁止局部改 `el-form` 栅格 |
+| 文案 | 页面不写介绍段落；解释进 tooltip；`el-alert` 只报当前真实异常、标题 ≤20 字、**禁 `description`**；按钮用动词短语 | 见 `docs/ui-spec.md` §8 |
+| 字体 | 不挂 webfont（Google Fonts `<link>` 已从 `index.html` 删除，国内拉不到还阻塞首屏）；`--font-display` 已等于 `--font-sans` | `--font` / `--mono` |
+| 无障碍与响应式 | `:focus-visible` 2px `--seal` 轮廓可见；`prefers-reduced-motion` 生效；980px / 640px 不塌、无文档级滚动条 | §3.7.1 |
+
 ## 4. 反模式表（Agent 自查）
 
 | 反模式 | 改法 |
@@ -280,6 +302,16 @@ export const usePalaceStore = defineStore('palace', () => {
 | 壳上静态 import 一棵多数人用不到的重组件 | `defineAsyncComponent(() => import(...))` |
 | 测试里 `vi.mock('element-plus', () => ({ ... }))` 整包替换 | 用 `importOriginal` 展开 `...actual` 再覆盖（EP 已按需注册，见 §1.1） |
 | 给纯异步依赖建 `manualChunks` 组 | 只给首屏依赖建组，异步依赖留在自己的分片里（见 §1.2） |
+| 大号衬线中文标题（`--font-display` 当衬线用、中文标题 > 18px） | 标题 ≤18px / 700 / `letter-spacing:.03em` / `var(--font)`；最大的字留给数字（§3.9 D2） |
+| 品牌色 / 按钮 / 选中态 / 进度条 / tab 下划线用红绿 | 强调一律 `--seal`，破坏性操作 `--stamp`；`--up`/`--down` 只给价格（§3.9 D1） |
+| 卡片加 `box-shadow` 或圆角 > 4px 找「精致感」 | `--shadow: none` + `1px solid var(--rule)` + `--radius` 3px（§3.9 D3） |
+| 自绘表单行（`div.field-header` + `div.field-controls` + `p.field-hint`） | `el-form-item`（+ `.form-grid` / `.filter-bar`），label 宽走 `--form-label-w` |
+| `el-alert` 写 `description` 长说明 / 当常驻说明条 | 只报当前真实异常，`title` ≤20 字；解释进 `el-tooltip` |
+| 硬编码颜色 / 字号 / 间距（`#hex`、`px` 字号、裸 `rem` 间距） | 用令牌；确实无法用令牌时必须写注释说明 why（`docs/ui-spec.md` §11.6） |
+| 用 `min-height` / 大 `padding` 撑空，或写死 `repeat(N,1fr)` 但内容不足 | `flex:1 1 auto; min-height:0` 吃满；栅格用 `repeat(auto-fit, minmax(…,1fr))` |
+| 页面顶部写介绍段落 / 副标题段 | 口径进 `PageHeader` 的 `note`（单行 + tooltip）或 docs；页面只放数据与操作 |
+| 空态用大插图 + 三行解释（`el-empty :image-size="120"`） | `EmptyState`：一行主文案 ≤14 字 + 一行下一步，整块 ≤96px |
+| 在 SFC 里重写 `el-table` / `el-form` 的行高与配色 | 改 `style.components.css` 全局层一次，别在 32 个页面各调一遍 |
 
 ## 5. 命令与自检
 
@@ -294,13 +326,51 @@ bun run build
 # 可选试构建：bun run build:rolldown → dist-rolldown/
 ```
 
+**观感自查（改样式/令牌后必跑）** —— 靠机器量，不靠肉眼说「差不多」：
+
+```powershell
+cd frontend
+bun run build
+bunx vite preview --host 127.0.0.1 --port 4174   # 另一个终端
+node e2e/runtime-smoke.mjs          # 全路由 + 全 Tab + 弹层真挂一遍：白屏 / pageerror / 空壳弹层
+node e2e/audit-shots.mjs     # 结构断言 + 截图 → artifacts/audit-*.png
+node e2e/taste-audit.mjs        # 切字 / 溢出 / 死白 / 对比度，逐页逐元素量
+$env:AUDIT_APPEARANCE="night"; node e2e/taste-audit.mjs   # 四档外观都要过：day|paper|night|ink
+node e2e/admin-shots.mjs      # 管理后台六个分区：中文枚举 / 分页 / 无左竖条 / 未折行 → artifacts/admin-*.png
+node e2e/board-theme-shots.mjs   # 大屏在 day/paper/ink 三档都不改 <html>；「暗色」开关只影响本页
+```
+
+三个脚本的 mock 走 `e2e/audit-mocks.mjs`（在 `pulse-mocks.mjs` 上补形状；未命中端点回 `{}` 会让页面抛
+`xxx.map is not a function`，那是 mock 不对不是产品坏了）。`admin-shots.mjs` 自带 mock（管理后台只依赖
+`/api/admin/*` 与 `/api/auth/*`，另起一份比往公共 mock 里塞 admin 夹具更好读）。**对比度探针必须用 canvas
+解析颜色**：令牌层是 `oklch()`，`getComputedStyle` 回来的是 `lab(96.5% -.55 -1.79)`，正则抓数字会把 96.5
+当 R 通道还吃掉负号，近白底会被算成近黑（曾据此误报 181 处）。
+
+**上线后验收**走 `e2e/verify-admin-live.mjs`：对**刚部署的那个镜像**起一次性容器 + SSH 隧道，不 mock 任何
+`/api`，真建号、真登录、真读日志（步骤写在脚本文件头）。它验的是产物而不是源码，且一个字节都不碰生产数据。
+**注意本机的 `chromium.launch()` 要传 `{ channel: 'chromium' }`**：headless shell 连不上调试端口会 180s 超时。
+
+**排错顺序**（照着走，别猜）：
+1. `node e2e/mock-shapes.mjs` —— 打印每条路由请求了哪些端点、mock 回了什么形状。标「空对象」的基本就是崩因。
+2. 对照 `src/shared/types/**` 补 `audit-mocks.mjs` 的形状。**注意数组端点要用尾部精确匹配**：`/skills` 用 includes 会把 `/skills/{slug}/job`（对象契约）也吞成数组。
+3. 还报错就 `node e2e/resolve-stack.cjs <chunk>.js <行> <列>` 把压缩栈还原成源码位置（需先 `vite build --sourcemap`）。
+4. 确认是产品 bug 再动产品代码。**mock 形状不对和产品坏了报错长得一模一样**，不查清就改代码只会改坏。
+
+**探针的两条豁免**（都有 WCAG 依据，别随手扩大）：`aria-hidden` 的纯装饰字形（分隔点）、
+以及失效控件（`disabled` / `aria-disabled` / `.is-disabled`，属 1.4.3 的 Incidental 例外）。
+
 - [ ] `bun run typecheck` 通过
 - [ ] 路由 + `AppSidebar` / `MobileBottomNav` 入口一致
 - [ ] 无文档级滚动条；路由页用 `page-fill`，滚动在 `page-scroll`/表体内
+- [ ] 视觉与密度过 §3.9 与 [`docs/ui-spec.md`](docs/ui-spec.md) §12 自检（红绿只给价格 / 最大的字是数字 / 行高 28px / 无阴影 / 无介绍段落）
 - [ ] 交互控件已用 Element Plus（按钮/表/表单/输入/选择/弹层）；无新增裸 `<button>`/`<table>`/`<input>` 业务控件（文件选择等例外除外）
 - [ ] 无超 600 行新文件；大页有拆分计划或已拆
 - [ ] 新 feature 目录有简短 `README.md`（职责一句话即可）
 - [ ] K 线重算走 `prepChartOffthread`（Worker）；只读列表优先 Colada，禁止前端造复盘数字
 - [ ] `bun run test` 通过
 - [ ] 动了 `manualChunks` / EP 注册方式 / 壳上组件 import：`bun run build` 通过，并用 `bun scripts/dist-stats.mjs dist` 对比首屏体积没变差
+- [ ] 动了 `style.*.css` / 主题令牌：`node e2e/taste-audit.mjs` 在 **day / paper / night / ink 四档都「全部干净」**
+- [ ] 主色只在**填充**上用 `--seal`；当**文字**用一律 `--seal-ink`（深色档 `--seal` 当文字只有 2.5–3.3:1）
+- [ ] 次要文字用 `--text-tertiary` / `--mist`：它们已按「最暗承载面上仍 ≥4.5:1」校准，别再就地调浅
+- [ ] 新增/改动弹层组件：`node e2e/runtime-smoke.mjs` 全绿；点不开的弹层补一条 `dialogMount.test.ts` 式的挂载用例
 - [ ] 新增的事件监听器、定时器、轮询循环都有对称清理 / `AbortSignal` 出口

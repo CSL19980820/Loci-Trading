@@ -41,6 +41,7 @@ import threading
 import time
 
 from src.shared.observability import event, record_lock_wait
+from src.shared.process_alive import pid_alive
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,19 @@ _LOCK_STUCK_SEC = _env_seconds("LOCI_MARKET_WRITE_STUCK_SEC", 30 * 60.0, minimum
 #: 锁文件多旧才算残留可接管。与卡死阈值同口径，免得仓里有两套「多久算挂了」；
 #: 也必须大于等锁上限，否则等锁的人会顺手掀掉一把还活着的锁。
 _LOCK_STALE_SEC = max(_LOCK_STUCK_SEC, _LOCK_WAIT_SEC + 60.0)
+#: 记录的 pid 已经不在了，多旧才允许立刻接管（秒）。
+#:
+#: 有了 pid 探活，``_LOCK_STALE_SEC``（30 分钟）就只该管「探不出来」的情况。
+#: 崩溃 / 被杀 / 关机没跑到 finally 的进程留下的锁文件，holder 前缀既不是本进程
+#: 的 pid、age 又远不到 30 分钟——2026-08-26 现场：``.market.db.write.lock`` 里躺着
+#: ``18848:sync:full``，那个进程 08-25 就没了，而每一个想写库的人都要先陪它站
+#: 满半小时。一次崩溃换来半小时行情库全面瘫痪，代价全在等的人身上。
+#:
+#: 仍留一小段宽限而不是当场接管：写锁文件与 ``os.write`` 之间有个窗口，
+#: pid 也可能被系统回收后复用。宽限期让「刚占上锁的人」不会被路过的进程掀掉。
+_LOCK_DEAD_PID_GRACE_SEC = _env_seconds(
+    "LOCI_MARKET_WRITE_DEAD_PID_GRACE_SEC", 30.0, minimum=5.0
+)
 _PATH_LOCKS_GUARD = threading.Lock()
 _PATH_LOCKS: dict[Path, threading.RLock] = {}
 _NESTING: dict[Path, int] = {}
@@ -79,6 +93,28 @@ _HOLDERS: dict[Path, tuple[str, str, float]] = {}
 
 class MarketWriteBusy(RuntimeError):
     """行情写锁被占着 —— 另一个进程，或本进程另一条线程。"""
+
+
+def _holder_pid_is_dead(holder: str, age_sec: float) -> bool:
+    """锁文件里记着的进程是否已经不在了。
+
+    ``holder`` 形如 ``"<pid>:<label>"``（见 ``market_write_lock`` 的 ``os.write``）。
+    解析不出 pid（旧格式 / 写坏 / 空文件）一律返回 ``False``——回落到原来的
+    ``_LOCK_STALE_SEC`` 时间窗，宁可多等也不掀一把可能还活着的锁。
+
+    ``age_sec`` 的宽限是给「刚刚占上锁」留的窗口：``os.open`` 与 ``os.write``
+    之间锁文件是空的，pid 也可能被系统回收后复用。
+    """
+    if age_sec < _LOCK_DEAD_PID_GRACE_SEC:
+        return False
+    pid_text = str(holder or "").split(":", 1)[0].strip()
+    if not pid_text.isdigit():
+        return False
+    pid = int(pid_text)
+    if pid <= 0:
+        return False
+    # pid_alive 对「探不出来」一律答活着，所以这里只有明确已死才会返回 True。
+    return not pid_alive(pid)
 
 
 def _lock_path(resolved: Path) -> Path:
@@ -231,6 +267,24 @@ def market_write_lock(db_path: Path | str, *, label: str = "write") -> Iterator[
                     holder = lock_path.read_text(encoding="ascii", errors="ignore").strip()
                     if holder.startswith(f"{os.getpid()}:"):
                         # 残留本进程锁（异常退出未清）→ 接管
+                        lock_path.unlink(missing_ok=True)
+                        continue
+                    if _holder_pid_is_dead(holder, age):
+                        # 写锁的主人已经不在了。等满 _LOCK_STALE_SEC 只是陪一个死进程
+                        # 站岗，越早接管越好；WARNING 是为了让「谁掀了锁」留在日志里。
+                        logger.warning(
+                            "接管残留行情写锁：持有者 %s 的进程已退出（锁文件 %.0f 秒前写下），"
+                            "本次由「%s」接手",
+                            holder,
+                            age,
+                            label,
+                        )
+                        event(
+                            logger,
+                            logging.WARNING,
+                            "market_write_lock_dead_holder_evicted",
+                            fields={"holder": holder[:64], "age_sec": int(age)},
+                        )
                         lock_path.unlink(missing_ok=True)
                         continue
                     if age > _LOCK_STALE_SEC:

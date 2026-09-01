@@ -105,7 +105,7 @@ const showGrade = computed(
 }
 
 /*
- * 三态一律用语义色，不用品牌色：--lake 是静态绿，而 --seal 在「湖绿」主色下也是同一个绿，
+ * 三态一律用语义色，不用品牌色：--success 是静态绿，而 --seal 在「湖绿」主色下也是同一个绿，
  * 曾导致「体检通过」和「体检失败」渲染成完全相同的颜色，只剩中心文字能区分。
  */
 .seal-dial--ok .seal-dial__arc {
@@ -132,19 +132,20 @@ const showGrade = computed(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.12rem;
+  gap: 2px;
   pointer-events: none;
 }
 
 .seal-dial__kicker {
-  font-size: 0.68rem;
+  font-size: var(--fs-kicker);
   letter-spacing: 0.12em;
   color: var(--mist);
   font-weight: 500;
 }
 
 .seal-dial__score {
-  font-size: 2.35rem;
+  font-family: var(--mono);
+  font-size: var(--fs-tape);
   font-weight: 700;
   line-height: 1.05;
   color: var(--ink);
@@ -152,23 +153,24 @@ const showGrade = computed(
 }
 
 .seal-dial__score--word {
-  font-size: 1.5rem;
+  font-family: var(--font-sans);
+  font-size: var(--fs-hero);
   letter-spacing: 0.08em;
   color: var(--mist);
 }
 
 .seal-dial__grade {
-  font-size: 0.72rem;
-  font-weight: 650;
-  padding: 0.06rem 0.4rem;
-  border-radius: 3px;
+  font-size: var(--fs-kicker);
+  font-weight: 700;
+  padding: 0 var(--gap-1);
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--seal-soft) 70%, var(--sheet));
   color: var(--seal-ink);
 }
 
 .seal-dial--ok .seal-dial__grade {
-  background: var(--lake-soft);
-  color: var(--lake);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 @media (prefers-reduced-motion: reduce) {

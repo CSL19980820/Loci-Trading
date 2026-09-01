@@ -1,13 +1,4 @@
 @media (max-width: 1080px) {
-  .research-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .research-query {
-    justify-content: flex-start;
-  }
-
   .research-summary {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }

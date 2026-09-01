@@ -180,11 +180,11 @@ const lockLimitTone = computed(() => {
   flex-direction: column;
   overflow: auto;
   border: 1px solid color-mix(in srgb, var(--rule) 70%, var(--seal) 18%);
-  border-radius: calc(var(--radius) + 1px);
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--paper) 78%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 24px rgba(20, 32, 51, 0.12);
+  /* D3：卡片无阴影，靠 hairline 与半透明底分层 */
   pointer-events: auto;
   user-select: none;
 }
@@ -202,14 +202,14 @@ const lockLimitTone = computed(() => {
 }
 .k-readout__head strong {
   display: block;
-  font: 650 0.76rem/1.25 var(--mono);
+  font: 700 var(--fs-aux)/1.3 var(--mono);
   color: var(--ink);
 }
 .k-readout__limit {
   display: inline-block;
   margin-top: 0.15rem;
-  font-size: 0.66rem;
-  font-weight: 650;
+  font-size: var(--fs-kicker);
+  font-weight: 700;
 }
 .k-readout__close.el-button {
   --el-button-text-color: var(--mist);
@@ -232,7 +232,8 @@ const lockLimitTone = computed(() => {
   gap: 0.25rem;
   align-items: baseline;
   padding: 0.12rem 0;
-  font-size: 0.72rem;
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
   border-bottom: 1px dashed color-mix(in srgb, var(--rule) 55%, transparent);
 }
 .k-readout__row:last-child {
@@ -246,7 +247,7 @@ const lockLimitTone = computed(() => {
 .k-readout__row dd {
   margin: 0;
   text-align: right;
-  font-weight: 650;
+  font-weight: 700;
 }
 .k-readout__pair {
   display: flex;
@@ -256,25 +257,27 @@ const lockLimitTone = computed(() => {
   white-space: nowrap;
 }
 .k-readout__pair span:last-child {
-  font-size: 0.64rem;
+  font-size: var(--fs-kicker);
   font-weight: 500;
   opacity: 0.9;
 }
+/* 量不是涨跌语义，用状态橙 */
 .k-readout__vol {
-  color: #b45309;
+  color: var(--warn);
 }
+/* D1：读盘里的涨跌只能是涨跌色，旧版借了 --seal（品牌）与 --lake（旧湖绿） */
 .k-readout .is-up {
-  color: var(--seal);
+  color: var(--up);
 }
 .k-readout .is-down {
-  color: var(--lake);
+  color: var(--down);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .k-readout {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background: color-mix(in srgb, var(--paper) 94%, #fff);
+    background: var(--sheet);
   }
 }
 </style>

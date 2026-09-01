@@ -1,26 +1,44 @@
 # Loci（stock-analyzer）
 
-单机 A 股工作台：**账本 + 行情仓 + 策略/复盘/运维/AI**。数字由量化引擎产出；AI 只解释、提问、结构化录入。
+A 股量化工作台：**账本 + 行情仓 + 策略/复盘/运维/AI**，v2 起支持**多用户、
+策略广场与实时大屏**。数字由量化引擎产出；AI 只解释、提问、结构化录入。
 
 > 免责声明：仅供信息整理与方法论辅助，不构成投资建议。
+
+## 两种形态，一套代码
+
+| 形态 | 怎么跑 | 登录 | 数据 |
+|---|---|---|---|
+| **桌面单机** | `python loci.py` | 不需要（自动以主租户管理员身份运行） | `data/` 就是你的 |
+| **多用户服务端** | `PALACE_ENV=production` + `deploy/deploy.ps1` | 邮箱注册 / 微信 / QQ 扫码 | 每人一套私有库，行情共享一份 |
+
+**升级零迁移**：v1 的存量 `data/` 目录就是 v2 的「主租户」。首启会创建管理员
+账号（默认 `lociAdmin` / `Asdf!234`，带强制改密提示），登录后看到的还是原来
+那套账本。
 
 ## 架构（DDD 模块化单体）
 
 每个限界上下文独立目录，内部统一四层：`domain` / `application` / `infrastructure` / `api`。
 
-| 包 | 职责 | 库 |
-|---|---|---|
-| `src/ledger` | 成交/候选/预案/复盘记录 | `palace.db` |
-| `src/market` | 行情同步、标的池、适配器 | `market.db` |
-| `src/review` | 资金曲线、归因、候选验证 | 读 ledger+market |
-| `src/strategy` | 战法协议与选股 | — |
-| `src/backtest` | 信号回测 | — |
-| `src/ops` | 任务、技能、通知 | `ops.db` |
-| `src/ai` | LLM 客户端与 Agent | — |
-| `src/intel` | MCP 情报 | `mcp.json` |
-| `src/formula` | 通达信公式 / 潜龙指标 | — |
-| `src/shared` | 路径等横切 | — |
-| `src/app` | FastAPI 组合根 | — |
+| 包 | 职责 | 库 | 租户 |
+|---|---|---|---|
+| `src/identity` | 账号、角色、会话、配额、审计、通知 | `identity.db` | 全局 |
+| `src/community` | 策略广场、排行榜、跟单订阅、评论动态 | `community.db` | 全局 |
+| `src/ledger` | 成交/候选/预案/复盘记录 | `palace.db` | **每租户** |
+| `src/market` | 行情同步、标的池、适配器、实时推流 | `market.db` | 全局共享 |
+| `src/review` | 资金曲线、归因、候选验证 | 读 ledger+market | — |
+| `src/strategy` | 战法协议与选股 | — | — |
+| `src/backtest` | 信号回测 | — | — |
+| `src/ops` | 任务、技能、通知、LLM 供应商 | `ops.db` | **每租户** |
+| `src/ai` | LLM 客户端与 Agent | — | — |
+| `src/intel` | MCP 情报 | `mcp.json` | **每租户** |
+| `src/formula` | 通达信公式 / 潜龙指标 | — | — |
+| `src/shared` | 路径、租户上下文等横切 | — | — |
+| `src/app` | FastAPI 组合根 | — | — |
+
+多租户模型见 [`src/shared/tenancy.py`](src/shared/tenancy.py) 与
+[ADR-015](docs/adr/ADR-015-v2-multi-tenant-identity-and-community.md)：
+**换 data 根，不给每张表加 `user_id`**。
 
 约定详见 [docs/architecture/project-structure.md](docs/architecture/project-structure.md)。
 

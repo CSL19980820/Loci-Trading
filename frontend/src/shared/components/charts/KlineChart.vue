@@ -19,6 +19,7 @@ import {
 } from '@/shared/lib/klineConfig'
 import type { KPeriod, OhlcBar } from '@/shared/lib/indicators'
 import { buildKlineOption } from '@/shared/lib/klineChartOption'
+import type { StrategySignalMark } from '@/shared/lib/klineStrategyMarks'
 import { resolveKlineDblclickIndex } from '@/shared/lib/klineDblclick'
 import { useChartTheme } from '@/shared/lib/useChartTheme'
 import { prepChartOffthread } from '@/shared/lib/useChartPrep'
@@ -58,6 +59,8 @@ const props = withDefaults(
     hasMoreHistory?: boolean
     /** 锚定到该交易日（日 K） */
     focusDate?: string
+    /** 策略选股信号标注 */
+    strategySignals?: StrategySignalMark[]
   }>(),
   {
     period: 'day',
@@ -69,6 +72,7 @@ const props = withDefaults(
     stockName: '',
     hasMoreHistory: false,
     focusDate: '',
+    strategySignals: () => [],
   },
 )
 
@@ -158,6 +162,7 @@ function buildOption(prep: ChartPrepResult) {
     zoomEnd,
     stockCode: props.stockCode,
     stockName: props.stockName,
+    strategySignals: props.strategySignals,
     tokens: tokens.value,
   })
 }
@@ -359,6 +364,7 @@ watch(
       props.maPeriods,
       props.visibleBars,
       props.focusDate,
+      props.strategySignals,
       // canvas 颜色是 setOption 时的快照，主题变了必须重绘，否则深色下仍是浅色档轴线
       tokens.value,
     ] as const,

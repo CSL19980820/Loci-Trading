@@ -24,15 +24,28 @@ from src.ops.application.notify_screen_template import (
     preview_screen_template,
     resolve_kind_tag,
 )
-from src.ops.application.notify_send_queue import run_serialized
+from src.ops.application.notify_send_queue import NonRetryableSendError, run_serialized
 
 logger = logging.getLogger(__name__)
 
 WECOM_WEBHOOK_PREFIX = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
 MAX_TEXT_CHARS = 2000
 
+#: 企微 ``msgtype=text`` 的官方上限是 **2048 字节**（UTF-8），不是 2048 字。中文
+#: 一字三字节，折算下来一条只装得下约 680 个汉字。``MAX_TEXT_CHARS`` 那道 2000
+#: **字**的闸门对纯中文正文其实是 6000 字节——超限那部分能不能发出去取决于服务端
+#: 心情，而它不会告诉你哪里被吞了。所以「长正文」必须**自己按字节分片**，别指望
+#: `_clip`：截断是丢内容，分片是全都发到。
+WECOM_TEXT_MAX_BYTES = 2048
+
+#: 分片默认预算。留 ~240 字节给标题行与 ``（i/n）`` 标记。
+WECOM_CHUNK_BYTES = 1800
+
 __all__ = [
     "NotifyError",
+    "NotifyNotRetryable",
+    "WECOM_CHUNK_BYTES",
+    "WECOM_TEXT_MAX_BYTES",
     "format_alerts",
     "format_digest",
     "format_job_status",
@@ -47,12 +60,98 @@ __all__ = [
     "resolve_kind_tag",
     "send_wecom_markdown",
     "send_wecom_text",
+    "split_text_for_wecom",
     "validate_wecom_webhook",
 ]
 
 
+def _byte_len(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def split_text_for_wecom(
+    text: str,
+    *,
+    limit_bytes: int = WECOM_CHUNK_BYTES,
+    max_chunks: int = 6,
+) -> list[str]:
+    """把长正文按**字节**切成多片，优先在空行/换行/句末断开。
+
+    为什么不按字数切：企微的上限是字节，中英混排时同样的字数可能差三倍字节。
+    为什么优先在换行断：简报正文是分段的，从段落中间切开会把一句话劈成两条消息。
+
+    ``max_chunks`` 是防呆闸门（一条简报最多几条消息）。真的超了就在最后一片尾部
+    标注「已截断」——**明说被截断**比悄悄丢掉后半篇好。
+    """
+    body = str(text or "").strip()
+    if not body:
+        return []
+    budget = max(64, min(int(limit_bytes), WECOM_TEXT_MAX_BYTES - 64))
+    chunks: list[str] = []
+    rest = body
+    while rest and len(chunks) < max_chunks:
+        if _byte_len(rest) <= budget:
+            chunks.append(rest)
+            rest = ""
+            break
+        cut = _cut_point(rest, budget)
+        chunks.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip("\n")
+    if rest:
+        tail = chunks[-1] if chunks else ""
+        note = "\n…（后续已截断）"
+        while tail and _byte_len(tail + note) > budget:
+            tail = tail[:-1]
+        chunks[-1] = tail + note
+    return [chunk for chunk in chunks if chunk.strip()]
+
+
+def _cut_point(text: str, budget: int) -> int:
+    """在 ``budget`` 字节以内找一个体面的断点（字符下标）。"""
+    # 先用字节预算换算出一个字符上界：UTF-8 下 1 字符 ≤ 4 字节，从 budget 往回收。
+    high = min(len(text), budget)
+    while high > 1 and _byte_len(text[:high]) > budget:
+        high -= 1
+    window = text[:high]
+    for sep in ("\n\n", "\n", "。", "；", "！", "？", "，", " "):
+        index = window.rfind(sep)
+        # 太靠前的断点会切出一堆碎片：至少要用掉这一片的六成。
+        if index >= high * 0.6:
+            return index + len(sep)
+    return high
+
+
 class NotifyError(RuntimeError):
     """推送配置或发送失败。"""
+
+
+class NotifyNotRetryable(NotifyError, NonRetryableSendError):
+    """企微明确拒绝、且重试无意义（甚至有害）的失败。
+
+    仍是 ``NotifyError`` 的子类——所有 ``except NotifyError`` 的调用点一行不用改；
+    同时是 ``NonRetryableSendError``，出站队列见到它就不再重试。
+    """
+
+
+#: 收到这些 errcode 就别再打了。
+#:
+#: - ``45009`` 接口调用超过限制：官方对每个 webhook key 限 **20 条/分钟**。此前
+#:   它被当成普通失败，``notify_send_queue`` 会在 1s 间隔内再打 2 次——在超频的
+#:   伤口上撒盐，把「这一分钟满了」拖成「这个机器人被限得更久」。
+#: - ``93000`` webhook 地址非法 / ``40001`` 凭证不合法 / ``93004`` 机器人已停用：
+#:   配置问题，重试一万次也一样。
+#:
+#: 表外的错误码保持可重试：宁可多打两次，也不要把「网络抖了一下」误判成永久
+#: 失败——静音的代价比重复出声大得多。
+WECOM_NON_RETRYABLE_ERRCODES = frozenset({45009, 93000, 93004, 40001})
+
+
+def _webhook_key(url: str) -> str:
+    """取 webhook 的 key 段——官方限额按它算，不按机器人、不按租户。"""
+    text = (url or "").strip()
+    if text.startswith(WECOM_WEBHOOK_PREFIX):
+        return text[len(WECOM_WEBHOOK_PREFIX) :]
+    return text.rsplit("key=", 1)[-1] if "key=" in text else text
 
 
 def validate_wecom_webhook(url: str) -> str:
@@ -86,7 +185,8 @@ def send_wecom_text(webhook_url: str, content: str) -> dict[str, Any]:
         {"msgtype": "text", "text": {"content": _clip(content, MAX_TEXT_CHARS)}},
         ensure_ascii=False,
     ).encode("utf-8")
-    return run_serialized(lambda: _post(url, body))
+   #: rate_key 让出站队列按 webhook key 过 20 条/分钟的令牌桶（官方口径）。
+    return run_serialized(lambda: _post(url, body), rate_key=_webhook_key(url))
 
 
 def send_wecom_markdown(webhook_url: str, content: str) -> dict[str, Any]:
@@ -115,8 +215,12 @@ def _post(url: str, body: bytes) -> dict[str, Any]:
         payload = json.loads(raw) if raw else {}
     except json.JSONDecodeError as exc:
         raise NotifyError(f"企微响应不是 JSON：{raw[:120]}") from exc
-    if int(payload.get("errcode", 0)) != 0:
-        raise NotifyError(f"企微错误 {payload.get('errcode')}：{payload.get('errmsg', '')}")
+    errcode = int(payload.get("errcode", 0) or 0)
+    if errcode != 0:
+        detail = f"企微错误 {errcode}：{payload.get('errmsg', '')}"
+        if errcode in WECOM_NON_RETRYABLE_ERRCODES:
+            raise NotifyNotRetryable(detail)
+        raise NotifyError(detail)
     return payload if isinstance(payload, dict) else {"ok": True}
 
 
@@ -234,6 +338,7 @@ def format_job_status(
         "skill_watch": "监测",
         "strategy_monitor": "纸面监测",
         "intel_fetch": "情报采集",
+        "intel_brief": "简报推送",
         "notify": "推送",
         "outcome": "跟踪",
         "backtest": "回测",
@@ -321,6 +426,7 @@ def kind_labels_fallback(kind: str) -> str:
         "skill_watch": "监测",
         "strategy_monitor": "纸面监测",
         "intel_fetch": "情报采集",
+        "intel_brief": "简报推送",
         "notify": "推送",
     }.get(kind, "任务")
 
@@ -337,3 +443,27 @@ def _title_from_result(result: dict[str, Any], fallback: str) -> str:
     if name.startswith("screen:"):
         name = name[len("screen:") :]
     return name
+
+
+# ---- 多通道告警（实现在 notify_registry / infrastructure.notify_channels）----
+#
+# 在这里再导一次，是为了让「推送相关的东西从 src.ops.application.notify 拿」
+# 这个既有心智继续成立。实现不放本文件：本文件已 339 行，且企微出站与
+# 通道注册表是两件事，混在一起下一个人就分不清改哪儿了。
+from src.ops.application.notify_registry import (  # noqa: E402
+    NotifyChannelError,
+    dispatch,
+    get_channel_config,
+    list_channels,
+    save_channel_config,
+    test_channel,
+)
+
+__all__ += [
+    "NotifyChannelError",
+    "dispatch",
+    "get_channel_config",
+    "list_channels",
+    "save_channel_config",
+    "test_channel",
+]

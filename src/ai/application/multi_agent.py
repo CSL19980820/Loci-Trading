@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 from src.ai import ProviderConfig
 from src.ops.application.skill_cli import run_skill_cli
+from src.shared.tenancy import submit_with_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +104,11 @@ def run_ammo_agents(
 
     results: list[dict[str, Any]] = []
     workers = min(max_workers, max(1, len(specs)))
+    # 子任务在**已带租户上下文的** Skill worker 线程里扇出；线程池不继承
+    # ContextVar，裸 pool.submit 会让子 agent 的 CLI / MCP 调用按主租户解析
+    # 库与技能目录（mcp.json 也是租户私有的，等于用管理员的悟道 Key）。
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(_one, spec): spec for spec in specs}
+        futures = {submit_with_tenant(pool, _one, spec): spec for spec in specs}
         for fut in as_completed(futures):
             results.append(fut.result())
     # 稳定顺序：按声明顺序

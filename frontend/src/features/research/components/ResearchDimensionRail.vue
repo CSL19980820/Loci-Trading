@@ -45,11 +45,9 @@ function select(key: string): void {
 
 <template>
   <section class="dimension-rail" aria-label="研究维度目录">
+    <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <header class="section-head">
-      <div>
-        <span class="research-kicker">DIMENSION MAP</span>
-        <h3>维度目录</h3>
-      </div>
+      <h3>维度目录</h3>
       <span class="count-mark">{{ props.rows.length }}</span>
     </header>
     <el-table
@@ -91,14 +89,6 @@ function select(key: string): void {
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--sheet);
-}
-
-.research-kicker {
-  display: block;
-  color: var(--mist);
-  font: 0.68rem/1.2 var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .section-head {
@@ -163,7 +153,7 @@ function select(key: string): void {
 }
 
 .quality-partial {
-  color: var(--seal);
+  color: var(--seal-ink);
 }
 
 .quality-missing {

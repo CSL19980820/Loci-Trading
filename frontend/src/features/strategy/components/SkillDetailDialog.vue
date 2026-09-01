@@ -359,16 +359,15 @@ async function saveJob(): Promise<void> {
 }
 
 .manual {
-  min-height: 8rem;
   max-height: 62vh;
   overflow: auto;
 }
 .manual-body {
   padding: 1rem 1.15rem;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--el-fill-color-blank);
-  font-size: 0.9rem;
+  font-size: var(--fs-body);
   line-height: 1.7;
   word-break: break-word;
 }
@@ -412,7 +411,7 @@ async function saveJob(): Promise<void> {
 .md-code {
   margin: 0 0 0.7rem;
   padding: 0.55rem 0.7rem;
-  border-radius: 4px;
+  border-radius: var(--radius);
   background: var(--el-fill-color-light);
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 0.8rem;
@@ -437,7 +436,7 @@ async function saveJob(): Promise<void> {
 .tool-item {
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 4px;
+  border-radius: var(--radius);
 }
 .tool-head {
   display: flex;

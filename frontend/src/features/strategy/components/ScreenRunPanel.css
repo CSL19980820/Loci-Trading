@@ -229,3 +229,21 @@
 .picks-empty :deep(.el-empty) {
   padding: 1rem 0;
 }
+
+.run-panel__elapsed {
+  margin-left: auto;
+  padding-right: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.run-panel__abandon {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+}
+
+.run-panel__abandon-note {
+  font-size: 0.72rem;
+  color: var(--mist);
+}

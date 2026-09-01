@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 import pandas as pd
@@ -104,6 +105,7 @@ def screen(
     health_check: bool = True,
     on_progress: ProgressCallback | None = None,
     data_snapshot: Mapping[str, Any] | None = None,
+    live_overlay: bool | None = None,
 ) -> ScreenResult:
     """在指定交易日跑一次全市场选股。
 
@@ -117,6 +119,7 @@ def screen(
                   的小范围调试时自动跳过（全市场覆盖率对单票没有意义）。
     on_progress: 可选进度回调 ``(phase, percent, message)``，供异步选股轮询。
     data_snapshot: 可复用的行情仓快照；区间选股由调用方在任务开始时提供一次。
+    live_overlay: 盘中选今天时叠独立实时日 K（不写库）。``None`` 按时钟自动判断。
     """
     import time
 
@@ -142,12 +145,22 @@ def screen(
     except LookAheadError as exc:
         raise StrategyError(str(exc)) from exc
 
+    from src.market import should_overlay_live
+
+    if live_overlay is None:
+        live_overlay = should_overlay_live(trade_date)
+    today = date.today().isoformat()
+
     health: dict[str, Any] | None = None
     if health_check and not codes:
         from src.market import guard_market_health
 
         _progress("health", 12, "数据体检…")
-        health = guard_market_health(store, trade_date=trade_date).to_dict()
+        health_date = trade_date
+        if live_overlay:
+            days = store.trading_days()
+            health_date = days[-1] if days else trade_date
+        health = guard_market_health(store, trade_date=health_date).to_dict()
         _progress("health", 20, "体检通过，解析宇宙…")
 
     try:
@@ -156,7 +169,7 @@ def screen(
             store,
             effective_universe,
             codes=codes,
-            as_of=trade_date,
+            as_of=trade_date or (today if live_overlay else None),
             skip_safety=skip_universe_safety,
         )
     except UniverseError as exc:
@@ -167,6 +180,8 @@ def screen(
     start, end = _resolve_start(
         store, trade_date, bars, full_history=requires_full_history
     )
+    if live_overlay:
+        end = today
     # 必须带 codes + 窗口：无范围 data_snapshot 会扫全库 source_evidence，
     # 在千万行 market.db 上易触发 disk I/O error，拖死尾盘选股。
     if data_snapshot is not None:
@@ -182,6 +197,7 @@ def screen(
         "history_mode": "full" if requires_full_history else "window",
         "start": start,
         "end": end,
+        "live_overlay": bool(live_overlay),
     }
     _progress(
         "universe",
@@ -229,6 +245,27 @@ def screen(
         panels["__instrument_names__"] = {
             code: str(info.get("name", "")) for code, info in resolved.meta.items()
         }
+    if live_overlay:
+        from src.market import ScreenLiveError, fetch_live_spot_bars, overlay_live_day
+
+        types = {
+            code: str((resolved.meta.get(code) or {}).get("instrument_type") or "STOCK")
+            for code in resolved.codes
+        }
+        _progress("live", 52, f"拉取实时行情 {len(resolved.codes)} 只…")
+        try:
+            live_bars = fetch_live_spot_bars(
+                resolved.codes, instrument_types=types
+            )
+        except ScreenLiveError as exc:
+            raise StrategyError(str(exc)) from exc
+        if not live_bars:
+            raise StrategyError(
+                "盘中选股拉不到实时行情，已中止（不回退昨日本地日 K）"
+            )
+        panels = overlay_live_day(panels, live_bars, today)
+        result_snapshot["live_overlay_codes"] = len(live_bars)
+        _progress("live", 56, f"已叠实时日 K {len(live_bars)} 只")
     reference = _reference_panel(panels, engine.required_fields())
     if reference is None:
         funnel = resolved.funnel.to_dict()

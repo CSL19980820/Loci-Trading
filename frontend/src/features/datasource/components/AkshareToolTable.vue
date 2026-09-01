@@ -13,6 +13,9 @@ import type {
   JsonValue,
 } from '@/shared/types/quant'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
+
 import AkshareBatchProbeDialog from './AkshareBatchProbeDialog.vue'
 
 const props = defineProps<{
@@ -87,14 +90,14 @@ const paged = computed(() => {
 const tableRows = computed(() => paged.value as unknown as Record<string, unknown>[])
 
 const columns = ref<BasicTableColumn[]>([
-  { prop: 'name', label: '接口', minWidth: 190, showOverflowTooltip: true },
-  { prop: 'category_label', label: '类目', width: 110, slotName: 'category' },
-  { prop: 'provider', label: '来源', width: 110 },
-  { prop: 'summary', label: '说明', minWidth: 200, showOverflowTooltip: true },
-  { prop: 'status', label: '就绪', width: 100, slotName: 'ready' },
-  { prop: 'health_ok', label: '探测', width: 88, slotName: 'health' },
-  { prop: 'health_elapsed_ms', label: '响应', width: 92, align: 'right', slotName: 'rtt' },
-  { prop: 'actions', label: '操作', width: 88, fixed: 'right', align: 'center', slotName: 'actions' },
+  { prop: 'name', label: '接口', minWidth: 190, align: 'center', headerAlign: 'center', showOverflowTooltip: true },
+  { prop: 'category_label', label: '类目', width: 110, align: 'center', headerAlign: 'center', slotName: 'category' },
+  { prop: 'provider', label: '来源', width: 110, align: 'center', headerAlign: 'center' },
+  { prop: 'summary', label: '说明', minWidth: 200, align: 'left', headerAlign: 'left', showOverflowTooltip: true },
+  { prop: 'status', label: '就绪', width: 100, align: 'center', headerAlign: 'center', slotName: 'ready' },
+  { prop: 'health_ok', label: '探测', width: 88, align: 'center', headerAlign: 'center', slotName: 'health' },
+  { prop: 'health_elapsed_ms', label: '响应', width: 92, align: 'center', headerAlign: 'center', slotName: 'rtt' },
+  { prop: 'actions', label: '操作', width: 88, fixed: 'right', align: 'center', headerAlign: 'center', slotName: 'actions' },
 ])
 
 const pager = computed(() => ({
@@ -208,7 +211,15 @@ watch(filtered, () => {
 </script>
 
 <template>
-  <Sheet title="接口" :chip="versionChip" class="ak-sheet" plain>
+  <!--
+    「接口」标题删了：表头已写「接口 / 说明 / 入参」，视图切换器也写着「按接口」，
+    本视图内没有并列兄弟块要区分。版本 chip 迁到本块第一条功能行（头部读数），信息不丢。
+  -->
+  <Sheet class="ak-sheet" plain>
+    <template #header>
+      <HeaderStat label="AkShare 版本" :value="versionChip" />
+    </template>
+
     <template #actions>
       <el-button type="primary" size="small" :loading="busy" @click="emit('probe-all')">一键全测</el-button>
       <el-button size="small" :disabled="!busy" @click="emit('stop-batch')">停止</el-button>
@@ -287,7 +298,7 @@ watch(filtered, () => {
           </template>
         </BasicTable>
       </div>
-      <el-empty v-else description="接口目录尚未加载" />
+      <EmptyState v-else description="接口目录尚未加载" reason="点右上「刷新」重读一次" />
     </div>
   </Sheet>
 
@@ -301,7 +312,7 @@ watch(filtered, () => {
 
   <el-dialog v-model="visible" :title="selected ? `试跑 ${selected.name}` : '接口试跑'" width="720px" destroy-on-close>
     <p v-if="selected" class="signature">{{ selected.signature }} · {{ selected.summary }}</p>
-    <el-form label-position="top" class="params-form" @submit.prevent="submitProbe">
+    <el-form label-position="right" label-width="6.5em" size="small" class="params-form" @submit.prevent="submitProbe">
       <el-form-item
         v-for="parameter in selected?.parameters ?? []"
         :key="parameter.name"
@@ -362,8 +373,8 @@ watch(filtered, () => {
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
-  height: 100%;
 }
+/* 只在 sheet 内层做一次 flex 传递：不再逐层写 height:100% 互相打架 */
 .ak-sheet :deep(.sheet-slot) {
   display: flex;
   flex-direction: column;
@@ -375,19 +386,19 @@ watch(filtered, () => {
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
-  height: 100%;
-  gap: 0.55rem;
+  gap: var(--gap-2);
 }
-.version-hint { color: var(--el-color-warning); font-size: 0.82rem; }
+.version-hint { color: var(--warn); font-size: var(--fs-aux); }
 .catalog-filters {
   display: grid;
-  grid-template-columns: minmax(13rem, 2fr) repeat(3, minmax(7rem, 1fr));
-  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--gap-2);
   flex-shrink: 0;
 }
+/* 高度内容驱动：表体自己吃满剩余空间，空目录时不留 12rem 死白 */
 .ak-table-wrap {
   flex: 1 1 auto;
-  min-height: 12rem;
+  min-height: 0;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--sheet);
@@ -395,16 +406,17 @@ watch(filtered, () => {
   display: flex;
   flex-direction: column;
 }
-.ak-table-wrap :deep(.basic-table) {
-  height: 100%;
-}
-.filter-meta { color: var(--el-text-color-secondary); font-size: 0.82rem; }
+.filter-meta { color: var(--mist); font-size: var(--fs-aux); }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.signature { margin: 0 0 0.8rem; color: var(--el-text-color-secondary); font-family: var(--mono); font-size: 0.82rem; }
-.params-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 0.75rem; }
-.parameter-meta { margin: 0.3rem 0 0; color: var(--el-text-color-secondary); font-size: 0.78rem; line-height: 1.35; }
-.probe-summary { margin: 0.75rem 0; color: var(--el-text-color-secondary); font-size: 0.85rem; }
-@media (max-width: 900px) {
-  .catalog-filters, .params-form { grid-template-columns: 1fr; }
+.signature { margin: 0 0 var(--gap-2); color: var(--mist); font-family: var(--mono); font-size: var(--fs-aux); overflow-wrap: anywhere; }
+/* 表单栅格挂在 el-form 自身：不插裸 div，label 宽仍由 EP 的 label-width 算 */
+.params-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--gap-1) var(--gap-3);
+  align-items: start;
 }
+.params-form :deep(.el-form-item) { margin-bottom: var(--gap-1); min-width: 0; }
+.parameter-meta { margin: 2px 0 0; color: var(--mist); font-size: var(--fs-kicker); line-height: 1.35; }
+.probe-summary { margin: var(--gap-2) 0; color: var(--mist); font-size: var(--fs-aux); font-variant-numeric: tabular-nums; }
 </style>

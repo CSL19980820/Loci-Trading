@@ -20,6 +20,7 @@ from src.ops.application.jobs.backtest import execute_backtest
 from src.ops.application.jobs.compare import execute_compare
 from src.ops.application.jobs.context import (
     DEFAULT_PALACE_DB,
+    default_palace_db,
     Executor,
     JobCancelled,
     JobContext,
@@ -45,6 +46,7 @@ from src.ops.application.jobs.sync import execute_sync
 
 __all__ = [
     "DEFAULT_PALACE_DB",
+    "default_palace_db",
     "EXECUTORS",
     "Executor",
     "JobCancelled",

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from html import unescape
 from html.parser import HTMLParser
+import os
 from ipaddress import IPv6Address, ip_address, ip_network
 import re
 import socket
@@ -30,6 +31,17 @@ _UA = (
 _TIMEOUT = 18.0
 _MAX_RESULTS = 8
 _MAX_FETCH_CHARS = 12_000
+
+#: 外网工具**专用**代理。为什么不复用全局 ``HTTP_PROXY``:同一个进程还要拉
+#: akshare / 腾讯 / 新浪 / 通达信这些**国内**行情源,全局代理会把它们一起绕到
+#: 境外出口——又慢又容易直接断,而行情是这套系统的命根子。所以只给这两个
+#: 外网工具单开一个开关,行情链路一律直连。
+#:
+#: 生产实测(2026-08-26,容器内):直连 ``html.duckduckgo.com`` 报
+#: ``Network is unreachable``;经宿主 ``172.17.0.1:7890`` 380ms 拿到 HTTP 202。
+#: 不配置时行为完全不变(``proxy=None`` → httpx 仍按 ``trust_env`` 读全局环境
+#: 变量),开发机上原来怎么走现在还怎么走。
+_PROXY_ENV = "LOCI_WEB_TOOL_PROXY"
 
 
 #: 重定向跳数上限。httpx 的 follow_redirects 已关闭，改由 _get_guarded 手动跟。
@@ -153,9 +165,23 @@ def _guard_url(url: str) -> None:
             raise WebAccessBlocked(_BLOCK_HINT)
 
 
+def _web_proxy() -> str | None:
+    """外网工具专用代理;没配就返回 None(交回 httpx 的 trust_env 默认行为)。"""
+    return os.environ.get(_PROXY_ENV, "").strip() or None
+
+
 def _client() -> httpx2.Client:
-    # follow_redirects=False 本身就是护栏的一部分：跟跳必须回 _guard_url 重判。
-    return httpx2.Client(timeout=_TIMEOUT, follow_redirects=False, headers={"User-Agent": _UA})
+    # follow_redirects=False 本身就是护栏的一部分:跟跳必须回 _guard_url 重判。
+    #
+    # 走代理**不放松 SSRF 护栏**:``_guard_url`` 判的是目标 URL 解析出来的地址,
+    # 与走不走代理无关。代理自身是私网地址(172.17.0.1)也不受影响——它不是
+    # 被校验的目标。Fake-IP 段的豁免见 ``_PROXY_FAKE_IP_NETWORKS``。
+    return httpx2.Client(
+        timeout=_TIMEOUT,
+        follow_redirects=False,
+        headers={"User-Agent": _UA},
+        proxy=_web_proxy(),
+    )
 
 
 def _get_guarded(client: httpx2.Client, url: str) -> Any:

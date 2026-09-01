@@ -158,19 +158,4 @@ def build_skill_watch_router(*, write_dependency, ops_db: str | None = None) -> 
         except JobError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @router.get("/api/skills/{slug}/second-wave", tags=["skills"])
-    def get_second_wave_latest(slug: str) -> dict[str, Any]:
-        """首页挂载：上一轮二波扫描快照 + 列表票当日现价。不重跑扫描。"""
-        from src.ops.application.skill_watch.engine_registry import engine_spec
-        from src.ops.application.skill_watch.second_wave_snapshot import (
-            SECOND_WAVE_SLUG,
-            present_latest_snapshot,
-        )
-
-        spec = engine_spec(slug)
-        if spec is None or spec.target != "second_wave:scan_second_wave":
-            raise HTTPException(status_code=404, detail="该技能不是二波监测")
-        with _ops() as store:
-            return present_latest_snapshot(store, slug=slug or SECOND_WAVE_SLUG)
-
     return router

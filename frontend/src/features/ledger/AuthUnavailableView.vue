@@ -2,6 +2,10 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { BRAND_MARK } from '@/shared/lib/brand'
+
+const brandMark = BRAND_MARK
+
 const route = useRoute()
 const router = useRouter()
 
@@ -16,13 +20,12 @@ function retry(): void {
 </script>
 
 <template>
+  <!-- 非壳内页例外（§3.7.1）：自管 100dvh，但内容靠 place-items 居中，不靠大 padding -->
   <main class="auth-unavailable" aria-labelledby="auth-unavailable-title">
     <section class="auth-unavailable__content">
-      <p class="auth-unavailable__eyebrow">LOCI / 连接状态</p>
+      <p class="auth-unavailable__eyebrow">{{ brandMark }} / 连接状态</p>
       <h1 id="auth-unavailable-title">认证服务暂不可用</h1>
-      <p class="auth-unavailable__message">
-        当前无法完成登录状态校验，工作台没有加载。服务恢复后可以继续刚才的页面。
-      </p>
+      <p class="auth-unavailable__message">登录校验失败，服务恢复后可继续原页面</p>
       <el-button type="primary" @click="retry">重试</el-button>
     </section>
   </main>
@@ -33,36 +36,35 @@ function retry(): void {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 1.5rem;
+  padding: var(--gap-4);
   background: var(--paper);
 }
-
 .auth-unavailable__content {
-  width: min(100%, 32rem);
-  padding: 1.5rem;
+  width: min(100%, 26rem);
+  padding: var(--gap-3);
   border: 1px solid var(--rule);
-  border-left: 4px solid var(--seal);
   border-radius: var(--radius);
-  background: var(--sheet);
+  /* 原为 border-left: 2px solid var(--seal)：左竖条改为 hairline 外框 + 极淡印章底色 */
+  background: color-mix(in srgb, var(--seal) 6%, var(--sheet));
 }
-
 .auth-unavailable__eyebrow {
-  margin: 0 0 0.65rem;
+  margin: 0 0 var(--gap-1);
   color: var(--mist);
-  font: 600 0.72rem/1.3 var(--mono);
+  font: 600 var(--fs-kicker) / 1.3 var(--mono);
   letter-spacing: 0.08em;
 }
-
 h1 {
   margin: 0;
   color: var(--ink);
-  font-size: 1.35rem;
-  line-height: 1.25;
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.3;
 }
-
 .auth-unavailable__message {
-  margin: 0.75rem 0 1.25rem;
+  margin: var(--gap-2) 0 var(--gap-3);
   color: var(--muted);
-  line-height: 1.65;
+  font-size: var(--fs-body);
+  line-height: 1.6;
 }
 </style>

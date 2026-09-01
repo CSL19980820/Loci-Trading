@@ -13,7 +13,7 @@ const props = withDefaults(
   {
     leftWidth: '230px',
     padding: '0',
-    gap: '0.75rem',
+    gap: 'var(--gap-2)',
   },
 )
 
@@ -69,7 +69,7 @@ const hasTopExpand = computed(() => Boolean(slots.topExpand))
   min-height: 0;
   overflow: auto;
   border-right: 1px solid var(--rule);
-  background: var(--panel-2);
+  background: var(--sheet-alt);
 }
 
 .page-container__body {
@@ -87,9 +87,9 @@ const hasTopExpand = computed(() => Boolean(slots.topExpand))
   flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: flex-start;
-  padding: 0.75rem 1rem 0;
+  gap: var(--gap-2);
+  align-items: center;
+  padding: var(--gap-1) var(--pad-sheet-x);
   border-bottom: 1px solid var(--rule);
 }
 

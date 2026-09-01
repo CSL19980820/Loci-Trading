@@ -192,17 +192,18 @@ async function submit(): Promise<void> {
     @update:model-value="emit('update:visible', $event)"
     @closed="close"
   >
-    <el-alert type="info" show-icon :closable="false" :title="hint" />
     <el-alert v-if="error" class="dialog-alert" type="error" show-icon :closable="false" :title="error" />
-    <el-form class="import-form" label-position="top" @submit.prevent="submit">
+    <el-form class="import-form" label-position="right" label-width="6.5em" size="small" @submit.prevent="submit">
       <el-form-item label="批量 JSON" required>
-        <el-input
-          v-model="raw"
-          type="textarea"
-          :autosize="{ minRows: 10, maxRows: 18 }"
-          :placeholder="placeholder"
-          spellcheck="false"
-        />
+        <el-tooltip :content="hint" placement="top">
+          <el-input
+            v-model="raw"
+            type="textarea"
+            :autosize="{ minRows: 10, maxRows: 18 }"
+            :placeholder="placeholder"
+            spellcheck="false"
+          />
+        </el-tooltip>
       </el-form-item>
     </el-form>
     <template #footer>
@@ -213,6 +214,6 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
-.dialog-alert { margin-top: .75rem; }
-.import-form { margin-top: .8rem; }
+.dialog-alert { margin-top: var(--gap-2); }
+.import-form { margin-top: var(--gap-2); }
 </style>

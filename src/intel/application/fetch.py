@@ -186,6 +186,20 @@ def _resolve_structured(result: dict[str, Any]) -> dict[str, Any] | None:
     if isinstance(direct, dict) and direct:
         data = direct.get("data")
         if isinstance(data, dict) and ("tool" in direct or "success" in direct):
+            # 解包成服务端的 ``data`` 段（消费方读的都是 rows/summary 这一层），但
+            # ``rawData`` 是 ``data`` 的**兄弟节点**，直接丢会把 ``detailLevel=raw`` 唯一
+            # 多出来的那份东西整段抹掉——悟道简报的全文（``rawData[0].content.fullContent``）
+            # 就在那里，抹掉之后推出去的「简报」只剩一句核心摘要。
+            #
+            # 为什么不改成「让消费方自己去 text 里再解一次 JSON」：``McpClient`` 对正文有
+            # ``MAX_TOOL_RESULT_CHARS=12_000`` 的截断，raw 档 JSON 正文实测 41KB，截断后
+            # 必然解不出结构，这条路走不通（线上实测过一次，只拿到 410 字的兜底摘要）。
+            #
+            # ``rawData`` 只有显式 ``detailLevel=raw`` 才会出现（配方与 tape lane 都不用
+            # raw），所以这行对既有工具的载荷形状零影响。
+            raw_data = direct.get("rawData")
+            if raw_data is not None and "rawData" not in data:
+                return {**data, "rawData": raw_data}
             return data
         return direct
     return _parse_tool_payload(str(result.get("text") or ""))

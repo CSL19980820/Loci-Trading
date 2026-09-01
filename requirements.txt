@@ -17,9 +17,12 @@ itsdangerous>=2.2.0
 # 同理无处直接 import：UploadFile/File 路由（账本导入、技能包、战法包）在
 # create_app 注册路由时就要求 python-multipart，缺了 app 直接起不来。
 python-multipart>=0.0.20
-
 # 定时任务调度（进程内单例，不引入 broker）
-apscheduler>=3.10.0
+# 上界不是洁癖：APScheduler 4.x 至今只有 4.0.0a6（alpha，16 个月没出 beta），
+# 官方文档明写 do NOT use in production；而且 4.x 把 API 整个重写了
+# （BackgroundScheduler / executors / add_job 签名全变）。没有上界的话，
+# 4.0 stable 发布当天 pip 就会解析到 4.x，本仓在 import 处直接炸。
+apscheduler>=3.11,<4
 # 技能包 SKILL.md 的 YAML frontmatter
 PyYAML>=6.0
 # 分享包 AES 加密 zip（设置 → 一键打包）

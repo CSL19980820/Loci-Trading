@@ -133,51 +133,63 @@ function roleLabel(role?: string): string {
 
     <template v-else>
       <template v-if="historyRows.length && timelineModel.codeOptions.length">
+        <!--
+          「角色演进图」这行标题删了：卡片头已经写着「角色演进」，图自己有坐标轴与
+          图例，标题只是把选码控件挤到第二行。读法说明（纵轴是档位、最多 6 只、
+          缺口＝当日无观测）挪进选码控件的 tooltip，页面上不留常驻说明段。
+        -->
         <div class="chart-head">
-          <p class="section dim chart-title">角色演进图</p>
-          <el-select
-            v-model="selectedCodes"
-            multiple
-            collapse-tags
-            collapse-tags-tooltip
-            :max-collapse-tags="2"
-            size="small"
-            placeholder="选择代码"
-            class="code-select"
+          <el-tooltip
+            placement="top-end"
+            content="纵轴是角色档位（不是收益）；最多叠 6 只，缺口表示当日无观测"
           >
-            <el-option
-              v-for="opt in timelineModel.codeOptions"
-              :key="opt.code"
-              :label="`${opt.name}(${opt.code})`"
-              :value="opt.code"
-              :disabled="
-                selectedCodes.length >= 6 && !selectedCodes.includes(opt.code)
-              "
-            />
-          </el-select>
+            <el-select
+              v-model="selectedCodes"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              :max-collapse-tags="2"
+              size="small"
+              placeholder="选择代码"
+              aria-label="角色演进图 · 选择代码"
+              class="code-select"
+            >
+              <el-option
+                v-for="opt in timelineModel.codeOptions"
+                :key="opt.code"
+                :label="`${opt.name}(${opt.code})`"
+                :value="opt.code"
+                :disabled="
+                  selectedCodes.length >= 6 && !selectedCodes.includes(opt.code)
+                "
+              />
+            </el-select>
+          </el-tooltip>
         </div>
-        <p class="dim footnote chart-hint">
-          纵轴是角色档位（不是收益）；最多叠 6 只，缺口表示当日无观测。
-        </p>
         <PaperRoleTimelineChart :model="timelineModel" :height="260" />
       </template>
 
       <template v-if="positionAlerts.length">
-        <p class="section dim">持仓角色告警</p>
-        <el-alert
-          v-for="alert in positionAlerts"
-          :key="String(alert.code)"
-          class="alert-row"
-          type="warning"
-          show-icon
-          :closable="false"
-          :title="`${String(alert.name)} ${String(alert.code)} 已判${String(alert.role_label)}仍在持仓`"
-          :description="`${alert.observed_at ? `观测 ${alert.observed_at} · ` : ''}${String(alert.role_basis || '角色依据缺失')}${alert.layers != null ? ` · 持仓 ${alert.layers} 层` : ''}`"
-        />
+        <p class="section dim">持仓角色告警 <b class="count">{{ positionAlerts.length }}</b></p>
+        <!--
+          这一块原来是一摞 el-alert，靠 description 摊开「观测日 · 角色依据 · 持仓层数」。
+          description 禁用，但那三样是**证据数据**、不是介绍段，藏进 tooltip 等于丢证据。
+          改成每条一行：状态 chip + 标的 + 判定 + 依据 + 观测日 + 层数，全部留在页面上。
+        -->
+        <ul class="role-alert-list">
+          <li v-for="alert in positionAlerts" :key="String(alert.code)" class="alert-row">
+            <el-tag size="small" type="warning" effect="plain">{{ String(alert.role_label) }}</el-tag>
+            <span class="alert-row__who">{{ String(alert.name) }} {{ String(alert.code) }}</span>
+            <span>已判{{ String(alert.role_label) }}仍在持仓</span>
+            <span class="dim">{{ String(alert.role_basis || '角色依据缺失') }}</span>
+            <span v-if="alert.observed_at" class="dim mono">观测 {{ String(alert.observed_at) }}</span>
+            <span v-if="alert.layers != null" class="dim mono">持仓 {{ String(alert.layers) }} 层</span>
+          </li>
+        </ul>
       </template>
 
       <template v-if="survival.length">
-        <p class="section dim">龙头存活榜</p>
+        <p class="section dim">龙头存活榜 <b class="count">{{ survival.length }}</b></p>
         <el-table :data="survival" size="small" max-height="220" empty-text="还没有存活统计">
           <el-table-column prop="code" label="代码" width="90" />
           <el-table-column prop="name" label="名称" width="110" />
@@ -210,7 +222,7 @@ function roleLabel(role?: string): string {
       </template>
 
       <template v-if="recentTransitions.length">
-        <p class="section dim">最近角色转移</p>
+        <p class="section dim">最近角色转移 <b class="count">{{ recentTransitions.length }}</b></p>
         <el-table :data="recentTransitions" size="small" max-height="240" empty-text="还没有角色转移">
           <el-table-column prop="code" label="代码" width="90" />
           <el-table-column prop="name" label="名称" width="110" />
@@ -246,28 +258,50 @@ function roleLabel(role?: string): string {
   font-size: 0.85rem;
   font-weight: normal;
 }
+/* 每条告警一行：chip + 标的 + 判定 + 证据，横排到底，不换行成第二段 */
+.role-alert-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .alert-row {
-  margin-bottom: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.55rem;
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.alert-row:last-child {
+  border-bottom: 0;
+}
+.alert-row__who {
+  font-weight: 600;
+}
+.mono {
+  font-family: var(--mono);
 }
 .footnote {
   margin: 0.35rem 0 0;
   font-size: 0.85rem;
 }
+/* 图上方只剩选码控件，靠右贴齐图的右边缘 */
 .chart-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
-}
-.chart-title {
-  margin: 0;
+  margin-bottom: 0.35rem;
 }
 .code-select {
   min-width: 14rem;
   max-width: 22rem;
 }
-.chart-hint {
-  margin: 0.25rem 0 0.5rem;
+.count {
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--el-text-color-secondary);
 }
 </style>

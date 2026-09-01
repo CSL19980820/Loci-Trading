@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import { ArrowDown, Plus, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
 
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
@@ -9,9 +9,20 @@ import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import RowActions from '@/shared/components/ui/RowActions.vue'
+import { strategyLabel } from '@/shared/lib/format'
 import type { StrategyInfo } from '@/shared/types/quant'
 
 import StrategyDetailDialog from './StrategyDetailDialog.vue'
+
+/**
+ * 名称列一律中文：后端 `name` 缺失、或它本身就是 slug 形状（`sanyuan-tail-v1`）时
+ * 退回共享词表。搜索与 row-key 仍然用 slug，那是标识不是展示。
+ */
+function displayName(name: unknown, slug: unknown): string {
+  const text = String(name || '').trim()
+  if (text && !/^[a-z0-9][a-z0-9._-]*$/.test(text)) return text
+  return strategyLabel(String(slug || '') || text)
+}
 
 function sourceKindLabel(kind: string | null | undefined): string {
   if (kind === 'builtin') return '内置'
@@ -36,6 +47,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   openScreen: [slug: string]
+  /** 打开「从克隆包导入」对话框；对话框由 QuantView 持有（它同时是刷新战法列表的人）。 */
+  importBundle: []
 }>()
 
 const router = useRouter()
@@ -94,7 +107,9 @@ const filteredRows = computed(() => {
         (row) =>
           row.name.toLowerCase().includes(q)
           || row.slug.toLowerCase().includes(q)
-          || String(row.description || '').toLowerCase().includes(q),
+          || String(row.description || '')
+            .toLowerCase()
+            .includes(q),
       )
   return list as unknown as Record<string, unknown>[]
 })
@@ -127,19 +142,23 @@ const columns = ref<BasicTableColumn[]>([
   {
     prop: 'min_bars',
     label: '最少K线',
-    align: 'right',
+    align: 'center',
+    headerAlign: 'center',
     width: 100,
   },
   {
     prop: 'strategy_revision',
     label: '修订',
+    align: 'center',
+    headerAlign: 'center',
     width: 118,
     slotName: 'revision',
   },
   {
     prop: 'actions',
     label: '操作',
-    align: 'right',
+    align: 'center',
+    headerAlign: 'center',
     width: 168,
     fixed: 'right',
     slotName: 'actions',
@@ -172,9 +191,9 @@ function openEditableStrategy(slug: string): void {
   openWorkbench({ slug })
 }
 
-	function openCreate(source: 'blank' | 'description' | 'tdx'): void {
-	  openWorkbench({ source })
-	}
+function openCreate(source: 'blank' | 'description' | 'tdx'): void {
+  openWorkbench({ source })
+}
 
 function onRowClick(row: Record<string, unknown>): void {
   openDetail(row as unknown as StrategyInfo)
@@ -192,7 +211,7 @@ function onRowClick(row: Record<string, unknown>): void {
             :schemas="filterSchemas"
             :col-props="{ span: 8 }"
             :input-debounce-ms="0"
-            label-width="48px"
+            label-width="6.5em"
           />
         </div>
         <div class="strategies-search-actions">
@@ -212,6 +231,8 @@ function onRowClick(row: Record<string, unknown>): void {
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <!-- 克隆包的落地口：别人导出的战法 JSON 在这里粘贴导入 -->
+          <el-button :icon="Upload" @click="emit('importBundle')">从克隆包导入</el-button>
         </div>
       </template>
       <template #main>
@@ -229,20 +250,28 @@ function onRowClick(row: Record<string, unknown>): void {
           <template #name="{ row }">
             <div class="name-cell">
               <div class="name-line">
-                <strong>{{ row.name }}</strong>
-                <el-tag v-if="row.editable" size="small" type="primary" effect="plain">可编辑</el-tag>
+                <strong>{{ displayName(row.name, row.slug) }}</strong>
+                <el-tag v-if="row.editable" size="small" type="primary" effect="plain"
+                  >可编辑</el-tag
+                >
                 <el-tag v-else size="small" effect="plain">只读</el-tag>
               </div>
             </div>
           </template>
           <template #source="{ row }">
-            <el-tag size="small" :type="row.source_kind === 'builtin' ? 'info' : 'danger'" effect="plain">
+            <el-tag
+              size="small"
+              :type="row.source_kind === 'builtin' ? 'info' : 'danger'"
+              effect="plain"
+            >
               {{ sourceKindLabel(String(row.source_kind)) }}
             </el-tag>
           </template>
           <template #revision="{ row }">
             <span class="dim">
-              {{ revisionLabel(String(row.strategy_revision || ''), String(row.source_kind || '')) }}
+              {{
+                revisionLabel(String(row.strategy_revision || ''), String(row.source_kind || ''))
+              }}
             </span>
           </template>
           <template #actions="{ row }">
@@ -291,6 +320,8 @@ function onRowClick(row: Record<string, unknown>): void {
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <!-- 克隆包的落地口：别人导出的战法 JSON 在这里粘贴导入 -->
+          <el-button :icon="Upload" @click="emit('importBundle')">从克隆包导入</el-button>
         </EmptyState>
       </template>
     </PageContainer>

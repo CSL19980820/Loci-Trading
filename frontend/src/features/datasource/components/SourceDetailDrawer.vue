@@ -26,6 +26,13 @@ const open = computed({
 
 const probing = computed(() => props.busyKey === `source:${props.row?.id ?? ''}`)
 
+/** 两段常驻说明收进读数行的 tooltip：抽屉正文里不再留介绍文字。 */
+const scopeHint = computed(() =>
+  props.row?.interfaceOnly
+    ? '这家只出现在 AkShare 接口目录里，没有内置取数线路：点接口数去「按接口」勾选，勾上的会进内置 MCP 工具清单。'
+    : '源总开关关掉时，这家所有工具都不参与选源；单个工具停用只影响那一条线路。',
+)
+
 function toolRows(): Record<string, unknown>[] {
   return (props.row?.tools ?? []) as unknown as Record<string, unknown>[]
 }
@@ -47,7 +54,9 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
       <div class="ds-detail__head">
         <div class="ds-detail__name">
           <h4 :id="titleId" :class="titleClass">{{ row?.label ?? '数据源' }}</h4>
-          <code v-if="row">{{ row.id }}</code>
+          <el-tooltip v-if="row" :content="scopeHint" placement="bottom-start">
+            <code>{{ row.id }}</code>
+          </el-tooltip>
           <p v-if="row?.baseUrl" class="ds-detail__url">{{ row.baseUrl }}</p>
         </div>
         <el-tag v-if="row?.interfaceOnly" size="small" type="info" effect="plain">接口源</el-tag>
@@ -113,7 +122,7 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="顺位" width="62" align="right">
+        <el-table-column label="顺位" width="62" align="center" header-align="center">
           <template #default="{ row: item }">
             <span class="ord">{{ asTool(item).order ?? '—' }}</span>
           </template>
@@ -154,14 +163,6 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
           </template>
         </el-table-column>
       </el-table>
-
-      <p v-if="row.interfaceOnly" class="ds-detail__hint">
-        这家只出现在 AkShare 接口目录里，没有内置取数线路：点上面的接口数去「按接口」勾选，
-        勾上的会进内置 MCP 工具清单。
-      </p>
-      <p v-else class="ds-detail__hint">
-        源总开关关掉时，这家所有工具都不参与选源；单个工具停用只影响那一条线路。
-      </p>
     </template>
     <el-empty v-else description="未选中数据源" />
   </el-drawer>
@@ -187,6 +188,7 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
 .ds-detail__name code {
   font: 0.76rem var(--mono);
   color: var(--mist);
+  cursor: help;
 }
 
 .ds-detail__url {
@@ -251,13 +253,6 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
 }
 
 .dim {
-  color: var(--mist);
-}
-
-.ds-detail__hint {
-  margin: 0.75rem 0 0;
-  font-size: 0.78rem;
-  line-height: 1.5;
   color: var(--mist);
 }
 </style>

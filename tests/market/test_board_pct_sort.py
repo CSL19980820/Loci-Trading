@@ -34,20 +34,20 @@ class BoardPctSortTests(unittest.TestCase):
                         (code, name),
                     )
                 bars = [
-                    ("600001", "2026-07-30", 10.0),
-                    ("600001", "2026-07-31", 11.0),  # +10%
-                    ("600002", "2026-07-30", 20.0),
-                    ("600002", "2026-07-31", 20.0),  # 0%
-                    ("600003", "2026-07-30", 30.0),
-                    ("600003", "2026-07-31", 27.0),  # -10%
+                    ("600001", "2026-07-30", 10.0, 10000.0),
+                    ("600001", "2026-07-31", 11.0, 50000.0),  # +10%, amount=50k
+                    ("600002", "2026-07-30", 20.0, 20000.0),
+                    ("600002", "2026-07-31", 20.0, 100000.0),  # 0%, amount=100k
+                    ("600003", "2026-07-30", 30.0, 30000.0),
+                    ("600003", "2026-07-31", 27.0, 10000.0),  # -10%, amount=10k
                 ]
-                for code, day, close in bars:
+                for code, day, close, amt in bars:
                     store.conn.execute(
                         "INSERT INTO quotes_daily(trade_date, code, open, high, low,"
                         " close, volume, amount, turnover, fetched_at)"
-                        " VALUES (?, ?, ?, ?, ?, ?, 1000, 10000, 0.01,"
+                        " VALUES (?, ?, ?, ?, ?, ?, 1000, ?, 0.01,"
                         " '2026-07-31T00:00:00')",
-                        (day, code, close, close, close, close),
+                        (day, code, close, close, close, close, amt),
                     )
                 store.conn.commit()
 
@@ -62,6 +62,21 @@ class BoardPctSortTests(unittest.TestCase):
                 self.assertEqual(
                     [row["code"] for row in losers],
                     ["600003", "600002", "600001"],
+                )
+
+                _total, amounts = store.page_instruments_by_amount(
+                    sort="amount_desc", limit=10
+                )
+                self.assertEqual(
+                    [row["code"] for row in amounts],
+                    ["600002", "600001", "600003"],
+                )
+                _total, amounts_asc = store.page_instruments_by_amount(
+                    sort="amount_asc", limit=10
+                )
+                self.assertEqual(
+                    [row["code"] for row in amounts_asc],
+                    ["600003", "600001", "600002"],
                 )
 
 

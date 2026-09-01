@@ -1,5 +1,12 @@
 # 龙回头·二波：盘中提醒规格与观察期用法（2026-08-12）
 
+> **⛔ 已退役（2026-08）。本文只作历史规格存档，不对应任何在跑的代码。**  
+> 该战法已整体下线：信号引擎 `second_wave`、技能包 `dragon-second-wave`、`监测·二波监测` 任务、
+> 首页二波条、`second_wave_signals` 留痕表全部移除；存量安装由
+> `src/ops/application/retire_second_wave.py` 在启动时幂等清理。
+> 下方保留的是**退役当时的规格与实测数字**，供以后重做同类战法时先复现基线用。
+> 文中提到的 `scripts/dragon_second_wave_live_scan.py` 等脚本已随之删除，相关命令不再可用。
+
 > **类型**：How-to（可执行规格 + 观察期流程）  
 > **脚本**：[`scripts/dragon_second_wave_live_scan.py`](../../scripts/dragon_second_wave_live_scan.py)  
 > **阈值依据**：[`2026-08-dragon-pool-trigger-chip-backtest.md`](2026-08-dragon-pool-trigger-chip-backtest.md)、[`2026-08-dragon-survivorship-and-portfolio-fragility.md`](2026-08-dragon-survivorship-and-portfolio-fragility.md)  

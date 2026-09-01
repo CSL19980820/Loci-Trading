@@ -5,7 +5,7 @@ from typing import Any
 import sqlite3
 
 from src.ops.infrastructure.model_catalog import normalize_models, present_provider_models
-from src.ops.infrastructure.store_helpers import dumps, loads, new_id
+from src.ops.infrastructure.store_helpers import _now, dumps, loads, new_id
 
 
 class OpsProvidersMixin:
@@ -34,14 +34,15 @@ class OpsProvidersMixin:
         with self._transaction() as cursor:
             cursor.execute(
                 "UPDATE llm_providers SET encrypted_key = NULL, key_last4 = '',"
-                " updated_at = datetime('now') WHERE id = ?",
-                (provider_id,),
+                " updated_at = ? WHERE id = ?",
+                (_now(), provider_id),
             )
 
     def upsert_provider(self, payload: dict[str, Any]) -> str:
         provider_id = payload.get("id") or new_id("LLM")
         is_default_val = payload.get("is_default")
         is_default_insert = 1 if is_default_val else 0
+        moment = _now()
         with self._transaction() as cursor:
             if "is_default" in payload:
                 conflict_default = "is_default=excluded.is_default,"
@@ -53,7 +54,7 @@ class OpsProvidersMixin:
                                           key_last4, default_model, models_json,
                                           models_synced_at, proxy_url, is_active, is_default,
                                           validated_at, note, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     protocol=excluded.protocol, base_url=excluded.base_url,
                     encrypted_key=COALESCE(excluded.encrypted_key, llm_providers.encrypted_key),
@@ -80,6 +81,9 @@ class OpsProvidersMixin:
                     is_default_insert,
                     str(payload.get("validated_at", "")),
                     str(payload.get("note", "")),
+                    # created_at / updated_at：upsert 命中已有行时只采用 updated_at。
+                    moment,
+                    moment,
                 ),
             )
         return provider_id
@@ -92,9 +96,9 @@ class OpsProvidersMixin:
         with self._transaction() as cursor:
             cursor.execute("UPDATE llm_providers SET is_default = 0")
             cursor.execute(
-                "UPDATE llm_providers SET is_default = 1, updated_at = datetime('now')"
+                "UPDATE llm_providers SET is_default = 1, updated_at = ?"
                 " WHERE id = ?",
-                (record["id"],),
+                (_now(), record["id"]),
             )
         return True
 

@@ -27,7 +27,6 @@ const meterClass = computed(() => ({
 
 <template>
   <div class="scan-progress" aria-live="polite">
-    <div class="scan-progress__kicker mono">体检进度</div>
     <div class="scan-progress__head">
       <strong>{{ head }}</strong>
       <span class="mono scan-progress__pct">{{ pct }}%</span>
@@ -44,50 +43,42 @@ const meterClass = computed(() => ({
 
 <style scoped>
 .scan-progress {
-  margin: 0 0 0.75rem;
-  padding: 0.75rem 0.85rem;
+  margin: 0 0 var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
   border: 1px solid color-mix(in srgb, var(--seal) 28%, var(--rule));
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--seal-soft) 35%, var(--sheet));
 }
-
-.scan-progress__kicker {
-  margin: 0 0 0.35rem;
-  color: var(--mist);
-  font-size: 0.68rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .scan-progress__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.65rem;
-  margin-bottom: 0.45rem;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-1);
 }
 
 .scan-progress__pct {
-  font-size: 0.82rem;
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+  font-weight: 700;
   color: var(--mist);
   font-variant-numeric: tabular-nums;
 }
 
 .scan-progress__msg {
-  margin: 0.45rem 0 0;
-  font-size: 0.86rem;
+  margin: var(--gap-1) 0 0;
+  font-size: var(--fs-body);
   line-height: 1.4;
 }
 
 .scan-progress__detail {
-  margin: 0.25rem 0 0;
-  font-size: 0.78rem;
+  margin: 2px 0 0;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .seal-meter__track {
-  height: 0.42rem;
+  height: 4px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--rule) 70%, var(--sheet));
   overflow: hidden;
@@ -101,11 +92,11 @@ const meterClass = computed(() => ({
 }
 
 .seal-meter--done .seal-meter__fill {
-  background: var(--lake);
+  background: var(--success);
 }
 
 .seal-meter--err .seal-meter__fill {
-  background: #c8a400;
+  background: var(--warn);
 }
 
 @media (prefers-reduced-motion: reduce) {

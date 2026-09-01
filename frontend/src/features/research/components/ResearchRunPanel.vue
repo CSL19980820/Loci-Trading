@@ -42,12 +42,12 @@ function submit(): void {
 
 <template>
   <section class="run-panel" aria-label="研究 run">
+    <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
+    <!-- 「只列本次会话的 run」这句口径进 tooltip：页面上不留介绍段 -->
     <header class="run-head">
-      <div>
-        <span class="research-kicker">RUN LEDGER</span>
+      <el-tooltip placement="bottom-start" content="只列本次会话已创建或读取的 run；持久历史列表要等后端列表接口">
         <h3>研究 run</h3>
-        <p>当前仅列出本次会话已创建或读取的 run；持久历史列表需后端列表接口。</p>
-      </div>
+      </el-tooltip>
       <form class="run-query" @submit.prevent="submit">
         <el-input
           v-model="runId"
@@ -114,9 +114,7 @@ function submit(): void {
 .run-panel { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); overflow: hidden; }
 .run-head, .run-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .run-head { padding: 0.82rem 0.9rem; border-bottom: 1px solid var(--rule); }
-.research-kicker { display: block; color: var(--mist); font: 0.68rem/1.2 var(--mono); letter-spacing: 0.08em; }
-.run-head h3 { margin: 0.22rem 0 0; font-size: 0.98rem; letter-spacing: 0; }
-.run-head p { margin: 0.28rem 0 0; color: var(--mist); font-size: 0.76rem; }
+.run-head h3 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: .03em; cursor: help; }
 .run-query { display: flex; align-items: center; gap: 0.4rem; min-width: min(100%, 23rem); }
 .run-query .el-input { flex: 1 1 auto; }
 .run-panel :deep(.el-table) { width: 100%; }

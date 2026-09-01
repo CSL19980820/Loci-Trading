@@ -1,9 +1,10 @@
 """Job 执行上下文与公共错误/前缀。"""
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from threading import Event
+from threading import Event, Thread
 from time import monotonic
 from typing import Any
 
@@ -16,8 +17,17 @@ from src.shared.observability import (
 )
 from src.shared.paths import palace_db as _default_palace_db
 
+logger = logging.getLogger(__name__)
+
 #: 账本默认路径。PalaceStore 不像 MarketStore 那样接受 None。
+#: 兼容保留。**新代码用 default_palace_db()**：这个常量在 import 期求值，
+#: 多租户下会把所有用户的任务指向同一个账本。
 DEFAULT_PALACE_DB = str(_default_palace_db())
+
+
+def default_palace_db() -> str:
+    """当前租户的账本路径（每次调用现解析）。"""
+    return str(_default_palace_db())
 
 Executor = Callable[[dict[str, Any], "JobContext"], dict[str, Any]]
 
@@ -246,3 +256,159 @@ class JobContext:
         from src.market import open_market_hot
 
         return open_market_hot(self.market_hot_db)
+
+
+#: 执行期心跳间隔（秒）。
+#:
+#: 上界由回收窗决定：``store_runs.STALE_RUN_SECONDS_BY_KIND`` 里最紧的一档是
+#: ``sync`` / ``screen`` / ``paper_eod`` 的 45 分钟，另有「无 owner_pid 的旧
+#: 记录」15 分钟。心跳必须远快于其中最短的窗口，否则一次合法的长任务还在跑
+#: 就被判死回收（2026-08-25：一次 914s 的日终同步，heartbeat_at 全程冻在起始值）。
+#: 下界由写锁决定：心跳是一条 ``UPDATE job_runs`` 写事务，秒级刷新等于在整个
+#: 任务期间持续跟业务写入抢 ops.db 的写锁。
+#: 取 30s：15 分钟窗有 30 倍余量、45 分钟窗有 90 倍余量；一次 45 分钟的同步也
+#: 只多出 ~90 条单行 UPDATE（可忽略）；运维页看到的 heartbeat_at 最多落后 30s，
+#: 远小于人判断「是不是挂了」的耐心（本次误判发生在冻结 15 分钟时）。
+HEARTBEAT_INTERVAL_SECONDS = 30.0
+
+#: 停泵时等心跳线程收尾的上限（秒）。心跳线程最长阻塞在一次等写锁上
+#: （``RunHeartbeatWriter`` 的 busy_timeout，2s），10s 是宽裕的兜底。
+HEARTBEAT_JOIN_TIMEOUT_SECONDS = 10.0
+
+#: 心跳线程名前缀。测试据此断言「任务结束后没有心跳线程残留」。
+HEARTBEAT_THREAD_PREFIX = "job-heartbeat-"
+
+
+class HeartbeatPump:
+    """执行期后台心跳：执行器跑着的时候周期性推进 ``job_runs.heartbeat_at``。
+
+    为什么不让执行器自己刷：执行器是 16 个各写各的同步函数，绝大多数是「一头扎
+    进去几百秒」的循环。逐个改一遍既不现实，新写的执行器也一定会忘——忘记的代价
+    是任务跑到一半被判死回收（占槽被抢、运维页显示已挂），属于静默事故。所以统一
+    由 ``run_job`` 在执行器外面套一层，执行器不需要知道心跳的存在。
+
+    线程安全：**不复用调用方的 OpsStore 连接**。``sqlite3.connect`` 默认
+    ``check_same_thread=True``，后台线程碰主连接会当场抛 ProgrammingError；就算
+    关掉这个开关，也会和执行线程正在跑的事务共用一条连接。因此优先向 store 要一
+    个自带连接的 ``RunHeartbeatWriter``（见 ``store_runs``），拿不到才回落到
+    ``JobContext.heartbeat()``（测试替身 / 旧 store）。
+
+    生命周期：``stop()`` = 置事件 + ``join()``；成功、异常、超时、取消四条路径都经
+    ``__exit__`` 收口，线程不会泄漏。线程另标 daemon，最坏情况也不挡进程退出。
+    """
+
+    def __init__(
+        self,
+        context: "JobContext",
+        *,
+        interval: float | None = None,
+        beat: Callable[[], None] | None = None,
+    ) -> None:
+        self._context = context
+        # 默认间隔在**构造时**才读模块全局，测试可 monkeypatch 成亚秒级。
+        raw = HEARTBEAT_INTERVAL_SECONDS if interval is None else interval
+        try:
+            seconds = float(raw)
+        except (TypeError, ValueError):
+            seconds = HEARTBEAT_INTERVAL_SECONDS
+        # 非正数会把循环变成忙等，一律回落默认值。
+        self.interval = seconds if seconds > 0 else HEARTBEAT_INTERVAL_SECONDS
+        self._beat = beat
+        self._writer: Any = None
+        self._stop = Event()
+        self._thread: Thread | None = None
+        #: 成功 / 失败的心跳次数，供测试与排查断言。
+        self.beats = 0
+        self.errors = 0
+
+    @property
+    def thread(self) -> Thread | None:
+        return self._thread
+
+    def _resolve_writer(self) -> Any:
+        """取一个可跨线程用的心跳写入器；取不到返回 None（回落 ctx.heartbeat）。"""
+        if self._beat is not None:
+            return None
+        factory = getattr(self._context.ops_store, "run_heartbeat_writer", None)
+        if not callable(factory):
+            return None
+        try:
+            return factory()
+        except Exception:  # noqa: BLE001 — 取不到写入器就回落，绝不影响任务
+            logger.debug("心跳写入器创建失败，回落 ctx.heartbeat", exc_info=True)
+            return None
+
+    def _beat_once(self) -> None:
+        try:
+            if self._beat is not None:
+                self._beat()
+            elif self._writer is not None:
+                self._writer.beat(self._context.run_id)
+            else:
+                self._context.heartbeat()
+        except Exception as exc:  # noqa: BLE001 — 心跳写不进去是可见性问题，不是任务失败
+            self.errors += 1
+            if self.errors == 1:
+                logger.warning(
+                    "run %s 心跳刷新失败，任务继续执行：%s", self._context.run_id, exc
+                )
+            return
+        self.beats += 1
+
+    def _loop(self) -> None:
+        try:
+            # wait() 返回 True 表示收到停止信号：不再多刷一拍，立刻收尾。
+            while not self._stop.wait(self.interval):
+                self._beat_once()
+        finally:
+            # 连接在本线程开，也必须在本线程关。
+            self._close_writer()
+
+    def _close_writer(self) -> None:
+        writer, self._writer = self._writer, None
+        closer = getattr(writer, "close", None)
+        if not callable(closer):
+            return
+        try:
+            closer()
+        except Exception:  # noqa: BLE001 — 关连接失败不该盖过真正的任务结果
+            logger.debug("心跳连接关闭失败", exc_info=True)
+
+    def start(self) -> "HeartbeatPump":
+        """起泵；重复调用无副作用。"""
+        if self._thread is not None:
+            return self
+        if self._beat is None and (
+            self._context.ops_store is None or not self._context.run_id
+        ):
+            # 没有落库目标（未绑定 run / 无 store）：不起线程，省得白占一个。
+            return self
+        self._stop.clear()
+        self._writer = self._resolve_writer()
+        thread = Thread(
+            target=self._loop,
+            name=f"{HEARTBEAT_THREAD_PREFIX}{self._context.run_id or 'unbound'}",
+            daemon=True,
+        )
+        self._thread = thread
+        thread.start()
+        return self
+
+    def stop(self, *, timeout: float | None = None) -> None:
+        """幂等停泵。成功 / 异常 / 超时 / 取消四条路径都经此收口。"""
+        self._stop.set()
+        thread, self._thread = self._thread, None
+        if thread is None:
+            # 线程没起来：写入器（若已创建）也要还回去。
+            self._close_writer()
+            return
+        thread.join(HEARTBEAT_JOIN_TIMEOUT_SECONDS if timeout is None else timeout)
+        if thread.is_alive():
+            # daemon 线程不挡进程退出；但这说明写锁上有人赖着，值得记一笔。
+            logger.warning("心跳线程 %s 未按时退出（daemon，不阻塞进程）", thread.name)
+
+    def __enter__(self) -> "HeartbeatPump":
+        return self.start()
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self.stop()

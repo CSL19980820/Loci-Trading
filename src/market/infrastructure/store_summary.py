@@ -263,3 +263,104 @@ class MarketSummaryMixin:
                 (f"{last_date}|{revision}|{count}",),
             )
         return count
+
+    def market_distribution(self, trade_date: str | None = None) -> dict[str, Any]:
+        """全市场真实涨跌分布统计（跌停/各跌幅档/平/各涨幅档/涨停以及总家数）。"""
+        if not trade_date:
+            cal = self.conn.execute(
+                "SELECT trade_date FROM trading_calendar ORDER BY trade_date DESC LIMIT 2"
+            ).fetchall()
+            dates = [str(r[0]) for r in cal if r[0]]
+        else:
+            cal = self.conn.execute(
+                "SELECT trade_date FROM trading_calendar WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 2",
+                (trade_date,),
+            ).fetchall()
+            dates = [str(r[0]) for r in cal if r[0]]
+
+        if len(dates) < 2:
+            return {
+                "trade_date": dates[0] if dates else "",
+                "prev_date": "",
+                "total_count": 0,
+                "up_count": 0,
+                "down_count": 0,
+                "flat_count": 0,
+                "limit_up": 0,
+                "limit_down": 0,
+                "buckets": [
+                    {"key": "limitDown", "label": "跌停", "count": 0, "tone": "down"},
+                    {"key": "down7", "label": "-7%", "count": 0, "tone": "down"},
+                    {"key": "down5", "label": "-5%", "count": 0, "tone": "down"},
+                    {"key": "down3", "label": "-3%", "count": 0, "tone": "down"},
+                    {"key": "down1", "label": "-1%", "count": 0, "tone": "down"},
+                    {"key": "flat", "label": "平", "count": 0, "tone": "flat"},
+                    {"key": "up1", "label": "+1%", "count": 0, "tone": "up"},
+                    {"key": "up3", "label": "+3%", "count": 0, "tone": "up"},
+                    {"key": "up5", "label": "+5%", "count": 0, "tone": "up"},
+                    {"key": "up7", "label": "+7%", "count": 0, "tone": "up"},
+                    {"key": "limitUp", "label": "涨停", "count": 0, "tone": "up"},
+                ],
+            }
+
+        cur_d, prev_d = dates[0], dates[1]
+        sql = """
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 <= -9.8 THEN 1 ELSE 0 END) as limit_down,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 > -9.8 AND ((c.close - p.close)/p.close)*100 <= -7 THEN 1 ELSE 0 END) as down7,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 > -7 AND ((c.close - p.close)/p.close)*100 <= -5 THEN 1 ELSE 0 END) as down5,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 > -5 AND ((c.close - p.close)/p.close)*100 <= -3 THEN 1 ELSE 0 END) as down3,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 > -3 AND ((c.close - p.close)/p.close)*100 < 0 THEN 1 ELSE 0 END) as down1,
+            SUM(CASE WHEN p.close > 0 AND c.close = p.close THEN 1 ELSE 0 END) as flat_count,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 > 0 AND ((c.close - p.close)/p.close)*100 < 3 THEN 1 ELSE 0 END) as up1,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 >= 3 AND ((c.close - p.close)/p.close)*100 < 5 THEN 1 ELSE 0 END) as up3,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 >= 5 AND ((c.close - p.close)/p.close)*100 < 7 THEN 1 ELSE 0 END) as up5,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 >= 7 AND ((c.close - p.close)/p.close)*100 < 9.8 THEN 1 ELSE 0 END) as up7,
+            SUM(CASE WHEN p.close > 0 AND ((c.close - p.close)/p.close)*100 >= 9.8 THEN 1 ELSE 0 END) as limit_up,
+            SUM(CASE WHEN p.close > 0 AND c.close > p.close THEN 1 ELSE 0 END) as up_count,
+            SUM(CASE WHEN p.close > 0 AND c.close < p.close THEN 1 ELSE 0 END) as down_count
+        FROM quotes_daily c
+        JOIN quotes_daily p ON c.code = p.code AND p.trade_date = ?
+        JOIN instruments i ON c.code = i.code
+        WHERE c.trade_date = ? AND i.instrument_type = 'STOCK' AND i.status = 'normal';
+        """
+        row = self.conn.execute(sql, (prev_d, cur_d)).fetchone()
+        total = int(row["total"] or 0) if row else 0
+        limit_down = int(row["limit_down"] or 0) if row else 0
+        down7 = int(row["down7"] or 0) if row else 0
+        down5 = int(row["down5"] or 0) if row else 0
+        down3 = int(row["down3"] or 0) if row else 0
+        down1 = int(row["down1"] or 0) if row else 0
+        flat_count = int(row["flat_count"] or 0) if row else 0
+        up1 = int(row["up1"] or 0) if row else 0
+        up3 = int(row["up3"] or 0) if row else 0
+        up5 = int(row["up5"] or 0) if row else 0
+        up7 = int(row["up7"] or 0) if row else 0
+        limit_up = int(row["limit_up"] or 0) if row else 0
+        up_count = int(row["up_count"] or 0) if row else 0
+        down_count = int(row["down_count"] or 0) if row else 0
+
+        return {
+            "trade_date": cur_d,
+            "prev_date": prev_d,
+            "total_count": total,
+            "up_count": up_count,
+            "down_count": down_count,
+            "flat_count": flat_count,
+            "limit_up": limit_up,
+            "limit_down": limit_down,
+            "buckets": [
+                {"key": "limitDown", "label": "跌停", "count": limit_down, "tone": "down"},
+                {"key": "down7", "label": "-7%", "count": down7, "tone": "down"},
+                {"key": "down5", "label": "-5%", "count": down5, "tone": "down"},
+                {"key": "down3", "label": "-3%", "count": down3, "tone": "down"},
+                {"key": "down1", "label": "-1%", "count": down1, "tone": "down"},
+                {"key": "flat", "label": "平", "count": flat_count, "tone": "flat"},
+                {"key": "up1", "label": "+1%", "count": up1, "tone": "up"},
+                {"key": "up3", "label": "+3%", "count": up3, "tone": "up"},
+                {"key": "up5", "label": "+5%", "count": up5, "tone": "up"},
+                {"key": "up7", "label": "+7%", "count": up7, "tone": "up"},
+                {"key": "limitUp", "label": "涨停", "count": limit_up, "tone": "up"},
+            ],
+        }

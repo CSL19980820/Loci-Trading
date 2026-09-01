@@ -4,6 +4,6 @@
 """
 from __future__ import annotations
 
-APP_VERSION = "1.0.0"
-APP_RELEASED_AT = "2026-07-28 16:30"
-APP_RELEASE_SUMMARY = "多战法账本桌面端：行情台、复盘闭环、主题与托盘。"
+APP_VERSION = "2.0.0"
+APP_RELEASED_AT = "2026-08-27 12:30"
+APP_RELEASE_SUMMARY = "群龙：多用户与租户隔离、策略广场与排行榜、实时行情大屏。"

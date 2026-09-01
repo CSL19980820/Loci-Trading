@@ -10,13 +10,28 @@ from src.intel.infrastructure.intel_cache import list_latest_snapshots
 from src.intel.infrastructure.quota import trade_date_today
 from src.market import MarketStore
 
-BRIEF_TOOLS = (
+#: 情绪/题材/梯队三段的老工具。
+_CORE_TOOLS = (
     "short_term_emotion",
     "limit_up_ladder",
     "theme_intraday_capital",
     "market_overview",
     "limit_stats",
 )
+
+#: 复盘与排雷段（2026-08-31 进配方）。这几张表本地库算不出来：
+#: 「昨涨停今天活着几只」「跌停原因」「竞价资金打哪条主线」「未来两周有什么催化」
+#: 「杠杆资金加减」「谁要解禁」。缺任一条只是该段为空，不影响其它段与主体功能。
+_REVIEW_TOOLS = (
+    "board_break_analysis",
+    "limit_down",
+    "auction_theme_strength",
+    "market_catalyst_calendar",
+    "margin_trading",
+    "unlock_events",
+)
+
+BRIEF_TOOLS = _CORE_TOOLS + _REVIEW_TOOLS
 
 #: 悟道 short_term_emotion.summary 用 sealed*/broken* 命名，排在前面；
 #: 后面的下划线/中文别名留给其它情报源兜底。
@@ -204,6 +219,255 @@ def _ladder_summary(payload: dict[str, Any] | None) -> dict[str, Any]:
     return {"count": len(rows) if rows else None, "height": height}
 
 
+# ---- 复盘与排雷段（悟道专供，本地库算不出来）------------------------------
+#
+# 一条共同纪律：**只投影，不发明**。字段缺就给 None / 空列表，不拿别处的数字顶替，
+# 也不在这里做二次口径换算（例外只有 `_percent`：把 0–1 比例统一成 0–100 百分数）。
+#
+# 为什么用「找含某个键的那层 dict」而不是写死 `data.summary` 这类路径：同一份结果
+# 本仓见过三种包法（`structuredContent` / `data` / `result`），写死路径的那一版在
+# 上游加一层包装时会静默变成「没数据」，而这与「今天真没数据」在界面上长得一样。
+
+#: 悟道 sentimentSignal 的三值枚举 → 人话。翻译只留一份，前端不再自己猜。
+_SENTIMENT_ZH = {"cooling": "退潮", "neutral": "中性", "warming": "修复"}
+
+
+def _find_mapping(payload: dict[str, Any] | None, *keys: str) -> dict[str, Any] | None:
+    """在载荷里找**第一个**含有任一给定键的嵌套 dict。"""
+    if not payload:
+        return None
+    for mapping in _walk(_structured(payload)):
+        if any(key in mapping for key in keys):
+            return mapping
+    return None
+
+
+def _list_under(payload: dict[str, Any] | None, *keys: str) -> list[dict[str, Any]]:
+    """取嵌套里第一个非空的 ``keys`` 列表（``_rows`` 只认 rows/items，这里认别的段名）。"""
+    if not payload:
+        return []
+    for mapping in _walk(_structured(payload)):
+        for key in keys:
+            value = mapping.get(key)
+            if isinstance(value, list) and value:
+                return [row for row in value if isinstance(row, dict)]
+    return []
+
+
+def _board_break(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """断板分析：昨涨停 × 今日。悟道 ``breakRate`` 是 0–1 比例，统一成百分数。"""
+    summary = _find_mapping(payload, "breakRate", "sentimentSignal")
+    if not summary:
+        return None
+    signal = str(summary.get("sentimentSignal") or "").strip()
+    high_board: list[dict[str, Any]] = []
+    raw_high = summary.get("highBoardBroken")
+    for row in raw_high if isinstance(raw_high, list) else []:
+        if not isinstance(row, dict):
+            continue
+        high_board.append(
+            {
+                "code": str(row.get("code") or "").strip(),
+                "name": str(row.get("name") or "").strip(),
+                "prev_streak": _pick_number(row, "prevStreak", "prev_streak"),
+                "pct_chg": _pick_number(row, "pctChg", "pct_chg"),
+            }
+        )
+        if len(high_board) >= 5:
+            break
+    result: dict[str, Any] = {
+        "prev_limit_ups": _pick_number(summary, "totalPrevLimitUps"),
+        "sealed_again": _pick_number(summary, "sealedAgainCount"),
+        "broken": _pick_number(summary, "brokenCount"),
+        "break_rate": _percent(_pick_number(summary, "breakRate")),
+        "avg_broken_pct_chg": _pick_number(summary, "avgBrokenPctChg"),
+        "sentiment_signal": signal or None,
+        "sentiment_zh": _SENTIMENT_ZH.get(signal),
+        "high_board_broken": high_board,
+    }
+    if all(value in (None, [], "") for value in result.values()):
+        return None
+    return result
+
+
+def _limit_down_summary(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """跌停池：家数 + 今日封板率/炸板数（悟道 ``stats.limitDownCount.today``）。"""
+    if not payload:
+        return None
+    stats = _find_mapping(payload, "limitDownCount")
+    bucket: dict[str, Any] | None = None
+    if stats:
+        raw = stats.get("limitDownCount")
+        if isinstance(raw, dict) and isinstance(raw.get("today"), dict):
+            bucket = raw["today"]
+    root = _find_mapping(payload, "total")
+    count = _pick_number(root, "total") if root else None
+    if count is None and bucket:
+        count = _pick_number(bucket, "num")
+    rows = [
+        {
+            "code": str(row.get("code") or "").strip(),
+            "name": str(row.get("name") or "").strip(),
+            "reason": str(row.get("reason") or row.get("reasonInfo") or "").strip(),
+        }
+        for row in _list_under(payload, "rows", "items")[:5]
+    ]
+    if count is None and not rows:
+        return None
+    return {
+        "count": count,
+        "sealed_rate": _percent(_pick_number(bucket, "rate")) if bucket else None,
+        "reopened": _pick_number(bucket, "open_num") if bucket else None,
+        "rows": rows,
+    }
+
+
+def _auction_themes(payload: dict[str, Any] | None, *, limit: int = 5) -> list[dict[str, Any]]:
+    """竞价题材强度：今天竞价资金打哪条主线。``consistency`` 是 0–1 比例。"""
+    out: list[dict[str, Any]] = []
+    for row in _list_under(payload, "themes"):
+        name = str(row.get("name") or row.get("themeName") or "").strip()
+        if not name:
+            continue
+        leaders: list[dict[str, Any]] = []
+        raw_leaders = row.get("leaders")
+        for leader in raw_leaders if isinstance(raw_leaders, list) else []:
+            if not isinstance(leader, dict):
+                continue
+            leaders.append(
+                {
+                    "code": str(leader.get("code") or "").strip(),
+                    "name": str(leader.get("name") or "").strip(),
+                    "change_pct": _pick_number(leader, "changeRate", "change_pct"),
+                }
+            )
+            if len(leaders) >= 3:
+                break
+        out.append(
+            {
+                "name": name,
+                "member_count": _pick_number(row, "memberCount"),
+                "hit_count": _pick_number(row, "hitCount"),
+                "bid_amount_text": str(row.get("totalBidAmountText") or "").strip(),
+                "avg_change_pct": _pick_number(row, "avgChangeRate"),
+                "consistency": _percent(_pick_number(row, "consistency")),
+                "limit_up_open": _pick_number(row, "limitUpOpenCount"),
+                "leaders": leaders,
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _catalysts(
+    payload: dict[str, Any] | None, *, day: str, limit: int = 6
+) -> list[dict[str, Any]]:
+    """短线催化日历：只留**今天及以后**、国家为中国（或未标国家）的事件。
+
+    过滤放在消费侧而不是请求参数里：服务端 ``country`` 过滤值一旦对不上就是静默
+    0 行，而行里本来就带 ``country``，本地筛错了看得见。
+    """
+    out: list[dict[str, Any]] = []
+    today = str(day or "")[:10]
+    for row in _list_under(payload, "rows", "items"):
+        date = str(row.get("date") or "").strip()[:10]
+        if date and today and date < today:
+            continue
+        country = str(row.get("country") or "").strip()
+        if country and "中国" not in country:
+            continue
+        title = str(row.get("title") or row.get("event") or "").strip()
+        if not title:
+            continue
+        stamp = str(row.get("time") or "").strip()
+        out.append(
+            {
+                "date": date,
+                "time": stamp[-8:] if len(stamp) > 8 else stamp,
+                "title": title,
+                "type": str(row.get("type") or "").strip(),
+                "star": _pick_number(row, "star"),
+            }
+        )
+    out.sort(key=lambda item: (item["date"] or "9999", -(item["star"] or 0)))
+    return out[:limit]
+
+
+def _margin(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    """两融汇总：**只取最新一个交易日，并把交易所三行加起来**。
+
+    两个坑各踩过一次：
+
+    - 悟道返回的 ``latest`` 只是 rows 的第一行（实测是 BSE 的 83 亿），正文 headline 也
+      用的是那一行。拿它当全市场余额，会把两融说小两个数量级（全市场实测 2.6 万亿）。
+    - 两融是 **T+1 数据**，问当天必空，所以配方给的是七天窗口（`_MARGIN_WINDOW_DAYS`）。
+      窗口里有多天 × 三所十几行，**一锅加起来就是把一周的余额摞在一起**。所以先挑出
+      最大的 ``tradeDate``，只汇总那一天。
+    """
+    rows = _list_under(payload, "rows", "items")
+    if not rows:
+        return None
+    latest_day = ""
+    for row in rows:
+        day = str(row.get("tradeDate") or row.get("trade_date") or "").strip()
+        if day > latest_day:
+            latest_day = day
+    balance = 0.0
+    net_buy = 0.0
+    seen = 0
+    exchanges: list[dict[str, Any]] = []
+    for row in rows:
+        day = str(row.get("tradeDate") or row.get("trade_date") or "").strip()
+        if latest_day and day != latest_day:
+            continue
+        value = _pick_number(row, "marginBalance")
+        if value is None:
+            continue
+        buy = _pick_number(row, "marginBuy") or 0.0
+        repay = _pick_number(row, "marginRepay") or 0.0
+        seen += 1
+        balance += value
+        net_buy += buy - repay
+        exchanges.append(
+            {
+                "exchange": str(row.get("exchangeId") or "").strip(),
+                "balance": value,
+                "net_buy": buy - repay,
+            }
+        )
+    if not seen:
+        return None
+    return {
+        "trade_date": latest_day,
+        "balance": balance,
+        "net_buy": net_buy,
+        "exchange_count": seen,
+        "exchanges": exchanges,
+    }
+
+
+def _unlocks(payload: dict[str, Any] | None, *, limit: int = 5) -> list[dict[str, Any]]:
+    """解禁排雷：按解禁比例从大到小报前几条。"""
+    out: list[dict[str, Any]] = []
+    for row in _list_under(payload, "rows", "items"):
+        code = str(row.get("tsCode") or row.get("code") or "").strip()
+        ratio = _pick_number(row, "floatRatio", "float_ratio")
+        if not code or ratio is None:
+            continue
+        out.append(
+            {
+                "code": code.split(".")[0],
+                "float_date": str(row.get("floatDate") or "").strip(),
+                "float_ratio": ratio,
+                "share_type": str(row.get("shareType") or "").strip(),
+                "holder": str(row.get("holderName") or "").strip(),
+            }
+        )
+    out.sort(key=lambda item: -(item["float_ratio"] or 0))
+    return out[:limit]
+
+
 def empty_intel_brief(
     *,
     trade_date: str | None = None,
@@ -218,6 +482,12 @@ def empty_intel_brief(
         "emotion": None,
         "themes": [],
         "ladder": None,
+        "board_break": None,
+        "limit_down": None,
+        "auction_themes": [],
+        "catalysts": [],
+        "margin": None,
+        "unlocks": [],
         "tools": {
             name: {"present": False, "fetched_at": None, "server": ""}
             for name in BRIEF_TOOLS
@@ -242,20 +512,28 @@ def build_intel_brief(
             trade_date=day,
             note="情报缓存读取失败（已忽略）；不影响盘面/账本/选股主体功能。",
         )
-    emotion_payload = (latest.get("short_term_emotion") or {}).get("payload")
-    ladder_payload = (latest.get("limit_up_ladder") or {}).get("payload")
-    themes_payload = (latest.get("theme_intraday_capital") or {}).get("payload")
-    overview_payload = (latest.get("market_overview") or {}).get("payload")
-    stats_payload = (latest.get("limit_stats") or {}).get("payload")
 
-    breadth = _breadth(emotion_payload if isinstance(emotion_payload, dict) else None)
+    def payload_of(tool: str) -> dict[str, Any] | None:
+        raw = (latest.get(tool) or {}).get("payload")
+        return raw if isinstance(raw, dict) else None
+
+    emotion_payload = payload_of("short_term_emotion")
+    overview_payload = payload_of("market_overview")
+    stats_payload = payload_of("limit_stats")
+
+    breadth = _breadth(emotion_payload)
     if breadth["advancers"] is None and breadth["decliners"] is None:
-        breadth = _breadth(overview_payload if isinstance(overview_payload, dict) else None)
+        breadth = _breadth(overview_payload)
+    limit_down = _limit_down_summary(payload_of("limit_down"))
+    # 跌停家数三级兜底：情绪表 → 涨跌停统计 → 跌停池。跌停池才是权威口径，但它只在
+    # 收盘档采（开盘 9:26 没有跌停可言），所以不能当第一顺位。
+    pool_down_count = limit_down.get("count") if limit_down else None
     emotion = {
         "limit_up_count": _metric(emotion_payload, "limit_up_count")
         or _metric(stats_payload, "limit_up_count"),
         "limit_down_count": _metric(emotion_payload, "limit_down_count")
-        or _metric(stats_payload, "limit_down_count"),
+        or _metric(stats_payload, "limit_down_count")
+        or pool_down_count,
         # 统一成 0–100 百分数，避免前端再猜比例/百分
         "promotion_rate": _percent(_metric(emotion_payload, "promotion_rate")),
         "broken_rate": _percent(_metric(emotion_payload, "broken_rate")),
@@ -271,8 +549,13 @@ def build_intel_brief(
     )
     if has_emotion:
         emotion["promotion_rate_basis"] = PROMOTION_RATE_BASIS
-    ladder = _ladder_summary(ladder_payload if isinstance(ladder_payload, dict) else None)
-    themes = _theme_rows(themes_payload if isinstance(themes_payload, dict) else None)
+    ladder = _ladder_summary(payload_of("limit_up_ladder"))
+    themes = _theme_rows(payload_of("theme_intraday_capital"))
+    board_break = _board_break(payload_of("board_break_analysis"))
+    auction_themes = _auction_themes(payload_of("auction_theme_strength"))
+    catalysts = _catalysts(payload_of("market_catalyst_calendar"), day=day)
+    margin = _margin(payload_of("margin_trading"))
+    unlocks = _unlocks(payload_of("unlock_events"))
     fetched_ats = [
         str(item.get("fetched_at") or "")
         for item in latest.values()
@@ -287,6 +570,12 @@ def build_intel_brief(
         "emotion": emotion if has_emotion else None,
         "themes": themes,
         "ladder": ladder if ladder.get("count") is not None or ladder.get("height") is not None else None,
+        "board_break": board_break,
+        "limit_down": limit_down,
+        "auction_themes": auction_themes,
+        "catalysts": catalysts,
+        "margin": margin,
+        "unlocks": unlocks,
         "tools": {
             name: {
                 "present": name in latest,

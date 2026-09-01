@@ -24,6 +24,8 @@ _ALLOWED_BOARD_SORT = frozenset(
         "turnover_asc",
         "pct_desc",
         "pct_asc",
+        "amount_desc",
+        "amount_asc",
     }
 )
 
@@ -115,7 +117,10 @@ def _resolve_board_page(
     if sort_key not in _ALLOWED_BOARD_SORT:
         raise HTTPException(
             status_code=422,
-            detail="sort 仅支持 code / turnover_desc / turnover_asc / pct_desc / pct_asc",
+            detail=(
+                "sort 仅支持 code / turnover_desc / turnover_asc / pct_desc /"
+                " pct_asc / amount_desc / amount_asc"
+            ),
         )
     turnover_floor = None if turnover_min is None else float(turnover_min) / 100.0
     offset = (page - 1) * page_size
@@ -136,6 +141,16 @@ def _resolve_board_page(
         )
     if sort_key.startswith("pct"):
         return store.page_instruments_by_pct(
+            q=q,
+            instrument_type=type_filter,
+            status=status_filter,
+            industry=industry_filter,
+            sort=sort_key,
+            offset=offset,
+            limit=page_size,
+        )
+    if sort_key.startswith("amount"):
+        return store.page_instruments_by_amount(
             q=q,
             instrument_type=type_filter,
             status=status_filter,
@@ -185,7 +200,10 @@ def register_board_routes(
         ),
         sort: str = Query(
             default="code",
-            description="排序：code | turnover_desc | turnover_asc | pct_desc | pct_asc",
+            description=(
+                "排序：code | turnover_desc | turnover_asc | pct_desc | pct_asc |"
+                " amount_desc | amount_asc"
+            ),
         ),
         turnover_min: float | None = Query(
             default=None,

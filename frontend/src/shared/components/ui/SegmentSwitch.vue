@@ -49,13 +49,25 @@ const value = computed({
 </template>
 
 <style scoped>
+/* 分段控件：控件高 28px、圆角 3px；选中态用品牌靛（D1：红绿只留给涨跌数字） */
 .segment-switch {
   --el-border-radius-base: var(--radius);
-  --el-segmented-bg-color: var(--sheet);
-  --el-segmented-item-selected-color: var(--ink);
-  --el-segmented-item-selected-bg-color: var(--paper);
-  --el-segmented-item-hover-color: var(--ink);
+  --el-segmented-padding: 1px;
+  --el-segmented-bg-color: var(--sheet-alt);
+  --el-segmented-color: var(--muted);
+  --el-segmented-item-selected-color: var(--sheet);
+  --el-segmented-item-selected-bg-color: var(--seal);
+  --el-segmented-item-hover-color: var(--seal-ink);
+  --el-segmented-item-hover-bg-color: var(--seal-soft);
+  --el-segmented-item-active-bg-color: var(--seal-soft);
   --el-border-color: var(--rule);
+  min-height: var(--ctl-h);
+  border: 1px solid var(--rule);
+  font-size: var(--fs-body);
   font-weight: 500;
+}
+
+.segment-switch :deep(.el-segmented__item) {
+  padding: 0 var(--gap-2);
 }
 </style>

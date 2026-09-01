@@ -82,8 +82,9 @@ describe('PaperRoleReviewPanel', () => {
     })
 
     const text = wrapper.text()
-    expect(text).toContain('角色演进图')
-    expect(text).toContain('纵轴是角色档位')
+    // 图上方的「角色演进图」标题与读法说明段已删：图靠坐标轴自证，读法进 tooltip
+    expect(wrapper.find('.role-timeline-stub').exists()).toBe(true)
+    expect(text).not.toContain('纵轴是角色档位')
     expect(text).toContain('持仓角色告警')
     expect(text).toContain('已判走弱仍在持仓')
     expect(text).toContain('龙头存活榜')

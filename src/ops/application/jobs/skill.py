@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from src.ops.application.jobs.context import (
-    DEFAULT_PALACE_DB,
+    default_palace_db,
     JobContext,
     JobError,
     _llm_meta,
@@ -27,7 +27,7 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     定时 Job **不支持 HITL**（ask_user 会失败提示改用对话式 Skill Run）。
     若 skill 声明了 ``agents:``，会先并行跑弹药子任务再进主 Agent。
     """
-    from src.ai import resolve_config
+    from src.ai import record_llm_usage, resolve_config
     from src.ai.application.agent import format_tool_trace, run_agent
     from src.ai.application.multi_agent import format_subagent_briefs, run_ammo_agents
 
@@ -115,6 +115,15 @@ def execute_skill(config: dict[str, Any], context: JobContext) -> dict[str, Any]
         temperature=float(config.get("temperature", 0.3)),
         thinking=thinking,
         allow_hitl=False,
+    )
+    # run_agent 把整条多轮工具链的 token 加总在 result 上，之前只写进 payload
+    # 给人看，从不落 ai_usage_daily——技能任务是任务侧最烧 token 的一条路径。
+    record_llm_usage(
+        provider=provider.name,
+        model=result.model or provider.model,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        ops_db=str(getattr(context.ops_store, "db_path", "") or ""),
     )
 
     payload = result.to_dict()

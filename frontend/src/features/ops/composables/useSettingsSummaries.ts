@@ -15,13 +15,16 @@ import { APP_VERSION } from '@/shared/lib/release'
 import type { RailMark } from '../components/SettingsRail.vue'
 import { formatBytes } from './opsLabels'
 
-export type OpsTab = 'mcp' | 'llm' | 'system' | 'pack'
+export type OpsTab = 'mcp' | 'llm' | 'system' | 'signals' | 'pack'
 
 export type RailSummary = { tail: string; state: RailMark }
 
 const EMPTY: Record<OpsTab, RailSummary> = {
   mcp: { tail: '—', state: 'idle' },
   llm: { tail: '—', state: 'idle' },
+  // 信号规则的读数由 SignalRulesTab 自己回传（见 OpsView 的 @summary）：
+  // 规则接口只有那一处在用，没必要为了 rail 上一行小字再全局拉一次。
+  signals: { tail: '—', state: 'idle' },
   system: { tail: '—', state: 'idle' },
   pack: { tail: '—', state: 'idle' },
 }

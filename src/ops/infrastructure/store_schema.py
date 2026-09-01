@@ -1,7 +1,7 @@
 """运维库 schema DDL 与进程内建表缓存。"""
 from __future__ import annotations
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -170,6 +170,10 @@ _MIGRATIONS: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_runs_heartbeat ON job_runs(status, heartbeat_at)",
     "DROP TABLE IF EXISTS skills",
     "DROP TABLE IF EXISTS mcp_servers",
+    # 二波监测 2026-08 退役：引擎、技能包、托管任务一并删除，留痕表随之作废。
+    # DROP 放迁移里而不是「留着不写」——只追加的孤儿表会跟着 ops.db 一直被备份、
+    # VACUUM、体检扫过，成本不为零（旧 skills / mcp_servers 同理，见上两行）。
+    "DROP TABLE IF EXISTS second_wave_signals",
     """CREATE TABLE IF NOT EXISTS alert_rules (
         id TEXT PRIMARY KEY,
         code TEXT NOT NULL,
@@ -349,35 +353,6 @@ _MIGRATIONS: list[str] = [
     "CREATE INDEX IF NOT EXISTS idx_leader_roles_slug_code ON leader_role_snapshots(slug, code, observed_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_leader_roles_slug_date ON leader_role_snapshots(slug, trade_date DESC, observed_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_leader_roles_slug_observed ON leader_role_snapshots(slug, observed_at DESC)",
-    # 二波监测留痕：**只追加**，一轮扫描写一批（含未达强度线、未过宽度闸的触发）。
-    # 观察期要回答「强度高的后续是不是真的更好」，就必须留住每一次触发的当时判据；
-    # 只记最终提醒等于把反例扔了，那个问题就永远验不了。
-    # 可整表清空重建（重扫即生），保留天数由 prune_second_wave 控制。
-    """CREATE TABLE IF NOT EXISTS second_wave_signals (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL DEFAULT '',
-        trade_date TEXT NOT NULL,
-        observed_at TEXT NOT NULL,
-        code TEXT NOT NULL,
-        name TEXT NOT NULL DEFAULT '',
-        strength INTEGER NOT NULL DEFAULT 0,
-        alerted INTEGER NOT NULL DEFAULT 0,
-        breadth_pct REAL,
-        gate_pass INTEGER NOT NULL DEFAULT 0,
-        price REAL,
-        day_low REAL,
-        ma_now REAL,
-        ma_window INTEGER NOT NULL DEFAULT 0,
-        days_since_peak INTEGER,
-        drawdown_pct REAL,
-        pct20_now REAL,
-        chip_width_pct REAL,
-        entry_day TEXT NOT NULL DEFAULT '',
-        tags_json TEXT NOT NULL DEFAULT '[]',
-        created_at TEXT NOT NULL
-    )""",
-    "CREATE INDEX IF NOT EXISTS idx_second_wave_date ON second_wave_signals(trade_date DESC, observed_at DESC)",
-    "CREATE INDEX IF NOT EXISTS idx_second_wave_code ON second_wave_signals(code, trade_date DESC)",
     # 悟道 MCP 日配额分池计数；DDL 归属 ops，intel.quota 仅读写本表
     """CREATE TABLE IF NOT EXISTS mcp_quota (
         trade_date   TEXT NOT NULL,
@@ -411,4 +386,58 @@ _MIGRATIONS: list[str] = [
     )""",
     "CREATE INDEX IF NOT EXISTS idx_ai_decisions_slug ON ai_decisions(slug, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_ai_decisions_run ON ai_decisions(run_id)",
+    # 保留期清理按这些列截断。缺索引时 15 天截断就是全表扫，而清理跑在 02:30
+    # 且整段持写锁——慢下来等于把凌晨的库锁住，比不清理更糟。
+    # 已有可用的不再重复建：alert_hits.idx_alert_hits_time、
+    # job_runs.idx_runs_job(job_id, started_at DESC)。
+    # leader_role_snapshots 的三条复合索引都以 slug 打头，全表按 trade_date
+    # 截断用不上，故单独补一条。
+  "CREATE INDEX IF NOT EXISTS idx_ai_decisions_created ON ai_decisions(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_monitor_runs_started ON monitor_runs(started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_leader_roles_trade_date ON leader_role_snapshots(trade_date)",
+    # 实时信号（大屏推流）的两张表。行情与研究产物**不**落这里——见
+    # src/market/application/realtime_signals.py 的模块 docstring 第 1 条：
+    # 「绝不写库」约束的是 market.db / research 库，信号日志与规则阈值属于运维
+    # 事实，本来就该在 ops.db。两张表都可整表清空（清了只丢「我昨天收到过什么
+    # 提醒」与「我调过哪几个阈值」，重开就回到代码里的默认值）。
+    #
+    # signal_rule_config：只存**被改过的那几条**。默认值写死在代码里的规则表
+    # （realtime_signals.RULES），库里空 = 全部用默认。这样新增规则、改默认值
+    # 不会被旧配置钉死，也不必写一次「把 6 条默认值灌进库」的种子迁移。
+    # 主键是 (tenant, rule_id) 而不是裸 rule_id：ops.db 虽已按租户分库，但主租户
+    # 的库同时被系统任务与管理员用，裸主键会让「谁把 fast_surge 关了」无从分辨，
+    # 而且哪天要合库就得重做主键。多一列 tenant 是纵深防御，代价一个字节。
+    # params 存 JSON 文本；空串等价于「一个键都没覆盖」（loads 的 fallback）。
+    """CREATE TABLE IF NOT EXISTS signal_rule_config (
+ tenant TEXT NOT NULL,
+ rule_id TEXT NOT NULL,
+ enabled INTEGER NOT NULL DEFAULT 1,
+ params TEXT NOT NULL DEFAULT '',
+ updated_at TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY (tenant, rule_id)
+ )""",
+    # signal_journal：信号日志（用户需求 5）。id 是**确定性去重键**（见
+    # store_signals.signal_dedup_id），不是随机 uuid —— 引擎的内存去抖表一重启
+    # 就没了，靠它把重启后重复命中的同一条信号压回一行。保留策略同样在写入时
+    # 顺带执行，不另起定时任务（store_signals.prune_signal_journal）。
+    """CREATE TABLE IF NOT EXISTS signal_journal (
+ id TEXT PRIMARY KEY,
+ tenant TEXT NOT NULL,
+ code TEXT NOT NULL DEFAULT '',
+ name TEXT NOT NULL DEFAULT '',
+ rule_id TEXT NOT NULL DEFAULT '',
+ rule_label TEXT NOT NULL DEFAULT '',
+ title TEXT NOT NULL DEFAULT '',
+ detail TEXT NOT NULL DEFAULT '',
+ direction TEXT NOT NULL DEFAULT '',
+ strength REAL NOT NULL DEFAULT 0,
+ price REAL NOT NULL DEFAULT 0,
+ pct REAL NOT NULL DEFAULT 0,
+ triggered_at TEXT NOT NULL DEFAULT '',
+ trade_day TEXT NOT NULL DEFAULT ''
+ )""",
+    # 读（最近 80 条）与两道保留闸门（按时间删、按条数删）走的是同一条路径：
+    # 先按租户收窄，再按 triggered_at 倒序。缺这条索引三处都是全表扫。
+  "CREATE INDEX IF NOT EXISTS idx_signal_journal_tenant_time"
+    " ON signal_journal(tenant, triggered_at DESC)",
 ]

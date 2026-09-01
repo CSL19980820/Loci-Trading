@@ -10,7 +10,12 @@ defineProps<{
 </script>
 
 <template>
-  <section :id="anchor" class="sys-section">
+  <!--
+    标题保留：同屏并列四小节（数据目录 / 行情同步 / 推送 / 外观），遮住标题就分不清
+    哪块表单是哪联。压成一行的做法是左槽定宽——标题与该小节第一条控件永远同高，
+    窄屏也只收窄槽宽，绝不让标题独占一行（见下方 media query）。
+  -->
+  <section :id="anchor" class="sys-section" :aria-label="title">
     <aside class="sys-section__gutter" aria-hidden="true">
       <h3 class="sys-section__title">{{ title }}</h3>
       <p
@@ -124,22 +129,22 @@ defineProps<{
   margin-top: 0.25rem;
 }
 
+/*
+ * 窄屏只收窄左槽，**不塌成单列**：塌了标题就自己占一行、表单退到下一行，
+ * 正是要避免的「两行干一行的事」。
+ */
 @media (max-width: 900px) {
   .sys-section {
-    grid-template-columns: 1fr;
-    gap: 0.25rem;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.25rem 0.55rem;
   }
 
   .sys-section__gutter {
-    border-right: 0;
-    padding-right: 0;
-    display: flex;
-    align-items: baseline;
-    gap: 0.55rem;
+    padding-right: 0.4rem;
   }
 
-  .sys-section__stamp {
-    margin-top: 0;
+  .sys-section__title {
+    font-size: 0.8rem;
   }
 }
 </style>

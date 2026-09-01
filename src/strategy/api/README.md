@@ -20,9 +20,19 @@
 - `GET /api/insights/overlap` — 选股信号重叠（Jaccard + 常撞代码；非持仓风险）
 - `GET /api/strategies/{slug}/audit` — 前视静态审计（生成链/测试用，体检页不挂）
 
-挂载：
-- `src.strategy.api.router.build_strategy_router`
+挂载与文件清单：
+- `router.py` → `build_strategy_router`：聚合入口。自留 `POST /api/strategies/screen`（同步单日）、`POST /api/analysis/{kind}`、`GET|PUT|DELETE /api/strategies/{slug}/job`、`GET /api/screen/today`、`/api/strategies/{slug}/doc`、`/api/insights/*`、`/api/strategies/{slug}/audit`；并 `include_router` 下面这几个子 router
+- `screen_run_router.py` → `build_screen_run_router`：异步即时选股三端点，**都以 `strategy` 为轴**（进度槽按「租户 × 战法」分片，一个人可以同时跑多个战法）：
+  - `GET /api/screen/run`：不带参 → 聚合快照（顶层是「当前这一个」槽，兼容老客户端；`runs` 是 slug → 槽，`running_strategies` 是正在跑的 slug，`max_concurrent_runs` 是并发上限）；带 `?strategy=` → 只要那一个槽（不存在返回 idle，不建槽）
+  - `POST /api/screen/run`（202 受理）：返回**这个战法**的槽快照；占不到槽时带 `busy_reason`（`same_strategy` = 它自己在跑，防重复入库；`tenant_limit` = 并发到顶）。别的战法在跑不算占用
+  - `POST /api/screen/run/cancel?strategy=`（202 受理，协作式取消）：点名停一个；**省略 `strategy` 停全部**（老客户端语义），返回 `cancelled_strategies`
+- `screen_history_router.py` → `build_screen_history_router`：`GET /api/screen/history` 与 `/batch`
+- `version_router.py` → `build_strategy_version_router`：`/api/strategies/{slug}/versions`、`/rollback`
+- `screen_skills_router.py`：`/api/screen-skills*`
+- `screen_universe.py` → `effective_screen_universe`（**非路由**）：同步 `/api/strategies/screen` 与异步 `POST /api/screen/run` 共用的行情范围口径。两端必须给出同一个 universe，拷两份必然漂移，所以只留一份
 - `src.strategy.api.convert.build_strategy_convert_router`（转换器 / 自定义策略）
+
+本域 router 一律用 `_write: None = write_guard` 默认参数风格声明写权限依赖，**不要**改成 `Annotated[..., Depends(...)]`——那是 community 两个 router 为了绕开 `from __future__ import annotations` 才用的写法，本域各文件都带该 future 导入。
 
 策略目录返回 `entry_instructions` 时，前端战法详情以“买入说明”展示；内置战法首次读取目录时会将默认简述写入 `ops.db.strategy_docs`，已有非空人工内容优先保留。该字段只描述执行预案，不改变 `entry_timing` 或回测成交逻辑。
 

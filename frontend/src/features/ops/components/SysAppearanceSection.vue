@@ -42,7 +42,7 @@ defineExpose({ load })
 </script>
 
 <template>
-  <el-form class="sys-form" label-position="left" label-width="5.5rem" @submit.prevent>
+  <el-form class="sys-form" label-position="right" label-width="6.5em" size="small" @submit.prevent>
     <el-row :gutter="12">
       <el-col :xs="24" :xl="12">
         <el-form-item label="主题">
@@ -101,7 +101,7 @@ defineExpose({ load })
 .swatch-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--gap-1);
 }
 
 .swatch.el-button {
@@ -114,8 +114,8 @@ defineExpose({ load })
   --el-button-active-bg-color: transparent;
   --el-button-active-border-color: var(--seal);
   height: auto;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.8rem;
+  padding: var(--gap-1) var(--gap-2);
+  font-size: var(--fs-aux);
   font-weight: 500;
 }
 
@@ -127,8 +127,8 @@ defineExpose({ load })
 .swatch__chip {
   width: 0.8rem;
   height: 0.8rem;
-  margin-right: 0.35rem;
-  border-radius: 2px;
+  margin-right: var(--gap-1);
+  border-radius: var(--radius);
   background: var(--sw);
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
 }
@@ -137,8 +137,8 @@ defineExpose({ load })
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.86rem;
+  gap: var(--gap-2);
+  font-size: var(--fs-body);
 }
 
 .hint-q {
@@ -149,12 +149,12 @@ defineExpose({ load })
   height: 1rem;
   border: 1px solid var(--rule);
   border-radius: 50%;
-  font-size: 0.68rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
   cursor: help;
 }
 
 .sys-form :deep(.el-form-item) {
-  margin-bottom: 0.45rem;
+  margin-bottom: var(--gap-2);
 }
 </style>

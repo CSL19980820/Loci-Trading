@@ -17,6 +17,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
+from src.shared.paths import ops_db as _current_ops_db
 from src.ops.infrastructure.store_helpers import (
     DEFAULT_DB,
     JOB_KINDS,
@@ -27,6 +28,7 @@ from src.ops.infrastructure.store_helpers import (
     MANAGED_SYNC_INTRADAY,
     OpsError,
     RUN_STATUSES,
+    _now,
     dumps,
     loads,
     new_id,
@@ -41,12 +43,14 @@ from src.ops.infrastructure.store_schema import (
     _SCHEMA,
     _SCHEMA_READY,
 )
+from src.ops.infrastructure.store_retention import OpsRetentionMixin
 from src.ops.infrastructure.store_strategy import OpsStrategyMixin
 from src.ops.infrastructure.store_ai_decisions import OpsAiDecisionsMixin
 from src.ops.infrastructure.store_alerts import OpsAlertsMixin
 from src.ops.infrastructure.store_paper import OpsPaperMixin
 from src.ops.infrastructure.store_paper_mem import OpsPaperMemMixin
 from src.ops.infrastructure.store_quota import OpsQuotaMixin
+from src.ops.infrastructure.store_signals import OpsSignalsMixin
 from src.ops.infrastructure.store_watch import OpsWatchMixin
 
 __all__ = [
@@ -79,11 +83,18 @@ class OpsStore(
     OpsWatchMixin,
     OpsQuotaMixin,
     OpsAiDecisionsMixin,
+    OpsSignalsMixin,
+    OpsRetentionMixin,
 ):
-    """任务 / LLM 供应商 / 提醒 / 纸面量化舱 / 记忆图 / 龙头留痕 的读写。每个请求或任务持有独立连接。"""
+    """任务 / LLM 供应商 / 提醒 / 纸面量化舱 / 记忆图 / 龙头留痕 / 实时信号 的读写。每个请求或任务持有独立连接。"""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or DEFAULT_DB)
+        # 不传路径 = 用**当前租户**的 ops.db，每次构造重新解析。
+        # ``DEFAULT_DB`` 是 import 期求值的常量：多租户下用它等于把全进程钉死在
+        # 「最先 import 本模块的那个租户」的库上，供应商 / 会话 / 用量全串味，而且
+        # 不报错（``src/community/infrastructure/store.py`` 的注释里点过这个名）。
+        # 常量本身保留，只为兼容 ``from src.ops import DEFAULT_DB`` 的旧引用。
+        self.db_path = Path(db_path) if db_path else _current_ops_db()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path, timeout=30.0)
         self.conn.row_factory = sqlite3.Row
@@ -117,9 +128,12 @@ class OpsStore(
         self.conn.close()
 
     def _now(self) -> str:
-        from datetime import datetime
+        """本库统一时钟。真身在 ``store_helpers._now()``（本地时区 + 偏移 + 微秒）。
 
-        return datetime.now().astimezone().isoformat(timespec="seconds")
+        留这个方法是因为各 mixin 已经在用 ``self._now()``；口径只有一处，
+        ``job_runs`` 的时间戳与 ``paper_*`` / ``alert_*`` 从此对得上。
+        """
+        return _now()
 
     def __enter__(self) -> OpsStore:
         return self
@@ -144,9 +158,9 @@ class OpsStore(
         with self._transaction() as cursor:
             cursor.executescript(_SCHEMA)
             cursor.execute(
-                "INSERT INTO meta(key, value, updated_at) VALUES('schema_version', ?, datetime('now'))"
+                "INSERT INTO meta(key, value, updated_at) VALUES('schema_version', ?, ?)"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-                (str(SCHEMA_VERSION),),
+                (str(SCHEMA_VERSION), _now()),
             )
 
     def _export_legacy_mcp_to_json(self) -> None:
@@ -228,8 +242,8 @@ class OpsStore(
                     continue
                 raise
         self.conn.execute(
-            "INSERT INTO meta(key, value, updated_at) VALUES('schema_version', ?, datetime('now'))"
+            "INSERT INTO meta(key, value, updated_at) VALUES('schema_version', ?, ?)"
             " ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-            (str(SCHEMA_VERSION),),
+            (str(SCHEMA_VERSION), _now()),
         )
         self.conn.commit()

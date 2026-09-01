@@ -1,23 +1,38 @@
 /**
  * 数据体检状态机：idle → scanning → result|healthy → repairing → 复检。
- * 分数/门禁以后端报告为准；扫描回放仅 UI。
+ * 分数/门禁以后端报告为准；扫描回放仅 UI。纯函数（汇总/分级/文案/进度）在 `healthCheckupLogic.ts`。
  */
 import { computed, onUnmounted, ref, shallowRef } from 'vue'
 
 import {
   buildRepairPlanFromFindings,
-  computeSealGrade,
-  computeSealScore,
-  CORE_CHECK_IDS,
-  FALLBACK_CATALOG,
   catalogForMode,
   idleSkeletonFromCatalog,
+  isAutoRepairAction,
   normalizeHealthReport,
   rowsFromCatalog,
   type HealthCheckRow,
   type HealthPhase,
   type ProgressSnap,
 } from '@/features/review/composables/healthCheckupModel'
+import {
+  bootstrapDoneMessage,
+  bootstrapProgressDetail,
+  checkupHeadline,
+  checkupSubtitle,
+  effectiveCatalog,
+  isInstrumentsStalled,
+  INSTRUMENTS_STALL_MESSAGE,
+  phaseForReport,
+  planForFindingAction,
+  planIsActionable,
+  resolveSealGrade,
+  resolveSealScore,
+  revealProgressSnap,
+  revealSequence,
+  scanHeartbeatSnap,
+  softBootstrapPercent,
+} from '@/features/review/composables/healthCheckupLogic'
 import {
   getMarketBootstrap,
   getMarketHealth,
@@ -86,29 +101,14 @@ export function useHealthCheckup() {
     }
   }
 
-  const score = computed(() => {
-    const r = report.value
-    if (!r) return null
-    if (typeof r.score === 'number' && !Number.isNaN(r.score)) return r.score
-    return computeSealScore(r.block_count ?? 0, r.warn_count ?? 0)
-  })
-  const grade = computed(() => {
-    const r = report.value
-    if (!r) return ''
-    if (r.grade) return r.grade
-    const s = score.value
-    return s == null ? '' : computeSealGrade(s)
-  })
+  const score = computed(() => resolveSealScore(report.value))
+  const grade = computed(() => resolveSealGrade(report.value, score.value))
   const blocked = computed(() => Boolean(report.value?.blocked))
   const reason = computed(() => report.value?.reason ?? '')
   const repairPlan = computed<HealthRepairPlan | null>(
     () => report.value?.repair_plan ?? null,
   )
-  const canOneClickRepair = computed(() => {
-    const plan = repairPlan.value
-    if (!plan) return false
-    return Boolean(plan.needs_bootstrap || plan.needs_turnover_repair)
-  })
+  const canOneClickRepair = computed(() => planIsActionable(repairPlan.value))
   const issueRows = computed(() =>
     checkRows.value.filter((r) => r.status === 'block' || r.status === 'warn'),
   )
@@ -119,100 +119,36 @@ export function useHealthCheckup() {
 
   const idleSkeletonRows = computed(() => idleSkeletonFromCatalog(false))
 
-  const subtitle = computed(() => {
-    if (phase.value === 'idle') {
-      const n = idleSkeletonRows.value.length
-      return `选股前建议先扫一遍 · ${n} 项待检 · 仓内+线路+依赖 · 只读`
-    }
-    if (phase.value === 'scanning') {
-      const pct = progress.value?.percent
-      const msg = progress.value?.message
-      if (msg) return msg
-      return pct != null ? `进度 ${Math.round(pct)}%` : '正在核对行情仓…'
-    }
-    if (phase.value === 'repairing') return '修好后自动复检'
-    if (!report.value) return ''
-    const trade = report.value.trade_date ? `交易日 ${report.value.trade_date}` : ''
-    const checked = report.value.checked_at ? `上次 ${report.value.checked_at}` : ''
-    if (!report.value.blocked) {
-      const w = report.value.warn_count
-      const head = w > 0 ? `通过（${w} 项提示）` : '全部通过'
-      return [head, checked, trade].filter(Boolean).join(' · ')
-    }
-    const b = report.value.block_count
-    const w = report.value.warn_count
-    const parts = [
-      b > 0 ? `阻断 ${b}` : '',
-      w > 0 ? `提示 ${w}` : '',
-      b > 0 ? '选股将被拒绝' : '',
-      trade,
-    ].filter(Boolean)
-    return parts.join(' · ')
-  })
+  const subtitle = computed(() =>
+    checkupSubtitle({
+      phase: phase.value,
+      progress: progress.value,
+      report: report.value,
+      idleCount: idleSkeletonRows.value.length,
+    }),
+  )
 
-  const headline = computed(() => {
-    if (phase.value === 'idle') return '尚未体检'
-    if (phase.value === 'scanning') return '正在核对行情仓'
-    if (phase.value === 'repairing') return '正在修复'
-    if (phase.value === 'healthy') return '行情仓可安全选股'
-    const n = issueRows.value.length
-    return n > 0 ? `发现 ${n} 项问题` : '体检完成'
-  })
+  const headline = computed(() => checkupHeadline(phase.value, issueRows.value.length))
 
   const hasRepairableIssues = computed(
     () => canOneClickRepair.value && issueRows.value.some((r) => r.autoFixable),
   )
 
-  function applyReportRows(next: MarketHealthReport, revealedAll = true): void {
-    const catalog = next.catalog?.length
-      ? next.catalog
-      : catalogForMode(Boolean(next.include_network))
-    const emptyBlocked = next.findings.some(
-      (f) => f.check === 'empty_store' && f.severity === 'block',
-    )
-    const coreRanBeyondEmpty = next.findings.some(
-      (f) => CORE_CHECK_IDS.has(f.check) && f.check !== 'empty_store',
-    )
-    const effectiveCatalog =
-      emptyBlocked && !coreRanBeyondEmpty
-        ? catalog.filter((c) => c.id === 'empty_store' || !CORE_CHECK_IDS.has(c.id))
-        : catalog
-    const revealed = new Set(
-      revealedAll
-        ? [...effectiveCatalog.map((c) => c.id), ...next.findings.map((f) => f.check)]
-        : [],
-    )
-    checkRows.value = rowsFromCatalog(effectiveCatalog, next.findings, revealed, null)
-  }
-
   function settlePhase(next: MarketHealthReport): void {
     const normalized = normalizeHealthReport(next)
     report.value = normalized
-    applyReportRows(normalized, true)
-    const plan = normalized.repair_plan
-    const repairable = Boolean(plan?.needs_bootstrap || plan?.needs_turnover_repair)
-    phase.value = normalized.blocked || repairable ? 'result' : 'healthy'
+    const catalog = effectiveCatalog(normalized)
+    const revealed = new Set([
+      ...catalog.map((c) => c.id),
+      ...normalized.findings.map((f) => f.check),
+    ])
+    checkRows.value = rowsFromCatalog(catalog, normalized.findings, revealed, null)
+    phase.value = phaseForReport(normalized)
   }
 
   async function revealScan(next: MarketHealthReport, token: number): Promise<boolean> {
-    const catalog = next.catalog?.length
-      ? next.catalog
-      : catalogForMode(Boolean(next.include_network))
-    const byId = new Map(next.findings.map((f) => [f.check, f]))
-    const emptyBlocked = next.findings.some(
-      (f) => f.check === 'empty_store' && f.severity === 'block',
-    )
-    const coreRanBeyondEmpty = next.findings.some(
-      (f) => CORE_CHECK_IDS.has(f.check) && f.check !== 'empty_store',
-    )
-    const effectiveCatalog =
-      emptyBlocked && !coreRanBeyondEmpty
-        ? catalog.filter((c) => c.id === 'empty_store' || !CORE_CHECK_IDS.has(c.id))
-        : catalog
-    const sequence = effectiveCatalog.filter(
-      (c) => c.id !== 'empty_store' || byId.has('empty_store'),
-    )
-
+    const catalog = effectiveCatalog(next)
+    const sequence = revealSequence(catalog, next.findings)
     const revealed = new Set<string>()
     const total = Math.max(1, sequence.length)
 
@@ -229,23 +165,14 @@ export function useHealthCheckup() {
     for (let i = 0; i < sequence.length; i += 1) {
       if (token !== scanToken.value) return false
       const item = sequence[i]!
-      progress.value = {
-        percent: Math.round(((i + 0.45) / total) * 100),
-        message: `检查 ${i + 1}/${total} · ${item.label}`,
-        detail: `${item.id} · trade_date ${next.trade_date || '—'}`,
-        status: 'running',
-      }
-      checkRows.value = rowsFromCatalog(effectiveCatalog, next.findings, revealed, item.id)
+      const snap = { item, index: i, total, tradeDate: next.trade_date }
+      progress.value = revealProgressSnap({ ...snap, done: false })
+      checkRows.value = rowsFromCatalog(catalog, next.findings, revealed, item.id)
       await sleep(160)
       if (token !== scanToken.value) return false
       revealed.add(item.id)
-      checkRows.value = rowsFromCatalog(effectiveCatalog, next.findings, revealed, null)
-      progress.value = {
-        percent: Math.round(((i + 1) / total) * 100),
-        message: `检查 ${i + 1}/${total} · ${item.label}`,
-        detail: `${item.id} · trade_date ${next.trade_date || '—'}`,
-        status: 'running',
-      }
+      checkRows.value = rowsFromCatalog(catalog, next.findings, revealed, null)
+      progress.value = revealProgressSnap({ ...snap, done: true })
       await sleep(40)
     }
     return token === scanToken.value
@@ -278,12 +205,7 @@ export function useHealthCheckup() {
     scanHeartbeat = window.setInterval(() => {
       if (token !== scanToken.value) return
       const waited = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
-      progress.value = {
-        percent: Math.min(28, 4 + waited * 2),
-        message: waitLabel,
-        detail: waited > 0 ? `已等待 ${waited}s` : '',
-        status: 'running',
-      }
+      progress.value = scanHeartbeatSnap(waitLabel, waited)
     }, 1000)
 
     try {
@@ -374,10 +296,7 @@ export function useHealthCheckup() {
       if (!cur || cur.status === 'done' || cur.status === 'error') return
       const waited = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
       if (waited < 2) return
-      const pct = Number(cur.percent || 0)
-      // instruments 阶段 total=0、percent=0：用等待秒数给一点呼吸感，避免「假死」
-      const softPct =
-        pct > 0 ? pct : Math.min(8, 1 + Math.floor(waited / 15))
+      const softPct = softBootstrapPercent(Number(cur.percent || 0), waited)
       progress.value = {
         ...cur,
         percent: softPct,
@@ -399,30 +318,14 @@ export function useHealthCheckup() {
         }
         const pct = Number(snap.percent || 0)
         const waited = Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
-        // 证券列表阶段长时间无进展：前端主动放弃等待，避免永久卡死
-        if (
-          (snap.status === 'running' || snap.status === 'idle') &&
-          (snap.phase === 'instruments' || !snap.phase) &&
-          pct <= 0 &&
-          waited >= 180
-        ) {
+        if (isInstrumentsStalled(snap, waited)) {
           setSyncing(false)
-          throw new Error(
-            '刷新证券列表超时（已等 3 分钟）。请检查网络或到数据源页探测 instruments，再重试。',
-          )
+          throw new Error(INSTRUMENTS_STALL_MESSAGE)
         }
-        const detail = [
-          snap.total ? `${snap.done}/${snap.total}` : '',
-          snap.code ? `当前 ${snap.code}` : '',
-          snap.phase ? `阶段 ${snap.phase}` : '',
-          waited >= 5 && pct <= 0 ? `已等待 ${waited}s` : '',
-        ]
-          .filter(Boolean)
-          .join(' · ')
         progress.value = {
-          percent: pct > 0 ? pct : Math.min(8, 1 + Math.floor(waited / 15)),
+          percent: softBootstrapPercent(pct, waited),
           message: snap.message || opts.label || '同步中…',
-          detail,
+          detail: bootstrapProgressDetail(snap, waited),
           status: snap.status,
         }
         if (snap.status === 'running' || snap.status === 'idle') {
@@ -436,10 +339,7 @@ export function useHealthCheckup() {
           throw new Error(snap.message || '修复失败')
         }
         if (snap.status === 'done') {
-          const r = snap.report || {}
-          ElMessage.success(
-            `修复完成：成功 ${String(r.succeeded ?? '—')} / 失败 ${String(r.failed ?? '—')} / 跳过 ${String(r.skipped ?? '—')}`,
-          )
+          ElMessage.success(bootstrapDoneMessage(snap.report))
           return
         }
         throw new Error(`修复状态异常：${snap.status || 'unknown'}`)
@@ -486,6 +386,15 @@ export function useHealthCheckup() {
     }
   }
 
+  /** 修复失败的共同收尾：留在 result 并延迟收掉进度条。 */
+  function settleRepairFailure(e: unknown): void {
+    error.value = toErrorMessage(e, '修复失败')
+    phase.value = 'result'
+    window.setTimeout(() => {
+      if (phase.value !== 'repairing') progress.value = null
+    }, 2500)
+  }
+
   async function repairAll(checkIds?: string[]): Promise<void> {
     let plan = repairPlan.value
     if (checkIds?.length && report.value) {
@@ -494,7 +403,7 @@ export function useHealthCheckup() {
       )
       plan = buildRepairPlanFromFindings(selected)
     }
-    if (!plan || (!plan.needs_bootstrap && !plan.needs_turnover_repair)) {
+    if (!plan || !planIsActionable(plan)) {
       ElMessage.info('没有可自动修复的项')
       return
     }
@@ -510,11 +419,7 @@ export function useHealthCheckup() {
       await scan()
     } catch (e: unknown) {
       if (token !== repairToken.value) return
-      error.value = toErrorMessage(e, '修复失败')
-      phase.value = 'result'
-      window.setTimeout(() => {
-        if (phase.value !== 'repairing') progress.value = null
-      }, 2500)
+      settleRepairFailure(e)
     } finally {
       if (token === repairToken.value) {
         repairBusy.value = ''
@@ -533,7 +438,7 @@ export function useHealthCheckup() {
       ElMessage.info(finding.remediation?.hint || '该项需人工处理，请到运维页按提示操作')
       return
     }
-    if (!['bootstrap', 'sync', 'sync_factors', 'repair_turnover'].includes(action)) {
+    if (!isAutoRepairAction(action)) {
       ElMessage.info(finding.remediation?.hint || '该项暂无自动修复，请到运维页手动处理')
       return
     }
@@ -543,26 +448,18 @@ export function useHealthCheckup() {
     error.value = ''
     phase.value = 'repairing'
     try {
-      const plan: HealthRepairPlan = {
-        actions: [action],
-        primary_action: action,
-        with_factors: action === 'sync_factors' || action === 'sync' || action === 'bootstrap',
-        needs_bootstrap: action === 'bootstrap' || action === 'sync' || action === 'sync_factors',
-        needs_turnover_repair: action === 'repair_turnover',
-        labels: [finding.remediation?.label || '修复'],
-        check_ids: [finding.check],
-      }
+      const plan = planForFindingAction({
+        action,
+        check: finding.check,
+        label: finding.remediation?.label,
+      })
       await executePlan(plan, finding.remediation?.label, token)
       if (token !== repairToken.value) return
       ElMessage.info('正在复检…')
       await scan()
     } catch (e: unknown) {
       if (token !== repairToken.value) return
-      error.value = toErrorMessage(e, '修复失败')
-      phase.value = 'result'
-      window.setTimeout(() => {
-        if (phase.value !== 'repairing') progress.value = null
-      }, 2500)
+      settleRepairFailure(e)
     } finally {
       if (token === repairToken.value) {
         repairBusy.value = ''

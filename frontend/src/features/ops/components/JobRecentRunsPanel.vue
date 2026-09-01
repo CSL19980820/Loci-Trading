@@ -1,11 +1,18 @@
 <script setup lang="ts">
 /**
  * 当前任务的最近执行历史：BasicTable（常规表，条数少不必虚拟化）。
+ *
+ * 失败原因**必须点得开**：`error_text` 在单元格里只放得下第一行，全文经
+ * `JobRunErrorDialog` 展开并可整段复制。此前全文只挂在原生 `title` 上，
+ * 读不完也复制不走。
  */
 import { computed, ref, watch } from 'vue'
 import { CircleCheck, CircleClose, WarningFilled } from '@element-plus/icons-vue'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import type { JobRun } from '@/shared/types/quant'
+
+import JobRunErrorDialog from './JobRunErrorDialog.vue'
 import {
   firstLine,
   formatRunDuration,
@@ -23,16 +30,25 @@ const { runs, isPending, refetch } = useJobRunsQuery(() => ({
   limit: 200,
 }))
 
-const tableRows = computed(() => runs.value as unknown as Record<string, unknown>[])
-const runCount = computed(() => runs.value.length)
+/** 「只看失败」：一屏几十条成功记录里找那一条红的，靠肉眼扫是最慢的一步。 */
+const failedOnly = ref(false)
+const errorOpen = ref(false)
+const activeRun = ref<JobRun | null>(null)
+
+const visibleRuns = computed(() =>
+  failedOnly.value ? runs.value.filter((run) => run.status === 'failed') : runs.value,
+)
+const tableRows = computed(() => visibleRuns.value as unknown as Record<string, unknown>[])
+const runCount = computed(() => visibleRuns.value.length)
+const failedCount = computed(() => runs.value.filter((run) => run.status === 'failed').length)
 
 const columns = ref<BasicTableColumn[]>([
   {
     prop: 'started_at',
     label: '时间',
     minWidth: 168,
-    align: 'left',
-    headerAlign: 'left',
+    align: 'center',
+    headerAlign: 'center',
     showOverflowTooltip: true,
     formatter: (row) => formatStartedAt(String(row.started_at ?? '')),
   },
@@ -40,14 +56,16 @@ const columns = ref<BasicTableColumn[]>([
     prop: 'trigger',
     label: '触发',
     width: 88,
+    align: 'center',
+    headerAlign: 'center',
     slotName: 'trigger',
   },
   {
     prop: 'duration_ms',
     label: '耗时',
     width: 104,
-    align: 'right',
-    headerAlign: 'right',
+    align: 'center',
+    headerAlign: 'center',
     slotName: 'duration',
   },
   {
@@ -84,15 +102,38 @@ async function reload(): Promise<void> {
   await refetch()
 }
 
+function openError(row: Record<string, unknown>): void {
+  const id = String(row.id ?? '')
+  activeRun.value = runs.value.find((run) => run.id === id) ?? null
+  if (!activeRun.value) return
+  errorOpen.value = true
+}
+
+/**
+ * 直接把最近一条失败摊开。回执上的「上次失败 N」点进来就落在这里——
+ * 少掉「猜是哪条任务 → 逐条点开 → 悬停读半句」三步。
+ */
+async function focusLatestFailure(): Promise<void> {
+  await reload()
+  const hit = runs.value.find((run) => run.status === 'failed')
+  if (!hit) return
+  failedOnly.value = true
+  activeRun.value = hit
+  errorOpen.value = true
+}
+
 watch(
   () => props.jobId,
   () => {
+    failedOnly.value = false
+    errorOpen.value = false
+    activeRun.value = null
     void reload()
   },
   { immediate: true },
 )
 
-defineExpose({ reload })
+defineExpose({ reload, focusLatestFailure })
 </script>
 
 <template>
@@ -117,6 +158,14 @@ defineExpose({ reload })
           <strong>最近执行</strong>
           <span class="job-runs-panel__meta">仅当前任务</span>
           <el-tag size="small" effect="plain" type="info">{{ runCount }} 条</el-tag>
+          <el-checkbox
+            v-model="failedOnly"
+            size="small"
+            class="job-runs-panel__only-failed"
+            :disabled="!failedCount"
+          >
+            只看失败{{ failedCount ? `（${failedCount}）` : '' }}
+          </el-checkbox>
         </div>
       </template>
 
@@ -145,19 +194,31 @@ defineExpose({ reload })
             </el-icon>
             {{ statusLabel(String(row.status ?? '')) }}
           </el-tag>
-          <span v-if="row.error_text" class="job-runs-panel__err" :title="String(row.error_text)">
-            {{ firstLine(String(row.error_text)) }}
-          </span>
+          <el-button
+            v-if="row.error_text"
+            link
+            size="small"
+            class="job-runs-panel__err"
+            title="点开看失败全文并复制"
+            @click="openError(row)"
+          >
+            <span class="job-runs-panel__err-body">
+              <span class="job-runs-panel__err-line">{{ firstLine(String(row.error_text)) }}</span>
+              <span class="job-runs-panel__err-more">全文</span>
+            </span>
+          </el-button>
         </div>
       </template>
     </BasicTable>
+
+    <JobRunErrorDialog v-model="errorOpen" :run="activeRun" />
   </section>
 </template>
 
 <style scoped>
 .job-runs-panel {
   flex: 1 1 auto;
-  min-height: 14rem;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -174,7 +235,7 @@ defineExpose({ reload })
 }
 
 .job-runs-panel__table :deep(.basic-table__toolbar) {
-  padding: 0.45rem 0.75rem;
+  padding: var(--gap-1) var(--gap-2);
   background: color-mix(in srgb, var(--panel-2) 70%, var(--sheet));
 }
 
@@ -186,18 +247,18 @@ defineExpose({ reload })
 }
 
 .job-runs-panel__title strong {
-  font-size: 0.92rem;
+  font-size: var(--fs-title);
 }
 
 .job-runs-panel__meta {
-  font-size: 0.76rem;
+  font-size: var(--fs-aux);
   color: var(--muted);
 }
 
 .job-runs-panel__duration {
   font-variant-numeric: tabular-nums;
   font-family: var(--mono);
-  font-size: 0.9em;
+  font-size: var(--fs-body);
   color: var(--ink);
 }
 
@@ -221,12 +282,56 @@ defineExpose({ reload })
   vertical-align: middle;
 }
 
-.job-runs-panel__err {
+.job-runs-panel__only-failed {
+  margin-left: auto;
+}
+
+/* 失败原因是个 el-button link：一眼看得出「这半句还能点开」，不是一段哑掉的灰字。 */
+.job-runs-panel__err.el-button {
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  font-size: var(--fs-aux);
+  font-weight: 400;
+  text-align: left;
+  --el-button-text-color: var(--muted);
+  --el-button-hover-text-color: var(--el-color-danger);
+  --el-button-active-text-color: var(--el-color-danger);
+}
+
+/* EP 把默认插槽再包一层 span，省略号要靠 min-width:0 一路传下去才生效 */
+.job-runs-panel__err :deep(span) {
+  min-width: 0;
+}
+
+.job-runs-panel__err-body {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+  min-width: 0;
+}
+
+.job-runs-panel__err:hover .job-runs-panel__err-line,
+.job-runs-panel__err:focus-visible .job-runs-panel__err-line {
+  /* 失败用全站危险色（EP 语义 token），不借涨跌色 */
+  color: var(--el-color-danger);
+  text-decoration: underline;
+}
+
+.job-runs-panel__err-line {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted);
-  font-size: 0.84em;
+}
+
+.job-runs-panel__err-more {
+  flex: 0 0 auto;
+  padding: 0 var(--gap-1);
+  border: 1px solid color-mix(in srgb, var(--el-color-danger) 35%, var(--rule));
+  border-radius: var(--radius);
+  font-size: var(--fs-kicker);
+  color: var(--el-color-danger);
 }
 </style>

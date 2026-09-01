@@ -110,6 +110,7 @@ class CandidateQueryMixin:
     def candidates_list_payload(
         self,
         *,
+        code: str | None = None,
         strategy: str | None = None,
         decision: str | None = None,
         start: str | None = None,
@@ -117,7 +118,7 @@ class CandidateQueryMixin:
         limit: int = 200,
         include_backfill: bool = False,
     ) -> list[dict[str, Any]]:
-        """跨日期/战法的候选列表，供工作台列表页使用（不再按天侧栏）。
+        """查询候选列表。
 
         默认排除回填源；审计回填时传 ``include_backfill=True``。
         """
@@ -126,6 +127,9 @@ class CandidateQueryMixin:
         if not include_backfill:
             clauses.extend(EXCLUDE_BACKFILL_SQL)
             clauses.append(EXCLUDE_STALE_API_SCREEN_SQL)
+        if code and code.strip():
+            clauses.append("code = ?")
+            params.append(code.strip())
         if strategy and strategy.strip():
             raw = strategy.strip()
             like = f"%{raw}%"

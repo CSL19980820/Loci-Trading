@@ -14,6 +14,7 @@ import BasicTable, {
 } from '@/shared/components/ui/BasicTable.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
+import { strategyLabel } from '@/shared/lib/format'
 import type { ScreenCandidate, ScreenHistory } from '@/shared/types/quant'
 
 export type HistoryRow = {
@@ -83,7 +84,9 @@ const filterSchemas: BasicFormSchema[] = [
 const allRows = computed<HistoryRow[]>(() => {
   const hist = props.history
   if (!hist?.dates?.length) return []
-  const name = props.capabilityName || hist.strategy
+  // 兜底不能是裸 slug：父级没传中文名时，`hist.strategy` 是 `sanyuan-tail-v1`
+  // 这种英文编码，直接摆到弹窗标题与详情行上。
+  const name = props.capabilityName || strategyLabel(hist.strategy)
   return hist.dates.map((date) => {
     const items = hist.by_date[date] ?? []
     return {
@@ -161,20 +164,23 @@ onMounted(() => {
 })
 
 const detailColumns: BasicTableColumn[] = [
-  { type: 'index', label: '#', width: 48, align: 'left' },
-  { prop: 'code', label: '标的', minWidth: 148, slotName: 'code' },
-  { prop: 'decision', label: '裁决', width: 82, slotName: 'decision' },
+  { type: 'index', label: '#', width: 48, align: 'center', headerAlign: 'center' },
+  { prop: 'code', label: '标的', minWidth: 148, align: 'center', headerAlign: 'center', slotName: 'code' },
+  { prop: 'decision', label: '裁决', width: 82, align: 'center', headerAlign: 'center', slotName: 'decision' },
   {
     prop: 'score',
     label: '分数',
     width: 88,
-    align: 'right',
+    align: 'center',
+    headerAlign: 'center',
     formatter: (row) => (row.score == null ? '—' : String(row.score)),
   },
   {
     prop: 'reason',
     label: '理由',
     minWidth: 200,
+    align: 'left',
+    headerAlign: 'left',
     showOverflowTooltip: true,
     formatter: (row) => String(row.reason || '—'),
   },
@@ -225,7 +231,7 @@ function onToolbarRefresh(): void {
         v-model="filterModel"
         :schemas="filterSchemas"
         :col-props="{ span: 24 }"
-        label-width="72px"
+        label-width="6.5em"
         class="history-panel__form"
       />
       <div class="history-panel__actions">

@@ -12,6 +12,8 @@ import type {
   ResearchPointInTimeFact,
 } from '@/shared/types/quant-research'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+
 import ResearchTemporalImportDialog, { type ResearchTemporalImportKind } from './ResearchTemporalImportDialog.vue'
 
 const props = defineProps<{
@@ -198,11 +200,9 @@ defineExpose({ loadMemberships, loadFacts })
 
 <template>
   <section class="temporal-panel" aria-label="历史研究数据">
+    <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <header class="temporal-head">
-      <div>
-        <span class="research-kicker">POINT-IN-TIME DATA</span>
-        <h4>历史数据</h4>
-      </div>
+      <h4>历史数据</h4>
     </header>
 
     <section class="temporal-section" aria-label="历史股票池快照">
@@ -210,14 +210,14 @@ defineExpose({ loadMemberships, loadFacts })
         <div><h5>历史股票池快照</h5><span>{{ membershipLoaded ? `${membershipTotal} 条` : '尚未加载' }}</span></div>
         <el-button size="small" :icon="Upload" @click="openImport('membership')">导入快照</el-button>
       </div>
-      <el-form class="temporal-query" label-position="top" @submit.prevent="loadMemberships">
+      <el-form class="temporal-query" inline label-position="left" size="small" @submit.prevent="loadMemberships">
         <el-form-item label="股票池标识">
           <el-input v-model="membershipFilter.universeId" clearable maxlength="128" placeholder="例如 CSI300" />
         </el-form-item>
-        <el-form-item label="截至日期（解析可选）">
+        <el-form-item label="截至日期">
           <el-date-picker v-model="membershipFilter.asOf" value-format="YYYY-MM-DD" type="date" placeholder="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item class="query-action">
+        <el-form-item label-width="0">
           <el-button native-type="submit" :icon="RefreshRight" :loading="membershipLoading">读取快照</el-button>
         </el-form-item>
       </el-form>
@@ -228,19 +228,19 @@ defineExpose({ loadMemberships, loadFacts })
         <span v-if="membershipUnavailableReason(resolvedMembership)">{{ membershipUnavailableReason(resolvedMembership) }}</span>
       </div>
       <el-table v-if="memberships.length" :data="memberships" size="small" :row-key="membershipRowKey">
-        <el-table-column prop="universe_id" label="股票池" min-width="132" show-overflow-tooltip />
-        <el-table-column prop="as_of" label="快照日" width="112" />
-        <el-table-column prop="available_at" label="可见日" width="112" />
-        <el-table-column label="成员" width="78"><template #default="{ row }">{{ row.members.length }}</template></el-table-column>
-        <el-table-column label="状态" width="108"><template #default="{ row }"><el-tag size="small" effect="plain" :type="membershipType(row)">{{ membershipLabel(row) }}</el-tag></template></el-table-column>
-        <el-table-column label="来源 / 版本" min-width="150" show-overflow-tooltip><template #default="{ row }"><el-link v-if="safeSourceUrl(row.source_url)" :href="safeSourceUrl(row.source_url)" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(row.source_id, row.snapshot_revision) }}</el-link><span v-else>{{ sourceText(row.source_id, row.snapshot_revision) }}</span></template></el-table-column>
-        <el-table-column label="抓取 / 载荷 / 解析" min-width="240" show-overflow-tooltip><template #default="{ row }"><code :title="provenanceText(row)">{{ provenanceText(row) }}</code></template></el-table-column>
-        <el-table-column label="操作" width="108" fixed="right"><template #default="{ row }"><el-button text size="small" :disabled="!canUseMembership(row)" :title="membershipUnavailableReason(row)" @click="useUniverse(row)">用于严格 PIT</el-button></template></el-table-column>
+        <el-table-column prop="universe_id" label="股票池" min-width="132" align="center" header-align="center" show-overflow-tooltip />
+        <el-table-column prop="as_of" label="快照日" width="112" align="center" header-align="center" />
+        <el-table-column prop="available_at" label="可见日" width="112" align="center" header-align="center" />
+        <el-table-column label="成员" width="78" align="center" header-align="center"><template #default="{ row }">{{ row.members.length }}</template></el-table-column>
+        <el-table-column label="状态" width="108" align="center" header-align="center"><template #default="{ row }"><el-tag size="small" effect="plain" :type="membershipType(row)">{{ membershipLabel(row) }}</el-tag></template></el-table-column>
+        <el-table-column label="来源 / 版本" min-width="150" align="center" header-align="center" show-overflow-tooltip><template #default="{ row }"><el-link v-if="safeSourceUrl(row.source_url)" :href="safeSourceUrl(row.source_url)" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(row.source_id, row.snapshot_revision) }}</el-link><span v-else>{{ sourceText(row.source_id, row.snapshot_revision) }}</span></template></el-table-column>
+        <el-table-column label="抓取 / 载荷 / 解析" min-width="240" align="left" header-align="left" show-overflow-tooltip><template #default="{ row }"><code :title="provenanceText(row)">{{ provenanceText(row) }}</code></template></el-table-column>
+        <el-table-column label="操作" width="108" align="center" header-align="center" fixed="right"><template #default="{ row }"><el-button text size="small" :disabled="!canUseMembership(row)" :title="membershipUnavailableReason(row)" @click="useUniverse(row)">用于严格 PIT</el-button></template></el-table-column>
       </el-table>
-      <el-empty
+      <EmptyState
         v-else-if="membershipLoaded && !membershipLoading"
-        description="这个条件下没有快照。换个股票池标识或日期，或点「导入快照」补一批"
-        :image-size="42"
+        description="无快照"
+        reason="换条件，或点「导入快照」"
       />
     </section>
 
@@ -249,17 +249,17 @@ defineExpose({ loadMemberships, loadFacts })
         <div><h5>PIT 事实</h5><span>{{ factLoaded ? `${factTotal} 条` : '尚未加载' }}</span></div>
         <el-button size="small" :icon="Upload" @click="openImport('fact')">导入事实</el-button>
       </div>
-      <el-form class="temporal-query temporal-query--facts" label-position="top" @submit.prevent="loadFacts">
+      <el-form class="temporal-query" inline label-position="left" size="small" @submit.prevent="loadFacts">
         <el-form-item label="实体标识">
           <el-input v-model="factFilter.entityId" clearable maxlength="64" placeholder="证券代码或实体 ID" />
         </el-form-item>
         <el-form-item label="事实类型">
-          <el-select v-model="factFilter.factType" clearable placeholder="全部"><el-option label="财务" value="financial" /><el-option label="事件" value="event" /><el-option label="其他" value="other" /></el-select>
+          <el-select v-model="factFilter.factType" clearable placeholder="全部" class="fact-type"><el-option label="财务" value="financial" /><el-option label="事件" value="event" /><el-option label="其他" value="other" /></el-select>
         </el-form-item>
-        <el-form-item label="截至日期（解析可选）">
+        <el-form-item label="截至日期">
           <el-date-picker v-model="factFilter.asOf" value-format="YYYY-MM-DD" type="date" placeholder="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item class="query-action">
+        <el-form-item label-width="0">
           <el-button native-type="submit" :icon="RefreshRight" :loading="factLoading">读取事实</el-button>
         </el-form-item>
       </el-form>
@@ -277,10 +277,10 @@ defineExpose({ loadMemberships, loadFacts })
         <el-table-column label="来源 / 版本" min-width="150" show-overflow-tooltip><template #default="{ row }"><el-link v-if="safeSourceUrl(row.source_url)" :href="safeSourceUrl(row.source_url)" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(row.source_id, row.revision) }}</el-link><span v-else>{{ sourceText(row.source_id, row.revision) }}</span></template></el-table-column>
         <el-table-column label="抓取 / 载荷 / 解析" min-width="240" show-overflow-tooltip><template #default="{ row }"><code :title="provenanceText(row)">{{ provenanceText(row) }}</code></template></el-table-column>
       </el-table>
-      <el-empty
+      <EmptyState
         v-else-if="factLoaded && !factLoading"
-        description="这个条件下没有事实。换个实体或日期，或点「导入事实」补一批"
-        :image-size="42"
+        description="无事实"
+        reason="换条件，或点「导入事实」"
       />
     </section>
 
@@ -294,22 +294,23 @@ defineExpose({ loadMemberships, loadFacts })
 
 <style scoped>
 .temporal-panel { overflow: hidden; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
-.temporal-head, .subhead { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .72rem .9rem; }
+.temporal-head, .subhead { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-3); padding: var(--pad-sheet); }
 .temporal-head { border-bottom: 1px solid var(--rule); }
-.research-kicker { display: block; color: var(--mist); font: .68rem/1.2 var(--mono); letter-spacing: .08em; }
-.temporal-head h4, .subhead h5 { margin: .2rem 0 0; color: var(--ink); font-size: .88rem; letter-spacing: 0; }
+.temporal-head h4, .subhead h5 { margin: 0; color: var(--ink); font-size: var(--fs-title); font-weight: 700; letter-spacing: .03em; }
 .temporal-section + .temporal-section { border-top: 1px solid var(--rule); }
 .subhead { align-items: flex-end; }
-.subhead > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: .4rem; }
-.subhead span { color: var(--mist); font-size: .72rem; }
-.temporal-query { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(10rem, .9fr) auto; gap: .45rem .65rem; align-items: end; padding: 0 .9rem .72rem; }
-.temporal-query--facts { grid-template-columns: minmax(0, 1.1fr) minmax(8.5rem, .8fr) minmax(10rem, .9fr) auto; }
-.temporal-query :deep(.el-form-item) { margin-bottom: 0; }
-.temporal-query :deep(.el-date-editor), .temporal-query :deep(.el-select) { width: 100%; }
-.query-action { justify-content: flex-end; }
-.section-alert { margin: 0 .9rem .7rem; }
-.resolved-row { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; padding: .58rem .9rem; border-top: 1px solid var(--rule); color: var(--mist); font-size: .74rem; }
-code { color: var(--ink); font: .72rem var(--mono); overflow-wrap: anywhere; }
-@media (max-width: 920px) { .temporal-query, .temporal-query--facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .query-action { justify-content: flex-start; } }
-@media (max-width: 560px) { .temporal-head, .subhead { align-items: flex-start; flex-direction: column; } .temporal-query, .temporal-query--facts { grid-template-columns: 1fr; } }
+.subhead > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--gap-1); }
+.subhead span { color: var(--mist); font-size: var(--fs-aux); }
+/* 筛选条交给 EP inline 表单排版，不再用 grid 覆盖 el-form 布局 */
+.temporal-query { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gap-1) var(--gap-2); padding: 0 var(--pad-sheet-x) var(--gap-2); }
+.temporal-query :deep(.el-form-item) { margin: 0; }
+.temporal-query :deep(.el-form-item__label) { padding-right: var(--gap-2); }
+.fact-type { width: 8rem; }
+.section-alert { margin: 0 var(--pad-sheet-x) var(--gap-2); }
+.resolved-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1) var(--gap-2); padding: var(--gap-2) var(--pad-sheet-x); border-top: 1px solid var(--rule); color: var(--mist); font-size: var(--fs-aux); }
+code { color: var(--ink); font: var(--fs-aux) var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .temporal-head, .subhead { align-items: flex-start; flex-direction: column; }
+  .temporal-query :deep(.el-form-item) { width: 100%; }
+}
 </style>

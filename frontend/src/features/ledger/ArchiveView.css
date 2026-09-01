@@ -3,91 +3,83 @@
   flex-direction: column;
   min-height: 0;
 }
-
+/* 顶栏不再铺渐变「纸感」：终端风用一条 hairline 收边就够 */
 .sw-top {
   flex-shrink: 0;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--paper) 88%, #fff) 0%, var(--paper) 100%);
+  background: var(--sheet-alt);
   border-bottom: 1px solid var(--rule);
 }
-
 .sw-id-row {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.55rem 0.85rem 0.35rem;
+  gap: var(--gap-2);
+  padding: var(--gap-1) var(--gap-3);
   flex-wrap: wrap;
 }
-
 .sw-back {
   flex-shrink: 0;
 }
-
 .sw-id {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.35rem 0.55rem;
+  gap: var(--gap-1) var(--gap-2);
   min-width: 0;
   flex: 1 1 auto;
 }
-
+/* 中文标题走 sans + --fs-hero 上限（D2）：旧版 var(--font-display) 1.14rem 是衬线大标题 */
 .sw-name {
-  font-family: var(--font-display);
-  font-size: 1.14rem;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  line-height: 1.15;
+  font-family: var(--font-sans);
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
 }
-
 .sw-code {
   color: var(--mist);
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
 }
-
+/* D2：这页最大的字是最新价 */
 .sw-last {
-  font-size: 1.2rem;
+  font-family: var(--mono);
+  font-size: var(--fs-tape);
+  font-weight: 700;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.sw-pct {
+  font-family: var(--mono);
+  font-size: var(--fs-title);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-
-.sw-pct {
-  font-size: 0.86rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
 .sw-last.is-up,
 .sw-pct.is-up {
   color: var(--up);
 }
-
 .sw-last.is-down,
 .sw-pct.is-down {
   color: var(--down);
 }
-
 .sw-tags {
   display: inline-flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--gap-1);
   flex-shrink: 0;
 }
-
 .stock-workbench--batch .sw-tags {
   margin-left: 0;
 }
-
 .sw-split {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   align-items: stretch;
 }
-
 .sw-split__main {
   flex: 1 1 auto;
   min-width: 0;
@@ -95,122 +87,16 @@
   display: flex;
   flex-direction: column;
 }
-
-/* 台账式底线轨：三格等分，印章红下划指示当前页 */
-.sw-rail {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-  margin: 0 0.55rem;
-  padding: 0;
-}
-
-.sw-rail__tab {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.35rem;
-  padding: 0.45rem 0.5rem 0.55rem;
-  color: var(--mist);
-  border-bottom: 2px solid transparent;
-  transition:
-    color 0.16s ease,
-    border-color 0.16s ease,
-    background 0.16s ease;
-}
-
-.sw-rail__tab.el-button {
-  width: 100%;
-  height: auto;
-  margin: 0;
-  border-radius: 0;
-  --el-button-text-color: var(--mist);
-  --el-button-hover-text-color: var(--ink);
-}
-
-.sw-rail__tab:hover {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--sheet) 55%, transparent);
-}
-
-.sw-rail__tab:focus-visible {
-  outline: 2px solid var(--seal);
-  outline-offset: -2px;
-}
-
-.sw-rail__tab.is-active {
-  color: var(--ink);
-  border-bottom-color: var(--seal);
-}
-
-.sw-rail__label {
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-
-.sw-rail__tab.is-active .sw-rail__label {
-  font-weight: 700;
-}
-
-.sw-rail__count {
-  min-width: 1.15rem;
-  padding: 0.08rem 0.32rem;
-  border-radius: 3px;
-  border: 1px solid var(--rule);
-  background: var(--sheet);
-  color: var(--mist);
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.sw-rail__tab.is-active .sw-rail__count {
-  border-color: color-mix(in srgb, var(--seal) 40%, var(--rule));
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sw-rail__tab {
-    transition: none;
-  }
-}
-
 .sw-body {
   flex: 1 1 auto;
   min-height: 0;
 }
-
-.sw-pane--busy {
-  position: relative;
-  min-height: 12rem;
-}
-
 .sw-body--quote {
   display: flex;
   flex-direction: column;
-  padding: 0.45rem 0.65rem 0.65rem;
+  padding: var(--gap-1) var(--gap-2) var(--gap-2);
 }
-
 .sw-body--quote .tdx-desk {
   flex: 1 1 auto;
   min-height: 0;
-}
-
-.sw-body--ledger {
-  gap: 0.55rem;
-}
-
-@media (max-width: 720px) {
-  .sw-rail__label {
-    letter-spacing: 0.04em;
-    font-size: 0.9rem;
-  }
 }

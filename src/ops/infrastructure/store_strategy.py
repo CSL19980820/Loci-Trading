@@ -5,7 +5,7 @@ import datetime as _dt
 from typing import Any
 import sqlite3
 
-from src.ops.infrastructure.store_helpers import OpsError, dumps, loads, new_id
+from src.ops.infrastructure.store_helpers import OpsError, _now, dumps, loads, new_id
 
 
 class OpsStrategyMixin:
@@ -120,8 +120,8 @@ class OpsStrategyMixin:
             cursor.execute("UPDATE strategy_versions SET is_active=0 WHERE slug=?", (slug,))
             cursor.execute(
                 "INSERT INTO strategy_versions(id, slug, version, code, file_path, issues, created_at, is_active)"
-                " VALUES(?, ?, ?, ?, ?, ?, datetime('now'), 1)",
-                (new_id("SV"), slug, next_ver, code, file_path, dumps(issues or [])),
+                " VALUES(?, ?, ?, ?, ?, ?, ?, 1)",
+                (new_id("SV"), slug, next_ver, code, file_path, dumps(issues or []), _now()),
             )
         # 清理：超过10个且未被任务引用的最旧版本
         self._prune_strategy_versions(slug)

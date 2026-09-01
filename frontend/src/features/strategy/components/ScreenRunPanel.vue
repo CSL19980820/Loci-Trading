@@ -21,11 +21,17 @@ const props = defineProps<{
   skillLog: string[]
   skillRun: SkillRun | null
   skillReply: string
+  /** 技能是否真的还在后台跑（skillBusy 只覆盖请求在途那一瞬） */
+  skillActive?: boolean
+  /** 「已跑 2 分 13 秒」；起点未知时调用方给「已跟踪 …」 */
+  elapsedText?: string
+  canAbandon?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:skillReply': [value: string]
   reply: []
+  abandon: []
 }>()
 
 const route = useRoute()
@@ -64,7 +70,7 @@ watch(
 
 const statusLabel = computed(() => {
   if (props.kind === 'skill') {
-    if (props.skillBusy) return '技能运行中'
+    if (props.skillBusy || props.skillActive) return '技能运行中'
     const st = props.skillRun?.status
     if (st === 'done') return '技能已完成'
     if (st === 'error') return '技能失败'
@@ -102,7 +108,7 @@ const logs = computed(() =>
 const liveRunning = computed(() => {
   if (props.kind === 'skill') {
     const st = props.skillRun?.status
-    return props.skillBusy || st === 'running' || st === 'waiting_user'
+    return props.skillBusy || props.skillActive || st === 'running' || st === 'waiting_user'
   }
   return props.running
 })
@@ -126,18 +132,20 @@ function onLogScroll(): void {
 }
 
 const pickColumns = computed<BasicTableColumn[]>(() => [
-  { prop: 'code', label: '标的', minWidth: 120, slotName: 'code' },
+  { prop: 'code', label: '标的', minWidth: 120, align: 'center', headerAlign: 'center', slotName: 'code' },
   {
     prop: 'open',
     label: '开',
-    align: 'right',
+    align: 'center',
+    headerAlign: 'center',
     width: 88,
     formatter: (row) => fmtNum(row.open as number | null),
   },
   {
     prop: 'close',
     label: '收',
-    align: 'right',
+    align: 'center',
+    headerAlign: 'center',
     width: 88,
     formatter: (row) => fmtNum(row.close as number | null),
   },
@@ -190,6 +198,7 @@ function toggleLog(): void {
           </el-icon>
           <strong>{{ statusLabel }}</strong>
         </span>
+        <span v-if="elapsedText" class="mono mist run-panel__elapsed">{{ elapsedText }}</span>
         <span v-if="showProgress" class="mono mist">{{ progressPct }}%</span>
       </div>
       <el-progress
@@ -199,6 +208,12 @@ function toggleLog(): void {
         :show-text="false"
         :status="progressStatus"
       />
+      <div v-if="canAbandon" class="run-panel__abandon">
+        <el-button size="small" type="warning" plain native-type="button" @click="emit('abandon')">
+          放弃跟踪
+        </el-button>
+        <span class="run-panel__abandon-note">停跟踪不等于停任务：后端没有中止接口，它会在后台跑完</span>
+      </div>
     </header>
 
     <div
@@ -315,14 +330,12 @@ function toggleLog(): void {
           v-if="lastResult && !pickRows.length && !watchRows.length"
           class="picks-empty"
           description="该日无标的满足条件"
-          :image-size="48"
         />
         <EmptyState
           v-else-if="!lastResult"
           class="picks-empty"
           description="今天还没跑过选股"
-          reason="在左侧选中战法后，点右上角「选股」开跑；工作日 15:30 也会自动跑一遍盘后选股。"
-          :image-size="56"
+          reason="选中左侧战法后点右上角「选股」；15:30 自动跑一遍"
         />
       </div>
     </div>
@@ -333,7 +346,6 @@ function toggleLog(): void {
         v-else-if="!skillLog.length"
         class="picks-empty"
         description="跑技能后显示事件流与产出"
-        :image-size="48"
       />
     </div>
   </section>

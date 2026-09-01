@@ -221,6 +221,8 @@ def optional_llm_critique(
             max_tokens=4096,
             temperature=0.3,
             log=logger,
+            # 复盘评头论足也是真花钱的 LLM 调用，必须进月度用量。
+            ops_db=str(getattr(store, "db_path", "") or ""),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("style llm critique failed: %s", exc)

@@ -150,11 +150,10 @@ function onMore(command: string): void {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  min-height: 10.5rem;
   padding: 0.7rem 0.75rem;
   background: var(--sheet);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: border-color 0.12s ease, background 0.12s ease;
 }
@@ -182,7 +181,7 @@ function onMore(command: string): void {
   height: 2.1rem;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius);
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.95rem;
@@ -192,7 +191,7 @@ function onMore(command: string): void {
 }
 
 .prov-card.is-default .prov-card__avatar {
-  color: var(--seal);
+  color: var(--seal-ink);
   background: var(--seal-soft);
   border-color: var(--seal);
 }
@@ -290,7 +289,7 @@ function onMore(command: string): void {
 .model-chip.active {
   border-color: var(--seal);
   background: var(--seal-soft);
-  color: var(--seal);
+  color: var(--seal-ink);
 }
 
 .prov-card__extra {

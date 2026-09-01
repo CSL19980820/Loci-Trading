@@ -12,9 +12,10 @@ type NavEntry = { readonly path: string; readonly title: string; readonly short?
 
 export const NAV_LABELS = {
   pulse: { path: '/', title: '盘面', short: '盘面' },
+  live: { path: '/live', title: '实时大屏', short: '大屏' },
   pool: { path: '/pool', title: '候选池', short: '候选池' },
   reviews: { path: '/reviews', title: '复盘中心', short: '复盘' },
-  'review-records': { path: '/reviews/records', title: '复盘记录' },
+  'review-records': { path: '/reviews/records', title: '复盘记录', short: '记录' },
   winrate: { path: '/winrate', title: '胜率统计', short: '胜率' },
   'screen-history': { path: '/screen-history', title: '选股', short: '选股' },
   insights: { path: '/insights', title: '数据体检', short: '体检' },
@@ -25,7 +26,9 @@ export const NAV_LABELS = {
   archive: { path: '/archive/:code', title: '档案', short: '档案' },
   login: { path: '/login', title: '登录' },
   'auth-unavailable': { path: '/auth-unavailable', title: '认证服务暂不可用' },
+  account: { path: '/account', title: '账号', short: '账号' },
   peek: { path: '/peek', title: '行情速览' },
+  admin: { path: '/admin', title: '管理后台', short: '管理' },
 } as const satisfies Record<string, NavEntry>
 
 export type NavKey = keyof typeof NAV_LABELS

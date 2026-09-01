@@ -38,6 +38,13 @@ const SwitchStub = defineComponent({
   template: '<input class="strict-switch" type="checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)">',
 })
 
+/** 战法字段已从 el-input 换成 el-select（选项文案中文、value 仍是 slug），stub 成同形输入 */
+const SelectStub = defineComponent({
+  props: { modelValue: { type: String, default: '' } },
+  emits: ['update:modelValue'],
+  template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)">',
+})
+
 const FormStub = defineComponent({
   template: '<form><slot /></form>',
 })
@@ -63,6 +70,8 @@ function mountPanel() {
         'el-form': FormStub,
         'el-form-item': { template: '<div><slot /></div>' },
         'el-input': InputStub,
+        'el-select': SelectStub,
+        'el-option': true,
         'el-input-number': true,
         'el-date-picker': DatePickerStub,
         'el-switch': SwitchStub,

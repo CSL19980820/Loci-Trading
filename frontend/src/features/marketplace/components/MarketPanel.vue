@@ -135,10 +135,10 @@ function openPackage(item: MarketPackage): void {
 
 async function removePackage(item: MarketPackage): Promise<void> {
   if (!item.removable || item.kind !== 'skill') return
-  if (!(await confirmDangerous(`确定卸载技能包「${item.slug}」？`, '确认卸载', '卸载'))) return
+  if (!(await confirmDangerous(`确定卸载技能包「${item.name}」？`, '确认卸载', '卸载'))) return
   try {
     await removeSkill(item.slug)
-    ElMessage.success(`已卸载 ${item.slug}`)
+    ElMessage.success(`已卸载 ${item.name}`)
     if (selectedId.value === item.id) select('')
     await load()
     emit('catalog-changed')
@@ -178,22 +178,9 @@ defineExpose({ load })
 
 <template>
   <div class="market-panel" :class="{ 'market-panel--embedded': embedded }">
-    <header v-if="!embedded" class="market-hero">
-      <div>
-        <strong>市场</strong>
-      </div>
-      <HeaderActions
-        :actions="[
-          { key: 'reload', label: '刷新', disabled: loading, onClick: () => void load() },
-          { key: 'publish', label: '安装 zip', kind: 'primary', onClick: goPublish },
-        ]"
-      />
-    </header>
-
     <div class="market-subhead">
       <PageTabs v-model="shelfTab" :items="tabItems" :sticky="false" dense aria-label="市场货架分区" />
       <HeaderActions
-        v-if="embedded"
         :actions="[
           { key: 'reload', label: '刷新', disabled: loading, onClick: () => void load() },
           { key: 'publish', label: '安装 zip', kind: 'primary', onClick: goPublish },
@@ -236,8 +223,7 @@ defineExpose({ load })
         <EmptyState
           v-else
           description="货架还没有这类货品"
-          reason="去「发布」安装 Skill zip。"
-          :image-size="80"
+  reason="去「发布」安装 Skill zip"
         >
           <el-button type="primary" @click="goPublish">去发布 / 安装</el-button>
         </EmptyState>
@@ -266,26 +252,12 @@ defineExpose({ load })
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* flex:1 已吃满父级高度；再写 height:100% 只会互相打架（体检 §4.4） */
   flex: 1 1 auto;
-  height: 100%;
 }
 
 .market-panel--embedded {
   background: transparent;
-}
-
-.market-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.65rem 0.85rem 0.35rem;
-  flex-shrink: 0;
-}
-
-.market-hero strong {
-  font-family: var(--font-display);
-  font-size: 1.12rem;
 }
 
 .market-subhead {
@@ -329,19 +301,16 @@ defineExpose({ load })
   flex-shrink: 0;
 }
 
+/* 高度内容驱动：货架空时不留 12rem 死白，长列表由表体自滚 */
 .market-shelf-wrap {
   flex: 1 1 auto;
-  min-height: 12rem;
+  min-height: 0;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--sheet);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-.market-shelf-wrap :deep(.basic-table) {
-  height: 100%;
 }
 
 </style>

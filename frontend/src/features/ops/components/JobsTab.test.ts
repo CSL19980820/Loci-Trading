@@ -25,6 +25,7 @@ vi.mock('@/shared/api/quant', () => ({
   getStrategies: vi.fn().mockResolvedValue([]),
   getSkills: vi.fn().mockResolvedValue([]),
   getProviders: vi.fn().mockResolvedValue([]),
+  getJobQuota: vi.fn().mockResolvedValue({ used: 2, limit: 5, unlimited: false, managed: 7 }),
   createJob: vi.fn(),
   deleteJob: vi.fn(),
   runJob: vi.fn(),

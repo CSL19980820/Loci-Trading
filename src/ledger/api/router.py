@@ -51,6 +51,7 @@ def build_ledger_router(
     @router.get("/api/candidates/list", tags=["candidates"])
     def candidates_list(
         store: Store,
+        code: str | None = Query(default=None, max_length=16),
         strategy: str | None = Query(default=None, max_length=64),
         decision: str | None = Query(default=None, max_length=32),
         start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
@@ -61,8 +62,9 @@ def build_ledger_router(
             description="true 时含区间回填；默认排除",
         ),
     ) -> list[dict[str, Any]]:
-        """跨日期候选列表。按战法/裁决过滤，点进详情看单条。"""
+        """跨日期候选列表。按战法/裁决/股票代码过滤，点进详情看单条。"""
         return store.candidates_list_payload(
+            code=code,
             strategy=strategy,
             decision=decision,
             start=start,

@@ -4,8 +4,6 @@
 """
 from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
-from hmac import compare_digest
-from ipaddress import ip_address
 from pathlib import Path
 import logging
 import os
@@ -13,15 +11,35 @@ import sqlite3
 import time
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from src.app.auth_guards import (
+    build_auth_guards,
+    current_context,  # noqa: F401 - 测试/兼容 re-export
+)
+from src.app.logging_setup import configure_logging
 from src.app.login_throttle import LoginThrottle  # noqa: F401 — 测试/兼容 re-export
+from src.app.security_middleware import (  # noqa: F401 - 下划线名同为兼容 re-export
+    _env_flag,
+    _is_loopback_client,
+    _split_hosts,
+    install_secure_response_headers,
+)
+from src.app.spa_mount import install_spa_cache_control, mount_spa
+from src.app.startup_migrations import run_startup_self_heal
+from src.app.tenant_middleware import TenantResolverMiddleware
 from src.app.write_token_policy import apply_write_token_policy
+from src.identity import (
+    IdentityStore,
+    build_admin_router,
+    build_auth_dependency,
+    build_auth_router,
+    seed_default_admin,
+)
 from src.ledger import PalaceError, PalaceStore
 from src.ledger.api.router import build_ledger_router
 from src.shared.observability import (
@@ -31,9 +49,10 @@ from src.shared.observability import (
     metric as observation_metric,
     span as observation_span,
 )
-from src.shared.paths import PROJECT_ROOT, ensure_data_dir, palace_db
-from src.shared.webview_cache import purge_webview_http_cache_on_boot
+from src.shared.paths import ensure_data_dir, palace_db
 
+# 必须在任何 logger 取用前执行：容器绕过 cli/serve.py 直起 uvicorn，没这一行应用自己的 INFO 在生产上一条都不输出（见 logging_setup）。
+configure_logging()
 logger = logging.getLogger(__name__)
 
 DEFAULT_DB = palace_db()
@@ -47,24 +66,6 @@ class LoginInput(BaseModel):
     username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=1, max_length=512)
 
-
-def _split_hosts(raw: str) -> list[str]:
-    return [host.strip() for host in raw.split(",") if host.strip()]
-
-
-def _env_flag(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _is_loopback_client(request: Request) -> bool:
-    """首启豁免只给直接本机请求；经代理转发的一律要求认证。"""
-    if request.headers.get("forwarded") or request.headers.get("x-forwarded-for"):
-        return False
-    host = request.client.host if request.client else ""
-    try:
-        return ip_address(host).is_loopback
-    except ValueError:
-        return host.lower() == "localhost"
 
 
 def _spawn_eod_catchup(
@@ -124,33 +125,12 @@ def create_app(
 ) -> FastAPI:
     """创建可测试的 FastAPI 实例；每个请求独立持有 SQLite 连接。"""
     ensure_data_dir()
-    try:
-        from src.ai import migrate_encrypted_llm_keys
-
-        purged_llm = migrate_encrypted_llm_keys()
-        if purged_llm:
-            logger.info("已清除 %s 条 LLM 旧加密凭据（请在运维页重录）", purged_llm)
-    except Exception:
-        logger.exception("清理 LLM 旧加密凭据失败（已忽略）")
-    try:
-        from src.intel import migrate_encrypted_mcp_tokens
-
-        purged_mcp = migrate_encrypted_mcp_tokens()
-        if purged_mcp:
-            logger.info("已清除 %s 条 MCP 旧加密凭据（请在运维页重录）", purged_mcp)
-    except Exception:
-        logger.exception("清理 MCP 旧加密凭据失败（已忽略）")
-    try:
-        from src.strategy.application.screen_skills import refresh_screen_strategy_catalog
-
-        refresh_screen_strategy_catalog()
-    except Exception:
-        logger.exception("刷新 Screen Skill 战法目录失败（已忽略）")
-    # 打包桌面：uvicorn 拉起 app 时清 WebView HTTP 缓存（早于 load_url）
-    try:
-        purge_webview_http_cache_on_boot()
-    except Exception:
-        logger.exception("启动时清理 WebView 缓存失败（已忽略）")
+    run_startup_self_heal()
+    # 只有**显式传参**才钉死账本路径（测试与单库桌面部署依赖这个语义）。
+    # PALACE_DB 环境变量刻意不参与钉死：它表达的是「这台机器主租户的那一份库」，
+    # 由 paths.palace_db() 自己按租户判断——子租户仍要落到自己的目录，
+    # 否则所有人共用一个账本，多租户当场失效。
+    pinned_palace_db = bool(db_path)
     resolved_db = Path(db_path or os.environ.get("PALACE_DB") or DEFAULT_DB)
     runtime_environment = (environment or os.environ.get("PALACE_ENV") or "local").strip().lower()
     is_production = runtime_environment == "production"
@@ -177,12 +157,14 @@ def create_app(
     resolved_auth_username = auth_username if auth_username is not None else os.environ.get("PALACE_AUTH_USERNAME", "")
     resolved_auth_password = auth_password if auth_password is not None else os.environ.get("PALACE_AUTH_PASSWORD", "")
     resolved_session_secret = session_secret if session_secret is not None else os.environ.get("PALACE_SESSION_SECRET", "")
-    if is_production and not resolved_auth_username:
-        raise RuntimeError("生产环境必须配置 PALACE_AUTH_USERNAME")
-    if is_production and not resolved_auth_password:
-        raise RuntimeError("生产环境必须配置 PALACE_AUTH_PASSWORD")
-    if is_production and not resolved_session_secret:
-        raise RuntimeError("生产环境必须配置 PALACE_SESSION_SECRET")
+    # v2 起这两个变量不再是「唯一的固定管理员」，而只是首启种子的入参。
+    # 不配也能起：identity 会种出默认管理员 lociAdmin / Asdf!234（带强制改密）。
+    # 但生产上用文档里写死的口令是高危状态，必须喊得足够大声。
+    if is_production and not (resolved_auth_username and resolved_auth_password):
+        logger.warning(
+            "生产环境未配置 PALACE_AUTH_USERNAME/PASSWORD，将使用默认管理员账号。"
+            "该口令是公开文档里的默认值，请立刻登录并修改，或配置这两个环境变量后重启。"
+        )
     # 会话 Cookie 默认带 Secure；只有显式声明的 HTTP 临时排障模式才放开。
     resolved_insecure_http = (
         insecure_http if insecure_http is not None else _env_flag("PALACE_INSECURE_HTTP")
@@ -193,6 +175,32 @@ def create_app(
             "登录凭证会以明文经网络传输。仅限短期排障，勿长期对公网运行。"
         )
     login_throttle = LoginThrottle()
+
+    # ---- 身份体系（v2 群龙）--------------------------------------
+    # 老部署只有 PALACE_AUTH_USERNAME/PASSWORD 一对固定凭据；v2 把它们种成
+    # identity.db 里的管理员账号，租户绑到 __primary__，也就是原来的 data/
+    # 目录本身。升级即用：老用户登录后看到的还是自己那套账本，零迁移。
+    identity_db_path = os.environ.get("LOCI_IDENTITY_DB") or None
+    try:
+        with IdentityStore(identity_db_path) as identity_store:
+            seeded = seed_default_admin(
+                identity_store,
+                # 显式把部署声明的凭据交给种子函数，而不是塞进 os.environ——
+                # 后者会跨测试/跨 app 实例泄漏，且没人清理。
+                username=resolved_auth_username or None,
+                password=resolved_auth_password or None,
+            )
+            if seeded is not None:
+                logger.info("身份库已就绪，管理员：%s", seeded.username)
+    except Exception:
+        # 身份库建不起来不该让整个应用起不来：Agent Bearer 通道仍可用，
+        # 运维还有机会进容器排查。
+        logger.exception("初始化身份库失败（登录功能将不可用）")
+    auth_dependency = build_auth_dependency(
+        identity_db_path,
+        # 桌面/本地形态自动以主租户管理员身份运行，保持单机零登录体验。
+        auto_login_primary=not require_write_auth,
+    )
     # 调度器实例存在这里，供关闭钩子与 /api/jobs/schedule 取用。
     scheduler_box: dict[str, Any] = {"instance": None}
 
@@ -341,65 +349,27 @@ def create_app(
         pass
 
     def get_store() -> Generator[PalaceStore, None, None]:
-        store = PalaceStore(resolved_db)
+        """每请求解析一次账本路径：多租户下它随当前用户变。
+
+        ``resolved_db`` 只在显式传参 / PALACE_DB 指定时是权威值；否则交给
+        ``palace_db()`` 按 ContextVar 里的租户解析（见 src/shared/tenancy.py）。
+        """
+        store = PalaceStore(resolved_db if pinned_palace_db else palace_db())
         try:
             yield store
         finally:
             store.close()
 
-    def has_browser_session(request: Request) -> bool:
-        """只认当前固定账号签发的、未被篡改的会话 Cookie。"""
-        if not require_write_auth:
-            return True
-        if not resolved_auth_username:
-            return False
-        return compare_digest(str(request.session.get("username", "")), resolved_auth_username)
+    guards = build_auth_guards(
+        require_write_auth=require_write_auth, write_token=resolved_write_token
+    )
+    has_browser_session = guards.has_browser_session
+    has_agent_token = guards.has_agent_token
+    require_write_access = guards.require_write_access
 
-    def has_agent_token(request: Request) -> bool:
-        """Agent 无浏览器会话时可用的服务器端 Bearer 令牌。"""
-        authorization = request.headers.get("Authorization", "")
-        scheme, _, token = authorization.partition(" ")
-        return bool(
-            resolved_write_token
-            and scheme.lower() == "bearer"
-            and token
-            and compare_digest(token, resolved_write_token)
-        )
+    install_secure_response_headers(app)
 
-    def require_write_access(request: Request) -> None:
-        """浏览器会话或 Agent Bearer 令牌均可写入不可变账本。"""
-        if has_browser_session(request) or has_agent_token(request):
-            return
-        raise HTTPException(status_code=401, detail="请先登录或提供有效的 Bearer 令牌")
-
-    @app.middleware("http")
-    async def secure_response_headers(request: Request, call_next: Any) -> Any:
-        """静态 SPA 与 JSON API 共用的浏览器安全响应头。"""
-        response = await call_next(request)
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        response.headers.setdefault(
-            "Content-Security-Policy",
-            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-            "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
-        )
-        return response
-
-    @app.middleware("http")
-    async def spa_cache_control(request: Request, call_next: Any) -> Any:
-        """index/路由壳禁止缓存；带 hash 的 /assets 可长期缓存。"""
-        response = await call_next(request)
-        path = request.url.path
-        if path.startswith("/api/"):
-            return response
-        if path.startswith("/assets/"):
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-            return response
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        return response
+    install_spa_cache_control(app)
 
     @app.middleware("http")
     async def require_authenticated_access(request: Request, call_next: Any) -> Any:
@@ -408,14 +378,23 @@ def create_app(
             return await call_next(request)
 
         path = request.url.path
+        # /api/auth/** 整个前缀公开：注册、找回密码、扫码轮询本来就是给未登录的人
+        # 用的。只放行 /api/auth/login 会让注册页把自己挡在门外。
+        public_api_prefixes = ("/api/auth/",)
+        # 这几条虽在 /api/auth/ 下，但只有登录后才有意义，必须重新挡上。
+        private_auth_prefixes = (
+            "/api/auth/me",
+            "/api/auth/api-keys",
+            "/api/auth/notifications",
+        )
         public_api_paths = {
             "/api/health",
-            "/api/auth/login",
-            "/api/auth/logout",
-            "/api/auth/session",
         }
         if path.startswith("/api/"):
-            is_public_api = path in public_api_paths
+            is_public_api = path in public_api_paths or (
+                path.startswith(public_api_prefixes)
+                and not path.startswith(private_auth_prefixes)
+            )
             if path == "/api/ops/data-location":
                 # 首次向导需要在登录前读取并选择数据目录；配置完成后该响应
                 # 含本机安装、配置及数据库路径。仅本机首启可匿名，远端仍须认证。
@@ -438,8 +417,11 @@ def create_app(
             return RedirectResponse(url="/login", status_code=307)
         return await call_next(request)
 
-    if is_production:
-        # FastAPI 中后添加的中间件位于外层，确保鉴权前可读取 request.session。
+    if is_production and resolved_session_secret:
+        # v2 之后已经**没有任何代码读 request.session**：身份走 identity 的
+        # loci_session（服务端 sessions 表 + 不透明 token）。这一段只为兼容回滚——
+        # 万一要退回 v1，palace_session 还能被认出来。没配 secret 就不装，
+        # 于是「零环境变量也能起生产」成立。
         app.add_middleware(
             SessionMiddleware,
             secret_key=resolved_session_secret,
@@ -448,6 +430,11 @@ def create_app(
             same_site="lax",
             https_only=not resolved_insecure_http,
         )
+
+    # 必须是最外层中间件：后加的先跑。生产鉴权闸门 require_authenticated_access
+    # 读的是 request.state.loci_auth，晚一层注册它就永远读不到（真踩过：登录 200
+    # 但下一个请求仍然 401）。
+    app.add_middleware(TenantResolverMiddleware, resolver=auth_dependency)
 
     @app.exception_handler(PalaceError)
     async def palace_error_handler(_: Request, exc: PalaceError) -> JSONResponse:
@@ -483,45 +470,30 @@ def create_app(
         经 Nginx 转发后 request.client.host 已是真实来源。"""
         return request.client.host if request.client else "unknown"
 
-    @app.post("/api/auth/login", tags=["auth"])
-    def login(payload: LoginInput, request: Request) -> dict[str, str | bool]:
-        if not is_production:
-            return {"authenticated": True, "username": "local"}
-        throttle_key = _throttle_key(request)
-        blocked_for = login_throttle.retry_after(throttle_key)
-        if blocked_for:
-            logger.warning("登录失败次数过多，暂时拒绝来源 %s", throttle_key)
-            raise HTTPException(
-                status_code=429,
-                detail="登录失败次数过多，请稍后再试",
-                headers={"Retry-After": str(blocked_for)},
+    # 身份与治理路由先挂：登录页在任何业务能力缺失时都必须可用。
+    app.include_router(
+        build_auth_router(
+            auth_dependency=auth_dependency,
+            identity_db=identity_db_path,
+            # 本地 http 调试若带 Secure，浏览器根本不会回传 Cookie。
+            cookie_secure=is_production and not resolved_insecure_http,
+        )
+    )
+    app.include_router(
+        build_admin_router(auth_dependency=auth_dependency, identity_db=identity_db_path)
+    )
+    try:
+        from src.community import build_community_router
+
+        app.include_router(
+            build_community_router(
+                write_dependency=require_write_access,
+                auth_dependency=auth_dependency,
             )
-        if not (
-            compare_digest(payload.username, resolved_auth_username)
-            and compare_digest(payload.password, resolved_auth_password)
-        ):
-            login_throttle.record_failure(throttle_key)
-            raise HTTPException(status_code=401, detail="账号或密码错误")
-        login_throttle.reset(throttle_key)
-        request.session.clear()
-        request.session["username"] = resolved_auth_username
-        return {"authenticated": True, "username": resolved_auth_username}
-
-    @app.post("/api/auth/logout", tags=["auth"])
-    def logout(request: Request) -> dict[str, bool]:
-        if is_production:
-            request.session.clear()
-        return {"authenticated": False}
-
-    @app.get("/api/auth/session", tags=["auth"])
-    def session(request: Request) -> dict[str, str | bool]:
-        if not is_production:
-            return {"authenticated": True, "username": "local"}
-        authenticated = has_browser_session(request)
-        return {
-            "authenticated": authenticated,
-            "username": resolved_auth_username if authenticated else "",
-        }
+        )
+    except ImportError:
+        # 社区上下文是可选能力：缺依赖时工作台照常可用。
+        logger.warning("社区上下文未装载（community 依赖缺失）")
 
     app.include_router(
         build_ledger_router(
@@ -542,7 +514,7 @@ def create_app(
             write_dependency=require_write_access,
             market_db=os.environ.get("PALACE_MARKET_DB") or None,
             ops_db=os.environ.get("PALACE_OPS_DB") or None,
-            palace_db=str(resolved_db),
+            palace_db=str(resolved_db) if pinned_palace_db else None,
             scheduler_getter=lambda: scheduler_box["instance"],
             setup_access_allowed=_is_loopback_client,
         )
@@ -554,43 +526,16 @@ def create_app(
     app.include_router(
         build_assistant_router(
             write_dependency=require_write_access,
-            ops_db=os.environ.get("PALACE_OPS_DB") or None,
-            palace_db=str(resolved_db),
+            # 一律传 None：助手会话与 LLM 供应商都在租户自己的 ops.db 里，
+            # 把 PALACE_OPS_DB 钉进去等于让所有人共用一套密钥与对话。
+            ops_db=None,
+            palace_db=str(resolved_db) if pinned_palace_db else None,
             market_db=os.environ.get("PALACE_MARKET_DB") or None,
             scheduler_reloader=reload_scheduler,
         )
     )
 
-    dist_dir = Path(
-        static_dir or os.environ.get("PALACE_STATIC_DIR") or (PROJECT_ROOT / "frontend" / "dist")
-    )
-    if dist_dir.is_dir():
-        resolved_dist = dist_dir.resolve()
-        assets_dir = resolved_dist / "assets"
-        if assets_dir.is_dir():
-            app.mount("/assets", StaticFiles(directory=assets_dir), name="palace-assets")
-
-        @app.get("/{frontend_path:path}", include_in_schema=False)
-        def serve_spa(frontend_path: str) -> FileResponse:
-            """提供产物文件,并为 Vue Router 的历史路由回退到 index.html。
-
-            ``/api/`` 下未匹配到路由的一律回 JSON 404,**不吐 SPA 外壳**。
-            否则调用方拿到的是 200 + text/html:前端会以「JSON 解析失败」的形式炸在
-            离现场十万八千里的地方,API 客户端也分不清「端点没了」和「服务器返回了页面」。
-            持仓下线这一轮删掉十几个 `/api/*`,正是这类混淆最容易发生的时候。
-            """
-            if frontend_path.startswith("api/"):
-                raise HTTPException(status_code=404, detail="接口不存在:/%s" % frontend_path)
-            requested = (resolved_dist / frontend_path).resolve()
-            if frontend_path and requested.is_relative_to(resolved_dist) and requested.is_file():
-                return FileResponse(requested)
-            return FileResponse(
-                resolved_dist / "index.html",
-                headers={
-                    "Cache-Control": "no-store, no-cache, must-revalidate",
-                    "Pragma": "no-cache",
-                },
-            )
+    mount_spa(app, static_dir)
     return app
 
 

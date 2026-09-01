@@ -15,12 +15,17 @@ from src.market.infrastructure.store import MarketError, normalize_code
 
 logger = logging.getLogger(__name__)
 
-#: 默认指数：上证 / 深证 / 创业 / 科创
+#: 默认指数：上证 / 深证 / 创业 / 科创 / 沪深300
+#:
+#: 盯盘大屏的指数带是**五个固定槽位**（IndexBar.vue 的 SLOTS），这里少一个，
+#: 大屏就常驻一格「—」。沪深300 此前漏在这里，那一格从上线起就没出过数。
+#: 加代码前先确认它在 store_codes.py 的市场映射表里有归属，否则 normalize_code 会猜错市场。
 DEFAULT_INDICES: tuple[tuple[str, str], ...] = (
     ("000001", "上证"),
     ("399001", "深证"),
     ("399006", "创业"),
     ("000688", "科创"),
+    ("000300", "沪深300"),
 )
 
 _CACHE_LOCK = threading.Lock()

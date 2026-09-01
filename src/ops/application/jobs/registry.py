@@ -1,15 +1,19 @@
 """执行器注册表与统一 run_job 入口。"""
 from __future__ import annotations
 
+from contextlib import nullcontext
 import logging
 import time
 import traceback
 from typing import Any
 
+from src import market as market_pkg
+
 from src.ops.application.jobs.backtest import execute_backtest
 from src.ops.application.jobs.compare import execute_compare
 from src.ops.application.jobs.context import (
     Executor,
+    HeartbeatPump,
     JobCancelled,
     JobContext,
     JobSkipped,
@@ -17,6 +21,8 @@ from src.ops.application.jobs.context import (
 )
 from src.ops.application.jobs.data_quality import execute_data_quality
 from src.ops.application.jobs.hot_rebuild import execute_hot_rebuild
+from src.ops.application.jobs.intraday_capture import execute_intraday_capture
+from src.ops.application.jobs.intel_brief import execute_intel_brief
 from src.ops.application.jobs.intel_fetch import execute_intel_fetch
 from src.ops.application.jobs.market_gate import (
     market_heavy_slot,
@@ -31,6 +37,7 @@ from src.ops.application.jobs.paper_quant import (
     execute_strategy_monitor,
 )
 from src.ops.application.jobs.prune import execute_prune
+from src.ops.application.jobs.prune_tenant import execute_prune_tenant
 from src.ops.application.jobs.screen import execute_screen
 from src.ops.application.jobs.skill import execute_skill
 from src.ops.application.jobs.skill_watch import execute_skill_watch
@@ -45,6 +52,20 @@ from src.shared.observability import (
 
 logger = logging.getLogger(__name__)
 
+# 17 种 kind 的**托管 cron 归属**（2026-08 审计结论；改这里等于改 ensure_*）：
+#   sync / screen / outcome / prune / hot_rebuild / data_quality / intel_fetch /
+# skill_watch → 系统托管，见 application/ensure_*.py 与 ensure_all_managed_jobs
+#   prune_tenant → **租户托管**（ensure_prune_tenant_job，挂在 ensure_tenant_jobs）：
+#     它清的是当前租户私有的 ops.db 与 skill_runs/ research_runs/，所以每个租户
+#  各跑一份；cron 按 crc32(tenant)%60 散进 02:30-03:29 错峰
+#   alert_scan → **有启用规则才托管**（ensure_alert_scan_job）：一条规则都没有时
+#     scan_alert_rules 直接返回 total_rules=0，无条件挂等于每天 48 条空 run
+#   strategy_monitor / paper_eod → 按**纸面舱**挂：PUT /api/ops/paper-cabins/{slug}
+#     /config 调 ensure_paper_monitor_jobs。绝不在启动时按舱重挂——已退役的
+#     dragon-return / dragon-pool 会被重新拉起来（见 retire_dragon_*）
+#   skill → skill_strategy_config.save_strategy_config 成对写入，不自动创建
+#   notify / backtest / compare / optimize → 手动触发或用户在运维页自建 cron：
+#     都要 config 里点名 template / strategy / 区间，没有能托管的默认值
 EXECUTORS: dict[str, Executor] = {
     "sync": execute_sync,
     "screen": execute_screen,
@@ -52,12 +73,15 @@ EXECUTORS: dict[str, Executor] = {
     "compare": execute_compare,
     "optimize": execute_optimize,
     "prune": execute_prune,
+    "prune_tenant": execute_prune_tenant,
     "skill": execute_skill,
     "notify": execute_notify,
     "outcome": execute_outcome,
     "hot_rebuild": execute_hot_rebuild,
     "data_quality": execute_data_quality,
     "intel_fetch": execute_intel_fetch,
+    "intel_brief": execute_intel_brief,
+    "intraday_capture": execute_intraday_capture,
     "skill_watch": execute_skill_watch,
     "alert_scan": execute_alert_scan,
     "strategy_monitor": execute_strategy_monitor,
@@ -301,11 +325,25 @@ def run_job(
                     reason=skip_reason,
                     duration_ms=int((time.monotonic() - started) * 1000),
                 )
-            with market_heavy_slot(str(kind), str(job.get("name") or job.get("id") or "")):
+            # 心跳泵套在闸门**外面**：等 market_gate 的写槽最长 20 分钟
+            # （MARKET_LOCK_WAIT_SEC），排队期间这条 run 已经是 running，心跳一样
+            # 不能冻。执行器是同步函数、不会自己刷心跳，统一在这里兜住；正常返回、
+            # 抛异常、超时、取消四条路径都由 with 收口停泵，线程不会泄漏。
+            # 盘中选股走独立实时 overlay，不占行情闸门，避免跟增量同步互相等死。
+            gate = (
+                nullcontext()
+                if str(kind) == "screen" and market_pkg.in_live_screen_clock()
+                else market_heavy_slot(
+                    str(kind), str(job.get("name") or job.get("id") or "")
+                )
+            )
+            with HeartbeatPump(ctx), gate:
                 ctx.check_cancelled()
                 result = executor(dict(job.get("config") or {}), ctx)
-                ctx.heartbeat()
-                ctx.check_cancelled()
+            # 泵已停（stop 会 join 心跳线程），最后一拍补在这里：不让心跳线程和紧
+            # 接着的 finish_run 抢同一条 run 的写锁。
+            ctx.heartbeat()
+            ctx.check_cancelled()
     except JobSkipped as exc:
         # 同批写入已有人在做（行情闸门），不是故障：不刷红运维页、不推企微。
         logger.info("任务 %s 本轮跳过：%s", job.get("name"), exc)
@@ -389,7 +427,16 @@ def run_job(
     if (
         isinstance(result, dict)
         and result.get("skipped")
-        and kind in {"notify", "intel_fetch", "skill_watch", "strategy_monitor", "paper_eod"}
+        and kind in {
+            "notify",
+            "intel_fetch",
+            # 简报「悟道未装配 / 这一档还没出稿 / 今天已推过」都走 skipped：
+            # 记 failed 会让四档任务每天在运维页刷红，而什么都没坏。
+            "intel_brief",
+            "skill_watch",
+            "strategy_monitor",
+            "paper_eod",
+        }
     ):
         status = "skipped"
     elif (
@@ -414,6 +461,16 @@ def run_job(
         and int(result.get("failed") or 0) > 0
     ):
         # 历史日 K 硬失败不得假绿（现价软跳过不计入 failed）
+        status = "failed"
+    elif (
+        isinstance(result, dict)
+        and kind == "intel_brief"
+        and not result.get("skipped")
+        and str(result.get("push_error") or "").strip()
+    ):
+        # 简报取回来了但一条都没发出去（webhook 坏/网络断）不得假绿：这条任务的
+        # 全部价值就是「发到人手上」。刻意没发（安静时段/限流/开关关闭/已推过）走
+        # skipped 或 push_skipped，不落这里。
         status = "failed"
 
     if isinstance(result, dict):

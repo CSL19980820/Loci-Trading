@@ -76,6 +76,36 @@ class MinuteAdjustTests(unittest.TestCase):
     def test_adjust_ratio_none_is_one(self) -> None:
         self.assertEqual(adjust_ratio_on_date(MagicMock(), "301528", "2026-06-05", "none"), 1.0)
 
+    def test_adjust_ratio_when_trade_date_is_latest(self) -> None:
+        store = MagicMock()
+        store.conn.execute.return_value.fetchone.return_value = {"d": "2026-08-28"}
+        store._factor_series.return_value = pd.Series([1.5], index=["2026-08-28"])
+        store._adjust_ratio.return_value = pd.Series([1.0], index=["2026-08-28"])
+        ratio = adjust_ratio_on_date(store, "301528", "2026-08-28", "qfq")
+        self.assertAlmostEqual(ratio, 1.0)
+        call_dates = store._factor_series.call_args[0][1]
+        self.assertEqual(list(call_dates), ["2026-08-28"])
+
+    def test_factor_series_handles_duplicate_dates(self) -> None:
+        from src.market.infrastructure.store import MarketStore
+        store = MarketStore(":memory:")
+        try:
+            store.conn.execute(
+                "INSERT INTO adjust_factors(code, trade_date, hfq_factor, fetched_at) VALUES (?, ?, ?, ?)",
+                ("000001", "2026-01-01", 1.0, "2026-01-01T00:00:00"),
+            )
+            store.conn.execute(
+                "INSERT INTO adjust_factors(code, trade_date, hfq_factor, fetched_at) VALUES (?, ?, ?, ?)",
+                ("000001", "2026-06-01", 1.2, "2026-06-01T00:00:00"),
+            )
+            # 传入含重复日期的序列（如 [2026-08-28, 2026-08-28]）
+            dates = pd.Series(["2026-08-28", "2026-08-28"], dtype=str)
+            factors = store._factor_series("000001", dates)
+            self.assertEqual(len(factors), 2)
+            self.assertAlmostEqual(float(factors.iloc[0]), 1.2)
+            self.assertAlmostEqual(float(factors.iloc[1]), 1.2)
+        finally:
+            store.close()
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,8 +22,15 @@ from src.research.infrastructure import (
     ResearchWorkflowStore,
 )
 from src.shared.paths import research_runs_dir
+from src.shared.tenancy import submit_with_tenant
 
 
+#: 进程级单线程池：PTH252 实验一次跑满 CPU，串行是有意的。
+#:
+#: **它的工作线程是进程共享的，Context 停在线程创建那一刻**，与提交任务的请求
+#: 无关。投递一律走 submit_with_tenant（见下方 _submit），别写 .submit(...)：
+#: execute_job 里 _jobs() / _cards() / _workflows() 全部基于 research_runs_dir()，
+#: 那是**租户私有**目录，丢了上下文就会把 B 的因子实验产物写进管理员的目录。
 _FACTOR_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="research-factor")
 
 
@@ -105,7 +112,9 @@ def build_research_factor_router(
                 )
 
         try:
-            _FACTOR_EXECUTOR.submit(execute_job)
+            # 见 _FACTOR_EXECUTOR 上方注释：这里改成裸 submit 会让 job 状态与 run card
+            # 落到主租户的 research_runs 目录，发起人轮询到的永远是 queued。
+            submit_with_tenant(_FACTOR_EXECUTOR, execute_job)
         except Exception as exc:
             jobs.update(job["id"], status="failed", error=f"submit_failed: {exc}")
             raise Pth252FactorExperimentError("PTH252 后台任务提交失败") from exc

@@ -7,13 +7,46 @@ import re
 from typing import Any
 
 from src.ops.application.jobs.context import (
-    DEFAULT_PALACE_DB,
+    default_palace_db,
     JobContext,
     JobError,
+    JobSkipped,
     _llm_meta,
 )
+from src.shared.tenancy import is_primary_tenant
 
 logger = logging.getLogger(__name__)
+
+
+def _await_shared_quotes(context: JobContext) -> dict[str, Any]:
+    """子租户选股前的**只读**行情就绪检查。
+
+    不传任何 code，所以 ``ensure_today_quotes_for_screen`` 只会度量覆盖率、
+    走盘中软放行，绝不会调 ``apply_today_spot``、绝不会碰全局写锁。
+
+    没就绪就抛 :class:`JobSkipped`：这不是失败，是「该做的事还没轮到」。落
+    skipped 才说得清「在等主账号的行情同步」，落 failed 只会每天刷一条红。
+    """
+    from src.market.application.screen_spot import (
+        ScreenSpotError,
+        ensure_today_quotes_for_screen,
+    )
+
+    try:
+        with context.market() as store:
+            ensured = ensure_today_quotes_for_screen(store, [])
+    except ScreenSpotError as exc:
+        raise JobSkipped(
+            f"当日行情尚未就绪（{exc}）；行情由主账号的同步任务统一写，"
+            "本轮跳过，等同步完成后的下一轮再选股"
+        ) from exc
+    except Exception as exc:
+        raise JobSkipped(f"读取当日行情覆盖失败，本轮跳过：{exc}") from exc
+    return {
+        "status": str(ensured.get("status") or ""),
+        "message": str(ensured.get("message") or ""),
+        "coverage": ensured.get("coverage") or {},
+    }
 
 
 def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
@@ -26,22 +59,40 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
 
     不写候选池的话，复盘引擎的候选池验证永远没有数据可验，"当初否决的票
     后来涨了多少"这个最有价值的问题就问不出来。
+
+    多租户：**子账号既不刷 spot、也不镜像热库**。行情是全局共享事实，写它的是
+    主账号的系统级同步任务；子账号只读，当日行情没就绪就落 skipped 等下一轮。
     """
+    from src.market import should_overlay_live
     from src.strategy import get, screen
 
     slug = config.get("strategy")
     if not slug:
         raise JobError("screen 任务必须指定 strategy")
 
-    # 选股要的是「今日日 K 可用」：覆盖已达标则跳过 spot，避免与盘后同步抢写。
+    # 盘中选今天：自己拉实时 overlay，不写 market.db、不镜像热库、不跟同步抢锁。
+    live_overlay = should_overlay_live(config.get("date"))
+
+    # 行情是**全局共享事实**：写 ``market.db`` 的只有主租户的系统级同步任务。
+    # 子租户的选股只该**读**——它去补 spot 就要经 ``apply_today_spot`` 抢全局
+    # ``market_write_lock``，50 个租户 15:30 一起抢，谁都别想跑完，连主租户的
+    # 日终重刷也会被拖住。当日行情没就绪就落 skipped，等同步跑完下一轮再来。
+    primary = is_primary_tenant()
+    refresh_spot = (
+        bool(config.get("refresh_spot", True)) and primary and not live_overlay
+    )
     spot_rows = 0
     spot_requested = 0
     spot_refresh_meta: dict[str, Any] = {
-        "enabled": bool(config.get("refresh_spot", True)),
+        "enabled": refresh_spot,
         "status": "disabled",
-        "message": "",
+        "message": (
+            ""
+            if primary
+            else "子账号不刷现价：行情由主账号的同步任务统一写，这里只读"
+        ),
     }
-    if bool(config.get("refresh_spot", True)):
+    if refresh_spot:
         from src.market.application.screen_spot import (
             ScreenSpotError,
             ensure_today_quotes_for_screen,
@@ -76,6 +127,14 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             raise JobError(
                 f"选股前准备当日行情失败，已阻断选股：{exc}"
             ) from exc
+    elif live_overlay:
+        spot_refresh_meta = {
+            "enabled": False,
+            "status": "live_overlay",
+            "message": "盘中选股走独立实时行情，不写 market.db、不跟同步抢锁",
+        }
+    elif not primary:
+        spot_refresh_meta.update(_await_shared_quotes(context))
 
     # 策略声明 requires_full_history 时跳过热库镜像，直接读全量库。
     # 否则尽量镜像后读热库；镜像失败或热库落后于全量时回退全量库选股
@@ -87,19 +146,33 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
 
     use_hot = False
     if not needs_full:
-        # refresh_spot=False 时也补一次窗口，保证热库与全量库一致。
         try:
             with context.market() as full, context.market_hot() as hot:
-                from src.market import hot_unusable_reason, mirror_recent_to_hot
+                from src.market import (
+                    hot_unusable_reason,
+                    hot_window_shallow,
+                    mirror_recent_to_hot,
+                )
 
-                mirror_recent_to_hot(full, hot)
-                reason = hot_unusable_reason(full, hot)
+                # 镜像是**写全局 ``market_hot.db``**，同样只归主租户：sync 每轮
+                # 结束时已经做过（``jobs/sync.py``）。子租户跟着镜像一遍，就是 N 个
+                # 线程写同一个热库文件，而且失败还被这里的 except 吞掉——热库落后
+                # 时它只会安静地回退全量库，没人知道发生过什么。
+                # 盘中 overlay 连镜像也不做：今日价走实时，热库只提供历史。
+                if primary and not live_overlay:
+                    mirror_recent_to_hot(full, hot)
+                if live_overlay:
+                    reason = (
+                        "热库窗口偏浅" if hot_window_shallow(full, hot) else ""
+                    )
+                else:
+                    reason = hot_unusable_reason(full, hot)
                 if reason:
                     logger.warning("%s，回退全量库选股", reason)
                 else:
                     use_hot = True
         except Exception as exc:
-            logger.warning("镜像热库失败，回退全量库选股：%s", exc)
+            logger.warning("热库不可用，回退全量库选股：%s", exc)
 
     with (context.market_hot() if use_hot else context.market()) as store:
         result = screen(
@@ -109,6 +182,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             params=config.get("params"),
             codes=config.get("codes"),
             universe=config.get("universe"),
+            live_overlay=live_overlay,
         )
         names = {
             item["code"]: item["name"] for item in store.list_instruments(status="")
@@ -218,7 +292,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
 
         payload["recorded"] = persist_screen_candidates(
             _Bag(),
-            palace_db=context.palace_db or DEFAULT_PALACE_DB,
+            palace_db=context.palace_db or default_palace_db(),
             names=names,
             pool_id=str(config.get("pool_id") or "") or None,
             decision=str(config.get("decision") or "精选"),
@@ -259,8 +333,7 @@ def _ai_pick_codes(
         return {"picks": fallback_picks, "fallback": True, "reason": ""}
 
     try:
-        from src.ai import resolve_config
-        from src.ai import ChatMessage, chat
+        from src.ai import ChatMessage, chat, record_llm_usage, resolve_config
 
         provider = resolve_config(
             context.ops_store,
@@ -302,6 +375,16 @@ def _ai_pick_codes(
             max_tokens=800,
             temperature=0.2,
             thinking=thinking,
+        )
+        # 任务侧原来只把 token 数丢进 llm_meta 给人看，从不计费，
+        # 月度用量因此系统性低估（选股每轮都在花钱）。解析失败也照记：
+        # 钱已经花掉了，账不能按「解析成功与否」来记。
+        record_llm_usage(
+            provider=provider.name,
+            model=getattr(response, "model", "") or provider.model,
+            input_tokens=getattr(response, "input_tokens", 0),
+            output_tokens=getattr(response, "output_tokens", 0),
+            ops_db=str(getattr(context.ops_store, "db_path", "") or ""),
         )
         raw = (response.text or "").strip()
         if raw.startswith("```"):

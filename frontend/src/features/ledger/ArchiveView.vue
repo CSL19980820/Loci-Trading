@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
- * 个股工作台：行情 / 候选历史。
- * 默认行情；特殊入口可带 ?view=candidates。按当前 tab 按需加载。
+ * 个股工作台：行情。
  */
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import ArchiveBatchDock from '@/features/ledger/components/ArchiveBatchDock.vue'
@@ -11,44 +10,25 @@ import ArchiveBatchRail from '@/features/ledger/components/ArchiveBatchRail.vue'
 import DataQueryDetailPanel from '@/features/market/components/DataQueryDetailPanel.vue'
 import { useQuotesQuery } from '@/features/market/composables/useQuotesQuery'
 import { chgClass, fmtPct } from '@/features/market/composables/dataQueryFormat'
-import StockTimeline from '@/features/ledger/components/StockTimeline.vue'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import { listCandidates } from '@/shared/api/palace'
+import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
 import { toErrorMessage } from '@/shared/lib/errors'
-import Sheet from '@/shared/components/layout/Sheet.vue'
+import { strategyLabel } from '@/shared/lib/format'
+import type { StrategySignalMark } from '@/shared/lib/klineStrategyMarks'
 import type { IndicatorKind } from '@/shared/lib/klineConfig'
 import type { KPeriod } from '@/shared/lib/indicators'
-import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
-import { usePalaceStore } from '@/shared/stores/palace'
 
 import './ArchiveView.css'
 
-type StockView = 'quote' | 'candidates'
-
 const route = useRoute()
 const router = useRouter()
-const store = usePalaceStore()
 const batch = useBatchBrowseStore()
 
 const code = computed(() => String(route.params.code ?? '').trim())
-const view = computed<StockView>(() =>
-  String(route.query.view || 'quote') === 'candidates' ? 'candidates' : 'quote',
-)
-/** 从候选/选股/回测带入：锚定日 K 到该交易日 */
+/** 从选股/回测带入：锚定日 K 到该交易日 */
 const focusDate = computed(() => {
   const d = String(route.query.date || '').trim()
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ''
-})
-
-const viewItems: { name: StockView; label: string }[] = [
-  { name: 'quote', label: '行情' },
-  { name: 'candidates', label: '候选' },
-]
-
-/** 首次进入某 tab 才挂载面板，之后保留以免 K 线反复重绘。 */
-const visited = reactive({
-  quote: false,
-  candidates: false,
 })
 
 const adjust = ref<'qfq' | 'hfq' | 'none'>('qfq')
@@ -57,7 +37,32 @@ const indicator = ref<IndicatorKind>('macd')
 const quotesLimit = ref(320)
 const narrow = ref(false)
 const drawerOpen = ref(false)
+const strategySignals = ref<StrategySignalMark[]>([])
 
+async function loadStrategySignals(targetCode: string): Promise<void> {
+  const c = targetCode.trim()
+  if (!c) {
+    strategySignals.value = []
+    return
+  }
+  try {
+    const list = await listCandidates({ code: c, limit: 500, include_backfill: true })
+    strategySignals.value = list.map((item) => {
+      const rawName = item.rule_version || item.pool_id || '选股'
+      const displayName = strategyLabel(rawName)
+      return {
+        date: item.date,
+        strategyName: displayName,
+        strategySlug: item.pool_id || item.rule_version,
+        decision: item.decision,
+        reason: item.reason,
+        score: item.score,
+      }
+    })
+  } catch {
+    strategySignals.value = []
+  }
+}
 function quotesLimitFor(p: KPeriod): number {
   if (p === 'week') return Math.max(800, quotesLimit.value)
   if (p === 'month') return Math.max(1500, quotesLimit.value)
@@ -72,17 +77,11 @@ const { quote, refetch, isPending, isLoading, error: quoteError, isError: quoteF
   enabled: quotesEnabled.value,
 }))
 
-const quoteBusy = computed(() => view.value === 'quote' && (isPending.value || isLoading.value))
-const candidatesBusy = computed(() => view.value === 'candidates' && store.loading)
+const quoteBusy = computed(() => isPending.value || isLoading.value)
 const quoteErrorText = computed(() =>
   quoteFailed.value ? toErrorMessage(quoteError.value, '行情加载失败') : '',
 )
-const candidatesErrorText = computed(() =>
-  view.value === 'candidates' && !candidatesBusy.value ? store.error : '',
-)
 
-const timeline = computed(() => (store.selectedCode === code.value ? store.selectedTimeline : []))
-const candidates = computed(() => timeline.value.filter((e) => e.type === 'candidate'))
 const stockName = computed(() => quote.value?.name || code.value)
 
 const adjustLabel = computed(() => ({ qfq: '前复权', hfq: '后复权', none: '不复权' })[adjust.value])
@@ -102,10 +101,6 @@ const detailPct = computed(() => {
   if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return null
   return ((b - a) / a) * 100
 })
-
-const tabBadge = computed(() => ({
-  candidates: visited.candidates ? candidates.value.length : null,
-}))
 
 const boardTag = computed(() => {
   const q = quote.value
@@ -134,13 +129,6 @@ const boardTag = computed(() => {
 })
 
 const industryTag = computed(() => String(quote.value?.industry || '').trim())
-
-function setView(next: StockView): void {
-  void router.replace({
-    path: route.path,
-    query: { ...route.query, view: next === 'quote' ? undefined : next },
-  })
-}
 
 const hasBatch = computed(() => batch.active)
 const canPrev = computed(() => hasBatch.value && batch.index >= 1)
@@ -229,10 +217,6 @@ function extendHistory(): void {
   quotesLimit.value = Math.min(total, Math.max(quotesLimit.value, rows) + 240)
 }
 
-function retryCandidates(): void {
-  void store.loadRoute(route, true)
-}
-
 function retryQuotes(): void {
   void refetch()
 }
@@ -242,20 +226,14 @@ function barHasFocusDate(q: NonNullable<typeof quote.value>, d: string): boolean
 }
 
 watch(
-  () => [view.value, code.value] as const,
-  ([v, c]) => {
-    // 候选切片由 palace.loadRoute 按 view 拉取；这里只标记已访问，避免面板反复重挂
-    if (c) visited[v] = true
-  },
-  { immediate: true },
-)
-
-watch(
   () => code.value,
   (c) => {
-    visited.quote = view.value === 'quote'
-    visited.candidates = view.value === 'candidates'
-    if (c) batch.syncCode(c)
+    if (c) {
+      batch.syncCode(c)
+      void loadStrategySignals(c)
+    } else {
+      strategySignals.value = []
+    }
   },
   { immediate: true },
 )
@@ -272,7 +250,7 @@ watch(
 watch(
   () => [adjust.value, period.value, quotesLimit.value] as const,
   () => {
-    if (view.value === 'quote' && code.value) void refetch()
+    if (code.value) void refetch()
   },
 )
 
@@ -318,24 +296,6 @@ onUnmounted(() => {
           @toggle-dock="toggleDock"
         />
       </div>
-
-      <nav class="sw-rail" aria-label="个股视图">
-        <el-button
-          v-for="item in viewItems"
-          :key="item.name"
-          native-type="button"
-          class="sw-rail__tab"
-          :class="{ 'is-active': view === item.name }"
-          :aria-current="view === item.name ? 'page' : undefined"
-          @click="setView(item.name)"
-        >
-          <span class="sw-rail__label">{{ item.label }}</span>
-          <span
-            v-if="item.name !== 'quote' && tabBadge[item.name] != null"
-            class="sw-rail__count mono"
-          >{{ tabBadge[item.name] }}</span>
-        </el-button>
-      </nav>
     </header>
 
     <div class="sw-split">
@@ -358,7 +318,7 @@ onUnmounted(() => {
         @select="selectBatchCode"
       />
       <div class="sw-split__main">
-        <div v-if="visited.quote" v-show="view === 'quote'" class="sw-body sw-body--quote">
+        <div class="sw-body sw-body--quote">
           <el-alert
             v-if="quoteErrorText"
             :title="quoteErrorText"
@@ -382,32 +342,10 @@ onUnmounted(() => {
             :last-close="lastClose"
             :detail-pct="detailPct"
             :focus-date="focusDate"
+            :strategy-signals="strategySignals"
             @adjust-change="refetch"
             @need-history="extendHistory"
           />
-        </div>
-
-        <div
-          v-if="visited.candidates"
-          v-show="view === 'candidates'"
-          class="sw-body page-scroll sw-body--ledger sw-pane--busy"
-        >
-          <PageBusy overlay :busy="candidatesBusy" label="加载候选…" />
-          <el-alert
-            v-if="candidatesErrorText"
-            :title="candidatesErrorText"
-            type="error"
-            show-icon
-            :closable="false"
-          >
-            <el-button size="small" @click="retryCandidates">重试</el-button>
-          </el-alert>
-          <Sheet v-else title="候选记录" :chip="candidates.length">
-            <StockTimeline v-if="candidates.length" :events="candidates" />
-            <EmptyState v-else description="该标的尚无候选记录。可在选股页入库后查看。" :image-size="56">
-              <el-button size="small" @click="router.push('/screen-history')">去选股</el-button>
-            </EmptyState>
-          </Sheet>
         </div>
       </div>
     </div>

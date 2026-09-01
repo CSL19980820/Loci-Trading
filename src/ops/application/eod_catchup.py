@@ -43,8 +43,14 @@ def slot_for_day(day: str, hour: int, minute: int) -> datetime:
 def last_run_covers_slot(last_run_at: str, slot: datetime) -> bool:
     """``last_run_at`` 是否已覆盖该触发点（同日或更晚）。
 
-    SQLite ``datetime('now')`` 在多数环境是 UTC naive；个别环境也可能是本地钟。
-    无时区时 **UTC / 上海本地两种解释任一覆盖即视为已跑**，避免重启重复补跑。
+    ``finish_run`` 现在写的是 ``store_helpers._now()``——本地时区**带偏移**，
+    走下面 ``raw.tzinfo is not None`` 那一支：换算成上海时间后精确比较，不再有
+    任何猜测成分。
+
+    无时区那一支**必须留着**：库里还躺着改造前用 SQLite ``datetime('now')`` 写的
+    UTC naive 值（生产 ``jobs`` 表 14 行全是），而个别环境的旧值又可能是本地钟。
+    分不清就 **UTC / 上海本地两种解释任一覆盖即视为已跑**：宁可漏补一次，也不要
+    在启动时把当天已经跑过的日终任务再跑一遍。新写入的行不会再走到这一支。
     """
     from datetime import timezone
 

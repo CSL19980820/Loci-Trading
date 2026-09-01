@@ -15,7 +15,7 @@ from src.ai.api.assistant_stream import register_stream_route
 from src.ai.application.system_toolbus import build_system_toolbus
 from src.ai.domain.assistant import AssistantError, AssistantUnavailableError
 from src.ai.infrastructure.assistant_store import AssistantStore
-from src.shared.paths import ops_db as default_ops_db
+from src.ai.infrastructure.tenant_db import ops_db_for
 
 
 class _Model(BaseModel):
@@ -83,18 +83,27 @@ def build_assistant_router(
     market_db: str | None = None, manager: AssistantManager | None = None,
     scheduler_reloader: Callable[[], None] | None = None,
 ) -> APIRouter:
-    """返回未挂载 router。所有会话数据读取也沿用写鉴权，防止对话越权读取。"""
+    """返回未挂载 router。所有会话数据读取也沿用写鉴权，防止对话越权读取。
+
+    **路径一律惰性解析**：router 是进程内装配一次的对象，而 ``ops_db()`` 随
+    ``current_tenant()`` 变。在这里把它 ``str()`` 成常量，等于让所有用户共用
+    第一个（装配时那个）租户的库——会话、供应商、用量全串味。显式传入的
+    ``ops_db`` 仍然优先，单机与测试靠它钉库。
+    """
     router = APIRouter(tags=["ai-assistant"], dependencies=[Depends(write_dependency)])
-    resolved_ops_db = str(ops_db or default_ops_db())
+
+    def resolved_ops_db() -> str:
+        return ops_db_for(ops_db)
+
     active_manager = manager or AssistantManager(
-        ops_db=resolved_ops_db,
+        ops_db=ops_db,
         palace_db=palace_db,
         market_db=market_db,
         scheduler_reloader=scheduler_reloader,
     )
 
     def store() -> AssistantStore:
-        return AssistantStore(resolved_ops_db)
+        return AssistantStore(resolved_ops_db())
 
     def fail(exc: AssistantError, *, missing: bool = False) -> HTTPException:
         status_code = 404 if missing else 503 if isinstance(exc, AssistantUnavailableError) else 422
@@ -477,7 +486,7 @@ def build_assistant_router(
     def tool_catalog() -> dict[str, Any]:
         from src.ops import OpsStore
 
-        with OpsStore(resolved_ops_db) as ops:
+        with OpsStore(resolved_ops_db()) as ops:
             rows = ops.list_providers()
         providers = [
             {
@@ -510,7 +519,7 @@ def build_assistant_router(
             "tools": build_system_toolbus(
                 palace_db=palace_db,
                 market_db=market_db,
-                ops_db=resolved_ops_db,
+                ops_db=resolved_ops_db(),
                 scheduler_reloader=scheduler_reloader,
             ).catalog(),
         }

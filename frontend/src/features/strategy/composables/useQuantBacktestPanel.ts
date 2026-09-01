@@ -1,8 +1,9 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, onUnmounted, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { runBacktest, runHorizonBacktest } from '@/shared/api/quant'
 import { toErrorMessage } from '@/shared/lib/errors'
+import { useBacktestPanelStore } from '@/shared/stores/backtestPanel'
 import type {
   BacktestResult,
   HorizonBacktestResult,
@@ -31,10 +32,48 @@ function rangeEndingToday(daysBack: number): [string, string] {
   return [iso(start), iso(end)]
 }
 
+/** 回测面板对外的契约（模板与测试都按这个名字走，别再 ReturnType 反推）。 */
+export interface QuantBacktestPanel {
+  strategySlug: Ref<string>
+  range: Ref<[string, string] | null>
+  mode: Ref<BacktestMode>
+  busy: Ref<boolean>
+  /** 本次回测真实已耗时（秒）；没有服务端百分比，就别编一个 */
+  elapsedSec: Ref<number>
+  expectedHint: ComputedRef<string>
+  horizonResult: Ref<HorizonBacktestResult | null>
+  tradeResult: Ref<BacktestResult | null>
+  errorText: Ref<string>
+  activePreset: Ref<30 | 90 | 180 | null>
+  showCost: Ref<boolean>
+  holdDays: Ref<number>
+  stopLossEnabled: Ref<boolean>
+  stopLossPct: Ref<number>
+  commissionBps: Ref<number>
+  stampDutyBps: Ref<number>
+  slippageBps: Ref<number>
+  selected: ComputedRef<StrategyInfo | null>
+  entryLabel: ComputedRef<string>
+  entryDetail: ComputedRef<string>
+  subtitle: ComputedRef<string>
+  rangeShortcuts: { text: string; value: () => [Date, Date] }[]
+  tripCostPct: ComputedRef<number>
+  resultMeta: ComputedRef<string>
+  rangeLabel: ComputedRef<string>
+  activeHasResult: ComputedRef<boolean>
+  applyPreset: (daysBack: 30 | 90 | 180) => void
+  onRangeChange: () => void
+  disabledDate: (date: Date) => boolean
+  run: () => Promise<void>
+  /** 停止等待本次回测：abort 请求并作废回写 */
+  stop: () => void
+  skippedText: (skipped: Record<string, number> | undefined) => string
+}
+
 export function useQuantBacktestPanel(opts: {
   strategies: Ref<StrategyInfo[]>
   lockedSlug?: Ref<string | undefined>
-}) {
+}): QuantBacktestPanel {
   const prefs = loadBacktestPrefs()
 
   const strategySlug = ref('')
@@ -46,6 +85,19 @@ export function useQuantBacktestPanel(opts: {
   const errorText = ref('')
   const activePreset = ref<30 | 90 | 180 | null>(prefs.activePreset ?? 90)
   const showCost = ref(false)
+
+  const cache = useBacktestPanelStore()
+  /** 工坊面板与策稿页锁定战法的面板各存各的结果 */
+  const cacheScope = computed(() => opts.lockedSlug?.value || '__workshop__')
+
+  /**
+   * 回测是一次几十秒的同步 POST，没有服务端进度可读——所以这里给的是**真实
+   * 已耗时**，不是编出来的百分比。停止按钮靠 controller 断掉等待。
+   */
+  const elapsedSec = ref(0)
+  let controller: AbortController | null = null
+  let runToken = 0
+  let ticker: number | undefined
 
   const holdDays = ref(prefs.holdDays ?? 3)
   const stopLossEnabled = ref(prefs.stopLossEnabled !== false)
@@ -207,6 +259,42 @@ export function useQuantBacktestPanel(opts: {
     () => (commissionBps.value * 2 + stampDutyBps.value + slippageBps.value * 2) / 100,
   )
 
+  /** `战法|开始|结束`——换一组输入，暂存的结果就不该再贴回来。 */
+  const resultKey = computed(
+    () => `${strategySlug.value}|${range.value?.[0] ?? ''}|${range.value?.[1] ?? ''}`,
+  )
+
+  /** 开跑前就说清楚要等多久；藏在空态里等于没说。 */
+  const expectedHint = computed(() =>
+    mode.value === 'horizon'
+      ? '全市场逐日回放，一次通常要几十秒；区间越长越久'
+      : '逐笔模拟买卖，全市场一次通常要几十秒到一两分钟',
+  )
+
+  function stopTicker(): void {
+    if (ticker != null) {
+      window.clearInterval(ticker)
+      ticker = undefined
+    }
+  }
+
+  /**
+   * 停止等待这次回测。
+   *
+   * token 先自增再 abort：即便请求已经在返回路上，回来的那一份也会被下面的
+   * 守卫丢掉，不会在用户停手之后再把结果/报错糊回界面。
+   */
+  function stop(): void {
+    if (!busy.value) return
+    runToken += 1
+    controller?.abort('用户停止回测')
+    controller = null
+    stopTicker()
+    busy.value = false
+    errorText.value = ''
+    ElMessage.info('已停止等待 · 这一次的结果不会再回写')
+  }
+
   async function run(): Promise<void> {
     errorText.value = ''
     if (!strategySlug.value) {
@@ -228,45 +316,93 @@ export function useQuantBacktestPanel(opts: {
       return
     }
 
+    const token = ++runToken
+    const ctrl = new AbortController()
+    controller = ctrl
     busy.value = true
+    elapsedSec.value = 0
+    const startedAt = Date.now()
+    stopTicker()
+    ticker = window.setInterval(() => {
+      elapsedSec.value = Math.floor((Date.now() - startedAt) / 1000)
+    }, 1000)
     try {
       if (mode.value === 'horizon') {
-        const next = await runHorizonBacktest({
-          strategy: strategySlug.value,
-          start,
-          end,
-          horizons: [1, 3],
-        })
+        const next = await runHorizonBacktest(
+          {
+            strategy: strategySlug.value,
+            start,
+            end,
+            horizons: [1, 3],
+          },
+          { signal: ctrl.signal },
+        )
+        if (token !== runToken) return
         horizonResult.value = next
+        rememberResults()
         const n1 = next.horizons.t1?.n ?? 0
         const n3 = next.horizons.t3?.n ?? 0
         if (!n1 && !n3) ElMessage.info('区间内没有可评估的信号事件')
         else ElMessage.success(`Horizon 完成 · T+1 ${n1} 笔 · T+3 ${n3} 笔`)
       } else {
-        const next = await runBacktest({
-          strategy: strategySlug.value,
-          start,
-          end,
-          mode: 'trade',
-          hold_days: holdDays.value,
-          stop_loss_pct: stopLossEnabled.value ? stopLossPct.value : null,
-          commission_bps: commissionBps.value,
-          stamp_duty_bps: stampDutyBps.value,
-          slippage_bps: slippageBps.value,
-          include_trades: true,
-        })
+        const next = await runBacktest(
+          {
+            strategy: strategySlug.value,
+            start,
+            end,
+            mode: 'trade',
+            hold_days: holdDays.value,
+            stop_loss_pct: stopLossEnabled.value ? stopLossPct.value : null,
+            commission_bps: commissionBps.value,
+            stamp_duty_bps: stampDutyBps.value,
+            slippage_bps: slippageBps.value,
+            include_trades: true,
+          },
+          { signal: ctrl.signal },
+        )
+        if (token !== runToken) return
         tradeResult.value = next
+        rememberResults()
         const n = next.metrics?.trades ?? 0
         if (!n) ElMessage.info('区间内没有可评估成交')
         else ElMessage.success(`成交回测完成 · ${n} 笔`)
       }
     } catch (caught: unknown) {
+      // 用户停手 / 组件卸载：这次结果连同报错一起作废，不许再回写界面
+      if (token !== runToken) return
       errorText.value = toErrorMessage(caught, '回测失败')
       ElMessage.error(errorText.value)
     } finally {
-      busy.value = false
+      if (controller === ctrl) controller = null
+      if (token === runToken) {
+        stopTicker()
+        busy.value = false
+      }
     }
   }
+
+  function rememberResults(): void {
+    cache.remember(cacheScope.value, {
+      key: resultKey.value,
+      horizon: horizonResult.value,
+      trade: tradeResult.value,
+    })
+  }
+
+  // 装载时把上一次的结果接回来（切 Tab 会卸载本组件），输入不同则不接
+  const remembered = cache.recall(cacheScope.value, resultKey.value)
+  if (remembered) {
+    horizonResult.value = remembered.horizon
+    tradeResult.value = remembered.trade
+  }
+
+  // 组件卸载（切 Tab / 离页）也作废在途请求，别让它回来写一个已经没人看的面板
+  onUnmounted(() => {
+    runToken += 1
+    controller?.abort('面板已卸载')
+    controller = null
+    stopTicker()
+  })
 
   const resultMeta = computed(() => {
     const start = range.value?.[0] || ''
@@ -289,6 +425,8 @@ export function useQuantBacktestPanel(opts: {
     range,
     mode,
     busy,
+    elapsedSec,
+    expectedHint,
     horizonResult,
     tradeResult,
     errorText,
@@ -313,6 +451,7 @@ export function useQuantBacktestPanel(opts: {
     onRangeChange,
     disabledDate,
     run,
+    stop,
     skippedText,
   }
 }

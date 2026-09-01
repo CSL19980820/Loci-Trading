@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import { getSession } from '@/shared/api/palace'
+import { useUserStore } from '@/shared/stores/user'
 import { brandTitle } from '@/shared/lib/brand'
 import { navRoute } from '@/shared/lib/navLabels'
 
@@ -8,6 +8,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { ...navRoute('pulse'), component: () => import('@/features/market/PulseView.vue') },
+    { ...navRoute('live'), component: () => import('@/features/live/LiveBoardView.vue') },
     { ...navRoute('pool'), component: () => import('@/features/ledger/PoolView.vue') },
     { ...navRoute('data-query'), component: () => import('@/features/market/DataQueryView.vue') },
     { ...navRoute('reviews'), component: () => import('@/features/review/ReviewCenterView.vue') },
@@ -51,6 +52,8 @@ const router = createRouter({
       redirect: { path: '/quant', query: { tab: 'market', shelf: 'installed', kind: 'skill' } },
     },
     { ...navRoute('archive'), component: () => import('@/features/ledger/ArchiveView.vue') },
+    { ...navRoute('account'), component: () => import('@/features/auth/AccountView.vue') },
+    { ...navRoute('admin'), component: () => import('@/features/admin/AdminView.vue') },
     {
       ...navRoute('login', { public: true }),
       component: () => import('@/features/ledger/LoginView.vue'),
@@ -72,22 +75,37 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   // 失败页 / 行情 Peek：禁止等会话。Peek 是独立小窗，boot-splash 挂载后即卸；
-  // 若这里再 await getSession，导航未完成时主区只剩 #eef2f6 白方块。
+  // 若这里再 await 会话，导航未完成时主区只剩 #eef2f6 白方块。
   if (to.name === 'auth-unavailable' || to.name === 'peek') return true
 
-  let session
-  try {
-    session = await getSession()
-  } catch {
-    return {
-      name: 'auth-unavailable',
-      query: { redirect: to.fullPath },
-    }
+  // 会话真相只有一处：userStore。
+  //
+  // 以前守卫走 palace.getSession()（窄契约，只回 authenticated/username），
+  // 而 userStore 走 /auth/session 的完整契约，两条腿互不连通且没人在启动时
+  // 调 load()。后果是刷新一次用户态全丢：头像变「未登录」、isAdmin 归 false
+  // 让管理后台入口整个消失、强制改密提示条永不出现、未读角标恒为 0。
+  // 守卫本来就要在首屏渲染前等一次会话，顺手水合是零额外成本的。
+  //
+  // 但**只有首屏那一次**该等。旧写法每次导航都 `await load()`，而 load() 除了
+  // inflight 去重没有任何缓存短路——于是每点一次菜单，导航就被一次
+  // GET /api/auth/session 的网络往返吊住，页面停在旧页等后端答话（用户原话：
+  // 「点之前先卡一会儿」）。现在：已水合就走 ensureLoaded()（命中缓存、零请求），
+  // 过期由后台 fire-and-forget 补，导航不为它等。
+  const userStore = useUserStore()
+  // `available === false` 表示上一次探测根本没打通。这一档不能吃缓存：失败页的
+  // 「重试」就是一次 router.replace，吃了缓存它会永远弹回失败页。
+  const cached = userStore.initialized && userStore.available
+  const authed = cached ? await userStore.ensureLoaded() : await userStore.load()
+  // 低频重验：缓存超过 60s 才补一次，且绝不 await——它只影响**下一次**导航的判定。
+  userStore.revalidateStale()
+  if (!userStore.available) {
+    return { name: 'auth-unavailable', query: { redirect: to.fullPath } }
   }
   if (to.meta.public === true) {
-    return session.authenticated ? { name: 'pulse' } : true
+    return authed ? { name: 'pulse' } : true
   }
-  return session.authenticated ? true : { name: 'login' }
+  if (authed) return true
+  return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined }
 })
 
 router.afterEach((to) => {

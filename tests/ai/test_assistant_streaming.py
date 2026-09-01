@@ -78,7 +78,7 @@ def test_stream_token_think_are_batched_before_persist(tmp_path: Path) -> None:
         return outcome
 
     try:
-        with patch("src.ai.application.assistant_manager.run_agent", side_effect=run_streaming):
+        with patch("src.ai.application.assistant_run_executor.run_agent", side_effect=run_streaming):
             manager._run(run_id, session_id, "流式", config)
         with AssistantStore(db_path) as store:
             events = store.poll_events(run_id)
@@ -119,7 +119,7 @@ def test_waiting_user_pauses_run_instead_of_completing(tmp_path: Path) -> None:
         pending_ask={"prompt": "是否继续？", "options": ["是", "否"]},
     )
     try:
-        with patch("src.ai.application.assistant_manager.run_agent", return_value=outcome):
+        with patch("src.ai.application.assistant_run_executor.run_agent", return_value=outcome):
             manager._run(run_id, session_id, "请确认", config)
         with AssistantStore(db_path) as store:
             run = store.get_run(run_id)
@@ -159,7 +159,7 @@ def test_empty_completion_finishes_failed_with_error_not_done(tmp_path: Path) ->
         pending_ask={},
     )
     try:
-        with patch("src.ai.application.assistant_manager.run_agent", return_value=outcome):
+        with patch("src.ai.application.assistant_run_executor.run_agent", return_value=outcome):
             manager._run(run_id, session_id, "平账", config)
         with AssistantStore(db_path) as store:
             run = store.get_run(run_id)
@@ -238,16 +238,16 @@ def test_reply_after_waiting_user_resumes_same_run(tmp_path: Path) -> None:
 
         # 续环：用户答复进入末条 tool result，最终可 completed
         with patch(
-            "src.ai.application.assistant_manager.run_agent", side_effect=capture_run
+            "src.ai.application.assistant_run_executor.run_agent", side_effect=capture_run
         ), patch(
-            "src.ai.application.assistant_manager.build_system_toolbus",
+            "src.ai.application.assistant_run_executor.build_system_toolbus",
             return_value=SimpleNamespace(
                 schemas=[],
                 executor=lambda *_a, **_k: {"text": ""},
                 wait_for_background_tasks=lambda **_k: True,
             ),
         ), patch(
-            "src.ai.application.assistant_manager.run_evidence_agents",
+            "src.ai.application.assistant_run_executor.run_evidence_agents",
             return_value=[],
         ):
             manager._run(waiting_run, session_id, "继续", config, "", "", True)
@@ -341,13 +341,13 @@ def test_multi_turn_skips_empty_assistant_when_building_model_history(tmp_path: 
     manager = AssistantManager(ops_db=str(db_path))
     try:
         with patch(
-            "src.ai.application.assistant_manager.run_evidence_agents",
+            "src.ai.application.assistant_run_executor.run_evidence_agents",
             return_value=[],
         ), patch(
-            "src.ai.application.assistant_manager.build_system_toolbus",
+            "src.ai.application.assistant_run_executor.build_system_toolbus",
             return_value=IdleBus(),
         ), patch(
-            "src.ai.application.assistant_manager.run_agent",
+            "src.ai.application.assistant_run_executor.run_agent",
             side_effect=capture_run,
         ):
             manager._run(run_id, session_id, "第二问", config)

@@ -318,6 +318,52 @@ class NotifyJobTests(unittest.TestCase):
         self.assertEqual(second["result"].get("reason"), "already_pushed")
         self.assertEqual(second["result"].get("push_day"), "2026-08-03")
 
+    def test_screen_push_wecom_allows_different_time_slots_or_content_same_day(self) -> None:
+        """同任务同天不同时点（如 14:50 与 15:30）各自独立推送，同点同内容防重。"""
+        job_id = self.store.create_job(
+            name="screen:multi-slots",
+            kind="screen",
+            config={"strategy": "demo", "push_wecom": True},
+        )
+        self.store.set_setting(
+            "wecom_webhook",
+            {"url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abcdefghijklmnop"},
+        )
+
+        picks_1450 = [{"code": "002809", "name": "红墙股份", "pct_chg": 4.6, "close": 9.1}]
+        picks_1530 = [{"code": "002809", "name": "红墙股份", "pct_chg": 4.37, "close": 9.08}]
+
+        def make_executor(picks):
+            def _exec(_config, _ctx):
+                return {
+                    "strategy": "demo",
+                    "trade_date": "2026-08-28",
+                    "picks": picks,
+                }
+            return _exec
+
+        with patch("src.ops.application.notify_dispatch.send_wecom_text") as send:
+            send.return_value = {"errcode": 0}
+            # 模拟 14:50 第一次执行
+            with patch.dict("src.ops.application.jobs.registry.EXECUTORS", {"screen": make_executor(picks_1450)}):
+                first = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
+                # 14:50 再次重跑（同内容同时间）应被拦截
+                dup_1450 = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
+
+            self.assertTrue(first["result"].get("pushed"))
+            self.assertTrue(dup_1450["result"].get("push_skipped"))
+            self.assertEqual(send.call_count, 1)
+
+            # 模拟 15:30 第二次执行（即使同一只票，由于时点和内容不同/指纹不同，允许正常推送）
+            with patch.dict("src.ops.application.jobs.registry.EXECUTORS", {"screen": make_executor(picks_1530)}):
+                second = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
+                # 15:30 再次重跑（同内容同时间）应被拦截
+                dup_1530 = run_job(self.store, job_id, context=JobContext(ops_store=self.store))
+
+            self.assertTrue(second["result"].get("pushed"))
+            self.assertTrue(dup_1530["result"].get("push_skipped"))
+            self.assertEqual(send.call_count, 2)
+
     def test_skill_push_wecom_uses_skills_template(self) -> None:
         job_id = self.store.create_job(
             name="skill:demo",

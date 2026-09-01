@@ -1,11 +1,19 @@
-"""托管：全量引擎战法绑定定点选股。"""
+"""托管：全量引擎战法绑定定点选股。
+
+盘后 15:30 这个点对单机单用户是对的；多租户之后 50 个用户的 3 条选股全挤在
+同一分钟，租户线程池只有两条，后面的只能排队。所以**首次创建**时按租户把分钟
+错峰到 ``15:30~15:44``（``application/job_stagger.py``，crc32 确定性散列，
+**主租户恒为 15:30 不变**）。已有任务只补缺失键、不覆盖用户改过的 cron。
+"""
 from __future__ import annotations
 
 from typing import Any
 
+from src.ops.application.job_stagger import staggered_minute
 from src.ops.application.trading_schedule import compose_trading_cron
-
-#: 盘后选股默认点（收盘后、日终同步前）
+from src.ops.infrastructure.scheduler import normalize_cron_weekdays
+#: 盘后选股默认点（收盘后、日终同步前）。分钟是**基准值**，实际时点还要叠加
+#: 本租户的错峰偏移，见 ``_schedule_for_engine``。
 SCREEN_EOD_HOUR = 15
 SCREEN_EOD_MINUTE = 30
 
@@ -19,8 +27,12 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
     """
     from src.strategy import all_strategies
 
+    # 概览里报的「默认 cron」也要带上本租户的错峰偏移，否则运维页显示 15:30、
+    # 实际 15:37，看的人只会以为哪里坏了。
     default_cron = compose_trading_cron(
-        "once", run_hour=SCREEN_EOD_HOUR, run_minute=SCREEN_EOD_MINUTE
+        "once",
+        run_hour=SCREEN_EOD_HOUR,
+        run_minute=staggered_minute(SCREEN_EOD_MINUTE),
     )
     default_schedule = {
         "mode": "once",
@@ -49,24 +61,38 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
             if existing and isinstance(existing.get("config"), dict)
             else {}
         )
-        # 战法声明了固定时点才覆盖；否则保留用户在详情页保存的 schedule。
+        # 战法声明了固定时点才覆盖；否则保留用户在详情页保存的 schedule / cron。
         if _has_schedule_override(engine) or not isinstance(prev_cfg.get("schedule"), dict):
             schedule = engine_schedule
+            cron = compose_trading_cron(
+                schedule["mode"],
+                run_hour=schedule["run_hour"],
+                run_minute=schedule["run_minute"],
+                interval_minutes=schedule["interval_minutes"],
+                window_start_hour=schedule["window_start_hour"],
+                window_start_minute=schedule["window_start_minute"],
+                window_end_hour=schedule["window_end_hour"],
+                window_end_minute=schedule["window_end_minute"],
+            )
         else:
             schedule = {
                 key: prev_cfg["schedule"].get(key, default_schedule[key])
                 for key in default_schedule
             }
-        cron = compose_trading_cron(
-            schedule["mode"],
-            run_hour=schedule["run_hour"],
-            run_minute=schedule["run_minute"],
-            interval_minutes=schedule["interval_minutes"],
-            window_start_hour=schedule["window_start_hour"],
-            window_start_minute=schedule["window_start_minute"],
-            window_end_hour=schedule["window_end_hour"],
-            window_end_minute=schedule["window_end_minute"],
-        )
+            # 如果已有 cron 字段（如用户自定义多时点/多行 cron），优先保留已设置的 cron
+            if existing and existing.get("cron"):
+                cron = normalize_cron_weekdays(existing["cron"])
+            else:
+                cron = compose_trading_cron(
+                    schedule["mode"],
+                    run_hour=schedule["run_hour"],
+                    run_minute=schedule["run_minute"],
+                    interval_minutes=schedule["interval_minutes"],
+                    window_start_hour=schedule["window_start_hour"],
+                    window_start_minute=schedule["window_start_minute"],
+                    window_end_hour=schedule["window_end_hour"],
+                    window_end_minute=schedule["window_end_minute"],
+                )
         job_crons[slug] = cron
         declared_hold_days = getattr(engine, "screen_hold_days", None)
         default_hold_days = (
@@ -147,14 +173,25 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
 def _schedule_for_engine(
     engine: Any, default_schedule: dict[str, Any]
 ) -> dict[str, Any]:
-    """读取战法的托管时点；未声明时沿用统一 15:30 默认值。"""
+    """读取战法的托管时点；未声明时沿用统一 15:30 默认值。
+
+    定点（``mode="once"``）的分钟再叠一层**按租户的错峰偏移**：主租户恒为 0，
+    其它租户按 ``crc32(tenant) % 15`` 落在 15:30~15:44 之间。确定性散列意味着
+    同一个租户每次算出来都一样——用户看到的「下次触发」不会每次重启就换一个。
+
+    这里只决定**默认时点**：调用方仅在战法显式声明 ``screen_schedule``、或任务
+    还不存在时才采用它；用户在详情页改过的 schedule 一律保留。
+    """
     override = getattr(engine, "screen_schedule", None)
-    if not isinstance(override, dict):
-        return dict(default_schedule)
-    return {
-        key: override.get(key, default_schedule[key])
-        for key in default_schedule
-    }
+    if isinstance(override, dict):
+        schedule = {
+            key: override.get(key, default_schedule[key]) for key in default_schedule
+        }
+    else:
+        schedule = dict(default_schedule)
+    if str(schedule.get("mode") or "") == "once":
+        schedule["run_minute"] = staggered_minute(int(schedule.get("run_minute") or 0))
+    return schedule
 
 
 def _top_n_for_engine(engine: Any, previous: dict[str, Any]) -> int:

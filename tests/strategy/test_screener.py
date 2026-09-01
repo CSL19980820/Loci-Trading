@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 import pandas as pd
@@ -125,6 +126,38 @@ class ScreenerPanelSelectionTests(unittest.TestCase):
 
         self.assertEqual(store.load_args["start"], self.days[-10])
         self.assertEqual(store.load_args["end"], self.days[-1])
+
+    def test_live_overlay_forces_today_and_does_not_use_store_end(self) -> None:
+        today = date.today().isoformat()
+        store = _PanelStore(self.days)
+        live = {
+            "600001": {
+                "open": 1.0,
+                "high": 1.0,
+                "low": 1.0,
+                "close": 1.0,
+                "volume": 9.0,
+                "amount": 9.0,
+            }
+        }
+        with patch(
+            "src.strategy.application.screener.resolve_universe",
+            return_value=self.resolved,
+        ), patch(
+            "src.market.fetch_live_spot_bars",
+            return_value=live,
+        ):
+            result = screen(
+                store,
+                _VolumeOnlyEngine(),
+                codes=["600001"],
+                extra_bars=0,
+                live_overlay=True,
+            )
+        self.assertEqual(store.load_args["end"], today)
+        self.assertTrue(result.data_snapshot["live_overlay"])
+        self.assertEqual(result.data_snapshot.get("live_overlay_codes"), 1)
+        self.assertEqual(result.trade_date, today)
 
 
 if __name__ == "__main__":

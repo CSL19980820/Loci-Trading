@@ -1,153 +1,407 @@
 /*
- * 主题：data-appearance（明暗底色）× data-primary（品牌主色）
- * 唯一定义处。此前 style.components.css 与 style.tail.css 各存一份逐字副本，
- * 改前者会被后者静默覆盖，故收口到本文件。
+ * 主题：data-appearance（外观）× data-primary（品牌主色）。唯一定义处。
  *
- * 边界：主题只换「底色 + 品牌主色」，不换涨跌语义色（--up/--down 固定红涨绿跌，见 style.base.css）。
+ * 基线（= day 日间档）在 style.base.css 的 :root，本文件只写**差异**：
+ *   · paper / night / ink 三档外观覆写 --n-1..--n-12 与状态色；
+ *   · 八档内置主色覆写 --seal / --on-primary，派生档由 base 的 color-mix 统一算；
+ *   · EP 变量桥接。
+ * 夜盘只有一份真相：night / ink / html.dark 的公共部分写在同一个选择器列表里，
+ * 不再各存副本（历史上 components / tail 各抄一份，改前面被后面静默覆盖）。
+ *
+ * 四档外观不是「同一张脸换明暗」，性格来自中性色的**色相倾向 + 对比强度 + 表面层级差**：
+ *   day   冷中性灰 hue 250 / 低彩度 —— 干净现代，白面板浮在浅灰画布上
+ *   paper 暖米 hue 82 / 彩度抬到 0.024-0.032 —— 一眼看得出是米色，不是「白里带点脏」
+ *   night 蓝灰 hue 258 —— 深邃科技感，表面层级差拉到 4 档
+ *   ink   中性纯黑 chroma 0 —— OLED 友好，画布近纯黑、正文纯白，对比度最高
+ *
+ * 边界（D1）：主题只换「底色 + 品牌主色」，**不换涨跌语义色的角色**——
+ * 涨跌只在明暗之间换到对应对比度的红/绿，绝不跟随 data-primary。
+ *
+ * 「sRGB 兑现」注释的含义见 style.base.css 文件头：那几个键会被 JS（ECharts /
+ * Monaco）通过 getComputedStyle 读走，只能是 hex/rgba 字面量，注释里写着它等于哪一阶。
  */
 
-/* —— 外观 —— */
+/* ═══════════════ 外观：暖纸（warm ivory，长时间盯盘护眼） ═══════════════ */
 html[data-appearance='paper'] {
-  --paper: #f4f1ea;
-  --sheet: #fbf8f2;
-  --panel-2: #efebe3;
-  --rule: #ddd4c6;
-  --ink: #1c1917;
-  --mist: #78716c;
-  --warn-soft: #f6ecd8;
-  --info-soft: #e7edf7;
+  --n-1: oklch(0.995 0.01 82);
+  --n-2: oklch(0.982 0.016 82);
+  --n-3: oklch(0.962 0.024 82);
+  --n-4: oklch(0.938 0.028 82);
+  --n-5: oklch(0.918 0.03 82);
+  --n-6: oklch(0.895 0.032 82);
+  --n-7: oklch(0.868 0.03 82);
+  --n-8: oklch(0.815 0.03 82);
+  --n-9: oklch(0.73 0.03 82);
+  /* 同 base：10/11 档压暗到「下沉面上仍 ≥4.5:1」，暖调的 chroma 保持不动 */
+  --n-10: oklch(0.5225 0.028 82);
+  --n-11: oklch(0.4475 0.026 82);
+  --n-12: oklch(0.272 0.022 82);
+
+  /* sRGB 兑现：--sheet = --n-2 @95%，文字三档 = --n-12 / --n-11 / --n-10，线 = --n-7 / --n-8 */
+  --sheet: rgba(255, 248, 237, 0.95);
+  --ink: #2c261b;
+  --muted: #5c5343;
+  --mist: #726858;
+  --rule: #ded2be;
+  --rule-strong: #ccc1ad;
+  --panel-rgb: 255, 248, 237;
+  --shadow-sm: 0 1px 2px 0 color-mix(in oklab, var(--n-12) 7%, transparent);
+  --shadow: 0 1px 3px 0 color-mix(in oklab, var(--n-12) 8%, transparent);
 }
 
+/* ═══════════════ 夜盘公共层：night / ink / html.dark ═══════════════ */
 html[data-appearance='night'],
-html[data-appearance='ink'] {
+html[data-appearance='ink'],
+html.dark {
   color-scheme: dark;
-  --ink: #e8eef6;
-  --paper: #121820;
-  --sheet: #1a222d;
-  --panel: #1a222d;
-  --panel-2: #222b38;
-  --bg: var(--paper);
-  --rule: #2c3645;
-  --line: var(--rule);
-  --line-2: #3a4658;
-  --mist: #8b9aab;
-  --muted: #b7c3d1;
-  /* --seal-ink / --seal-soft 的深色档见文件末尾的派生块（放那里才不会被主色块覆盖） */
-  --lake: #3fa88f;
-  --lake-soft: color-mix(in srgb, var(--lake) 24%, transparent);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 
-  /* 深色底下浅色徽章会糊成白块：软色一律改为低透明度覆盖层 */
-  --up: #f2647c;
-  --up-soft: rgba(196, 30, 58, 0.2);
-  --down: #3fa88f;
-  --down-soft: rgba(15, 107, 92, 0.22);
-  --warn: #e0a33c;
-  --warn-soft: rgba(217, 119, 6, 0.2);
-  --info: #6b9bf5;
-  --info-soft: rgba(37, 99, 235, 0.2);
+  /*
+   * 涨跌色在深底上要提亮到 6:1 以上，否则整屏数字发闷。
+   * sRGB 兑现：--up = oklch(.705 .165 26)，--down = oklch(.735 .145 152)。
+   */
+  --up: #f67168;
+  --up-ink: oklch(0.8 0.13 26);
+  --down: #57c37b;
+  --down-ink: oklch(0.83 0.12 152);
+  --stamp: oklch(0.68 0.18 22);
+
+  /*
+   * 涨跌浓淡阶：深色档要**从画布上方一点点起步**（L 0.32 ≈ 刚压过 --n-6），
+   * 不能照抄明档「从淡红起步」——淡色在深底上是最亮的那一档，浓淡关系会整个翻过来。
+   * L 依旧等距（≈0.095 一档）。
+   */
+  --up-1: oklch(0.32 0.06 26);
+  --up-2: oklch(0.42 0.095 26);
+  --up-3: oklch(0.52 0.125 26);
+  --up-4: oklch(0.61 0.15 26);
+  --up-5: oklch(0.705 0.165 26);
+  --down-1: oklch(0.33 0.05 152);
+  --down-2: oklch(0.43 0.08 152);
+  --down-3: oklch(0.535 0.105 152);
+  --down-4: oklch(0.635 0.125 152);
+  --down-5: oklch(0.735 0.145 152);
+
+  /* 状态色。sRGB 兑现：--warn = oklch(.8 .145 78)，--info = oklch(.745 .115 240) */
+  --warn: #f0b13f;
+  --warn-ink: oklch(0.85 0.12 78);
+  --info: #62b6ee;
+  --info-ink: oklch(0.82 0.1 240);
+  /* 非价格语义的健康色。sRGB 兑现：oklch(.75 .105 195) */
+  --ok: #4cc3c2;
+
+  --peach: oklch(0.75 0.15 45);
+  --sand: oklch(0.78 0.12 72);
+  --lavender: oklch(0.72 0.16 295);
+
+  /* 深色底上阴影要更重更散，否则浮起层贴在背景上分不出层 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.55);
+  --shadow-watercolor: 0 4px 18px rgba(0, 0, 0, 0.5);
 }
 
+/* ═══════════════ 外观：夜间（蓝灰科技感） ═══════════════ */
+html[data-appearance='night'],
+html.dark {
+  --n-1: oklch(0.278 0.022 258);
+  --n-2: oklch(0.232 0.021 258);
+  --n-3: oklch(0.19 0.019 258);
+  --n-4: oklch(0.158 0.017 258);
+  --n-5: oklch(0.272 0.022 258);
+  --n-6: oklch(0.315 0.023 258);
+  --n-7: oklch(0.33 0.021 258);
+  --n-8: oklch(0.395 0.021 258);
+  --n-9: oklch(0.47 0.02 258);
+  /*
+ * 深色档同样按「最亮的承载面（--surface-active / n-6）上仍 ≥4.5:1」定。
+   * 原来的 L0.62 在浮起面板上只有 3.67:1——夜盘里所有 12-13px 的次要读数
+   * （时间、代码、平盘价、口径）都糊，是最招人烦的那一档。
+   */
+  --n-10: oklch(0.7075 0.02 258);
+  --n-11: oklch(0.782 0.017 258);
+  --n-12: oklch(0.965 0.008 258);
+
+  /* sRGB 兑现：--sheet = --n-2 @92%（深色档留一点透，让弹层与面板分得开） */
+  --sheet: rgba(23, 30, 39, 0.92);
+  --ink: #f0f4f9;
+  --muted: #b0b9c5;
+  --mist: #99a1ad;
+  --rule: #2f3640;
+  --rule-strong: #3f4752;
+  --panel-rgb: 23, 30, 39;
+}
+
+/* ═══════════════ 外观：墨黑（中性纯黑 / OLED / 最高对比） ═══════════════ */
 html[data-appearance='ink'] {
-  --paper: #0d1117;
-  --sheet: #161b22;
-  --panel-2: #1c2330;
-  --rule: #30363d;
+  /* chroma 全 0：纯中性灰阶，不带任何色偏，这是它和 night 最直观的区别 */
+  --n-1: oklch(0.245 0 0);
+  --n-2: oklch(0.185 0 0);
+  --n-3: oklch(0.13 0 0);
+  --n-4: oklch(0.09 0 0);
+  --n-5: oklch(0.275 0 0);
+  --n-6: oklch(0.315 0 0);
+  --n-7: oklch(0.3 0 0);
+  --n-8: oklch(0.37 0 0);
+  --n-9: oklch(0.46 0 0);
+  /* 同 night：抬到浮起面上仍 ≥4.5:1 */
+  --n-10: oklch(0.7075 0 0);
+  --n-11: oklch(0.815 0 0);
+  --n-12: oklch(1 0 0);
+
+  /* sRGB 兑现：= --n-2 / --n-12 / --n-11 / --n-10 / --n-7 / --n-8 */
+  --sheet: rgba(19, 19, 19, 0.95);
+  --ink: #ffffff;
+  --muted: #c3c3c3;
+  --mist: #a1a1a1;
+  --rule: #2e2e2e;
+  --rule-strong: #404040;
+  --panel-rgb: 19, 19, 19;
+
+  /* 高对比档：涨跌与状态色再提一档，配合纯黑底 */
+  --up: #ff7b72;
+  --up-ink: oklch(0.83 0.14 26);
+  --down: #5cd283;
+  --down-ink: oklch(0.86 0.125 152);
+  --warn: #fabb41;
+  --warn-ink: oklch(0.87 0.125 80);
+  --info: #69c1fc;
+  --info-ink: oklch(0.85 0.1 240);
+  /* sRGB 兑现：oklch(.785 .11 195) */
+  --ok: #51cfcf;
+
+  /* 浓淡阶同步提一档：纯黑底比 night 更黑，最淡那档要再亮一点才看得见 */
+  --up-1: oklch(0.335 0.06 26);
+  --up-2: oklch(0.435 0.1 26);
+  --up-3: oklch(0.535 0.13 26);
+  --up-4: oklch(0.635 0.155 26);
+  --up-5: oklch(0.735 0.175 26);
+  --down-1: oklch(0.36 0.05 152);
+  --down-2: oklch(0.465 0.08 152);
+  --down-3: oklch(0.57 0.11 152);
+  --down-4: oklch(0.672 0.135 152);
+  --down-5: oklch(0.775 0.155 152);
+
+  /* 纯黑底上阴影几乎看不见，浮起层改靠边框区分 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.7);
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.72);
+  --shadow-hover: 0 6px 20px rgba(0, 0, 0, 0.8);
+}
+
+/*
+ * 深色档的主色派生：明档 hover 是「压暗」，深色档要反过来「提亮」。
+ * base 里 --seal-hover 混的是 --n-12，深色档 n-12 本身就是近白，方向自动反过来，
+ * 这里只调混合比例（深底上要更亮一点才跳得出来），并把 --seal-ink 提到能读的亮度。
+ */
+html[data-appearance='night'],
+html[data-appearance='ink'],
+html.dark {
+  --seal-hover: color-mix(in oklab, var(--seal) 86%, var(--n-12));
+  --seal-active: color-mix(in oklab, var(--seal) 74%, var(--n-12));
+  --seal-ink: color-mix(in oklab, var(--seal) 48%, oklch(1 0 0));
+  --seal-soft: color-mix(in oklab, var(--seal) 22%, transparent);
+  --seal-border: color-mix(in oklab, var(--seal) 55%, transparent);
+  --focus-halo: color-mix(in oklab, var(--seal) 26%, transparent);
 }
 
 /*
  * Element Plus 深色：官方 dark/css-vars 由 main.ts 静态引入，靠 html.dark 生效。
- * 这里把 EP 变量重新指回本仓 token，避免出现「EP 自带深灰 + 账本台深蓝」两套底色。
+ * 这里把 EP 变量重新指回本仓 token，避免出现「EP 自带深灰 + 盘口深蓝」两套底色。
+ * 顺序必须在 css-vars 之后，选择器同为 html.dark 时靠后者胜出（见 main.ts 的引入顺序）。
  */
 html.dark {
-  --el-bg-color: var(--sheet);
+  --el-bg-color: var(--surface);
   --el-bg-color-page: var(--paper);
-  --el-bg-color-overlay: var(--sheet);
-  --el-fill-color-blank: var(--sheet);
-  --el-fill-color: var(--panel-2);
-  --el-fill-color-light: var(--panel-2);
-  --el-fill-color-lighter: var(--sheet);
-  --el-fill-color-extra-light: var(--sheet);
-  --el-text-color-primary: var(--ink);
-  --el-text-color-regular: var(--muted);
-  --el-text-color-secondary: var(--mist);
-  --el-text-color-placeholder: var(--mist);
-  --el-border-color: var(--rule);
-  --el-border-color-light: var(--rule);
-  --el-border-color-lighter: var(--rule);
-  --el-border-color-extra-light: var(--rule);
-  --el-border-color-dark: var(--line-2);
-  --el-mask-color: rgba(9, 13, 19, 0.72);
+  --el-bg-color-overlay: var(--surface-raised);
+  --el-fill-color-blank: var(--surface);
+  --el-fill-color: var(--surface-sunken);
+  --el-fill-color-light: var(--surface-sunken);
+  --el-fill-color-lighter: var(--surface-sunken);
+  --el-fill-color-extra-light: var(--surface);
+  --el-fill-color-dark: var(--surface-hover);
+  --el-fill-color-darker: var(--surface-active);
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-text-color-placeholder: var(--text-tertiary);
+  --el-text-color-disabled: var(--text-disabled);
+  --el-disabled-text-color: var(--text-disabled);
+  --el-disabled-bg-color: var(--surface-active);
+  --el-disabled-border-color: var(--border-subtle);
+  --el-border-color: var(--border-default);
+  --el-border-color-light: var(--border-subtle);
+  --el-border-color-lighter: var(--border-subtle);
+  --el-border-color-extra-light: var(--border-subtle);
+  --el-border-color-dark: var(--border-strong);
+  --el-border-color-hover: var(--border-strong);
+  /* 遮罩要盖住纯黑底下的浮起层，比明档更黑一档 */
+  --el-mask-color: color-mix(in oklab, oklch(0 0 0) 68%, transparent);
+  --el-box-shadow: var(--shadow);
+  --el-box-shadow-light: var(--shadow-sm);
+  --el-box-shadow-lighter: var(--shadow-sm);
 }
 
 /*
- * —— 主色 ——
- * 这里只换 --seal 一个值。--seal-ink / --seal-soft 一律由它派生（见下方派生块），
- * 否则主色块与外观块同权重、且排在后面，会把深色档的对比度修正整个覆盖掉：
- * 深色 + 湖绿时 --seal-ink 会退回 #0a4f44，压在深底上几乎读不出来。
+ * ═══════════════ 主色 ═══════════════
+ * 每档只给两个种子：--seal（实心色）与 --on-primary（实心色上的文字）。
+ * 其余派生（hover/active/ink/soft/border/focus）在 style.base.css 由 color-mix 统一算，
+ * 所以新增一档主色只要加两行；自定义主色则由 shared/lib/theme.ts 写内联变量整套覆盖。
+ *
+ * 色值全部由 derivePrimaryScale(seed, mode) 校准过：OKLCH 里钉住 L，
+ * 再用 WCAG 收敛，保证 --seal 对 --on-primary 的对比度 ≥ 4.5:1。
+ * 与 shared/lib/theme.ts 的 PRIMARY_OPTIONS 一一对应，改一边要同步另一边。
  */
-html[data-primary='lake'] {
-  --seal: #0f6b5c;
+html[data-primary='seal'] {
+  --seal: #cc323e; /* oklch(.56 .19 22) 朱红 */
+  --on-primary: #ffffff;
 }
 
-html[data-primary='blue'] {
-  --seal: #2563eb;
+html[data-primary='flame'] {
+  --seal: #c15108; /* oklch(.575 .16 45) 橙红 */
+  --on-primary: #ffffff;
 }
 
 html[data-primary='amber'] {
-  --seal: #d97706;
+  /* 琥珀在 L≈0.72 才叫琥珀；这个亮度下白字必然不够，改配深字（阈值 L>0.62） */
+  --seal: #d79700; /* oklch(.72 .15 78) */
+  --on-primary: #14181f;
 }
 
-/* 主色的「文字态」与「浅底态」：浅色档压深、深色档提亮，与外观解耦互不覆盖 */
-:root,
-html[data-primary] {
-  --seal-ink: color-mix(in srgb, var(--seal) 72%, #000);
-  --seal-soft: color-mix(in srgb, var(--seal) 12%, #fff);
+html[data-primary='moss'] {
+  --seal: #298646; /* oklch(.555 .13 150) 墨绿 */
+  --on-primary: #ffffff;
+}
+
+html[data-primary='lake'] {
+  --seal: #008471; /* oklch(.565 .11 178) 湖绿 */
+  --on-primary: #ffffff;
+}
+
+html[data-primary='teal'] {
+  --seal: #007ca8; /* oklch(.565 .12 232) 青青 */
+  --on-primary: #ffffff;
+}
+
+html[data-primary='blue'] {
+  --seal: #396ed6; /* oklch(.56 .17 262) 靖蓝 */
+  --on-primary: #ffffff;
+}
+
+html[data-primary='violet'] {
+  --seal: #854ece; /* oklch(.55 .19 300) 紫罗兰 */
+  --on-primary: #ffffff;
+}
+
+/* 深色档把实心主色提亮一档：明档校准值放在 night 画布上偏闷 */
+html.dark[data-primary='amber'] {
+  --seal: #ebaa2d; /* oklch(.78 .15 78) */
+  --on-primary: #14181f;
 }
 
 /*
  * 助手「墨盘」品牌符号：浮球 / 空态图标 / 会话轨共用一枚深色圆盘。
- * 此前三处各自硬编码 #12161c，深色主题下与 --paper(#121820) 的 RGB 差只有 (0,2,4)，
- * 等于隐形——而浮球是助手唯一入口。
+ * 这里需要「无论明暗都保持深色盘面」，跟着 --ink 走会在夜盘翻成浅色，
+ * 浮球会糊进背景（浮球是助手唯一入口），所以钉死一个深色 oklch 而不是用 --n-*。
  */
 :root {
-  --ai-disc-face: color-mix(in srgb, #12161c 88%, var(--seal) 12%);
-  --ai-disc-ribbon: #e8eef2;
-  --ai-disc-edge: color-mix(in srgb, #fff 14%, transparent);
+  --ai-disc-face: color-mix(in oklab, oklch(0.22 0.03 250) 88%, var(--seal));
+  --ai-disc-ribbon: oklch(0.94 0.006 250);
+  --ai-disc-edge: color-mix(in oklab, oklch(1 0 0) 14%, transparent);
 }
 
 html[data-appearance='night'],
-html[data-appearance='ink'] {
-  --seal-ink: color-mix(in srgb, var(--seal) 45%, #fff);
-  --seal-soft: color-mix(in srgb, var(--seal) 22%, transparent);
+html[data-appearance='ink'],
+html.dark {
   /* 深底上墨盘要反过来提亮，否则整枚球糊进背景 */
-  --ai-disc-face: color-mix(in srgb, var(--sheet) 62%, var(--seal) 38%);
-  --ai-disc-ribbon: var(--ink);
-  --ai-disc-edge: color-mix(in srgb, #fff 26%, transparent);
+  --ai-disc-face: color-mix(in oklab, var(--surface-raised) 62%, var(--seal));
+  --ai-disc-ribbon: var(--text-primary);
+  --ai-disc-edge: color-mix(in oklab, oklch(1 0 0) 26%, transparent);
 }
 
 /*
- * EP 主色梯度统一由 --seal 派生：此前只换了 --el-color-primary 本色，
- * hover / 浅底 / focus 光晕仍停在朱红梯度上，换主色后会红绿混搭。
+ * EP 主色梯度统一由 --seal 派生：只换 --el-color-primary 本色的话，
+ * hover / 浅底 / focus 光晕仍停在旧梯度上，换主色后会红蓝混搭。
+ * light-3..light-9 是 EP 用于「浅底/描边/禁用主色」的梯度，明档往白走、暗档往画布走。
+ *
+ * 选择器必须带上 html[data-primary]：EP 的 dark/css-vars 把这些键写在 html.dark 上
+ *（特指度 0,1,1），只写 :root（0,1,0）会被它压掉，夜盘就会回到 EP 自带的蓝。
+ * applyTheme 保证 data-primary 永远存在。
  */
 :root,
 html[data-primary] {
   --el-color-primary: var(--seal);
-  --el-color-primary-light-3: color-mix(in srgb, var(--seal) 70%, #fff);
-  --el-color-primary-light-5: color-mix(in srgb, var(--seal) 50%, #fff);
-  --el-color-primary-light-7: color-mix(in srgb, var(--seal) 30%, #fff);
-  --el-color-primary-light-8: color-mix(in srgb, var(--seal) 20%, #fff);
+  --el-color-primary-light-3: color-mix(in oklab, var(--seal) 70%, var(--n-1));
+  --el-color-primary-light-5: color-mix(in oklab, var(--seal) 50%, var(--n-1));
+  --el-color-primary-light-7: color-mix(in oklab, var(--seal) 30%, var(--n-1));
+  --el-color-primary-light-8: color-mix(in oklab, var(--seal) 20%, var(--n-1));
   --el-color-primary-light-9: var(--seal-soft);
-  --el-color-primary-dark-2: var(--seal-ink);
+  --el-color-primary-dark-2: var(--seal-active);
   --el-color-success: var(--success);
-  --el-color-danger: var(--loss);
+  --el-color-success-light-9: var(--success-soft);
+  /* 危险操作用印章红，不用涨跌红：删除按钮和「涨」不该是同一个红 */
+  --el-color-danger: var(--stamp);
+  --el-color-danger-light-9: color-mix(in oklab, var(--stamp) 12%, transparent);
+  --el-color-error: var(--stamp);
+  --el-color-error-light-9: color-mix(in oklab, var(--stamp) 12%, transparent);
   --el-color-warning: var(--warn);
+  --el-color-warning-light-9: var(--warn-soft);
+  --el-color-info: var(--info);
+  --el-color-info-light-9: var(--info-soft);
 }
 
 html[data-appearance='night'],
-html[data-appearance='ink'] {
-  --el-color-primary-light-3: color-mix(in srgb, var(--seal) 70%, #000);
-  --el-color-primary-light-5: color-mix(in srgb, var(--seal) 50%, #000);
-  --el-color-primary-light-7: color-mix(in srgb, var(--seal) 32%, #000);
-  --el-color-primary-light-8: color-mix(in srgb, var(--seal) 24%, #000);
+html[data-appearance='ink'],
+html.dark {
+  /* 深色档梯度混向画布（--n-3）而不是白，否则浅底档会在深色里刷出一片高亮 */
+  --el-color-primary-light-3: color-mix(in oklab, var(--seal) 70%, var(--n-3));
+  --el-color-primary-light-5: color-mix(in oklab, var(--seal) 50%, var(--n-3));
+  --el-color-primary-light-7: color-mix(in oklab, var(--seal) 32%, var(--n-3));
+  --el-color-primary-light-8: color-mix(in oklab, var(--seal) 24%, var(--n-3));
+}
+
+/*
+ * —— 深色档：主色**当文字用**时必须换到 --seal-ink ——
+ *
+ * `--el-color-primary`（= --seal 本色）是给「实心填充」校准的：白字压在上面
+ * 对比度够，所以它一直保持品牌本色不随明暗漂移。但 Element Plus 有几处把
+ * 同一个变量直接拿去当**文字色**：
+ *   · `el-button` 的 text / link 变体（表格行里的「选股」「配置」）
+ *   · `el-tag--primary.is-plain` 的文字（「只读」这类标记）
+ * · `el-link--primary`、`el-checkbox` 勾选后的 label
+ * 深底上 #cc323e 当文字只有 2.5–3.3 : 1，实测糊成一团（AA 要 4.5）。
+ *
+ * `--seal-ink` 正是为此存在的「主色文字态」：深色档里它朝白提亮，实测 6.4–8.3 : 1。
+ * 这里只改**文字色**，不动填充色——所以实心主按钮仍是品牌本色 + 白字。
+ *
+ * 明亮档不需要这一段：那里 --seal 当文字本来就够暗。
+ */
+html[data-appearance='night'] :is(.el-button--primary.is-text, .el-button--primary.is-link),
+html[data-appearance='ink'] :is(.el-button--primary.is-text, .el-button--primary.is-link),
+html.dark :is(.el-button--primary.is-text, .el-button--primary.is-link) {
+  --el-button-text-color: var(--seal-ink);
+  --el-button-hover-text-color: var(--seal-ink);
+  --el-button-active-text-color: var(--seal-ink);
+}
+
+html[data-appearance='night'] .el-tag--primary.el-tag--plain,
+html[data-appearance='ink'] .el-tag--primary.el-tag--plain,
+html.dark .el-tag--primary.el-tag--plain {
+  --el-tag-text-color: var(--seal-ink);
+}
+
+html[data-appearance='night'] .el-link--primary,
+html[data-appearance='ink'] .el-link--primary,
+html.dark .el-link--primary {
+  --el-link-text-color: var(--seal-ink);
+  --el-link-hover-text-color: var(--seal-ink);
+}
+
+/*
+ * el-check-tag 选中态：EP 直接写 color: var(--el-color-primary)，没留变量，
+ * 只能整条覆盖 color。它的底是 --el-color-primary-light-8（深色档朝画布混），
+ * 主色本色压在上面只有 2.9 : 1。
+ */
+html[data-appearance='night'] .el-check-tag.el-check-tag--primary.is-checked,
+html[data-appearance='ink'] .el-check-tag.el-check-tag--primary.is-checked,
+html.dark .el-check-tag.el-check-tag--primary.is-checked {
+  color: var(--seal-ink);
 }

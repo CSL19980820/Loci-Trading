@@ -62,7 +62,23 @@ PERSONAL_TABLES = (
     "strategy_backtests",
     # AI 决策留痕含 prompt 原文与报价快照，属个人交易记录，绝不外发
     "ai_decisions",
+    # 助手全套：对话原文、工具回执、运行事件、用量、授权凭据，以及**个人画像与
+    # 长期记忆**（ai_assistant_profile / ai_memories）。这批表原来一张都没登记，
+    # 分享包会把「我跟 AI 说过的每一句话」连同画像一起发出去。
+    "ai_sessions",
+    "ai_messages",
+    "ai_agent_runs",
+    "ai_agent_events",
+    "ai_usage_daily",
+    "ai_execution_grants",
+    "ai_assistant_profile",
+    "ai_memories",
 )
+
+#: 个人表的**命名约定**。新表只要落在这些前缀里就必须进 PERSONAL_TABLES；
+#: 回归测试对着真实建出来的 ops.db 卡这条（tests/ai/test_share_pack_ai_tables.py）。
+#: 靠人记得改清单是靠不住的——上面那八张 AI 表就是这么漏掉的。
+PERSONAL_TABLE_PREFIXES = ("ai_", "paper_mem")
 
 #: ops.db `meta` 只放行这些键（`*` 结尾为前缀匹配）。其余一律不外发。
 META_ALLOWLIST = (
@@ -272,6 +288,7 @@ __all__ = [
     "FORBIDDEN_SUFFIXES",
     "META_ALLOWLIST",
     "PERSONAL_TABLES",
+    "PERSONAL_TABLE_PREFIXES",
     "find_forbidden_files",
     "sanitize_json_file",
     "sanitize_mcp_json",

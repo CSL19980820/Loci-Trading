@@ -22,6 +22,7 @@
 - `run_pth252_factor_experiment()`：固定研究候选 `close / rolling_max(high, 252)`；盘后信号、T+1 开盘执行、每 20 个交易日调仓并持有 20 日。仅从最高十分位按分数保留至多 20 只，成交失败位置保持空缺。它复用研究回测、冻结重放和因子敏感性产物，但不会注册进 `src.strategy` 的四个活动战法。
 - HTTP：`GET /api/research/catalog`、`GET /api/research/profile/{code}?budget=lite|standard|deep&as_of=YYYY-MM-DD`、`POST /api/research/runs`；历史股票池和 PIT 事实通过独立 temporal API 查询或追加导入；研究回测在人工审核后只能发布或否决，两个结论都绑定 artifact manifest。
 - PTH252 HTTP：`POST /api/research/factor-jobs` 只接受固定参数和已有 `historical_universe_id`，异步任务通过 `GET /api/research/factor-jobs/{job_id}` 查询。严格 PIT 任一证据缺失都会标记任务失败；若已生成 run，失败响应仍保留 `run_id` 以读取诊断 artifact。
+- HTTP 分文件与端点归属见 [`api/README.md`](api/README.md#文件清单)。回测端点组 2026-08 拆到 `api/backtest_router.py`（它持有进程级线程池 `_BACKTEST_EXECUTOR`，已登记进 `tests/ai/test_tenant_threads.py::_GUARDED_FILES`；再拆时清单要跟着走）；`build_research_router` 仍 `include_router` 它，URL 集合与挂载方式不变。
 - 技术指标：`application/technical.py`，只对行情仓历史日 K 计算 MA、MACD、RSI、KDJ、OBV、Williams %R、Stage 和 VCP 代理。
 
 ## 如何扩展

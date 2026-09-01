@@ -187,7 +187,6 @@ onUnmounted(() => {
   <SettingsPanel title="MCP Server" :receipt="receipt">
     <template #action>
       <el-button v-if="wudaoServer" :disabled="busy" @click="openWudaoConfig">配置悟道</el-button>
-      <el-button type="primary" :disabled="busy" @click="mcpFormOpen = true">添加外部 MCP</el-button>
     </template>
 
     <el-table v-if="builtinServers.length" :data="builtinServers" size="small" row-key="id" class="mb">
@@ -230,7 +229,7 @@ onUnmounted(() => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right" align="right">
+      <el-table-column label="操作" width="160" fixed="right" align="center" header-align="center">
         <template #default="{ row }">
           <el-button link :disabled="busy" @click="openDetail(row)">详情</el-button>
           <template v-if="row.resident">
@@ -248,7 +247,20 @@ onUnmounted(() => {
       </el-table-column>
     </el-table>
 
-    <h4 v-if="externalServers.length" class="ext-title">外部 MCP</h4>
+    <!--
+      标题保留但压成功能行：内置表与外部表同屏并列，只靠列差分不清谁是谁。
+      「添加外部 MCP」从面板头挪到这里——它加的就是这张表的行，计数也在同一行。
+      条件从「有外部服务」放宽到「有任何服务」，否则一台外部都没有时按钮会消失。
+    -->
+    <div v-if="mcpServers.length" class="ext-head">
+      <h4 class="ext-title">外部 MCP</h4>
+      <el-tag size="small" type="info" effect="plain" class="ext-count">
+        {{ externalServers.length }}
+      </el-tag>
+      <el-button type="primary" :disabled="busy" @click="mcpFormOpen = true">
+        添加外部 MCP
+      </el-button>
+    </div>
     <el-table v-if="externalServers.length" :data="externalServers" size="small" row-key="id">
       <el-table-column label="名称" min-width="120">
         <template #default="{ row }">
@@ -265,7 +277,7 @@ onUnmounted(() => {
           <span class="mono">{{ toolCount(row) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right" align="right">
+      <el-table-column label="操作" width="160" fixed="right" align="center" header-align="center">
         <template #default="{ row }">
           <el-button link :disabled="busy" @click="openDetail(row)">详情</el-button>
           <el-button link :disabled="busy" @click="toggleMcp(row)">
@@ -292,39 +304,43 @@ onUnmounted(() => {
   </SettingsPanel>
 
   <el-dialog v-model="mcpFormOpen" title="添加 MCP Server" :width="dialogWidth()" destroy-on-close>
-    <el-form label-position="top" @submit.prevent="submitMcp">
-      <div class="form-grid">
-        <el-form-item label="名称" required>
-          <el-input v-model.trim="mcpForm.name" placeholder="my-data-source" />
-        </el-form-item>
-        <el-form-item label="地址" required class="full-span">
-          <el-input v-model.trim="mcpForm.url" placeholder="https://mcp.example.com" />
-        </el-form-item>
-        <el-form-item label="Token" required class="full-span">
-          <el-input
-            v-model.trim="mcpForm.token"
-            type="password"
-            autocomplete="off"
-            placeholder="开发者页复制的 API Key（lb_ 开头）"
-            show-password
-          />
-        </el-form-item>
-        <el-form-item label="到期日（可选）" class="full-span">
-          <el-date-picker
-            v-model="mcpForm.expires_at"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="套餐到期后自动跳过"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="备注" class="full-span">
-          <el-input v-model.trim="mcpForm.note" placeholder="用途说明" />
-        </el-form-item>
-        <el-form-item class="full-span">
-          <el-checkbox v-model="mcpForm.verify">保存时握手校验</el-checkbox>
-        </el-form-item>
-      </div>
+    <el-form
+      class="form-grid"
+      label-position="right"
+      label-width="6.5em"
+      size="small"
+      @submit.prevent="submitMcp"
+    >
+      <el-form-item label="名称" required>
+        <el-input v-model.trim="mcpForm.name" placeholder="my-data-source" />
+      </el-form-item>
+      <el-form-item label="地址" required class="full-span">
+        <el-input v-model.trim="mcpForm.url" placeholder="https://mcp.example.com" />
+      </el-form-item>
+      <el-form-item label="Token" required class="full-span">
+        <el-input
+          v-model.trim="mcpForm.token"
+          type="password"
+          autocomplete="off"
+          placeholder="开发者页复制的 API Key（lb_ 开头）"
+          show-password
+        />
+      </el-form-item>
+      <el-form-item label="到期日（可选）" class="full-span">
+        <el-date-picker
+          v-model="mcpForm.expires_at"
+          type="date"
+          value-format="YYYY-MM-DD"
+          placeholder="套餐到期后自动跳过"
+          style="width: 100%"
+        />
+      </el-form-item>
+      <el-form-item label="备注" class="full-span">
+        <el-input v-model.trim="mcpForm.note" placeholder="用途说明" />
+      </el-form-item>
+      <el-form-item class="full-span">
+        <el-checkbox v-model="mcpForm.verify">保存时握手校验</el-checkbox>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="mcpFormOpen = false">取消</el-button>
@@ -337,8 +353,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* 加载态不再定高：EP 的 v-loading 遮罩自带 spinner，8rem 只是空白 */
 .mcp-loading {
-  min-height: 8rem;
+  padding: var(--gap-4) 0;
 }
 
 .desc {
@@ -350,27 +367,35 @@ onUnmounted(() => {
 }
 
 .name-tag {
-  margin-left: 0.4rem;
+  margin-left: var(--gap-1);
   vertical-align: middle;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 0.75rem;
-}
-
-.form-grid .full-span {
-  grid-column: 1 / -1;
-}
+/* 栅格与 .full-span 用全局 .form-grid（style.components.css），不在此另立一套 */
 
 .mb {
-  margin-bottom: 1rem;
+  margin-bottom: var(--gap-4);
+}
+
+/* 标题 + 计数 chip + 主操作同一行 */
+.ext-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
 }
 
 .ext-title {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
+  margin: 0;
+  font-size: var(--fs-aux);
   color: var(--muted);
+}
+
+.ext-count {
+  font-family: var(--mono);
+}
+
+.ext-head .el-button {
+  margin-left: auto;
 }
 </style>

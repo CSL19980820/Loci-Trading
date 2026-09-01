@@ -26,11 +26,11 @@ const tableRows = computed(() =>
 )
 
 const columns: BasicTableColumn[] = [
-  { prop: 'name', label: '接口', minWidth: 200, showOverflowTooltip: true },
-  { prop: 'ok', label: '结果', width: 88, align: 'center', slotName: 'status' },
-  { prop: 'elapsed_ms', label: '响应', width: 100, align: 'right', slotName: 'rtt' },
-  { prop: 'rows', label: '行数', width: 72, align: 'right', formatter: (row) => (row.rows == null ? '—' : String(row.rows)) },
-  { prop: 'error', label: '说明', minWidth: 220, showOverflowTooltip: true, slotName: 'error' },
+  { prop: 'name', label: '接口', minWidth: 200, align: 'center', headerAlign: 'center', showOverflowTooltip: true },
+  { prop: 'ok', label: '结果', width: 88, align: 'center', headerAlign: 'center', slotName: 'status' },
+  { prop: 'elapsed_ms', label: '响应', width: 100, align: 'center', headerAlign: 'center', slotName: 'rtt' },
+  { prop: 'rows', label: '行数', width: 72, align: 'center', headerAlign: 'center', formatter: (row) => (row.rows == null ? '—' : String(row.rows)) },
+  { prop: 'error', label: '说明', minWidth: 220, align: 'left', headerAlign: 'left', showOverflowTooltip: true, slotName: 'error' },
 ]
 
 function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger' | 'info'; text: string } {
@@ -65,8 +65,8 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
       :loading="busy && !results.length"
       row-key="name"
       stripe
-      height="360"
-      empty-text="等待首批探测结果…"
+      max-height="360"
+      empty-text="等待首批探测结果"
       class="batch-table"
     >
       <template #status="{ row }">
@@ -88,13 +88,15 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
 </template>
 
 <style scoped>
-.batch-head { display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 0.75rem; }
-.batch-readout { margin: 0; font-size: 0.85rem; color: var(--el-text-color-secondary); }
-.batch-readout b { font-family: var(--mono); color: var(--ink); }
-.batch-readout .ok { color: var(--el-color-success); }
-.batch-readout .bad { color: var(--el-color-danger); }
-.sep { margin: 0 0.35rem; opacity: 0.5; }
+.batch-head { display: flex; flex-direction: column; gap: var(--gap-2); margin-bottom: var(--gap-2); }
+.batch-readout { margin: 0; font-size: var(--fs-aux); color: var(--mist); }
+.batch-readout b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+/* 通/败是探测结果，不是涨跌：走状态色，不借 --up / --down（D1） */
+.batch-readout .ok { color: var(--info); }
+.batch-readout .bad { color: var(--warn); }
+.sep { margin: 0 var(--gap-1); color: var(--rule); }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.is-fail { color: var(--el-color-danger); }
-.batch-table { min-height: 360px; }
+.is-fail { color: var(--warn); }
+/* 高度内容驱动：结果少时表就矮，不再用 min-height 撑出 360px 空表 */
+.batch-table { min-height: 0; }
 </style>

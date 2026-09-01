@@ -8,6 +8,7 @@ from src.ops.infrastructure.store_helpers import (
     JOB_KINDS,
     OpsError,
     RUN_STATUSES,
+    _now,
     dumps,
     loads,
     new_id,
@@ -26,13 +27,24 @@ class OpsJobsMixin:
         if kind not in JOB_KINDS:
             raise OpsError(f"未知任务类型：{kind}（可选 {list(JOB_KINDS)}）")
         job_id = new_id("JOB")
+        created = _now()
         with self._transaction() as cursor:
             try:
                 cursor.execute(
                     "INSERT INTO jobs(id, name, kind, cron, config_json, enabled,"
                     " created_at, updated_at)"
-                    " VALUES(?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))",
-                    (job_id, name, kind, cron, dumps(config or {}), 1 if enabled else 0),
+                    " VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        job_id,
+                        name,
+                        kind,
+                        cron,
+                        dumps(config or {}),
+                        1 if enabled else 0,
+                        # created_at / updated_at 传同一个值：新建这一刻两者本就相等。
+                        created,
+                        created,
+                    ),
                 )
             except sqlite3.IntegrityError as exc:
                 raise OpsError(f"任务名已存在：{name}") from exc
@@ -64,7 +76,8 @@ class OpsJobsMixin:
                 params.append(value)
         if not assignments:
             return False
-        assignments.append("updated_at = datetime('now')")
+        assignments.append("updated_at = ?")
+        params.append(_now())
         where = ["id = ?"]
         where_params: list[Any] = [job_id]
         if expected_name is not None:
@@ -133,11 +146,12 @@ class OpsJobsMixin:
         """按名称创建或更新任务（托管同步任务用）。"""
         # 托管任务可由多个进程在启动时同时确保。先查再建会让其中一方撞上
         # jobs.name 的唯一约束，因而必须把决策收敛为单条 upsert。
+        moment = _now()
         with self._transaction() as cursor:
             cursor.execute(
                 """
                 INSERT INTO jobs(id, name, kind, cron, config_json, enabled, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     cron = excluded.cron,
                     config_json = CASE WHEN ? THEN excluded.config_json ELSE jobs.config_json END,
@@ -151,6 +165,10 @@ class OpsJobsMixin:
                     cron,
                     dumps(config or {}),
                     1 if enabled else 0,
+                    # created_at / updated_at：upsert 命中已有行时只有 updated_at 会被采用,
+                    # 见下面的 ``updated_at = excluded.updated_at``。
+                    moment,
+                    moment,
                     1 if config is not None else 0,
                 ),
             )
@@ -164,7 +182,11 @@ class OpsJobsMixin:
 
         已有任务：只补齐缺失的配置键，不改 enabled / cron，也不还原用户调过的
         参数（与行情托管语义一致，尊重运维页开关）。
+
+        **首次创建**时分钟按租户错峰到 15:45~15:59（主租户恒为 15:45）：不然 50 个
+        租户的候选跟踪会同一分钟一起开跑，全都堵在租户线程池门口。
         """
+        from src.ops.application.job_stagger import staggered_cron
         from src.ops.infrastructure.store_helpers import (
             MANAGED_OUTCOME_CRON,
             MANAGED_OUTCOME_TRACK,
@@ -180,7 +202,7 @@ class OpsJobsMixin:
             return self.ensure_job(
                 name=MANAGED_OUTCOME_TRACK,
                 kind="outcome",
-                cron=MANAGED_OUTCOME_CRON,
+                cron=staggered_cron(MANAGED_OUTCOME_CRON),
                 config=config,
                 enabled=enabled,
             )
@@ -231,6 +253,14 @@ class OpsJobsMixin:
 
         return ensure_managed_intel_jobs(self, enabled=enabled)
 
+    def ensure_managed_intel_brief_jobs(self, *, enabled: bool = True) -> dict:
+        """确保四档「简报·*」推送任务（首次默认开启；比悟道出稿晚 10 分钟）。"""
+        from src.ops.application.ensure_intel_brief_jobs import (
+            ensure_managed_intel_brief_jobs,
+        )
+
+        return ensure_managed_intel_brief_jobs(self, enabled=enabled)
+
     @staticmethod
     def _job_row(row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)
@@ -249,10 +279,10 @@ class OpsJobsMixin:
     def set_setting(self, key: str, value: Any) -> None:
         with self._transaction() as cursor:
             cursor.execute(
-                "INSERT INTO meta(key, value, updated_at) VALUES(?, ?, datetime('now'))"
+                "INSERT INTO meta(key, value, updated_at) VALUES(?, ?, ?)"
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value,"
                 " updated_at=excluded.updated_at",
-                (key, dumps(value)),
+                (key, dumps(value), _now()),
             )
 
     def delete_setting(self, key: str) -> bool:

@@ -17,12 +17,18 @@ from src.ops.application.jobs.context import JobContext
 logger = logging.getLogger(__name__)
 
 #: 可从 Job 配置覆盖的阈值键。写死一份名单，避免把无关配置塞进阈值对象。
+#: **新增阈值必须同步登记到这里**，否则运维页上调了也不生效——判据会安静地
+#: 继续用默认值，看起来像「改了没用」，实际是这份名单没跟上。
 _THRESHOLD_KEYS = (
     "min_authoritative_ratio",
     "max_fabricated_rows",
     "max_missing_receipts",
     "lookback_days",
-    "min_last_day_rows",
+    "min_last_day_coverage",
+    "min_last_day_rows_floor",
+    "min_last_day_authoritative_ratio",
+    "max_last_day_provisional_ratio",
+    "last_day_settle_hour",
     "min_index_close",
 )
 
@@ -49,6 +55,11 @@ def execute_data_quality(config: dict[str, Any], context: JobContext) -> dict[st
     不抛异常是刻意的：体检失败不该把运维页刷红——它报的是「库需要维护」，
     不是「这次任务出错了」。判据放在 payload 的 ``blocked`` / ``alert`` 里，
     由通知链路决定推不推。
+
+    **告警必须留在返回值里**：``report`` 会原样落进 ``job_runs.result_json``，
+    而 ``alert`` / ``blocked`` 正是 ``jobs/notify._maybe_push_wecom`` 的
+    ``data_quality`` 分支唯一读的两个键。下面那条 ``logger.warning`` 只写本地
+    日志文件，指望它「通知到人」等于没人知道；两条都留着，但别把日志当告警通道。
     """
     from src.market import inspect_market_data
 

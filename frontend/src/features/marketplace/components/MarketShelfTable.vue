@@ -28,12 +28,12 @@ const tableRows = computed(() => props.rows as unknown as Record<string, unknown
 
 const columns = computed<BasicTableColumn[]>(() => {
   const cols: BasicTableColumn[] = [
-    { prop: 'kind', label: '品类', width: 100, slotName: 'kind' },
-    { prop: 'name', label: '名称', minWidth: 180, slotName: 'name' },
-    { prop: 'trust', label: '信任', width: 88, slotName: 'trust' },
-    { prop: 'badges', label: '契约', minWidth: 160, slotName: 'badges' },
-    { prop: 'description', label: '说明', minWidth: 220, showOverflowTooltip: true, slotName: 'description' },
-    { prop: 'actions', label: '操作', width: props.showRemove ? 128 : 92, align: 'right', fixed: 'right', slotName: 'actions' },
+    { prop: 'kind', label: '品类', width: 100, align: 'center', headerAlign: 'center', slotName: 'kind' },
+    { prop: 'name', label: '名称', minWidth: 180, align: 'center', headerAlign: 'center', slotName: 'name' },
+    { prop: 'trust', label: '信任', width: 88, align: 'center', headerAlign: 'center', slotName: 'trust' },
+    { prop: 'badges', label: '契约', minWidth: 160, align: 'center', headerAlign: 'center', slotName: 'badges' },
+    { prop: 'description', label: '说明', minWidth: 220, align: 'left', headerAlign: 'left', showOverflowTooltip: true, slotName: 'description' },
+    { prop: 'actions', label: '操作', width: props.showRemove ? 128 : 92, align: 'center', headerAlign: 'center', fixed: 'right', slotName: 'actions' },
   ]
   return cols
 })

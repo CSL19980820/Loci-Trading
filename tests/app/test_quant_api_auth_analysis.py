@@ -191,8 +191,12 @@ class AnalysisEndpointTests(unittest.TestCase):
 
     def test_analysis_thread_start_failure_marks_run_failed(self) -> None:
         """任务槽已落库后若线程无法启动，不能留下永远 running 的历史。"""
-        with patch("src.strategy.api.router.threading.Thread") as thread:
-            thread.return_value.start.side_effect = RuntimeError("no thread slots")
+        # 线程入口已换成租户安全的 spawn_tenant_thread（裸 threading.Thread 会把
+        # 后台分析写进主租户的运维库），所以这里 patch 的是那个包装器。
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("no thread slots")
+
+        with patch("src.strategy.api.router.spawn_tenant_thread", _boom):
             response = self.client.post("/api/analysis/compare", json={"holds": [1]})
 
         self.assertEqual(response.status_code, 503, response.text)

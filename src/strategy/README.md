@@ -14,9 +14,9 @@
 - 历史污染行（隔日写入却标成 `api:screen*`）在连 `palace.db` 时幂等改标为 `api:screen_backfill`
 
 ## 关键入口
-`StrategyEngine`（domain/base）；`screen`（可带 `on_progress`）；
+`StrategyEngine`（domain/base）；`screen`（可带 `on_progress`；盘中选今天自动 `live_overlay`：实时日 K 叠内存，不写行情库）；
 HTTP：`/api/strategies/*`、`POST /api/strategies/screen`（默认 `record_candidates=true`；多日请用异步接口）、
-`GET|POST /api/screen/run`（异步进度 + 默认入库；支持 `start`/`end` 区间 ≤31 自然日，按交易日循环通用 `screen` + 同日同池入库）、`GET /api/screen/today?date=`、`GET /api/screen/history?live_only=`（默认真选）、`GET /api/screen/history/batch`（多战法一次返回，供盘面）。
+`GET|POST /api/screen/run`（异步进度 + 默认入库；支持 `start`/`end` 区间 ≤31 自然日，按交易日循环通用 `screen` + 同日同池入库；**进度按战法分槽**：`GET` 不带参返回聚合快照 `{...当前这一个, runs: {slug: 槽}, running_strategies}`，带 `?strategy=` 只看一个；`POST /api/screen/run/cancel?strategy=` 点名停一个，省略则停全部）、`GET /api/screen/today?date=`、`GET /api/screen/history?live_only=`（默认真选）、`GET /api/screen/history/batch`（多战法一次返回，供盘面）。
 选股/回测热路径挂 `guard_strategy`（`entry_timing=open` 裸用盘中字段为 block；动态截断：列数 ≤100 全量，否则按 `LOCI_AUDIT_PANEL_SAMPLE_SIZE`（默认 200、上限 500）**分片**跑截断一致性，全覆盖任一片 block 即 fail-closed）；正式 `signals` 与观察 `watch_signals` 都接受截断一致性审计；AI 转换/Python Skill 草稿同口径 fail-closed。
 
 静态审计（`application/audit.py::audit_source`）按入场时点分档，与 Screen Formula 编译器 `_audit_entry_timing` 的白名单保持同一口径：
@@ -46,11 +46,52 @@ Screen Skill 公式战法统一走 `src.formula.compile_screen_formula()` / `eva
 - Screen Skill 适配：`application/screen_formula.py` / `screen_python.py` 把包契约映射成同一个 `StrategyEngine`
 - Python Screen Skill 的 import/compute 失败会回显诊断码、entrypoint、包内相对文件和有界 trace；不要退化为无上下文异常文本
 - Screen Skill 可声明默认 `data.universe` 与 `data.adjust`；运行请求未覆盖时由 screen/backtest 使用，并在 `data_snapshot` 回显
-- 异步进度状态：`application/screen_run.py`（内存快照，仿 bootstrap；进度日志用战法中文名，不暴露 `lugw-*` slug / `pool_id`）；交易日窗口：`application/screen_dates.py`
+- 异步选股拆成两个文件：进度槽状态机在 `application/screen_run_state.py`（内存快照，仿 bootstrap；`_STATES[tenant][strategy_slug]` **双层分片** / 两级 LRU / 按战法 running 互斥 / 按战法协作式取消旗），交易日循环的执行体在 `application/screen_run.py`（进度日志用战法中文名，不暴露 `lugw-*` slug / `pool_id`）。`screen_run.py` 原样 re-export 状态机全部符号，历史导入 `from ...screen_run import _STATES` 继续成立且是同一个对象；交易日窗口：`application/screen_dates.py`
+- **战法级多槽并发**（2026-08）：一个租户可以同时跑潜龙 / 三源 / 杨氏，各有独立进度条、日志、结果与取消旗。执行体入口 `execute_screen_run` 用 `screen_run_slot_scope(slug)` 把 ContextVar 绑到自己的槽，里面所有 `screen_run_update(...)` 无需传 strategy；`screen_run_try_begin` 只挡**同一战法**重复点击（`busy_reason='same_strategy'`），并发到顶返回 `busy_reason='tenant_limit'`。上限 `MAX_CONCURRENT_RUNS`（默认 3，`LOCI_SCREEN_MAX_CONCURRENT_RUNS` 可覆盖）——底层 `market_gate` 早就是「sync 独占写 / screen 共享读」，挡住用户的一直是这个上层单槽
 - 即时选股窗口含**今天**时，默认先 `apply_today_spot`（可用 `refresh_spot=false` 跳过），与 `job:screen` 对齐；避免盘中覆盖率个位数被体检阻断
+
+## 战法目录的租户分片
+
+`application/catalog.py` 的 `_SHARDS` **按 `current_tenant()` 分片**，一个租户一份
+`{slug: engine}` + `{slug: metadata}`。内置三个战法（`_REGISTRY`）仍然全进程共享——那是
+代码事实；Screen Skill 不是，它是从**用户私有目录** `skill_root()` 编译出来的引擎。
+
+**为什么不能用进程全局**：`POST /api/screen-skills` 任何登录用户都能调，它会
+`save_screen_package()` 写自己的 `skill_root()`，再 `refresh_screen_strategy_catalog()`
+把 `list_screen_packages()` 的结果 `replace_screen_engines()` 进目录。旧实现在这一行把租户
+维度丢了，而 `replace_screen_engines` 是 `clear()+update()` **全量替换**，所以串味是双向的：
+A 一保存战法，B 的战法当场从 `GET /api/strategies` 里消失，同时 B 看到 A 的私有战法。更重的是
+`catalog.get(slug)` 被 `application/screener.py` 与 `src/backtest/application/runner.py` 直接
+消费——**B 能跑 A 的代码**，而引擎的 `install_path` 指着 A 的租户目录。
+
+**惰性加载回调怎么工作**：进程启动时 `src/app/main.py` 只刷了主租户，别的租户的分片一开始是
+空的。`catalog` 不能 import `screen_skills`（那边已经 import 了 `catalog`，反向会成环），所以
+用**回调注入**：`screen_skills` 在 import 期调用 `catalog.set_loader(refresh_screen_strategy_catalog)`，
+`get()` / `all_strategies()` / `describe_all()` 读分片前先走 `_ensure_loaded(tenant)`——该租户
+第一次被访问时回调 loader，用**他自己的** `skill_root()` 刷一次，之后 `loaded=True` 不再扫盘。
+`replace_screen_engines()` 也会置 `loaded=True`（显式刷过就算加载过，否则下一次读会再惰性加载一遍
+把结果盖掉）。加载失败按空目录处理并写日志，不让战法列表整个 500；下一次保存/更新会自愈。
+`_LOAD_LOCK` 只串行化「加载」本身，读路径不被磁盘 IO 与包编译堵住；`_LOADING` 防 loader 重入。
+
+**LRU 上限**：`MAX_TENANT_SHARDS = 64`。已编译的 Python Screen Skill 是活的模块对象加闭包，
+50+ 租户各留一份能吃掉几百 MB，而服务器只有 1.1G（见 `application/screener.py` 顶部的内存约定）。
+超出上限时按最近使用顺序淘汰最旧的分片，被淘汰的租户下次访问重新惰性加载，语义不变、只是慢一点。
+
+同源问题的另外两处，改法一致：
+
+- `application/screen_run_state.py` 的 `_STATES`（经 `application/screen_run.py` re-export）：选股进度（含完整
+  `result.picks`）按 **`[租户][战法]` 两层**分片，外层 `MAX_TENANT_STATES = 64`、内层
+  `MAX_RUNS_PER_TENANT = 6`，**再加一道全进程总闸 `MAX_TOTAL_RUN_SLOTS = 96`**（两个上限
+  相乘不等于有界：64 × 6 = 384 份 `result.picks`，服务器只有 1.1 GB），三级 LRU 都**只淘汰
+  已结束的槽**，且绝不淘汰调用方此刻正在写的那一个。running 互斥随之细化到战法：
+  以前是进程级一把锁（A 在跑时 B 直接被判 busy = 跨租户 DoS），后来是每租户一把（同一个人
+  跑潜龙时点不动三源），现在是每「租户 × 战法」一把。后台线程一律走 `spawn_tenant_thread`，
+  裸 `threading.Thread` 会丢掉 ContextVar，把 B 的候选写进管理员的 `palace.db`。
+- `src/market/application/realtime_signals.py` 的 `_fired`：key 是 `(租户, code, rule, 交易日)`。
+  行情是全局共享事实，「谁已经被提醒过」是私人事实；带上限 `MAX_FIRED_KEYS` 与换日清理。
 
 ## README 维护
 新增/下线战法、改 Protocol、选股入口或入库默认行为时必须更新本文。
 
 ## 相关测试
-`tests/strategy/`（含 `test_persist.py`、`test_audit_sampling.py`、`test_audit_forward_peek.py`）
+`tests/strategy/`（含 `test_persist.py`、`test_audit_sampling.py`、`test_audit_forward_peek.py`、`test_tenant_catalog.py`、`test_screen_run_tenant.py`、**`test_screen_run_multi.py`**（战法级多槽并发/隔离/并发上限）、`test_screen_run_cancel.py`）；实时信号去抖的双租户回归在 `tests/market/test_realtime_signals.py`
