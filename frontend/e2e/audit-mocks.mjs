@@ -85,8 +85,35 @@ const WINRATE_SUMMARY = [
     wins: 8,
     win_rate: 57.14,
     avg_return: 1.23,
+    observing: 3,
+    sample_all: 17,
+    primary_horizon: 5,
     last_reviewed: '2026-08-28',
-    horizons: { t1: { n: 14, win_rate: 66.7 }, t3: { n: 4, win_rate: 50 }, t5: { n: 0, win_rate: 0 } },
+    horizons: {
+      t1: { horizon: 1, n: 14, avg: 0.6, win_rate: 66.7, best: 7.2, worst: -4.1 },
+      t3: { horizon: 3, n: 14, avg: 1.1, win_rate: 50, best: 9.4, worst: -6.3 },
+      t5: { horizon: 5, n: 14, avg: 1.23, win_rate: 57.14, best: 12.6, worst: -8.2 },
+      t20: { horizon: 20, n: 11, avg: 3.4, win_rate: 63.6, best: 24.1, worst: -11.5 },
+    },
+    best_horizon: { horizon: 20, n: 11, avg: 3.4, win_rate: 63.6 },
+    best_sample: {
+      code: '688697',
+      name: '纽威数控',
+      base_date: '2026-08-25',
+      base_close: 31.2,
+      return_pct: 12.6,
+      max_favorable_pct: 15.1,
+      horizon: 5,
+    },
+    worst_sample: {
+      code: '300750',
+      name: '宁德时代',
+      base_date: '2026-08-19',
+      base_close: 210.4,
+      return_pct: -8.2,
+      max_favorable_pct: 1.2,
+      horizon: 5,
+    },
   },
   {
     strategy_tag: 'qianlong-close-v3',
@@ -95,8 +122,34 @@ const WINRATE_SUMMARY = [
     wins: 5,
     win_rate: 55.5,
     avg_return: -0.4,
+    observing: 2,
+    sample_all: 11,
+    primary_horizon: 5,
     last_reviewed: '2026-08-28',
-    horizons: { t1: { n: 9, win_rate: 60 }, t3: { n: 3, win_rate: 100 }, t5: { n: 0, win_rate: 0 } },
+    horizons: {
+      t1: { horizon: 1, n: 9, avg: 0.2, win_rate: 60, best: 5.5, worst: -3.9 },
+      t3: { horizon: 3, n: 9, avg: 0.9, win_rate: 100, best: 8.1, worst: 0.4 },
+      t5: { horizon: 5, n: 9, avg: -0.4, win_rate: 55.5, best: 6.7, worst: -7.7 },
+    },
+    best_horizon: { horizon: 3, n: 9, avg: 0.9, win_rate: 100 },
+    best_sample: {
+      code: '002415',
+      name: '海康威视',
+      base_date: '2026-08-21',
+      base_close: 28.6,
+      return_pct: 6.7,
+      max_favorable_pct: 8.3,
+      horizon: 5,
+    },
+    worst_sample: {
+      code: '600519',
+      name: '贵州茅台',
+      base_date: '2026-08-14',
+      base_close: 1420.0,
+      return_pct: -7.7,
+      max_favorable_pct: 0.6,
+      horizon: 5,
+    },
   },
   {
     strategy_tag: 'yangshi-tail-v1',
@@ -106,9 +159,72 @@ const WINRATE_SUMMARY = [
     win_rate: 33.3,
     avg_return: 0.8,
     last_reviewed: '2026-08-27',
-    horizons: { t1: { n: 6, win_rate: 33.3 }, t3: { n: 2, win_rate: 100 }, t5: { n: 0, win_rate: 0 } },
+    horizons: {},
+    best_horizon: null,
+    best_sample: null,
+    worst_sample: null,
   },
 ]
+
+/** 样本明细：胜率的分母长什么样。回数组会让面板读 `.settled` 拿到 undefined。 */
+const WINRATE_SAMPLES = {
+  strategy_tag: 'sanyuan-tail-v1',
+  primary_horizon: 5,
+  settled: 14,
+  observing: 3,
+  wins: 8,
+  win_rate: 57.14,
+  avg_return: 1.23,
+  sample_confidence: 'medium',
+  truncated: false,
+  samples: [
+    {
+      candidate_id: 'CR-1',
+      code: '688697',
+      name: '纽威数控',
+      base_date: '2026-08-25',
+      base_close: 31.2,
+      returns: { t1: 2.1, t3: 5.4, t5: 12.6, t10: 14.2, t20: 24.1, t60: null },
+      alpha: { t5: 11.4 },
+      max_favorable_pct: 15.1,
+      swing_pct: 18.2,
+      note: '',
+      tier: 'core',
+      win: true,
+      primary_return: 12.6,
+    },
+    {
+      candidate_id: 'CR-2',
+      code: '300750',
+      name: '宁德时代',
+      base_date: '2026-08-19',
+      base_close: 210.4,
+      returns: { t1: -1.2, t3: -4.6, t5: -8.2, t10: -6.1, t20: 2.3, t60: null },
+      alpha: { t5: -9.1 },
+      max_favorable_pct: 1.2,
+      swing_pct: 9.9,
+      note: '',
+      tier: 'core',
+      win: false,
+      primary_return: -8.2,
+    },
+    {
+      candidate_id: 'CR-3',
+      code: '002415',
+      name: '海康威视',
+      base_date: '2026-09-02',
+      base_close: 28.6,
+      returns: { t1: 0.9, t3: null, t5: null, t10: null, t20: null, t60: null },
+      alpha: { t5: null },
+      max_favorable_pct: 1.4,
+      swing_pct: 2.2,
+      note: '短线窗口未满（待 T+3/T+5）',
+      tier: 'core',
+      win: null,
+      primary_return: null,
+    },
+  ],
+}
 
 const WINRATE_TREND = ['sanyuan-tail-v1', 'qianlong-close-v3', 'yangshi-tail-v1'].flatMap((tag) =>
   ['2026-06', '2026-07', '2026-08'].map((period) => ({
@@ -118,6 +234,7 @@ const WINRATE_TREND = ['sanyuan-tail-v1', 'qianlong-close-v3', 'yangshi-tail-v1'
     wins: 3,
     win_rate: 60,
     avg_return: 1.1,
+    source: 'candidates',
   })),
 )
 
@@ -273,6 +390,7 @@ export function auditPayloadFor(url) {
   // 需求 8 取证：这两个必须回带英文 slug 的真数据，否则页面空着等于没验
   if (path.endsWith('/winrate/summary')) return WINRATE_SUMMARY
   if (path.endsWith('/winrate/trend')) return WINRATE_TREND
+  if (path.endsWith('/winrate/samples')) return WINRATE_SAMPLES
 
   if (path.endsWith('/jobs')) return JOBS
   if (path.endsWith('/review/candidates')) return REVIEW_CANDIDATES

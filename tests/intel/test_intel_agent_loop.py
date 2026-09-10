@@ -21,7 +21,6 @@ from src.ai.application.agent import (
 )
 from src.ai.infrastructure.client import ChatResponse, LLMError, ProviderConfig, ToolCall
 from src.intel.infrastructure.mcp import McpError
-from src.intel.infrastructure.registry import probe_mcp
 
 
 class McpApiErrorTests(unittest.TestCase):

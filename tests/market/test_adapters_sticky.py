@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 from typing import Any
 import unittest
-from unittest import mock
 
 import pandas as pd
 
@@ -85,14 +84,13 @@ class SinaAdapterWrapTests(unittest.TestCase):
 
 class StickyRouteTests(unittest.TestCase):
     def tearDown(self) -> None:
-        from src.market.infrastructure.adapters.router import clear_sticky
 
         clear_sticky()
         reset_registry()
 
     def test_pins_primary_and_prefers_sticky(self) -> None:
         """粘性钉的是协作合并主源（优先序），不是 RTT 最快源。"""
-        from src.market.infrastructure.adapters.router import fetch_daily_routed, peek_sticky
+        from src.market.infrastructure.adapters.router import peek_sticky
 
         slow = _FakeAdapter("slow", delay=0.08, frame=_daily_frame(2))
         fast = _FakeAdapter("fast", delay=0.01, frame=_daily_frame(5))
@@ -139,7 +137,6 @@ class StickyRouteTests(unittest.TestCase):
         拖到和它一样慢（证券宝实测 1.7~30s/票）。抽样后多数票只付一次主源。
         """
         from src.market.infrastructure.adapters.router import (
-            fetch_daily_routed,
             should_cross_check,
         )
 
@@ -178,7 +175,7 @@ class StickyRouteTests(unittest.TestCase):
         self.assertEqual(backup.hits, 1, "抽中的票必须真的做交叉校验")
 
     def test_sticky_failure_re_races(self) -> None:
-        from src.market.infrastructure.adapters.router import fetch_daily_routed, pin_sticky
+        from src.market.infrastructure.adapters.router import pin_sticky
 
         pin_sticky(LANE_HIST_DAILY, "broken", ttl_sec=60.0)
         broken = _FakeAdapter("broken", fail=True)
@@ -193,7 +190,6 @@ class StickyRouteTests(unittest.TestCase):
     def test_enabled_prefs_filter(self) -> None:
         from unittest.mock import patch
 
-        from src.market.infrastructure.adapters.registry import enabled_adapter_ids
         from src.market.infrastructure.adapters.router import fetch_daily_routed
 
         reset_registry(
@@ -215,7 +211,6 @@ class StickyRouteTests(unittest.TestCase):
         from unittest.mock import patch
 
         from src.market.infrastructure.adapters.registry import (
-            enabled_adapter_ids,
             lane_provider_enabled,
             provider_disabled_lanes,
             provider_master_enabled,
@@ -240,7 +235,6 @@ class StickyRouteTests(unittest.TestCase):
     def test_master_switch_overrides_per_lane_prefs(self) -> None:
         from unittest.mock import patch
 
-        from src.market.infrastructure.adapters.registry import enabled_adapter_ids
 
         reset_registry([_FakeAdapter("sina", lanes=(LANE_HIST_DAILY, LANE_SPOT_BATCH))])
         config = {
@@ -255,7 +249,6 @@ class SyncRoutedTests(unittest.TestCase):
     """默认 sync 走 fetch_daily_routed（不注入 sources）。"""
 
     def tearDown(self) -> None:
-        from src.market.infrastructure.adapters.router import clear_sticky
 
         clear_sticky()
         reset_registry()

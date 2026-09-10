@@ -8,6 +8,11 @@ APScheduler / HTTP 同进程内，盘中同步若 SSL 重试拖很久，尾盘�
 - sync = 写者独占（与任何 screen/sync 互斥）
 - screen = 共享读（多路选股可并行；spot 单飞已在 market 层合并）
 这样不会出现「潜龙等三源选股 90s」这种假互斥。
+- screen 之间另有一道**内存闸门** ``screen_memory_slot``：它只是
+  ``src.shared.screen_capacity`` 的 ops 适配器——进程级同时执行的选股数默认 1
+  （``LOCI_SCREEN_JOB_CONCURRENCY``），HTTP 异步选股与 AI 助手工具占的是同一道
+  闸门（放 ops 会让 strategy/ai 为一道信号量反向依赖 ops）。读槽并行解决的是
+  WAL 读写冲突；三档 15:30 各加载一份全市场面板叠在一起，是另一件事（memcg OOM）。
 - 14:35–15:00 盘中增量（mode=full）占锁前直接跳过，避免新开一轮写库撞上
   14:50；盘中选股自己拉实时 overlay，不再依赖这次增量。日终 today_refresh
   不跳过（15:30 选股要吃定稿 spot）。
@@ -25,7 +30,7 @@ import logging
 import os
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
@@ -33,6 +38,11 @@ from zoneinfo import ZoneInfo
 
 from src.ops.application.jobs.context import JobError, JobSkipped
 from src.shared.observability import event, record_lock_wait
+from src.shared.screen_capacity import (
+    ScreenCapacityBusy,
+    screen_capacity_permit,
+    screen_permit_wait_sec,
+)
 from src.shared.tenancy import current_tenant, is_primary_tenant
 
 logger = logging.getLogger(__name__)
@@ -442,3 +452,45 @@ def market_heavy_slot(kind: str, job_name: str) -> Iterator[None]:
                 # 变成「别人在写 + 自己在读」同时成立。
                 _restore_reader(ceded_reader, ceded_since)
         logger.info("行情重任务放锁：%s", label)
+
+
+@contextmanager
+def screen_memory_slot(kind: str, job_name: str) -> Iterator[None]:
+    """选股进程内并发上限（内存闸门）；非 screen 直接放行。
+
+    真身在 ``src.shared.screen_capacity``：HTTP 异步选股与 AI 助手也要占同一道
+    闸门，它不能只长在 ops 里。这里只剩两件 ops 自己的事——把 ``kind`` 维度的等待
+    写进 metrics，以及把 ``ScreenCapacityBusy`` 翻译成 Job 语义的 ``JobError``。
+
+    与 ``market_heavy_slot`` 分开：读写槽管的是 market.db 的 WAL 读写冲突，
+    这里管的是同时加载多份全市场面板的内存峰值。调用方先排这道队再占读槽，
+    排队中的选股不会挡住同步写者。
+    """
+    if kind != "screen":
+        yield
+        return
+    label = _slot_label(kind, job_name)
+    wait_sec = screen_permit_wait_sec()
+    started = time.monotonic()
+    with ExitStack() as stack:
+        try:
+            stack.enter_context(screen_capacity_permit(label=label, wait_sec=wait_sec))
+        except ScreenCapacityBusy as exc:
+            record_lock_wait(
+                component="screen_queue",
+                kind=kind,
+                wait_ms=max(0, int(exc.waited_sec * 1000)),
+                outcome="timeout",
+                reason="deadline",
+            )
+            raise JobError(
+                f"前面的选股占用超过 {int(wait_sec // 60)} 分钟仍未收工，"
+                f"选股「{label}」放弃排队；请到运维「执行历史」确认卡住的那条选股"
+            ) from exc
+        record_lock_wait(
+            component="screen_queue",
+            kind=kind,
+            wait_ms=max(0, int((time.monotonic() - started) * 1000)),
+            outcome="ok",
+        )
+        yield

@@ -1,4 +1,5 @@
 import { onActivated, onBeforeUnmount, onDeactivated, ref, watch } from 'vue'
+import type { Ref } from 'vue'
 import type { Router, RouteLocationNormalizedLoaded } from 'vue-router'
 
 import { getMarketBoard, getMarketSession } from '@/shared/api/quant'
@@ -8,13 +9,35 @@ import type { BoardRow } from '@/shared/types/quant'
 
 export type BoardSort = 'code' | 'turnover_desc' | 'turnover_asc'
 
+/** 行情台的公开契约：视图与测试都对着这个名字写，别去反推 useDataQueryMarket 的返回值。 */
+export interface DataQueryMarket {
+  marketQ: Ref<string>
+  liveOn: Ref<boolean>
+  industryFilter: Ref<string>
+  turnoverMin: Ref<number | null>
+  boardSort: Ref<BoardSort>
+  liveEnriching: Ref<boolean>
+  page: Ref<number>
+  pageSize: Ref<number>
+  boardRows: Ref<BoardRow[]>
+  boardTotal: Ref<number>
+  boardAsOf: Ref<string>
+  loadBoard: () => Promise<void>
+  onSearch: () => void
+  onPageSizeChange: () => void
+  openDetail: (row: BoardRow) => Promise<void>
+  /** `knownAllowed` 见实现处注释：复用调用方刚探到的 session 结果 */
+  startRefresh: (knownAllowed?: boolean) => void
+  stopRefresh: () => void
+}
+
 export function useDataQueryMarket(opts: {
   route: RouteLocationNormalizedLoaded
   router: Router
   busy: { value: boolean }
   error: { value: string }
   liveError: { value: string }
-}) {
+}): DataQueryMarket {
   const marketQ = ref('')
   /** 行情台默认叠实时；盘中自动轮询，非 live 窗口不强拉 */
   const liveOn = ref(true)
@@ -107,11 +130,17 @@ export function useDataQueryMarket(opts: {
     stopSessionTimer()
   }
 
-  function startRefresh(): void {
+  /**
+   * `knownAllowed` 让刚探测过 session 的调用方直接复用结果，省掉背靠背的第二发
+   * GET /market/session；离页回来（onActivated）不传，那时确实该重新探测。
+   */
+  function startRefresh(knownAllowed?: boolean): void {
     stopRefresh()
     if (!liveOn.value) return
     const generation = refreshGeneration
-    void refreshSessionGate().then((allowed) => {
+    const gate =
+      knownAllowed === undefined ? refreshSessionGate() : Promise.resolve(knownAllowed)
+    void gate.then((allowed) => {
       if (generation !== refreshGeneration || !liveOn.value || !allowed) return
       refreshTimer = setInterval(() => {
         if (document.hidden) return
@@ -158,7 +187,7 @@ export function useDataQueryMarket(opts: {
         if (seq !== listRequestSeq || generation !== refreshGeneration) return
         if (allowed) {
           // 先建轮询（内部 stopRefresh 只作废旧 live），再立即叠一次现价。
-          startRefresh()
+          startRefresh(allowed)
           void enrichLiveBoard()
         } else {
           stopRefresh()
@@ -232,7 +261,7 @@ export function useDataQueryMarket(opts: {
       void refreshSessionGate().then((allowed) => {
         if (generation !== refreshGeneration || !liveOn.value) return
         if (allowed) {
-          startRefresh()
+          startRefresh(allowed)
           void enrichLiveBoard()
         } else {
           stopRefresh()

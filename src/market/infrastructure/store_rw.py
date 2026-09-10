@@ -11,7 +11,9 @@ from src.market.infrastructure.store_codes import MarketError, guess_market, nor
 from src.market.infrastructure.store_quote_payload import (
     partition_valid_ohlc_rows,
     quote_payload_from_bars,
+    quote_value_columns,
 )
+from src.market.infrastructure.store_row_count import track_quote_upsert
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
 
 class MarketRwMixin:
@@ -176,24 +178,16 @@ class MarketRwMixin:
     ) -> list[tuple[Any, ...]]:
         code = normalize_code(code)
         if frame is None or frame.empty: return []
-        prepared = self._prepare_quote_frame(frame)
-        prepared, _rejected = partition_valid_ohlc_rows(prepared)
+        prepared, _rejected = partition_valid_ohlc_rows(self._prepare_quote_frame(frame))
+        if prepared.empty:
+            return []
         return [
-            (
-                row.trade_date,
-                code,
-                row.open,
-                row.high,
-                row.low,
-                row.close,
-                row.volume,
-                row.amount,
-                row.outstanding_share,
-                row.turnover,
-                source,
-                receipt_id,
+            (trade_date, code, *values, source, receipt_id)
+            for trade_date, values in zip(
+                prepared["trade_date"].tolist(),
+                zip(*quote_value_columns(prepared), strict=True),
+                strict=True,
             )
-            for row in prepared.itertuples(index=False)
         ]
 
     def _quote_payload_from_bars(
@@ -215,8 +209,9 @@ class MarketRwMixin:
         if cursor is None:
             with self._transaction() as tx:
                 return self._write_quote_payload(payload, cursor=tx)
-        cursor.executemany(
-            """
+        with track_quote_upsert(cursor, payload):
+            cursor.executemany(
+                """
                 INSERT INTO quotes_daily(trade_date, code, open, high, low, close,
                                          volume, amount, outstanding_share, turnover,
                                          source, receipt_id, fetched_at)
@@ -236,14 +231,15 @@ class MarketRwMixin:
                     receipt_id=COALESCE(excluded.receipt_id, quotes_daily.receipt_id),
                     fetched_at=excluded.fetched_at
                 """,
-            payload,
-        )
+                payload,
+            )
+        # 一批里同一交易日会重复上千次（全市场 spot 是 5500 行同一天）。日历表只关心
+        # 有哪些交易日，去重后再喂：5500 条 DO NOTHING 降到 1 条（实测 4.83 → 0.25 ms）。
         cursor.executemany(
             "INSERT INTO trading_calendar(trade_date, updated_at)"
             " VALUES(?, datetime('now')) ON CONFLICT(trade_date) DO NOTHING",
-            [(row[0],) for row in payload],
+            [(trade_date,) for trade_date in dict.fromkeys(row[0] for row in payload)],
         )
-        cursor.execute("DELETE FROM meta WHERE key = 'quotes_daily_rows_v1'")
         self._bump_revisions(cursor, "quotes")
         return len(payload)
 
@@ -309,21 +305,32 @@ class MarketRwMixin:
 
     @staticmethod
     def _prepare_quote_frame(frame: pd.DataFrame) -> pd.DataFrame:
-        """把数据源返回的列名归一，并把日期统一成 YYYY-MM-DD 文本。"""
-        out = frame.copy()
-        out.columns = [str(col).strip().lower() for col in out.columns]
-        if "date" in out.columns:
-            out = out.rename(columns={"date": "trade_date"})
-        if "trade_date" not in out.columns:
+        """把数据源返回的列名归一，并把日期统一成 YYYY-MM-DD 文本。
+
+        只挑要落库的列重建一张帧，不先 ``copy()`` 整张源表再裁：源表常带一堆用不上
+        的列，250 行帧上实测 1.05 ms → 0.65 ms。数值列保持原 dtype，NaN → NULL 留给
+        ``quote_value_columns``——整帧 ``astype(object).where(...)`` 自身要 0.44 ms，
+        还会让随后 OHLC 校验的 ``to_numeric`` 多花 0.27 ms。
+        """
+        columns = {str(column).strip().lower(): column for column in frame.columns}
+        date_column = columns.get("date") or columns.get("trade_date")
+        if date_column is None:
             raise MarketError("行情数据缺少日期列")
-        out["trade_date"] = pd.to_datetime(out["trade_date"]).dt.strftime("%Y-%m-%d")
-        for column in PANEL_FIELDS:
-            if column not in out.columns:
-                out[column] = None
-        keep = ["trade_date", *PANEL_FIELDS]
-        out = out[keep].drop_duplicates(subset=["trade_date"], keep="last")
-        # sqlite3 不认 NaN，会存成一个不等于自身的浮点毒值；显式转 NULL。
-        return out.astype(object).where(pd.notna(out), None)
+        # 各源的 date 列要么是 ``datetime.date`` 对象（sina/tencent/eastmoney），
+        # 要么是 ``YYYY-MM-DD`` 文本（tdx/baostock/daily_merge 归一后），一律
+        # year-first。显式 format 跳过逐值推断，同时避免「按首值定格式、其余静默
+        # 变 NaT」；真遇到非 ISO 的日期这里会直接抛，而不是安静丢一整列。
+        data: dict[str, Any] = {
+            "trade_date": pd.to_datetime(
+                frame[date_column], format="ISO8601"
+            ).dt.strftime("%Y-%m-%d")
+        }
+        for field in PANEL_FIELDS:
+            # 缺列的源补 NULL；写入 SQL 的 COALESCE 保证它不会抹掉库里已有的值。
+            source_column = columns.get(field)
+            data[field] = frame[source_column] if source_column is not None else None
+        out = pd.DataFrame(data, index=frame.index)
+        return out.drop_duplicates(subset=["trade_date"], keep="last")
 
     def upsert_adjust_factors(self, code: str, frame: pd.DataFrame, *, source: str = "") -> int:
         """写入稀疏的后复权因子。frame 需含 date 与 hfq_factor 两列。"""
@@ -333,7 +340,11 @@ class MarketRwMixin:
         out.columns = [str(col).strip().lower() for col in out.columns]
         if "date" in out.columns:
             out = out.rename(columns={"date": "trade_date"})
-        out["trade_date"] = pd.to_datetime(out["trade_date"]).dt.strftime("%Y-%m-%d")
+        # 复权因子的 date 同样是 ``datetime.date``（sina 侧已 ``.dt.date``）或
+        # ``YYYY-MM-DD`` 文本；理由同 _prepare_quote_frame。
+        out["trade_date"] = pd.to_datetime(
+            out["trade_date"], format="ISO8601"
+        ).dt.strftime("%Y-%m-%d")
         payload = [
             (code, str(row.trade_date), float(row.hfq_factor), source)
             for row in out.itertuples(index=False)

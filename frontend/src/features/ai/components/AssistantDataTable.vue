@@ -4,6 +4,8 @@ import { computed, ref, watch } from 'vue'
 import { artifactShellTitle, parseTablePayload } from '../assistantArtifacts'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
+import './assistant-card.css'
+
 const props = defineProps<{ artifact: AiChartArtifact }>()
 
 const page = ref(1)
@@ -30,8 +32,8 @@ function cellText(value: unknown): string {
 </script>
 
 <template>
-  <section class="assistant-data-table" :aria-label="artifactShellTitle(artifact)">
-    <div class="assistant-data-table__heading">
+  <section class="assistant-data-table assistant-card" :aria-label="artifactShellTitle(artifact)">
+    <div class="assistant-card__heading">
       <h3>{{ artifactShellTitle(artifact) }}</h3>
       <el-tag size="small" type="info">{{ payload.rows.length }} 行</el-tag>
     </div>
@@ -71,13 +73,5 @@ function cellText(value: unknown): string {
 </template>
 
 <style scoped>
-.assistant-data-table {
-  margin-top: .15rem; padding: .55rem; border: 1px solid var(--rule);
-  border-radius: var(--radius); background: var(--panel-2); width: 100%; min-width: 0;
-}
-.assistant-data-table__heading {
-  display: flex; align-items: center; justify-content: space-between; gap: .4rem; margin-bottom: .4rem;
-}
-.assistant-data-table h3 { margin: 0; font-size: var(--ai-fs-body); }
 .assistant-data-table__pager { margin-top: .45rem; justify-content: flex-end; }
 </style>

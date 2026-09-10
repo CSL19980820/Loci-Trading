@@ -25,7 +25,6 @@ from src.research.domain.hypothesis import (
     HypothesisError,
     HypothesisEvidenceError,
     HypothesisMetric,
-    HypothesisStatus,
     HypothesisTransitionError,
 )
 from src.research.infrastructure import (

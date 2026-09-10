@@ -18,6 +18,7 @@ def build_quant_router(
     palace_db: str | None = None,
     scheduler_getter=None,
     setup_access_allowed=None,
+    auth_dependency=None,
 ) -> APIRouter:
     """构造聚合 router。依赖由 app.main 注入，便于测试时整体替换。"""
     from src.ai.api.router import build_ai_router
@@ -112,7 +113,11 @@ def build_quant_router(
         )
     )
     router.include_router(
-        build_skills_router(**common, scheduler_getter=scheduler_getter)
+        build_skills_router(
+  **common,
+     scheduler_getter=scheduler_getter,
+         auth_dependency=auth_dependency,
+      )
     )
     router.include_router(
         build_skill_watch_router(write_dependency=write_dependency, ops_db=ops_db)

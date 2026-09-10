@@ -1,0 +1,430 @@
+/* WinRatePeriodTable.css - 现代量化金融终端周期分析工坊 */
+
+.period-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  width: 100%;
+}
+
+/* ── 分周期区块 ──
+ *
+ * 与胜率结论行同一套处理：删掉 3px 渐变顶条与卡片阴影（D3），四项周期速览
+ * 从「带框的 KPI 格」压成注脚行。这一屏最缺的是垂直空间——柱图与明细表
+ * 才是要读的东西。
+ */
+.period-studio {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  width: 100%;
+}
+
+.period-studio__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding-bottom: var(--gap-1);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.period-studio__title-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+}
+
+.period-studio__title {
+  font-size: var(--fs-title);
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: var(--text-primary);
+}
+
+.period-studio__sub {
+  font-size: var(--fs-aux);
+}
+
+/* 顶部周期速览指标 Bento */
+.period-studio__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  font-size: var(--fs-micro);
+  color: var(--text-secondary);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.legend-dot--up {
+  background: var(--up);
+}
+
+.legend-dot--down {
+  background: var(--down);
+}
+
+.legend-line {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--seal);
+}
+
+.period-studio__kpi-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-3) var(--gap-4);
+  padding: var(--gap-2) 0;
+border-bottom: 1px solid var(--border-subtle);
+}
+
+/* 四项周期速览是柱图的注脚，不是四个 KPI。原来每个带一圈边框 + 底色，
+   四个格子吃掉一行高度，而它们回答的都是同一个问题「哪个周期最好」。 */
+.period-kpi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 7rem;
+}
+
+.period-kpi-k {
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.period-kpi-v {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.period-chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+  padding: var(--gap-2) 0;
+}
+
+.period-chart {
+  display: flex;
+  align-items: stretch;
+  gap: var(--gap-3);
+  min-height: 140px;
+  min-width: 100%;
+  justify-content: flex-start;
+  padding: 0 var(--gap-1);
+}
+
+.chart-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 少数据时不要撑满：两个月份各占半屏时，两根柱子会漂在大片空白里。
+     每列 6.5~9rem，靠左排列；月份多了走容器的 overflow-x 横向滚动。 */
+  flex: 0 1 6.5rem;
+  min-width: 6.5rem;
+  max-width: 9rem;
+  gap: 6px;
+  padding: 6px 4px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.chart-col:hover {
+  background: var(--surface-sunken);
+  border-color: var(--border-subtle);
+}
+
+.chart-col.is-active {
+  background: color-mix(in oklab, var(--seal) 8%, transparent);
+  border-color: var(--seal);
+}
+
+.chart-col__top {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-rate-pill {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  letter-spacing: -0.01em;
+}
+
+.chart-col__body {
+  position: relative;
+  width: 100%;
+  height: 80px;
+  display: flex;
+  justify-content: center;
+}
+
+.chart-zero-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--border-subtle);
+  border-top: 1px dashed var(--border-default);
+  z-index: 0;
+}
+
+.chart-bar {
+  position: absolute;
+  width: 28px;
+  border-radius: 3px;
+  display: flex;
+  justify-content: center;
+  transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease;
+  z-index: 1;
+}
+
+.chart-col:hover .chart-bar {
+  transform: scaleX(1.08);
+}
+
+.chart-bar--up {
+  bottom: 50%;
+  background: var(--up);
+  align-items: flex-start;
+}
+
+.chart-bar--down {
+  top: 50%;
+  background: var(--down);
+  align-items: flex-end;
+}
+
+.chart-bar-val {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  position: absolute;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.chart-bar--up .chart-bar-val {
+  top: -16px;
+}
+
+.chart-bar--down .chart-bar-val {
+  bottom: -16px;
+}
+
+.chart-col__label {
+  font-size: var(--fs-aux);
+  font-weight: 700;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.chart-col.is-active .chart-col__label {
+  background: var(--seal);
+  color: #fff;
+}
+
+/* ── 全宽详细数据表 ── */
+.period-table-section {
+  width: 100%;
+}
+
+.row-period-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-period-badge {
+  font-size: var(--fs-body);
+  font-weight: 800;
+  color: var(--text-primary);
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  letter-spacing: 0.02em;
+}
+
+.row-period-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--seal);
+}
+
+/* 胜率表现槽 */
+.row-rate-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  width: 100%;
+}
+
+.row-rate-val {
+  font-size: var(--fs-body);
+  font-weight: 800;
+  min-width: 3.6rem;
+}
+
+.row-rate-meter {
+  flex: 1;
+  max-width: 7rem;
+  height: 6px;
+  background: var(--surface-sunken);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.row-rate-fill {
+  height: 100%;
+  background: var(--seal);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* 胜负战绩双色分段条 */
+.row-dist-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  width: 100%;
+}
+
+.row-dist-bar {
+  display: flex;
+  height: 6px;
+  flex: 1;
+  max-width: 6.5rem;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-sunken);
+}
+
+.row-dist-fill--win {
+  height: 100%;
+  background: var(--up);
+}
+
+.row-dist-fill--loss {
+  height: 100%;
+  background: var(--down);
+}
+
+.row-dist-text {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.row-count-val {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.row-avg-val {
+  font-size: var(--fs-body);
+  font-weight: 800;
+}
+
+/* 联动按钮 */
+.row-action-btn {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-default);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.row-action-btn:hover {
+  background: var(--seal);
+  color: #fff;
+  border-color: var(--seal);
+}
+
+.row-action-btn.is-active {
+  background: var(--seal);
+  color: #fff;
+  border-color: var(--seal);
+}
+
+/* ── 矩阵模式 ── */
+.matrix-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.matrix-cell:hover {
+  border-color: var(--border-subtle);
+  }
+
+.matrix-cell__top {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.matrix-cell__rate {
+  font-size: var(--fs-body);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.matrix-cell__bottom {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--fs-micro);
+}
+
+.matrix-cell__count {
+  line-height: 1;
+}
+
+.matrix-cell__avg {
+  font-weight: 700;
+  line-height: 1;
+}
+
+:deep(.period-active-row) {
+  background-color: color-mix(in oklab, var(--seal) 8%, transparent) !important;
+}

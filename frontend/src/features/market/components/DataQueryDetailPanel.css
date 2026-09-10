@@ -70,24 +70,32 @@
   margin-left: auto;
 }
 
-/* 通达信/同花顺风格统一紧凑按钮组与控件 */
-.tdx-btn-group :deep(.el-radio-button__inner) {
-  height: 26px;
-  line-height: 24px;
-  padding: 0 10px;
-  font-size: 12px;
+/*
+ * 通达信/同花顺风格紧凑控件：周期/复权按钮组与均线按钮共用同一副皮肤。
+ * 曾是两段逐字重复的 8 属性，各自再手写一份 night/ink/dark 覆盖；外观差异本就由
+ * --sheet / --rule / --ink 自己切换，feature 层不该二次声明（令牌唯一真相）。
+ * 盘面比全站再紧一档，所以局部把 --ctl-h 压到 26px，而不是绕过它写死高度——
+ * 这样 EP 的 --el-component-size-small（:root 里指向 --ctl-h）也跟着一起收。
+ */
+.tdx-btn-group,
+.tdx-ma-btn {
+  --ctl-h: 26px;
+}
+.tdx-btn-group :deep(.el-radio-button__inner),
+.tdx-ma-btn {
+  height: var(--ctl-h);
+  line-height: calc(var(--ctl-h) - 2px);
+  padding: 0 var(--gap-2);
+  font-size: var(--fs-aux);
   font-weight: 500;
   border: 1px solid var(--rule);
   background: var(--sheet);
   color: var(--ink);
   transition: all 180ms ease;
 }
-html[data-appearance='night'] .tdx-btn-group :deep(.el-radio-button__inner),
-html[data-appearance='ink'] .tdx-btn-group :deep(.el-radio-button__inner),
-html.dark .tdx-btn-group :deep(.el-radio-button__inner) {
-  background: var(--sheet-alt);
-  border-color: var(--rule);
-  color: var(--ink);
+/* 按钮组靠首尾圆角连成一条，独立按钮四角同圆 */
+.tdx-ma-btn {
+  border-radius: var(--radius);
 }
 .tdx-btn-group :deep(.el-radio-button:first-child .el-radio-button__inner) {
   border-radius: var(--radius) 0 0 var(--radius);
@@ -95,40 +103,18 @@ html.dark .tdx-btn-group :deep(.el-radio-button__inner) {
 .tdx-btn-group :deep(.el-radio-button:last-child .el-radio-button__inner) {
   border-radius: 0 var(--radius) var(--radius) 0;
 }
-.tdx-btn-group :deep(.el-radio-button__inner:hover) {
-  color: var(--seal-ink);
+.tdx-btn-group :deep(.el-radio-button__inner:hover),
+.tdx-ma-btn:hover {
   border-color: var(--seal);
+  color: var(--seal-ink);
 }
 .tdx-btn-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
   background-color: var(--seal) !important;
   border-color: var(--seal) !important;
-  color: #ffffff !important;
+  /* 压在实心主色上的文字色由 --on-primary 决定；写死白字在 amber 档只有 2.53:1 */
+  color: var(--on-primary) !important;
   font-weight: 600;
   box-shadow: -1px 0 0 0 var(--seal);
-}
-
-.tdx-ma-btn {
-  height: 26px;
-  line-height: 24px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: var(--radius);
-  border: 1px solid var(--rule);
-  background: var(--sheet);
-  color: var(--ink);
-  transition: all 180ms ease;
-}
-html[data-appearance='night'] .tdx-ma-btn,
-html[data-appearance='ink'] .tdx-ma-btn,
-html.dark .tdx-ma-btn {
-  background: var(--sheet-alt);
-  border-color: var(--rule);
-  color: var(--ink);
-}
-.tdx-ma-btn:hover {
-  border-color: var(--seal);
-  color: var(--seal-ink);
 }
 .tdx-meta {
   font-size: var(--fs-kicker);

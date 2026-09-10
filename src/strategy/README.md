@@ -25,7 +25,14 @@ HTTP：`/api/strategies/*`、`POST /api/strategies/screen`（默认 `record_cand
 - `next_open` / `next_dip`：当日 OHLC 全部合法，只保留负向 `shift` 的 warn
 - 任意时点下，当日字段被 `MA/EMA/HHV/SUM…` 等**含当根**滚动函数读取 → `intraday_field_rolling` **warn**：`MA(CLOSE,5)` 的窗口右端就是信号日本身。同样写法在公式编译器里是 `E_ENTRY_TIMING_LOOKAHEAD` 硬错误，Python 侧目前只报 warn（历史豁免，见 `LAGGING_CALLS`）
 - 动态截断探针会剔掉「截断到面板末日」那一格——那等于没截断，恒等通过。选股链路面板正好停在目标交易日，因此 `probe_dates=3` 实际是 2 个真探针
+- 动态审计只保留探针日的正式/观察代码集合；下一次计算前释放上一份结果及因子矩阵，避免全量与截断结果同时驻留。探针日期、全列分片覆盖及阻断规则不变。
 - 面板里可能混着**非 DataFrame 的元数据**（`__instrument_names__` 是 dict，由 `requires_instrument_names` 触发注入）。`audit_truncation` 只截 DataFrame、元数据原样透传，与 `audit_sampling` 的分片同一约定；漏了这层会让任何声明该 flag 的战法一进选股链路就 `AttributeError`（回归测试 `test_truncation_tolerates_non_dataframe_panel_entries`）
+
+异步区间选股的数据范围由通用 `screen` 用例负责：逐日解析股票池与预热窗口后取来源证据，编排层不再预取无范围的全库 `data_snapshot`。这是逐日观察到的版本，不声称整段区间被冻结在同一个数据库快照中。 **但会在收尾时复核一次**：`screen` 返回前再读一次 `market_revision`（meta 单行查询，零成本），与取证时不一致就在 `data_snapshot` 里加 `revision_changed_during_run: true` 与 `market_revision_end`。一致时不加任何字段，旧契约不变。命中这条说明面板加载期间有人写过行情库——行情读写槽本该防住选股与同步撞车，所以它是要查的信号而不是正常现象。真做统一读事务的代价（热库重建单事务重写 700 日窗口期间 WAL 无法 checkpoint）远大于收益，强复现仍沿用 research 的冻结机制。
+
+**所有**选股入口共用同一个热/全量选择判据 `src.market.hot_fallback_reason`：除近期完整性检查（窗口深度 + 末日是否跟上全量库）外，还校验从首个目标日的指标预热起点到区间末日的全部交易日；历史日/区间落在热库外、预热不足或中间缺日时回退全量库。预热长度由调用方 `signal_history_bars(engine)` 算好传进去（market 不得反向依赖 strategy），策略显式 `warmup_bars` 同样生效。
+
+覆盖的五个入口：异步 `POST /api/screen/run`（`application/screen_run.py`）、同步 `POST /api/strategies/screen`（`api/router.py`）、`job:screen`（`src/ops/application/jobs/screen.py`）、Screen Skill 试跑（`application/screen_skills.py`）、助手战法工具（`src/ai/application/system_toolbus_strategy.py`，后两者经 `open_screen_store(..., trade_date=, warmup_bars=)`）。这条判据 2026-09 之前只有异步入口有，另外四个只过 `hot_unusable_reason`——那两条都是相对**今天**的判据，历史日一律放行，随后 `screener._resolve_start` 的 `max(0, len(days) - bars)` 无声钳位预热起点，选出的票少了也不报错，同步端点还默认 `record_candidates=true` 直接污染候选池胜率。改判据请只改 `hot_fallback_reason` 一处。
 
 ## 如何扩展
 新战法：实现 Protocol，放 application/，在包 `__init__` 侧效 import 注册；声明 `entry_timing`。

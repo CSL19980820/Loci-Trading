@@ -9,7 +9,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, wait
 import inspect
 import time
-from typing import Any, Sequence
+from typing import Sequence
 
 import pandas as pd
 

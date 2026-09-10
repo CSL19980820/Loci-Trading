@@ -17,9 +17,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
-        'monaco-editor-css': fileURLToPath(
-          new URL('./node_modules/monaco-editor/min/vs/editor/editor.main.css', import.meta.url),
-        ),
       },
     },
     server: {

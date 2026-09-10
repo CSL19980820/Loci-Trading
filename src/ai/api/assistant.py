@@ -5,7 +5,7 @@ from collections.abc import Callable
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.ai.application.assistant_manager import AssistantManager

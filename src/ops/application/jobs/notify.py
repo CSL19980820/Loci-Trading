@@ -184,7 +184,6 @@ def _maybe_push_wecom(
             compute_push_fingerprint,
             is_screen_pushed,
             resolve_push_day,
-            shanghai_today,
         )
 
         push_day = resolve_push_day(result)

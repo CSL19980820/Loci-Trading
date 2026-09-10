@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
 
 from src.ai.infrastructure.providers import get_model_entry, resolve_config, update_provider_models
 from src.ops import OpsError, OpsStore

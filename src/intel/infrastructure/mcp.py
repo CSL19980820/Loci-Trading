@@ -131,7 +131,8 @@ def validate_mcp_url(url: str, *, resolve: bool = False) -> str:
     normalized = str(url or "").strip().rstrip("/")
     try:
         parts = urlsplit(normalized)
-        port = parts.port
+        # urlsplit 不校验端口；只有读 .port 才会对 :99999 这类值抛 ValueError。
+        _ = parts.port
     except ValueError as exc:
         raise McpError("MCP URL 端口不合法") from exc
     host = (parts.hostname or "").casefold()

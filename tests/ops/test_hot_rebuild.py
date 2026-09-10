@@ -117,6 +117,16 @@ class HotRebuildTests(unittest.TestCase):
         self.assertEqual(_quote_count(self.hot), 12)
 
 
+def _fake_engine(**extra) -> SimpleNamespace:
+    """够 execute_screen 的存储选择用的最小引擎替身。
+
+    ``min_bars`` 不能省：热库判据要用 ``signal_history_bars(engine)`` 算出目标日的
+    预热窗口，缺了它整段 hot 选择会被 except 吞成「热库不可用」而恒回退全量库，
+    本文件里「必须走热库」的用例就变成了永远测不到热库。
+    """
+    return SimpleNamespace(name="演示", min_bars=lambda: 2, **extra)
+
+
 class ScreenUsesHotStoreTests(unittest.TestCase):
     def test_execute_screen_reads_from_hot_store(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -164,7 +174,7 @@ class ScreenUsesHotStoreTests(unittest.TestCase):
                     },
                 ),
                 patch("src.market.apply_today_spot", lambda *_a, **_k: 2),
-                patch("src.strategy.get", lambda _slug: SimpleNamespace(name="演示")),
+                patch("src.strategy.get", lambda _slug: _fake_engine()),
                 patch("src.strategy.screen", fake_screen),
             ):
                 payload = execute_screen(
@@ -229,7 +239,7 @@ class ScreenUsesHotStoreTests(unittest.TestCase):
                     },
                 ),
                 patch("src.market.apply_today_spot", lambda *_a, **_k: 2),
-                patch("src.strategy.get", lambda _slug: SimpleNamespace(name="演示")),
+                patch("src.strategy.get", lambda _slug: _fake_engine()),
                 patch("src.strategy.screen", fake_screen),
                 patch(
                     "src.market.mirror_recent_to_hot",
@@ -275,7 +285,7 @@ class ScreenUsesHotStoreTests(unittest.TestCase):
             ctx = JobContext(market_db=full_path, market_hot_db=hot_path)
             with (
                 patch("src.market.apply_today_spot", lambda *_a, **_k: 0),
-                patch("src.strategy.get", lambda _slug: SimpleNamespace(name="演示")),
+                patch("src.strategy.get", lambda _slug: _fake_engine()),
                 patch("src.strategy.screen", fake_screen),
                 patch(
                     "src.market.mirror_recent_to_hot",
@@ -330,9 +340,7 @@ class ScreenUsesHotStoreTests(unittest.TestCase):
                 patch("src.market.apply_today_spot", lambda *_a, **_k: 0),
                 patch(
                     "src.strategy.get",
-                    lambda _slug: SimpleNamespace(
-                        name="演示", requires_full_history=True
-                    ),
+                    lambda _slug: _fake_engine(requires_full_history=True),
                 ),
                 patch("src.strategy.screen", fake_screen),
                 patch("src.market.mirror_recent_to_hot", side_effect=fake_mirror),

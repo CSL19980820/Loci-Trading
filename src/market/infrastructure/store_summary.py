@@ -7,6 +7,7 @@ from typing import Any
 import sqlite3
 
 from src.market.infrastructure.store_codes import MarketError, normalize_code
+from src.market.infrastructure.store_row_count import quote_row_count
 from src.market.infrastructure.turnover_math import compute_turnover
 
 
@@ -233,36 +234,12 @@ class MarketSummaryMixin:
         }
 
     def _cached_quote_row_count(self, last_date: str) -> int:
-        """按日历末日与行情 revision 缓存行情行数，避免每次全表 COUNT。"""
-        revision_row = self.conn.execute(
-            "SELECT value FROM meta WHERE key = 'quotes_revision'"
-        ).fetchone()
-        revision = str(revision_row[0] if revision_row else "0")
-        cached = self.conn.execute(
-            "SELECT value FROM meta WHERE key = 'quotes_daily_rows_v1'"
-        ).fetchone()
-        if cached and cached[0]:
-            raw = str(cached[0])
-            parts = raw.split("|")
-            if len(parts) == 3:
-                stamp, cached_revision, count_s = parts
-                if stamp == last_date and cached_revision == revision:
-                    try:
-                        return int(count_s)
-                    except ValueError:
-                        pass
-        count = int(self.conn.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0])
-        with self._transaction() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO meta(key, value, updated_at)
-                VALUES('quotes_daily_rows_v1', ?, datetime('now'))
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value, updated_at = excluded.updated_at
-                """,
-                (f"{last_date}|{revision}|{count}",),
-            )
-        return count
+        """行数走 store_row_count 的「冻结基数 + 活动尾巴」缓存，写入路径增量维护。
+
+        旧版把缓存绑在 quotes_revision 上，盘中每次同步都会失效，随后一次 coverage 要
+        全表 COUNT（生产 1,664 万行冷读 26～30 s）。现在稳态只读一行 meta + 一次主键范围计数。
+        """
+        return quote_row_count(self, last_date)
 
     def market_distribution(self, trade_date: str | None = None) -> dict[str, Any]:
         """全市场真实涨跌分布统计（跌停/各跌幅档/平/各涨幅档/涨停以及总家数）。"""

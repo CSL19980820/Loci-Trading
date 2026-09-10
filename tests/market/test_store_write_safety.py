@@ -150,3 +150,41 @@ class TestShareInferenceRefusesDirtyRows:
         ).fetchone()
         assert row[0] is None
         assert row[1] is None
+
+
+def test_upsert_drops_rows_that_violate_ohlc_bounds(store: MarketStore) -> None:
+    """四价自相矛盾的 K 线不许落库。
+
+    库里一根 ``high < close`` 的日 K 不会让任何人报错：形态识别、涨跌幅、回测
+    都照算，只是答案是错的。这条钉住 ``partition_valid_ohlc_rows`` 的每一条边界，
+    包括「一字板四价相等仍然合法」——判据写成严格不等号就会把涨停板整片丢掉。
+    """
+    frame = pd.DataFrame(
+        [
+            # 一字板：四价相等，合法
+            {"date": "2026-08-03", "open": 10.0, "high": 10.0, "low": 10.0, "close": 10.0},
+            {"date": "2026-08-04", "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.5},
+            # high 低于 close
+            {"date": "2026-08-05", "open": 10.0, "high": 10.4, "low": 9.0, "close": 10.5},
+            # high 低于 open
+            {"date": "2026-08-06", "open": 10.6, "high": 10.4, "low": 9.0, "close": 10.0},
+            # low 高于 close
+            {"date": "2026-08-07", "open": 10.3, "high": 11.0, "low": 10.2, "close": 10.1},
+            # low 高于 open
+            {"date": "2026-08-10", "open": 9.9, "high": 11.0, "low": 10.2, "close": 10.5},
+            # 非正价
+            {"date": "2026-08-11", "open": 10.0, "high": 11.0, "low": 9.0, "close": 0.0},
+            # 缺价
+            {"date": "2026-08-12", "open": 10.0, "high": 11.0, "low": 9.0, "close": float("nan")},
+        ]
+    )
+
+    assert store.upsert_quotes("600519", frame, source="test") == 2
+
+    stored = [
+        str(row[0])
+        for row in store.conn.execute(
+            "SELECT trade_date FROM quotes_daily ORDER BY trade_date"
+        )
+    ]
+    assert stored == ["2026-08-03", "2026-08-04"]

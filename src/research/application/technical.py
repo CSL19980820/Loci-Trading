@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-from src.shared.clock import utc_now as _now
 import hashlib
 import json
 from typing import Any

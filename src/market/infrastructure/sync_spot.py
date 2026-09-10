@@ -104,6 +104,20 @@ _SpotRefreshKey = tuple[str, str, int, str]
 _SPOT_REFRESH_FLIGHTS: dict[_SpotRefreshKey, _SpotRefreshFlight] = {}
 
 
+def _quote_number(source: Mapping[str, Any], name: str, fallback: float) -> float:
+    """取一个数值字段；缺失 / 非数 / NaN 一律回落。
+
+    提到模块级而不是留在循环体里：全市场 spot 一次 5500 行，循环内 ``def`` 每行
+    造一个只用六次的函数对象；而且闭包捕获 ``quote`` 会让静态检查无法判断它是
+    否延迟调用（ruff B023），把一个真 bug 的形状留在了没有 bug 的地方。
+    """
+    try:
+        value = float(source.get(name, fallback))
+    except (TypeError, ValueError):
+        return fallback
+    return value if pd.notna(value) else fallback
+
+
 def _live_quotes_to_spot_frame(quotes: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
     """把富行情转换为 spot 入库所需的最小 OHLCV 字段。
 
@@ -122,24 +136,16 @@ def _live_quotes_to_spot_frame(quotes: Sequence[Mapping[str, Any]]) -> pd.DataFr
         trade_date = str(quote.get("trade_date") or quote.get("date") or "").strip()[:10]
         if not trade_date:
             continue
-
-        def number(name: str, fallback: float) -> float:
-            try:
-                value = float(quote.get(name, fallback))
-            except (TypeError, ValueError):
-                return fallback
-            return value if pd.notna(value) else fallback
-
         rows.append(
             {
                 "code": str(quote.get("code") or ""),
                 "date": trade_date,
-                "open": number("open", close),
-                "high": number("high", close),
-                "low": number("low", close),
+                "open": _quote_number(quote, "open", close),
+                "high": _quote_number(quote, "high", close),
+                "low": _quote_number(quote, "low", close),
                 "close": close,
-                "volume": number("volume", 0.0),
-                "amount": number("amount", 0.0),
+                "volume": _quote_number(quote, "volume", 0.0),
+                "amount": _quote_number(quote, "amount", 0.0),
             }
         )
     return pd.DataFrame(
@@ -430,7 +436,9 @@ def _apply_today_spot_once(
         code_lookup = {raw: _safe_normalize_code(raw) for raw in raw_codes.unique()}
         spot = spot.assign(
             norm_code=raw_codes.map(code_lookup),
-            trade_day=pd.to_datetime(spot["date"]).dt.strftime("%Y-%m-%d"),
+            trade_day=pd.to_datetime(spot["date"], format="ISO8601").dt.strftime(
+                "%Y-%m-%d"
+            ),
         )
 
         trade_dates = sorted(set(spot["trade_day"].tolist()))

@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.ops.application.paper_policy.stances import (
-    SCAN_ABANDONED,
     SCAN_DOWNGRADED,
     SCAN_PENDING,
     is_scan_block_stance,

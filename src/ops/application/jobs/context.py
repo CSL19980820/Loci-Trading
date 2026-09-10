@@ -194,6 +194,12 @@ class JobContext:
     def is_timed_out(self) -> bool:
         return self._deadline is not None and monotonic() >= self._deadline
 
+    def remaining_seconds(self) -> float | None:
+        """返回当前任务还剩多少墙钟预算，供受控子进程复用。"""
+        if self._deadline is None:
+            return None
+        return max(0.0, self._deadline - monotonic())
+
     def check_cancelled(self) -> None:
         """供长循环执行器主动调用的停止门闩。"""
         if self.is_timed_out():

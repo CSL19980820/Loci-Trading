@@ -216,6 +216,15 @@ class McpUrlValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(McpError, "内网|回环|保留"):
             validate_mcp_url("https://198.18.0.140/api/mcp", resolve=False)
 
+    def test_out_of_range_port_is_rejected(self) -> None:
+        """urlsplit 不校验端口，只有读 .port 才抛 ValueError。
+
+        这条断言钉住 validate_mcp_url 里那次看似多余的属性访问：删掉它，
+        ``:99999`` 会被当成合法地址一路放到 httpx。
+        """
+        with self.assertRaisesRegex(McpError, "端口不合法"):
+            validate_mcp_url("https://example.com:99999/mcp")
+
 
 class RegistryTests(unittest.TestCase):
     def setUp(self) -> None:

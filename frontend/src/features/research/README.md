@@ -4,6 +4,10 @@
 
 - `ResearchPanel.vue`：标的、预算、质量快照、来源回执、21 维状态和显式归档，并编排可审计回测与假设面板。
 - `components/ResearchBacktestPanel.vue`：所有研究回测提交前都校验完整 train/OOS 和日期边界；严格 PIT 额外校验历史股票池标识。面板异步轮询 job，读取 run/workflow、查看 artifact manifest 并发起 replay；只有主回测、随机对照、训练和 OOS 全部匹配才显示回放通过。
+  **已拆**（607 → 390 行，仓库 600 行硬规则）：job 轮询与 replay 编排抽成
+  `components/useResearchBacktestJob.ts`，「主回测 / 随机对照 / train / OOS 四者全匹配才算回放通过」
+  的状态判定抽成 `components/researchBacktestStatus.ts`。判定单独成文件是因为它是**纯函数**——
+  四项里少判一项就会把没通过的 run 显示成可上线，该有的测试点在它身上，不在轮询逻辑里。
 - `components/ResearchPublicationDialog.vue`：仅对 `awaiting_human_review` 且 `validation=passed` 的 run 记录人工签署；原样回传后端给出的 `artifact_manifest_sha256`，不在前端计算 hash，也不改变生产策略默认参数。
 - `components/ResearchRejectionDialog.vue`：以同一份服务端 manifest 摘要记录人工否决；否决与签署均不修改生产策略默认参数。
 - `components/ResearchTemporalDataPanel.vue`：显式浏览、按截止日解析和导入历史股票池快照与 PIT 事实；选择股票池只回填 `historical_universe_id`，实际日期解析仍由后端完成。

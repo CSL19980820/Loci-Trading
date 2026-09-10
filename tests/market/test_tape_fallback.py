@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from typing import Any
 from unittest.mock import patch
 
 from src.market import MarketStore, legacy_call_tool
@@ -11,7 +10,6 @@ from src.market.infrastructure.adapters.types import TAPE_LANES
 from src.market.infrastructure.tape.cache import write_tape_cache
 from src.market.infrastructure.tape.cache_provider import CachedTapeProvider
 from src.market.infrastructure.tape.local_provider import LocalTapeProvider
-from src.market.infrastructure.tape.registry import reset_registry
 from src.market.infrastructure.tape.router import route_tape
 from src.market.infrastructure.tape.wudao_provider import WudaoTapeProvider
 

@@ -8,7 +8,10 @@
 - 禁止依赖 ledger / market / review 等业务包（paths 内延迟 import 建库除外）
 
 ## 关键入口
-- `src.shared.boot_splash` — 全屏分时启动页（enter：0→缓爬，服务就绪后原生页约 1s 拉到 100% 再交接 SPA；SPA 不重复开幕；exit/error 安静落章）
+- `src.shared.boot_splash` — 全屏分时启动页的**对外门面**（enter：0→缓爬，服务就绪后原生页约 1s 拉到 100% 再交接 SPA；SPA 不重复开幕；exit/error 安静落章）。只从这里导入 `BOOT_SPLASH_REV` / `render_splash_html` / `spa_boot_splash_markup` / `handoff_to_spa`；实现按职责拆成三块（原 703 行超 600 行硬规则）：
+  - `boot_splash_assets` — CSS / JS / 文案字面量，与 `frontend/index.html` 逐字同构，被 `scripts/sync_boot_splash_index.py`（正向）与 `scripts/sync_boot_splash_from_index.py`（按正则回灌 `_CSS`）**机器读写**。改这里等于改前端样式；`_CSS` 的三引号块形状是回灌脚本的正则契约，别改写法
+  - `boot_splash_markup` — 纯函数：按 phase 拼原生 HTML 文档与 SPA 内联片段，无 IO 无线程
+  - `boot_splash_handoff` — 唯一有副作用的一段：注入 JS 等动画跑完再 `load_url`。它自带的 `_COMPLETE_BEFORE_NAVIGATION_JS` 与 `boot_splash_assets._JS` **不是同一份内容**（配色与 TIPS 各一套，前者才与当前 index.html 对齐），看着像重复但不能合并
 - `src.shared.paths` — `data_dir` / 三库路径 / `ensure_data_dir`
 - `src.shared.api_deps` — HTTP 入站共用：`missing_dependency`（缺依赖 → 503 而非 500）、`market_store` / `market_hot_store` / `ops_store` / `palace_store` 打开器、`MAX_UPLOAD_BYTES`。对各上下文一律函数内懒导入，本模块因此不静态依赖任何限界上下文
 - `src.shared.api_models` — 请求模型基类 `QuantModel`（`extra="forbid"`）与 `UniverseSpecModel`。各上下文 `api/schemas.py` 从这里继承；**不要**把具体业务 DTO 放进来
@@ -21,6 +24,7 @@
 - `src.shared.webview_cache` — 启动时清理 WebView2 HTTP/代码/GPU 缓存（保留登录态）；根目录 `GrShaderCache` 等一并清
 - `src.shared.evidence_compact` — 逐票证据落库前瘦身(`compact_job_result` / `compact_source_evidence`)。**同一个根因在三处各犯过一次**:`ops.db.job_runs.result_json` 单条 257 MB、库涨到 5.67 GB;`palace.db.candidate_reviews.evidence_json` 227 行占全库 99%;`sync` 作业当年单独修过但补丁只打在自己身上。逐票回执的权威副本在 `market.db.source_route_receipts`,别处只留失败样本 + 计数 + 出处。**幂等**——调用方常传浅拷贝、同一份证据会被反复压,不幂等会把 `receipts_total` 写成上一遍的样本数(50),真实总数当场丢失且看起来是对的。历史存量用 `scripts/compact_evidence_blobs.py` 清
 - `src.shared.observability` — opt-in correlation scope、低基数内存 metrics 与结构化日志；默认不输出、不发外部网络
+- `src.shared.screen_capacity` — 进程级选股容量许可（内存闸门）：`screen_capacity_permit(label=…, wait_sec=…, cancelled=…)` 占位、`screen_capacity_status()` 读占用。容量 `LOCI_SCREEN_JOB_CONCURRENCY`（默认 1）、排队上限 `LOCI_SCREEN_QUEUE_WAIT_SEC`（默认 20 分钟）。**容量 1 是实测值不是保守估计**：每档选股加载 4400 只 × 60 日的多字段面板，三档 15:30 并发在 3.7G 机器上会触发 memcg OOM 把整个容器打掉（进程被杀，正在跑的 Job、调度器、其他租户会话一起没）。用 `Condition` + 递增票号做 **FIFO**——`BoundedSemaphore` 按唤醒顺序放行，选股一跑十几分钟，被后到者反复插队的那位会以「前面卡住了」的假故障收场；`cancelled` 每 0.5 秒问一次，排队中点「停止」不用干等到 20 分钟；同线程重入直接放行。放 shared 是因为 Job 执行器（ops）、HTTP 异步/同步选股（strategy）、AI 助手选股工具（ai）要占**同一道**闸门，放 ops 会给 strategy/ai 造出反向依赖边。同步 HTTP 与 AI 工具容量已满时快速返回，异步 HTTP 与 Job 允许可取消排队；等待 metrics 由调用方按自己的维度记（ops 侧在 `screen_memory_slot` 里记 `component="screen_queue"`）。
 - `src.shared.desktop_shell.apply_webview2_browser_arguments` — 默认 `LOCI_WEBVIEW_DISABLE_GPU=1` 缓解 `STATUS_BREAKPOINT`
 - `src.shared.desktop_shell.run_desktop_shell` — 主窗导航等待 `/api/health`；若 uvicorn 线程已退出则立刻失败（不再干等 90s）
 
@@ -45,4 +49,4 @@
 改路径解析优先级或布局约定时必须更新本文。
 
 ## 相关测试
-`tests/shared/`（含 `test_boot_splash.py`、`test_observability.py`，以及 `test_paths.py`、`test_single_instance.py`、`test_webview_cache.py`、`test_desktop_prefs.py`、`test_peek_dock.py`）
+`tests/shared/`（含 `test_boot_splash.py`、`test_observability.py`，以及 `test_paths.py`、`test_single_instance.py`、`test_webview_cache.py`、`test_desktop_prefs.py`、`test_peek_dock.py`、`test_screen_capacity.py`）

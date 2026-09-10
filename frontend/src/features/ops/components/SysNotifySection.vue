@@ -122,6 +122,15 @@ function resetTemplate(): void {
       </div>
     </el-form-item>
 
+    <el-form-item label="低吸观察">
+      <div class="preset-wrap">
+        <el-switch v-model="screenTemplate.show_watch_picks" />
+        <span class="switch-hint">
+          关＝推送不显示观察票（不计正式胜率的那批），正式空时直接显示「暂无符合条件的标的」
+        </span>
+      </div>
+    </el-form-item>
+
     <template v-if="isCustom">
       <el-row :gutter="12">
         <el-col :xs="24" :md="12">
@@ -267,7 +276,8 @@ function resetTemplate(): void {
   min-width: 0;
 }
 
-.fail-label {
+.fail-label,
+.switch-hint {
   margin-left: 1px;
   font-size: var(--fs-aux);
   color: var(--mist);

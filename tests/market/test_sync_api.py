@@ -1,10 +1,8 @@
 """市场同步 HTTP 契约：同步完成语义、执行闸门与错误恢复。"""
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tempfile
-import threading
 import unittest
 from unittest.mock import patch
 

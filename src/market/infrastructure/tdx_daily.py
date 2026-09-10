@@ -461,7 +461,10 @@ def _rows_to_frame(rows: list[dict]) -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     if "datetime" not in frame.columns:
         return _empty_frame()
-    stamp = pd.to_datetime(frame["datetime"], errors="coerce")
+    # pytdx 的 bar 里 ``datetime`` 是 ``YYYY-MM-DD HH:MM`` 文本（日线固定 15:00），
+    # year-first。显式 format 省掉逐值推断，也避免推断错格式后整列静默变 NaT——
+    # 下面 dropna 会把它们当成「源没给数据」丢掉，比不优化坏得多。
+    stamp = pd.to_datetime(frame["datetime"], format="ISO8601", errors="coerce")
     out = pd.DataFrame({"date": stamp.dt.strftime("%Y-%m-%d")})
     for column in ("open", "high", "low", "close"):
         out[column] = pd.to_numeric(frame.get(column), errors="coerce")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 import tempfile
 import time
@@ -9,7 +10,7 @@ from unittest import mock
 import numpy as np
 import pandas as pd
 
-from src.market.infrastructure.store import MarketStore, MarketError, normalize_code, to_sina_symbol
+from src.market.infrastructure.store import MarketStore
 
 
 def _quotes(dates: list[str], base: float = 10.0) -> pd.DataFrame:
@@ -112,7 +113,6 @@ class IncrementalSyncTests(unittest.TestCase):
     def test_spot_row_does_not_hide_a_history_gap(self) -> None:
         """断档要按库内最后一根定稿日 K 算，不能按被 spot 推到今天的水位算。"""
         from datetime import date, timedelta
-        from unittest import mock
 
         from src.market.infrastructure.sync import sync_quotes
 
@@ -149,7 +149,6 @@ class IncrementalSyncTests(unittest.TestCase):
         self.assertEqual(routed.call_args.kwargs["recent_bars"], 65)
 
     def test_force_ignores_the_watermark(self) -> None:
-        from datetime import date
         from src.market.infrastructure.sync import sync_quotes
 
         self.store.set_watermark("600519", status="ok")
@@ -172,6 +171,97 @@ class IncrementalSyncTests(unittest.TestCase):
             with_today_spot=False,
         )
         self.assertEqual(len(calls), 1)
+
+
+class NewListingSyncTests(unittest.TestCase):
+    """上市日尚无定稿日 K 时不应把新股报成来源故障。"""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.db = Path(self.temp.name) / "market.db"
+        self.store = MarketStore(self.db)
+        self.list_date = date.today().isoformat()
+        self.store.upsert_instruments(
+            [
+                {
+                    "code": "301689",
+                    "name": "N电科思仪",
+                    "market": "SZ",
+                    "board": "创业板",
+                    "instrument_type": "STOCK",
+                    "list_date": self.list_date,
+                }
+            ]
+        )
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.temp.cleanup()
+
+    def test_listing_day_without_history_is_soft_skipped(self) -> None:
+        from src.market.infrastructure.sync import sync_quotes
+
+        with mock.patch(
+            "src.market.infrastructure.adapters.fetch_daily_routed",
+            side_effect=AssertionError("上市日没有定稿 K 线时不应请求历史源"),
+        ) as routed:
+            report = sync_quotes(
+                lambda: MarketStore(self.db),
+                ["301689"],
+                workers=1,
+                min_interval=0.0,
+                with_factors=True,
+                with_today_spot=False,
+            )
+
+        routed.assert_not_called()
+        self.assertEqual(report.succeeded, 0)
+        self.assertEqual(report.failed, 0)
+        self.assertEqual(report.skipped, 1)
+        mark = self.store.watermark("301689")
+        self.assertIsNotNone(mark)
+        self.assertEqual(mark["status"], "ok")
+        self.assertEqual(mark["source"], "listing_calendar")
+        from src.market.infrastructure.sync import _watermark_is_fresh
+
+        self.assertFalse(
+            _watermark_is_fresh(mark, self.list_date),
+            "上市日跳过水位不能把下一轮历史同步短路掉",
+        )
+        receipt = self.store.conn.execute(
+            "SELECT state, unresolved, error FROM source_route_receipts"
+            " WHERE code = '301689' ORDER BY generated_at DESC LIMIT 1"
+        ).fetchone()
+        self.assertEqual(receipt[0:2], ("skipped", 0))
+        self.assertIn("暂无定稿日 K", receipt[2])
+        attempt = self.store.conn.execute(
+            "SELECT source_id, state, error FROM source_route_attempts"
+            " WHERE receipt_id = (SELECT receipt_id FROM source_route_receipts"
+            " WHERE code = '301689' ORDER BY generated_at DESC LIMIT 1)"
+        ).fetchone()
+        self.assertEqual(attempt[0:2], ("listing_calendar", "skipped"))
+        self.assertIn("暂无定稿日 K", attempt[2])
+
+    def test_force_still_requests_listing_day(self) -> None:
+        from src.market.infrastructure.sync import sync_quotes
+
+        with mock.patch(
+            "src.market.infrastructure.adapters.fetch_daily_routed",
+            return_value=(_quotes([self.list_date]), "tdx"),
+        ) as routed:
+            report = sync_quotes(
+                lambda: MarketStore(self.db),
+                ["301689"],
+                workers=1,
+                min_interval=0.0,
+                force=True,
+                with_factors=False,
+                with_today_spot=False,
+            )
+
+        routed.assert_called_once()
+        self.assertEqual(report.succeeded, 1)
+        self.assertEqual(report.failed, 0)
 
 
 class TodaySpotTests(unittest.TestCase):

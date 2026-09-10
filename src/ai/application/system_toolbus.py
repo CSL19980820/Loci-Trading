@@ -387,7 +387,6 @@ class SystemToolBus:
 
     def _register(self) -> dict[str, ToolSpec]:
         read = False
-        write = True
         specs = {
             "ask_user": ToolSpec(
                 "ask_user",

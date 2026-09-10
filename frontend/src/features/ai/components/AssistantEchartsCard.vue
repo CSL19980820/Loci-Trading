@@ -12,6 +12,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { artifactShellTitle, parseEchartsOption } from '../assistantArtifacts'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
+import './assistant-card.css'
+
 echarts.use([LineChart, BarChart, PieChart, ScatterChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const props = defineProps<{ artifact: AiChartArtifact }>()
@@ -47,8 +49,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="assistant-echarts-card" :aria-label="artifactShellTitle(artifact)">
-    <div class="assistant-echarts-card__heading">
+  <section class="assistant-echarts-card assistant-card" :aria-label="artifactShellTitle(artifact)">
+    <div class="assistant-card__heading">
       <h3>{{ artifactShellTitle(artifact) }}</h3>
     </div>
     <div v-if="option" ref="root" class="assistant-echarts-card__canvas" role="img" />
@@ -57,11 +59,5 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.assistant-echarts-card {
-  margin-top: .15rem; padding: .55rem; border: 1px solid var(--rule);
-  border-radius: var(--radius); background: var(--panel-2); width: 100%; min-width: 0;
-}
-.assistant-echarts-card__heading { margin-bottom: .35rem; }
-.assistant-echarts-card h3 { margin: 0; font-size: var(--ai-fs-body); }
 .assistant-echarts-card__canvas { width: 100%; height: 14rem; }
 </style>

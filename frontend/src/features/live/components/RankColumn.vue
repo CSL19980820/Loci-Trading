@@ -33,20 +33,28 @@ const props = withDefaults(
 
 // 价格跳动的 300ms 闪烁：只记上一轮价，不深拷行
 const flashMap = ref<Record<string, 'up' | 'down'>>({})
-const prevPriceMap = ref<Record<string, number>>({})
+/**
+ * 上一轮价格。**刻意不进响应式**：它只是判涨跌方向的中间量，没有任何模板读它，
+ * 包成 `ref` 只会让每帧 10 次写入白白走一遍 Proxy 的 set 拦截与依赖通知。
+ */
+let prevPrices = new Map<string, number>()
 let flashTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(
   () => props.rows,
   (rows) => {
     const next: Record<string, 'up' | 'down'> = {}
+    // 每轮按当前榜单重建：掉出榜的 code 顺带淘汰。旧版只写不删，挂机一天
+    // 这张表会攒下所有曾经上过榜的票。
+    const prices = new Map<string, number>()
     for (const row of rows) {
-      const prev = prevPriceMap.value[row.code]
+      const prev = prevPrices.get(row.code)
       if (prev !== undefined && prev !== row.price) {
         next[row.code] = row.price > prev ? 'up' : 'down'
       }
-      prevPriceMap.value[row.code] = row.price
+      prices.set(row.code, row.price)
     }
+    prevPrices = prices
     flashMap.value = next
     if (flashTimer) clearTimeout(flashTimer)
     flashTimer = setTimeout(() => {

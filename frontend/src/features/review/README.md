@@ -10,5 +10,32 @@
 - `composables/healthCheckupLogic.ts`：从 composable 提纯的无状态逻辑（对齐 `market/composables/pulseHomeLogic.ts` 的形状），单测在 `healthCheckupLogic.test.ts`。含分数/等级回退（`resolveSealScore`/`resolveSealGrade`）、落点判定（`phaseForReport`/`planIsActionable`）、目录裁剪与回放顺序（`effectiveCatalog`：空仓阻断且核心检查没往下跑时不摆核心项 / `revealSequence`）、标题与副标题文案（`checkupHeadline`/`checkupSubtitle`）、进度映射（`scanHeartbeatSnap`/`revealProgressSnap`/`softBootstrapPercent`/`bootstrapProgressDetail`/`bootstrapDoneMessage`）与 instruments 超时判定（`isInstrumentsStalled` + `INSTRUMENTS_STALL_MESSAGE`）。
 - `composables/healthCheckupModel.ts`：`autoFixable` / `isAutoRepairAction`；清单行与一键计划只收真实可执行动作；`normalizeHealthReport` 始终按 AUTO 动作重建 `repair_plan`，避免旧后端把 Job 时效标成 `sync` 误触发全量 bootstrap。
 - `components/HealthCheckList.vue`：idle 待检按 `group` 分组成紧凑清单（组名小标题 + check-row）；结果按阻断→提示分组；一键修复/勾选只认 `autoFixable`（人工项走「去处理」）。
-- `WinRateView.vue`：胜率；顶栏为 `PageToolbar`（读数「综合胜率/样本数/T+5 均收益」由主表已加载行汇总、不另发请求；口径全文进 ⓘ）；主表所在 Sheet 无标题（下面就是胜率表）；战法列/趋势表头/check-tag 一律 `strategyShortLabel`，slug 只留在 row-key 与调试 tooltip；主表为精选候选 T+1/T+3/T+5（T+5 为主），无候选回退手工复盘；趋势区仍为复盘按月/周，粒度切换在该 Sheet actions 内
+- `WinRateView.vue`：胜率，**两层**。顶栏 `PageToolbar` 给全局读数（综合胜率/样本数/T+5 均收益，由已加载行汇总、不另发请求），口径全文进 ⓘ；`PageTabs` = 「综合对比 + 每个战法」（badge 是 T+5 样本数），分周期粒度选择器放 tabs `trailing`，两层共用。
+  - **综合层**（默认）：`components/WinRateCompareTable.vue` 横向比各战法——胜率单元格采用现代化双层量化指示（大号数值 + 进度条 + 样本分子分母刻度），最佳持有期采用精美决策胶囊（`T+N` 药丸 + 胜率 + 均收益），行尾配下钻指引动效（`→`），整行可点进详情。下方是 `components/WinRatePeriodTable.vue` 的 `matrix` 形态（周期 × 战法），以结构化微单元格呈现胜率与盈亏热力。
+  - **单战法层**：`components/WinRateStrategyPanel.vue`——顶部**一行结论**（T+N 胜率大数字 + 置信度徽章 + 四项口径注脚 + 推导公式）；三张洞察卡（最佳样本 / 最差样本 / 最佳持有期）；左侧各持有期表现（最佳档行底微染）与右侧样本明细（状态 Tag、等宽涨跌染色）；下方为 `WinRatePeriodTable` 的 `single` 形态。样本按 tag 懒加载并缓存，「刷新」清缓存。
+  - 战法名一律 `strategyShortLabel`，slug 只留在 row-key、tab name 与调试 tooltip；分周期与主表**同源**（精选候选 T+5 按选出日聚合），旧版读手工 `reviews`、线上 0 行，那张表永远空着
 - `ReviewCenterView.vue`：候选验证列含 T+1/3/5/10/20/60；「精选短线兑现」标题与胜率卡片已删（压成 tabs 尾部行内读数），「当初否决、事后大涨」保留但压成与列表同行的 kicker
+
+### 胜率屏的装饰禁令（2026-09 重做，用户反馈「浓浓 AI 味各种线条」）
+
+重做前这一屏有 **7 条纯装饰线**与 3 个 emoji，垂直空间被它们吃掉，两张真正要读的表被挤出视口（用户原话「无法全部展示」）。逐条清掉了：
+
+| 删掉的东西 | 位置 | 为什么它是装饰 |
+|---|---|---|
+| 3px 渐变顶条 ×2 | `.wr-hero::before`、`.period-studio::before` | 不承载任何状态，纯色块 |
+| 卡片顶部色条 ×3 | `.wr-card--best/worst/horizon::before` | 卡内数字已经是涨跌色，色条是第二遍说同一件事 |
+| 胜率进度条 | `.wr-hero__meter-*` | 数字已经写了 50.0%，条形不增加信息 |
+| 表格内每行进度条 | `.wr-mini-meter` | 同上 ×6 行 |
+| 最佳行左侧色条 | `:deep(.is-best-horizon td:first-child)::before` | 行内已有「最佳」文字标签，改成行底 5% 微染 |
+| 公式条的灰底 + 蓝左边框 | `.wr-formula-bar` | 给一句说明文字配了两条装饰线 |
+| emoji 图标 | `🚀` `🛡️` `⭐` `📈` | 金融工作台不用 emoji；标签文字已经说清是什么 |
+| 柱子渐变 + 彩色投影 | `.chart-bar--up/down` | 柱子表达「涨跌 + 幅度」，渐变与投影都不承载信息 |
+| 卡片 hover 抬起 | `.wr-card:hover { transform }` | 卡片不可点，抬起是假的可交互暗示 |
+| 四处 `box-shadow` | hero / card / block / studio | 违反 D3：业务卡片不挂阴影 |
+| 三处 `rgba(0,0,0,.0x)` 阴影 | `.filter-pill.is-active` 等 | 写死的黑在 night/ink 两档完全不可见，选中态在深色下等于没反馈；改用边框 |
+
+同时把两处「KPI 卡片」压成注脚行（`.wr-summary__facts`、`.period-studio__kpi-bar`）：计算口径 / 结算进分母 / 盈利样本 / 窗口观察中这四项是**胜率的注脚**，不是四个独立 KPI，各带一圈边框只会吃掉一整行高度。参见 business-ui 的那条：不要加只重复表格计数的 KPI 卡。
+
+**改这一屏之前先问一遍**：要加的这条线/色块/图标，能不能被「它旁边的数字」替代？能的话就不要加。层次交给排版（字号、字重、颜色、留白），不交给边框与色条。
+
+验证口径：真机 Chromium 1568×900 + 代表性 fixture（含长中文名、观察中样本、负均收益 + 正胜率），明暗两档取 computed 值核对——全部走令牌，零硬编码色值，所以两档同时成立。

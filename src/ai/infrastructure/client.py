@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 import json
 import logging
 import re
-from typing import Any, Iterator
+from typing import Any
 
 import httpx2
 

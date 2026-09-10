@@ -152,6 +152,7 @@ export {
 export {
   getCandidateOutcomes,
   getPlanOutcomes,
+  getWinRateSamples,
   getWinRateSummary,
   getWinRateTrend,
 } from '@/shared/api/quant_review'

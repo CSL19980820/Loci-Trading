@@ -7,7 +7,6 @@ import time
 from typing import Any
 
 from src.ops.application.jobs.context import (
-    default_palace_db,
     JobContext,
     JobError,
     _llm_meta,

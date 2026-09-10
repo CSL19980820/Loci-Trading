@@ -50,7 +50,7 @@ def _http_get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
         text = response.text.strip()
     try:
         return response.json()
-    except ValueError:
+    except ValueError as exc:
         # QQ 的 me 接口不带 fmt 时返回 `callback( {...} );`——这里兜一层，
         # 但正常路径应该永远带 fmt=json。
         start = text.find("{")
@@ -59,7 +59,9 @@ def _http_get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
             import json
 
             return dict(json.loads(text[start : end + 1]))
-        raise ProviderError("unknown", "bad_payload", f"非 JSON 响应：{text[:120]}")
+        raise ProviderError(
+            "unknown", "bad_payload", f"非 JSON 响应：{text[:120]}"
+        ) from exc
 
 
 def _env(name: str) -> str:

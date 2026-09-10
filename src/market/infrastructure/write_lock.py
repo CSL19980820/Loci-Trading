@@ -309,6 +309,12 @@ def market_write_lock(db_path: Path | str, *, label: str = "write") -> Iterator[
                         "market_write_lock_busy",
                         fields={"wait_ms": wait_ms, "label": str(label)[:64]},
                     )
+                    # 刃掉隐式异常链：这里的 FileExistsError 只是「锁文件已存在」这个
+                    # 等锁信号，不是故障。链上去，CLI 那条直接把本异常打给用户的路径
+                    # 会把 data 目录绝对路径印进 stderr，还让人误以为文件系统坏了；
+                    # 而排障真正要的 wait_ms/label 上面 record_lock_wait 与 event
+                    # 已经结构化记过。上层 sync_spot / ops.jobs.sync 的有意包装仍走
+                    # from exc，不受影响。
                     raise MarketWriteBusy(
                         _busy_text(
                             holder=f"其它进程（{holder or '未知'}）",
@@ -316,7 +322,7 @@ def market_write_lock(db_path: Path | str, *, label: str = "write") -> Iterator[
                             label=str(label),
                             waited_sec=time.monotonic() - started,
                         )
-                    )
+                    ) from None
                 time.sleep(0.1)
 
         # ---- 从这里起 fd 与锁文件都归我们;每一条出口都必须把两样一起还回去 ----

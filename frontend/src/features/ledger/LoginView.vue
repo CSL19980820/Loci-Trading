@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
@@ -92,6 +92,13 @@ function startResendCountdown(): void {
     }
   }, 1000)
 }
+
+// 倒计时唯一的自然清理路径是「归零」，但登录成功会立刻 router.replace 卸载本页，
+// 定时器会继续对已卸载组件的 ref 写最多 60 次，并吊住整个 setup 作用域。
+onBeforeUnmount(() => {
+  if (resendTimer) clearInterval(resendTimer)
+  resendTimer = null
+})
 
 function targetRedirect(): string {
   const raw = route.query.redirect

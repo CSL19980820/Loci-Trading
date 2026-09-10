@@ -79,13 +79,18 @@ const breadthTip = computed(
 
 <style scoped>
 .tape {
+  /*
+   * 指数格宽是「6 位报价 + 涨跌幅 + 中文简称」的实测占位，属于内容测量值而不是密度令牌，
+   * 密度令牌里没有对应的一档，故就近声明；窄屏只需重指这一个值。
+   */
+  --tape-cell-w: 150px;
+  --tape-cell-w-aux: 120px;
   flex: 0 0 auto;
   display: flex;
   align-items: stretch;
   border: 1px solid var(--rule);
-  border-radius: var(--radius-lg, 10px);
+  border-radius: var(--radius-lg);
   background: var(--sheet);
-  box-shadow: var(--shadow);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
@@ -93,12 +98,12 @@ const breadthTip = computed(
 
 .tape__cell {
   flex: 1 1 0;
-  min-width: 150px;
+  min-width: var(--tape-cell-w);
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
-  padding: 10px 18px;
+  gap: var(--gap-1);
+  padding: var(--pad-sheet-y) var(--gap-4);
   border-left: 1px solid var(--rule);
   transition: background-color 300ms ease;
 }
@@ -107,34 +112,37 @@ const breadthTip = computed(
   border-left: none;
 }
 
+/* 交互底走语义层第 5 档：四档外观自动跟随，深色档也看得见 */
 .tape__cell:hover {
-  background: rgba(74, 111, 165, 0.04);
+  background: var(--surface-hover);
 }
 
 .tape__cell--aux {
   flex: 0 0 auto;
-  min-width: 120px;
+  min-width: var(--tape-cell-w-aux);
 }
 
 .tape__k {
   font-family: var(--font);
-  font-size: 12px;
+  font-size: var(--fs-aux);
   font-weight: 500;
   line-height: 1.2;
   color: var(--muted);
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
+/* 报价与涨跌幅同基线一行：span 默认 inline，不给 display 则 gap/align-items 全部失效 */
 .tape__row {
+  display: inline-flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--gap-2);
   min-width: 0;
 }
 
 .tape__price {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 24px;
+  font-size: var(--fs-tape);
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.01em;
@@ -143,14 +151,14 @@ const breadthTip = computed(
 .tape__pct {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
 }
 
 .tape__stat {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 18px;
+  font-size: var(--fs-title);
   font-weight: 700;
   color: var(--seal-ink);
   line-height: 1.3;
@@ -166,9 +174,11 @@ const breadthTip = computed(
 }
 
 @media (max-width: 900px) {
+  .tape {
+    --tape-cell-w: 132px;
+  }
   .tape__cell {
-    min-width: 132px;
-    padding: 8px 12px;
+    padding: var(--gap-2) var(--gap-3);
   }
 }
 </style>

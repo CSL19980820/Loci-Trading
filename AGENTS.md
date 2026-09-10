@@ -59,6 +59,9 @@
 # 导入冒烟：逐个 import src/** 与 cli/**。比 compileall 严格，能抓出「语法对但
 # 缩进错位」的代码（AI 批量生成的真实失败模式）。
 .\.venv\Scripts\python.exe tools\import_smoke.py
+# ruff F 类硬门禁（CI job `python-quality`）：不用真 import 就能全仓扫一遍，
+# 抓 `SyntaxError` 与未定义名字。本轮就是它抓出 paper_eod_bars.py 用了没定义的 logger。
+.\.venv\Scripts\python.exe -m ruff check --select F src cli tests
 cd frontend; bun install; bun run typecheck; bun run test; bun run build
 # 可选：bun run test:e2e（需 bunx playwright install chromium）；bun run build:rolldown
 .\.venv\Scripts\python.exe loci.py
@@ -68,11 +71,14 @@ python tools\reindent.py <file> [<file> ...]
 # 写大段 Python 时的防走样写法见 tools\README.md（缩进编码 + enc2py.py）
 ```
 
-CI（`.github/workflows/ci.yml`）共 7 个 job：`python`（`pytest` + `lint-imports`）、`frontend`（`bun install` + `typecheck` + `test` + `build`）、`e2e`（ubuntu + Chromium 真跑）、`performance-baseline`（**硬门禁**，`tests/benchmarks/baseline_benchmark.py` 失败即红）、`uv-validation`（**硬门禁**，无 `continue-on-error` 且脚本 `set -euo pipefail`）、`python-quality`（ruff，`continue-on-error`，不阻断）、`security-reports`（pip-audit + gitleaks + zizmor，三步全 `continue-on-error` 且只上传 artifact，无人读取）。
+CI（`.github/workflows/ci.yml`）共 7 个 job：`python`（`pytest` + `lint-imports`）、`frontend`（`bun install` + `typecheck` + `test` + `build`）、`e2e`（ubuntu + Chromium 真跑）、`performance-baseline`（**硬门禁**，`tests/benchmarks/baseline_benchmark.py` 失败即红）、`uv-validation`（**硬门禁**，无 `continue-on-error` 且脚本 `set -euo pipefail`）、`python-quality`（**ruff F 类硬门禁**：`ruff check --select F src cli tests`，配置见根目录 `ruff.toml`；全量风格检查仍 report-only）、`security-reports`（**gitleaks 密钥扫描硬门禁**，假阳性登记在根目录 `.gitleaks.toml`，按假凭据字面量放行而非路径豁免；pip-audit 与 zizmor 仍 report-only，但结果写进 `$GITHUB_STEP_SUMMARY`，不再只躺在没人点开的 artifact 里）。
 
-即：**5 个硬门禁**（python / frontend / e2e / performance-baseline / uv-validation）+ 2 个 report-only。
+即：**7 个硬门禁**（python / frontend / e2e / performance-baseline / uv-validation / python-quality 的 ruff F gate / security-reports 的 secret scan）+ 3 个 report-only 步（ruff 全量、pip-audit、zizmor）。
 
-可选加速：`$env:LOCI_MARKET_DUCKDB='1'`（[ADR-002](docs/adr/ADR-002-duckdb-readonly-panel.md)）；`$env:LOCI_BACKTEST_FAST='1'`（回测旁路，失败/有细规则止损回退经典引擎）。行情详情为 ECharts 通达信式三窗（K/量/副图常驻）；日 K 约拉 320 根供 MA250，默认可视最近 60 根。
+F 类是「真错」——未使用/重复导入、未定义名、被遮蔽的导入、写了没用的局部变量。存量已清零，本地自查用
+`.\.venv\Scripts\python.exe -m ruff check --select F src cli tests`。风格类（E501/E402 等）不阻断。
+
+可选加速：`$env:LOCI_MARKET_DUCKDB='1'`（[ADR-002](docs/adr/ADR-002-duckdb-readonly-panel.md)）；旧 `$env:LOCI_BACKTEST_FAST='1'` 仅保留调用兼容，成交统一走经典引擎。行情详情为 ECharts 通达信式三窗（K/量/副图常驻）；日 K 约拉 320 根供 MA250，默认可视最近 60 根。
 
 前端 **bun**；后端仓库 `.venv`。不要编造另一套工具链。
 
@@ -151,7 +157,9 @@ CI（`.github/workflows/ci.yml`）共 7 个 job：`python`（`pytest` + `lint-im
 ### 3.6 Definition of Done
 
 - [ ] 相关测试绿；无真实 `data/` 污染
+- [ ] 新增/修改测试：做过一次**变异验证**（把被测代码改坏 → 确认测试变红 → 恢复）。本轮靠它抓出两处假绿：一处整个函数体缩进错位到 `return` 之后（0 断言在跑），一处三个断言文案互为子串（漏渲染一个被另一个掩盖）。
 - [ ] 前端改动：`bun run typecheck`（及触及逻辑时 `bun run test`）通过
+- [ ] 抽 SFC 样式到单独 CSS 文件：必须写 `<style scoped src="./x.css">`，**禁止 `@import`**（`@import` 进来的规则拿不到 scope id，选择器会漏到全站）。验收看 build 产物里有没有属性选择器，如 `WinRateView-*.css` 的 `.wr-panel[data-v-c135f6ba]`——scope id 随 SFC 内容变，认形状不认具体值。
 - [ ] 触及跨上下文导入时：`lint-imports` 通过
 - [ ] 无新超 600 行文件（或已拆分）
 - [ ] 触及的模块 `README.md` / `api/README.md` 已更新

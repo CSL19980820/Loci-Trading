@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from pathlib import Path
-from threading import Event
 from types import SimpleNamespace
 from unittest.mock import patch
 

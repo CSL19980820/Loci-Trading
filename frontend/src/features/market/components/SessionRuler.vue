@@ -117,9 +117,9 @@ const legend = '09:15 竞价 · 09:30–11:30 早盘 · 11:30–13:00 午休 · 
 .ruler {
   display: flex;
   align-items: center;
-  gap: var(--gap-2, 8px);
+  gap: var(--gap-2);
   flex: 0 0 auto;
-  padding: 0 var(--gap-2, 8px) 2px;
+  padding: 0 var(--gap-2) 2px;
 }
 
 .ruler__edge,
@@ -207,7 +207,7 @@ const legend = '09:15 竞价 · 09:30–11:30 早盘 · 11:30–13:00 午休 · 
   width: 2px;
   height: 10px;
   margin-left: -1px;
-  background: var(--stamp, var(--seal));
+  background: var(--stamp);
   animation: ruler-breathe 2.6s ease-in-out infinite;
 }
 

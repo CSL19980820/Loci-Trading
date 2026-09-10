@@ -1,6 +1,7 @@
 import type { Pick, ScreenRecorded, UniverseSpec } from '@/shared/types/screenSkill'
 
 import type { Job } from './quant-ops'
+import type { CandidateOutcome } from './quant-review'
 
 // ---- MCP server -----------------------------------------------------
 
@@ -379,6 +380,28 @@ export interface SkillWatchPreview {
 
 // ---- 胜率趋势 -------------------------------------------------------
 
+export interface WinRateHorizonStat {
+  horizon?: number
+  n: number
+  avg: number
+  win_rate: number
+  best?: number
+  worst?: number
+  sample_confidence?: string
+  caution?: string
+}
+
+/** 最佳 / 最差样本：光给个 +12% 没法复盘，必须说出是哪只票、哪天选出 */
+export interface WinRateExtremeSample {
+  code: string
+  name: string
+  base_date: string
+  base_close: number | null
+  return_pct: number | null
+  max_favorable_pct: number | null
+  horizon: number
+}
+
 export interface WinRateSummary {
   strategy_tag: string
   total: number
@@ -388,13 +411,17 @@ export interface WinRateSummary {
   last_reviewed: string
   /** candidates=精选候选 T+N；reviews=手工复盘兜底 */
   source?: 'candidates' | 'reviews' | string
-  horizons?: Record<
-    string,
-    { n: number; avg: number; win_rate: number; best?: number; worst?: number }
-  >
+  /** t1/t3/t5/t10/t20/t60；candidates 口径下全档都在 */
+  horizons?: Record<string, WinRateHorizonStat>
+  /** 样本够（≥3 条）的持有期里胜率最高者；不够就没有「最佳持有期」 */
+  best_horizon?: WinRateHorizonStat | null
+  best_sample?: WinRateExtremeSample | null
+  worst_sample?: WinRateExtremeSample | null
   observing?: number
   sample_all?: number
   primary_horizon?: number
+  sample_confidence?: string
+  caution?: string
 }
 
 export interface WinRateTrendPoint {
@@ -403,6 +430,30 @@ export interface WinRateTrendPoint {
   total: number
   wins: number
   win_rate: number | null
+  avg_return?: number | null
+  /** candidates=候选 T+N 按选出日聚合；reviews=手工复盘兜底 */
+  source?: 'candidates' | 'reviews' | string
+}
+
+/** 胜率分母的逐条证据：CandidateOutcome 再加一句「这条算不算赢」 */
+export interface WinRateSample extends CandidateOutcome {
+  win: boolean | null
+  primary_return: number | null
+}
+
+export interface WinRateSampleDetail {
+  strategy_tag: string
+  primary_horizon: number
+  /** 已走完窗口的条数 = 胜率分母 */
+  settled: number
+  /** 还在窗口里，不进分母 */
+  observing: number
+  wins: number
+  win_rate: number | null
+  avg_return: number | null
+  sample_confidence: string
+  truncated: boolean
+  samples: WinRateSample[]
 }
 
 // ---- 选股历史 -------------------------------------------------------

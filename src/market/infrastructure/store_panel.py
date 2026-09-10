@@ -132,11 +132,9 @@ class MarketPanelMixin:
         if flat.empty:
             return {field: pd.DataFrame() for field in needed}
 
-        panels: dict[str, pd.DataFrame] = {}
-        for field in needed:
-            panel = flat.pivot(index="trade_date", columns="code", values=field)
-            panel.index = pd.Index(panel.index, name="trade_date")
-            panels[field] = panel.sort_index()
+        # 日历与证券索引只编码/排序一次；逐字段 pivot 会重复这份全量工作。
+        wide = flat.pivot(index="trade_date", columns="code", values=needed)
+        panels = {field: wide[field] for field in needed}
 
         if min_bars > 0:
             reference = panels.get("close")

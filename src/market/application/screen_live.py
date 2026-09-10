@@ -270,6 +270,23 @@ def _fill_turnover(
     panels["turnover"] = _consolidate(turnover)
 
 
+def _row_number(row: Any, name: str, fallback: float) -> float:
+    """从 itertuples 行里取一个数；缺失 / 非数 / NaN / 0 一律回落。
+
+    注意 ``or fallback``——0 也回落：spot 截面里 0 开盘价意味着「源没给」而不是
+    「开在 0 元」。这是原实现的语义，搬到模块级时逐字保留。
+
+    提到模块级而不是留在循环体里：全市场截面一次 5000+ 行，循环内 ``def`` 每行
+    造一个只用六次的函数对象，而闭包捕获 ``row`` 让静态检查无法判断它是否延迟
+    调用（ruff B023）——把一个真 bug 的形状留在了没有 bug 的地方。
+    """
+    try:
+        value = float(getattr(row, name, fallback) or fallback)
+    except (TypeError, ValueError):
+        return fallback
+    return value if pd.notna(value) else fallback
+
+
 def _spot_frame_to_bars(spot: pd.DataFrame | None, today: str) -> dict[str, dict[str, float]]:
     if spot is None or spot.empty:
         return {}
@@ -290,21 +307,14 @@ def _spot_frame_to_bars(spot: pd.DataFrame | None, today: str) -> dict[str, dict
         if not code or close <= 0 or day != today:
             continue
 
-        def number(name: str, fallback: float) -> float:
-            try:
-                value = float(getattr(row, name, fallback) or fallback)
-            except (TypeError, ValueError):
-                return fallback
-            return value if pd.notna(value) else fallback
-
-        amount = number("amount", 0.0)
+        amount = _row_number(row, "amount", 0.0)
         volume = normalize_trade_volume(
-            number("volume", 0.0), amount=amount, close=close
+            _row_number(row, "volume", 0.0), amount=amount, close=close
         )
         bars[code] = {
-            "open": number("open", close),
-            "high": number("high", close),
-            "low": number("low", close),
+            "open": _row_number(row, "open", close),
+            "high": _row_number(row, "high", close),
+            "low": _row_number(row, "low", close),
             "close": close,
             "volume": volume,
             "amount": amount,

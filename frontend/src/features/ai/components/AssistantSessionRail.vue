@@ -232,9 +232,12 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
 <style scoped>
 .assistant-session-rail {
   display: flex;
-  flex: 0 0 280px;
-  width: 280px;
-  min-width: 0;
+  /*
+   * 同 AssistantTaskSidebar：shrink 因子 0 会让 min-width 失效、窄屏挤没正文区。
+   * 900px 以下由 AssistantPanel 的断点折成 48px rail，这里只兜中间地带。
+   */
+  flex: 0 1 280px;
+  min-width: 220px;
   flex-direction: column;
   border-right: 1px solid var(--rule);
   background: color-mix(in srgb, var(--panel-2) 92%, var(--ink) 2%);
@@ -242,6 +245,8 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
 }
 .assistant-session-rail.is-collapsed {
   flex: 0 0 48px;
+  /* 展开态的 min-width 会把 48px 的 rail 撑回 220px，折叠时必须清掉 */
+  min-width: 0;
   width: 48px;
   align-items: stretch;
   justify-content: stretch;

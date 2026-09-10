@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from src.intel.application.arg_clamp import clamp_mcp_arguments_with_notes
 from src.intel.infrastructure.builtin_wudao_mcp import (

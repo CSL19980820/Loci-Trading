@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.intel.api.schemas import McpProbeRequest, McpServerCreate
-from src.shared.api_deps import market_store, missing_dependency, ops_store
+from src.shared.api_deps import market_store, missing_dependency
 
 
 def build_intel_router(

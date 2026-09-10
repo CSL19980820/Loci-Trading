@@ -75,6 +75,7 @@ from src.market.infrastructure.store import MarketStore, normalize_code, to_sina
 from src.market.infrastructure.live_tape import format_tray_title
 from src.market.infrastructure.store_hot import (
     HOT_WINDOW_TRADING_DAYS,
+    hot_fallback_reason,
     hot_unusable_reason,
     hot_window_shallow,
     mirror_recent_to_hot,
@@ -234,6 +235,7 @@ __all__ = [
     "EastmoneySource",
     "HealthReport",
     "HOT_WINDOW_TRADING_DAYS",
+    "hot_fallback_reason",
     "hot_unusable_reason",
     "hot_window_shallow",
     "LANE_AUCTION_SNAPSHOT",

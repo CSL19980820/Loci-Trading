@@ -31,14 +31,12 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from datetime import date
 import logging
 import queue
 import threading
 import time
 from typing import Any, Callable, Sequence
 
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 

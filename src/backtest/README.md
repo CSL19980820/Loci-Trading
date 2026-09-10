@@ -13,6 +13,19 @@
 ## 边界
 读 market + strategy；不写 palace。
 
+## 重任务执行边界
+
+`compare` / `optimize` 的 HTTP 分析入口默认把计算交给 `spawn` 子进程（请求体的
+`execution_mode` 可显式设为 `thread`）。子进程只接收显式的 `market_db` 路径和
+当前租户标识，在自己的连接中加载行情与 Screen Skill；取消、超时、进程异常由
+父任务收口到既有 `ops.db.job_runs` 状态机，不另建内存任务表。进程槽默认 1 个，
+可用 `LOCI_BACKTEST_PROCESS_SLOTS` 调到 1–4；槽满会返回可重试的容量错误。
+
+单次 `backtest` Job 也支持 `config.execution_mode=process`。默认仍是线程，保证
+旧 CLI/测试的低延迟；需要运行大面板或参数扫描时应使用进程模式。结果会附带
+`execution.mode / worker_pid / peak_rss_bytes`（未安装 `psutil` 时 RSS 为 `null`），
+用于运维核对实际隔离是否生效。
+
 ## 关键入口
 - 成交：`run_backtest` / `backtest_strategy` / `run_backtest_fast`
 - Horizon：`run_horizon_backtest` / `backtest_strategy_horizon`
@@ -66,10 +79,10 @@
 改成交假设须同步策略 entry_timing 语义与测试；改 Horizon 标记规则须同步计划文档与 `test_horizon.py`。
 新增指标一律 application 即时算，不落权威表。
 
-### 加速旁路（可选，仅成交路径）
-- 环境变量 `LOCI_BACKTEST_FAST=1` 时走 `run_backtest_fast`（numpy 向量化批量，有止损/止盈细规则时回退经典引擎）。
-- **权威路径仍是** `engine.run_backtest`（一字板 / T+1 / 止损止盈细规则）；加速失败或配置了细规则止损时回退经典引擎。
-- 回退时 `config["fast"]` 必须**如实**写 `engine="classic"` + `fallback_reason`（`next_dip` / 止损止盈细规则 / 加速路径异常），并打一条 warning 日志。结果自称 `numpy_fast`、实际跑的是经典引擎，会让「两条路径是否一致」的复核彻底失效。只有真正走 numpy 批量时 `config["engine"]` 才是 `numpy_fast`。
+### 旧快速入口兼容
+- `LOCI_BACKTEST_FAST=1` 和公开 `run_backtest_fast` 保留，统一委托 `engine.run_backtest`。已删除重复的无止损成交循环，停牌、一字板、T+1、止损止盈及数据末尾只维护一套规则。
+- 旧入口的 `config["fast"]` 回显 `engine="classic"` 和原因；不再声称使用 `numpy_fast`，也不再用异常重跑整次回测。
+- 核心循环将信号坐标一次转换为 Python 整数，成本只算一次，无止损止盈时跳过空的逐日触价扫描。固定合成数据对照旧引擎，四种入场时点 × 四种止损止盈组合，逐笔交易与全部指标相同；未测得稳定的整体提速，不作速度承诺。
 - `entry_timing` 只能来自策略引擎，Job 参数不可覆盖成前视口径。
 - 回测加载面板后、`compute` 前跑 `guard_strategy`：小宇宙（≤100 列）全列截断一致性；大宇宙按 `LOCI_AUDIT_PANEL_SAMPLE_SIZE`（默认 200、上限 500）分片探测，任一片 block 即失败。
 - 不写 `palace.db`；不发明信号。
@@ -80,7 +93,7 @@
 - `next_dip` 的目标价由策略参数 `dip_pct` 生成（默认回撤 2%）；成交价只允许是次日开盘价或目标价。目标价一律在**执行面板**（`execution_adjust` 那一份）的价格坐标系里生成——策略若声明 `execution_adjust="none"` 而信号面板是 `qfq`，用信号面板算目标价再去比不复权最低价，两边差一个复权因子，触价判断会整体错位
 - 止损/止盈的触发只说明当天能成交，成交价另算：跳空低开穿过止损位按开盘价出（`min(open, stop)`），跳空高开越过止盈价按开盘价出（`max(open, target)`）。按限价记账会让偏差全落在最差的那批交易上
 - 一字板按方向区分：一字涨停买不进但**卖得掉**，只有一字跌停才顺延退出日。两者共用一个方向无关的掩码会系统性低估打板类策略
-- 参数扫描 / ops Job 可开 `LOCI_BACKTEST_FAST`；交付结论前应用经典路径复核关键数字
+- 参数扫描 / ops Job 直接复用统一成交引擎；旧 `LOCI_BACKTEST_FAST` 仅为兼容，不代表独立加速能力
 - 需要原始成交价的策略通过 `execution_adjust = "none"` 声明，`backtest_strategy` 会保留信号面板的复权口径并单独加载执行面板
 - 读 `performance` 时必须先读 `assumption.model`，勿与组合研究账本混谈
 

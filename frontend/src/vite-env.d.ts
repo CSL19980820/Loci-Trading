@@ -7,8 +7,6 @@ declare module '*?worker' {
   export default workerConstructor
 }
 
-declare module 'monaco-editor-css'
-
 declare module 'vue-element-plus-x/es/Thinking/index.js' {
   import type { DefineComponent } from 'vue'
   const Thinking: DefineComponent<Record<string, unknown>, object, object>

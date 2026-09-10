@@ -376,5 +376,8 @@ __all__ = [
     "events_after_latest_resume",
     "fold_run_rich_metadata",
     "public_rich_fields",
-    *_RICH_KEYS,
 ]
+# 曾经把 ``*_RICH_KEYS`` splat 进来。那七个是**载荷字段名**，不是模块级符号：
+# ``from ... import *`` 会当场 AttributeError。全仓没有 star import 所以一直没
+# 炸，但 ``__all__`` 里躺着七个不存在的名字，任何按它做反射的工具都会踩空。
+# 需要那批键名请直接读 ``public_rich_fields()``。

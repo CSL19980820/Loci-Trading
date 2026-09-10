@@ -1,6 +1,7 @@
 """数据位置和桌面运行设置 HTTP。"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,30 @@ def build_system_settings_router(
             },
         }
 
+    def _reject_when_data_dir_is_pinned() -> None:
+        """数据目录被环境变量钉住时，拒绝经接口改写。
+
+        `src.shared.paths.data_dir()` 的取值顺序是 LOCI_DATA_DIR → PALACE_DATA_DIR →
+        配置文件。生产镜像里 `ENV LOCI_DATA_DIR=/app/data` 是硬编码的，所以写进
+        loci.config.json 的值**根本不会生效**——但旧实现照样会在请求给的任意绝对
+        路径上 mkdir、写探针、建三个 SQLite 库，而生产容器以 root 跑。
+
+        2026-09 安全审查（AUTHZ-DATA-LOCATION-002，high）：这个端点只挂 write guard，
+        任何已登录租户都能调，等于「非管理员可在容器内任意路径以 root 造文件」。
+        改路径本身在这种部署下是无效操作，所以这里直接拒绝：把「静默无效 + 真实副
+        作用」换成「明确拒绝」。桌面单机不设这两个环境变量，行为不变。
+        """
+        pinned = os.environ.get("LOCI_DATA_DIR") or os.environ.get("PALACE_DATA_DIR")
+        if not pinned:
+            return
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"本部署的数据目录由环境变量固定（{pinned}），不能经接口改写。"
+                "要换目录请改部署配置后重启。"
+            ),
+        )
+
     @router.get("/api/ops/data-location", tags=["ops"])
     def get_data_location() -> dict[str, Any]:
         """当前数据目录、默认路径、是否需要初始化行情。"""
@@ -97,6 +122,7 @@ def build_system_settings_router(
         )
         if not initial_setup_allowed:
             write_dependency(request)
+        _reject_when_data_dir_is_pinned()
 
         raw = (payload.data_dir or "").strip()
         if not raw:
@@ -137,7 +163,10 @@ def build_system_settings_router(
 
     @router.post("/api/ops/desktop-shortcut", tags=["ops"])
     def post_desktop_shortcut(_write: None = write_guard) -> dict[str, Any]:
-        """在当前用户桌面创建 Loci 快捷方式。"""
+        """在当前用户桌面创建 Loci 快捷方式（仅桌面单机形态）。"""
+        # 服务端部署没有桌面；这个端点只挂 write guard，留着等于给任意租户一个
+        # 往容器文件系统写文件的入口。同一条守卫复用部署形态判断。
+        _reject_when_data_dir_is_pinned()
         try:
             from src.shared.desktop_shortcut import create_desktop_shortcut
 

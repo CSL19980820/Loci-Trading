@@ -7,7 +7,6 @@
 """
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
@@ -52,10 +51,19 @@ _ENV_KEYS = (
     # environ.get("字面量")），但导出值一样会改锁的行为，必须一起清。
     "LOCI_MARKET_WRITE_STUCK_SEC",
     "LOCI_MARKET_WRITE_DEAD_PID_GRACE_SEC",
+    # 同理：选股容量许可（src/shared/screen_capacity.py）的两条经 _env_int /
+    # _env_seconds 间接读取。开发机导出过就会让容量用例在另一档并发上跑绿——
+    # 而容量=1 这个默认值是「三档并发触发 memcg OOM 打掉整个容器」换来的。
+    "LOCI_SCREEN_JOB_CONCURRENCY",
+    "LOCI_SCREEN_QUEUE_WAIT_SEC",
     # 下面这些漏掉过：开发机导出过就会让整套测试在「另一条实现」上跑绿。
     # LOCI_BACKTEST_FAST 会让回测套走旁路引擎，
     # LOCI_PAPER_ALLOW_BYPASS_GATES 会让闸门测试在闸门已被绕过的状态下通过。
     "LOCI_BACKTEST_FAST",
+    # LOCI_BACKTEST_EXECUTION 决定回测 job 走线程还是子进程隔离
+    # （jobs/{backtest,compare,optimize}.py 三处读它）：导出成 process 会让
+    # 回测用例在另一条执行路径上跑绿，本机通过、CI 变红。
+    "LOCI_BACKTEST_EXECUTION",
     "LOCI_PAPER_ALLOW_BYPASS_GATES",
     "LOCI_SKIP_EM_INDUSTRY",
     "LOCI_SKIP_WEBVIEW_CACHE_PURGE",
@@ -191,6 +199,33 @@ def _isolate_loci_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         shutil.rmtree(data_root, ignore_errors=True)
     except Exception:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _reset_screen_capacity(monkeypatch: pytest.MonkeyPatch):
+    """选股许可是**进程级**全局，测试之间不重置就会互相卡死。
+
+    两件事：
+
+    1. 清 `_HOLDERS` / `_WAITING` / `_LOCAL`。任何一个用例把许可漏出去（线程没
+       join、断言先炸），后面所有走 `execute_screen_run` 的用例都会排队。
+    2. 把排队上限压到 10 秒（环境变量下限）。默认 1200 秒是给生产的：一个漏掉
+       许可的用例会让整套测试静默挂 20 分钟，CI 上表现为「卡住」而不是「失败」。
+    """
+    from src.shared import screen_capacity
+
+    monkeypatch.setenv("LOCI_SCREEN_QUEUE_WAIT_SEC", "10")
+    screen_capacity._HOLDERS.clear()
+    screen_capacity._WAITING.clear()
+    if getattr(screen_capacity._LOCAL, "depth", 0):
+        screen_capacity._LOCAL.depth = 0
+    yield
+    leaked = list(screen_capacity._HOLDERS.values())
+    screen_capacity._HOLDERS.clear()
+    screen_capacity._WAITING.clear()
+    if getattr(screen_capacity._LOCAL, "depth", 0):
+        screen_capacity._LOCAL.depth = 0
+    assert not leaked, f"用例漏掉了选股许可，会拖垮后续用例：{leaked}"
 
 
 def pytest_sessionfinish(session, exitstatus) -> None:  # noqa: ARG001

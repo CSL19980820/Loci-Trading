@@ -48,4 +48,22 @@ describe('wecomScreenTemplate', () => {
     expect(sameWecomScreenTemplate(a, a)).toBe(true)
     expect(sameWecomScreenTemplate(a, b)).toBe(false)
   })
+
+  it('watch section is hidden by default and shown when enabled', () => {
+    const off = previewWecomScreenTemplate(normalizeWecomScreenTemplate(), 'quant')
+    expect(off).not.toContain('低吸观察')
+    expect(off).not.toContain('000957')
+    const on = previewWecomScreenTemplate(
+      normalizeWecomScreenTemplate({ show_watch_picks: true }),
+      'quant',
+    )
+    expect(on).toContain('👀 低吸观察（不计正式胜率）')
+    expect(on).toContain('▫️ 中通客车 000957 +1.66%')
+  })
+
+  it('detects watch flag changes as dirty', () => {
+    const a = normalizeWecomScreenTemplate()
+    const b = normalizeWecomScreenTemplate({ show_watch_picks: true })
+    expect(sameWecomScreenTemplate(a, b)).toBe(false)
+  })
 })

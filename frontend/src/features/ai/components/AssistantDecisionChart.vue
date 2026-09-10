@@ -4,6 +4,8 @@ import { computed } from 'vue'
 import { candidateDecisions, decimal, percent } from '../assistantArtifacts'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
+import './assistant-card.css'
+
 const props = defineProps<{ artifact: AiChartArtifact }>()
 
 const chartData = computed<Record<string, unknown>>(() => {
@@ -28,8 +30,8 @@ function metricTone(value: number | undefined): string {
 </script>
 
 <template>
-  <section class="assistant-chart" aria-label="候选精选图">
-    <div class="assistant-chart__heading">
+  <section class="assistant-chart assistant-card" aria-label="候选精选图">
+    <div class="assistant-card__heading">
       <h3>{{ artifact.title || '候选精选图' }}</h3>
       <el-tag size="small" type="info">{{ candidates.length }} 只</el-tag>
     </div>
@@ -64,9 +66,6 @@ function metricTone(value: number | undefined): string {
 </template>
 
 <style scoped>
-.assistant-chart { margin-top: .15rem; padding: .55rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--panel-2); width: 100%; }
-.assistant-chart__heading { display: flex; align-items: center; justify-content: space-between; gap: .4rem; margin-bottom: .4rem; }
-.assistant-chart h3 { margin: 0; font-size: var(--ai-fs-body); }
 .assistant-chart__candidates { display: grid; gap: .45rem; }
 .assistant-candidate { padding: .45rem; border: 1px solid var(--rule); border-radius: var(--ai-r-chip); background: var(--paper); }
 .assistant-candidate__head { display: flex; align-items: baseline; gap: .35rem; min-width: 0; margin-bottom: .35rem; font-size: var(--ai-fs-body); }

@@ -3,18 +3,20 @@ from __future__ import annotations
 
 import logging
 from copy import deepcopy
+from datetime import date
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from src.shared import api_deps as _api_deps
 from src.shared.api_deps import (
     market_hot_store,
     market_store,
     missing_dependency,
     ops_store,
     palace_store,
-    should_sync_today,
 )
+from src.shared.screen_capacity import ScreenCapacityBusy, screen_capacity_permit
 from src.strategy.api.schemas import (
     AnalysisRequest,
     ScreenRequest,
@@ -26,6 +28,9 @@ from src.shared.paths import market_hot_db
 from src.shared.tenancy import spawn_tenant_thread
 
 logger = logging.getLogger(__name__)
+# 兼容旧测试/导入；实际 /api/screen/today 由子 router 消费。
+# 保留同名入口，避免外部扩展在路由拆分后失效；子路由使用自己的依赖注入。
+should_sync_today = _api_deps.should_sync_today
 
 
 def build_strategy_router(
@@ -41,8 +46,16 @@ def build_strategy_router(
     from src.strategy.api.screen_history_router import build_screen_history_router
     from src.strategy.api.version_router import build_strategy_version_router
     from src.strategy.api.screen_run_router import build_screen_run_router
+    from src.strategy.api.screen_today_router import build_screen_today_router
 
     router.include_router(build_screen_history_router(palace_db=palace_db))
+    router.include_router(
+        build_screen_today_router(
+            write_dependency=write_dependency,
+            market_db=market_db,
+            palace_db=palace_db,
+        )
+    )
     router.include_router(
         build_strategy_version_router(
             write_dependency=write_dependency, market_db=market_db, ops_db=ops_db
@@ -63,6 +76,13 @@ def build_strategy_router(
     def _hot():
         """选股读滚动热库（近 700 交易日窗口），与全量写库物理隔离。"""
         return market_hot_store(str(market_hot_db()))
+
+    def _screen_capacity_label(strategy: str) -> str:
+        """给同步 HTTP 选股的全局容量许可提供可追踪标签。"""
+        from src.shared.tenancy import current_tenant, is_primary_tenant
+
+        slug = str(strategy or "?")
+        return f"http-sync:{slug}" if is_primary_tenant() else f"http-sync:[{current_tenant()}] {slug}"
 
     def _ops():
         return ops_store(ops_db)
@@ -101,29 +121,63 @@ def build_strategy_router(
             payload.strategy, payload.universe, ops_db=ops_db
         )
 
-        # 与 screen_run / job:screen 对齐：默认镜像后读热库；
-        # requires_full_history 或镜像失败时回退全量库。
+        # 与 screen_run / job:screen 对齐：默认镜像后读热库；requires_full_history、
+        # 镜像失败、或目标日的预热日历不在热库窗口内时回退全量库。
+        engine = None
         try:
             from src.strategy import get as _get_strategy
 
-            needs_full = bool(
-                getattr(_get_strategy(payload.strategy), "requires_full_history", False)
-            )
+            engine = _get_strategy(payload.strategy)
+            needs_full = bool(getattr(engine, "requires_full_history", False))
         except Exception:
             needs_full = False
+
+        # 预热长度**先算、算不出就 422**：那是战法定义的问题，不是「热库不可用」。混进
+        # 下面那个 except 会把战法配置错误藏成一次「安静地慢一点」的全量库选股。
+        warmup_bars = 0
+        if engine is not None and not needs_full:
+            from src.strategy.domain.base import signal_history_bars
+
+            try:
+                warmup_bars = signal_history_bars(engine)
+            except StrategyError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
 
         from contextlib import ExitStack
 
         with ExitStack() as stack:
+            try:
+                # 同步端点不能把请求线程排在分钟级任务后面；容量已满时让调用方
+                # 得到可重试的 429，异步入口才使用可取消的长队列。
+                stack.enter_context(
+                    screen_capacity_permit(
+                        label=_screen_capacity_label(payload.strategy),
+                        wait_sec=0,
+                    )
+                )
+            except ScreenCapacityBusy as exc:
+                raise HTTPException(
+                    status_code=429,
+                    detail=str(exc),
+                    headers={"Retry-After": "5"},
+                ) from exc
             full = stack.enter_context(_market())
             store = full
-            if not needs_full:
+            # 取不到 engine 就算不出预热长度；宁可慢走全量库，也不静默少票。
+            if engine is not None and not needs_full:
                 try:
-                    from src.market import hot_unusable_reason, mirror_recent_to_hot
+                    from src.market import hot_fallback_reason, mirror_recent_to_hot
 
                     hot = stack.enter_context(_hot())
                     mirror_recent_to_hot(full, hot)
-                    reason = hot_unusable_reason(full, hot)
+                    # trade_date 允许是历史单日，旧判据只看相对今天的窗口深度与末日会一律放行；
+                    # 本端点默认 record_candidates=true，静默少票会直接污染候选池的 T+N 胜率。
+                    reason = hot_fallback_reason(
+                        full,
+                        hot,
+                        trade_date=str(trade_date or date.today().isoformat()),
+                        warmup_bars=warmup_bars,
+                    )
                     if reason:
                         logger.warning("%s，回退全量库选股", reason)
                         store = full
@@ -417,116 +471,6 @@ def build_strategy_router(
             store.delete_job(job["id"])
         _reload_scheduler()
         return {"removed": True}
-
-    @router.get("/api/screen/today", tags=["strategy"])
-    def screen_today(
-        strategy: str = Query(min_length=1, max_length=64),
-        force_sync: bool = Query(default=False),
-        date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-        record_candidates: bool = Query(default=True),
-        top_n: int = Query(default=0, ge=0, le=500),
-        _write: None = write_guard,
-    ) -> dict[str, Any]:
-        """取指定日（默认最近可交易日）选股结果；默认写入候选池。
-
-        工作流：可选轻量同步后再 screen。慢 1-2 分钟可接受。
-        """
-        try:
-            from src.market import DataQualityError
-            from src.strategy import screen as run_screen
-            from src.strategy.application.persist import persist_screen_candidates
-            from src.strategy.domain.base import StrategyError
-        except ImportError as exc:
-            raise missing_dependency(exc) from exc
-
-        synced = False
-        sync_note = ""
-        if force_sync or should_sync_today(market_db):
-            try:
-                from src.ops.application.jobs import JobContext, execute_sync
-
-                ctx = JobContext(
-                    market_db=market_db, market_hot_db=str(market_hot_db())
-                )
-                refresh_instruments = force_sync
-                with ctx.market() as store:
-                    if not store.list_instruments():
-                        refresh_instruments = True
-                report = execute_sync(
-                    {
-                        "workers": 6,
-                        "interval": 0.1,
-                        "with_factors": True,
-                        "refresh_instruments": refresh_instruments,
-                        "limit": 200,
-                    },
-                    ctx,
-                )
-                synced = True
-                sync_note = (
-                    f"同步 {report.get('succeeded', 0)} 只，"
-                    f"跳过 {report.get('skipped', 0)} 只"
-                )
-            except Exception as exc:
-                sync_note = f"同步失败（{exc}），使用本地数据"
-
-        # 同步成功后把最近交易日（含当日 spot）增量镜像进热库，随后选股只读热库，
-        # 与全量写库物理隔离。镜像失败不阻断：热库缺当日由哨兵/重建任务兜底。
-        if synced:
-            try:
-                from src.market import mirror_recent_to_hot, open_market_hot
-
-                with _market() as full, open_market_hot(str(market_hot_db())) as hot:
-                    mirror_recent_to_hot(full, hot)
-            except Exception as exc:
-                logger.warning("镜像热库失败（由哨兵兜底）：%s", exc)
-
-        with _hot() as store:
-            try:
-                result = run_screen(
-                    store,
-                    strategy,
-                    trade_date=date,
-                    universe=None,
-                )
-            except DataQualityError as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"数据体检未通过，已拒绝选股：{exc}",
-                    headers={"X-Data-Health": "blocked"},
-                ) from exc
-            except StrategyError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            names = {
-                item["code"]: item["name"] for item in store.list_instruments(status="")
-            } if record_candidates else {}
-
-        body: dict[str, Any] = {
-            "strategy": result.strategy_slug,
-            "strategy_revision": result.strategy_revision,
-            "trade_date": result.trade_date,
-            "entry_timing": result.entry_timing,
-            "universe_size": result.universe_size,
-            "elapsed_seconds": round(result.elapsed_seconds, 3),
-            "params": result.params,
-            "effective_params": result.effective_params,
-            "picks": result.picks,
-            "watch_picks": result.watch_picks,
-            "universe": result.universe,
-            "universe_funnel": result.universe_funnel,
-            "data_snapshot": result.data_snapshot,
-            "synced": synced,
-            "sync_note": sync_note,
-        }
-        if record_candidates:
-            body["recorded"] = persist_screen_candidates(
-                result,
-                palace_db=palace_db,
-                names=names,
-                top_n=top_n,
-                source="api:screen_today",
-            )
-        return body
 
     @router.get("/api/strategies/{slug}/doc", tags=["strategy"])
     def get_strategy_doc(slug: str) -> dict[str, Any]:

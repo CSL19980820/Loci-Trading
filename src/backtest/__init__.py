@@ -41,6 +41,20 @@ from src.backtest.application.research_portfolio import (
     analyze_portfolio,
 )
 from src.backtest.application.research_validation import TrainOOSSplit
+from src.backtest.application.batch import (
+    run_backtest_job,
+    run_compare_job,
+    run_optimize_job,
+)
+from src.backtest.infrastructure.process_worker import (
+    ProcessWorkerBusy,
+    ProcessWorkerCancelled,
+    ProcessWorkerError,
+    ProcessWorkerStartError,
+    ProcessWorkerTimedOut,
+    process_slot_limit,
+    run_isolated_job,
+)
 
 __all__ = [
     "DEFAULT_HORIZONS",
@@ -71,6 +85,16 @@ __all__ = [
     "execute_backtest_context",
     "prepare_backtest_context",
     "run_backtest",
+    "run_backtest_job",
+    "run_compare_job",
     "run_backtest_fast",
+    "run_isolated_job",
     "run_horizon_backtest",
+    "run_optimize_job",
+    "ProcessWorkerBusy",
+    "ProcessWorkerCancelled",
+    "ProcessWorkerError",
+    "ProcessWorkerStartError",
+    "ProcessWorkerTimedOut",
+    "process_slot_limit",
 ]

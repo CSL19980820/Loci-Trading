@@ -70,25 +70,44 @@ const totalCount = computed<number>(() => {
 
 const hasData = computed(() => totalCount.value > 0)
 
+/**
+ * 一趟数出涨/跌/平。
+ *
+ * 原来是三个 `filter(...).length`：三遍全扫 + 三份立刻丢弃的中间数组。`distribution`
+ * 接口一失败就走这条降级路径，而它每 3 秒随新帧重算一次，N 还随缓存增长。
+ * `NaN` 的 pct 三档都不计——与旧的 `> 0 / < 0 / === 0` 口径一致。
+ */
+const tally = computed(() => {
+  let up = 0
+  let down = 0
+  let flat = 0
+  for (const row of props.rows ?? []) {
+    if (row.pct > 0) up += 1
+    else if (row.pct < 0) down += 1
+    else if (row.pct === 0) flat += 1
+  }
+  return { up, down, flat }
+})
+
 const upCount = computed<number>(() => {
   if (props.distribution?.total_count && props.distribution.up_count != null) {
     return props.distribution.up_count
   }
-  return (props.rows ?? []).filter((r) => r.pct > 0).length
+  return tally.value.up
 })
 
 const downCount = computed<number>(() => {
   if (props.distribution?.total_count && props.distribution.down_count != null) {
     return props.distribution.down_count
   }
-  return (props.rows ?? []).filter((r) => r.pct < 0).length
+  return tally.value.down
 })
 
 const flatCount = computed<number>(() => {
   if (props.distribution?.total_count && props.distribution.flat_count != null) {
     return props.distribution.flat_count
   }
-  return (props.rows ?? []).filter((r) => r.pct === 0).length
+  return tally.value.flat
 })
 
 interface Segment extends HeatBucket {

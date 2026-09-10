@@ -12,7 +12,6 @@ from src.formula.domain.screen_formula_types import (
     CompiledScreenFormula,
     FormulaCompileError,
     FormulaDiagnostic,
-    FormulaEvaluationError,
     FormulaEvaluationResult,
     ScreenFormulaManifest,
     stable_sha256,

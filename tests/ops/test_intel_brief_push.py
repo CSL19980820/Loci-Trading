@@ -34,7 +34,6 @@ from src.ops.application.ensure_intel_brief_jobs import (
 )
 from src.ops.application.jobs.context import JobContext
 from src.ops.application.jobs.intel_brief import (
-    DEFAULT_CHUNK_INTERVAL_SEC,
     execute_intel_brief,
 )
 from src.ops.application.jobs.registry import EXECUTORS

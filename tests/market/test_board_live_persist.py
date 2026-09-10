@@ -1,7 +1,6 @@
 """board live persist：写鉴权、默认只读、热库镜像。"""
 from __future__ import annotations
 
-import os
 import threading
 from pathlib import Path
 from unittest.mock import patch

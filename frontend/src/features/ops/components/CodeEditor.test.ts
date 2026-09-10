@@ -18,8 +18,10 @@ const monaco = vi.hoisted(() => {
 })
 
 vi.mock('./monacoEnv', () => ({ ensureMonacoEnv: vi.fn() }))
-vi.mock('monaco-editor-css', () => ({}))
-vi.mock('monaco-editor', async () => {
+vi.mock('monaco-editor/features/register.all.js', () => ({}))
+vi.mock('monaco-editor/languages/definitions/python/register.js', () => ({}))
+vi.mock('monaco-editor/languages/features/json/register.js', () => ({}))
+vi.mock('monaco-editor/editor/editor.api.js', async () => {
   await monaco.ready
   return monaco
 })

@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 from src.ledger import PalaceStore
-from src.review.application.decay import StrategyDecayReport, check_all_decay, check_decay
-from src.review.application.overlap import OverlapReport, compute_overlap
+from src.review.application.decay import check_all_decay, check_decay
+from src.review.application.overlap import compute_overlap
 from src.review.application.portfolio_guard import (
-    GuardResult,
     PortfolioLimits,
     check_portfolio_limits,
 )
@@ -24,6 +24,15 @@ def _make_palace() -> tuple[PalaceStore, tempfile.TemporaryDirectory]:  # type: 
     db = Path(tmp.name) / "palace.db"
     store = PalaceStore(db)
     return store, tmp
+
+
+def _recent_day(offset: int = 1) -> str:
+    """锚定今天的相对交易日字符串。
+
+    ``compute_overlap`` 的 cutoff 是 ``date.today() - days``，测试里写死绝对
+    日期会随时间漂出窗口——2026-06-01 这批数据在 2026-08-30 之后就整组失效了。
+    """
+    return (date.today() - timedelta(days=offset)).isoformat()
 
 
 def _insert_review(store: PalaceStore, strategy_tag: str, return_pct: float, day: str) -> None:
@@ -146,7 +155,7 @@ class OverlapTests(unittest.TestCase):
         )
 
     def test_identical_picks_full_overlap(self) -> None:
-        day = "2026-06-01"
+        day = _recent_day(1)
         for code in ("000001", "000002", "000003"):
             self._add_candidate(code, "strat-a", day)
             self._add_candidate(code, "strat-b", day)
@@ -161,7 +170,7 @@ class OverlapTests(unittest.TestCase):
         self.assertEqual(set(top.top_shared_codes), {"000001", "000002", "000003"})
 
     def test_disjoint_picks_zero_overlap(self) -> None:
-        day = "2026-06-01"
+        day = _recent_day(1)
         for code in ("000001", "000002"):
             self._add_candidate(code, "strat-x", day)
         for code in ("000003", "000004"):
@@ -177,11 +186,9 @@ class OverlapTests(unittest.TestCase):
         self.assertEqual(top.top_shared_codes, [])
 
     def test_partial_shared_codes_ranked_by_days(self) -> None:
-        for day, codes in (
-            ("2026-06-01", ("000001", "000002")),
-            ("2026-06-02", ("000001", "000003")),
-            ("2026-06-03", ("000001",)),
-        ):
+        plan = ((3, ("000001", "000002")), (2, ("000001", "000003")), (1, ("000001",)))
+        for offset, codes in plan:
+            day = _recent_day(offset)
             for code in codes:
                 self._add_candidate(code, "alpha", day)
                 self._add_candidate(code, "beta", day)
@@ -199,7 +206,7 @@ class OverlapTests(unittest.TestCase):
         self.assertEqual(reports, [])
 
     def test_single_strategy_returns_empty(self) -> None:
-        self._add_candidate("000001", "only-one", "2026-06-01")
+        self._add_candidate("000001", "only-one", _recent_day(1))
         reports = compute_overlap(self.store, days=90)
         self.assertEqual(reports, [])
 

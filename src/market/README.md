@@ -11,6 +11,10 @@
 ## 关键入口
 `MarketStore` / `sync_quotes`；HTTP：`/api/market/*` `/api/universe/*`（现由 app.legacy.quant_router 挂载）；CLI：`python -m cli.market`
 
+`load_panel` 对所有请求字段共用一次 `(trade_date, code)` pivot，避免逐字段重复编码和排序；
+返回值仍是按日期排序、按证券对齐的 pandas 数值面板，缺失值、复权与 `min_bars` 口径不变。
+可选 Polars 读取旁路按列转 NumPy 后交给 pandas，不再构造逐行字典。
+
 ## 如何扩展
 新行情源：**写 fetcher（只取原始报文）+ 在 `domain/source_contract.py` 声明 FieldSpec**，再注册到 lane。
 归一（列映射 / 数值化 / 手→股 / 百分数→小数 / 缺列质检）只走 `infrastructure/pipeline.py`，
@@ -55,7 +59,7 @@
 
 | 改动 | 改前 | 改后 |
 |---|---|---|
-| 前置状态查询（`sync_prefetch.py`） | 每票 4 条点查 ≈ 2.2 万次 | 4 条全市场聚合 ≈ 2.7s |
+| 前置状态查询（`sync_prefetch.py`） | 每票 4 条点查 ≈ 2.2 万次 | 5 条全市场聚合（含上市日） |
 | SQLite 连接 | 每票新建 + 关闭，5500 次 | 主线程一条，取数线程完全不碰库 |
 | 写事务 | 每票一次 `BEGIN IMMEDIATE` | 按批一次（`persist_quote_frame_receipts`） |
 | 多源协作合并 | 每票都对所有启用源拉一遍 | 抽样（`should_cross_check`），多数票只打主源 |
@@ -63,6 +67,7 @@
 - **限速器语义变了**：`_RateLimiter`（现居 `sync_engine.py`）的 `min_interval` 是**每个 worker 槽位**的间隔，不是全局串行队列。旧实现无论开几个 worker 都要付 `票数 × 2 × interval` 的排队地板（5500 × 2 × 0.15s ≈ 1650s），这是原先最大的单点。真正的礼貌约束是每个 (lane, 源) 的在途名额门闩。
 - **在途名额按源定**：`router_live.ADAPTER_SOURCE_CONCURRENCY` 覆盖 lane 级默认。通达信是二进制协议、每线程各自一条长连接，给 24；HTTP 源怕被判爬虫，仍留在 lane 级的 4。环境变量 `LOCI_ADAPTER_CONCURRENCY="hist_daily:tdx=32"` 可调。
 - **交叉校验改抽样**：`fetch_daily_routed(code)` 默认按 `should_cross_check(code)`（代码对 `CROSS_CHECK_SAMPLE_EVERY=50` 取模，稳定可复现）决定是否做多源合并；未抽中的票只打主源，**未请求的源在回执里明确记 `skipped` 并写明原因**，不会伪装成「校验过且一致」。`LOCI_CROSS_CHECK_EVERY=0` 关闭抽样（全部只打主源），`=1` 恢复每票都校验。
+- **上市日空历史软跳过**：`sync_prefetch.py` 同步预热 `instruments.list_date`。上市日尚无定稿日 K（盘中可能只有 `_spot` 临时行）时，历史源不发请求，终态记 `skipped` 并留回执；水位以 `status=ok/source=listing_calendar` 清掉旧失败，但该来源不命中“今日已同步”短路，收盘后下一轮再正常回填。这样新股不会把各来源误报成失败或触发熔断，旧票的真实连接/解析故障仍按失败处理。
 - **TDX 服务器探测**：公开行情服务器十台里常有大半是死的，串行探测每台吃满超时（实测 10.4s）。`tdx_daily.rank_servers()` 改并发探测 + 落磁盘缓存（`data/tdx_servers.json`，TTL 6 小时），冷启 2.0s、热缓存 0s。
 - **取数与落库分离**：`sync_engine.py` 里取数线程只做网络、结果进**有界**队列，单写线程按批落库。队列有界是刻意的——全量回填单票几千行，无界队列会把内存吃穿；队满自然回压取数线程。批大小 `CHUNK_FULL=40`（全量）/ `CHUNK_INCREMENTAL=200`（增量）。
 - **有界队列的代价是收尾必须主动**：`sync.py` 的收尾写死在 `finally: pool.shutdown(wait=True)`。「队列有界」加上「消费者可能提前离场」就是一条**确定性死锁**——`drain` 循环体里任何一处抛异常（progress 回调抛错、写线程 MemoryError、Ctrl-C 的 KeyboardInterrupt），控制权跳到 finally 时队列是满的、消费者已经走了，而池里还有几千个 code 没跑完，worker 全堵在 `outcomes.put()` 上永远醒不过来，`shutdown(wait=True)` 于是 join 一条永不返回的线程，**同步线程与进程退出双双挂死**。5544 只票配 600 深的队列，这不是概率问题。所以队列是带 abort 闸的 `OutcomeQueue`（`put_or_abort` 每 0.1s 回头看一眼闸）、池是 `FetchPool`，收尾三步缺一不可：**掀闸**（放出堵在 `put()` 上的 worker）→ **cancel 未起跑的任务**（否则用户都 Ctrl-C 了还要把剩下五千只票拉完）→ **边抽干边等**（兜住掀闸的时间差）。
@@ -79,10 +84,12 @@
 |---|---|
 | `store_codes.py` | `MarketError` / `normalize_code` / `guess_market` / `to_sina_symbol` |
 | `store_schema.py` | DDL、字段常量、`DEFAULT_DB` |
-| `store_rw.py` | 写入与基础读取 mixin；`upsert_quote_bars` / `set_watermarks` 供当日 spot 单事务批量落库（一次 DataFrame 归一，按 code+date 去重，禁止逐票建表）；`history(..., limit=)` 单票最近 N 根；`history_many` 批量 `code IN` + 窗口截断供龙头地图热路径 |
-| `store_summary.py` | 概览查询：`latest_bars` 走日历近窗+索引；`recent_amounts` 供 review 容量校验；`coverage` 走日历/证券表+绑定 `quotes_revision` 的行数 meta 缓存（行情写入失效，旧格式自动重算，避免千万行全表 COUNT/窗口扫描） |
+| `store_quote_payload.py` | 落库前归一：`partition_valid_ohlc_rows` 按四价约束拆「可落盘 / 拒绝」，走 numpy 比较且**全部合法时原样返回入参、不做防御性 copy**（250 行帧 1.69 → 0.12 ms，调用方只准读它）；`quote_value_columns` 按 `QUOTE_VALUE_FIELDS` 逐列把 NaN 换成 NULL —— 该常量刻意不复用 `PANEL_FIELDS`（后者 `turnover` 排在 `outstanding_share` 前，照它拼参数会把两列对调而不报错） |
+| `store_rw.py` | 写入与基础读取 mixin；`upsert_quote_bars` / `set_watermarks` 供当日 spot 单事务批量落库（一次 DataFrame 归一，按 code+date 去重，禁止逐票建表）；`history(..., limit=)` 单票最近 N 根；`history_many` 批量 `code IN` + 窗口截断供龙头地图热路径。`_prepare_quote_frame` **只挑要落库的列重建一张帧、且保持数值 dtype**（NaN→NULL 交给 `store_quote_payload.quote_value_columns`，整帧 `astype(object)` 会把 OHLC 校验拖慢一个量级）；写日历时按 `trade_date` 去重再喂（全市场 spot 是 5500 行同一天，5500 条 `DO NOTHING` 降到 1 条） |
+| `store_summary.py` | 概览查询：`latest_bars` 走日历近窗+索引；`recent_amounts` 供 review 容量校验；`coverage` 走日历/证券表，行数取 `store_row_count.py` 的缓存 |
+| `store_row_count.py` | `quotes_daily` 行数缓存 `meta.quotes_daily_rows_v2 = "{base_date}\|{base_rows}"`：**冻结基数 + 活动尾巴**。总数 = 基数（`< base_date`）+ 主键前缀范围计数（`>= base_date`，只有近一两日）。写入路径增量维护：`store_rw` 上传落在基数区的行**批量**探测「是否已存在」（每 400 对主键拼一条 `VALUES` 临时表 JOIN 主键索引，不再逐对 `SELECT`——回填一票 250 个交易日原本就是 250 次往返）只计真正新增，批内出现新交易日就推进冻结线；热库裁窗 `note_trim_below` 按将删行数递减、重灌 `track_hot_window_rewrite` 按区间前后差修正（重灌深入基数区 >30 日即作废重建）。只有无缓存时才全表 COUNT 一次。**为什么**：上一版绑 `quotes_revision`，盘中每 5 分钟同步一次就作废，随后的 `coverage()` 要冷扫 400 MB 覆盖索引——线上 2026-09-04 实测 `GET /api/ops/data-location` 26～30 s，设置页遮罩跟着蒙 30 s |
 | `store_rw.trading_days` | 带 `start`/`end` 的空结果**不会**触发 `rebuild_calendar`（热库常见「尚无下一交易日」）；仅全局日历为空且有日 K 时才从 `quotes_daily` 重建 |
-| `store_provenance.py` | 来源回执原子写入；`store_provenance_query.py` 负责 `source_evidence(codes,start,end)` 只读查询（code 分片 + 先取 receipt_id 再反查，避免 EXISTS 扫千万行日 K） |
+| `store_provenance.py` | 来源回执原子写入；`persist_quote_bar_receipts` **先按 code 把载荷索引成 `dict[str, list[row]]` 再分发回执**（逐 code 过滤/计数是 5500×5500 次比较，实测占整次 spot 落库的 96%），同一 code 的多个交易日必须整段留在列表里，只留最后一行会静默丢数据；`store_provenance_query.py` 负责 `source_evidence(codes,start,end)` 只读查询（code 分片 + 先取 receipt_id 再反查，避免 EXISTS 扫千万行日 K） |
 | `store_board_page.py` | 行情台分页：所属行业过滤、换手率排序/下限 |
 | `store_panel.py` | 全市场面板与 `_consolidate`；`_require_bounded_range` 拒绝 codes/start/end 全空的无范围调用 |
 | `duckdb_panel.py` | 可选 DuckDB 只读旁路（`LOCI_MARKET_DUCKDB=1`；失败回退 pandas） |
@@ -145,8 +152,9 @@
 
 - 路径：`paths.market_hot_db()`（默认 `data/market_hot.db`；`PALACE_MARKET_HOT_DB` 可覆盖，测试已隔离到 tmp）。
 - schema 与 `MarketStore` 完全一致：日 K / 日历只保留窗口，`instruments` / `adjust_factors` 全量复制，回执只保留与窗口内日 K 关联的行。
-- 入口：`open_market_hot()`（接口同 `MarketStore`）；增量镜像 `mirror_recent_to_hot`（同步 / 当日 spot 写全量库成功后调用；若热库窗口偏浅会自动升级为全量重建），全量重建 `mirror_to_hot`（幂等，可随时重跑）。`instruments` / `adjust_factors` 两张小表按 `<table>_revision` 做脏检查（热库侧记 `mirrored_<table>_revision`），没变就跳过重灌——增量镜像在选股热路径上每次都会调到，无条件整表重写会把一次写事务压进交互。全量重建走 `force=True`，始终重灌，保住「热库损坏时重跑即可」这条修复路径。`hot_window_shallow` 检测浅窗口；`hot_unusable_reason` 是选股路径判定「能否读热库」的**唯一入口**，同时查窗口深度与末日是否跟上全量库（窗口够深但缺当日也会被拒），返回空串表示可用、否则为回退原因。两者复制后都会按全量库当前窗口起点裁掉 `trade_date < start` 的日 K / 日历并清理孤儿回执（增量 copy 起点可能是近几天，裁剪仍用 `_window_start(full, HOT_WINDOW_TRADING_DAYS)`）。
-- 读写物理隔离：写操作（`apply_today_spot` / `sync_quotes` / bootstrap POST）仍走全量库 `paths.market_db()`；行情 HTTP 读端（coverage/session/board/quotes/search/industries/minute 本地名与复权）走热库。选股默认读热库；`requires_full_history`、镜像失败或热库落后于全量时回退全量库。触价提醒（`GET /api/alerts/today`）、notify alerts、MCP `instruments_search` 只读热库；`check_capacity` 由调用方注入热库 store。
+- 入口：`open_market_hot()`（接口同 `MarketStore`）；增量镜像 `mirror_recent_to_hot`（同步 / 当日 spot 写全量库成功后调用；若热库窗口偏浅会自动升级为全量重建），全量重建 `mirror_to_hot`（幂等，可随时重跑）。`instruments` / `adjust_factors` 两张小表按 `<table>_revision` 做脏检查（热库侧记 `mirrored_<table>_revision`），没变就跳过重灌——增量镜像在选股热路径上每次都会调到，无条件整表重写会把一次写事务压进交互。全量重建走 `force=True`，始终重灌，保住「热库损坏时重跑即可」这条修复路径。`hot_window_shallow` 检测浅窗口；`hot_unusable_reason` 查窗口深度 + 末日是否跟上全量库（窗口够深但缺当日也会被拒）。**选股路径统一走 `hot_fallback_reason(full, hot, *, trade_date, warmup_bars, end=None, live_overlay=False, window_trading_days=700)`**——它在前两条之上再校验第三条：从 `trade_date` 往前数 `warmup_bars` 个交易日的起点到 `end`（默认同 `trade_date`）之间，热库的交易日历必须与全量库一致；返回空串表示可用，否则是人话回退原因。第三条不能省：前两条都是相对**今天**的判据，看不出「用户要选的是 2020 年而热库只有近 700 个交易日」；缺了它，`screener._resolve_start` 的 `max(0, len(days) - bars)` 会把预热起点无声钳位到热库首日，历史日选股静默少票、结果还照常入库。`live_overlay=True` 只跳过末日判据（盘中今日价走独立实时 overlay），预热日历照查。`warmup_bars` 收整数而**不是** engine 对象：market 不得反向依赖 strategy，预热长度由调用方 `signal_history_bars(engine)` 算好再传。两者复制后都会按全量库当前窗口起点裁掉 `trade_date < start` 的日 K / 日历并清理孤儿回执（增量 copy 起点可能是近几天，裁剪仍用 `_window_start(full, HOT_WINDOW_TRADING_DAYS)`）。
+- 读写物理隔离：写操作（`apply_today_spot` / `sync_quotes` / bootstrap POST）仍走全量库 `paths.market_db()`；行情 HTTP 读端（coverage/session/board/quotes/search/industries/minute 本地名与复权）走热库。选股默认读热库；`requires_full_history`、镜像失败、热库落后于全量、或**目标日的指标预热日历不在热库窗口内**时回退全量库（判据见上条 `hot_fallback_reason`）。触价提醒（`GET /api/alerts/today`）、notify alerts、MCP `instruments_search` 只读热库；`check_capacity` 由调用方注入热库 store。
+- `open_screen_store(market_db, hot_db, *, trade_date, warmup_bars)` 是只读选股入口（助手战法、Screen Skill 试跑）：不镜像（镜像是同步 / 选股任务的写职责），内部过 `hot_fallback_reason`。两个关键字参数**故意没有默认值**——留默认就等于把「历史日静默少票」的缺口原地保留给下一个调用方。
 - **故意读全量**：`GET/POST /api/market/bootstrap`（回填进度看全库 coverage）、`/api/universe/*`、health/repair/sync、board `live&persist=true` 后台 spot 落盘（写鉴权，成功后镜像热库）、review 长窗（equity/trips/candidates/plans/winrate）、回测与研究路由。
 - 可重建派生缓存：日 K 历史不可变，热库损坏时删掉重建即可（`hot_rebuild` 任务），零双真相。镜像失败不阻断 sync。
 - **窗口搬运分批，但事务不拆**：`_copy_quotes_window` 在热库写锁内把全量库 `[start, ∞)` 的日 K / 日历搬进热库。原实现对全量库 `fetchall()` 整个窗口（rebuild ≈ 700 交易日 × 5500 只 ≈ **390 万行**）再 `[tuple(row) for row in rows]` 复制第二份，峰值是两份全量、全程持锁。现在读侧 `fetchmany(_COPY_BATCH_ROWS=5000)` + 写侧 `executemany` 分批（`_stream_copy`）。合成库实测（同机同库，`tracemalloc` 峰值）：
@@ -293,8 +301,18 @@ DEFAULT_ADAPTER_CONCURRENCY`）。多客户端大屏把同一条 lane 排成长�
 - `application/live_bars.py`：live 报价 → 内存分钟 bar（环形缓冲，按交易日重置）。
   **不走 `minute_bars` lane**——那是逐票 HTTP，几百只票的热循环里跑不动。
   分钟量取相邻快照的累计差；当日第一笔没有前值可减，记 0（不造假巨量柱）。
-- `application/realtime_signals.py`：6 条轻量规则（均线金叉 / MACD 金叉 / 放量突破 /
-  快速拉升 / 临近涨停 / 炸板），**注册表驱动**（`RULES`），不调重的选股引擎。
+- **实时信号拆在三个文件里**（原来是一个 899 行的文件，规则表与引擎的变更频率完全不同）：
+  - `application/realtime_rules.py`：6 条轻量规则（均线金叉 / MACD 金叉 / 放量突破 /
+    快速拉升 / 临近涨停 / 炸板）+ 参数规格 + 注册表 `RULES`。**加规则只动这里。**
+  - `application/realtime_rule_config.py`：ops.db 里的阈值覆盖怎么进内存（读取、30s TTL
+    缓存、对外形状）。库里只存被改过的键，默认值的唯一真相源是代码里的注册表。
+  - `application/realtime_signals.py`：引擎调度（面板缓存、去抖、涨速采样、进程单例），
+    并把上面两个模块的公开符号原样重导出——调用方不必知道拆过。
+
+  热路径两处快路径特例，等价性由 `tests/market/test_realtime_signal_internals.py` 钉死：
+  `_tail_series` 用 numpy 直接拼「历史 + 今日未完成 bar」并返回 RangeIndex（规则全部按
+  位置取值，日期索引只让每 tick 多付一次索引对齐）；`_crossed_now` 是 `CROSS(...).iloc[-1]`
+  的标量版。500 只票 x 6 条规则实测 766ms → 219ms/tick。
 
 ### 实时信号的三条口径
 
@@ -400,4 +418,4 @@ DEFAULT_ADAPTER_CONCURRENCY`）。多客户端大屏把同一条 lane 排成长�
 改同步语义、适配器契约、公开导出或 store 拆分边界时必须更新本文。
 
 ## 相关测试
-`tests/market/`（含 `test_duckdb_panel.py` 与可选 `test_polars_panel.py`：旁路只读且与经典面板对齐；显式基准见 `tests/benchmarks/polars_benchmark.py`；`test_http_client.py`：行情代理回退与握手重试；`test_daily_window.py`：日 K 增量近窗；`test_bounded_reads.py`：`load_panel` 范围护栏与热库窗口分批搬运的峰值内存对照；`test_live_hub.py`：单采集器 / N 订阅者只取一次数、周期预算、失败退避与自动停表、SSE 首帧形状；`test_realtime_signals.py`：去抖与 cooldown、`provisional`/`adjust=none` 口径、面板日缓存；`test_watchlist.py`：preset 排序与 400 只硬上限）
+`tests/market/`（含 `test_duckdb_panel.py` 与可选 `test_polars_panel.py`：旁路只读且与经典面板对齐；显式基准见 `tests/benchmarks/polars_benchmark.py`；`test_http_client.py`：行情代理回退与握手重试；`test_daily_window.py`：日 K 增量近窗；`test_bounded_reads.py`：`load_panel` 范围护栏与热库窗口分批搬运的峰值内存对照；`test_live_hub.py`：单采集器 / N 订阅者只取一次数、周期预算、失败退避与自动停表、SSE 首帧形状；`test_realtime_signals.py`：去抖与 cooldown、`provisional`/`adjust=none` 口径、面板日缓存；`test_watchlist.py`：preset 排序与 400 只硬上限；`test_store_row_count.py`：行数缓存在追加/回填/重复写/新交易日/热库裁窗与重灌后仍等于真 COUNT，且缓存建好后稳态不再全表 COUNT）

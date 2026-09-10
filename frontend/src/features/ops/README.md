@@ -11,7 +11,7 @@
 - LLM：`LlmProviderCard`（端点条 / 模型芯片 / ⋯ 菜单）；添加与编辑共用宽屏左右分栏 dialog（左身份/接入 · 右目录摘要）；完整目录仍走右侧 drawer
 - 本机 LLM / MCP Key 明文落库（ops.db / mcp.json）；旧密文启动时尽量自动迁明文
 - **定时任务 / 执行历史已迁工坊**：`JobsTab` + `JobEditorDialog` + `JobRunsDialog` 挂在 `/quant?tab=jobs`；执行历史是定时台「执行历史」按钮弹窗
-- 推送联：Webhook + 选股 text 模板（默认/简洁/含日期/自定义，实时双预览）；模板契约保留正式空态与低吸观察分区文案，后端推送不会把观察票混入正式精选。
+- 推送联：Webhook + 选股 text 模板（默认/简洁/含日期/自定义，实时双预览）+「低吸观察」开关（`show_watch_picks`，默认关：推送不显示观察票、双预览同步隐藏；开后预览恢复观察分区）。模板契约保留正式空态与低吸观察分区文案，正文不会把观察票混入正式精选；观察票仍写入候选库并在前端分区展示。
 - 纸面量化工作台在工坊 `/quant?tab=paper`（`PaperQuantPanel`）；通知策略安静时段/Bark 同面板可改。
   龙回头纸面舱已退役，面板默认 `demo`，不要再填 `dragon-return`。
   最近盯盘快照若含 `trading_day_gate`，面板会提示非交易日 / **交易日历缺失买入 fail-closed**（与 `POST .../orders` 409 对齐）。
@@ -23,9 +23,12 @@
 - `JobRunsDialog`：任务列最左（min 200）· 时间 min 160 · 耗时 `formatRunDuration`（如 `11h2min3s`，≥1s 忽略 ms）；`BasicTable` `virtualized` 保留固定任务列/选择列，表体 nowrap
 - 归属判定：`composables/jobOwnership.ts`（与后端 `get_job_by_name("screen:{slug}")` 一致）
 - 系统草稿：`composables/useSystemSettings.ts`（分联 dirty / 串行 saveAll / 推荐配置只写草稿）
-- 左栏尾注：`composables/useSettingsSummaries.ts`（状态印记 ok/idle/bad；`system` 显示 `v*` 版本；`pack` 显示可封箱/未编译）；`mcp` / `llm` 主标是「工具连接」「AI 模型」，缩写由 `OpsView` 拼在尾注前（`MCP · 2 台`）
+- 左栏尾注：`composables/useSettingsSummaries.ts`（状态印记 ok/idle/bad；`system` 显示 `v*` 版本；`pack` 显示可封箱/未编译）；`mcp` / `llm` 主标是「工具连接」「AI 模型」，缩写由 `OpsView` 拼在尾注前（`MCP · 2 台`）。**尾注刷新不进 `guard`**：它要打 7 个接口，页级遮罩只盖当前分区自己的 `load()`——曾因 `/ops/data-location` 冷读 30 s 让已渲染的 LLM 卡片蒙着「加载设置…」半分钟
 - 共享：`composables/useOpsFeedback.ts`（busy/guard）、`composables/opsLabels.ts`；模型选择器辅助在 `@/shared/lib/llm`
 - 大段 JSON：`components/CodeEditor.vue`；`useJobsQuery` / `useJobRunsQuery`
+  - Monaco **只装配 `json` / `python` / `plaintext` 三种语言**（`editor.api.js` + `features/register.all.js` + 两个语言 register，不走 `editor.main` barrel）。传别的 `language` 不会报错，但按 plaintext 渲染；要新语言就在 `CodeEditor.vue` 的 `loadMonaco()` 里加一行 `languages/definitions/<id>/register.js`
+  - 编辑器功能（折叠 / 查找 / 右键菜单 / 撤销 / 多光标）由 `features/register.all.js` 全量提供；相对 `editor.main` 少了 `caretOperations` / `copyPasteContribution` / `markerSelectionStatus` / `documentSemanticTokens` 四项（monaco 未发它们的 `.d.ts`）——当前两种语言下是空操作，**接入 LSP / diagnostics 时需重新评估**
+  - **CSS 全靠 contrib 自带**：ESM 侧每个 contrib 模块自带样式，随上面几个 import 进异步分片（`editor-*.css` / `format-*.css` / `wordPartOperations-*.css`，合计 162 KB raw / 25.9 KB gz）。**不要再引 `monaco-editor/min/vs/editor/editor.main.css`**——那是 AMD 版全量样式（349 KB raw / 117 KB gz），2026-09 实测是 100% 重复：把它的 1242 条顶层规则块拆成 1510 条「单选择器」逐条比对 contrib 分片，**独有选择器 0 条、独有声明 0 条**（余下差异全是 minifier 归一化，如 `transparent`↔`#0000`、属性重排、`var()` 回退值里的空格、`flex:0 1 auto`↔`flex:0 auto`）；codicon 字体只是从内联 base64 换成外链 `codicon-*.ttf`（本就已产出，删掉反而少一份重复）。删除后真机验证过背景/行号/等宽字体/光标/选区/括号匹配/查找面板与 `.mtk*` 六色分层均正常
 - **旧深链**：`?tab=jobs|runs` → `/quant?tab=jobs`（runs 另带 `runs=1` 打开历史弹窗）；`?tab=data-dir|market-sync|notify|appearance` → `?tab=system` + `#sys-*`；`?tab=skills` → 工坊市场；`?tab=lanes|akshare` → 工坊数据源
 - 有未保存系统改动时切分区 / 离开路由会确认
 - `McpTab` 内置 `loci-market` 详情用 `tools_catalog`；生效调用仍走 `tools`（按 lane 过滤）

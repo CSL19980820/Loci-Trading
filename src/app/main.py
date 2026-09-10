@@ -174,8 +174,6 @@ def create_app(
             "PALACE_INSECURE_HTTP 已开启：会话 Cookie 不带 Secure 标记，"
             "登录凭证会以明文经网络传输。仅限短期排障，勿长期对公网运行。"
         )
-    login_throttle = LoginThrottle()
-
     # ---- 身份体系（v2 群龙）--------------------------------------
     # 老部署只有 PALACE_AUTH_USERNAME/PASSWORD 一对固定凭据；v2 把它们种成
     # identity.db 里的管理员账号，租户绑到 __primary__，也就是原来的 data/
@@ -465,11 +463,6 @@ def create_app(
             payload["db"] = str(resolved_db)
         return payload
 
-    def _throttle_key(request: Request) -> str:
-        """限流按来源 IP 计。uvicorn 以 --proxy-headers 启动，
-        经 Nginx 转发后 request.client.host 已是真实来源。"""
-        return request.client.host if request.client else "unknown"
-
     # 身份与治理路由先挂：登录页在任何业务能力缺失时都必须可用。
     app.include_router(
         build_auth_router(
@@ -517,6 +510,8 @@ def create_app(
             palace_db=str(resolved_db) if pinned_palace_db else None,
             scheduler_getter=lambda: scheduler_box["instance"],
             setup_access_allowed=_is_loopback_client,
+            # 装 / 卸技能包要管理员：技能包 = 代码，见 ops/api/skills._require_skill_admin
+            auth_dependency=auth_dependency,
         )
     )
 

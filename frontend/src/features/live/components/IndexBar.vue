@@ -58,11 +58,19 @@ function changeOf(row: QuoteRow): number | null {
   return Number.isFinite(row.change) ? row.change : null
 }
 
+/*
+ * `trail` 必须复制一份。
+ *
+ * `useLiveBoard` 的点列改成了原地 push（省掉每帧 3400 次数字拷贝），
+ * 而 `IndexSparkline` 的 `series` computed 依赖的是 `props.points` 这个**引用**：
+ * 原地改数组它不会重画，sparkline 会定格在第一帧。
+ * 复制的代价是 5 条 × 240 个数字，与省下来的量级不在一个数上。
+ */
 const cells = computed<IndexCell[]>(() =>
   SLOTS.map((slot) => {
     const row = (props.rows ?? []).find((r) => slot.codes.includes(r.code)) ?? null
     const delta = row ? changeOf(row) : null
-    const trail = row ? (props.trails?.get(row.code) ?? []) : []
+    const trail = row ? [...(props.trails?.get(row.code) ?? [])] : []
     return {
       key: slot.key,
       name: slot.name,

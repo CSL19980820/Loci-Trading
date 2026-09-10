@@ -14,7 +14,7 @@
 
 - `build_research_catalog()`：返回 21 维目录、预算档位、来源注册表和安全边界。
 - `build_research_profile()`：从 `MarketStore` 构造不触网的临时个股研究剖面，支持 `as_of` 截止交易日。
-- `application/readonly_engine.py`：在 `LOCI_RESEARCH_POLARS=1` 且安装可选 Polars 时，对已读入的历史 frame 做等价只读转换；失败或未启用时保持 pandas，不改变研究 DTO。
+- 研究快照直接使用 `MarketStore.history` 的 pandas 输入，已移除没有计算收益的 Polars 往返转换。`application/readonly_engine.py` 仅保留旧导入兼容，`readonly_frame` 原样返回输入；旧 `LOCI_RESEARCH_POLARS` 不再生效，`polars_research_enabled()` 如实返回 false。不改变研究 DTO 和快照指纹。
 - `create_research_run()` / `resume_research_run()`：保存输入快照、profile、review 三阶段；相同输入 hash 可复用，行情版本变化只标记旧 run 为 `stale`，不覆盖旧输入。
 - `run_research_backtest()`：请求必须预先声明完整且不重叠的 train/OOS 区间；严格 PIT 还必须给出 `historical_universe_id`。它先保存 `frozen_input.json`（signals、执行 OHLCV、entry-price、benchmark、PIT mask、随机配置），主 run、control、train/OOS 都只使用该冻结切片。**产物契约 `research-frozen-input-v2`**：紧凑分隔符（不再 indent，行情价格本身很短、空白会占掉近一半体积），且 `execution_panels` 与 `panels` 同源时写 `null` 由解码侧回落——全市场 370 日 × 5000 只、6 字段的产物从约 376 MB 降到约 71 MB。序列化只做一次，`payload_bytes` 的返回值既用于算 hash 也原样落盘，不要把 dict 交给 `write_artifact` 让它再 dump 一遍。v1 产物会被 `context_from_payload` 明确拒绝（版本不符），不会静默走到 hash 不一致；validation 通过后只会进入 `awaiting_human_review`，必须由受权限保护的人工签署才能完成。replay 校验冻结和执行 artifact hash、策略 revision，并逐项比较主结果、控制组与 train/OOS；终态 run 只允许 `workflow-final.json`、`run_card.md`、`replay-comparison.json` 三类审计收尾 artifact，既有相同 hash 写入可幂等重放，其余新增或 hash 不同的写入一律拒绝。
 - 当前技术回测的 PIT 输入范围仅为行情证据和历史股票池。PIT 财务/事件事实可追加登记、按截止日查询并为后续因子研究保留来源与 `available_at`，但尚未被技术回测选择、冻结或消费；任何引入这类事实的未来回测都必须先冻结被选 observation、revision 和 hash，再进入严格门禁。

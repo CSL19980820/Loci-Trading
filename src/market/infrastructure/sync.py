@@ -3,11 +3,9 @@ from __future__ import annotations
 
 from src.shared.clock import utc_now
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 import logging
-import threading
 import time
 from typing import Any, Callable, Sequence
 
@@ -18,19 +16,22 @@ from src.market.infrastructure.store import MarketError, MarketStore, normalize_
 from src.market.infrastructure.store_quote_payload import partition_valid_ohlc_rows
 from src.market.infrastructure import sync_engine
 from src.market.infrastructure.sync_engine import RateLimiter as _RateLimiter
-from src.market.infrastructure.sync_prefetch import SyncPrefetch, load_sync_prefetch
+from src.market.infrastructure.sync_prefetch import (
+    SyncPrefetch,
+    _LISTING_SKIP_SOURCE,
+    listing_day_skip_receipt,
+    listing_day_without_history,
+    load_sync_prefetch,
+)
 from src.market.infrastructure.sync_spot import (
-    _apply_today_spot_once,
     apply_today_spot,
     fallback_used as _fallback_used,
 )
 from src.market.infrastructure.sync_factors import (
     _FACTOR_STALE_DAYS,
-    _factor_fetched_at,
     _factor_is_fresh,
     _fetch_factors_for_sync,
-    _refresh_factors_if_stale,
-    refresh_adjust_factors,
+    refresh_adjust_factors as refresh_adjust_factors,  # 兼容 src.market 包的旧导入路径
 )
 
 logger = logging.getLogger(__name__)
@@ -302,6 +303,8 @@ def _watermark_is_fresh(mark: Any, fresh_threshold: str) -> bool:
         return False
     if str(mark["status"] or "") != "ok":
         return False
+    if str(mark["source"] or "") == _LISTING_SKIP_SOURCE:
+        return False
     if _is_spot_watermark(mark):
         return False
     return str(mark["last_synced_at"] or "")[:10] >= fresh_threshold
@@ -372,6 +375,17 @@ def sync_quotes(
                     raise
                 instrument_type = types.get(code, "STOCK")
                 mark = prefetch.watermark(code)
+                list_date = "" if force else listing_day_without_history(
+                    prefetch, code, today=today_iso
+                )
+                if list_date:
+                    return sync_engine.Outcome(
+                        code=code,
+                        kind="skip",
+                        receipt=listing_day_skip_receipt(
+                            code, list_date, today=today_iso
+                        ),
+                    )
                 wants_factor = with_factors and instrument_type == "STOCK"
                 factor_stale = wants_factor and not _factor_is_fresh(
                     prefetch.factor_age.get(code, ""), _FACTOR_STALE_DAYS
@@ -504,6 +518,17 @@ def sync_quotes(
 
         def on_skipped(code: str, receipt: dict[str, Any]) -> None:
             report.skipped += 1
+            watermark = receipt.get("watermark") if receipt else None
+            if isinstance(watermark, dict):
+                try:
+                    store.set_watermark(
+                        code,
+                        status=str(watermark.get("status") or "ok"),
+                        message=str(watermark.get("message") or ""),
+                        source=str(watermark.get("source") or ""),
+                    )
+                except Exception as exc:
+                    logger.warning("写 %s 的跳过 watermark 失败：%s", code, exc)
             if receipt:
                 report.source_receipts.append(receipt)
 

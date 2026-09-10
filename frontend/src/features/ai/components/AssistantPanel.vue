@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElMessage } from 'element-plus'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 
 import { copyTextToClipboard } from '../assistantMessageActions'
 import { buildTaskModel, type TaskPlanStep } from '../assistantTaskModel'
@@ -23,6 +23,17 @@ import type {
 
 const HISTORY_KEY = 'loci.assistant.historyOpen'
 const TASK_KEY = 'loci.assistant.taskSidebarOpen'
+/*
+ * 侧栏折叠态是 v-if 切 DOM 的 rail 视图（历史 48px / 任务 44px），纯 CSS 断点只会把
+ * 展开态的 280–300px 内容裁进窄壳里，所以断点必须落在 JS 上。
+ * 900px 沿用此前 historyOpen 的初始化阈值；任务侧栏更宽，980px 以下先收它。
+ */
+const SESSION_RAIL_MIN_W = 900
+const TASK_SIDEBAR_MIN_W = 980
+/** 用户本次会话显式动过的那一侧，断点不再插手 */
+const userToggled = { history: false, task: false }
+/** 记住「这次是断点折的」，窗口变宽才好还回去；自动路径不写 localStorage，偏好不被改写 */
+const autoCollapsed = { history: false, task: false }
 
 /*
  * 交割范例只教格式，禁止写成像真实持仓的价格 / 股数：
@@ -148,21 +159,50 @@ watch(() => props.open, async (open) => {
 })
 
 watch(() => props.agents.length, (count) => {
-  if (count > 0) setTaskSidebarOpen(true)
+  // 窄屏别自动铺开 300px 侧栏：正文区会被挤没，折叠态的 live dot 已经能提示有任务在跑
+  if (count > 0 && hasRoom(TASK_SIDEBAR_MIN_W)) setTaskSidebarOpen(true, false)
 })
+
+function hasRoom(minWidth: number): boolean {
+  return window.matchMedia(`(min-width: ${minWidth}px)`).matches
+}
+
+function applyAutoCollapse(key: 'history' | 'task', open: Ref<boolean>, roomy: boolean): void {
+  if (userToggled[key]) return
+  if (!roomy && open.value) {
+    open.value = false
+    autoCollapsed[key] = true
+  } else if (roomy && autoCollapsed[key]) {
+    open.value = true
+    autoCollapsed[key] = false
+  }
+}
+
+function syncViewportCollapse(): void {
+  applyAutoCollapse('history', historyOpen, hasRoom(SESSION_RAIL_MIN_W))
+  applyAutoCollapse('task', taskSidebarOpen, hasRoom(TASK_SIDEBAR_MIN_W))
+}
 
 onMounted(() => {
   const saved = localStorage.getItem(HISTORY_KEY)
   if (saved === '0') historyOpen.value = false
   else if (saved === '1') historyOpen.value = true
-  else if (typeof window !== 'undefined' && window.innerWidth < 900) historyOpen.value = false
   const taskSaved = localStorage.getItem(TASK_KEY)
   if (taskSaved === '0') taskSidebarOpen.value = false
   if (taskSaved === '1') taskSidebarOpen.value = true
+  // 记住的偏好也要过一遍断点：窄屏上把侧栏铺开等于把正文区挤没
+  syncViewportCollapse()
+  window.addEventListener('resize', syncViewportCollapse)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncViewportCollapse)
 })
 
 function setHistoryOpen(value: boolean): void {
   historyOpen.value = value
+  userToggled.history = true
+  autoCollapsed.history = false
   localStorage.setItem(HISTORY_KEY, value ? '1' : '0')
 }
 
@@ -195,8 +235,12 @@ function openAgent(agentId: string): void {
   setTaskSidebarOpen(true)
 }
 
-function setTaskSidebarOpen(value: boolean): void {
+function setTaskSidebarOpen(value: boolean, byUser = true): void {
   taskSidebarOpen.value = value
+  if (byUser) {
+    userToggled.task = true
+    autoCollapsed.task = false
+  }
   localStorage.setItem(TASK_KEY, value ? '1' : '0')
 }
 </script>
@@ -427,7 +471,8 @@ function setTaskSidebarOpen(value: boolean): void {
 
   /*
    * 上下文构成条的定性分类色：只负责「八段互相可分」，不承载涨跌 / 成败语义，
-   * 因此不挂 --up / --down / --warn 这类会被误读的 token。深色适配待补。
+   * 因此不挂 --up / --down / --warn 这类会被误读的 token。
+   * 这批是 Tailwind 600/700 档（L≈0.47–0.55），只为浅底挑的；深色档覆写见下面一块。
    */
   --ai-cat-1: #64748b;
   --ai-cat-2: #4f46e5;
@@ -437,6 +482,29 @@ function setTaskSidebarOpen(value: boolean): void {
   --ai-cat-6: #9a3412;
   --ai-cat-7: #0f766e;
   --ai-cat-8: #0369a1;
+}
+
+/*
+ * night / ink / dark 的画布明度只有 0.13–0.19，上面那批 600/700 档 hex 压上去
+ * 对画布只有 2.5–4.2:1，相邻两段糊成一片（实测：明档八色对 night 画布 3.89 2.94
+ * 3.69 3.76 3.06 2.53 3.38 3.12）。深色档把 L 抬到 .64–.78，色相沿用明档实测的
+ * 八个（257 277 150 72 350 33 186 243），保证同一段换外观还是「同一个色」。
+ * 实测改后对 night 画布 5.1–9.0:1，八段两两 sRGB 最小色距 56（明档 48），可分性不降。
+ */
+html[data-appearance='night']
+  :is(.assistant-panel, .assistant-task-sidebar, .assistant-agent-thread-dialog, .assistant-settings-dialog, .assistant-runtime-popper, .ctx-usage-popper),
+html[data-appearance='ink']
+  :is(.assistant-panel, .assistant-task-sidebar, .assistant-agent-thread-dialog, .assistant-settings-dialog, .assistant-runtime-popper, .ctx-usage-popper),
+html.dark
+  :is(.assistant-panel, .assistant-task-sidebar, .assistant-agent-thread-dialog, .assistant-settings-dialog, .assistant-runtime-popper, .ctx-usage-popper) {
+  --ai-cat-1: oklch(.72 .04 257);
+  --ai-cat-2: oklch(.7 .16 277);
+  --ai-cat-3: oklch(.72 .14 150);
+  --ai-cat-4: oklch(.78 .14 72);
+  --ai-cat-5: oklch(.72 .17 350);
+  --ai-cat-6: oklch(.64 .16 33);
+  --ai-cat-7: oklch(.72 .09 186);
+  --ai-cat-8: oklch(.72 .12 243);
 }
 
 .assistant-dialog.el-dialog {

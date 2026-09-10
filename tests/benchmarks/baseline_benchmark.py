@@ -34,6 +34,7 @@ from tests.benchmarks.baseline_support import (
     synthetic_bars,
     synthetic_signals,
 )
+from tests.benchmarks.strategy_scale import measure_strategy_scale
 
 
 def test_write_performance_baseline() -> None:
@@ -129,9 +130,10 @@ def test_write_performance_baseline() -> None:
             ),
         }
 
+        measurements.update(measure_strategy_scale())
         artifact = artifact_payload(workspace, measurements)
-        _assert_measurements(measurements)
         _write_artifact(artifact)
+        _assert_measurements(measurements)
     finally:
         workspace.close()
 
@@ -325,15 +327,9 @@ def _job_claim_lock_wait(workspace: BaselineWorkspace) -> dict[str, Any]:
 
 
 def _assert_measurements(measurements: dict[str, dict[str, Any]]) -> None:
-    assert measurements
-    for name, item in measurements.items():
-        assert item["runs"] >= 1, name
-        assert item["successful_runs"] == item["runs"], name
-        assert item["error_count"] == 0, (name, item["errors"])
-        assert item["error_rate"] == 0.0, name
-        assert item["p50_ms"] is not None, name
-        assert item["p95_ms"] is not None, name
-        assert item["result_sha256"], name
+    from tests.benchmarks.performance_gate import assert_performance_budget
+
+    assert_performance_budget(measurements)
 
 
 def _write_artifact(payload: dict[str, Any]) -> None:

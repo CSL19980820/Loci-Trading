@@ -1,9 +1,22 @@
 import type { App } from 'vue'
 import { provideGlobalConfig } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-// CSS 仍走全量：EP 的 css 体积主要在 gzip 后并不大（约 70 KB gz），而按需 CSS
-// 一旦漏掉 ElMessage/ElMessageBox/v-loading 这类命令式入口的样式就是线上白板，
-// 收益/风险不成比例。JS 侧的按需（真正的大头）由 unplugin-vue-components 负责。
+// CSS 走全量，这是量过的结论，不要再改回按需（2026-09，EP 2.14.3 实测）：
+// 打开 ElementPlusResolver 的 `importStyle: 'css'` 后，首屏同步 CSS 从
+// 431.36 KB raw / 63.19 KB gz 降到 387.05 KB / 57.07 KB——只省 44.31 KB raw /
+// 6.12 KB gz，占首屏总量（354.79 KB gz）的 1.7%。
+//
+// 代价是要手工维护一张补充清单，且清单不止命令式入口。EP 的
+// `es/components/*/style/css` 会带上自身依赖的样式，所以模板里出现过的组件
+// 都没问题；漏的是**从不作为模板标签出现**的两类：
+//   1. 命令式入口：ElMessage / ElMessageBox / ElNotification / ElLoading；
+//   2. 第三方渲染的 EP 组件——`vue-element-plus-x` 从 `element-plus/es` 直接
+//      取组件，绕过编译期解析，用到 el-image / el-image-viewer / el-timeline /
+//      el-timeline-item / el-upload 这 5 个本仓模板从未写过的组件。
+// 只补第 1 类时用 Chromium 实测过：`.el-timeline-item__node` 的 position 从
+// absolute 退化成 static，`.el-upload-dragger` 边框归零，
+// `.el-image-viewer__canvas` 高度塌成 0——即助手面板整片错版且无任何报错。
+// 6 KB gz 换一张跟着第三方库内部实现走的清单，不划算。
 import 'element-plus/dist/index.css'
 
 /**

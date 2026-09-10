@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
 from src.shared.clock import utc_now as _now
 from typing import Any
 

@@ -19,6 +19,7 @@ export interface WecomScreenTemplate {
   quant_tag: string
   skills_tag: string
   max_picks: number
+  show_watch_picks: boolean
 }
 
 export const WECOM_PRESET_OPTIONS: { value: WecomScreenPreset; label: string; hint: string }[] = [
@@ -90,6 +91,7 @@ export const DEFAULT_WECOM_SCREEN_TEMPLATE: WecomScreenTemplate = {
   quant_tag: '量化',
   skills_tag: '技能',
   max_picks: 30,
+  show_watch_picks: false,
 }
 
 const SKILL_NOTE_MAX = 40
@@ -102,6 +104,7 @@ const SAMPLE = {
     { name: '上港集团', code: '600018', pct: 5, note: '回踩确认后温和放量' },
     { name: '平安银行', code: '000001', pct: null as number | null, note: '防御仓样本无涨幅字段' },
   ],
+  watch_picks: [{ name: '中通客车', code: '000957', pct: 1.66 }],
 }
 
 export function normalizeWecomScreenTemplate(
@@ -113,6 +116,7 @@ export function normalizeWecomScreenTemplate(
     : 'default'
   base.preset = preset
   base.max_picks = Math.max(1, Math.min(50, Number(base.max_picks) || 30))
+  base.show_watch_picks = base.show_watch_picks === true
   base.header = String(base.header || DEFAULT_WECOM_SCREEN_TEMPLATE.header)
   base.intro = String(base.intro ?? DEFAULT_WECOM_SCREEN_TEMPLATE.intro)
   base.pick = String(base.pick || DEFAULT_WECOM_SCREEN_TEMPLATE.pick)
@@ -223,6 +227,16 @@ export function previewWecomScreenTemplate(
     if (row) lines.push(row)
     rendered += 1
   }
+  if (tpl.show_watch_picks && SAMPLE.watch_picks.length) {
+    const watchHeader = tpl.watch_header.trim()
+    if (watchHeader) lines.push(watchHeader)
+    for (const pick of SAMPLE.watch_picks) {
+      const pctText = formatPct(pick.pct)
+      const rowTpl = pctText ? tpl.watch_pick : tpl.watch_pick_no_pct
+      const row = fill(rowTpl, { name: pick.name, code: pick.code, pct: pctText, note: '' }).trim()
+      if (row) lines.push(row)
+    }
+  }
   if (rendered === 0 && tpl.empty.trim()) lines.push(tpl.empty.trim())
   return lines.join('\n')
 }
@@ -246,6 +260,7 @@ export function sameWecomScreenTemplate(a: WecomScreenTemplate, b: WecomScreenTe
     x.more === y.more &&
     x.quant_tag === y.quant_tag &&
     x.skills_tag === y.skills_tag &&
-    x.max_picks === y.max_picks
+    x.max_picks === y.max_picks &&
+    x.show_watch_picks === y.show_watch_picks
   )
 }

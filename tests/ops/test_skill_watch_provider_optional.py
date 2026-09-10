@@ -8,7 +8,6 @@ import pytest
 from src.ops.application.jobs.context import JobContext, JobError
 from src.ops.application.jobs.paper_quant_support import _today
 from src.ops.application.jobs.skill_watch import execute_skill_watch
-from src.ops.application.unified_monitor_pool import get_unified_monitor_pool
 from src.ops.infrastructure.store import OpsStore
 
 

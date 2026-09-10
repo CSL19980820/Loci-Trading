@@ -236,9 +236,15 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
   display: flex;
   flex-direction: column;
   gap: var(--ai-gap-md);
-  flex: 0 0 300px;
-  width: 300px;
-  min-width: 0;
+  /*
+   * shrink 因子必须 > 0：原来写 0 0 300px，旁边的 min-width 对不可收缩的 flex 项无效，
+   * 窄屏下正文区被压到 0 还溢出弹窗。980px 以下由 AssistantPanel 的断点直接折成 44px
+   * rail（折叠态是 v-if 切 DOM 的，纯 CSS 收窄只会把展开态内容裁掉），
+   * 这里的可收缩只兜中间地带；min-width 是「任务列表还读得出来」的下限。
+   * width 删掉：flex-basis 已经给了宽度，两处写宽度只会打架。
+   */
+  flex: 0 1 300px;
+  min-width: 240px;
   min-height: 0;
   overflow: hidden;
   border-left: 1px solid var(--rule);
@@ -249,6 +255,8 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
 }
 .assistant-task-sidebar.is-collapsed {
   flex: 0 0 44px;
+  /* 展开态的 min-width 会把 44px 的 rail 撑回 240px，折叠时必须清掉 */
+  min-width: 0;
   width: 44px;
   padding: .45rem 0;
   overflow: hidden;

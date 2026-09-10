@@ -34,6 +34,17 @@ NOW = datetime(2026, 8, 27, 10, 30, 0)
 
 
 @pytest.fixture(autouse=True)
+def _freeze_journal_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    # HTTP 读取没有 now 参数，须与历史信号夹具使用同一个时钟。
+    class JournalClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW if tz is None else NOW.astimezone(tz)
+
+    monkeypatch.setattr("src.ops.infrastructure.store_signals.datetime", JournalClock)
+
+
+@pytest.fixture(autouse=True)
 def _drop_singleton_and_config_cache():
     # stream_router 的 (feed, seq) 结果缓存是模块级全局：不清就会跨用例串味
     # （tests/market/test_live_hub.py 也用 "index" 这个 key，seq 从 1 开始）。

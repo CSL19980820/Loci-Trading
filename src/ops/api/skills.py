@@ -10,10 +10,6 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from src.ops.api.schemas import (
     SkillGenerateRequest,
-    SkillJobConfig,
-    SkillRunCreate,
-    SkillRunReply,
-    SkillStrategyConfig,
 )
 from src.shared.api_deps import MAX_UPLOAD_BYTES, missing_dependency, ops_store
 
@@ -27,9 +23,34 @@ def build_skills_router(
     ops_db: str | None = None,
     palace_db: str | None = None,
     scheduler_getter=None,
+    auth_dependency=None,
 ) -> APIRouter:
     router = APIRouter()
     write_guard = Depends(write_dependency)
+    #: 组合根注入时才有身份上下文。桌面单机不注入 → 只剩写鉴权（本机单用户，
+    #: 种子账号本身就是管理员）。**新写组合根必须传它**，否则「装技能包」这条
+    #: 会静默退化成「任何已登录用户都能装」。
+    auth_guard = Depends(auth_dependency) if auth_dependency is not None else None
+
+    def _require_skill_admin(context) -> None:
+        """装 / 卸技能包 = 装 / 卸**代码**，只有平台管理员能做。
+
+        2026-09 安全审查（RCE-SKILL-CLI-001，critical）：技能包 frontmatter 的
+        ``agents[]`` 会在调用 LLM **之前**无条件跑完它声明的 CLI 子任务，而包内
+        允许落 ``.py``。所以「能上传技能包」等价于「能在服务器上执行任意代码」。
+        旧实现只挂 write guard，任何已登录租户（含最低权限 member）都能调——
+        多租户下这是一条从 member 直达「读取全部租户库」的提权链。
+
+        ``skill_cli.build_command`` 那边已把 argv[0] 收成白名单（裸 bash/sh/curl
+        与 ``python -c`` 全部拒绝），但那只挡「跑包外的东西」；包内脚本是上传者
+        自己写的，拦不住也不该拦——所以边界必须挪到「谁能上传」。
+        """
+        if context is None:
+            return
+        from src.identity.api.schemas import require_admin_context
+
+        require_admin_context(context)
+
 
     def _ops():
         return ops_store(ops_db)
@@ -89,8 +110,10 @@ def build_skills_router(
     def sync_skill_templates(
         overwrite: bool = Query(default=True),
         _write: None = write_guard,
+        context=auth_guard,
     ) -> dict[str, Any]:
-        """把仓库 templates/skills 下的战法模板安装到 data/skills。"""
+        """把仓库 templates/skills 下的战法模板装进 data/skills（**管理员专属**）。"""
+        _require_skill_admin(context)
         try:
             from src.ops.application.skills import SkillError, sync_skills_from_templates
         except ImportError as exc:
@@ -102,9 +125,12 @@ def build_skills_router(
 
     @router.post("/api/skills", tags=["skills"], status_code=201)
     def install_skill_api(
-        file: UploadFile = File(...), _write: None = write_guard
+        file: UploadFile = File(...),
+        _write: None = write_guard,
+        context=auth_guard,
     ) -> dict[str, Any]:
-        """上传并安装技能包 zip 到 data/skills/。"""
+        """上传并安装技能包 zip 到 data/skills/（**管理员专属**）。"""
+        _require_skill_admin(context)
         try:
             from src.ops import install_skill
             from src.ops.application.screen import ScreenPackageError, read_screen_archive
@@ -147,7 +173,13 @@ def build_skills_router(
         return {key: value for key, value in record.items() if key != "instructions"}
 
     @router.delete("/api/skills/{slug}", tags=["skills"])
-    def remove_skill(slug: str, _write: None = write_guard) -> dict[str, bool]:
+    def remove_skill(
+        slug: str,
+        _write: None = write_guard,
+        context=auth_guard,
+    ) -> dict[str, bool]:
+        """卸载技能包（**管理员专属**：卸的是代码）。"""
+        _require_skill_admin(context)
         try:
             from src.ops import resolve_skill, uninstall_skill
             from src.ops.application.skills import SkillError

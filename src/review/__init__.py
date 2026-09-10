@@ -15,12 +15,18 @@ from src.review.application.outcomes import (
     track_candidate_outcomes,
 )
 from src.review.application.outcomes_plans import evaluate_plans
-from src.review.application.winrates import strategy_winrate_summary
+from src.review.application.winrates import (
+    build_winrate_summary,
+    strategy_winrate_summary,
+    winrate_periods,
+    winrate_samples,
+)
 
 __all__ = [
     "HORIZONS",
     "PRIMARY_HORIZONS",
     "CandidateOutcome",
+    "build_winrate_summary",
     "evaluate_candidates",
     "evaluate_plans",
     "filter_recent_outcomes",
@@ -28,4 +34,6 @@ __all__ = [
     "summarize_by_strategy",
     "summarize_candidates",
     "track_candidate_outcomes",
+    "winrate_periods",
+    "winrate_samples",
 ]

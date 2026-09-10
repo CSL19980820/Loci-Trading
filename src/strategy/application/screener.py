@@ -84,11 +84,39 @@ def _reference_panel(
     panels: Mapping[str, Any], fields: tuple[str, ...]
 ) -> pd.DataFrame | None:
     """所有策略不一定读取 close；用首个非空必需字段作为信号面板参考。"""
-    for field in fields:
-        panel = panels.get(field)
+    for name in fields:
+        panel = panels.get(name)
         if isinstance(panel, pd.DataFrame) and not panel.empty:
             return panel
     return None
+
+
+def _seal_snapshot(store: MarketStore, snapshot: dict[str, Any]) -> dict[str, Any]:
+    """收尾复核行情版本：不一致说明面板加载期间有人写过行情库。
+
+    ``data_snapshot`` 描述的是**取证那一刻**的水位，从来不承诺整段计算期间数据库
+    被冻结——2026-09 的架构复审把这点记成了遗留缺口。真做统一读事务的代价远大于
+    收益（热库重建单事务重写 700 日窗口期间 WAL 无法 checkpoint），但末尾补一次
+    采样是零成本的：``market_revision`` 是 meta 单行查询。
+
+    两次不一致时显式标出来，而不是让结果看起来像在一份快照上算的。行情读写槽
+    本该防住选股与同步撞车，命中这条说明槽漏了，是要查的信号而不是正常现象。
+    """
+    before = str(snapshot.get("market_revision") or "")
+    if not before:
+        return snapshot
+    try:
+        after = store.market_revision()
+    except Exception:
+        # 复核失败不能拖垮已经算完的选股结果；缺这个字段等于「没复核」。
+        return snapshot
+    if after == before:
+        return snapshot
+    return {
+        **snapshot,
+        "market_revision_end": after,
+        "revision_changed_during_run": True,
+    }
 
 
 def screen(
@@ -219,7 +247,7 @@ def screen(
             health=health,
             universe=resolved.spec,
             universe_funnel=funnel,
-            data_snapshot=result_snapshot,
+            data_snapshot=_seal_snapshot(store, result_snapshot),
         )
 
     _progress("panel", 48, f"加载面板 {len(resolved.codes)} 只…")
@@ -282,7 +310,7 @@ def screen(
             health=health,
             universe=resolved.spec,
             universe_funnel=funnel,
-            data_snapshot=result_snapshot,
+            data_snapshot=_seal_snapshot(store, result_snapshot),
         )
 
     # 动态截断一致性：小宇宙全列，大宇宙分片全覆盖（见 audit_sampling）
@@ -358,7 +386,7 @@ def screen(
         health=health,
         universe=resolved.spec,
         universe_funnel=funnel,
-        data_snapshot=result_snapshot,
+        data_snapshot=_seal_snapshot(store, result_snapshot),
     )
 
 

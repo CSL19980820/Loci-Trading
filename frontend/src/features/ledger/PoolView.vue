@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+/**
+ * 候选池（路由 `/pool`）：筛选一批候选、读数、进档案、删。
+ *
+ * 表格上方只留一条横栏（页头与表格工具栏都已下线），所以这个文件里剩下的是
+ * 「拿到结果之后」的事：选中集合、当前已加载口径的读数、单删与批量删、进档案时
+ * 写批次会话。筛选草稿在 usePoolFilters，中文化文案在 poolLabels，详情在
+ * PoolCandidateDialog——它们各自都能独立说清职责，也就不该挤在这一屏里。
+ */
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { InfoFilled, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
@@ -8,8 +16,7 @@ import { batchDeleteCandidates, deleteCandidate } from '@/shared/api/palace'
 import { getStrategies } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
-import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
-import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
+import BasicForm from '@/shared/components/ui/BasicForm.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
@@ -18,12 +25,15 @@ import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
-import { decisionLabel, strategyLabel as formatStrategyLabel, timingLabel } from '@/shared/lib/format'
+import { decisionLabel, timingLabel } from '@/shared/lib/format'
 import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
 import type { Candidate } from '@/shared/types/palace'
 import type { StrategyInfo } from '@/shared/types/quant'
 
+import PoolCandidateDialog from './components/PoolCandidateDialog.vue'
 import { useCandidatesQuery } from './composables/useCandidatesQuery'
+import { decisionType, sourceLabel, usePoolLabels } from './composables/poolLabels'
+import { usePoolFilters } from './composables/usePoolFilters'
 
 /** 口径不占正文行：只作这条功能行末端的一枚 ⓘ */
 const PAGE_NOTE = '候选为当时快照，不随行情变动'
@@ -40,76 +50,8 @@ const selectedIds = ref<string[]>([])
 const basicFormRef = ref<InstanceType<typeof BasicForm>>()
 const basicTableRef = ref<InstanceType<typeof BasicTable>>()
 
-const filters = reactive({
-  strategy: '',
-  decision: '',
-  dateRange: null as [string, string] | null,
-})
-
-const filterModel = computed({
-  get: () => filters as Record<string, unknown>,
-  set: (value: Record<string, unknown>) => {
-    filters.strategy = String(value.strategy ?? '')
-    filters.decision = String(value.decision ?? '')
-    const range = value.dateRange
-    const nextRange =
-      Array.isArray(range) && range.length === 2
-        ? ([String(range[0] ?? ''), String(range[1] ?? '')] as [string, string])
-        : null
-    if (!formValuesEqual(filters.dateRange, nextRange)) filters.dateRange = nextRange
-  },
-})
-
-const filterSchemas = computed<BasicFormSchema[]>(() => [
-  {
-    field: 'strategy',
-    label: '战法',
-    component: 'select',
-    componentProps: {
-      clearable: true,
-      filterable: true,
-      placeholder: '全部',
-      options: strategies.value.map((item) => ({ label: item.name, value: item.slug })),
-    },
-  },
-  {
-    field: 'decision',
-    label: '裁决',
-    component: 'select',
-    componentProps: {
-      clearable: true,
-      placeholder: '全部',
-      options: [
-        { label: '精选', value: '精选' },
-        { label: '落选', value: '落选' },
-        { label: '观察', value: '观察' },
-      ],
-    },
-  },
-  {
-    field: 'dateRange',
-    label: '日期',
-    component: 'date-picker',
-    componentProps: {
-      type: 'daterange',
-      'value-format': 'YYYY-MM-DD',
-      'start-placeholder': '开始',
-      'end-placeholder': '结束',
-      clearable: true,
-    },
-  },
-])
-
-const queryFilters = computed(() => {
-  const [start, end] = filters.dateRange ?? []
-  return {
-    strategy: filters.strategy || undefined,
-    decision: filters.decision || undefined,
-    start: start || undefined,
-    end: end || undefined,
-    limit: 1000,
-  }
-})
+const { filterModel, filterSchemas, queryFilters } = usePoolFilters(strategies)
+const { strategyLabel, poolLabel } = usePoolLabels(strategies)
 
 const {
   rows: cachedRows,
@@ -156,24 +98,6 @@ watch(queryError, (err) => {
   error.value = err ? toErrorMessage(err, '加载候选失败') : ''
 })
 
-const strategyNameBySlug = computed(() => {
-  const map = new Map<string, string>()
-  for (const item of strategies.value) {
-    map.set(item.slug, item.name)
-  }
-  return map
-})
-
-const detailTitle = computed(() =>
-  detail.value ? `${detail.value.name} · ${detail.value.date}` : '候选详情',
-)
-
-const evidenceText = computed(() => {
-  const ev = detail.value?.evidence
-  if (!ev || !Object.keys(ev).length) return ''
-  return JSON.stringify(ev, null, 2)
-})
-
 const columns = ref<BasicTableColumn[]>([
   { type: 'selection', width: 48, fixed: 'left' },
   { prop: 'date', label: '日期', width: 110 },
@@ -208,47 +132,6 @@ const columns = ref<BasicTableColumn[]>([
   },
   { prop: 'actions', label: '操作', width: 80, slotName: 'actions', fixed: 'right' },
 ])
-
-function strategyLabel(slug: string): string {
-  if (!slug) return '—'
-  return strategyNameBySlug.value.get(slug) || formatStrategyLabel(slug)
-}
-
-/**
- * 池号形如 `sanyuan-tail-v1@2026-08-20`：拆出 slug 落中文，日期原样留。
- * 用户要求界面任何位置都不许再出现英文 slug（含这个详情抽屉）。
- */
-function poolLabel(value: string | null | undefined): string {
-  const raw = String(value ?? '').trim()
-  if (!raw) return '—'
-  const [slug, day] = raw.split('@')
-  const name = strategyLabel(slug)
-  return day ? `${name} · ${day}` : name
-}
-
-/** 写入来源同理：内部编码不外露 */
-const SOURCE_LABELS: Record<string, string> = {
-  'job:screen': '盘后选股任务',
-  'api:screen': '接口选股',
-  'api:screen_today': '盘中选股',
-  'api:screen_backfill': '历史回补',
-  ai_assistant: '助手写入',
-  manual: '手工录入',
-}
-
-function sourceLabel(value: string | null | undefined): string {
-  const raw = String(value ?? '').trim()
-  if (!raw) return '—'
-  if (SOURCE_LABELS[raw]) return SOURCE_LABELS[raw]
-  if (raw.includes('backfill')) return '历史回补'
-  if (raw.startsWith('job:')) return '定时任务'
-  if (raw.startsWith('api:')) return '接口写入'
-  return raw
-}
-
-function decisionType(decision: string): 'info' | 'danger' {
-  return decisionLabel(decision) === '精选' ? 'danger' : 'info'
-}
 
 async function load(): Promise<void> {
   error.value = ''
@@ -485,46 +368,16 @@ onMounted(async () => {
     </PageContainer>
   </div>
 
-  <el-dialog
+  <PoolCandidateDialog
     v-model="detailOpen"
-    :title="detailTitle"
-    width="52rem"
-    class="pool-detail-dialog"
-    destroy-on-close
-  >
-    <template v-if="detail">
-      <el-descriptions
-        class="pool-detail-desc"
-        :column="2"
-        border
-        size="small"
-        label-width="var(--form-label-w)"
-      >
-        <el-descriptions-item label="日期">{{ detail.date }}</el-descriptions-item>
-        <el-descriptions-item label="标的">
-          <StockLink
-            :code="detail.code"
-            :name="detail.name"
-            :date="detail.date"
-            :batch="poolBatch"
-          />
-        </el-descriptions-item>
-        <el-descriptions-item label="战法">{{ strategyLabel(detail.rule_version) }}</el-descriptions-item>
-        <el-descriptions-item label="裁决">{{ decisionLabel(detail.decision) }}</el-descriptions-item>
-        <el-descriptions-item label="时点">{{ timingLabel(detail.timing) }}</el-descriptions-item>
-        <el-descriptions-item label="评分">{{ detail.score ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="池">{{ poolLabel(detail.pool_id) }}</el-descriptions-item>
-        <el-descriptions-item label="来源">{{ sourceLabel(detail.source) }}</el-descriptions-item>
-        <el-descriptions-item label="理由" :span="2">{{ detail.reason }}</el-descriptions-item>
-      </el-descriptions>
-      <pre v-if="evidenceText" class="evidence">{{ evidenceText }}</pre>
-    </template>
-    <template #footer>
-      <el-button @click="detailOpen = false">关闭</el-button>
-      <el-button v-if="detail" type="danger" plain @click="confirmDelete(detail)">删除</el-button>
-      <el-button v-if="detail" type="primary" @click="goArchive">看档案</el-button>
-    </template>
-  </el-dialog>
+    :candidate="detail"
+    :strategy-text="detail ? strategyLabel(detail.rule_version) : '—'"
+    :pool-text="poolLabel(detail?.pool_id)"
+    :source-text="sourceLabel(detail?.source)"
+    :batch="poolBatch"
+    @delete="confirmDelete"
+    @archive="goArchive"
+  />
 
   <RecordDialog v-model="recordOpen" kind="candidate" @saved="onRecorded" />
 </template>
@@ -576,28 +429,6 @@ onMounted(async () => {
 .pool-alert {
   margin: var(--gap-1) var(--gap-3) 0;
   flex-shrink: 0;
-}
-.evidence {
-  margin: var(--gap-2) 0 0;
-  padding: var(--gap-2);
-  border-radius: var(--radius);
-  background: var(--sheet-alt);
-  font: var(--fs-aux) / 1.45 var(--mono);
-  overflow: auto;
-  max-height: 16rem;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.pool-detail-desc :deep(.el-descriptions__label) {
-  width: var(--form-label-w);
-  min-width: var(--form-label-w);
-  max-width: var(--form-label-w);
-  white-space: nowrap;
-  vertical-align: top;
-}
-.pool-detail-desc :deep(.el-descriptions__content) {
-  min-width: 0;
-  word-break: break-word;
 }
 :deep(.el-table__row),
 :deep(.el-table-v2__row) {

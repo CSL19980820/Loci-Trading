@@ -4,6 +4,7 @@ import type {
   CandidateOutcome,
   CandidateSummary,
   PlanOutcome,
+  WinRateSampleDetail,
   WinRateSummary,
   WinRateTrendPoint,
 } from '@/shared/types/quant'
@@ -45,4 +46,13 @@ export function getWinRateTrend(options: {
   tags?: string
 } = {}): Promise<WinRateTrendPoint[]> {
   return quantRequest(`/winrate/trend${query(options)}`)
+}
+
+/** 某战法胜率的逐条证据。胜率页展开一行时才拉，主表不带明细。 */
+export function getWinRateSamples(options: {
+  tag: string
+  horizon?: number
+  limit?: number
+}): Promise<WinRateSampleDetail> {
+  return quantRequest(`/winrate/samples${query(options)}`)
 }

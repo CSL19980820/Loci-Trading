@@ -23,10 +23,13 @@ from datetime import date, timedelta
 import time
 from typing import Any
 
+from src.shared.clock import utc_now
+
 
 #: 非 spot 末日的回看窗口。比增量判据的最大断档容忍宽一截即可：窗口里查不到
 #: 非 spot 行，说明这票定稿历史已落后超过窗口，增量判据本来也会判它走全量。
 FINALIZED_LOOKBACK_DAYS = 400
+_LISTING_SKIP_SOURCE = "listing_calendar"
 
 
 @dataclass
@@ -39,6 +42,8 @@ class SyncPrefetch:
                 watermarks: dict[str, dict[str, Any]] = field(default_factory=dict)
                 earliest: dict[str, str] = field(default_factory=dict)
                 finalized_last: dict[str, str] = field(default_factory=dict)
+                #: 证券列表给出的上市日；新股上市当日通常还没有定稿日 K。
+                list_dates: dict[str, str] = field(default_factory=dict)
                 factor_age: dict[str, str] = field(default_factory=dict)
                 #: 非 spot 末日窗口起点；窗口外的票按「无定稿末日」处理。
                 finalized_window_start: str = ""
@@ -48,6 +53,55 @@ class SyncPrefetch:
 
                 def watermark(self, code: str) -> dict[str, Any] | None:
                                 return self.watermarks.get(code)
+
+
+def listing_day_without_history(
+                prefetch: SyncPrefetch, code: str, *, today: str
+) -> str:
+                """返回仍在上市日且没有定稿日 K 的上市日期，否则返回空串。"""
+                list_date = str(prefetch.list_dates.get(code) or "")[:10]
+                if not list_date:
+                                return ""
+                try:
+                                if date.fromisoformat(list_date) < date.fromisoformat(today):
+                                                return ""
+                except ValueError:
+                                return ""
+                if prefetch.finalized_last.get(code, ""):
+                                return ""
+                return list_date
+
+
+def listing_day_skip_receipt(
+                code: str, list_date: str, *, today: str
+) -> dict[str, Any]:
+                """新股上市日尚无定稿日 K 时的可观测跳过回执。"""
+                reason = f"上市日 {list_date} 暂无定稿日 K，跳过历史源请求；收盘后再同步"
+                return {
+                                "code": code,
+                                "lane": "hist_daily",
+                                "attempts": [
+                                                {
+                                                                "source_id": _LISTING_SKIP_SOURCE,
+                                                                "state": "skipped",
+                                                                "checked_at": utc_now(),
+                                                                "error": reason,
+                                                }
+                                ],
+                                "selected_source": "",
+                                "fallback_used": False,
+                                "unresolved": False,
+                                "coverage_start": list_date,
+                                "coverage_end": today,
+                                "request_start": list_date,
+                                "request_end": today,
+                                "error": reason,
+                                "watermark": {
+                                                "status": "ok",
+                                                "message": reason,
+                                                "source": _LISTING_SKIP_SOURCE,
+                                },
+                }
 
 
 def _rows(store: Any, sql: str, params: tuple = ()) -> list[tuple]:
@@ -67,6 +121,10 @@ _FINALIZED_SQL = (
                 "SELECT code, MAX(trade_date) FROM quotes_daily"
                 " WHERE trade_date >= ? AND trade_date <= ?"
                 " AND source NOT LIKE '%\\_spot' ESCAPE '\\' GROUP BY code"
+)
+_LIST_DATE_SQL = (
+                "SELECT code, list_date FROM instruments"
+                " WHERE COALESCE(list_date, '') <> ''"
 )
 _FACTOR_SQL = "SELECT code, MAX(fetched_at) FROM adjust_factors GROUP BY code"
 
@@ -97,9 +155,11 @@ def load_sync_prefetch(
                                 out.earliest[str(row[0])] = str(row[1] or "")[:10]
                 for row in _rows(store, _FINALIZED_SQL, (window_start, window_end)):
                                 out.finalized_last[str(row[0])] = str(row[1] or "")[:10]
+                for row in _rows(store, _LIST_DATE_SQL):
+                                out.list_dates[str(row[0])] = str(row[1] or "")[:10]
                 for row in _rows(store, _FACTOR_SQL):
                                 out.factor_age[str(row[0])] = str(row[1] or "")
 
-                out.loaded = bool(out.watermarks or out.earliest)
+                out.loaded = bool(out.watermarks or out.earliest or out.list_dates)
                 out.elapsed_seconds = time.perf_counter() - began
                 return out

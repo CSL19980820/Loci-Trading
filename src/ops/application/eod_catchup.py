@@ -10,15 +10,19 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from src.ops.infrastructure.scheduler import split_cron_expressions
+
 logger = logging.getLogger(__name__)
 
 _TZ = ZoneInfo("Asia/Shanghai")
 #: 仅补跑这些 kind，避免把盘中增量同步在周末狂刷一遍。
 _CATCHUP_KINDS = frozenset({"screen", "sync", "outcome"})
+#: ``jobs_due_for_eod_catchup`` 附在返回项上的键：本次要补的那个触发点。
+CATCHUP_SLOT_KEY = "catchup_slot"
 
 
 def parse_once_cron(cron: str) -> tuple[int, int] | None:
-    """解析 ``M H * * 1-5`` 形态；其它（间隔/复杂）返回 None。"""
+    """解析单行 ``M H * * 1-5`` 形态；其它（间隔/复杂）返回 None。"""
     parts = str(cron or "").strip().split()
     if len(parts) != 5:
         return None
@@ -33,6 +37,19 @@ def parse_once_cron(cron: str) -> tuple[int, int] | None:
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         return None
     return hour, minute
+
+
+def parse_once_slots(cron: str) -> list[tuple[int, int]]:
+    """多时点 cron（换行 / 分号分隔，与 ``validate_cron`` 同口径）逐行解析成定点。
+
+    解析不出的行（间隔等）忽略；全部解析不出返回空列表，任务不参与补跑。
+    """
+    slots: list[tuple[int, int]] = []
+    for line in split_cron_expressions(cron):
+        parsed = parse_once_cron(line)
+        if parsed is not None:
+            slots.append(parsed)
+    return slots
 
 
 def slot_for_day(day: str, hour: int, minute: int) -> datetime:
@@ -68,8 +85,14 @@ def last_run_covers_slot(last_run_at: str, slot: datetime) -> bool:
     return as_utc >= slot or as_local >= slot
 
 
-def job_succeeded_on_trading_day(store: Any, *, job_id: str, day: str) -> bool:
-    """该任务是否已有覆盖 ``day`` 的成功记录（按 result.trade_date 或完成日）。"""
+def job_succeeded_on_trading_day(
+    store: Any, *, job_id: str, day: str, slot: datetime | None = None
+) -> bool:
+    """该任务是否已有覆盖 ``day`` 的成功记录（按 result.trade_date 或完成日）。
+
+    传 ``slot`` 时进一步要求成功记录的 ``started_at`` 不早于该触发点：多时点任务
+    早一档跑成功，不能替晚一档失败的那次顶账。
+    """
     from src.ops.application.wecom_push_mark import (
         resolve_push_day,
         shanghai_date_of_timestamp,
@@ -82,10 +105,16 @@ def job_succeeded_on_trading_day(store: Any, *, job_id: str, day: str) -> bool:
     runs = store.list_runs(job_id=job_id, status="success", limit=40)
     for run in runs:
         result = run.get("result")
-        if isinstance(result, dict) and resolve_push_day(result) == day:
-            return True
         finished = str(run.get("finished_at") or run.get("started_at") or "")
-        if finished and shanghai_date_of_timestamp(finished) == day:
+        on_day = (
+            isinstance(result, dict) and resolve_push_day(result) == day
+        ) or (bool(finished) and shanghai_date_of_timestamp(finished) == day)
+        if not on_day:
+            continue
+        if slot is None:
+            return True
+        started = str(run.get("started_at") or run.get("finished_at") or "")
+        if last_run_covers_slot(started, slot):
             return True
     return False
 
@@ -96,7 +125,11 @@ def jobs_due_for_eod_catchup(
     last_trading_day: str,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """选出应对 ``last_trading_day`` 已触发却尚未跑过的定点任务。"""
+    """选出应对 ``last_trading_day`` 已触发却尚未跑过的定点任务。
+
+    返回项是任务的浅拷贝，附带 ``CATCHUP_SLOT_KEY``：该任务最晚一个「已到点、
+    ``last_run_at`` 未覆盖」的触发点。多时点任务只要有一个时点漏跑就进名单。
+    """
     day = str(last_trading_day or "").strip()[:10]
     if not day:
         return []
@@ -113,22 +146,24 @@ def jobs_due_for_eod_catchup(
         kind = str(job.get("kind") or "")
         if kind not in _CATCHUP_KINDS:
             continue
-        parsed = parse_once_cron(str(job.get("cron") or ""))
-        if parsed is None:
+        last_run_at = str(job.get("last_run_at") or "")
+        missed = [
+            slot
+            for slot in (
+                slot_for_day(day, hour, minute)
+                for hour, minute in parse_once_slots(str(job.get("cron") or ""))
+            )
+            if cursor >= slot and not last_run_covers_slot(last_run_at, slot)
+        ]
+        if not missed:
             continue
-        hour, minute = parsed
-        slot = slot_for_day(day, hour, minute)
-        if cursor < slot:
-            continue
-        if last_run_covers_slot(str(job.get("last_run_at") or ""), slot):
-            continue
-        due.append(job)
+        due.append({**job, CATCHUP_SLOT_KEY: max(missed)})
     # 先日终同步，再选股，最后兑现——避免用未刷当日的日 K 选股。
     kind_rank = {"sync": 0, "screen": 1, "outcome": 2}
     due.sort(
         key=lambda j: (
             kind_rank.get(str(j.get("kind") or ""), 9),
-            str(j.get("cron") or ""),
+            j[CATCHUP_SLOT_KEY],
             str(j.get("name") or ""),
         )
     )
@@ -158,7 +193,10 @@ def run_eod_catchup(
             job_id = str(job.get("id") or "")
             try:
                 if job_id and job_succeeded_on_trading_day(
-                    store, job_id=job_id, day=last_trading_day
+                    store,
+                    job_id=job_id,
+                    day=last_trading_day,
+                    slot=job.get(CATCHUP_SLOT_KEY),
                 ):
                     skipped.append(name)
                     logger.info(

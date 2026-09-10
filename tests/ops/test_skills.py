@@ -7,7 +7,6 @@ from unittest.mock import patch
 import zipfile
 
 from src.ops.application.skills import (
-    MAX_ARCHIVE_BYTES,
     SkillError,
     install_skill,
     parse_manifest,

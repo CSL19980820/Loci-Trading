@@ -6,16 +6,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from inspect import Parameter
 import inspect
-import json
 import logging
-import math
-import re
 from threading import BoundedSemaphore
 import time
-from typing import Any
 
 from src.market.infrastructure.akshare_probe_worker import (
     MAX_CONCURRENT_PROBES,
@@ -40,20 +36,14 @@ from src.market.infrastructure.akshare_probe_result import (
 )
 
 from src.market.infrastructure.akshare_catalog_limits import (
-    MAX_PROBE_COLLECTION_ITEMS,
     MAX_PROBE_DATE_WINDOW_DAYS,
-    MAX_PROBE_JSON_DEPTH,
-    MAX_PROBE_JSON_NODES,
-    MAX_PROBE_PAGE,
-    MAX_PROBE_PARAMS_BYTES,
+    MAX_PROBE_JSON_DEPTH as MAX_PROBE_JSON_DEPTH,  # 测试按本模块属性读取
     MAX_PROBE_SECONDS,
-    MAX_PROBE_STRING_LENGTH,
     MAX_SAMPLE_ROWS,
     _annotation_text,
     _apply_probe_defaults,
     _coerce_params,
     _is_json_value,
-    _is_page_parameter,
     _probe_sample,
     _validate_and_bind,
     _validate_json_params,

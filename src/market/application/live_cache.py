@@ -136,7 +136,6 @@ def build_monitor_snapshot(
     include_minute: bool = True,
     force_refresh: bool = False,
 ) -> LiveSnapshot:
-    from datetime import datetime, timezone
 
     quotes, adapters, hits = get_cached_quotes(codes, force_refresh=force_refresh)
     minutes: dict[str, list[dict[str, Any]]] = {}

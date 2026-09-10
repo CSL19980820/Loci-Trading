@@ -1,0 +1,9 @@
+# 只为 CI 的 ruff F 类硬门禁服务（`ruff check --select F src cli tests`）。
+# F 类是「真错」：未使用/重复导入、未定义名、被遮蔽的导入、写了没用的局部变量。
+# 其余规则仍是 report-only，不在这里收紧——一次性打开会淹掉真问题。
+target-version = "py312"
+
+[lint.per-file-ignores]
+# 包出口的职责就是把子模块的名字摆出来，F401 在这里规则本身不适用；
+# 真要表达「这是再导出」时用 `X as X` 或 `__all__`，别在业务模块里靠豁免。
+"__init__.py" = ["F401"]

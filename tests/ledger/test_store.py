@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 from contextlib import closing
-from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
-import json
 from pathlib import Path
 import sqlite3
 import tempfile
-import threading
 import unittest
-from unittest import mock
 
-from src.ledger import PalaceError, PalaceStore, normalize_decision
+from src.ledger import PalaceStore, normalize_decision
 
 
 class PalaceStoreTests(unittest.TestCase):
@@ -250,7 +245,7 @@ class PalaceStoreTests(unittest.TestCase):
     def test_winrate_trend_groups_by_month(self) -> None:
         """胜率趋势按月聚合。"""
 
-        review_id = self.store.record_review(
+        self.store.record_review(
             entity_type="trade",
             entity_id="dummy",
             outcome="盈利",

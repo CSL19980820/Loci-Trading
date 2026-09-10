@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { defineComponent, h, shallowRef, triggerRef } from 'vue'
 import HeatStrip from '../components/HeatStrip.vue'
 import IndexBar from '../components/IndexBar.vue'
 import LiveEmptyState from '../components/LiveEmptyState.vue'
@@ -90,6 +91,32 @@ describe('IndexBar', () => {
     // 有点列才画折线，没有的槽位画一条平线，绝不造假走势
     expect(wrapper.findAll('.spark__line')).toHaveLength(1)
     expect(wrapper.findAll('.spark__void')).toHaveLength(4)
+  })
+
+  it('点列原地追加后 sparkline 仍重画，不定格在第一帧', async () => {
+    // 复刻 useLiveBoard 的真实写法：点列原地 push + triggerRef，指数行换新引用。
+    // IndexBar.cells 里那句 `[...trail]` 一旦被「优化」掉，这条就红。
+    const trails = shallowRef(new Map<string, number[]>([['000001', [3870, 3875]]]))
+    const rows = shallowRef<QuoteRow[]>([
+      quote({ code: '000001', name: '上证指数', price: 3875, prevClose: 3870, pct: 0.13 }),
+    ])
+    const host = mount(
+      defineComponent({
+        setup() {
+          return () => h(IndexBar, { rows: rows.value, trails: trails.value })
+        },
+      }),
+    )
+    const before = host.find('.spark__line').attributes('points')
+
+    trails.value.get('000001')?.push(3900)
+    triggerRef(trails)
+    rows.value = [
+      quote({ code: '000001', name: '上证指数', price: 3900, prevClose: 3870, pct: 0.78 }),
+    ]
+    await host.vm.$nextTick()
+
+    expect(host.find('.spark__line').attributes('points')).not.toBe(before)
   })
 })
 

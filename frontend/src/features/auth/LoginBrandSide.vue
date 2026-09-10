@@ -99,8 +99,20 @@ const capabilities = [
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* 登录页专属深色层级：四档令牌最深的 --n-4 也比它亮，无法复用 */
-  background: #0b0d12;
+  /*
+   * 登录页专属深色层级：四档令牌最深的 --n-4 也比它亮，无法复用。
+   * 这一面是刻意固定的深色（不跟外观切换，见 ui-spec 的门面页决定），所以下面几个
+   * 值不算令牌逃逸；收成局部变量只为「同一个色一个真相点」——此前 #f2f5f9 抄了
+   * 3 遍、白纱 rgba 抄了 4 遍、字色 rgba 抄了 3 遍。
+   */
+  --bs-face: #0b0d12;
+  --bs-ink: #f2f5f9;
+  --bs-ink-rgb: 233, 238, 245;
+  /* 白纱：卡片底/描边/点阵，只差 alpha */
+  --bs-veil-rgb: 255, 255, 255;
+  /* 冷光：与暖光（--seal）成对出现，只铺一层会糊成红雾 */
+  --bs-cool-rgb: 58, 104, 180;
+  background: var(--bs-face);
   padding: var(--gap-4) calc(var(--gap-4) * 1.5);
   isolation: isolate;
 }
@@ -127,7 +139,7 @@ const capabilities = [
 }
 .brand-side__glow2 {
   inset: 45% -40% -45% 40%;
-  background: radial-gradient(closest-side, rgba(58, 104, 180, 0.15), transparent 70%);
+  background: radial-gradient(closest-side, rgba(var(--bs-cool-rgb), .15), transparent 70%);
 }
 /*
  * 点阵必须配径向遮罩往外淡出。没有遮罩时它在整幅上均匀铺开，会和压在上面的
@@ -137,7 +149,7 @@ const capabilities = [
   inset: 0;
   background-image: radial-gradient(
     circle at 1.5px 1.5px,
-    rgba(255, 255, 255, 0.05) 1.5px,
+    rgba(var(--bs-veil-rgb), .05) 1.5px,
     transparent 0
   );
   background-size: 36px 36px;
@@ -164,7 +176,7 @@ const capabilities = [
   font-size: 20px;
   font-weight: 700;
   letter-spacing: 0.03em;
-  color: #f2f5f9;
+  color: var(--bs-ink);
 }
 
 /*
@@ -181,13 +193,13 @@ const capabilities = [
    * 再撑开就散架。中文不能像西文那样负到 -0.03em（会挤字），-0.01em 是上限。
    */
   letter-spacing: -0.01em;
-  color: #f2f5f9;
+  color: var(--bs-ink);
 }
 .brand-side__tag {
   margin: 18px 0 0;
   font-size: 16px;
   letter-spacing: 0.04em;
-  color: rgba(233, 238, 245, 0.6);
+  color: rgba(var(--bs-ink-rgb), .6);
 }
 
 /* 上下都吃 auto：高屏上剩余空间均分到「陈述↔卡片」和「卡片↔页脚」，不堆在底部 */
@@ -195,9 +207,9 @@ const capabilities = [
   position: relative;
   margin: auto 0;
   max-width: 624px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(var(--bs-veil-rgb), .09);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(var(--bs-veil-rgb), .035);
   overflow: hidden;
 }
 /* 曲线区高度写死，caps 的 padding-top 跟着它走：用百分比会随卡片高度浮动，压到文字上 */
@@ -219,7 +231,7 @@ const capabilities = [
   align-items: baseline;
   gap: var(--gap-3);
   padding: 16px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid rgba(var(--bs-veil-rgb), .07);
 }
 .brand-side__caps li:first-child {
   border-top: 0;
@@ -230,11 +242,11 @@ const capabilities = [
   font-size: 17px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: #f2f5f9;
+  color: var(--bs-ink);
 }
 .brand-side__caps span {
   font-size: 13px;
-  color: rgba(233, 238, 245, 0.52);
+  color: rgba(var(--bs-ink-rgb), .52);
 }
 
 .brand-side__foot {
@@ -245,7 +257,7 @@ const capabilities = [
   padding-top: var(--gap-4);
   font-size: 12px;
   letter-spacing: 0.03em;
-  color: rgba(233, 238, 245, 0.34);
+  color: rgba(var(--bs-ink-rgb), .34);
 }
 
 /* 窄屏：收成一条横帽，只保留品牌与一行陈述 */

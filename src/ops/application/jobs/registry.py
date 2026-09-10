@@ -26,6 +26,7 @@ from src.ops.application.jobs.intel_brief import execute_intel_brief
 from src.ops.application.jobs.intel_fetch import execute_intel_fetch
 from src.ops.application.jobs.market_gate import (
     market_heavy_slot,
+    screen_memory_slot,
     skip_reason_for_intraday_sync,
 )
 from src.ops.application.jobs.notify import _maybe_push_wecom, execute_notify
@@ -330,14 +331,14 @@ def run_job(
             # 不能冻。执行器是同步函数、不会自己刷心跳，统一在这里兜住；正常返回、
             # 抛异常、超时、取消四条路径都由 with 收口停泵，线程不会泄漏。
             # 盘中选股走独立实时 overlay，不占行情闸门，避免跟增量同步互相等死。
+            # 选股先排内存闸门再占读槽：排队中的选股不挡同步写者。
+            job_label = str(job.get("name") or job.get("id") or "")
             gate = (
                 nullcontext()
                 if str(kind) == "screen" and market_pkg.in_live_screen_clock()
-                else market_heavy_slot(
-                    str(kind), str(job.get("name") or job.get("id") or "")
-                )
+                else market_heavy_slot(str(kind), job_label)
             )
-            with HeartbeatPump(ctx), gate:
+            with HeartbeatPump(ctx), screen_memory_slot(str(kind), job_label), gate:
                 ctx.check_cancelled()
                 result = executor(dict(job.get("config") or {}), ctx)
             # 泵已停（stop 会 join 心跳线程），最后一拍补在这里：不让心跳线程和紧

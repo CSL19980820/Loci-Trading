@@ -4,11 +4,9 @@ from __future__ import annotations
 from src.intel.application.wudao_keys import (
     CODES_ARG_BY_TOOL as _WUDAO_CODES_ARG_BY_TOOL,
     DATE_ARG_BY_TOOL as _WUDAO_DATE_ARG_BY_TOOL,
-    DATELESS_TOOLS as _WUDAO_DATELESS_TOOLS,
 )
 
 from datetime import date as _date, timedelta
-from collections.abc import Mapping
 from typing import Any, Literal
 
 IntelPhase = Literal["open", "intraday", "close"]
@@ -461,7 +459,8 @@ def build_phase_calls(
 
 
 
+# 别名形式是 PEP 484 的显式再导出标记：这些名字本模块不用，只为兼容旧导入路径。
 from src.intel.application.quota_estimate import (  # noqa: E402
-    estimate_daily_calls,
-    structured_budget_alert,
+    estimate_daily_calls as estimate_daily_calls,
+    structured_budget_alert as structured_budget_alert,
 )

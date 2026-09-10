@@ -106,19 +106,23 @@ class ReviewCacheFixture(unittest.TestCase):
 
 
 class CacheHitTests(ReviewCacheFixture):
-    def test_three_scopes_cached_and_second_pass_all_hits(self) -> None:
-        """三个 scope 各占一条；第二轮全命中，条目数不涨。"""
+    def test_scopes_cached_and_second_pass_all_hits(self) -> None:
+        """每个 scope 各占一条；第二轮全命中，条目数不涨。
+
+        四条 = candidates / plans / winrate_summary 三个端点 + 它们共用的
+        ``candidate_outcomes``（winrate 三兄弟从它派生，见 router 模块头）。
+        """
         paths = ["/api/review/candidates", "/api/review/plans", "/api/winrate/summary"]
         first = []
         for path in paths:
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
             first.append(response.json())
-        self.assertEqual(self._cache_size(), 3)
+        self.assertEqual(self._cache_size(), 4)
 
         for path, expected in zip(paths, first):
             self.assertEqual(self.client.get(path).json(), expected, path)
-        self.assertEqual(self._cache_size(), 3)
+        self.assertEqual(self._cache_size(), 4)
 
     def test_repeat_request_does_not_recompute(self) -> None:
         """命中就是命中：底层 evaluate_candidates 只该跑一次。"""
@@ -135,11 +139,19 @@ class CacheHitTests(ReviewCacheFixture):
         self.client.get("/api/review/candidates", params=dict(selected_only=True))
         self.assertEqual(self._cache_size(), 2)
 
-    def test_winrate_trend_is_not_cached(self) -> None:
-        """不缓存名单：trend 实测 5ms，加缓存只会多一次指纹扫描。"""
-        self.assertEqual(self.client.get("/api/winrate/trend").status_code, 200)
-        self.assertEqual(self.client.get("/api/winrate/trend").status_code, 200)
-        self.assertEqual(self._cache_size(), 0)
+    def test_winrate_trio_shares_one_outcomes_computation(self) -> None:
+        """summary / trend / samples 同源：三条请求只重算一次候选 T+N。
+
+        trend 旧版读手工 ``reviews`` 表（线上 0 行），页面「分周期明细」因此永远
+        空着。改成与主表同源后它也进了缓存；这条钉住「同源」不退化回「各算各的」
+        ——那会把 700ms 乘三。
+        """
+        with self._spy_on_candidates() as spy:
+            self.assertEqual(self.client.get("/api/winrate/summary").status_code, 200)
+            self.assertEqual(self.client.get("/api/winrate/trend").status_code, 200)
+            samples = self.client.get("/api/winrate/samples", params=dict(tag="demo-screen"))
+        self.assertEqual(samples.status_code, 200)
+        self.assertEqual(spy.call_count, 1)
 
 
 class CacheInvalidationTests(ReviewCacheFixture):

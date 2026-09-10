@@ -3,6 +3,7 @@ import { defineComponent, h } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useDataQueryMarket } from './useDataQueryMarket'
+import type { DataQueryMarket } from './useDataQueryMarket'
 
 const api = vi.hoisted(() => ({
   getMarketBoard: vi.fn(),
@@ -72,7 +73,7 @@ describe('useDataQueryMarket request ordering', () => {
       return options.q === 'new' ? secondLocal.promise : firstLocal.promise
     })
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -111,7 +112,7 @@ describe('useDataQueryMarket request ordering', () => {
     api.getMarketSession.mockResolvedValue({ live_allowed: true })
     api.getMarketBoard.mockResolvedValue(board('live', true))
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -151,7 +152,7 @@ describe('useDataQueryMarket request ordering', () => {
       return Promise.resolve(board('local', false))
     })
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -185,7 +186,7 @@ describe('useDataQueryMarket request ordering', () => {
       return options.live ? live.promise : Promise.resolve(board('local', false))
     })
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -221,7 +222,7 @@ describe('useDataQueryMarket request ordering', () => {
       .mockResolvedValue({ live_allowed: true })
     api.getMarketBoard.mockResolvedValue(board('live', true))
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -256,7 +257,7 @@ describe('useDataQueryMarket request ordering', () => {
     api.getMarketSession.mockRejectedValue(new Error('session unavailable'))
     api.getMarketBoard.mockResolvedValue(board('local', false))
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -277,6 +278,34 @@ describe('useDataQueryMarket request ordering', () => {
     wrapper.unmount()
   })
 
+  it('probes the session gate only once per list load', async () => {
+    api.getMarketSession.mockResolvedValue({ live_allowed: true })
+    api.getMarketBoard.mockResolvedValue(board('live', true))
+
+    let market!: DataQueryMarket
+    const Probe = defineComponent({
+      setup() {
+        market = useDataQueryMarket({
+          route: { fullPath: '/data' } as never,
+          router: { push: vi.fn() } as never,
+          busy: { value: false },
+          error: { value: '' },
+          liveError: { value: '' },
+        })
+        return () => h('div')
+      },
+    })
+    const wrapper = mount(Probe)
+
+    await market.loadBoard()
+    await flushPromises()
+    // loadBoard 自己探一次后把结果透传给 startRefresh，不再背靠背打第二发。
+    expect(api.getMarketSession).toHaveBeenCalledTimes(1)
+
+    market.stopRefresh()
+    wrapper.unmount()
+  })
+
   it('does not leave busy stuck when KeepAlive activate restarts refresh during loadBoard', async () => {
     const local = deferred<Record<string, unknown>>()
     api.getMarketSession.mockResolvedValue({ live_allowed: false })
@@ -286,7 +315,7 @@ describe('useDataQueryMarket request ordering', () => {
     })
 
     const busy = { value: false }
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -327,7 +356,7 @@ describe('useDataQueryMarket request ordering', () => {
       return options.live ? live.promise : Promise.resolve(board('local', false))
     })
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({
@@ -361,7 +390,7 @@ describe('useDataQueryMarket request ordering', () => {
     api.getMarketSession.mockResolvedValue({ live_allowed: false })
     api.getMarketBoard.mockResolvedValue(board('local', false))
 
-    let market!: ReturnType<typeof useDataQueryMarket>
+    let market!: DataQueryMarket
     const Probe = defineComponent({
       setup() {
         market = useDataQueryMarket({

@@ -1,0 +1,274 @@
+/* WinRateCompareTable.css - 现代量化横向战法甲板与对比表格样式 */
+
+.cmp-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  width: 100%;
+}
+
+/* ── 顶部战法英雄卡片 (Deck) ── */
+.cmp-deck {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--gap-3);
+  width: 100%;
+}
+
+/* 战法卡是**可点的**（进该战法的证据页），所以保留 hover 反馈——但只用边框
+ * 与底色。原来是「3px 渐变顶条 + 抬起 2px + 阴影升级 + 发光圆点」四件套同时
+ * 上，四种手段说同一句「这里可以点」。 */
+.deck-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-3);
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.deck-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+/* 选中态要比 hover 更明确：主色边框 + 极淡主色底。不再叠 box-shadow 描边—— */
+/* 那在 night/ink 两档和边框糊成一团。 */
+.deck-card.is-active-card {
+  border-color: var(--seal);
+  background: color-mix(in oklab, var(--seal) 6%, var(--surface));
+}
+
+.deck-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.deck-card__title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 删掉了 .deck-card__indicator：它无条件渲染，三张卡/每一行都有，
+   不区分任何状态，是纯装饰。战法名本身就是身份。 */
+
+.deck-card__name {
+  font-size: var(--fs-title);
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+.deck-card__count {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  padding: 1px 6px;
+  background: var(--surface-sunken);
+  border-radius: 3px;
+}
+
+.deck-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+}
+
+.deck-card__rate-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.deck-card__k {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.deck-card__v-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-1);
+}
+
+.deck-card__rate {
+  font: 800 1.8rem/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* 原来这里是灰底 + 边框的内嵌盒子。卡片本身已经是容器，里面再套一圈框
+ * 并不区分出任何有意义的分组（business-ui：去掉不区分有用分组的框）。 */
+.deck-card__info-box {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: var(--gap-2);
+  padding-top: var(--gap-1);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.deck-card__sub-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.deck-card__sub-k {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.deck-card__sub-v {
+  font-size: var(--fs-body);
+  font-weight: 800;
+}
+
+.deck-card__best {
+  font-size: var(--fs-aux);
+  font-weight: 800;
+  color: var(--seal);
+}
+
+.deck-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.deck-card__action {
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  transition: all 0.15s ease;
+}
+
+.deck-card:hover .deck-card__action {
+  color: var(--seal);
+  transform: translateX(2px);
+}
+
+/* ── 表格包装 ── */
+.cmp-table-wrap {
+  width: 100%;
+}
+
+.cmp-tag-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 删掉了 .cmp-tag-indicator：它无条件渲染，三张卡/每一行都有，
+   不区分任何状态，是纯装饰。战法名本身就是身份。 */
+
+.cmp-tag-title {
+  font-size: var(--fs-body);
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.cmp-source-text {
+  font-size: var(--fs-aux);
+  font-weight: 500;
+}
+
+/* ── 胜率微量化指示器 ── */
+.cmp-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.cmp-meter__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-1);
+}
+
+.cmp-meter__rate {
+  font-size: var(--fs-body);
+  font-weight: 800;
+}
+
+.cmp-meter__count {
+  font-size: var(--fs-micro);
+  color: var(--text-tertiary);
+}
+
+/* 原来这里是 4px 的胜率进度条（.cmp-meter__track/__fill）。同一格里已经有
+ * 「50.0%」和「3/9」两个数字，条形不增加信息，却让每一行都多一条横线——
+ * 三张卡 + 三行表格 = 六条。删掉，胜率靠数字与置信度徽章表达。 */
+
+.cmp-return-text {
+  font-size: var(--fs-body);
+  font-weight: 800;
+}
+
+/* ── 最佳持有期胶囊 ── */
+/* 最佳持有期原来是个带边框带底色的小药丸，里面塞 T+N、胜率、均收益三个数字。
+   拆成普通行内内容：三段之间靠间距分开，比挤在药丸里可读。 */
+.cmp-best-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+}
+
+.cmp-best-tag {
+  font-weight: 800;
+  font-size: var(--fs-micro);
+  color: var(--seal);
+  background: color-mix(in oklab, var(--seal) 16%, transparent);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+
+.cmp-best-rate {
+  font-size: var(--fs-aux);
+  font-weight: 700;
+}
+
+.cmp-best-avg {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+
+/* 下钻箭头 */
+.cmp-arrow {
+  color: var(--text-tertiary);
+  font-weight: 700;
+  font-size: var(--fs-title);
+  opacity: 0.35;
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+:deep(.cmp-row:hover .cmp-arrow) {
+  opacity: 1;
+  transform: translateX(3px);
+  color: var(--seal);
+}
+
+:deep(.is-clickable) {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+:deep(.is-clickable:hover) {
+  background-color: var(--surface-hover) !important;
+}
+
+:deep(.is-active-row) {
+  background-color: color-mix(in oklab, var(--seal) 8%, transparent) !important;
+}

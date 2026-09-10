@@ -227,7 +227,7 @@ def fetch_minute_bars(
                 raise EastmoneyMinuteError(
                     f"{plain} 在 {day} 无分钟线（近窗 trends 不含该日；"
                     f"历史 kline：{kline_exc}）"
-                )
+                ) from kline_exc
             return out
 
     window_days = max(1, int(days))
@@ -236,7 +236,11 @@ def fetch_minute_bars(
     # 分钟行情按交易日使用；收盘后访问“近 1 日”时，最近交易日的
     # 09:30 可能已经超过严格 24 小时，不能因此把整天数据判成空。
     start = end - timedelta(days=window_days)
-    stamps = pd.to_datetime(frame["datetime"], errors="coerce")
+    # trends2 / kline 的第一段就是时间戳文本，东财在不同接口上给的宽度不一样：
+    # 既有 ``2026-07-28 09:31`` 也有 ``2026-07-28 09:31:00``（两种都在 tests/market
+    # 的用例里）。格式推断只按首个值定格式，混排时另一种会被静默判成 NaT 并被下面
+    # 的窗口过滤整行丢掉；ISO8601 两种都吃。
+    stamps = pd.to_datetime(frame["datetime"], format="ISO8601", errors="coerce")
     out = frame.loc[
         (stamps.dt.date >= start.date()) & (stamps <= end)
     ].reset_index(drop=True)

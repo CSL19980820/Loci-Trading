@@ -16,7 +16,7 @@ from typing import Any
 
 from src.shared.clock import utc_now
 
-from src.market.infrastructure.store import MarketStore, normalize_code
+from src.market.infrastructure.store import MarketStore
 
 logger = logging.getLogger(__name__)
 

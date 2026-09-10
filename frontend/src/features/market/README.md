@@ -13,7 +13,7 @@
   - **近选跟踪**：近 5 个交易日精选（T～T+4），同日同代码去重，与样本榜一起吃主区剩余高度
   - **样本榜**：涨幅 / 换手 / 板块（库内排序，非全市场领涨；板块=行业成交额加权涨幅）。「非全市场」「实时降级」这类口径**只在 tooltip**，不占版面
   - **今日选股**：底区，**用 flex 分配剩余高度**（不再 `min(22vh, 11.5rem)` 写死），700px 视口下仍保证 6 行可见；开盘前若 `last_trading_day` 已切到自然日，回退 `coverage_last_date`
-  - **密度纪律**（`components/pulseSkin.css`，feature 局部、`.pulse-*` 前缀）：行高 28 / 表头 26 / hairline 1px / 无阴影 / 圆角 3；数字列一律 `--mono` + `tabular-nums` + 右对齐，涨跌带符号（`signedPct`），代码列等宽次要色、名称列主色。注意全局把 `.el-button--small` 的 **min-height** 钉在 `--ctl-h`，卡片头里的 link 按钮要连 min-height 一起压
+  - **密度纪律**（`components/pulseSkin.css`，feature 局部、`.pulse-*` 前缀）：尺度全部走令牌、本文件不复述数值——行高 `--row-h` / 表头 `--head-h` / 圆角 `--radius-lg` / hairline 1px / 卡片无阴影（阴影只留给弹层）；卡片头与全局 `.sheet-bar` 同一档（`min-height: --head-h` + `--gap-1`/`--pad-sheet-x`）。`var()` 一律不带 fallback（令牌真值只在 `style.base.css`，写 fallback 只会在改名时静默生效成错值）。数字列一律 `--mono` + `tabular-nums` + 右对齐，涨跌带符号（`signedPct`），代码列等宽次要色、名称列主色。卡片头的 tab 是文本型切换，不是控件：全局把 `.el-button--small` 的 **min-height** 钉在 `--ctl-h`，所以这里用局部契约 `--pulse-tab-h` 连 min-height 一起压
   - **空态不许说谎**（`composables/pulseEmptyState.ts`，纯函数 + 单测）：三档（历史读不到 / 一次都没跑过 / 有历史但窗口空）。表内只放 `trackEmptyShort` / `todayEmptyShort` 的 ≤14 字短句 + 一个「去选股」按钮，长解释进 tooltip
   - 首屏遮罩：会话 + 指数/榜到位后即撤；选股表后台续填，不挡已渲染内容
   - 交易时段 `useLivePolling` 约 8s：`live-tape` 每 tick；市场榜隔 tick（≈16s）；选股叠价同 tick 复用榜内行、仅对缺失 code 发 `codes` spot（`persist:false`）；KeepAlive 离页停表并 bump 世代作废 in-flight
@@ -21,7 +21,7 @@
   - **视觉自查**（需 `bunx playwright install chromium` + `bun run vite --port 5173`）：`node e2e/pulse-shots.mjs`（1280×800 / 1440×900 / 700 / 1200 / 880 窄屏 + 降级态截图）、`node e2e/pulse-metrics.mjs`（行高、可见行数、文档级滚动条）、`node e2e/pulse-degraded.mjs`。产物落 `frontend/artifacts/`。**用 node 跑，bun 起 playwright 在本机 launch 超时**
 - `components/` 首页子块：`PulseIndexStrip` / `SessionRuler`(+`sessionRuler.ts`) / `PulseStatusBar` / `PulseHealthDot` / `PulseWatchRail` / `PulseTrackTable` / `PulsePickTable` / `PulseMarketBoard` / `pulseSkin.css`
 - `PeekView.vue`（路由 `/peek`）：桌面托盘「行情」按需创建第二 WebView2 浮窗（启动期不预建，避免双 WebView2 卡死）；失败才回退系统浏览器。贴边缩成约 36–40px 探头（`peekChrome.shouldShowGhost`）；展开态禁透明白块。**只显示指数条与时钟**：原「仓 x%」徽标与「持仓·今日」列表随持仓下线一并移除，窗口标题不再带仓位涨跌
-- `DataQueryView.vue`：默认实时叠价；点行进入 `/archive/:code?view=quote`；翻页/搜索时旧实时响应不会覆盖新列表；`useDataQueryMarket` KeepAlive 离页停表、回页按 `liveOn` 重启；列表 `busy` 与实时世代分离，避免首屏 `onActivated→startRefresh` 与 `loadBoard` 竞态永久转圈
+- `DataQueryView.vue`：默认实时叠价；点行进入 `/archive/:code?view=quote`；翻页/搜索时旧实时响应不会覆盖新列表；`useDataQueryMarket` KeepAlive 离页停表、回页按 `liveOn` 重启；列表 `busy` 与实时世代分离，避免首屏 `onActivated→startRefresh` 与 `loadBoard` 竞态永久转圈。**一次列表加载只探一次 `/market/session`**：`loadBoard` / `watch(liveOn)` 探到结果后用 `startRefresh(allowed)` 透传，只有 `onActivated`（离页回来）才重新探测。公开契约是导出的 `DataQueryMarket` 接口，别用 `ReturnType<typeof useDataQueryMarket>` 反推
 - `components/DataQueryDetailPanel.vue`：个股 K 线详情
   - 顶栏：返回（可 embedded 隐藏）+ 周期/复权/均线
   - 现盘条为图内**左上悬浮**毛玻璃卡片；日 K **双击**打开 `MinuteSessionDialog`

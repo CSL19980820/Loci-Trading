@@ -1,6 +1,7 @@
 """Screen Skill 应用编排。"""
 from __future__ import annotations
 
+from datetime import date
 import json
 from pathlib import Path
 from typing import Any
@@ -174,17 +175,21 @@ def preview_screen_skill(
         )
         try:
             from src.market import open_screen_store
+            from src.strategy.domain.base import signal_history_bars
         except ImportError as exc:
             raise missing_dependency(exc) from exc
 
-        # 试跑与正式选股一致：默认热库（经 open_screen_store 判定浅/落后后回退
-        # 全量）；requires_full_history 直接读全量。
-        open_store = (
-            market_store
-            if bool(getattr(engine, "requires_full_history", False))
-            else open_screen_store
-        )
-        with open_store(market_db) as store:
+        # 与正式选股共用判据：窗口深度 / 末日落后 / 目标日预热日历；requires_full_history 直接读全量。
+        # trade_date 可为历史日，缺了预热那条会静默少票，用户会误以为是自己刚写的公式错了。
+        if bool(getattr(engine, "requires_full_history", False)):
+            store_cm = market_store(market_db)
+        else:
+            store_cm = open_screen_store(
+                market_db,
+                trade_date=str(payload.run.trade_date or date.today().isoformat()),
+                warmup_bars=signal_history_bars(engine),
+            )
+        with store_cm as store:
             result = screen(
                 store,
                 engine,

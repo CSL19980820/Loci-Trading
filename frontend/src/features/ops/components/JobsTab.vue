@@ -1,57 +1,36 @@
 <script setup lang="ts">
 /**
  * 工坊「定时」台：本机任务可 CRUD；战法/技能绑定（screen:/skill:）只读。
+ *
+ * 这个文件留下的是「这屏的交互」：筛选与选中、六个写动作（新建 / 改 / 跑 / 启停 /
+ * 改时点 / 删）、回执与错误落点。目录读取与中文名解析在 useJobsCatalog，cron、
+ * 下次触发、名册行的展示换算在 jobPresentation——那两块既不认这里的 emit，
+ * 也不该跟着这屏的 UI 状态一起翻。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import {
-  createJob,
-  deleteJob,
-  getJobQuota,
-  getProviders,
-  getScheduleStatus,
-  getSkills,
-  getStrategies,
-  runJob,
-  updateJob,
-} from '@/shared/api/quant'
+import { createJob, deleteJob, getJobQuota, runJob, updateJob } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
-import { toErrorMessage } from '@/shared/lib/errors'
-import type {
-  Job,
-  JobKind,
-  JobQuota,
-  LlmProvider,
-  ScheduleStatus,
-  Skill,
-  StrategyInfo,
-} from '@/shared/types/quant'
+import type { Job, JobKind, ScheduleStatus } from '@/shared/types/quant'
 
 import JobDetailPane from './JobDetailPane.vue'
 import JobEditorDialog from './JobEditorDialog.vue'
 import JobRunsDialog from './JobRunsDialog.vue'
-import JobsRail, { type JobRailRow } from './JobsRail.vue'
+import JobsRail from './JobsRail.vue'
 import type { ReceiptPair } from './SettingsPanel.vue'
 import SettingsPanel from './SettingsPanel.vue'
 import {
   isBoundManagedJob,
   isSkillBoundJob,
   isStrategyBoundJob,
-  jobOriginLabel,
   skillSlugFromBoundJob,
   strategySlugFromBoundJob,
 } from '../composables/jobOwnership'
-import {
-  cnStrategyName,
-  formatNext,
-  jobHealth,
-  jobHealthLabel,
-  kindLabel,
-  type JobHealth,
-} from '../composables/opsLabels'
-import { useJobsQuery } from '../composables/useJobsQuery'
+import { jobHealth, type JobHealth } from '../composables/opsLabels'
+import { cronLabel, nextRunText, railRowsOf } from '../composables/jobPresentation'
+import { useJobsCatalog } from '../composables/useJobsCatalog'
 import { useOpsFeedback } from '../composables/useOpsFeedback'
 
 const emit = defineEmits<{
@@ -66,11 +45,21 @@ const router = useRouter()
 const route = useRoute()
 const { busy, notice, errorText, guard } = useOpsFeedback()
 
-const { jobs, isPending: jobsPending, error: jobsQueryError, refetch: refetchJobs } = useJobsQuery()
-const schedule = ref<ScheduleStatus | null>(null)
-/** 自建任务额度：写在「新建」旁边，别让人填完一整张表才吃 429。 */
-const quota = ref<JobQuota | null>(null)
-const loadError = ref('')
+const catalog = useJobsCatalog()
+const {
+  jobs,
+  jobsPending,
+  jobsError,
+  schedule,
+  quota,
+  strategies,
+  skills,
+  providers,
+  displayName,
+  selectedStrategyText,
+  selectedSkillText,
+} = catalog
+
 const selectedId = ref<string | null>(null)
 const kindFilter = ref<'all' | JobKind>('all')
 /** 只看失败：找「哪条挂了」以前只能逐条点开看，行上根本不显示 last_status。 */
@@ -97,10 +86,6 @@ watch(runsOpen, (open) => {
   delete next.runs
   void router.replace({ query: next })
 })
-
-const strategies = ref<StrategyInfo[]>([])
-const skills = ref<Skill[]>([])
-const providers = ref<LlmProvider[]>([])
 
 /** 最近一条失败的任务：回执上的「上次失败 N」点进来就落在它身上。 */
 const latestFailedJob = computed(() => {
@@ -162,32 +147,13 @@ const filteredJobs = computed(() => {
   return list
 })
 
-/** 名册行：名字解析与状态归类都在这儿算完，左栏只管画。 */
-const railRows = computed((): JobRailRow[] =>
-  filteredJobs.value.map((job) => {
-    const health = jobHealth(job)
-    return {
-      id: job.id,
-      title: displayName(job),
-      kindText: kindLabel(job.kind),
-      originText: jobOriginLabel(job),
-      bound: isBoundManagedJob(job),
-      enabled: job.enabled,
-      health,
-      healthText: jobHealthLabel(health),
-    }
-  }),
-)
+/** 名册行：名字解析与状态归类都在渲染前算完，左栏只管画。 */
+const railRows = computed(() => railRowsOf(filteredJobs.value, displayName))
 
 const selected = computed(() => {
   const id = selectedId.value
   if (!id) return null
   return jobs.value.find((j) => j.id === id) ?? null
-})
-
-const jobsError = computed(() => {
-  const queryError = toErrorMessage(jobsQueryError.value, '定时任务加载失败')
-  return queryError || loadError.value
 })
 
 watch(
@@ -210,106 +176,11 @@ watch(
   { immediate: true },
 )
 
+/** 目录读完顺手把回执往外抛：schedule 归工坊头，changed 归历史弹窗。 */
 async function load(): Promise<void> {
-  loadError.value = ''
-  const [
-    jobsResult,
-    scheduleResult,
-    strategiesResult,
-    skillsResult,
-    providersResult,
-    quotaResult,
-  ] = await Promise.allSettled([
-    refetchJobs(),
-    getScheduleStatus(),
-    getStrategies(),
-    getSkills(),
-    getProviders(),
-    getJobQuota(),
-  ])
-  const failures = [
-    [jobsResult, '定时任务加载失败'],
-    [scheduleResult, '调度状态加载失败'],
-    [strategiesResult, '战法列表加载失败'],
-    [skillsResult, '技能列表加载失败'],
-    [providersResult, '模型提供方加载失败'],
-  ] as const
-  const failed = failures.find(([result]) => result.status === 'rejected')
-  if (failed?.[0].status === 'rejected') {
-    loadError.value = toErrorMessage(failed[0].reason, failed[1])
-  }
-  if (scheduleResult.status === 'fulfilled') schedule.value = scheduleResult.value
-  if (strategiesResult.status === 'fulfilled') strategies.value = strategiesResult.value
-  if (skillsResult.status === 'fulfilled') skills.value = skillsResult.value
-  if (providersResult.status === 'fulfilled') providers.value = providersResult.value
-  // 额度问不到只是少显示一行「自建额度」，不该把整页判成加载失败：
-  // 老后端没有 /api/jobs/quota，报错会把一个能用的页面说成坏的。
-  quota.value = quotaResult.status === 'fulfilled' ? quotaResult.value : null
+  await catalog.load()
   emit('schedule-changed', schedule.value)
   emit('changed')
-}
-
-// displayName 由 v-for 每行调用，逐行 find 会随目录长度线性劣化；预建索引。
-// 存的是**已中文化**的名字：后端的 name 缺失或本身就是 slug 时，cnStrategyName
-// 会退回共享词表，界面上不会再冒出 `sanyuan-tail-v1` 这种英文编码。
-const strategyNames = computed(
-  () => new Map(strategies.value.map((s) => [s.slug, cnStrategyName(s.name, s.slug)])),
-)
-const skillNames = computed(
-  () => new Map(skills.value.map((s) => [s.slug, cnStrategyName(s.name, s.slug)])),
-)
-
-/**
- * 名字一律走中文：后端没回 name 时，旧代码 `|| slug` 直接把 `sanyuan-tail-v1`
- * 这种英文编码摆到界面上。现在统一过 cnStrategyName（含拼音词根兜底）。
- */
-function displayName(job: Job): string {
-  if (isStrategyBoundJob(job)) {
-    const slug = strategySlugFromBoundJob(job)
-    return slug ? (strategyNames.value.get(slug) ?? cnStrategyName('', slug)) : job.name
-  }
-  if (isSkillBoundJob(job)) {
-    const slug = skillSlugFromBoundJob(job)
-    return slug ? (skillNames.value.get(slug) ?? cnStrategyName('', slug)) : job.name
-  }
-  return job.name
-}
-
-/**
- * cron → 人话。托管任务写的是 `mon-fri`（APScheduler 口径），本机任务的历史
- * 预设写的是 `1-5`，两种都要认得出来，否则同一个时点显示成两种样子。
- */
-function cronLabel(job: Job): string {
-  if (!job.cron) return '仅手动'
-  const text = job.cron.replace(/\bmon-fri\b/i, '1-5')
-  if (text === '*/5 9-14 * * 1-5') return '盘中每 5 分钟'
-  const once = /^(\d{1,2}) (\d{1,2}) \* \* 1-5$/.exec(text)
-  if (once) {
-    return `工作日 ${once[2].padStart(2, '0')}:${once[1].padStart(2, '0')}`
-  }
-  return job.cron
-}
-
-function nextRunOf(job: Job): string {
-  if (!job.cron) return '仅手动'
-  if (!job.enabled) return '已停用'
-  const hit = schedule.value?.jobs.find((item) => item.id === job.id)
-  const text = formatNext(hit?.next_run_at)
-  if (text !== '—') return text
-  // 调度器未跑时后端仍会按 cron 推算；若仍无值，展示原因
-  return schedule.value?.reason ? `—（${schedule.value.reason}）` : '—'
-}
-
-function selectedStrategyText(job: Job): string {
-  const slug = String(job.config?.strategy || strategySlugFromBoundJob(job) || '')
-  if (!slug) return '—'
-  return strategyNames.value.get(slug) ?? cnStrategyName('', slug)
-}
-
-function selectedSkillText(job: Job): string {
-  const slug = String(job.config?.skill || skillSlugFromBoundJob(job) || '')
-  if (!slug) return '—'
-  return skillNames.value.get(slug) ?? cnStrategyName('', slug)
 }
 
 function openCreate(): void {
@@ -542,7 +413,7 @@ defineExpose({ load, schedule })
         :busy="busy"
         :title="displayName(selected)"
         :cron-text="cronLabel(selected)"
-        :next-run-text="nextRunOf(selected)"
+        :next-run-text="nextRunText(selected, schedule)"
         :strategy-text="selected.kind === 'screen' ? selectedStrategyText(selected) : undefined"
         :skill-text="selected.kind === 'skill' ? selectedSkillText(selected) : undefined"
         @fire="fire(selected)"

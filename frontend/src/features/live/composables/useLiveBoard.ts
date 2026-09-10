@@ -15,6 +15,14 @@ import {
   getMarketDistribution,
   type MarketDistribution,
 } from '@/shared/api/quant_market'
+import {
+  boardRowToQuote,
+  createIndexTrails,
+  createQuoteCache,
+  RANK_SIZE,
+  tapeIndexToQuote,
+  topRows,
+} from '../lib/quoteState'
 
 /**
  * 信号保留策略——用户原话：
@@ -31,6 +39,12 @@ export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'of
 
 /** 大屏同时挂两条 SSE：行情（preset=all）与信号（preset=signals）。 */
 type FeedOrigin = 'quotes' | 'signals'
+
+/*
+ * 报价缓存、指数点列、榜单选取都在 `../lib/quoteState`：这个文件只管 SSE 编排、
+ * 连接状态与信号保留策略。
+ */
+
 export function useLiveBoard() {
   const status = ref<ConnectionStatus>('connecting')
   const lastAsOf = ref<string>('')
@@ -39,18 +53,14 @@ export function useLiveBoard() {
   const isLive = ref<boolean>(false)
   const distribution = ref<MarketDistribution | null>(null)
 
-  // 核心行情数据
-  const quotesMap = shallowRef<Map<string, QuoteRow>>(new Map())
+  // 核心行情数据：缓存与点列的实现细节在 lib/quoteState
+  const quotes = createQuoteCache()
+  const quotesMap = quotes.map
+  const quotesList = quotes.list
   const indexRows = shallowRef<QuoteRow[]>([])
-  /**
-   * 指数分时点列（新增，向后兼容）：code → 最近 N 个点位。
-   *
-   * 指数带右侧那枚 sparkline 需要一条**真实**走势。旧的 IndexMiniChart 在没有
-   * 历史时用 sin() 造过一条假曲线——那是在骗人。这里只累计推流真实到达的点，
-   * 没有点就让 sparkline 画一条平线。上限 240 点（3s 一帧约 12 分钟窗口）。
-   */
-  const indexTrails = shallowRef<Map<string, number[]>>(new Map())
-  const MAX_TRAIL_POINTS = 240
+  const trails = createIndexTrails()
+  /** 指数分时点列：code → 最近 240 个真实点位，只由推流帧与首屏快照累加 */
+  const indexTrails = trails.trails
   const gainersRows = shallowRef<QuoteRow[]>([])
   const losersRows = shallowRef<QuoteRow[]>([])
   const turnoverRows = shallowRef<QuoteRow[]>([])
@@ -150,22 +160,6 @@ export function useLiveBoard() {
     }
   }
 
-  /** 把本帧指数点位追加进分时点列；重复点位不入列，免得平盘时白撑数组 */
-  function pushIndexTrails(rows: QuoteRow[]) {
-    if (!rows.length) return
-    const next = new Map(indexTrails.value)
-    let touched = false
-    for (const row of rows) {
-      if (!Number.isFinite(row.price) || row.price <= 0) continue
-      const prev = next.get(row.code) ?? []
-      if (prev.length && prev[prev.length - 1] === row.price) continue
-      const list = [...prev, row.price]
-      next.set(row.code, list.slice(Math.max(0, list.length - MAX_TRAIL_POINTS)))
-      touched = true
-    }
-    if (touched) indexTrails.value = next
-  }
-
   /** 链路活着（onOpen 或任何一帧/一条信号到达）。只动链路状态，不碰数据新鲜度。 */
   function markLinkUp(): void {
     status.value = 'connected'
@@ -207,12 +201,7 @@ export function useLiveBoard() {
     sessionPhase.value = frame.session.phase
     isLive.value = frame.session.live
 
-    // 按类别拆分行
-    const newMap = new Map(quotesMap.value)
-    for (const row of frame.rows) {
-      newMap.set(row.code, row)
-    }
-    quotesMap.value = newMap
+    quotes.upsert(frame.rows)
 
     // 如果返回的行具备指数或全市场特征，分别派发
     const indices: QuoteRow[] = []
@@ -235,18 +224,15 @@ export function useLiveBoard() {
 
     if (indices.length > 0) {
       indexRows.value = indices
-      pushIndexTrails(indices)
+      trails.push(indices)
     }
 
     if (stocks.length > 0) {
-      // 涨幅榜
-      gainersRows.value = [...stocks].sort((a, b) => b.pct - a.pct).slice(0, 10)
-      // 跌幅榜
-      losersRows.value = [...stocks].sort((a, b) => a.pct - b.pct).slice(0, 10)
-      // 换手榜
-      turnoverRows.value = [...stocks].sort((a, b) => b.turnover - a.turnover).slice(0, 10)
-      // 成交额榜
-      amountRows.value = [...stocks].sort((a, b) => b.amount - a.amount).slice(0, 10)
+      // 涨幅榜 / 跌幅榜 / 换手榜 / 成交额榜：各一趟部分选择，不复制不全排序
+      gainersRows.value = topRows(stocks, (row) => row.pct, 1, RANK_SIZE)
+      losersRows.value = topRows(stocks, (row) => row.pct, -1, RANK_SIZE)
+      turnoverRows.value = topRows(stocks, (row) => row.turnover, 1, RANK_SIZE)
+      amountRows.value = topRows(stocks, (row) => row.amount, 1, RANK_SIZE)
     }
   }
 
@@ -289,68 +275,25 @@ export function useLiveBoard() {
         distribution.value = dist.value
       }
 
-      const map = new Map(quotesMap.value)
+      // 先攒齐，末尾一次并入：中途不发布，免得首屏几路结果各触发一次整屏重算
+      const staged: QuoteRow[] = []
       if (tape.status === 'fulfilled' && tape.value?.indices) {
-        const idxList: QuoteRow[] = []
-        for (const item of tape.value.indices) {
-          const p = Number(item.price ?? 0)
-          const pct = Number(item.pct ?? 0)
-          const prev = pct !== 0 && p > 0 ? p / (1 + pct / 100) : p
-          const row: QuoteRow = {
-            code: item.code || '',
-            name: item.name || item.label || '',
-            price: p,
-            prevClose: prev,
-            change: Number(item.change ?? 0),
-            pct,
-            volume: 0,
-            amount: 0,
-            turnover: 0,
-            amplitude: 0,
-            speed: 0,
-            high: Number(item.price ?? 0),
-            low: Number(item.price ?? 0),
-            open: Number(item.price ?? 0),
-            staleMs: 0,
-          }
-          idxList.push(row)
-          map.set(row.code, row)
-        }
+        const idxList = tape.value.indices.map(tapeIndexToQuote)
+        staged.push(...idxList)
         if (indexRows.value.length === 0 && idxList.length > 0) {
           indexRows.value = idxList
         }
         // 快照只给得出一个点：够 sparkline 判定「有没有数据」，画不出走势也不编
-        pushIndexTrails(idxList)
+        trails.push(idxList)
         if (!lastAsOf.value && tape.value.as_of) {
           lastAsOf.value = tape.value.as_of
         }
       }
 
       const toRows = (items: BoardRow[]): QuoteRow[] => {
-        return items.map((b) => {
-          const p = Number(b.price ?? b.local_close ?? 0)
-          const pct = Number(b.pct ?? b.local_pct ?? 0)
-          const prev = Number(b.prev_close ?? (pct !== 0 && p > 0 ? p / (1 + pct / 100) : p))
-          const r: QuoteRow = {
-            code: String(b.code || ''),
-            name: String(b.name || ''),
-            price: p,
-            prevClose: prev,
-            change: Number(b.change ?? b.local_change ?? 0),
-            pct,
-            volume: Number(b.volume ?? 0),
-            amount: Number(b.amount ?? 0),
-            turnover: Number(b.turnover ? Number(b.turnover) * 100 : 0),
-            amplitude: 0,
-            speed: 0,
-            high: Number(b.high ?? p),
-            low: Number(b.low ?? p),
-            open: Number(b.open ?? p),
-            staleMs: 0,
-          }
-          map.set(r.code, r)
-          return r
-        })
+        const rows = items.map(boardRowToQuote)
+        staged.push(...rows)
+        return rows
       }
       if (boardSample.status === 'fulfilled' && boardSample.value?.items?.length) {
         toRows(boardSample.value.items)
@@ -367,7 +310,7 @@ export function useLiveBoard() {
       if (boardAmount.status === 'fulfilled' && amountRows.value.length === 0) {
         amountRows.value = toRows(boardAmount.value.items || [])
       }
-      quotesMap.value = map
+      quotes.upsert(staged)
     } catch {
       /* 容错兜底 */
     }
@@ -566,6 +509,8 @@ export function useLiveBoard() {
     isLive,
     distribution,
     quotesMap,
+    /** 与 quotesMap 同序同内容的数组；页面直接用，不要再 Array.from 一遍 */
+    quotesList,
     indexRows,
     /** 新增字段：指数分时点列，纯累加，老调用方忽略即可 */
     indexTrails,

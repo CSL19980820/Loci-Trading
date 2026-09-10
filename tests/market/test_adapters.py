@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import time
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import unittest
-from typing import Any
 from unittest import mock
 
 import pandas as pd
@@ -23,11 +21,9 @@ from src.market.infrastructure.adapters.registry import (
 from src.market.infrastructure.adapters.router import (
     clear_sticky,
     fetch_capital_flow_routed,
-    fetch_daily_best,
     fetch_daily_routed,
     fetch_live_quotes_routed,
     fetch_minute_routed,
-    fetch_spot_routed,
     probe_lane,
 )
 from src.market.infrastructure.adapters.sina_adapter import SinaAdapter

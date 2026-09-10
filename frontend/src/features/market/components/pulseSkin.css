@@ -2,7 +2,11 @@
  * 盘面页共用皮肤：卡片、密度表、数字/涨跌类（feature 局部；令牌只消费 var(--token)）。
  *
  * 选择器一律 `.pulse-*` 前缀开头：本文件由盘面各子组件 import，是全局注入的，
- * 前缀是它不污染别的页的唯一保证。行高 28 / 表头 26 / hairline 1px / 无阴影 / 圆角 3。
+ * 前缀是它不污染别的页的唯一保证。
+ *
+ * 尺度全部走令牌，本文件不复述数值：行高 `--row-h`、表头 `--head-h`、圆角 `--radius-lg`、
+ * 分隔一律 1px hairline、卡片无阴影（阴影只留给弹层）。令牌真值只在 style.base.css。
+ * `var()` 不写 fallback：令牌都在 `:root` 恒定义，写了只是给改名时留一个必然过期的错值。
  */
 
 .pulse-panel {
@@ -14,8 +18,7 @@
   overflow: hidden;
   background: var(--sheet);
   border: 1px solid var(--rule);
-  border-radius: var(--radius-lg, 10px);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
   transition: border-color 200ms ease;
 }
 
@@ -23,14 +26,16 @@
   border-color: var(--rule-strong);
 }
 
+/* 与全局 .sheet-bar 同一档：min-height --head-h + padding --gap-1/--pad-sheet-x，
+   盘面不再自成一档卡片头高度 */
 .pulse-panel__head {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--gap-2, 10px);
-  min-height: 36px;
-  padding: 6px 14px;
+  gap: var(--gap-2);
+  min-height: var(--head-h);
+  padding: var(--gap-1) var(--pad-sheet-x);
   border-bottom: 1px solid var(--rule);
   background: var(--sheet-alt);
 }
@@ -38,22 +43,22 @@
 .pulse-panel__lead {
   display: flex;
   align-items: baseline;
-  gap: var(--gap-2, 10px);
+  gap: var(--gap-2);
   min-width: 0;
 }
 
 .pulse-panel__title {
   font-family: var(--font);
-  font-size: 14.5px;
+  font-size: var(--fs-title);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--ink);
   white-space: nowrap;
 }
-/* 元信息一律 11px 次要色单行：解释性长句进 tooltip，不占版面 */
+/* 元信息一律微标档次要色单行：解释性长句进 tooltip，不占版面 */
 .pulse-panel__meta {
   font-family: var(--mono);
-  font-size: var(--fs-kicker, 11px);
+  font-size: var(--fs-kicker);
   color: var(--mist);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -67,26 +72,30 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--gap-2, 8px);
-  padding: var(--gap-2, 8px);
-  font-size: var(--fs-aux, 12px);
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .pulse-tabs {
+  /*
+   * 卡片头里的 tab 是文本型切换，不是控件：全局 .el-button--small 被钉到 --ctl-h，
+   * 连 min-height 一起生效，直接用会把卡片头撑高一档，密表里每张卡片少一行。
+   * 密度令牌最矮的一档是 --row-h-sm，仍然偏高，所以就近钉一个只服务本组件的局部契约。
+   */
+  --pulse-tab-h: 18px;
   display: flex;
   align-items: center;
-  gap: var(--gap-1, 4px);
+  gap: var(--gap-1);
   flex: 0 0 auto;
 }
 
-/* 全局把 .el-button--small 的 min-height 钉到 --ctl-h(28px)，密表里的 link 按钮
-   必须连 min-height 一起压，否则卡片头会被撑到 30px 以上 */
 .pulse-tabs .el-button {
-  height: 18px;
-  min-height: 18px;
-  padding: 0 3px;
-  font-size: var(--fs-kicker, 11px);
+  height: var(--pulse-tab-h);
+  min-height: var(--pulse-tab-h);
+  padding: 0 var(--gap-1);
+  font-size: var(--fs-kicker);
   border-radius: 0;
 }
 
@@ -106,14 +115,14 @@
   --el-table-border: 1px solid var(--rule);
   --el-table-bg-color: var(--sheet);
   --el-table-tr-bg-color: var(--sheet);
-  --el-table-header-bg-color: var(--sheet-alt, var(--sheet));
+  --el-table-header-bg-color: var(--sheet-alt);
   --el-table-header-text-color: var(--mist);
   --el-table-text-color: var(--ink);
-  --el-table-row-hover-bg-color: var(--seal-soft, var(--sheet-alt));
+  --el-table-row-hover-bg-color: var(--seal-soft);
 }
 
 /* EP 的 `.el-table--small td.el-table__cell` 自带 padding，且比单纯 `.pulse-table
-   .el-table__cell` 更特异；这里必须带元素选择器压过去，否则行高会退回 38px */
+   .el-table__cell` 更特异；这里必须带元素选择器压过去，否则行高会退回 EP 默认档 */
 .pulse-table td.el-table__cell,
 .pulse-table th.el-table__cell {
   padding: 0;
@@ -123,18 +132,18 @@
 /* 行高含那条 hairline：内容盒取 row-h - 1，舒适不拥挤 */
 .pulse-table .el-table__row,
 .pulse-table td.el-table__cell {
-  height: calc(var(--row-h, 42px) - 1px);
+  height: calc(var(--row-h) - 1px);
 }
 
 .pulse-table th.el-table__cell {
-  height: calc(var(--head-h, 38px) - 1px);
+  height: calc(var(--head-h) - 1px);
 }
 
 .pulse-table .cell {
-  padding: 0 var(--gap-2, 12px);
-  height: calc(var(--row-h, 42px) - 1px);
-  line-height: calc(var(--row-h, 42px) - 1px);
-  font-size: var(--fs-body, 14px);
+  padding: 0 var(--gap-2);
+  height: calc(var(--row-h) - 1px);
+  line-height: calc(var(--row-h) - 1px);
+  font-size: var(--fs-body);
   white-space: nowrap;
   word-break: keep-all;
   overflow: hidden;
@@ -143,16 +152,16 @@
 }
 
 .pulse-table th.el-table__cell .cell {
-  height: calc(var(--head-h, 38px) - 1px);
-  line-height: calc(var(--head-h, 38px) - 1px);
-  font-size: var(--fs-aux, 13px);
+  height: calc(var(--head-h) - 1px);
+  line-height: calc(var(--head-h) - 1px);
+  font-size: var(--fs-aux);
   font-weight: 600;
   letter-spacing: 0.03em;
   text-align: center;
 }
 
 .pulse-table .el-table__row--striped td.el-table__cell {
-  background: var(--sheet-alt, var(--sheet));
+  background: var(--sheet-alt);
 }
 
 .pulse-table .el-table__inner-wrapper::before {
@@ -174,7 +183,7 @@
 }
 
 .pulse-flat {
-  color: var(--flat, var(--muted));
+  color: var(--flat);
 }
 
 .pulse-name {
@@ -189,7 +198,7 @@
 
 .pulse-code {
   font-family: var(--mono);
-  font-size: var(--fs-kicker, 11px);
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 

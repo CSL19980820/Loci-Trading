@@ -11,8 +11,48 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 from src.ops.application.jobs import JobContext, execute_sync
 from src.ops.infrastructure.store import MANAGED_SYNC_INTRADAY, OpsStore
+
+
+class _FakeSyncReport:
+    """``sync_quotes`` 的最小替身返回值：execute_sync 只读这几个字段。"""
+
+    succeeded = 0
+    skipped = 0
+    failed = 0
+    rows_written = 0
+    elapsed_seconds = 0.0
+
+
+@pytest.fixture(autouse=True)
+def _no_real_network(monkeypatch: pytest.MonkeyPatch):
+    """任何真实连接都让用例失败。
+
+    **记账 + teardown 断言，不是当场抛**：行情适配器的契约就是「吞掉一切网络
+    异常、回退下一个源」，在 connect 里抛错会被它自己接住翻译成一次「这个源
+    不通」，用例照样绿。只抛不记的守卫对真实泄漏毫无反应。
+
+    不是洁癖：本文件两条失败报告用例原先漏了 patch ``sync_quotes``，
+    ``_finalize_today_with_authoritative`` 于是真去连通达信——实测 117 次真实
+    connect（端口 7709 与 443），两条合计 40 秒，占全套 450 秒的 9%。
+
+    守 ``socket.socket.connect`` 而不是 ``urlopen``：通达信走裸 socket，
+    urlopen 拦不到它。
+    """
+    import socket
+
+    leaked: list[str] = []
+
+    def _spy(self, address):
+        leaked.append(str(address))
+        raise OSError("用例试图真的出网：行情源必须 mock")
+
+    monkeypatch.setattr(socket.socket, "connect", _spy)
+    yield
+    assert not leaked, f"用例试图真的出网（行情源必须 mock）：{leaked[:5]}"
 
 
 class MarketSyncSettingsStoreTests(unittest.TestCase):
@@ -160,6 +200,9 @@ class TodayRefreshSyncTests(unittest.TestCase):
         with (
             patch("src.market.MarketStore", FakeStore),
             patch("src.market.sync_instruments", lambda *_a, **_k: None),
+            # 必须 patch：today_refresh 的 _finalize_today_with_authoritative 会调它，
+            # 漏了就真去连通达信（实测 117 次真实 connect，两条用例合计 40 秒）。
+            patch("src.market.sync_quotes", lambda *_a, **_k: _FakeSyncReport()),
             patch("src.market.apply_today_spot", lambda *_a, **_k: 1),
             patch("src.market.refresh_adjust_factors", boom),
             patch("src.market.backfill_missing_turnover", lambda *_a, **_k: {}),
@@ -202,6 +245,9 @@ class TodayRefreshSyncTests(unittest.TestCase):
         with (
             patch("src.market.MarketStore", FakeStore),
             patch("src.market.sync_instruments", lambda *_a, **_k: None),
+            # 必须 patch：today_refresh 的 _finalize_today_with_authoritative 会调它，
+            # 漏了就真去连通达信（实测 117 次真实 connect，两条用例合计 40 秒）。
+            patch("src.market.sync_quotes", lambda *_a, **_k: _FakeSyncReport()),
             patch("src.market.apply_today_spot", lambda *_a, **_k: 1),
             patch("src.market.refresh_adjust_factors", lambda *_a, **_k: 0),
             patch("src.market.backfill_missing_turnover", boom),

@@ -54,11 +54,11 @@ const headline = computed(() => {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--gap-2, 8px);
-  padding: 2px var(--gap-2, 8px);
+  gap: var(--gap-2);
+  padding: 2px var(--gap-2);
   border-bottom: 1px solid var(--rule);
-  background: var(--sheet-alt, var(--sheet));
-  font-size: var(--fs-aux, 12px);
+  background: var(--sheet-alt);
+  font-size: var(--fs-aux);
   color: var(--warn);
   min-width: 0;
 }
@@ -83,7 +83,7 @@ const headline = computed(() => {
   height: 18px;
   min-height: 18px;
   padding: 0 2px;
-  font-size: var(--fs-aux, 12px);
+  font-size: var(--fs-aux);
 }
 
 .pulse-issues__text {
@@ -99,7 +99,7 @@ const headline = computed(() => {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-2, 8px);
+  gap: var(--gap-2);
 }
 
 .pulse-issues__list li {
@@ -109,12 +109,12 @@ const headline = computed(() => {
 }
 
 .pulse-issues__list strong {
-  font-size: var(--fs-aux, 12px);
+  font-size: var(--fs-aux);
   color: var(--ink);
 }
 
 .pulse-issues__list span {
-  font-size: var(--fs-aux, 12px);
+  font-size: var(--fs-aux);
   color: var(--mist);
   word-break: break-all;
 }

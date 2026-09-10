@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from src.shared.api_models import QuantModel
 
@@ -54,10 +54,22 @@ class WecomScreenTemplateModel(QuantModel):
         max_length=160,
     )
     empty: str = Field(default="📭 暂无符合条件的标的", max_length=80)
+    formal_empty: str = Field(
+        default="📭 正式精选 0 只",
+        max_length=80,
+        description="开了低吸观察且正式精选为空时的提示行",
+    )
+    watch_header: str = Field(default="👀 低吸观察（不计正式胜率）", max_length=80)
+    watch_pick: str = Field(default="▫️ {name} {code} {pct}", max_length=120)
+    watch_pick_no_pct: str = Field(default="▫️ {name} {code}", max_length=120)
     more: str = Field(default="…另有 {n} 只", max_length=80)
     quant_tag: str = Field(default="量化", max_length=32)
     skills_tag: str = Field(default="技能", max_length=32)
     max_picks: int = Field(default=30, ge=1, le=50)
+    show_watch_picks: bool = Field(
+        default=False,
+        description="低吸观察票是否随推送发出；关=隐藏「👀 低吸观察」分区",
+    )
 
 
 class WecomSettingsUpdate(QuantModel):

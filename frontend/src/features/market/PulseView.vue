@@ -158,23 +158,11 @@ const tradeDateText = computed(() => session.value?.today || '—')
           :has-enabled-screen-job="hasEnabledScreenJob"
           :next-screen-run-at="nextScreenRunAt"
         />
-        <el-button
-          class="pulse-act-btn"
-          @click="goLive"
-        >
-          实时大屏
-        </el-button>
-        <el-button
-          class="pulse-act-btn"
-          :loading="spotPersistBusy"
-          :disabled="loading"
-          @click="persistSpot"
-        >
+        <el-button @click="goLive">实时大屏</el-button>
+        <el-button :loading="spotPersistBusy" :disabled="loading" @click="persistSpot">
           同步现价
         </el-button>
-        <el-button type="primary" class="pulse-act-btn pulse-act-btn--primary" :loading="loading" @click="refreshAll">
-          刷新数据
-        </el-button>
+        <el-button type="primary" :loading="loading" @click="refreshAll">刷新数据</el-button>
       </div>
     </header>
     <SessionRuler :is-trading-day="session?.is_trading_day ?? null" />
@@ -246,8 +234,8 @@ const tradeDateText = computed(() => session.value?.today || '—')
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--gap-3, 16px);
-  padding: 10px 20px;
+  gap: var(--gap-3);
+  padding: var(--pad-sheet-y) var(--gap-4);
   border-bottom: 1px solid var(--rule);
   background: var(--sheet);
   min-width: 0;
@@ -257,14 +245,14 @@ const tradeDateText = computed(() => session.value?.today || '—')
 .pulse__bar-brand {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--gap-3);
   min-width: 0;
 }
 
 .pulse__title {
   margin: 0;
   font-family: var(--font);
-  font-size: 18px;
+  font-size: var(--fs-hero);
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--ink);
@@ -274,29 +262,32 @@ const tradeDateText = computed(() => session.value?.today || '—')
 .pulse__meta-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-2);
 }
 
 .pulse__day,
 .pulse__clock {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
   color: var(--mist);
   white-space: nowrap;
 }
 
 .pulse__phase-tag {
-  font-size: 12px;
+  /* pill 竖向内边距必须小于 --gap-1 才不把页头顶高一档，密度令牌没有这一档 */
+  --phase-tag-pad-y: 2px;
+  font-size: var(--fs-aux);
   font-weight: 600;
-  padding: 2px 8px;
+  padding: var(--phase-tag-pad-y) var(--gap-2);
   border-radius: var(--radius-pill);
   white-space: nowrap;
 }
+/* D1：红绿只属于价格。「开盘中」是会话状态，走非价格语义的健康色 --ok（四档外观已校准） */
 .pulse__phase-tag.is-live {
-  background: var(--down-soft);
-  color: var(--down);
-  border: 1px solid rgba(22, 163, 74, 0.25);
+  background: var(--ok-soft);
+  color: var(--ok);
+  border: 1px solid color-mix(in oklab, var(--ok) 25%, transparent);
 }
 .pulse__phase-tag.is-closed {
   background: var(--seal-soft);
@@ -312,22 +303,14 @@ const tradeDateText = computed(() => session.value?.today || '—')
 .pulse__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.pulse-act-btn {
-  height: 28px !important;
-  padding: 0 12px !important;
-  font-size: 12.5px !important;
-  font-weight: 500 !important;
-  border-radius: var(--radius) !important;
+  gap: var(--gap-2);
 }
 
 .pulse__body.page-scroll {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-3, 16px);
-  padding: 16px 20px 24px;
+  gap: var(--gap-3);
+  padding: var(--gap-4);
   min-height: 0;
   z-index: 1;
 }
@@ -336,7 +319,7 @@ const tradeDateText = computed(() => session.value?.today || '—')
   min-height: 280px;
   display: grid;
   grid-template-columns: minmax(0, 1.68fr) minmax(0, 0.92fr);
-  gap: var(--gap-3, 18px);
+  gap: var(--gap-3);
 }
 
 .pulse__today {
@@ -345,14 +328,11 @@ const tradeDateText = computed(() => session.value?.today || '—')
 }
 
 @media (max-width: 960px) {
-  .pulse__bar {
-    padding: 10px 16px;
-  }
   .pulse__grid {
     grid-template-columns: 1fr;
   }
   .pulse__body.page-scroll {
-    padding: 14px 16px;
+    padding: var(--gap-3) var(--gap-4);
   }
 }
 </style>

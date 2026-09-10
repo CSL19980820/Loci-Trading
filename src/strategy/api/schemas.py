@@ -98,6 +98,9 @@ class AnalysisRequest(QuantModel):
     stop_loss_pct: float | None = Field(default=None, ge=-100, le=0)
     benchmark: str | None = Field(default="000300", pattern=r"^\d{6}$")
     universe: UniverseSpecModel | None = None
+    #: compare / optimize 默认在受控 spawn worker 中运行，避免把 API 进程的
+    #: 大面板内存与异常拖垮；需要本地调试时可显式切回 thread。
+    execution_mode: Literal["process", "thread"] = "process"
 
 
 class StrategyJobConfig(QuantModel):

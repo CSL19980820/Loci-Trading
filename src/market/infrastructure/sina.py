@@ -163,7 +163,7 @@ def fetch_daily(symbol: str, *, session: requests.Session | None = None) -> pd.D
     frame = pd.DataFrame(rows)
     if "date" not in frame.columns:
         raise SinaFetchError(f"{symbol} 数据缺少日期列")
-    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
+    frame["date"] = pd.to_datetime(frame["date"], format="ISO8601", errors="coerce").dt.date
     frame = frame.dropna(subset=["date"])
     # 这几列在部分标的上才有，留着会污染后续的统一 schema。
     frame = frame.drop(columns=[c for c in ("prevclose", "postVol", "postAmt") if c in frame.columns])
@@ -398,7 +398,7 @@ def _fetch_outstanding_share(
         return pd.DataFrame(columns=["date", "outstanding_share"])
     frame = pd.DataFrame(records)
     frame = frame.rename(columns={"amount": "outstanding_share"})
-    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
+    frame["date"] = pd.to_datetime(frame["date"], format="ISO8601", errors="coerce").dt.date
     # 新浪这个接口的单位是万股。
     frame["outstanding_share"] = pd.to_numeric(
         frame["outstanding_share"], errors="coerce"
@@ -540,7 +540,7 @@ def fetch_hfq_factors(
     frame = pd.DataFrame(data).rename(columns={"d": "date", "f": "hfq_factor"})
     if "date" not in frame.columns or "hfq_factor" not in frame.columns:
         raise SinaFetchError(f"{symbol} 后复权因子缺列：{list(frame.columns)[:6]}")
-    frame["date"] = pd.to_datetime(frame["date"], errors="coerce").dt.date
+    frame["date"] = pd.to_datetime(frame["date"], format="ISO8601", errors="coerce").dt.date
     frame["hfq_factor"] = pd.to_numeric(frame["hfq_factor"], errors="coerce")
     out = (
         frame[["date", "hfq_factor"]].dropna().sort_values("date").reset_index(drop=True)
@@ -553,8 +553,5 @@ def fetch_hfq_factors(
 
 
 from src.market.infrastructure.sina_capital_flow import (
-    CAPITAL_FLOW_FIELDS,
-    CAPITAL_FLOW_MAX_NUM,
-    CAPITAL_FLOW_URL,
-    fetch_capital_flow,
+    fetch_capital_flow as fetch_capital_flow,  # sina_adapter 按本模块属性调用
 )

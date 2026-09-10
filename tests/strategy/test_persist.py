@@ -261,7 +261,7 @@ class ScreenRunStateTests(unittest.TestCase):
         finally:
             screen_run_update(status="idle", result=None, error="", log=[])
 
-    def test_range_screen_reuses_one_market_snapshot(self) -> None:
+    def test_range_screen_leaves_scoped_evidence_to_screen(self) -> None:
         class FakeMarketStore:
             def __init__(self) -> None:
                 self.snapshot_calls = 0
@@ -322,8 +322,8 @@ class ScreenRunStateTests(unittest.TestCase):
             )
 
         self.assertEqual(screen_run_snapshot()["status"], "done")
-        self.assertEqual(market.snapshot_calls, 1)
-        self.assertEqual(snapshots, [{"market_revision": "fixed"}] * 2)
+        self.assertEqual(market.snapshot_calls, 0)
+        self.assertEqual(snapshots, [None, None])
         screen_run_update(status="idle", result=None, error="", log=[])
 
     def test_screen_run_refreshes_spot_when_window_includes_today(self) -> None:

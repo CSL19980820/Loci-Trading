@@ -79,7 +79,7 @@ class NotifyFormatTests(unittest.TestCase):
         self.assertEqual(format_pct(5), "+5%")
         self.assertEqual(format_pct(-2.3), "-2.3%")
 
-    def test_weak_market_watch_picks_have_a_separate_notification_section(self) -> None:
+    def test_weak_market_watch_picks_are_hidden_from_notification(self) -> None:
         text = format_screen_picks_text(
             {
                 "strategy": "sanyuan-tail-v1",
@@ -92,11 +92,60 @@ class NotifyFormatTests(unittest.TestCase):
             }
         )
 
-        self.assertIn("📭 正式精选 0 只", text)
+        self.assertNotIn("👀 低吸观察", text)
+        self.assertNotIn("002963", text)
+        self.assertNotIn("301529", text)
+        self.assertIn("📭 暂无符合条件的标的", text)
+
+    def test_show_watch_picks_flag_restores_watch_section(self) -> None:
+        from src.ops.application.notify_screen_template import normalize_screen_template
+
+        normalized = normalize_screen_template({"show_watch_picks": "true"})
+        self.assertTrue(normalized["show_watch_picks"])
+        self.assertFalse(
+            normalize_screen_template({"show_watch_picks": "false"})["show_watch_picks"]
+        )
+
+        text = format_screen_picks_text(
+            {
+                "strategy": "sanyuan-tail-v1",
+                "trade_date": "2026-08-11",
+                "picks": [],
+                "watch_picks": [{"code": "002963", "name": "豪尔赛", "pct_chg": 1.75}],
+            },
+            template=normalized,
+        )
+
         self.assertIn("👀 低吸观察（不计正式胜率）", text)
         self.assertIn("▫️ 豪尔赛 002963 +1.75%", text)
-        self.assertIn("▫️ 福赛科技 301529 +1.73%", text)
-        self.assertNotIn("暂无符合条件的标的", text)
+        self.assertIn("📭 正式精选 0 只", text)
+
+    def test_request_schema_accepts_every_template_key(self) -> None:
+        """前端整份模板原样 PUT 回来；schema 少一个键就是 422「Extra inputs are not permitted」。
+
+        2026-09-04 线上就是这样炸的：formal_empty / watch_header / watch_pick /
+        watch_pick_no_pct 早在 DEFAULT_TEMPLATE 里，却一直没进 WecomScreenTemplateModel。
+        """
+        from src.ops.api.schemas import WecomScreenTemplateModel
+        from src.ops.application.notify_screen_template import DEFAULT_TEMPLATE
+
+        self.assertEqual(set(WecomScreenTemplateModel.model_fields), set(DEFAULT_TEMPLATE))
+        model = WecomScreenTemplateModel(**{**DEFAULT_TEMPLATE, "watch_header": "👀 观察"})
+        self.assertEqual(model.watch_header, "👀 观察")
+
+    def test_watch_picks_stay_out_of_notification_when_formal_picks_exist(self) -> None:
+        text = format_screen_picks_text(
+            {
+                "strategy": "sanyuan-tail-v1",
+                "trade_date": "2026-08-11",
+                "picks": [{"code": "600018", "name": "上港集团", "pct_chg": 5}],
+                "watch_picks": [{"code": "002963", "name": "豪尔赛", "pct_chg": 1.75}],
+            }
+        )
+
+        self.assertIn("📌 上港集团 600018 +5%", text)
+        self.assertNotIn("👀 低吸观察", text)
+        self.assertNotIn("002963", text)
 
     def test_skill_picks_include_clipped_note(self) -> None:
         from src.ops.application.notify_screen_template import clip_skill_note

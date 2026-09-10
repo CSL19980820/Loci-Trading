@@ -98,7 +98,7 @@ def _redirect_log(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 def test_log_rotation_caps_total_size(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """长期挂机不能把日志写到没边：主文件 + N 份历史就是硬上限。"""
-    path = _redirect_log(monkeypatch, tmp_path)
+    _redirect_log(monkeypatch, tmp_path)
     monkeypatch.setattr(loci, "LOG_MAX_BYTES", 2048)
     monkeypatch.setattr(loci, "LOG_BACKUP_COUNT", 2)
 

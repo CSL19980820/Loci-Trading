@@ -18,7 +18,14 @@ from contextlib import ExitStack
 from datetime import date
 from typing import Any, Callable
 
-from src.shared.tenancy import spawn_tenant_thread
+from src.shared.screen_capacity import (
+    ScreenCapacityBusy,
+    screen_capacity_permit,
+    screen_capacity_status,
+    screen_permit_wait_sec,
+)
+from src.shared.tenancy import current_tenant, is_primary_tenant, spawn_tenant_thread
+from src.strategy.domain.base import signal_history_bars
 from src.strategy.application.screen_dates import (
     ScreenDateError,
     resolve_from_opts,
@@ -44,6 +51,20 @@ from src.strategy.application.screen_run_state import (  # noqa: F401 - 兼容 r
     screen_run_try_begin,
     screen_run_update,
 )
+
+
+
+
+def _capacity_label(opts: dict[str, Any]) -> str:
+    """许可持有者标签，进运维快照与「忙」文案。
+
+    非主租户带租户前缀：两个租户同时跑同名战法时，光看战法名分不出是谁占着
+    唯一的那个位子。口径与 ops 的 job 槽标签一致。
+    """
+    slug = str(opts.get("strategy") or "?")
+    if is_primary_tenant():
+        return f"http:{slug}"
+    return f"http:[{current_tenant()}] {slug}"
 
 
 def _result_body(result: Any, recorded: dict[str, Any] | None) -> dict[str, Any]:
@@ -132,12 +153,12 @@ def _execute_screen_run(
 
         # 策略声明 requires_full_history（如递推/长窗口公式）时必须读全量库；
         # 否则默认读滚动热库（近 700 交易日窗口），与全量写库物理隔离。
+        engine = None
         try:
             from src.strategy import get as _get_strategy
 
-            needs_full = bool(
-                getattr(_get_strategy(str(opts["strategy"])), "requires_full_history", False)
-            )
+            engine = _get_strategy(str(opts["strategy"]))
+            needs_full = bool(getattr(engine, "requires_full_history", False))
         except Exception:
             needs_full = False
 
@@ -149,7 +170,41 @@ def _execute_screen_run(
             log_line=f"▸ 窗口 {label}",
         )
 
-        with ExitStack() as stack, market_factory() as full:
+        # 面板内存峰值全在下面这段里（4400 只票 x 60 日面板）。进程级许可必须在
+        # 打开行情库之前拿到——三档并发在 3.7G 机器上打爆过整个容器，依据见
+        # src/shared/screen_capacity.py 的模块 docstring。
+        capacity = screen_capacity_status()
+        if int(capacity["in_use"]) >= int(capacity["limit"]):
+            # 只在真要排队时才提示。空闲时也报「排队中」会让人以为系统忙。
+            screen_run_update(
+                phase="queued",
+                percent=3,
+                message="排队等前面的选股…",
+                log_line=(
+                    f"· 进程内已有 {capacity['in_use']} 个选股在跑"
+                    f"（{'、'.join(capacity['holders']) or '?'}），排队中"
+                ),
+            )
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(
+                    screen_capacity_permit(
+                        label=_capacity_label(opts),
+                        wait_sec=screen_permit_wait_sec(),
+                        cancelled=screen_run_cancel_requested,
+                    )
+                )
+            except ScreenCapacityBusy as exc:
+                msg = str(exc)
+                screen_run_update(
+                    status="error",
+                    phase="error",
+                    message=msg,
+                    error=msg,
+                    log_line=f"✗ {msg}",
+                )
+                return
+            full = stack.enter_context(market_factory())
             if win_start and win_end:
                 days = full.trading_days(start=win_start, end=win_end)
                 # 休市点「今日」会得到空窗口：回落到窗口末日之前最近交易日。
@@ -231,22 +286,27 @@ def _execute_screen_run(
             store = full
             if hot_db and not needs_full:
                 from src.market import (
-                    hot_unusable_reason,
-                    hot_window_shallow,
+                    hot_fallback_reason,
                     mirror_recent_to_hot,
                     open_market_hot,
                 )
 
+                # 预热根数在 try 外面算：算不出来是策略契约问题，不该被下面那个
+                # except 归成「镜像热库失败」，那会让人照着错方向查热库。
+                warmup_bars = signal_history_bars(engine)
                 try:
                     hot = open_market_hot(hot_db)
                     stack.enter_context(hot)
-                    if live_today:
-                        reason = (
-                            "热库窗口偏浅" if hot_window_shallow(full, hot) else ""
-                        )
-                    else:
+                    if not live_today:
                         mirror_recent_to_hot(full, hot)
-                        reason = hot_unusable_reason(full, hot)
+                    reason = hot_fallback_reason(
+                        full,
+                        hot,
+                        trade_date=days[0],
+                        end=days[-1],
+                        warmup_bars=warmup_bars,
+                        live_overlay=live_today,
+                    )
                     if reason:
                         screen_run_update(log_line=f"⚠ {reason}，回退全量库")
                         store = full
@@ -258,9 +318,8 @@ def _execute_screen_run(
                     )
                     store = full
 
-            # 区间内各日共享同一行情仓版本；每次 screen 都重新扫描快照会把
-            # O(区间天数 × 全库) 的审计开销叠加到选股热路径。
-            market_snapshot = store.data_snapshot()
+            # 数据证据由 screen 在解析当日股票池与预热窗口后读取。
+            # 编排层预取全库快照既扫描无关回执，也不能冻结逐日计算时的行情版本。
             total_days = len(days)
             screen_run_update(
                 log_line=f"· 共 {total_days} 个交易日待跑",
@@ -337,7 +396,6 @@ def _execute_screen_run(
                         universe=uni,
                         health_check=health_check and index == 1,
                         on_progress=on_progress,
-                        data_snapshot=market_snapshot,
                         live_overlay=should_overlay_live(day),
                     )
                 except DataQualityError as exc:

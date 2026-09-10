@@ -7,10 +7,8 @@ from __future__ import annotations
 
 from src.shared.clock import utc_now
 
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
-import inspect
-import time
 from typing import Any, Sequence
 
 import pandas as pd
@@ -18,24 +16,21 @@ import pandas as pd
 from src.market.infrastructure.adapters import circuit
 from src.market.infrastructure.adapters.base import AdapterError, MarketAdapter
 from src.market.infrastructure.adapters.registry import (
-    adapters_for_lane,
     enabled_adapter_ids,
     get_adapter,
     lane_disabled_provider_ids,
     lane_route_policy,
 )
 from src.market.infrastructure.adapters.types import (
-    LANE_CAPITAL_FLOW,
     LANE_HIST_DAILY,
     LANE_SPOT_BATCH,
-    ProbeResult,
-    SpeedTestResult,
 )
+# 别名形式是 PEP 484 的显式再导出标记：这些名字本模块不用，只为兼容旧导入路径。
 from src.market.infrastructure.adapters.aux_router import (
-    fetch_adjust_factors_routed,
-    fetch_capital_flow_routed,
-    fetch_instruments_routed,
-    fetch_minute_routed,
+    fetch_adjust_factors_routed as fetch_adjust_factors_routed,
+    fetch_capital_flow_routed as fetch_capital_flow_routed,
+    fetch_instruments_routed as fetch_instruments_routed,
+    fetch_minute_routed as fetch_minute_routed,
 )
 from src.market.infrastructure.adapters import router_live as _live_router
 from src.market.infrastructure.adapters.router_live import (
@@ -44,7 +39,6 @@ from src.market.infrastructure.adapters.router_live import (
     _claim_adapter,
     authoritative_order,
     clear_sticky,
-    lane_authority,
     peek_sticky,
     pin_authority,
     pin_sticky,
@@ -94,11 +88,10 @@ def _race_live_quotes(*args: Any, **kwargs: Any) -> tuple[list[dict], str]:
 from src.market.infrastructure.adapters.router_shared import _resolve_adapters
 
 
+# 别名形式是 PEP 484 的显式再导出标记：这些名字本模块不用，只为兼容旧导入路径。
 from src.market.infrastructure.adapters.router_probe import (
-    PROBE_ADAPTER_TIMEOUT_SEC,
-    SPEEDTEST_TIMEOUT_SEC,
-    probe_lane,
-    speedtest_daily,
+    probe_lane as probe_lane,
+    speedtest_daily as speedtest_daily,
 )
 
 

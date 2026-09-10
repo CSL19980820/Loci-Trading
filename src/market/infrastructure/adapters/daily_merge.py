@@ -31,7 +31,13 @@ def _date_column(frame: pd.DataFrame) -> str:
 def _normalize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     date_col = _date_column(out)
-    out["_trade_date"] = pd.to_datetime(out[date_col], errors="coerce").dt.strftime("%Y-%m-%d")
+    # 入参是各日线源的原始帧：sina/tencent 的 date 是 ``datetime.date``，
+    # tdx/baostock/eastmoney kline 是 ``YYYY-MM-DD`` 文本——都是 year-first。
+    # 这里带 ``errors=coerce``，格式推断一旦按首值定错格式，其余行会静默变 NaT
+    # 并被下一行 dropna 丢掉；显式 ISO8601 既省掉逐值推断也堵掉这条静默丢数路径。
+    out["_trade_date"] = pd.to_datetime(
+        out[date_col], format="ISO8601", errors="coerce"
+    ).dt.strftime("%Y-%m-%d")
     out = out.dropna(subset=["_trade_date"])
     if out.empty:
         return out

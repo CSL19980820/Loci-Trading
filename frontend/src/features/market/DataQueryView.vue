@@ -48,7 +48,6 @@ const {
   industryFilter,
   turnoverMin,
   boardSort,
-  liveEnriching,
   page,
   pageSize,
   boardRows,
@@ -358,7 +357,7 @@ onMounted(async () => {
               layout: 'total, sizes, prev, pager, next',
             }"
             :toolbar-config="{ refresh: true, custom: true }"
-            :loading="busy || liveEnriching"
+            :loading="busy"
             stripe
             row-key="code"
             empty-text="无证券"

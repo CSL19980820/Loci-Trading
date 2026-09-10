@@ -18,6 +18,7 @@ import os
 import re
 from threading import Lock
 from time import perf_counter
+from types import MappingProxyType
 from typing import Any
 from uuid import uuid4
 
@@ -39,9 +40,13 @@ _LOW_CARDINALITY_LABELS = {
     "outcome",
     "reason",
 }
-_CURRENT: ContextVar[dict[str, str]] = ContextVar(
+#: **默认值必须不可变。** ContextVar 的 default 是所有上下文共享的**同一个对象**，
+#: 给一个真 dict 意味着任何一处原地写入（`current_values()[k] = v`）都会永久污染
+#: 每一个还没显式 set 过的上下文——多租户下就是 A 的 trace_id 漏进 B 的日志，而且
+#: 不报错、不可复现。只读映射让这种写法当场 TypeError。
+_CURRENT: ContextVar[Mapping[str, str]] = ContextVar(
     "loci_observability_correlation",
-    default={},
+    default=MappingProxyType({}),
 )
 _METRICS: Counter[tuple[str, tuple[tuple[str, str], ...]]] = Counter()
 _METRIC_LOCK = Lock()

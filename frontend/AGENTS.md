@@ -262,13 +262,21 @@ export const usePalaceStore = defineStore('palace', () => {
 
 产品形态是**专业行情终端**（密度对标通达信 / 同花顺 / 悟道），不是内容站。
 完整令牌表、表单/表格/空态/文案规范与禁止清单见 **[`docs/ui-spec.md`](docs/ui-spec.md)**（施工依据）。
-三条硬纪律与硬性尺度：
+三条硬纪律与硬性尺度（下表数值是 `style.base.css` 的副本，**不是**真值）：
+
+> **令牌真值只在 [`src/style.base.css`](src/style.base.css)（日盘 `:root`）与 [`src/style.theme.css`](src/style.theme.css)（外观 / 主色档）。**
+> 本节与 `docs/ui-spec.md` 里出现的一切数值都只是**副本**，用于让人一眼知道量级。
+> 发现文档与 CSS 不符：**一律以 CSS 为准**，回来改文档，不要照文档去改 CSS
+> （CSS 里的值是跑过 `e2e/taste-audit.mjs` 对比度探针校准过的）。
+> 也因此 `var()` 一律不写 fallback —— `:root` 恒定义的令牌，fallback 永不触发，
+> 却是读代码的人唯一能看到的令牌值，还会互相矛盾；改名那天它会静默生效成错值。
+> 只有**故意不定义**的令牌才写 fallback。
 
 | 项 | 硬性要求 | 令牌 / 位置 |
 |---|---|---|
 | D1 红绿只属于价格 | `--up` / `--down` 只用于涨跌数字与涨跌语义标记；品牌色、按钮、选中态、进度条、tab 下划线、事件点一律不用红绿 | 强调用 `--seal`；破坏性操作用 `--stamp` |
-| D2 最大的字是数字 | 数字 `--mono` + `font-variant-numeric: tabular-nums`；中文标题 ≤18px / 700 / `letter-spacing:.03em`，不换字族、禁衬线 | `--fs-tape` 26 / `--fs-hero` 17 / `--fs-title` 14 / `--fs-body` 13 / `--fs-aux` 12 / `--fs-kicker` 11 |
-| D3 密度优先 | 表格行高 28px、表头 26px、控件 28px、区块间距 8px、圆角 3px、阴影 none、分隔一律 1px hairline | `--row-h` / `--head-h` / `--ctl-h` / `--gap-1..4` / `--pad-sheet` / `--radius` / `--shadow` |
+| D2 最大的字是数字 | 数字 `--mono` + `font-variant-numeric: tabular-nums`；中文标题 ≤20px / 700 / `letter-spacing:.03em`，不换字族、禁衬线 | `--fs-tape` 26 / `--fs-hero` 20 / `--fs-title` 16 / `--fs-body` 14 / `--fs-aux` 12 / `--fs-kicker` 11 / `--fs-micro` 10 |
+| D3 密度优先 | 表格行高 32px（紧凑档 `--row-h-sm` 28px）、表头 30px、控件 30px、区块间距 8px、圆角 6px（大件 `--radius-lg` 10px）、业务卡片不挂阴影、分隔一律 1px hairline | `--row-h` / `--head-h` / `--ctl-h` / `--gap-1..4`（4/8/12/16）/ `--pad-sheet`（10px 14px）/ `--radius` / `--shadow`（只喂 EP 弹层，业务卡片不用） |
 | 令牌唯一真相 | 日盘 `:root` 在 `style.base.css`；夜盘 `night`/`ink`/`html.dark` **同一个选择器列表**在 `style.theme.css`；同一选择器不得在两个 `style.*.css` 里各写一份 | 六层：base → layout → components → content → tail → theme |
 | EP 尺寸 | 全局 `size: 'small'`（`shared/plugins/element.ts`），控件高由 `--el-component-size-small` 钉到 `--ctl-h` | 不在页面里逐个传 `size` |
 | 表格 | `el-table` / `BasicTable`；数字列 `align="right"`（自动等宽 + tabular-nums），代码列 `class-name="is-code"`，涨跌用 `is-up`/`is-down`/`is-flat`；表格贴 Sheet 边 | 皮肤在 `style.components.css`，SFC 不重写行高与配色 |

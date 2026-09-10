@@ -333,6 +333,12 @@ def audit_truncation(
         )
         return report
 
+    # 截断比较只需要探针日的代码集合，不必同时持有全量和截断结果的所有因子矩阵。
+    expected_by_date = {
+        cutoff: (set(full.picks_on(cutoff)), set(full.watch_picks_on(cutoff)))
+        for cutoff in probes
+    }
+    del full
     mismatches: list[dict[str, Any]] = []
     for cutoff in probes:
         # 元数据（`__instrument_names__` 等）没有时间轴，原样传下去；
@@ -345,16 +351,19 @@ def audit_truncation(
         partial = engine.compute(truncated, params)
         if cutoff not in partial.signals.index:
             mismatches.append({"date": cutoff, "issue": "截断后该日信号消失"})
+            del partial
             continue
 
+        expected_formal, expected_watch = expected_by_date[cutoff]
         signal_sets = (
-            ("formal", set(full.picks_on(cutoff)), set(partial.picks_on(cutoff))),
+            ("formal", expected_formal, set(partial.picks_on(cutoff))),
             (
                 "watch",
-                set(full.watch_picks_on(cutoff)),
+                expected_watch,
                 set(partial.watch_picks_on(cutoff)),
             ),
         )
+        del partial
         for channel, expected, actual in signal_sets:
             if expected != actual:
                 mismatches.append(

@@ -7,7 +7,6 @@ import sqlite3
 from src.ops.infrastructure.store_helpers import (
     JOB_KINDS,
     OpsError,
-    RUN_STATUSES,
     _now,
     dumps,
     loads,

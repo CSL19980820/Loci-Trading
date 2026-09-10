@@ -21,6 +21,7 @@ from pathlib import Path
 import sqlite3
 
 from src.market.infrastructure.store import MarketStore
+from src.market.infrastructure.store_row_count import note_trim_below, track_hot_window_rewrite
 from src.shared.paths import market_hot_db as _default_hot_db
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ def _trim_hot_before(hot: MarketStore, keep_from: str) -> None:
     if not keep_from:
         return
     with hot._transaction() as cursor:
+        note_trim_below(cursor, keep_from)
         cursor.execute("DELETE FROM quotes_daily WHERE trade_date < ?", (keep_from,))
         cursor.execute("DELETE FROM trading_calendar WHERE trade_date < ?", (keep_from,))
         _purge_orphan_receipts(cursor)
@@ -200,21 +202,22 @@ def _copy_quotes_window(full: MarketStore, hot: MarketStore, start_date: str) ->
     GC 压力与 RSS 峰值都随批大小封顶。
     """
     with hot._transaction() as cursor:
-        cursor.execute("DELETE FROM quotes_daily WHERE trade_date >= ?", (start_date,))
-        cursor.execute("DELETE FROM trading_calendar WHERE trade_date >= ?", (start_date,))
-        written = _stream_copy(
-            full.conn.execute(_QUOTES_SELECT_SQL, (start_date,)),
-            cursor,
-            _QUOTES_UPSERT_SQL,
-        )
-        _stream_copy(
-            full.conn.execute(
-                "SELECT trade_date, updated_at FROM trading_calendar WHERE trade_date >= ?",
-                (start_date,),
-            ),
-            cursor,
-            "INSERT OR REPLACE INTO trading_calendar VALUES(?,?)",
-        )
+        with track_hot_window_rewrite(cursor, start_date):
+            cursor.execute("DELETE FROM quotes_daily WHERE trade_date >= ?", (start_date,))
+            cursor.execute("DELETE FROM trading_calendar WHERE trade_date >= ?", (start_date,))
+            written = _stream_copy(
+                full.conn.execute(_QUOTES_SELECT_SQL, (start_date,)),
+                cursor,
+                _QUOTES_UPSERT_SQL,
+            )
+            _stream_copy(
+                full.conn.execute(
+                    "SELECT trade_date, updated_at FROM trading_calendar WHERE trade_date >= ?",
+                    (start_date,),
+                ),
+                cursor,
+                "INSERT OR REPLACE INTO trading_calendar VALUES(?,?)",
+            )
     # 回执：删除热库孤儿后，重灌窗口内日 K 关联的回执（含 attempts）。
     _replace_linked_receipts(full, hot, start_date)
     return written
@@ -354,22 +357,80 @@ def hot_unusable_reason(
     return ""
 
 
+def hot_fallback_reason(
+    full: MarketStore,
+    hot: MarketStore,
+    *,
+    trade_date: str,
+    warmup_bars: int,
+    end: str | None = None,
+    live_overlay: bool = False,
+    window_trading_days: int = HOT_WINDOW_TRADING_DAYS,
+) -> str:
+    """选股该不该回退全量库的**唯一**判据；空字符串 = 可以读热库。
+
+    三条判据缺一不可：窗口深度（``hot_window_shallow``）、末日是否落后于全量库
+    （``live_overlay`` 时跳过，盘中今日价走独立实时 overlay），以及目标日的指标
+    **预热日历**是否完整落在热库内。
+
+    第三条不能省：前两条都是相对**今天**的判据，看不出「用户要选的是 2020 年，
+    而热库只有近 700 个交易日」。缺了它，``screener._resolve_start`` 的
+    ``max(0, len(days) - bars)`` 会把不足的预热窗口无声钳位到热库首日，随后
+    ``load_panel(min_bars=...)`` 把历史不够的票静默丢掉——跑出一份少票的
+    「成功」结果并照常入库，比直接失败坏得多。
+
+    ``warmup_bars`` 收整数而**不是** engine 对象：market 不得反向依赖 strategy，
+    预热长度由调用方 ``signal_history_bars(engine)`` 算好再传。
+    ``end`` 供区间选股传区间末日；默认与 ``trade_date`` 同日。
+    """
+    if live_overlay:
+        if hot_window_shallow(full, hot, window_trading_days=window_trading_days):
+            return "热库窗口偏浅"
+    else:
+        reason = hot_unusable_reason(full, hot, window_trading_days=window_trading_days)
+        if reason:
+            return reason
+    start = str(trade_date or "")
+    if not start:
+        all_days = full.trading_days()
+        start = all_days[-1] if all_days else ""
+    last = str(end or start)
+    # bars<=0 会让切片退化成 [-0:]=全历史，把「几乎不需要预热」误判成
+    # 「热库必须装下全部历史」，恒回退全量库。
+    warmup = full.trading_days(end=start)[-max(1, int(warmup_bars)):]
+    if not warmup:
+        return "目标交易日前没有可用历史"
+    required = full.trading_days(start=warmup[0], end=last)
+    available = set(hot.trading_days(start=warmup[0], end=last))
+    if not set(required).issubset(available):
+        return f"热库未覆盖目标日预热窗口（{warmup[0]}→{last}）"
+    return ""
+
+
 @contextmanager
 def open_screen_store(
     market_db: str | None = None,
     hot_db: str | None = None,
+    *,
+    trade_date: str,
+    warmup_bars: int,
 ) -> Iterator[MarketStore]:
     """选股**只读**入口：热库可用就给热库，否则回退全量库。
 
     与选股任务路径的区别是不镜像——镜像是同步 / 选股任务的写职责，只读路径
-    （助手战法、技能试跑）不该顺手改热库，但仍必须过 ``hot_unusable_reason``，
-    否则会拿浅热库或落后一天的面板选股。
+    （助手战法、技能试跑）不该顺手改热库，但仍必须过 ``hot_fallback_reason``：
+    浅热库、落后一天、**目标日的预热日历不在热库窗口内**，三者都要回退全量库。
+
+    两个关键字参数故意**不给默认值**：留默认就等于把「历史日静默少票」的缺口
+    原地保留给下一个调用方。
     """
     with ExitStack() as stack:
         full = stack.enter_context(MarketStore(market_db))
         try:
             hot = stack.enter_context(open_market_hot(hot_db))
-            reason = hot_unusable_reason(full, hot)
+            reason = hot_fallback_reason(
+                full, hot, trade_date=trade_date, warmup_bars=warmup_bars
+            )
         except sqlite3.Error as exc:
             hot = None
             reason = f"热库打开失败（{exc}）"

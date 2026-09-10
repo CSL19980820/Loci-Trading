@@ -3,12 +3,10 @@ from __future__ import annotations
 import io
 from pathlib import Path
 import tempfile
-import threading
 import unittest
 from unittest.mock import patch
 import zipfile
 
-from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from src.app.main import create_app

@@ -30,7 +30,7 @@ const {
   sessionPhase,
   isLive,
   distribution,
-  quotesMap,
+  quotesList,
   indexRows,
   indexTrails,
   gainersRows,
@@ -45,7 +45,11 @@ const {
 // 大屏默认跟随用户自选外观；「暗色」是顶栏上的显式开关，不替用户改色
 const { inkOn, toggleInk } = useBoardInk()
 
-const allQuotes = computed<QuoteRow[]>(() => Array.from(quotesMap.value.values()))
+/*
+ * 整屏消费的全量报价直接用 useLiveBoard 增量维护的 quotesList。
+ * 这里原来是 `computed(() => Array.from(quotesMap.value.values()))`——每帧走一遍
+ * Map 迭代器物化整个数组，再把新引用级联给 HeatStrip / TickerTape / 状态栏。
+ */
 
 /** 四张榜单的身份：色条 + 数值口径。涨跌用红绿（价格语义），换手/额用蓝/黄。 */
 const RANKS = [
@@ -83,7 +87,7 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
 
     <main class="live-board__main">
       <div class="live-board__left">
-        <HeatStrip :rows="allQuotes" :distribution="distribution" />
+        <HeatStrip :rows="quotesList" :distribution="distribution" />
 
         <div class="live-board__ranks">
           <RankColumn
@@ -102,7 +106,7 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
       <SignalStream :signals="signals" :new-signal-ids="newSignalIds" :status="status" />
     </main>
 
-    <TickerTape :rows="allQuotes" />
+    <TickerTape :rows="quotesList" />
 
     <LiveStatusBar
       :source="source"
@@ -110,7 +114,7 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
       :as-of="lastAsOf"
       :stale-ms="staleMs"
       :source-error="sourceError"
-      :quote-count="allQuotes.length"
+      :quote-count="quotesList.length"
       :signal-count="signals.length"
     />
   </div>

@@ -11,6 +11,8 @@ import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import KlineChart from '@/shared/components/charts/KlineChart.vue'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
+import './assistant-card.css'
+
 const props = defineProps<{ artifact: AiChartArtifact }>()
 
 const bars = computed(() => parseKlineBars(props.artifact.data ?? {}))
@@ -27,8 +29,8 @@ const visibleBars = computed(() => Math.max(ASSISTANT_KLINE_MIN_VISIBLE, Math.mi
 </script>
 
 <template>
-  <section class="assistant-kline-card" :aria-label="artifactShellTitle(artifact)">
-    <div class="assistant-kline-card__heading">
+  <section class="assistant-kline-card assistant-card" :aria-label="artifactShellTitle(artifact)">
+    <div class="assistant-card__heading">
       <h3>{{ artifactShellTitle(artifact) }}</h3>
       <el-tag v-if="code" size="small" type="info">{{ name ? `${name} ${code}` : code }}</el-tag>
     </div>
@@ -55,14 +57,6 @@ const visibleBars = computed(() => Math.max(ASSISTANT_KLINE_MIN_VISIBLE, Math.mi
 </template>
 
 <style scoped>
-.assistant-kline-card {
-  margin-top: .15rem; padding: .55rem; border: 1px solid var(--rule);
-  border-radius: var(--radius); background: var(--panel-2); width: 100%; min-width: 0;
-}
-.assistant-kline-card__heading {
-  display: flex; align-items: center; justify-content: space-between; gap: .4rem; margin-bottom: .4rem;
-}
-.assistant-kline-card h3 { margin: 0; font-size: var(--ai-fs-body); }
 /*
  * 单一高度来源：此前 height:16rem + min-height:14rem 写了三遍互相打架（体检 §4.2/§4.4）。
  * K 线改用宽高比定高，窄屏自动变矮，小卡片里不再留死白。

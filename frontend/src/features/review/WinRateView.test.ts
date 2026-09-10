@@ -1,11 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import WinRateView from './WinRateView.vue'
-import { getWinRateSummary, getWinRateTrend } from '@/shared/api/quant'
+import { getWinRateSamples, getWinRateSummary, getWinRateTrend } from '@/shared/api/quant'
 
 vi.mock('@/shared/api/quant', () => ({
   CapabilityUnavailableError: class CapabilityUnavailableError extends Error {},
+  getWinRateSamples: vi.fn(),
   getWinRateSummary: vi.fn(),
   getWinRateTrend: vi.fn(),
 }))
@@ -18,94 +19,202 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+const SUMMARY_ROW = {
+  strategy_tag: 'sanyuan-tail-v1',
+  source: 'candidates',
+  total: 12,
+  wins: 5,
+  win_rate: 41.7,
+  avg_return: -3.45,
+  observing: 6,
+  sample_all: 18,
+  primary_horizon: 5,
+  last_reviewed: '2026-09-08',
+  horizons: {
+    t1: { horizon: 1, n: 18, avg: -0.25, win_rate: 44.4, best: 9.01, worst: -8.96 },
+    t5: { horizon: 5, n: 12, avg: -3.45, win_rate: 41.7, best: 7.71, worst: -17.91 },
+    t10: { horizon: 10, n: 4, avg: 2.97, win_rate: 50, best: 14.74, worst: -4.28 },
+  },
+  best_horizon: { horizon: 10, n: 4, avg: 2.97, win_rate: 50 },
+  best_sample: {
+    code: '603217',
+    name: '元利科技',
+    base_date: '2026-08-25',
+    base_close: 28.39,
+    return_pct: 7.71,
+    max_favorable_pct: 8.45,
+    horizon: 5,
+  },
+  worst_sample: {
+    code: '002971',
+    name: '和远气体',
+    base_date: '2026-08-28',
+    base_close: 47.08,
+    return_pct: -17.91,
+    max_favorable_pct: -0.64,
+    horizon: 5,
+  },
+}
+
+const SAMPLE_DETAIL = {
+  strategy_tag: 'sanyuan-tail-v1',
+  primary_horizon: 5,
+  settled: 12,
+  observing: 6,
+  wins: 5,
+  win_rate: 41.7,
+  avg_return: -3.45,
+  sample_confidence: 'medium',
+  truncated: false,
+  samples: [
+    {
+      candidate_id: 'C-1',
+      code: '603217',
+      name: '元利科技',
+      base_date: '2026-08-25',
+      base_close: 28.39,
+      returns: { t1: 2.18, t3: 5.42, t5: 7.71 },
+      win: true,
+      primary_return: 7.71,
+    },
+  ],
+}
+
+const STUBS = {
+  Sheet: {
+    props: ['title'],
+    template: '<section><h3>{{ title }}</h3><slot name="actions" /><slot /></section>',
+  },
+  /* 渲染真实插槽而不是 dataSource 的 JSON：打印 JSON 会把 slug 混进 text()，
+     「界面不许出现英文 slug」那条断言就永远测不到真实渲染。 */
+  BasicTable: {
+    props: ['dataSource', 'columns'],
+    template:
+      '<div><span v-for="col in columns" :key="col.prop">{{ col.label }}</span>' +
+      '<div v-for="(row, i) in dataSource" :key="i">' +
+      '<template v-for="col in columns" :key="col.prop">' +
+      '<slot :name="col.slotName || col.prop" :row="row">{{ row[col.prop] }}</slot>' +
+      '</template></div></div>',
+  },
+  PageTabs: {
+    props: ['modelValue', 'items'],
+    template:
+      '<nav><button v-for="it in items" :key="it.name" :data-tab="it.name"' +
+      ' @click="$emit(\'update:modelValue\', it.name)">{{ it.label }}</button>' +
+      '<slot name="trailing" /></nav>',
+  },
+  EmptyState: true,
+  PageBusy: true,
+  RouterLink: { template: '<a><slot /></a>' },
+  'el-select': {
+    props: ['modelValue'],
+    template:
+ '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value); $emit(\'change\', $event.target.value)"><slot /></select>',
+  },
+  'el-option': true,
+  'el-tooltip': { template: '<span><slot /></span>' },
+  'el-button': { template: '<button><slot /></button>' },
+  'el-alert': true,
+  StockLink: {
+    props: ['code', 'name'],
+    template: '<a>{{ name || code }}</a>',
+  },
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+function mountView() {
+  return mount(WinRateView, { global: { stubs: STUBS } })
+}
+
+describe('WinRateView 两层结构', () => {
+  /*
+     * 用户原话：「我想切不同的策略都做不到。进来先是一个综合型的……点对应的才可以
+     * 看对应的胜率」。所以进页面必须是综合层，且**不能**顺手替某个战法发请求。
+  */
+  it('进来是综合对比，不预拉任何战法的样本', async () => {
+    vi.mocked(getWinRateSummary).mockResolvedValue([SUMMARY_ROW] as never)
+    vi.mocked(getWinRateTrend).mockResolvedValue([
+      { period: '2026-08', strategy_tag: 'sanyuan-tail-v1', total: 10, wins: 4, win_rate: 40, avg_return: -4.16, source: 'candidates' },
+    ] as never)
+    vi.mocked(getWinRateSamples).mockResolvedValue(SAMPLE_DETAIL as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(getWinRateSamples).not.toHaveBeenCalled()
+    const text = wrapper.text()
+    expect(text).toContain('综合对比')
+    expect(text).toContain('三源尾盘共振')
+    expect(text).toContain('同期对比（精选候选 T+5，按选出日）')
+    expect(text).not.toContain('sanyuan-tail-v1')
+    wrapper.unmount()
+  })
+
+  it('切到战法 tab 才拉样本，并写清分母与最佳/最差样本', async () => {
+    vi.mocked(getWinRateSummary).mockResolvedValue([SUMMARY_ROW] as never)
+    vi.mocked(getWinRateTrend).mockResolvedValue([] as never)
+    vi.mocked(getWinRateSamples).mockResolvedValue(SAMPLE_DETAIL as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-tab="sanyuan-tail-v1"]').trigger('click')
+    await flushPromises()
+
+    expect(getWinRateSamples).toHaveBeenCalledWith({ tag: 'sanyuan-tail-v1' })
+    const text = wrapper.text()
+    // 分母写在页面上，观察中的样本单独交代——这就是「怎么算的」那一句
+    expect(text).toContain('胜率 41.7% = 盈利 5 ÷ 已走完 T+5 的 12 条精选候选')
+    expect(text).toContain('另有 6 条还在窗口内，不计入')
+    // 最佳 / 最差样本点名到票，最佳持有期回答「该拿几天」
+    expect(text).toContain('元利科技')
+    expect(text).toContain('和远气体')
+    expect(text).toContain('T+10')
+    wrapper.unmount()
+  })
+
+  it('同一个战法来回切只请求一次样本', async () => {
+    vi.mocked(getWinRateSummary).mockResolvedValue([SUMMARY_ROW] as never)
+    vi.mocked(getWinRateTrend).mockResolvedValue([] as never)
+    vi.mocked(getWinRateSamples).mockResolvedValue(SAMPLE_DETAIL as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-tab="sanyuan-tail-v1"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-tab="overview"]').trigger('click')
+    await wrapper.get('[data-tab="sanyuan-tail-v1"]').trigger('click')
+    await flushPromises()
+
+    expect(vi.mocked(getWinRateSamples).mock.calls.length).toBe(1)
+    wrapper.unmount()
+  })
+})
+
 describe('WinRateView trend changes', () => {
   it('keeps the trend for the latest granularity when a slower prior request resolves last', async () => {
     const month = deferred<never>()
     const week = deferred<never>()
-    vi.mocked(getWinRateSummary).mockResolvedValue([{ strategy_tag: 'A' }] as never)
+    vi.mocked(getWinRateSummary).mockResolvedValue([{ strategy_tag: 'A', total: 1 }] as never)
     vi.mocked(getWinRateTrend).mockImplementation((options) =>
       options?.granularity === 'month' ? month.promise : week.promise,
     )
-    const wrapper = mount(WinRateView, {
-      global: {
-        stubs: {
-          HeaderActions: { template: '<div><slot /></div>' },
-          Sheet: { template: '<section><slot /><slot name="actions" /></section>' },
-          BasicTable: { props: ['dataSource'], template: '<pre>{{ dataSource }}</pre>' },
-          EmptyState: true,
-          PageBusy: true,
-          'el-select': {
-            props: ['modelValue'],
-            template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value); $emit(\'change\', $event.target.value)"><slot /></select>',
-          },
-          'el-option': true,
-          'el-checkbox': true,
-          'el-button': { template: '<button><slot /></button>' },
-          'el-tag': { template: '<span><slot /></span>' },
-        },
-      },
-    })
+
+    const wrapper = mountView()
     await flushPromises()
 
     await wrapper.get('select').setValue('week')
-    week.resolve([{ period: '2026-W01', strategy_tag: 'A', win_rate: 88 }] as never)
+    week.resolve([{ period: '2026-W01', strategy_tag: 'A', total: 3, wins: 2, win_rate: 88 }] as never)
     await flushPromises()
-    month.resolve([{ period: '2026-01', strategy_tag: 'A', win_rate: 12 }] as never)
+    month.resolve([{ period: '2026-01', strategy_tag: 'A', total: 3, wins: 1, win_rate: 12 }] as never)
     await flushPromises()
 
     expect(wrapper.text()).toContain('2026-W01')
     expect(wrapper.text()).not.toContain('2026-01')
-  })
-})
-
-describe('WinRateView 战法展示', () => {
-  /*
-   * 用户反复点名：界面上不许再出现 `sanyuan-tail-v1` 这类英文 slug。
-   * 主表战法列、分周期 check-tag、趋势表头三处都要落中文短名，
-   * slug 只允许留在 row-key / activeTags / 调试 tooltip 里。
-  */
-  it('renders Chinese strategy names instead of English slugs', async () => {
-    vi.mocked(getWinRateSummary).mockResolvedValue([
-      {
-        strategy_tag: 'sanyuan-tail-v1',
-        source: 'candidates',
-        total: 14,
-        wins: 8,
-        win_rate: 57.1,
-        avg_return: 1.23,
-        last_reviewed: '2026-08-20',
-        horizons: { t1: { n: 14, win_rate: 57.1 }, t3: { n: 4, win_rate: 75 } },
-      },
-    ] as never)
-    vi.mocked(getWinRateTrend).mockResolvedValue([
-      { period: '2026-08', strategy_tag: 'sanyuan-tail-v1', win_rate: 60, total: 5 },
-    ] as never)
-
-    const wrapper = mount(WinRateView, {
-      global: {
-        stubs: {
-          Sheet: { template: '<section><slot name="actions" /><slot /></section>' },
-          BasicTable: {
-            props: ['dataSource', 'columns'],
-            template:
-              '<div><span v-for="col in columns" :key="col.prop">{{ col.label }}</span>' +
-              '<div v-for="(row, i) in dataSource" :key="i"><slot name="tag" :row="row" /></div></div>',
-          },
-          EmptyState: true,
-          PageBusy: true,
-          'el-select': { template: '<select><slot /></select>' },
-          'el-option': true,
-          'el-check-tag': { template: '<span><slot /></span>' },
-          'el-tooltip': { template: '<span><slot /></span>' },
-          'el-button': { template: '<button><slot /></button>' },
-          'el-tag': { template: '<span><slot /></span>' },
-        },
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('三源尾盘共振')
-    expect(wrapper.text()).not.toContain('sanyuan-tail-v1')
     wrapper.unmount()
   })
 })

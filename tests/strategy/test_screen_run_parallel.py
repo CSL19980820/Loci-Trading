@@ -11,16 +11,22 @@ cancel / 快照），这边真的起 ``start_screen_run_thread`` 两次，让两
 4. 结果 ``picks`` 落在正确的槽里。
 
 这条用例专门防「进度看着对，其实是两条线程轮流盖同一个槽」——那种 bug 在单线程
+
+**容量前提**：进程级选股许可（``src.shared.screen_capacity``）默认只放行一个，
+两条线程真并跑需要显式把容量抬到 2。这不是绕过闸门——槽隔离与闸门是两件事，
+把它们搅在一起会让「槽会不会串」永远测不到。闸门本身的行为另有用例钉。
 测试里 100% 观察不到。
 """
 from __future__ import annotations
 
 import threading
+import time
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from src.shared import screen_capacity
 from src.shared.tenancy import tenant_scope
 from src.strategy.application.screen_run import (
     _STATES,
@@ -32,6 +38,17 @@ from src.strategy.application.screen_run import (
 
 QIANLONG = "qianlong-close-v3"
 SANYUAN = "sanyuan-tail-v1"
+
+
+@pytest.fixture(autouse=True)
+def _capacity_for_two(monkeypatch):
+    """本文件要的是两条线程真并跑，显式把进程级许可抬到 2 并清干净状态。"""
+    monkeypatch.setenv("LOCI_SCREEN_JOB_CONCURRENCY", "2")
+    screen_capacity._HOLDERS.clear()
+    screen_capacity._WAITING.clear()
+    yield
+    screen_capacity._HOLDERS.clear()
+    screen_capacity._WAITING.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -163,3 +180,62 @@ def _wait_until_settled(slug: str, timeout: float = 20.0) -> None:
             return
         time.sleep(0.05)
     raise AssertionError(f"{slug} 没能在 {timeout}s 内跑完：{screen_run_snapshot(slug)}")
+
+
+def _wait_for_capacity(*, in_use: int, waiting: int, timeout: float = 20.0) -> dict:
+    """等许可状态到达期望值。裸读会撞上「第二条线程刚 spawn 还没排到队」。"""
+    deadline = time.monotonic() + timeout
+    status = screen_capacity.screen_capacity_status()
+    while time.monotonic() < deadline:
+        status = screen_capacity.screen_capacity_status()
+        if status["in_use"] == in_use and status["waiting"] == waiting:
+            return status
+        time.sleep(0.02)
+    raise AssertionError(f"许可状态没到 in_use={in_use}/waiting={waiting}：{status}")
+
+
+def test_second_strategy_queues_instead_of_doubling_memory(monkeypatch) -> None:
+    """容量=1 时第二个战法**排队**而不是并行开面板。
+
+    生产实测：三档并发的全市场面板（4400 只票 x 60 日）在 3.7G 机器上触发
+    memcg OOM 打掉整个容器。槽仍然是两个（进度条各显各的），但真正开面板的
+    同时只有一个。这条用例钉的就是「槽数 != 并发数」。
+    """
+    import src.strategy as strategy_pkg
+
+    monkeypatch.setenv("LOCI_SCREEN_JOB_CONCURRENCY", "1")
+    screen_capacity._HOLDERS.clear()
+    screen_capacity._WAITING.clear()
+    inside = threading.Event()
+    release = threading.Event()
+    concurrent: list[int] = []
+
+    def fake_screen(_store, slug: str, **kwargs: Any) -> SimpleNamespace:
+        day = str(kwargs.get("trade_date") or "")
+        concurrent.append(len(screen_capacity.screen_capacity_status()["holders"]))
+        if day == "2026-08-26" and not inside.is_set():
+            inside.set()
+            release.wait(timeout=20)
+        return _result(slug, day)
+
+    monkeypatch.setattr(strategy_pkg, "screen", fake_screen)
+
+    with tenant_scope("u_a"):
+        assert _spawn(QIANLONG).get("status") == "running"
+        assert _spawn(SANYUAN).get("status") == "running"
+        assert inside.wait(timeout=20)
+
+        # 第一个占着唯一的许可；第二个已认领自己的槽（进度条在转）但还没开面板。
+        # 轮询而不是裸读：第二条线程刚被 spawn 时可能还没走到排队那一步。
+        status = _wait_for_capacity(in_use=1, waiting=1)
+        assert status["holders"] and status["waiters"], status
+        assert set(screen_run_snapshot_all()["running_strategies"]) == {QIANLONG, SANYUAN}
+
+        release.set()
+        _wait_until_settled(QIANLONG)
+        _wait_until_settled(SANYUAN)
+
+        # 两个都跑完，且从没有过两份面板同时在内存里。
+        assert screen_run_snapshot(QIANLONG)["status"] == "done"
+        assert screen_run_snapshot(SANYUAN)["status"] == "done"
+        assert max(concurrent) == 1, concurrent

@@ -1,0 +1,397 @@
+/*
+ * AppSidebar 的皮肤。经 `<style scoped src>` 挂回组件，**仍是 scoped**——
+ * 编译期照样加 data-v 属性、`:deep()` 照常展开，与写在 SFC 里没有任何差别
+ * （`@import` 则不然：那样引进来的规则拿不到 scope，所以这里不能用 @import）。
+ *
+ * 单独成文件是因为它已经比脚本 + 模板加起来还长：改一次间距要在 700 行里翻，
+ * 而版型编排与皮肤本来就是两拨人在两个时候改。类名全部 `app-sidebar` 私有，
+ * 没有外部页面 :deep 进来，整体挪动是安全的。
+ */
+.app-sidebar {
+  /*
+   * 210px 太宽（用户原话「左侧菜单太宽了」）。176px 仍装得下「管理后台 / 策稿台」
+   * 这一档四字短名，再窄就要开始截断了。收缩态维持 54px。
+   */
+  --sidebar-w: 176px;
+  --sidebar-w-collapsed: 54px;
+  --icon-btn: 26px;
+  height: 100%;
+  min-height: 0;
+  width: var(--sidebar-w);
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--rule);
+  background: var(--sheet-alt);
+  overflow: hidden;
+  transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: 100;
+}
+
+.app-sidebar.collapsed {
+  width: var(--sidebar-w-collapsed);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar {
+    transition: none;
+  }
+}
+
+/* 顶部 Brand 栏：42px，Logo与名称居左，折叠按钮在最右顶边 */
+.brand-row {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sheet);
+}
+
+.app-sidebar.collapsed .brand-row {
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1, 4px);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius, 6px);
+  background: var(--seal);
+  /* 实心主色上的文字色只能由 --on-primary 决定：写死白字在 amber 主色下只有 2.5:1 */
+  color: var(--on-primary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker, 11px);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.brand-name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--radius, 6px);
+  color: var(--mist);
+  transition: all 180ms ease;
+}
+
+.brand-toggle:hover {
+  background: var(--sheet-alt);
+  color: var(--ink);
+}
+
+/* 中间菜单区域：自适应高度 + 独立滚动。min-height:0 是关键，否则内容会把底部顶出视口 */
+.side-menu-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 6px 5px;
+}
+
+.side-menu {
+  width: 100%;
+  border-right: 0 !important;
+  background: transparent !important;
+}
+
+/* 一级折叠标题与图标 */
+.side-menu :deep(.el-sub-menu__title) {
+  display: flex !important;
+  align-items: center;
+  height: 34px;
+  line-height: 34px;
+  padding: 0 8px !important;
+  margin: 3px 0;
+  border-radius: var(--radius, 6px);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 180ms ease;
+}
+
+.side-menu :deep(.el-sub-menu__title:hover) {
+  background: var(--sheet) !important;
+  color: var(--ink);
+}
+
+.side-menu :deep(.el-sub-menu__title .sub-menu-icon),
+.side-menu :deep(.el-sub-menu__title .el-icon) {
+  width: 16px;
+  font-size: 15px;
+  margin-right: 8px;
+  color: var(--mist);
+  transition: color 180ms ease;
+}
+
+.side-menu :deep(.el-sub-menu__title:hover .el-icon) {
+  color: var(--seal-ink);
+}
+
+.side-menu :deep(.el-sub-menu__title .el-sub-menu__icon-arrow) {
+  margin-right: 0 !important;
+  font-size: 12px;
+  color: var(--mist);
+}
+
+/*
+ * 二级菜单项。底部那组用的是**同一条规则**（.foot-menu 也带 .side-menu 类），
+ * hover / is-active / 高度 / 缩进因此像素级一致——这正是「做成类似我的那种菜单」。
+ * 左缩进从 32px 收到 26px：侧栏窄了，再吃 32px 会把四字短名挤到换行。
+ */
+.side-menu :deep(.el-menu-item) {
+  display: flex !important;
+  align-items: center;
+  height: 32px;
+  line-height: 32px;
+  padding: 0 10px 0 26px !important;
+  margin: 2px 0;
+  border-radius: var(--radius, 6px);
+  border-left: 0 !important;
+  color: var(--muted);
+  font-size: 13px;
+  transition: all 180ms ease;
+}
+
+.side-menu :deep(.el-menu-item .el-icon) {
+  width: 15px;
+  margin-right: 8px;
+  font-size: 14px;
+  color: var(--mist);
+  transition: color 180ms ease;
+}
+
+.side-menu :deep(.el-menu-item:hover) {
+  background: var(--sheet) !important;
+  color: var(--ink);
+}
+
+.side-menu :deep(.el-menu-item.is-active) {
+  background: var(--seal-soft) !important;
+  color: var(--seal) !important;
+  font-weight: 600;
+}
+
+.side-menu :deep(.el-menu-item.is-active .el-icon) {
+  color: var(--seal-ink);
+}
+
+/* 收缩态下的菜单项 */
+.app-sidebar.collapsed .side-menu-wrap {
+  padding: 6px 4px;
+}
+
+.app-sidebar.collapsed .side-menu :deep(.el-menu-item) {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  margin: 4px 0;
+  height: 34px;
+  width: 100%;
+}
+
+.app-sidebar.collapsed .side-menu :deep(.el-menu-item .el-icon) {
+  margin: 0 !important;
+  font-size: 16px;
+}
+
+.collapsed-divider {
+  height: 1px;
+  background: var(--rule);
+  margin: 6px 4px;
+}
+
+/*
+ * —— 底部固定区 ——
+ * flex-shrink:0 + 不参与上方滚动容器：上面的菜单再长也不会把它顶走，
+ * 它也不会跟着上面一起滚（用户原话：「两者互不影响」）。
+ */
+.sidebar-foot {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 5px 6px;
+  border-top: 1px solid var(--rule);
+  background: var(--sheet);
+}
+
+.app-sidebar.collapsed .sidebar-foot {
+  padding: 4px 4px 6px;
+}
+
+/* 底部菜单容器只负责排版；皮肤全部由上面的 .side-menu 规则提供 */
+.foot-menu {
+  width: 100%;
+}
+
+.foot-menu :deep(.el-menu-item) {
+  background: transparent;
+}
+
+/*
+ * 「消息」「主题」是开弹层的动作项，不是页面。EP 的 el-menu 在非 router 模式下
+ * 会把**任何**被点过的 item 记成 activeIndex，于是点一次消息，那一条就永久亮着，
+ * 看起来像「当前页是消息」。这里按住不让它进选中态——选中态只属于真路由项。
+ */
+.foot-menu :deep(.el-menu-item.foot-menu-item--notify.is-active),
+.foot-menu :deep(.el-menu-item.foot-menu-item--theme.is-active) {
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-weight: 400;
+}
+
+.foot-menu :deep(.el-menu-item.foot-menu-item--notify.is-active .el-icon),
+.foot-menu :deep(.el-menu-item.foot-menu-item--theme.is-active .el-icon) {
+  color: var(--mist);
+}
+
+.foot-menu :deep(.el-menu-item.foot-menu-item--notify.is-active:hover),
+.foot-menu :deep(.el-menu-item.foot-menu-item--theme.is-active:hover) {
+  background: var(--sheet) !important;
+  color: var(--ink) !important;
+}
+
+/* 未读圆点跟着铃铛走：图标外面包了一层 el-badge，图标本身的间距规则照旧生效 */
+.foot-badge {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.foot-badge :deep(.el-badge__content.is-dot) {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  background: var(--stamp);
+}
+
+.foot-hairline {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--rule);
+}
+
+.foot-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.foot-user--collapsed {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.foot-user :deep(.user-menu-wrap) {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.foot-user--collapsed :deep(.user-menu-wrap) {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.foot-user :deep(.user-profile-btn) {
+  height: 32px;
+  padding: 0 4px;
+  border-radius: var(--radius, 6px);
+}
+
+.foot-user--collapsed :deep(.user-profile-btn) {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.foot-user :deep(.user-name) {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.foot-actions {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.foot-user--collapsed .foot-actions {
+  flex-direction: column;
+}
+
+.icon-btn.el-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--icon-btn);
+  height: var(--icon-btn);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius, 6px);
+  background: transparent;
+  color: var(--mist);
+  text-decoration: none;
+  transition: all 180ms ease;
+}
+
+.icon-btn.el-button + .icon-btn.el-button {
+  margin-left: 0;
+}
+
+.icon-btn .el-icon {
+  font-size: 15px;
+}
+
+.icon-btn.el-button:hover {
+  background: var(--sheet-alt);
+  color: var(--ink);
+}
+
+@media (max-width: 980px) {
+  .app-sidebar {
+    display: none;
+  }
+}

@@ -118,17 +118,17 @@ const visible = computed(() => Boolean(line.value))
   flex: 0 0 auto;
   display: flex;
   align-items: baseline;
-  gap: var(--gap-2, 8px);
+  gap: var(--gap-2);
   min-width: 0;
-  padding: 1px var(--gap-2, 8px) 2px;
+  padding: 1px var(--gap-2) 2px;
   border: 1px solid var(--rule);
-  border-radius: var(--radius, 3px);
+  border-radius: var(--radius);
   background: var(--sheet);
 }
 
 .intel-tape__k {
   flex: 0 0 auto;
-  font-size: var(--fs-kicker, 11px);
+  font-size: var(--fs-kicker);
   color: var(--mist);
   letter-spacing: 0.02em;
 }
@@ -137,7 +137,7 @@ const visible = computed(() => Boolean(line.value))
   min-width: 0;
   flex: 1 1 auto;
   font-family: var(--mono);
-  font-size: var(--fs-aux, 12px);
+  font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
   white-space: nowrap;

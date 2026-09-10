@@ -9,14 +9,13 @@ from dataclasses import asdict
 from datetime import date
 import hashlib
 import json
-from math import isfinite
 from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 
 from src.backtest import BacktestResult, TrainOOSSplit
-from src.research.domain.dag import ResearchStage, ResearchWorkflow, StageStatus
+from src.research.domain.dag import ResearchWorkflow, StageStatus
 from src.research.domain.run_card import ResearchRunCard
 from src.research.domain.temporal import MembershipSnapshot
 from src.research.infrastructure import ResearchRunCardStore

@@ -8,7 +8,7 @@
 import logging
 from typing import Annotated, Any, Callable
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Body, Depends, Path, Query
 
 from src.community.application import discovery, engagement, publishing
 from src.community.api.deps import (

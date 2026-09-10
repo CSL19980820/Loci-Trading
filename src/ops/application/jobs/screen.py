@@ -1,6 +1,7 @@
 """screen 任务执行器：选股与候选池落库。"""
 from __future__ import annotations
 
+from datetime import date
 import json
 import logging
 import re
@@ -65,6 +66,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     """
     from src.market import should_overlay_live
     from src.strategy import get, screen
+    from src.strategy.domain.base import signal_history_bars
 
     slug = config.get("strategy")
     if not slug:
@@ -137,22 +139,29 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
         spot_refresh_meta.update(_await_shared_quotes(context))
 
     # 策略声明 requires_full_history 时跳过热库镜像，直接读全量库。
-    # 否则尽量镜像后读热库；镜像失败或热库落后于全量时回退全量库选股
-    # （与 screen_run 一致，不假装哨兵会修）。
+    # 否则尽量镜像后读热库；镜像失败、热库落后于全量、或**目标日的预热日历
+    # 不在热库窗口内**时回退全量库选股（判据与其余选股入口共用同一个函数）。
+    engine = None
     try:
-        needs_full = bool(getattr(get(str(slug)), "requires_full_history", False))
+        engine = get(str(slug))
+        needs_full = bool(getattr(engine, "requires_full_history", False))
     except Exception:
         needs_full = False
 
     use_hot = False
-    if not needs_full:
+    warmup_bars = 0
+    # 取不到 engine 就算不出预热长度；读全量库虽慢，但不会静默少票。
+    if engine is not None and not needs_full:
+        # 预热长度**先算、算不出就抛**：engine 缺 min_bars 或 warmup_bars 非法是战法
+        # 定义的问题，不是「热库不可用」。混进下面那个 except 会把两件事说成同一件，
+        # 还会把战法配置错误藏成一次「安静地慢一点」的全量库选股。
+        try:
+            warmup_bars = signal_history_bars(engine)
+        except Exception as exc:
+            raise JobError(f"战法 {slug} 的指标预热长度算不出来（{exc}）") from exc
         try:
             with context.market() as full, context.market_hot() as hot:
-                from src.market import (
-                    hot_unusable_reason,
-                    hot_window_shallow,
-                    mirror_recent_to_hot,
-                )
+                from src.market import hot_fallback_reason, mirror_recent_to_hot
 
                 # 镜像是**写全局 ``market_hot.db``**，同样只归主租户：sync 每轮
                 # 结束时已经做过（``jobs/sync.py``）。子租户跟着镜像一遍，就是 N 个
@@ -161,12 +170,15 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
                 # 盘中 overlay 连镜像也不做：今日价走实时，热库只提供历史。
                 if primary and not live_overlay:
                     mirror_recent_to_hot(full, hot)
-                if live_overlay:
-                    reason = (
-                        "热库窗口偏浅" if hot_window_shallow(full, hot) else ""
-                    )
-                else:
-                    reason = hot_unusable_reason(full, hot)
+                # config["date"] 可以是任意历史日。只看窗口深度与末日的旧判据对历史日
+                # 一律放行，随后 screener 无声钳位预热起点，少票的结果照常写进候选池。
+                reason = hot_fallback_reason(
+                    full,
+                    hot,
+                    trade_date=str(config.get("date") or date.today().isoformat()),
+                    warmup_bars=warmup_bars,
+                    live_overlay=live_overlay,
+                )
                 if reason:
                     logger.warning("%s，回退全量库选股", reason)
                 else:

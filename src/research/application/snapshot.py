@@ -1,7 +1,7 @@
 """研究输入快照：只保存本次计算实际需要的本地事实。"""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 import hashlib
 import json
 import math
@@ -12,7 +12,6 @@ import pandas as pd
 from src.shared.clock import utc_now
 from src.market import check_market_health, normalize_code
 from src.research.domain.contract import ResearchInputSnapshot, SourceAttempt
-from src.research.application.readonly_engine import readonly_frame
 
 
 Budget = Literal["lite", "standard", "deep"]
@@ -214,13 +213,11 @@ def capture_research_input(
     days = store.trading_days(end=requested or None)
     resolved_as_of = str(days[-1]) if days else ""
     start = days[-max_bars] if len(days) > max_bars else None
-    frame = readonly_frame(
-        store.history(
-            normalized,
-            start=start,
-            end=resolved_as_of or requested or None,
-            adjust="qfq",
-        )
+    frame = store.history(
+        normalized,
+        start=start,
+        end=resolved_as_of or requested or None,
+        adjust="qfq",
     )
     instrument_rows = store.instruments_by_codes([normalized])
     instrument = (

@@ -22,7 +22,6 @@ from src.strategy.application import screen_run_state as state
 from src.strategy.application.screen_run import (
     MAX_CONCURRENT_RUNS,
     MAX_RUNS_PER_TENANT,
-    MAX_TOTAL_RUN_SLOTS,
     _STATES,
     screen_run_cancel_requested,
     screen_run_request_cancel,

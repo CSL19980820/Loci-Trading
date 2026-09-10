@@ -18,6 +18,7 @@ const board = {
   isLive: ref(false),
   distribution: ref(null),
   quotesMap: shallowRef(new Map<string, QuoteRow>()),
+  quotesList: shallowRef<QuoteRow[]>([]),
   indexRows: shallowRef<QuoteRow[]>([]),
   indexTrails: shallowRef(new Map<string, number[]>()),
   gainersRows: shallowRef<QuoteRow[]>([]),

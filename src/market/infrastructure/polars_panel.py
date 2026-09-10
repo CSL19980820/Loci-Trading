@@ -15,8 +15,8 @@ import pandas as pd
 
 
 def _to_pandas(frame: Any) -> pd.DataFrame:
-    """转回既有边界类型，不要求额外的 pyarrow 可选依赖。"""
-    return pd.DataFrame(frame.to_dicts())
+    """按列转换，避免为每根 K 线创建字典；无需 pyarrow。"""
+    return pd.DataFrame({name: frame[name].to_numpy() for name in frame.columns})
 
 
 def polars_panel_enabled() -> bool:

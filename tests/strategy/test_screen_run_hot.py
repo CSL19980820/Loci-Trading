@@ -143,7 +143,7 @@ class ScreenRunHotStoreTests(unittest.TestCase):
         captured = self._run(
             full_seeded=True,
             hot_prepopulated=True,
-            engine=SimpleNamespace(requires_full_history=False),
+            engine=SimpleNamespace(requires_full_history=False, min_bars=lambda: 1),
             wipe_full_quotes=True,
         )
         self.assertEqual(captured["status"], "done")
@@ -174,7 +174,7 @@ class ScreenRunHotStoreTests(unittest.TestCase):
                 return _fake_result("2026-07-31", str(store.db_path))
 
             with (
-                patch("src.strategy.get", lambda _slug: SimpleNamespace(requires_full_history=False)),
+                patch("src.strategy.get", lambda _slug: SimpleNamespace(requires_full_history=False, min_bars=lambda: 1)),
                 patch("src.strategy.screen", side_effect=fake_screen),
             ):
                 execute_screen_run(
@@ -209,7 +209,7 @@ class ScreenRunHotStoreTests(unittest.TestCase):
             with (
                 patch(
                     "src.strategy.get",
-                    lambda _slug: SimpleNamespace(requires_full_history=False),
+                    lambda _slug: SimpleNamespace(requires_full_history=False, min_bars=lambda: 1),
                 ),
                 patch("src.strategy.screen", side_effect=fake_screen),
                 patch(

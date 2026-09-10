@@ -60,7 +60,7 @@ def _exclusive_lock(path: Path) -> Iterator[None]:
                     os.O_CREAT | os.O_EXCL | os.O_WRONLY,
                 )
                 os.write(descriptor, str(os.getpid()).encode("ascii", errors="ignore"))
-            except FileExistsError:
+            except FileExistsError as exc:
                 try:
                     age = time.time() - lock_path.stat().st_mtime
                     if age > _STALE_LOCK_SECONDS:
@@ -69,7 +69,7 @@ def _exclusive_lock(path: Path) -> Iterator[None]:
                 except FileNotFoundError:
                     continue
                 if time.monotonic() >= deadline:
-                    raise HypothesisConcurrencyError(f"假设文件锁超时：{path}")
+                    raise HypothesisConcurrencyError(f"假设文件锁超时：{path}") from exc
                 time.sleep(0.01)
         try:
             yield

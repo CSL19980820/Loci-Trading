@@ -15,26 +15,30 @@
 可写 market 侧缓存表。AI 不得替代本模块出数。
 
 ## 关键入口
-`evaluate_candidates` / `filter_recent_outcomes` / `track_candidate_outcomes` / `strategy_winrate_summary`；
+`evaluate_candidates` / `filter_recent_outcomes` / `track_candidate_outcomes` /
+`build_winrate_summary` / `winrate_periods` / `winrate_samples`（合称 winrate 三视角，都吃同一批已算好的 outcomes）；
 盘面近选跟踪用 `window_days=5`（T～T+4）过滤精选候选。
 HTTP：`/api/review/candidates|plans` `/api/winrate/*` `/api/insights/*`
 
 洞察与胜率口径：
-- `/api/winrate/summary`：精选候选 **T+5** 胜率优先（另附 T+1/T+3）；无候选样本时回退手工 `reviews`
+- `/api/winrate/summary`：精选候选 **T+5** 胜率优先（另附 T+1/T+3）；无候选样本时回退手工 `reviews`。每行还带 `horizons`（T+1…T+60 全档）、`best_horizon`（样本 ≥3 的最优持有期）、`best_sample` / `worst_sample`（点名到票+日期）——胜率页要能回答「凭什么」
+- `/api/winrate/trend`：**与 summary 同源**，精选候选 T+5 按**选出日**分月/周聚合；一条候选样本都没有时才回退手工 `reviews`（行内 `source` 标明是哪种）。2026-09 之前它只读 `reviews`，而线上那张表 0 行，页面「分周期明细」于是永远空着
+- `/api/winrate/samples?tag=`：某战法逐条样本（选出日 / 代码 / 基准价 / 各档收益 / 是否计赢）。`settled` 是胜率分母，`observing` 不进分母
 - `/insights/decay`：优先候选 T+5 滚动胜率 vs 基线；无候选回退复盘；前端消费在选股目录「近期胜率」
 - `/insights/overlap`：core 候选按 `rule_version` 的信号重叠（日均 Jaccard + 常撞代码）；**不是**持仓风险；排除回填源
 - `evaluate_candidates` / 胜率链路默认排除 `%backfill%` / `%:history`，避免区间重放抬高 T+N
 - 候选观察窗：`PRIMARY_HORIZONS=(1,3,5)`，完整窗含 10/20/60
-- 胜率**样本披露**：`_horizon_aggregate` 与 `summarize_by_strategy` 的每一行都带 `sample_confidence`（`low`/`medium`/`high`，阈值 30/100，与 `backtest.application.metrics` 同口径），不足 30 只候选再附 `caution`。胜率数值口径不变——只是一只候选走完 T+5 就报「100%」时必须标出样本档，否则会被当成结论
+- 胜率**样本披露**：`horizon_aggregate`（公开，`winrates` 复用同一口径）与 `summarize_by_strategy` 的每一行都带 `sample_confidence`（`low`/`medium`/`high`，阈值 30/100，与 `backtest.application.metrics` 同口径），不足 30 只候选再附 `caution`。胜率数值口径不变——只是一只候选走完 T+5 就报「100%」时必须标出样本档，否则会被当成结论
 - 盘后托管 Job「候选T+N跟踪」（`kind=outcome`，cron `45 15 * * 1-5`）重算近 5 个交易日窗口
 
 ## API 层的结果缓存
 `api/router.py` 有一层进程内 LRU，键 = 端点 + 参数 + `palace.review_read_fingerprint()` +
-`market.market_revision()`，命中 candidates / plans / winrate_summary 三个 scope。
+`market.market_revision()`，命中 candidates / plans / winrate_summary / winrate_trend /
+winrate_samples，外加一个内部 scope `candidate_outcomes`——winrate 三兄弟都从它派生，同一条请求链上 `evaluate_candidates` 只跑一次。
 不设 TTL：靠版本号换键，账本或行情一写立刻失效，不引入隐式陈数据。
 `review_read_fingerprint()` 必须是**逐行摘要**而不是 `COUNT(*)`——候选**等长改判**
 （行数不变、裁决变了）也得换键，否则会发陈数据。
-`/api/winrate/trend` 故意不缓存：实测几毫秒，加缓存只多一次指纹扫描。
+`/api/winrate/trend` 改成候选口径后不再是几毫秒的裸 SQL，因此也进了缓存。
 
 ## 如何扩展
 新指标放 application/，经 API 暴露；补 tests/review。
@@ -42,7 +46,8 @@ HTTP：`/api/review/candidates|plans` `/api/winrate/*` `/api/insights/*`
 ## 给 Agent 的用法
 - 候选 T+N：`from src.review import evaluate_candidates, summarize_candidates`
 - 预案兑现：`evaluate_plans`（实现于 `application/outcomes_plans.py`）
-- 自动胜率：`track_candidate_outcomes` / `strategy_winrate_summary`
+- 自动胜率：`track_candidate_outcomes` / `strategy_winrate_summary`（HTTP 侧用
+  `build_winrate_summary` + `winrate_periods` + `winrate_samples`，三者共用一次 `evaluate_candidates`）
 - 输入只能是候选池 / 预案 / 手工复盘 + 真实行情；产出是**纸上收益**，不是实盘盈亏
 - 候选裁决按 ledger 的公开 `normalize_decision` 归一；不导入 `ledger.infrastructure`
 - **Store 直捅债**（收拢中）：`evaluate_plans` → `plans_payload`；触价 → `active_plans_with_stops` + `market.latest_bars`；`evaluate_candidates` → `candidate_outcome_rows`；`check_decay` → `review_returns_for_tag` / `review_strategy_tags_with_returns`；`check_capacity` → `market.recent_amounts`。仍直捅：`overlap`——新代码勿再增加 `.conn`

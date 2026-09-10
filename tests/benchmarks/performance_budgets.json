@@ -1,0 +1,21 @@
+{
+  "schema_version": "loci-performance-budgets-v1",
+  "description": "Conservative regression ceilings for the isolated 256x240 and 2000x370 fixtures; not production latency SLOs.",
+  "min_runs": 5,
+  "process_peak_rss_bytes": 805306368,
+  "p95_ms": {
+    "market_panel_64x240": 1000,
+    "market_panel_256x240": 3000,
+    "research_profile": 1000,
+    "backtest_classic": 500,
+    "backtest_fast": 500,
+    "kline_dimension": 500,
+    "candidate_pool_1000": 1500,
+    "candidate_pool_5000": 5000,
+    "market_slot_lock_wait": 2000,
+    "job_claim_lock_wait": 2000,
+    "strategy_compute_2000x370": 5000,
+    "strategy_audit_2000x370": 10000,
+    "backtest_stops_2000x370": 3000
+  }
+}

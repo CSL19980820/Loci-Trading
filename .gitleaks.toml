@@ -1,0 +1,28 @@
+# 密钥扫描（CI job `security-and-quality-reports` 的 Secret scan 步）是**硬门禁**：
+# 扫到即红，没有 continue-on-error。
+#
+# 下面放行的是逐条核对过的假凭据字面量，不是路径豁免——真凭据即使写进 tests/
+# 也照样会被拦下。新增夹具口令时请一并在这里登记，并说明「为什么这不是真凭据」。
+[extend]
+useDefault = true
+
+[allowlist]
+description = "单元测试夹具与中文正文里的假凭据/字段名（generic-api-key 启发式误报）"
+regexTarget = "secret"
+regexes = [
+  # 企业微信 webhook 假 key（tests/ops、tests/app 的通知链路夹具）
+  '''^abcdef1234567890$''',
+  # AI 供应商假 key：明文 sk- 前缀，仅用于「入库要加密」的断言
+  '''^sk-plain-xyz9$''',
+  # 情报 MCP 假 token / 假密文（base64("abcdefghijk") 与 base64("encrypted")）
+  '''^lb_secret_1234$''',
+  '''^YWJjZGVmZ2hpams=$''',
+  '''^ZW5jcnlwdGVk$''',
+  # 钉钉假加签密钥
+'''^SECe1f2a3b4c5d6$''',
+  # 多租户 e2e 里的测试账号口令（账号本身也只存在于临时 identity.db）
+  '''^(victim|walk-in|analyst)-secret-2026$''',
+  # 不是凭据：一个缓存键名与一个前端字段名，被 `key=` / `key:` 的正则误伤
+  '''^quotes_daily_rows_v1$''',
+  '''^volume_ratio20$''',
+]

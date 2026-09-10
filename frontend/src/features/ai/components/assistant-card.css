@@ -1,0 +1,36 @@
+/*
+ * 助手产物卡片的共享外壳。此前 CodeCard / DataTable / DecisionChart / EchartsCard /
+ * EquityCard / KlineCard / SourceStrip 七个组件各抄一份同样的外壳 + heading + h3，
+ * 改一次卡片间距要动七个文件，漏一个就是一档错位。
+ *
+ * 尺寸全部走助手域契约令牌（--ai-*，定义在 AssistantPanel.vue 末尾的 unscoped 块），
+ * 不再用全站 --radius：卡片圆角在本域的名字是 --ai-r-card（今天同值，改的时候不分叉）。
+ * 必须是全局样式：七个卡片各自 scoped，共享壳只能落在不带 scope 属性的规则上。
+ */
+.assistant-card {
+  margin-top: var(--ai-gap-xs);
+  padding: var(--ai-gap-md);
+  border: 1px solid var(--rule);
+  border-radius: var(--ai-r-card);
+  background: var(--panel-2);
+  width: 100%;
+  min-width: 0;
+}
+
+/* 只有一行标签的条状卡（来源条）纵向再收一档 */
+.assistant-card--tight {
+  padding: var(--ai-block-pad);
+}
+
+.assistant-card__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ai-gap-sm);
+  margin-bottom: var(--ai-gap-sm);
+}
+
+.assistant-card h3 {
+  margin: 0;
+  font-size: var(--ai-fs-body);
+}

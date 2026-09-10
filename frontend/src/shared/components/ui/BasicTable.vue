@@ -1,12 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, reactive, ref, shallowRef, useAttrs, useSlots, watch } from 'vue'
+/**
+ * 全站表格契约。本文件只做三件事：收 props / 拼装、把事件原样转发出去、
+ * 编排「工具行 — 表体 — 分页器」三段版型。
+ *
+ * 真正有状态的三块各自成文件，改动前先看它们头部的说明：
+ *   useBasicTableSource —— 取数、分页与请求世代（并发丢弃旧响应）
+ *   useBasicTableEdit —— 行内编辑态与行主键口径
+ *   useBasicTableHeight —— offsetHeight 自适应与 resize 监听对称性
+ */
+import { computed, provide, ref, useAttrs, useSlots } from 'vue'
 import type { TableInstance } from 'element-plus'
-import { RefreshRight, Setting } from '@element-plus/icons-vue'
 
 import BasicTableColumns from './BasicTableColumns.vue'
+import BasicTableToolbar from './BasicTableToolbar.vue'
 import BasicTableVirtual from './BasicTableVirtual.vue'
 import { createSpanMethod } from './basicTableMerge'
 import { canVirtualizeBasicTable } from './basicTableVirtualSupport'
+import { useBasicTableEdit } from './useBasicTableEdit'
+import { useBasicTableHeight } from './useBasicTableHeight'
+import { useBasicTableSource } from './useBasicTableSource'
 import type {
   BasicTableColumn,
   BasicTableEditConfig,
@@ -85,36 +97,14 @@ const slots = useSlots()
 provide('basicTableSlots', slots)
 const tableRef = ref<TableInstance>()
 const virtualTableRef = ref<InstanceType<typeof BasicTableVirtual>>()
-// shallowRef：几千行的业务表不必再被本组件深度代理一层。写入全是整表替换
-// （见下方两处 `rows.value = …`）；行内字段的响应式由父层自己的 ref 提供。
-const rows = shallowRef<Record<string, unknown>[]>([])
-const innerLoading = ref(false)
 const zoomed = ref(false)
-const autoHeight = ref<number | undefined>()
-const editRowKey = ref('')
-const editColumn = ref<unknown>(null)
-let requestGeneration = 0
 
-const pager = reactive({
-  currentPage: 1,
-  pageSize: 20,
-  total: 0,
-})
-
-const showPager = computed(() => props.pagination !== false)
-
-const pagerOpts = computed(() => {
-  const base =
-    typeof props.pagination === 'object' && props.pagination
-      ? props.pagination
-      : ({} as BasicTablePagination)
-  return {
-    pageSizes: base.pageSizes ?? [10, 20, 30, 40, 50, 80],
-    layout: base.layout ?? 'total, sizes, prev, pager, next, jumper',
-    background: base.background ?? true,
-    hideOnSinglePage: base.hideOnSinglePage ?? false,
-  }
-})
+// 注册顺序即生命周期钩子的调用顺序：高度先算（onMounted 里 calcOffsetHeight 在前），
+// 再发默认请求——与拆分前组件内那一个 onMounted 的语义一致。
+const { autoHeight } = useBasicTableHeight(props)
+const { rows, innerLoading, pager, showPager, pagerOpts, fetch, reloadTable, restReload } =
+  useBasicTableSource(props)
+const { resolveRowKey, isEditByRow, setEditRow, clearEdit, getRowEdit } = useBasicTableEdit(props)
 
 const showToolbar = computed(
   () =>
@@ -139,69 +129,6 @@ const useVirtualized = computed(() => {
   )
 })
 
-const customizableColumns = computed(() =>
-  columns.value.filter((c) => c.type !== 'selection' && c.type !== 'index' && c.type !== 'expand'),
-)
-
-// 依赖只需要「数组换了」或「长度变了」；原来的 deep 会在每次触发时遍历
-// 全部行的每个字段（几千行 × 几十列），而回调根本不读字段值。
-// 元素级改动仍由父层自己的 ref 驱动重渲染，不经这个 watch。
-watch(
-  [() => props.dataSource, () => props.dataSource?.length],
-  ([list]) => {
-    if (props.request) return
-    rows.value = list ?? []
-    pager.total =
-      typeof props.pagination === 'object' && props.pagination?.total != null
-        ? props.pagination.total
-        : (list?.length ?? 0)
-  },
-  { immediate: true },
-)
-
-// 只有三个标量字段，逐个监听即可，不必深遍历整个对象。
-watch(
-  () => {
-    const p = typeof props.pagination === 'object' ? props.pagination : null
-    return p ? [p.currentPage, p.pageSize, p.total] : null
-  },
-  (values) => {
-    if (!values) return
-    const [currentPage, pageSize, total] = values
-    if (currentPage != null) pager.currentPage = currentPage
-    if (pageSize != null) pager.pageSize = pageSize
-    if (total != null) pager.total = total
-  },
-  { immediate: true },
-)
-
-async function fetch(opt: Record<string, unknown> = {}, resetPage = false): Promise<void> {
-  if (!props.request) return
-  if (resetPage) pager.currentPage = 1
-  const generation = ++requestGeneration
-  innerLoading.value = true
-  try {
-    const result = await props.request({
-      ...opt,
-      currentPage: pager.currentPage,
-      pageSize: pager.pageSize,
-    })
-    if (generation !== requestGeneration) return
-    rows.value = result.list
-    pager.total = result.total
-  } finally {
-    if (generation === requestGeneration) innerLoading.value = false
-  }
-}
-
-function reloadTable(opt: Record<string, unknown> = {}): Promise<void> {
-  return fetch(opt, false)
-}
-
-function restReload(opt: Record<string, unknown> = {}): Promise<void> {
-  return fetch(opt, true)
-}
-
 function onPageChange(page: number): void {
   pager.currentPage = page
   emit('current-change', page)
@@ -213,30 +140,6 @@ function onSizeChange(size: number): void {
   pager.currentPage = 1
   emit('size-change', size)
   if (props.request) void fetch()
-}
-
-function resolveRowKey(row: Record<string, unknown>): string {
-  if (typeof props.rowKey === 'function') return props.rowKey(row)
-  if (typeof props.rowKey === 'string') return String(row[props.rowKey] ?? '')
-  return String(row.id ?? '')
-}
-
-function isEditByRow(row: Record<string, unknown>): boolean {
-  return editRowKey.value !== '' && resolveRowKey(row) === editRowKey.value
-}
-
-function setEditRow(row: Record<string, unknown>, column?: unknown): void {
-  editRowKey.value = resolveRowKey(row)
-  editColumn.value = column ?? null
-}
-
-function clearEdit(): void {
-  editRowKey.value = ''
-  editColumn.value = null
-}
-
-function getRowEdit(): { rowKey: string; column: unknown } {
-  return { rowKey: editRowKey.value, column: editColumn.value }
 }
 
 function onRowClick(row: Record<string, unknown>, column: unknown, event: Event): void {
@@ -273,30 +176,6 @@ function onToolbarRefresh(): void {
   if (props.request) void restReload()
 }
 
-function calcOffsetHeight(): void {
-  if (!props.offsetHeight) {
-    autoHeight.value = undefined
-    return
-  }
-  autoHeight.value = Math.max(120, window.innerHeight - props.offsetHeight)
-}
-
-// 注册/移除都必须无条件：以前两边都包在 `if (props.offsetHeight)` 里，
-// prop 在生命周期中间变化（0 → 非 0 或反过来）就会漏掉一次 remove，监听器永久泄漏。
-// calcOffsetHeight 自己在 offsetHeight 为空时会置空高度，所以空跑无副作用。
-onMounted(() => {
-  calcOffsetHeight()
-  window.addEventListener('resize', calcOffsetHeight)
-  if (props.request && props.hasDefaultRequest) void fetch()
-})
-
-onUnmounted(() => {
-  requestGeneration += 1
-  window.removeEventListener('resize', calcOffsetHeight)
-})
-
-watch(() => props.offsetHeight, calcOffsetHeight)
-
 function clearSelection(): void {
   if (useVirtualized.value) {
     virtualTableRef.value?.clearSelection()
@@ -328,52 +207,18 @@ defineExpose({
 
 <template>
   <div class="basic-table" :class="{ 'basic-table--zoom': zoomed }">
-    <div
+    <BasicTableToolbar
       v-if="$slots.toolbarButtons || showToolbar"
-      class="basic-table__toolbar"
+      v-model:zoomed="zoomed"
+      :config="toolbarConfig"
+      :columns="columns"
+      :busy="busy"
+      @refresh="onToolbarRefresh"
     >
-      <div class="basic-table__toolbar-left">
+      <template #buttons>
         <slot name="toolbarButtons" />
-      </div>
-      <div class="basic-table__toolbar-right">
-        <el-button
-          v-if="toolbarConfig?.refresh"
-          size="small"
-          :icon="RefreshRight"
-          :loading="busy"
-          @click="onToolbarRefresh"
-        >
-          刷新
-        </el-button>
-        <el-button
-          v-if="toolbarConfig?.zoom"
-          size="small"
-          @click="zoomed = !zoomed"
-        >
-          {{ zoomed ? '还原' : '放大' }}
-        </el-button>
-        <el-popover
-          v-if="toolbarConfig?.custom"
-          placement="bottom-end"
-          :width="200"
-          trigger="click"
-        >
-          <template #reference>
-            <el-button size="small" :icon="Setting">列设置</el-button>
-          </template>
-          <div class="basic-table__cols">
-            <el-checkbox
-              v-for="(col, i) in customizableColumns"
-              :key="col.prop ?? col.label ?? i"
-              :model-value="!col.hidden"
-              @change="(v: string | number | boolean) => { col.hidden = !v }"
-            >
-              {{ col.label || col.prop || `列${i + 1}` }}
-            </el-checkbox>
-          </div>
-        </el-popover>
-      </div>
-    </div>
+      </template>
+    </BasicTableToolbar>
 
     <div class="basic-table__body" v-loading="busy">
       <BasicTableVirtual
@@ -468,56 +313,6 @@ defineExpose({
   background: var(--sheet);
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
-}
-
-.basic-table__toolbar {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  gap: var(--gap-2);
-  padding: var(--gap-1) var(--pad-sheet-x);
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet-alt);
-  flex-shrink: 0;
-}
-
-.basic-table__toolbar-left,
-.basic-table__toolbar-right {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-2);
-}
-
-.basic-table__toolbar-right {
-  margin-left: auto;
-}
-
-.basic-table__toolbar-left :deep(.el-button),
-.basic-table__toolbar-right :deep(.el-button) {
-  margin: 0;
-}
-
-.basic-table__toolbar-left :deep(.el-button + .el-button),
-.basic-table__toolbar-right :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-.basic-table__toolbar-right :deep(.el-button) {
-  --el-button-bg-color: var(--sheet);
-  --el-button-border-color: var(--rule-strong);
-  --el-button-text-color: var(--ink);
-  --el-button-hover-bg-color: var(--sheet-alt);
-  --el-button-hover-border-color: var(--rule-strong);
-  --el-button-hover-text-color: var(--ink);
-}
-
-.basic-table__cols {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-1);
-  max-height: 16rem;
-  overflow: auto;
 }
 
 .basic-table__body {

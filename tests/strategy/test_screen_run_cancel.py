@@ -21,7 +21,7 @@ from src.strategy.application.screen_run import (
     screen_run_request_cancel,
     screen_run_snapshot,
     screen_run_try_begin,
- screen_run_update,
+    screen_run_update,
 )
 
 
@@ -60,7 +60,7 @@ def test_cancel_raises_the_flag_and_says_stopping_not_stopped() -> None:
         assert snap["status"] == "running"
         assert "停止" in snap["message"]
         # 文案不能写「已取消」——检查点还没到，那是谎话。
-    assert "已取消" not in snap["message"]
+        assert "已取消" not in snap["message"]
 
 
 def test_cancel_does_not_cross_tenants() -> None:
@@ -96,21 +96,21 @@ def test_a_new_run_lowers_a_stale_cancel_flag() -> None:
         assert screen_run_snapshot()["status"] == "running"
 
 
-def test_checkpoint_stops_the_loop_and_keeps_finished_days(monkeypatch) -> None:
+def test_checkpoint_stops_the_loop_and_keeps_finished_days(monkeypatch: pytest.MonkeyPatch) -> None:
     """检查点命中后：状态落 cancelled，且**已经跑完的交易日不回滚**。
 
     取消是「不再往下跑」，不是「撤销已经做过的事」。已入库的候选是真实发生过的
     选股结果，把它们删掉才是数据丢失。
     """
-from src.strategy.application import screen_run as module
+    from src.strategy.application import screen_run as module
 
-seen: list[str] = []
-calls = {"n": 0}
+    seen: list[str] = []
+    calls = {"n": 0}
 
-def fake_cancel_requested() -> bool:
-    # 第一天放过，第二天开始拦——模拟「跑到一半用户点了停止」。
-    calls["n"] += 1
-    return calls["n"] > 1
+    def fake_cancel_requested() -> bool:
+        # 第一天放过，第二天开始拦——模拟「跑到一半用户点了停止」。
+        calls["n"] += 1
+        return calls["n"] > 1
 
     monkeypatch.setattr(module, "screen_run_cancel_requested", fake_cancel_requested)
 
@@ -118,17 +118,18 @@ def fake_cancel_requested() -> bool:
         _begin()
         # 直接驱动检查点语义，不拉起真实的行情依赖：本用例要钉的是
         # 「命中检查点之后状态怎么落」，不是选股算得对不对。
-    total = 3
-    for index, day in enumerate(["d1", "d2", "d3"], start=1):
-        if module.screen_run_cancel_requested():
-            screen_run_update(
-           status="cancelled",
-         phase="cancelled",
-        message=f"已停止 · 完成 {index - 1}/{total} 个交易日",
-      )
-            break
+        total = 3
+        for index, day in enumerate(["d1", "d2", "d3"], start=1):
+            if module.screen_run_cancel_requested():
+                screen_run_update(
+                    status="cancelled",
+                    phase="cancelled",
+                    message=f"已停止 · 完成 {index - 1}/{total} 个交易日",
+                )
+                break
             seen.append(day)
 
+        # 快照按租户取，必须留在 tenant_scope 里读。
         snap: dict[str, Any] = screen_run_snapshot()
 
     assert seen == ["d1"], "第一天应当跑完再停"

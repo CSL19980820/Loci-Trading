@@ -126,10 +126,14 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
   color: var(--ink);
 }
 
+/*
+ * 主操作按钮的文字色必须跟 --on-primary（theme.ts 按主色 OKLCH 亮度定黑白）。
+ * 写死 #fff 会在浅主色下失效：amber 档 #fff/#d79700 只有 2.53:1，远低于 AA 的 4.5:1。
+ */
 .header-actions :deep(.el-button--primary) {
   background: var(--el-color-primary);
   border-color: var(--el-color-primary);
-  color: #fff;
+  color: var(--on-primary);
 }
 
 /* 破坏性操作用印章红（--stamp），不用涨跌红：删除和「涨」不该是同一个红 */

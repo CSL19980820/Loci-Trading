@@ -81,7 +81,7 @@ function openJobs(): void {
   /* 全局 .el-button--small 的 min-height 是 --ctl-h，页头这枚点必须一起压下来 */
   min-height: 20px;
   padding: 0 2px;
-  font-size: var(--fs-aux, 12px);
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 

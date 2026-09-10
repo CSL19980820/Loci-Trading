@@ -90,7 +90,7 @@ class FastEngineTests(unittest.TestCase):
             self.assertEqual(ct.entry_date, ft.entry_date)
             self.assertEqual(ct.exit_reason, ft.exit_reason)
             self.assertAlmostEqual(ct.net_return_pct, ft.net_return_pct, places=4)
-        self.assertEqual(fast.config.get("engine"), "numpy_fast")
+        self.assertEqual(fast.config["fast"]["engine"], "classic")
 
     def test_close_entry_matches_classic_without_stops(self) -> None:
         panels = _panels()
@@ -202,7 +202,7 @@ class FastEngineTests(unittest.TestCase):
         self.assertEqual(echo["engine"], "classic")
         self.assertIn("止损", echo["fallback_reason"])
 
-    def test_numpy_path_echo_reports_numpy_fast(self) -> None:
+    def test_legacy_fast_entry_reports_shared_engine(self) -> None:
         panels = _panels()
         signals = _hold_signals(panels)
         cfg = BacktestConfig(
@@ -212,8 +212,8 @@ class FastEngineTests(unittest.TestCase):
         fast = run_backtest_fast(
             signals, panels, entry_timing="next_open", config=cfg, strategy_slug="t"
         )
-        self.assertEqual(fast.config.get("engine"), "numpy_fast")
-        self.assertNotIn("fast", fast.config)
+        self.assertEqual(fast.config["fast"]["engine"], "classic")
+        self.assertIn("共享引擎", fast.config["fast"]["fallback_reason"])
 
     def test_stop_loss_falls_back_to_classic(self) -> None:
         """有细规则止损时应回退经典——结果与直接 run_backtest 一致。"""

@@ -182,10 +182,11 @@ async function loadActiveTab(): Promise<void> {
 }
 
 async function reload(): Promise<void> {
-  await guard(async () => {
-    await loadActiveTab()
-    await refreshSummaries()
-  })
+  // 遮罩只盖当前分区自己的加载。rail 上那行摘要小字要打 7 个接口，其中
+  // /ops/data-location 冷读曾实测 30 s（全量库行数统计）——它在后台刷，
+  // 不能让「最慢的摘要」决定整页何时揭开（用户看到卡片都渲染完了还蒙着）。
+  void refreshSummaries().catch(() => undefined)
+  await guard(loadActiveTab)
 }
 
 function onAppearanceChanged(): void {

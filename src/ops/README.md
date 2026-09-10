@@ -16,7 +16,8 @@ HTTP：`api/skills.py`（目录/安装/生成）+ `api/skill_runs_api.py`（对�
 - 选股模板可在系统「推送」联配置（ops.db `wecom_screen_template`）：预设 default / compact / with_date / custom。
 - 渲染：`format_screen_picks_text`（`notify_screen_template.py`）；占位符 `{title}` `{kind}` `{date}` `{name}` `{code}` `{pct}` `{n}`；技能另有 `{note}`（≤40 字，取 pick.note/thesis 等）。
 - 技能推送行用 `skill_pick` / `skill_pick_no_pct`（有说明才套用；无说明回退量化行）。
-- 量化任务可同时返回正式 `picks` 与弱市 `watch_picks`；企微把后者独立显示为“低吸观察（不计正式胜率）”。正式为空但有观察时显示“正式精选 0 只”，不再误报“暂无符合条件的标的”。
+- **模板键 = 请求 schema 键**：前端把整份模板原样 `PUT /api/ops/settings/wecom`，`QuantModel` 是 `extra="forbid"`，`WecomScreenTemplateModel` 少一个键就是 422「Extra inputs are not permitted」（2026-09-04 线上 `formal_empty` / `watch_*` 四键就是这么炸的）。给 `DEFAULT_TEMPLATE` 加键必须同批加进 schema，`tests/ops/test_notify_and_sync.py::test_request_schema_accepts_every_template_key` 钉着两边相等。
+- 量化任务可同时返回正式 `picks` 与弱市 `watch_picks`。**观察票是否随推送发出由模板配置 `show_watch_picks` 统一控制**（系统「推送」联的「低吸观察」开关，落库 ops.db `wecom_screen_template`，默认**关**）：关＝企微/Bark 不出现「👀 低吸观察」分区、正式为空时显示「暂无符合条件的标的」而非「正式精选 0 只」，对所有战法（潜龙/三源/杨氏）一并生效；开＝恢复分区与「正式精选 0 只」空态。观察票无论开关都照常以 `decision=观察` 写入 `candidate_reviews` 并在前端分区展示。
 - `screen` / 绑定战法任务 `push_wecom=true` → 量化标记；`skill` 且结果含 picks → 技能标记。成功推送后写入 `wecom_push_marks`（`job_id:trade_date`）；同日再跑只记 `already_pushed`，不重复发企微。
 - `screen` / `skill` 正文已自带中文标题，企微分发不再追加内部任务名；Bark 标题也先解析为战法中文名，用户可见通知不得出现 `screen:` / `skill:` 编码。
 - `sync` 且 `push_wecom=true`：仅历史日 K 硬 `failed>0` 或整次任务失败时推企微。当日现价（含整批源忙/断网、单票停牌退市）一律软跳过：`spot_skip_reason` / `spot_gaps`，**永不**累加 `failed`，避免 5000+ 条刷屏；文案用人话。
@@ -225,10 +226,20 @@ HTTP：`api/skills.py`（目录/安装/生成）+ `api/skill_runs_api.py`（对�
 - 活动目录收缩：`ensure_managed_screen_jobs` 会删除 `screen:*` 前缀下不再托管的旧 `screen` 任务（未注册，或声明 `screen_managed_job=False`），避免废弃/不定时战法继续调度或推送；其它同名前缀任务和非 `screen` 任务不受影响
 - 调度器：`loci.py` / `cli.serve` 默认 `PALACE_ENABLE_SCHEDULER=1`（pytest 不设）；启动时确保上述托管任务并 `reload`
 - **工作日 cron**：一律写 `mon-fri`（或经 `validate_cron` 把历史 `1-5` 归一化）。APScheduler 的数字星期是 **0=周一**，Unix 习惯的 `1-5` 会被当成周二–周六，**整周跳过周一**（龙王盘中监测/纸面盯盘会在周一静默不跑）。
-- **启动补跑**：调度器起来后后台执行 `eod_catchup`——对 `screen` / 日终 `sync` / `outcome` 等「工作日定点」cron，若最近交易日触发点已过且尚未跑过，则 `trigger=catchup` 补跑一次。`last_run_at` 无时区时按 UTC/上海本地**任一覆盖**即跳过；若当日已有成功 run，也跳过。选股企微另有 `wecom_push_marks` 防连推。
+- **启动补跑**：调度器起来后后台执行 `eod_catchup`——对 `screen` / 日终 `sync` / `outcome` 等「工作日定点」cron，若最近交易日触发点已过且尚未跑过，则 `trigger=catchup` 补跑一次。多时点 cron（换行 / 分号分隔）逐时点判定：只要有一个时点「已到、`last_run_at` 未覆盖」就进名单，补的是最晚那个时点。`last_run_at` 无时区时按 UTC/上海本地**任一覆盖**即跳过；「当日已成功」的判定精确到时点——成功 run 的 `started_at` 必须不早于要补的触发点，早一档成功不能替晚一档失败顶账。选股企微另有 `wecom_push_marks` 防连推。
 - `GET /api/jobs/schedule`：未启调度器时仍用 `preview_upcoming_jobs` / `next_cron_fire_at` 按 cron 推算 `next_run_at`，供详情页展示
 - **执行互斥与生命周期**：`run_job` 通过 ops.db 原子认领同一任务的执行槽；调度、API、CLI 和助手重叠触发时，后到者返回 `skipped` 和当前 `run_id`，不重复执行副作用。可传 `idempotency_key` 做跨重试幂等；`JobContext.check_cancelled()` 在安全检查点收敛 API 的取消请求或 `timeout_sec`，终态为 `cancelled` / `timed_out`，`finish_run` 不允许覆盖既有终态。`heartbeat_at` 与 `owner_pid` 一起用于 stale recovery。`sync`/`screen` 另有进程内行情闸门（`jobs/market_gate.py`）：**sync=独占写、screen=共享读**（多路选股可并行；不再互相假互斥等 90s）。holder 标签去重（`screen:qianlong-…` 不再变成 `screen:screen:…`）。**14:35–15:00 盘中增量（`mode=full`）占锁前直接 skipped**，避免新开一轮写库和 14:50 选股叠内存；盘中选股自己拉实时 overlay，不再等这次增量写完。日终 `today_refresh` 不跳过。`execute_sync` 持锁后仍会再判一次窗口，判到就 `JobSkipped` 放锁。选股等锁 360s、同步等锁 20 分钟（`LOCI_MARKET_GATE_SCREEN_WAIT_SEC` / `LOCI_MARKET_GATE_SYNC_WAIT_SEC` 可覆盖；旧的 90s 与 45 分钟租期完全失配，正常排队天天被当故障报）。**写者优先**：有 sync 在排队时不再放新 screen 进来，否则一波接一波的选股能把同步无限期饿死。**读槽有租约**（`MARKET_SCREEN_HOLD_LEASE_SEC`，45 分钟，与 screen stale 回收窗同口径）：到点仍不放槽的选股按已废弃处理并放行同步——ops.db 那条 run 此时也已被判 failed，闸门不该继续替一个判死的任务挡路。**同线程重入按 kind 判**：同 kind 直接放行（`run_job` 外层 + `execute_sync` 内层是同一批写入，再抢一次只会自锁），`sync` 写槽里再要 `screen` 读槽也放行（写槽本就涵盖读，排队等于等自己）；但 **`screen` 读槽里再要 `sync` 写槽不算重入**——那是跨 kind，正是本模块要防的「一边扫 market.db、一边写 WAL」组合，旧判据「持有任意 kind 即重入」会把它静默放行、独占写锁形同虚设。现在内层会真去抢写槽：先把**自家**那把读槽临时让出（否则 `_acquire_writer` 会等自己），写完在同一临界区里降级取回；别人的读槽照样挡路，抢不到就按常规排队/超时收场。等锁超时用人话了断，不硬刚挂死同步：**同步排在另一条健康同步后面等不到 → `JobSkipped` → 终态 `skipped`**（两条同步写的是同一批当日行情，先到的写完就够了；判 failed 只会每天刷一次假故障 + 企微「同步失败」）；持锁超过 `MARKET_SYNC_STUCK_SEC`（45 分钟，与 sync stale 回收窗同口径）才算卡死，仍明确 failed 并点名占锁任务；被租约内的选股挡住仍是 failed，但文案改为「选股仍在正常执行」，不再让用户去「停掉卡住的选股」（它们通常是受害者而非元凶）。`LOCI_OBSERVABILITY=1` 时记 `loci.lock.wait_ms` / `market_gate_lock_timeout`（`outcome=skipped|timeout`）。读写双库：`sync`/`screen` 写全量库后把最近交易日增量镜像进热库（`mirror_recent_to_hot`）；`sync` 镜像失败只记 warning、不阻断任务。`screen` 默认只读热库；镜像失败、`hot_unusable_reason` 判定不可用（窗口偏浅或落后于全量）、或策略 `requires_full_history` 时回退全量库选股——`jobs/screen`、`screen_run`、`POST /api/screen` 三条路径共用同一判定函数，不再各写一份；选股前准备当日行情见 `market.application.screen_spot`（覆盖达标跳过 / 库忙复检覆盖）。超时 / 僵尸 running 回收：认领时优先按 `owner_pid` **探活**——进程已死立刻腾槽（不再干等）；**同一 PID 但 `started_at` 早于本进程启动**也立刻腾槽（容器 Recreate 后 uvicorn 经常还是 PID 1，`pid_alive(1)` 为真会把上一世的 running 当成还活着，2026-09-01 重启后三条槽被假占用）。时间兜底 `sync`/`screen` **45 分钟**，其它 kind **24 小时**。调度器启动与每次 `claim_run` 都会扫。跨进程行情写锁见 `market.infrastructure.write_lock`（sync/spot 互斥，同线程可重入，**跨线程等待有 deadline**）。**`execute_sync` 自己也占 sync 写槽**：HTTP `/api/market/sync`、首启 bootstrap 回填、CLI 都不走 `run_job`，只在 `run_job` 上挂闸门等于留了后门——2026-08-24 正是 bootstrap 同步在闸门视野之外占着写锁，把 15:30 三只选股拖死，进而让盘后同步与日终重刷连续两次假故障。即时分析预先分配独立运行槽，因此不同请求仍可并行。
 - **执行期心跳（2026-08-25 修）**：`run_job` 在执行器外面套一层 `HeartbeatPump`（`jobs/context.py`），执行期间每 **30s**（`HEARTBEAT_INTERVAL_SECONDS`）推进一次 `job_runs.heartbeat_at`。此前 `ctx.heartbeat()` 全仓只在执行器**启动前**和**返回后**各调一次，中间从不刷新：一次 914s 的日终同步心跳全程冻在起始值，于是（1）耗时超过 `STALE_RUN_SECONDS_BY_KIND["sync"]`（45 分钟）的**合法**长任务会在还在跑的时候被 `claim_run` / `reclaim_stale_runs` 判死腾槽；（2）运维看着冻结的心跳，把正常但慢的同步当成挂死处理，还错杀了旁边正在跑的选股。**不去改 16 个执行器**——它们都是同步函数，逐个改不现实、新写的一定会忘，所以统一在 registry 这一层兜住。几条硬约束（理由都写在代码注释里）：泵套在 `market_heavy_slot` **外面**（等写槽本身最长 20 分钟，排队期间这条 run 已经是 running，心跳一样不能冻）；30s 是「远快于最紧的 15 分钟 / 45 分钟回收窗」和「别拿单行 UPDATE 去持续抢 ops.db 写锁」之间的折中；心跳线程**自带 sqlite 连接**（`store_runs.RunHeartbeatWriter`）——`OpsStore.conn` 是 `check_same_thread=True` 建的，跨线程直接用会当场抛 ProgrammingError，共用连接还会和执行线程的事务互踩，连接懒开懒关且都在心跳线程内完成；`stop()` = 置事件 + `join()`，成功 / 异常 / 超时 / 取消四条路径都经 `with` 收口，线程不泄漏（另标 daemon 兜底）；心跳写库失败只累加 `errors` 并记一条 warning，绝不反过来把任务本身弄失败。`finish_run` 随之改用 `BEGIN IMMEDIATE`：WAL 下「先 SELECT 状态、再 UPDATE 终态」的 deferred 事务，若心跳线程在中间提交过，升级写锁会立刻拿到 `SQLITE_BUSY_SNAPSHOT`（`busy_timeout` 对这种冲突不生效），收尾会平白失败。**注意心跳的含义也随之变了**：它现在证明的是「进程还活着、这条 run 还没收尾」，**不**证明业务在推进——真卡死（例如攥着 market.db 不放）要靠 `timeout_sec`、人工取消或 `market_gate` 的持锁判据兜底，时间窗只剩下抓「进程没了 / 根本没心跳」。回归测试见 `tests/ops/test_job_heartbeat_liveness.py`
+
+### 回测进程边界（2026-09）
+
+`compare` / `optimize` 的即时分析默认用 `execution_mode=process`，由
+`src.backtest` 的 `spawn` worker 承担大面板计算；单次 `backtest` Job 也可在配置中
+启用同一模式。父进程仍负责 `job_runs` 认领、心跳、取消、超时与最终落库，worker
+只读显式 `market_db`，在当前租户上下文中加载策略，结果通过 16 MiB 上限的 JSON
+IPC 返回。worker 被终止后内存随操作系统回收，避免线程异常把 API 进程拖进高水位。
+进程槽默认 1 个，`LOCI_BACKTEST_PROCESS_SLOTS` 可调到 1–4；结果的 `execution`
+字段记录 worker PID 与可选 RSS。旧 CLI 或小样本可将 `execution_mode` 设为 `thread`。
 
 ### Job kind × 托管 cron 判定（2026-08 审计）
 
@@ -277,11 +288,28 @@ HTTP：`api/skills.py`（目录/安装/生成）+ `api/skill_runs_api.py`（对�
 - 不对称要注意：同步排在选股后面拿不到锁是 `JobSkipped`（下轮再跑，静默），
   **选股排在同步后面超时却是 `JobError`**——同样是排队，一边算正常一边算故障。
 - 三条选股（`qianlong-close-v3` / `sanyuan-tail-v1` / `yangshi-tail-v1`）同在 15:30，
-  彼此是共享读者不互斥，但会并发跑满（APScheduler 线程池，`max_instances=1` 只管单条不重入）；
-  单条实测可达 984s，尾巴会压到 15:46 前后，与 `40 15` 情报盘后、`45 15` 候选跟踪重叠。
+  彼此是共享读者不互斥，但 `run_job` 在读槽外还套一道 `screen_memory_slot`——它现在只是
+  `src.shared.screen_capacity` 的 ops 适配器（记 `component="screen_queue"` 的等待 metrics、
+  把 `ScreenCapacityBusy` 翻成 `JobError`），闸门本体是**进程级**的：同时执行的选股数
+  `LOCI_SCREEN_JOB_CONCURRENCY`（默认 1），排队上限 `LOCI_SCREEN_QUEUE_WAIT_SEC`
+  （默认 20 分钟，超时 `JobError`），FIFO 先到先得、排队可取消。排队在读槽之外，不挡同步写者。
+  串行后单条实测 30~100s，尾巴一般在 15:35 前；极端单条 984s 时会推到 15:46 前后，
+  与 `40 15` 情报盘后、`45 15` 候选跟踪重叠。
+- **闸门覆盖面（2026-09 已补齐五类入口）**：许可本体在 `src/shared/screen_capacity.py`，
+  下列入口全部占同一道闸门，`LOCI_SCREEN_JOB_CONCURRENCY` 就是全进程的真实上界：
+
+  | 入口 | 位置 | 排队策略 |
+  |---|---|---|
+  | Job 执行器 | `ops/application/jobs/market_gate.py:477` | 等 `LOCI_SCREEN_QUEUE_WAIT_SEC` |
+  | HTTP 异步选股 | `strategy/application/screen_run.py:191` | 等满，可取消（点「停止」即出队） |
+  | HTTP 同步选股 | `strategy/api/router.py:150` | `wait_sec=0`，满则 429 |
+  | `/api/screen/today` | `strategy/api/screen_today_router.py:105` | `wait_sec=0`，满则 429 |
+  | AI 助手选股工具 | `ai/application/system_toolbus_strategy.py:67` | `wait_sec=0`，不堵模型回合 |
+
+  两档策略的分界是**调用方能不能等**：后台任务与异步执行体有进度条可以排队，
+  同步 HTTP 与模型回合不能——让它们排 20 分钟只会换来一个超时的连接。
 - 建议（按性价比排序，均不改战法声明）：① 把 `LOCI_MARKET_GATE_SCREEN_WAIT_SEC` 提到 900s，
-  零改动把容忍窗从 26 分钟推到 34 分钟；② 三条选股错峰到 15:30 / 15:33 / 15:36
-  （需要改 `screen_schedule` 声明，属战法侧改动）；③ 日终重刷维持 15:10，**不要提前**——
+  零改动把容忍窗从 26 分钟推到 34 分钟；② 日终重刷维持 15:10，**不要提前**——
   提前到 15:05 换来的 5 分钟余量，代价是可能拿到未定稿的收盘 spot。
 - `hot_rebuild`（16:10）/ `data_quality`（16:30）不在 `MARKET_HEAVY_KINDS` 里，不受行情闸门管；
   选股读槽租约是 45 分钟（15:30 起最晚到 16:15），极端拖堂时热库重建会在选股仍在读时重灌热库。

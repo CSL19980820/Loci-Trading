@@ -13,7 +13,8 @@
 - 会话标题：首条消息立刻用用户话生成临时标题；首轮助手回答收口后由模型精炼短标题（SSE `session_title`）；用户手动改名会锁定不再覆盖。侧栏左对齐：上行标题、下行模型名。
 - 任务侧栏：右侧图标展开/收起（默认收起为 ~44px 窄条，展开约 **300px**）；顶栏直接是 pill 分区「计划 / 子进程 / 来源 / 产物 / 上下文」（无「检查器」标题与摘要废话）。计划为竖向步进；子进程为状态点卡片（`AssistantAgentCard`，运行中为 **SVG 边框追光**，短 dash 沿周界跑；不用 conic，避免 WebView 斜线残影）；有子进程时自动切到该页。「上下文」为人话摘要（安全底线 / 偏好 / 记忆用量 / 本轮查询），「改设置」打开 `AssistantSettingsDialog`。助手设置也可由**左历史轨左下角 LC** 打开。过程与工具名均中文展示。
 - 助手叠层统一用 **`el-dialog`**（设置、子进程线程），不用 drawer。设置弹窗宽约 **780px**：指令双栏；规则为归拢列表；记忆为**用户画像 / 工作记忆各一整段 Markdown**（`PUT /api/ai/memories/document` 整仓替换），顶栏开关条保留。
-- 展开偏好写入 localStorage；有子进程时自动展开侧栏。
+- 展开偏好写入 localStorage；有子进程时自动展开侧栏（**仅在够宽时**：`< 980px` 不自动铺开任务侧栏，折叠态的 live dot 已经提示有任务在跑）。
+- **窄屏自动折叠（JS 断点，不是 CSS）**：`AssistantPanel` 在挂载与 `resize` 时按 `window.innerWidth` 判定——`< 980px` 折任务侧栏、`< 900px` 折历史轨。折叠态是 `v-if` 切 DOM 的 rail 视图（44px / 48px），纯 CSS 断点只会把展开态内容裁进窄壳里，所以断点必须落在 JS 上。自动折叠**不写 localStorage**（偏好不被窄屏访问改写），窗口变宽会还回去；用户本次会话显式动过的那一侧，断点不再插手。两个侧栏的 `flex` 同时改成可收缩（`0 1 300px` / `0 1 280px` + `min-width`），兜住断点之间的中间地带；折叠态必须自己把 `min-width` 清回 0，否则 rail 会被展开态的 `min-width` 撑开。
 - 主时间线含**活动条**（Evidence lane）：派生的子进程以卡片列出，可点开线程弹窗查看加载过程；结论仍置底。
 - **思考块**：流式时对话区贴底跟滚（含 `thinking` 增量）；块内限高并内滚跟最新句。思考阶段一结束（出工具 / 正文 / 收口）自动收起，视口留给最新过程与结论。
 - 输入坞使用 EP-X **`XSender`**（`AssistantSenderDock`）+ 底栏 `AssistantRuntimeBar`（分组模型 + 思考程度 `off/low/medium/high/xhigh/max`，默认 `medium`，偏好存 `localStorage`）+ 图片上传/粘贴 + **行首 `/` 斜杠**（内置 `/compact` + 技能包；Cursor 式，仅当本行左右无其它文字）+ 发送/中止。
@@ -36,12 +37,13 @@
 | 字阶 | `--ai-fs-title` / `--ai-fs-prose` / `--ai-fs-body` / `--ai-fs-aux` / `--ai-fs-meta` | `--fs-title` / `--fs-body` / `--fs-aux` / `--fs-kicker` / `--fs-kicker` |
 | 圆角 | `--ai-r-card` / `--ai-r-chip` / `--ai-r-pill` | `--radius` / `4px` / `999px` |
 | 间距 | `--ai-gap-xs…lg` / `--ai-pad-x` / `--ai-pad-y` / `--ai-row-min` | 见契约块 |
-| 分类色 | `--ai-cat-1…8` | 上下文构成条专用；`assistantContextUsage.ts` 只返回 `var(--ai-cat-N)` |
+| 分类色 | `--ai-cat-1…8` | 上下文构成条专用；`assistantContextUsage.ts` 只返回 `var(--ai-cat-N)`；night / ink / `html.dark` 另有一档覆写（明档 600/700 hex 压深色画布只有 2.5–4.2:1） |
 
 - **阅读正文与面板 chrome 分档**：助手回答（`.assistant-turn__content` 及其 markdown）用 `--ai-fs-prose`，与全站正文同档 .9rem——它是用户真正在读的内容，不能跟着元信息一起缩；卡片小标题、回执行、会话列表等 chrome 用 `--ai-fs-body` .8rem，比全站正文紧一档。`--fs-kicker` .7rem 是本域**字号地板**，不要再写更小的值。
 - `--ai-fs-aux` 与 `--ai-fs-meta` 今天同值（全站字阶 .8 与 .7 之间无档位），语义仍分开：aux = 次要正文，meta = mono / 大写微标。
 - 契约块的选择器**必须**同时列出各弹层根（`.assistant-agent-thread-dialog`、`.assistant-settings-dialog`、`.assistant-runtime-popper`、`.ctx-usage-popper`）——它们被 teleport 到 body，取不到 `.assistant-panel` 的继承链。新增 teleport 弹层要顺手加进去。
 - **不要给 `var(--ai-*)` 写 fallback**：此前 6 处 fallback 与定义值早已对不上，成了误导性的过期快照。
+- **卡片外壳走 `assistant-card.css`**：七张产物卡（Code / DataTable / DecisionChart / Echarts / Equity / Kline / SourceStrip）共用全局类 `.assistant-card` + `.assistant-card__heading`，条状卡加 `.assistant-card--tight`。组件里不要再抄外壳（此前七份逐字重复，改一次间距要动七个文件）。它必须是**全局**样式：各卡片自己 scoped，共享壳只能落在不带 scope 属性的规则上。
 
 ## 富渲染时间线（ADR-006）
 

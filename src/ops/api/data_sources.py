@@ -203,7 +203,6 @@ def build_data_sources_router(*, write_dependency) -> APIRouter:
         from src.market import (
             ALL_LANES,
             enabled_adapter_ids,
-            get_adapter,
             lane_route_policy,
             list_catalog,
             provider_disabled_lanes,

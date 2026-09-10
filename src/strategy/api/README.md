@@ -1,6 +1,7 @@
 归属：`/api/strategies*` `/api/backtest` `/api/analysis/*` `/api/screen/*` `/api/insights/*`。
 
 `POST /api/analysis/{kind}` 返回 `job_id` 与本次真实 `run_id`；即时分析按请求快照执行，轮询可使用返回的 `poll`（`run_id` 精确过滤）。
+`compare` / `optimize` 默认以 `execution_mode=process` 交给受控 `spawn` worker，避免大面板计算占满 API 进程；调试或小样本可在请求体中显式传 `execution_mode=thread`。
 说明：`/api/screen-skills*` 的 HTTP 契约在本域 `api/screen_skills_router.py`，编排在 `application/screen_skills.py`（2026-08 从组合根搬入）；包读写经 `src.ops` 包根，公式编译与选股执行也在本域。
 
 选股响应：
@@ -21,7 +22,8 @@
 - `GET /api/strategies/{slug}/audit` — 前视静态审计（生成链/测试用，体检页不挂）
 
 挂载与文件清单：
-- `router.py` → `build_strategy_router`：聚合入口。自留 `POST /api/strategies/screen`（同步单日）、`POST /api/analysis/{kind}`、`GET|PUT|DELETE /api/strategies/{slug}/job`、`GET /api/screen/today`、`/api/strategies/{slug}/doc`、`/api/insights/*`、`/api/strategies/{slug}/audit`；并 `include_router` 下面这几个子 router
+- `router.py` → `build_strategy_router`：聚合入口。自留 `POST /api/strategies/screen`（同步单日）、`POST /api/analysis/{kind}`、`GET|PUT|DELETE /api/strategies/{slug}/job`、`/api/strategies/{slug}/doc`、`/api/insights/*`、`/api/strategies/{slug}/audit`；并 `include_router` 下面这几个子 router
+- `screen_today_router.py` → `build_screen_today_router`：`GET /api/screen/today`；可选轻量同步与热库镜像，选股阶段与其他入口共用进程级容量许可，容量已满快速返回 429
 - `screen_run_router.py` → `build_screen_run_router`：异步即时选股三端点，**都以 `strategy` 为轴**（进度槽按「租户 × 战法」分片，一个人可以同时跑多个战法）：
   - `GET /api/screen/run`：不带参 → 聚合快照（顶层是「当前这一个」槽，兼容老客户端；`runs` 是 slug → 槽，`running_strategies` 是正在跑的 slug，`max_concurrent_runs` 是并发上限）；带 `?strategy=` → 只要那一个槽（不存在返回 idle，不建槽）
   - `POST /api/screen/run`（202 受理）：返回**这个战法**的槽快照；占不到槽时带 `busy_reason`（`same_strategy` = 它自己在跑，防重复入库；`tenant_limit` = 并发到顶）。别的战法在跑不算占用

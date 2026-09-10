@@ -6,6 +6,7 @@ const props = withDefaults(
     values: number[]
     width?: number
     height?: number
+    /** 默认中性色（品牌色）；要表达涨跌由调用方显式传 var(--up) / var(--down) */
     color?: string
     label?: string
     /** 同花顺式：末端圆点 */
@@ -14,7 +15,7 @@ const props = withDefaults(
   {
     width: 320,
     height: 96,
-    color: '#dc2626',
+    color: 'var(--seal)',
     label: '图',
     showEndDot: false,
   },

@@ -67,7 +67,6 @@ class ProductionAuthTests(unittest.TestCase):
                 "src.strategy.api.router.market_store",
                 side_effect=AssertionError("写守卫应在选股前拒绝请求"),
             ),
-            patch("src.strategy.api.router.should_sync_today", return_value=False),
         ):
             for method, path, kwargs in (
                 ("post", "/api/strategies/screen", {"json": {"strategy": "qianlong-close-v3"}}),

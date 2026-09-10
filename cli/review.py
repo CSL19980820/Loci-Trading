@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 
 from src.market import DEFAULT_DB, MarketStore
 from src.ledger import PalaceStore

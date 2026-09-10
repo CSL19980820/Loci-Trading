@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import sqlite3
 
 import pandas as pd
@@ -264,3 +265,60 @@ def test_global_query_keeps_unlinked_failed_receipt(tmp_path: Path) -> None:
     assert evidence["receipts"][0]["state"] == "failed"
     # 无 requested_codes 时 unresolved_codes 为空；未解析回执从 receipts 侧暴露
     assert evidence["unresolved_receipt_codes"] == ["600519"]
+
+
+def test_quote_bar_receipts_keep_every_trade_date_per_code(tmp_path: Path) -> None:
+    """一个 code 带多个交易日时，回执必须覆盖整段，不能只记其中一行。
+
+    落库按 code 预分组（一趟索引替掉逐 code 全表过滤）之后，最容易写出的错就是
+    ``rows_by_code[code] = [row]``：行数、覆盖区间、内容指纹全部只剩最后一天，
+    而 quotes_daily 里也只落一行——两侧都不报错，静默丢数据。
+    """
+    codes = ["600519", "000001"]
+    dates = ["2025-01-02", "2025-01-03", "2025-01-06"]
+    receipts = [
+        {
+            "code": code,
+            "lane": "spot_batch",
+            "selected_source": "fixture",
+            "attempts": [{"source_id": "fixture", "state": "selected"}],
+        }
+        for code in codes
+    ]
+    bars = [
+        {
+            "code": code,
+            "date": day,
+            "open": 10.0 + offset,
+            "high": 11.0 + offset,
+            "low": 9.0 + offset,
+            "close": 10.5 + offset,
+            "volume": 1000.0 + offset,
+        }
+        for offset, code in enumerate(codes)
+        for day in dates
+    ]
+    with MarketStore(tmp_path / "market.db") as store:
+        assert store.persist_quote_bar_receipts(
+            receipts, bars, source="fixture"
+        ) == len(codes) * len(dates)
+        stored = dict(
+            store.conn.execute(
+                "SELECT code, COUNT(*) FROM quotes_daily GROUP BY code"
+            ).fetchall()
+        )
+        detail = {
+            str(row["code"]): row
+            for row in store.conn.execute(
+                "SELECT code, coverage_json, coverage_start, coverage_end,"
+                " payload_sha256 FROM source_route_receipts"
+            )
+        }
+
+    assert stored == {"600519": len(dates), "000001": len(dates)}
+    for code in codes:
+        assert json.loads(detail[code]["coverage_json"])["rows_written"] == len(dates)
+        assert detail[code]["coverage_start"] == dates[0]
+        assert detail[code]["coverage_end"] == dates[-1]
+    # 指纹是按 code 切出来的那几行算的，两只票不能撞成同一个值
+    assert detail["600519"]["payload_sha256"] != detail["000001"]["payload_sha256"]

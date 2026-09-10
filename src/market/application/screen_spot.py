@@ -178,7 +178,6 @@ def ensure_today_quotes_for_screen(
     - degrade_reason: 降级原因（仅降级时有）
     - message: 中文说明
     """
-    from src.market.infrastructure.adapters import AdapterError
     from src.market.infrastructure.sync_spot import apply_today_spot
 
     today = date.today().isoformat()

@@ -151,7 +151,6 @@ def run_backtest(
 
     dates = list(signals.index)
     codes = list(signals.columns)
-    date_pos = {date: i for i, date in enumerate(dates)}
 
     open_a = open_.to_numpy(dtype=float)
     high_a = high.to_numpy(dtype=float)
@@ -191,8 +190,9 @@ def run_backtest(
 
     signal_rows, signal_cols = np.nonzero(signals.fillna(False).to_numpy(dtype=bool))
     trades: list[Trade] = []
+    cost = cfg.round_trip_cost_pct()
 
-    for row, col in zip(signal_rows, signal_cols):
+    for row, col in zip(signal_rows.tolist(), signal_cols.tolist()):
         entry_idx = row + entry_offset
         if entry_idx >= len(dates):
             skip("入场日超出数据范围")
@@ -253,7 +253,7 @@ def run_backtest(
         mae = (np.nanmin(lows) / entry_price - 1) * 100 if lows.size else 0.0
 
         gross = (exit_price / entry_price - 1) * 100
-        net = gross - cfg.round_trip_cost_pct()
+        net = gross - cost
 
         bench = None
         if benchmark_close is not None:
@@ -317,7 +317,9 @@ def _resolve_exit(
     )
 
     # T+1：入场次日起才可能卖出。
-    for idx in range(entry_idx + 1, min(planned_exit, last_index) + 1):
+    # 没有触价规则时直接到期撮合，避免逐日执行空判断。
+    scan_end = min(planned_exit, last_index) if stop_price is not None or target_price is not None else entry_idx
+    for idx in range(entry_idx + 1, scan_end + 1):
         if stop_price is not None and low_a[idx, col] <= stop_price:
             price, resolved = _tradable_exit(
                 col, idx, stop_price, cfg, close_a, one_word_down, volume_a, last_index,

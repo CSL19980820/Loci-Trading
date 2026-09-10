@@ -10,14 +10,14 @@ import math
 import sqlite3
 from typing import Any
 
-from src.ops.application.paper_copy_zh import format_lookback_for_prompt
+# paper_style_memory 仍从本模块取这个名字，别名标记显式再导出。
+from src.ops.application.paper_copy_zh import format_lookback_for_prompt as format_lookback_for_prompt
 from src.ops.application.paper_decided_by import count_fills_by_decided_by
 from src.ops.application.paper_exec import BUY_ACTIONS, SELL_ACTIONS
 
 logger = logging.getLogger(__name__)
 
 from src.ops.application.paper_eod_bars import (
-    _PANEL_BAR_FIELDS,
     _bars_from_history,
     _bars_from_panel,
     _lookback_panels,

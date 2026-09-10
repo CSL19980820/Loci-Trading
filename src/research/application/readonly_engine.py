@@ -1,37 +1,17 @@
-"""研究只读输入的可回滚计算引擎旁路。
-
-研究 DTO 仍由 pandas 生成；Polars 只负责把已从公开 MarketStore API 取得的
-只读 frame 做等价转换，便于基准比较。未安装或转换失败时原 frame 原样返回。
-"""
+"""兼容旧研究输入入口；不再进行没有计算收益的 DataFrame 往返转换。"""
 from __future__ import annotations
-
-import os
 
 import pandas as pd
 
 
 def polars_research_enabled() -> bool:
-    raw = (os.environ.get("LOCI_RESEARCH_POLARS") or "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    """旧 POC 已退出执行链路；保留导入兼容，但不能再宣称已启用加速。"""
+    return False
 
 
 def readonly_frame(frame: pd.DataFrame, *, engine: str | None = None) -> pd.DataFrame:
-    """按显式 engine 选择研究只读 frame；默认保持 pandas。"""
-    selected = (engine or ("polars" if polars_research_enabled() else "pandas")).lower()
-    if selected != "polars" or frame.empty:
-        return frame
-    try:
-        import polars as pl
-
-        index = frame.index.copy()
-        columns = frame.columns.copy()
-        polars_frame = pl.DataFrame(frame.reset_index(drop=True).to_dict(orient="records"))
-        converted = pd.DataFrame(polars_frame.to_dicts(), columns=columns)
-        converted.index = index
-        converted.columns = columns
-        return converted
-    except (ImportError, OSError, AttributeError, RuntimeError, TypeError, ValueError):
-        return frame
+    """保持输入对象及 dtype；旧 engine 参数仅为调用兼容而保留。"""
+    return frame
 
 
 __all__ = ["polars_research_enabled", "readonly_frame"]

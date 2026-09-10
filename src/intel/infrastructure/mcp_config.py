@@ -76,7 +76,7 @@ def _mcp_json_write_lock(target: Path):
         while descriptor is None:
             try:
                 descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            except FileExistsError:
+            except FileExistsError as exc:
                 try:
                     age = time.time() - lock_path.stat().st_mtime
                 except FileNotFoundError:
@@ -88,7 +88,7 @@ def _mcp_json_write_lock(target: Path):
                         pass
                     continue
                 if time.monotonic() >= deadline:
-                    raise McpConfigError("MCP 配置正被另一进程更新，请稍后重试")
+                    raise McpConfigError("MCP 配置正被另一进程更新，请稍后重试") from exc
                 time.sleep(0.02)
             except OSError as exc:
                 raise McpConfigError("无法锁定 MCP 配置文件") from exc

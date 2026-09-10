@@ -17,6 +17,7 @@ PLACEHOLDERS_PICK = ("{name}", "{code}", "{pct}", "{note}")
 
 SKILL_NOTE_MAX = 40
 
+
 DEFAULT_TEMPLATE: dict[str, Any] = {
     "preset": "default",
     "header": "【{title}】-{kind}",
@@ -34,6 +35,7 @@ DEFAULT_TEMPLATE: dict[str, Any] = {
     "quant_tag": "量化",
     "skills_tag": "技能",
     "max_picks": 30,
+    "show_watch_picks": False,
 }
 
 PRESETS: dict[str, dict[str, Any]] = {
@@ -89,11 +91,19 @@ _SAMPLE_RESULT: dict[str, Any] = {
         {"code": "600018", "name": "上港集团", "pct_chg": 5, "note": "回踩确认后温和放量"},
         {"code": "000001", "name": "平安银行", "note": "防御仓样本无涨幅字段"},
     ],
+    "watch_picks": [{"code": "000957", "name": "中通客车", "pct_chg": 1.66}],
 }
 
 
 def default_screen_template() -> dict[str, Any]:
     return dict(DEFAULT_TEMPLATE)
+
+
+def _as_bool(value: Any) -> bool:
+    """模板布尔字段宽容解析：bool / 0|1 / "true"|"false" 等写法都可。"""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def normalize_screen_template(raw: Any) -> dict[str, Any]:
@@ -111,6 +121,7 @@ def normalize_screen_template(raw: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         max_picks = 30
     out["max_picks"] = max(1, min(50, max_picks))
+    out["show_watch_picks"] = _as_bool(out.get("show_watch_picks"))
     text_keys = (
         "header",
         "intro",
@@ -255,7 +266,11 @@ def format_screen_picks_text(
     )
 
     if rendered == 0:
-        empty = str(tpl["formal_empty"] if watch_picks else tpl["empty"]).strip()
+        empty = str(
+            tpl["formal_empty"]
+            if (watch_picks and tpl["show_watch_picks"])
+            else tpl["empty"]
+        ).strip()
         if empty:
             lines.append(empty)
     elif len(picks) > rendered:
@@ -263,7 +278,7 @@ def format_screen_picks_text(
         if more:
             lines.append(more)
 
-    if watch_picks:
+    if watch_picks and tpl["show_watch_picks"]:
         watch_header = str(tpl["watch_header"]).strip()
         if watch_header:
             lines.append(watch_header)

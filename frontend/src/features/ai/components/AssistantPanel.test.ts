@@ -1,5 +1,6 @@
 import { shallowMount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import AssistantPanel from './AssistantPanel.vue'
 
@@ -31,7 +32,31 @@ const dialogStub = {
 describe('AssistantPanel', () => {
   afterEach(() => {
     localStorage.clear()
+    vi.unstubAllGlobals()
   })
+
+  /** 侧栏折叠态只从 collapsed / open 两个 prop 看得出来，stub 把它们透出成属性 */
+  function mountWithSidebarProbes() {
+    return shallowMount(AssistantPanel, {
+      props: { ...baseProps, providerReady: true },
+      global: {
+        stubs: {
+          'el-dialog': { template: '<div><slot /></div>' },
+          'el-button': buttonStub,
+          AssistantEmptyState: { template: '<div />' },
+          AssistantSenderDock: { template: '<div />' },
+          AssistantSessionRail: {
+            props: ['collapsed'],
+            template: '<aside data-testid="session-rail" :data-collapsed="collapsed" />',
+          },
+          AssistantTaskSidebar: {
+            props: ['open'],
+            template: '<aside data-testid="task-sidebar" :data-open="open" />',
+          },
+        },
+      },
+    })
+  }
 
   it('opens as a dialog at 90% of the viewport', () => {
     const wrapper = shallowMount(AssistantPanel, {
@@ -127,5 +152,34 @@ describe('AssistantPanel', () => {
     })
 
     expect(wrapper.get('[data-testid="session-rail"]').attributes('data-disabled')).toBe('true')
+  })
+
+  it('窄屏挂载时把两侧栏折成 rail，且不改写记住的偏好', async () => {
+    localStorage.setItem('loci.assistant.historyOpen', '1')
+    localStorage.setItem('loci.assistant.taskSidebarOpen', '1')
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+
+    const wrapper = mountWithSidebarProbes()
+    // 折叠发生在 onMounted 里，属性要等一次 flush 才落到 DOM
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="session-rail"]').attributes('data-collapsed')).toBe('true')
+    expect(wrapper.get('[data-testid="task-sidebar"]').attributes('data-open')).toBe('false')
+    // 断点折叠不落盘：否则一次窄屏访问就把用户的展开偏好永久改掉
+    expect(localStorage.getItem('loci.assistant.historyOpen')).toBe('1')
+    expect(localStorage.getItem('loci.assistant.taskSidebarOpen')).toBe('1')
+  })
+
+  it('够宽时保留记住的展开态', async () => {
+    localStorage.setItem('loci.assistant.historyOpen', '1')
+    localStorage.setItem('loci.assistant.taskSidebarOpen', '1')
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+
+    const wrapper = mountWithSidebarProbes()
+    // 折叠发生在 onMounted 里，属性要等一次 flush 才落到 DOM
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="session-rail"]').attributes('data-collapsed')).toBe('false')
+    expect(wrapper.get('[data-testid="task-sidebar"]').attributes('data-open')).toBe('true')
   })
 })
