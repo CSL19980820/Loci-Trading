@@ -1,0 +1,96 @@
+{
+  "executors": {
+    "qianlong-close-v3": {
+      "before_seconds": 312.35665724996943,
+      "after_seconds": 116.07797796197701,
+      "daily_before_median": 11.99413063400425,
+      "daily_after_median": 3.6559565540519543,
+      "before_maxrss_mb": 609.33203125,
+      "after_maxrss_mb": 494.6171875,
+      "all_daily_selections_and_factors_equal": true,
+      "remaining_21_full_result_digests_equal": true,
+      "first_day_without_health_digest": "d5ee32d8c81b961162be710a593f668f0ce6cd401e971a90b626371bf0870b01",
+      "reuse": {
+        "panel": true,
+        "evidence": true,
+        "evidence_rows": 427827,
+        "evidence_bytes": 5989578
+      }
+    },
+    "yixian-auction": {
+      "before_seconds": 901.8033564880025,
+      "after_seconds": 270.59326988691464,
+      "daily_before_median": 38.801767124037724,
+      "daily_after_median": 10.12967671547085,
+      "before_maxrss_mb": 1160.78515625,
+      "after_maxrss_mb": 748.80859375,
+      "all_daily_selections_and_factors_equal": true,
+      "remaining_21_full_result_digests_equal": true,
+      "first_day_without_health_digest": "60a8720a83b2469c55127ab7a499172ec2b3b846718cd6f0aa504dbdec9cad95",
+      "reuse": {
+        "panel": true,
+        "evidence": true,
+        "evidence_rows": 2230661,
+        "evidence_bytes": 31229254
+      }
+    }
+  },
+  "http": [
+    {
+      "slug": "qianlong-close-v3",
+      "status": "done",
+      "seconds": 96.0128116607666,
+      "screen_seconds": 84.253,
+      "days": 22,
+      "formal": 18,
+      "watch": 12,
+      "same_daily_counts_universe_latest_factors": true,
+      "record_candidates": false
+    },
+    {
+      "slug": "yixian-auction",
+      "status": "done",
+      "seconds": 288.2486300468445,
+      "screen_seconds": 285.503,
+      "days": 22,
+      "formal": 48,
+      "watch": 0,
+      "same_daily_counts_universe_latest_factors": true,
+      "record_candidates": false
+    }
+  ],
+  "deployed_hashes": {
+    "src/formula/domain/functions.py": "d1dcdd8557051edc42d2295597cf80bbd015e00c4199f805dae138576b957aa0",
+    "src/formula/domain/board.py": "85691dfc3788e9e2802e15a704b4b1ae747929da367f4d57f9bf7101636fbed7",
+    "src/market/infrastructure/store_panel.py": "9161cbae8bfe391ab7122df498af8ceedd3fec02f1366feefd59d1591e7e3c9a",
+    "src/market/infrastructure/store_panel_window.py": "2016417ab8b13e298cb558ffb220ea9d58f1af709e04cf5231d8ae39e90f8e91",
+    "src/market/infrastructure/store_provenance_window.py": "a79febdf9d3b97722742cffb1b6e3c7e7b4544485c3956a515f77a4ead313d54",
+    "src/market/infrastructure/store_provenance_query.py": "097a31656d0ba240c64736515dabda2cfcfc63ffd537a6f4f915fc989542c30b",
+    "src/market/infrastructure/store_hot.py": "989b987612c535676c317e52ab68a4e72d2eb54204ba4134287f4e846de888dc",
+    "src/market/__init__.py": "b3ef9c5058b1f40129267ce6c681fda670bc01052deb5496720becc98773b75e",
+    "src/strategy/application/screen_run.py": "db64bb1e992d5528f0a2238de7744962e0bd41c1f525e5eaa996f5a5dbb0d907",
+    "src/strategy/application/screen_run_prepare.py": "4c5bb61d66627a3911f70d7ca213dfdbd24b162f9e3130cf9a73c6cd71a16feb",
+    "src/strategy/application/qianlong.py": "6ae1e8edba1665869af5ebc6841d2a7d5e1a24c3d5fc980ea9baf17ca79e342c"
+  },
+  "compression": [
+    {
+      "accept": "identity",
+      "encoding": "identity",
+      "wire_bytes": 29473399,
+      "decoded_bytes": 29473399,
+      "sha256": "61ab6dd3b1edacb50f93ee52bea4be58be56f3097fc110936eab763c55cb2280",
+      "seconds": 0.34810098202433437,
+      "vary": "Accept-Encoding"
+    },
+    {
+      "accept": "gzip",
+      "encoding": "gzip",
+      "wire_bytes": 2530691,
+      "decoded_bytes": 29473399,
+      "sha256": "61ab6dd3b1edacb50f93ee52bea4be58be56f3097fc110936eab763c55cb2280",
+      "seconds": 0.6455559380119666,
+      "vary": "Accept-Encoding"
+    }
+  ],
+  "image": "loci-qianlong:2.0.0-20260912-194406"
+}

@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Sequence
 
 from src.market.infrastructure.store_codes import MarketError, normalize_code
+from src.market.infrastructure.store_provenance_window import cached_quote_evidence, INVALID_OHLC_SQL
 
 # SQLite 默认变量上限约 999；code/receipt IN 列表统一按此分片。
 _SQL_IN_CHUNK = 900
@@ -22,12 +23,19 @@ class MarketProvenanceQueryMixin:
         codes: Sequence[str] | None = None,
         start: str | None = None,
         end: str | None = None,
+        include_details: bool = True,
     ) -> dict[str, object]:
         requested_codes, unparsed_codes = self._requested_codes(codes)
-        quote_summary = self._quote_summary(requested_codes, start=start, end=end)
+        quote_rows = self._quote_evidence_rows(requested_codes, start=start, end=end)
+        quote_summary = self._aggregate_quote_rows(quote_rows)
         observed_codes = quote_summary["observed_codes"]
         legacy_codes = quote_summary["legacy_codes"]
-        receipt_rows = self._receipt_rows(requested_codes, start=start, end=end)
+        receipt_rows = self._receipt_rows(
+            requested_codes, start=start, end=end,
+            linked_ids=list(dict.fromkeys(str(row["receipt_id"]) for row in quote_rows
+                                          if row["receipt_id"])),
+            **({"include_unlinked": False} if not include_details else {}),
+        )
         receipt_ids = [str(row["receipt_id"]) for row in receipt_rows]
         attempts_by_receipt = self._attempts_by_receipt(receipt_ids)
 
@@ -45,7 +53,7 @@ class MarketProvenanceQueryMixin:
                 {"receipt_id": receipt_id, "code": detail["code"], **attempt}
                 for attempt in receipt_attempts
             )
-        sources = self._source_summaries(requested_codes, start=start, end=end)
+        sources = self._source_summaries(quote_rows)
         if not sources and requested_codes and not receipts:
             sources.append(
                 {"source_id": "market.db", "state": "failed", "rows": 0, "codes": 0,
@@ -55,7 +63,7 @@ class MarketProvenanceQueryMixin:
             *legacy_codes,
             *(str(item["code"]) for item in missing_attempt_receipts),
         }
-        return {
+        result = {
             "lane": "hist_daily",
             "requested_codes": requested_codes,
             "observed_codes": sorted(observed_codes),
@@ -77,6 +85,15 @@ class MarketProvenanceQueryMixin:
                 str(item["receipt_id"]) for item in missing_attempt_receipts
             ),
         }
+        if not include_details:
+            result.update({
+                "receipt_details_omitted": True,
+                "receipt_detail_basis": "all_quote_linked_receipts",
+                "historical_failure_scope": self._failure_scope_summary(requested_codes, start=start, end=end),
+                "evidence_scope": {"codes": requested_codes, "start": start, "end": end},
+                "detail_note": "保留所有实际报价关联回执及attempt；额外历史失败回执仅汇总，不能作为完整严格PIT证据。",
+            })
+        return result
 
     @staticmethod
     def _requested_codes(codes: Sequence[str] | None) -> tuple[list[str], list[str]]:
@@ -117,6 +134,8 @@ class MarketProvenanceQueryMixin:
         *,
         start: str | None,
         end: str | None,
+        include_unlinked: bool = True,
+        linked_ids: Sequence[str] | None = None,
     ) -> list[sqlite3.Row]:
         """按范围收集回执。
 
@@ -126,8 +145,9 @@ class MarketProvenanceQueryMixin:
         2) 并上未挂日 K 的失败/skip 回执
         3) 再按 id 批量取 r.*
         """
-        linked_ids = self._linked_receipt_ids(codes, start=start, end=end)
-        unlinked_ids = self._unlinked_receipt_ids(codes, start=start, end=end)
+        if linked_ids is None:
+            linked_ids = self._linked_receipt_ids(codes, start=start, end=end)
+        unlinked_ids = self._unlinked_receipt_ids(codes, start=start, end=end) if include_unlinked else []
         receipt_ids = list(dict.fromkeys([*linked_ids, *unlinked_ids]))
         if not receipt_ids:
             return []
@@ -143,6 +163,26 @@ class MarketProvenanceQueryMixin:
             rows.extend(chunk_rows)
         rows.sort(key=lambda row: (str(row["generated_at"] or ""), str(row["receipt_id"])))
         return rows
+
+    def _failure_scope_summary(
+        self, codes: Sequence[str], *, start: str | None, end: str | None,
+    ) -> dict[str, object]:
+        chunks = [codes[i:i + _SQL_IN_CHUNK] for i in range(0, len(codes), _SQL_IN_CHUNK)] or [()]
+        counts: dict[str, int] = {}
+        for chunk in chunks:
+            scope, params = self._unlinked_receipt_scope(chunk, start=start, end=end)
+            rows = self.conn.execute(
+                "SELECT r.state, COUNT(*) AS total FROM source_route_receipts r WHERE "
+                + scope + " GROUP BY r.state", params,
+            ).fetchall()
+            for row in rows:
+                state = str(row["state"])
+                counts[state] = counts.get(state, 0) + int(row["total"])
+        return {
+            "receipt_count": sum(counts.values()), "by_state": counts,
+            "may_overlap_quote_linked_receipts": True,
+            "detail_rows_materialized": False,
+        }
 
     def _linked_receipt_ids(
         self,
@@ -332,36 +372,29 @@ class MarketProvenanceQueryMixin:
             "request_end": str(row["request_end"] or ""), "attempts": attempts,
         }
 
-    def _quote_summary(
-        self,
-        codes: Sequence[str],
-        *,
-        start: str | None,
-        end: str | None,
-    ) -> dict[str, object]:
-        """按 code 分片聚合，避免全宇宙一次 IN 爆变量上限。"""
-        if not codes:
-            where, params = self._quote_where((), start=start, end=end)
-            return self._aggregate_quote_rows(
-                self.conn.execute(
-                    self._quote_summary_sql(where), list(params)
-                ).fetchall()
-            )
-
+    def _quote_evidence_rows(
+        self, codes: Sequence[str], *, start: str | None, end: str | None,
+    ) -> list[sqlite3.Row]:
+        """同一范围只扫描一次日 K；先压缩到 code/receipt/source，再关联回执。"""
+        cached = cached_quote_evidence(self, codes, start=start, end=end)
+        if cached is not None:
+            return cached
+        chunks = [codes[i:i + _SQL_IN_CHUNK] for i in range(0, len(codes), _SQL_IN_CHUNK)] or [()]
         rows: list[sqlite3.Row] = []
-        code_list = list(codes)
-        for offset in range(0, len(code_list), _SQL_IN_CHUNK):
-            chunk = code_list[offset : offset + _SQL_IN_CHUNK]
+        for chunk in chunks:
             where, params = self._quote_where(chunk, start=start, end=end)
-            rows.extend(
-                self.conn.execute(self._quote_summary_sql(where), list(params)).fetchall()
-            )
-        return self._aggregate_quote_rows(rows)
+            rows.extend(self.conn.execute(self._quote_evidence_sql(where), params).fetchall())
+        return rows
 
     @staticmethod
-    def _quote_summary_sql(where: str) -> str:
+    def _quote_evidence_sql(where: str) -> str:
         return (
-            "SELECT code, COUNT(*) AS rows, "
+            "SELECT q.*, CASE WHEN q.receipt_id IS NULL THEN q.legacy_source "
+            "ELSE r.selected_source END AS source_id FROM ("
+            "SELECT code, receipt_id, CASE WHEN receipt_id IS NULL "
+            "THEN COALESCE(NULLIF(source, ''), 'unknown') ELSE '' END AS legacy_source, "
+            "MIN(trade_date) AS first_date, MAX(trade_date) AS last_date, "
+            "MAX(fetched_at) AS last_fetched_at, COUNT(*) AS rows, "
             "SUM(CASE WHEN open IS NOT NULL THEN 1 ELSE 0 END) AS open_rows, "
             "SUM(CASE WHEN high IS NOT NULL THEN 1 ELSE 0 END) AS high_rows, "
             "SUM(CASE WHEN low IS NOT NULL THEN 1 ELSE 0 END) AS low_rows, "
@@ -371,11 +404,9 @@ class MarketProvenanceQueryMixin:
             "SUM(CASE WHEN turnover IS NOT NULL THEN 1 ELSE 0 END) AS turnover_rows, "
             "SUM(CASE WHEN outstanding_share IS NOT NULL THEN 1 ELSE 0 END) AS share_rows, "
             "SUM(CASE WHEN receipt_id IS NULL THEN 1 ELSE 0 END) AS legacy_rows, "
-            "SUM(CASE WHEN open IS NOT NULL AND high IS NOT NULL AND low IS NOT NULL "
-            "AND close IS NOT NULL AND (high < low OR high < open OR high < close "
-            "OR low > open OR low > close OR open <= 0 OR high <= 0 OR low <= 0 "
-            "OR close <= 0) THEN 1 ELSE 0 END) AS invalid_ohlc "
-            "FROM quotes_daily" + where + " GROUP BY code"
+            f"SUM(CASE WHEN {INVALID_OHLC_SQL} THEN 1 ELSE 0 END) AS invalid_ohlc "
+            "FROM quotes_daily" + where + " GROUP BY code, receipt_id, legacy_source"
+            ") q LEFT JOIN source_route_receipts r ON r.receipt_id = q.receipt_id"
         )
 
     @staticmethod
@@ -410,73 +441,46 @@ class MarketProvenanceQueryMixin:
             "invalid_ohlc_rows": sum(int(row["invalid_ohlc"] or 0) for row in rows),
         }
 
-    def _source_summaries(
-        self, codes: Sequence[str], *, start: str | None, end: str | None
-    ) -> list[dict[str, object]]:
+    @staticmethod
+    def _source_summaries(rows: Sequence[sqlite3.Row]) -> list[dict[str, object]]:
         buckets: dict[str, dict[str, object]] = {}
-        code_chunks: list[Sequence[str]]
-        if codes:
-            code_list = list(codes)
-            code_chunks = [
-                code_list[offset : offset + _SQL_IN_CHUNK]
-                for offset in range(0, len(code_list), _SQL_IN_CHUNK)
-            ]
-        else:
-            code_chunks = [()]
-
-        for chunk in code_chunks:
-            where, params = self._quote_where(chunk, start=start, end=end, alias="q")
-            restriction = " AND (q.receipt_id IS NULL OR r.selected_source <> '')"
-            source_rows = self.conn.execute(
-                "SELECT CASE WHEN q.receipt_id IS NULL "
-                "THEN COALESCE(NULLIF(q.source, ''), 'unknown') ELSE r.selected_source "
-                "END AS source_id, "
-                "COUNT(*) AS rows, COUNT(DISTINCT q.code) AS codes, "
-                "MIN(q.trade_date) AS first_date, "
-                "MAX(q.trade_date) AS last_date, MAX(q.fetched_at) AS last_fetched_at, "
-                "SUM(CASE WHEN q.receipt_id IS NULL THEN 1 ELSE 0 END) AS legacy_rows "
-                "FROM quotes_daily q LEFT JOIN source_route_receipts r "
-                "ON r.receipt_id = q.receipt_id"
-                + (
-                    where + restriction
-                    if where
-                    else " WHERE " + restriction.removeprefix(" AND ")
-                )
-                + " GROUP BY source_id",
-                params,
-            ).fetchall()
-            for row in source_rows:
-                source_id = str(row["source_id"])
-                bucket = buckets.setdefault(
-                    source_id,
-                    {
-                        "source_id": source_id,
-                        "state": "selected",
-                        "rows": 0,
-                        "codes": 0,
-                        "first_date": "",
-                        "last_date": "",
-                        "last_fetched_at": "",
-                        "legacy_rows": 0,
-                    },
-                )
-                bucket["rows"] = int(bucket["rows"]) + int(row["rows"] or 0)
-                bucket["codes"] = int(bucket["codes"]) + int(row["codes"] or 0)
-                bucket["legacy_rows"] = int(bucket["legacy_rows"]) + int(
-                    row["legacy_rows"] or 0
-                )
-                first = str(row["first_date"] or "")
-                last = str(row["last_date"] or "")
-                fetched = str(row["last_fetched_at"] or "")
-                if first and (not bucket["first_date"] or first < str(bucket["first_date"])):
-                    bucket["first_date"] = first
-                if last and (not bucket["last_date"] or last > str(bucket["last_date"])):
-                    bucket["last_date"] = last
-                if fetched and (
-                    not bucket["last_fetched_at"]
-                    or fetched > str(bucket["last_fetched_at"])
-                ):
-                    bucket["last_fetched_at"] = fetched
+        source_codes: dict[str, set[str]] = {}
+        for row in rows:
+            # 空/孤儿关联不能变成 legacy；原 SQL 只接纳 NULL receipt 或非空 selected_source。
+            if row["source_id"] is None or row["source_id"] == "":
+                continue
+            source_id = str(row["source_id"])
+            bucket = buckets.setdefault(
+                source_id,
+                {
+                    "source_id": source_id,
+                    "state": "selected",
+                    "rows": 0,
+                    "codes": 0,
+                    "first_date": "",
+                    "last_date": "",
+                    "last_fetched_at": "",
+                    "legacy_rows": 0,
+                },
+            )
+            bucket["rows"] = int(bucket["rows"]) + int(row["rows"] or 0)
+            source_codes.setdefault(source_id, set()).add(str(row["code"]))
+            bucket["codes"] = len(source_codes[source_id])
+            bucket["legacy_rows"] = int(bucket["legacy_rows"]) + int(
+                row["legacy_rows"] or 0
+            )
+            first = str(row["first_date"] or "")
+            last = str(row["last_date"] or "")
+            fetched = str(row["last_fetched_at"] or "")
+            if first and (not bucket["first_date"] or first < str(bucket["first_date"])):
+                bucket["first_date"] = first
+            if last and (not bucket["last_date"] or last > str(bucket["last_date"])):
+                bucket["last_date"] = last
+            if fetched and (
+                not bucket["last_fetched_at"]
+                or fetched > str(bucket["last_fetched_at"])
+            ):
+                bucket["last_fetched_at"] = fetched
 
         result: list[dict[str, object]] = []
         for source_id in sorted(buckets):

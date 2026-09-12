@@ -72,6 +72,7 @@ from src.market.infrastructure.sources import (
 )
 from src.market.infrastructure.store_schema import DEFAULT_DB
 from src.market.infrastructure.store import MarketStore, normalize_code, to_sina_symbol
+from src.market.infrastructure.store_panel_window import panel_read_window
 from src.market.infrastructure.live_tape import format_tray_title
 from src.market.infrastructure.store_hot import (
     HOT_WINDOW_TRADING_DAYS,
@@ -252,6 +253,7 @@ __all__ = [
     "MarketAdapter",
     "MarketEmotion",
     "MarketStore",
+    "panel_read_window",
     "QuoteSource",
     "SinaSource",
     "SourceError",

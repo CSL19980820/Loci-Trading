@@ -123,7 +123,7 @@ def test_source_evidence_aggregates_many_receipts_without_quote_detail_fetch(tmp
     assert source["last_fetched_at"]
     # 优化后：先按 receipt_id 索引取回执，禁止对每条 receipt 做 EXISTS 扫日 K
     assert not any("EXISTS" in statement.upper() for statement in statements)
-    assert any("DISTINCT receipt_id FROM quotes_daily" in statement for statement in statements)
+    assert sum("FROM quotes_daily" in statement for statement in statements) == 1
 
 
 def test_source_evidence_chunks_large_code_lists(tmp_path: Path) -> None:

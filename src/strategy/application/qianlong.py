@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from src.formula import (
@@ -226,9 +227,14 @@ class QianlongCloseePickerV3(_QianlongCore):
         advancing = (close > previous_close) & valid_close
         valid_count = valid_close.sum(axis=1)
         breadth = advancing.sum(axis=1).div(valid_count.where(valid_count > 0))
-        breadth_panel = pd.DataFrame(
-            {code: breadth for code in close.columns}, index=close.index
-        )
+        if breadth.dtype == np.dtype(float):
+            codes = list(dict.fromkeys(close.columns))
+            breadth_panel = pd.DataFrame(
+                np.broadcast_to(breadth.to_numpy()[:, None], (len(breadth), len(codes))).copy(),
+                index=close.index, columns=codes,
+            )
+        else:
+            breadth_panel = pd.DataFrame({code: breadth for code in close.columns}, index=close.index)
         weak_skip = p.get("weak_breadth_skip")
         if weak_skip is None:
             market_ok = pd.DataFrame(True, index=close.index, columns=close.columns)

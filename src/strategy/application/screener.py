@@ -203,7 +203,7 @@ def screen(
     except UniverseError as exc:
         raise StrategyError(str(exc)) from exc
 
-    bars = signal_history_bars(engine, extra_bars=extra_bars)
+    bars = signal_history_bars(engine, extra_bars=extra_bars, params=resolved_params)
     requires_full_history = bool(getattr(engine, "requires_full_history", False))
     start, end = _resolve_start(
         store, trade_date, bars, full_history=requires_full_history
@@ -314,6 +314,7 @@ def screen(
         )
 
     # 动态截断一致性：小宇宙全列，大宇宙分片全覆盖（见 audit_sampling）
+    _progress("audit", 58, "检查前视偏差（全股票范围）…")
     try:
         guard_strategy(engine, panels, params=resolved_params)
     except LookAheadError as exc:

@@ -26,6 +26,7 @@ from src.shared.screen_capacity import (
 )
 from src.shared.tenancy import current_tenant, is_primary_tenant, spawn_tenant_thread
 from src.strategy.domain.base import signal_history_bars
+from src.strategy.application.screen_run_prepare import ensure_screen_quotes, range_read_scope
 from src.strategy.application.screen_dates import (
     ScreenDateError,
     resolve_from_opts,
@@ -228,57 +229,8 @@ def _execute_screen_run(
                 )
                 return
 
-            # 与 job:screen 对齐：窗口含今天时保证「今日日 K 可用」。
-            # 覆盖已达标则跳过 spot，避免与盘后同步抢写把选股打死。
-            today = date.today().isoformat()
-            if refresh_spot and today in days:
-                from src.market.application.screen_spot import (
-                    ScreenSpotError,
-                    ensure_today_quotes_for_screen,
-                )
-
-                instruments = full.list_instruments()
-                spot_codes = [item["code"] for item in instruments]
-                spot_types = {
-                    item["code"]: item["instrument_type"] for item in instruments
-                }
-                screen_run_update(
-                    phase="spot",
-                    percent=5,
-                    message="检查当日行情…",
-                    log_line=f"↻ 准备当日行情（{len(spot_codes)} 只）",
-                )
-                try:
-                    ensured = ensure_today_quotes_for_screen(
-                        full,
-                        spot_codes,
-                        instrument_types=spot_types or None,
-                    )
-                except ScreenSpotError as exc:
-                    msg = str(exc)
-                    screen_run_update(
-                        status="error",
-                        phase="error",
-                        message=msg,
-                        error=msg,
-                        log_line=f"✗ {msg}",
-                    )
-                    return
-                except Exception as exc:
-                    msg = f"选股前准备当日行情失败，已阻断选股：{exc}"
-                    screen_run_update(
-                        status="error",
-                        phase="error",
-                        message=msg,
-                        error=msg,
-                        log_line=f"✗ {msg}",
-                    )
-                    return
-                screen_run_update(
-                    log_line=f"✓ {ensured.get('message') or '当日行情就绪'}",
-                    message=str(ensured.get("message") or "当日行情就绪"),
-                    percent=7,
-                )
+            if not ensure_screen_quotes(full, days, refresh_spot):
+                return
 
             # 选股读滚动热库（近 700 交易日窗口），与全量写库物理隔离；写操作
             # （apply_today_spot）只碰全量库。策略要求全历史或未配置热库时回退
@@ -293,11 +245,15 @@ def _execute_screen_run(
 
                 # 预热根数在 try 外面算：算不出来是策略契约问题，不该被下面那个
                 # except 归成「镜像热库失败」，那会让人照着错方向查热库。
-                warmup_bars = signal_history_bars(engine)
+                warmup_bars = signal_history_bars(engine, params=opts.get("params"))
                 try:
                     hot = open_market_hot(hot_db)
                     stack.enter_context(hot)
                     if not live_today:
+                        screen_run_update(
+                            phase="prepare", percent=6, message="同步选股热库…",
+                            log_line="· 同步选股热库（行情与来源回执）…",
+                        )
                         mirror_recent_to_hot(full, hot)
                     reason = hot_fallback_reason(
                         full,
@@ -318,6 +274,9 @@ def _execute_screen_run(
                     )
                     store = full
 
+            stack.enter_context(range_read_scope(
+                store, engine, days, opts.get("params"), codes=opts.get("codes"), universe=uni,
+            ))
             # 数据证据由 screen 在解析当日股票池与预热窗口后读取。
             # 编排层预取全库快照既扫描无关回执，也不能冻结逐日计算时的行情版本。
             total_days = len(days)

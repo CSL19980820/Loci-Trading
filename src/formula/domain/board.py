@@ -63,9 +63,12 @@ def limit_ratio_panel(
     """
     lookup = names or {}
     ratios = [limit_ratio_for(str(code), lookup.get(str(code), "")) for code in close.columns]
-    row = pd.Series(ratios, index=close.columns, dtype=float)
+    if not len(close.index):
+        # 保留原空行面板的 object dtype。
+        return pd.DataFrame(index=close.index, columns=close.columns)
+    values = np.broadcast_to(np.asarray(ratios, dtype=float), close.shape).copy()
     return pd.DataFrame(
-        [row.to_numpy()] * len(close.index), index=close.index, columns=close.columns
+        values, index=close.index, columns=close.columns
     )
 
 

@@ -214,13 +214,24 @@ def merge_params(engine: StrategyEngine, params: dict[str, Any] | None) -> dict[
     return merged
 
 
-def signal_history_bars(engine: StrategyEngine, *, extra_bars: int = 20) -> int:
+def signal_history_bars(
+    engine: StrategyEngine, *, extra_bars: int = 20, params: dict[str, Any] | None = None,
+) -> int:
     """返回信号计算前应加载的历史根数。
 
     ``min_bars`` 只表示指标达到最小可计算长度；递推指标还需要额外历史
     稳定初始状态。策略可声明 ``warmup_bars``，让选股与回测共享同一口径。
     """
     baseline = engine.min_bars() + max(0, int(extra_bars))
+    history_bars = getattr(engine, "history_bars", None)
+    if callable(history_bars):
+        try:
+            required = history_bars(merge_params(engine, params))
+        except (TypeError, ValueError) as exc:
+            raise StrategyError(str(exc)) from exc
+        if isinstance(required, bool) or not isinstance(required, int) or required < 1:
+            raise StrategyError("策略 history_bars 必须返回正整数")
+        baseline = max(baseline, required + max(0, int(extra_bars)))
     configured = getattr(engine, "warmup_bars", None)
     if configured is None:
         return baseline

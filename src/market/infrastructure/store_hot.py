@@ -187,7 +187,7 @@ def _stream_copy(
         copied += len(batch)
 
 
-def _copy_quotes_window(full: MarketStore, hot: MarketStore, start_date: str) -> int:
+def _copy_quotes_window(full: MarketStore, hot: MarketStore, start_date: str, *, force: bool = False) -> int:
     """把全量库 [start_date, ∞) 的日 K、日历与关联回执复制进热库（先删同区间）。
 
     **删 + 灌仍在同一个写事务里，这一点不能拆。** 热库是选股的在线只读库：
@@ -202,25 +202,59 @@ def _copy_quotes_window(full: MarketStore, hot: MarketStore, start_date: str) ->
     GC 压力与 RSS 峰值都随批大小封顶。
     """
     with hot._transaction() as cursor:
-        with track_hot_window_rewrite(cursor, start_date):
-            cursor.execute("DELETE FROM quotes_daily WHERE trade_date >= ?", (start_date,))
-            cursor.execute("DELETE FROM trading_calendar WHERE trade_date >= ?", (start_date,))
-            written = _stream_copy(
-                full.conn.execute(_QUOTES_SELECT_SQL, (start_date,)),
-                cursor,
-                _QUOTES_UPSERT_SQL,
-            )
-            _stream_copy(
-                full.conn.execute(
-                    "SELECT trade_date, updated_at FROM trading_calendar WHERE trade_date >= ?",
-                    (start_date,),
-                ),
-                cursor,
-                "INSERT OR REPLACE INTO trading_calendar VALUES(?,?)",
-            )
+        unchanged = not force and _same_window_rows(full, cursor, _QUOTES_SELECT_SQL, start_date)
+        calendar_sql = (
+            "SELECT trade_date, updated_at FROM trading_calendar "
+            "WHERE trade_date >= ? ORDER BY trade_date"
+        )
+        unchanged = unchanged and _same_window_rows(full, cursor, calendar_sql, start_date)
+        written = 0
+        if not unchanged:
+            with track_hot_window_rewrite(cursor, start_date):
+                cursor.execute("DELETE FROM quotes_daily WHERE trade_date >= ?", (start_date,))
+                cursor.execute("DELETE FROM trading_calendar WHERE trade_date >= ?", (start_date,))
+                written = _stream_copy(
+                    full.conn.execute(_QUOTES_SELECT_SQL, (start_date,)), cursor, _QUOTES_UPSERT_SQL,
+                )
+                _stream_copy(
+                    full.conn.execute(calendar_sql, (start_date,)), cursor,
+                    "INSERT OR REPLACE INTO trading_calendar VALUES(?,?)",
+                )
     # 回执：删除热库孤儿后，重灌窗口内日 K 关联的回执（含 attempts）。
     _replace_linked_receipts(full, hot, start_date)
     return written
+
+
+def _same_window_rows(full: MarketStore, target: sqlite3.Cursor, sql: str, start: str) -> bool:
+    """热库写事务内比对完整值，不依赖可能漏记旁路修订的版本号。"""
+    source = full.conn.execute(sql, (start,))
+    target.execute(sql, (start,))
+    try:
+        while True:
+            left = source.fetchmany(_COPY_BATCH_ROWS)
+            right = target.fetchmany(_COPY_BATCH_ROWS)
+            if [tuple(row) for row in left] != [tuple(row) for row in right]:
+                return False
+            if not left:
+                return True
+    finally:
+        source.close()
+
+
+def _changed_receipt_rows(
+    cursor: sqlite3.Cursor, table: str, cols: list[str], rows: list[sqlite3.Row],
+    chunk: list[str], placeholders: str,
+) -> list[tuple]:
+    keys = [cols.index("receipt_id")]
+    if table == "source_route_attempts":
+        keys.append(cols.index("attempt_no"))
+    current = {
+        tuple(row[i] for i in keys): tuple(row)
+        for row in cursor.execute(
+            f"SELECT {','.join(cols)} FROM {table} WHERE receipt_id IN ({placeholders})", chunk,
+        )
+    }
+    return [tuple(row) for row in rows if tuple(row) != current.get(tuple(row[i] for i in keys))]
 
 
 def _replace_linked_receipts(full: MarketStore, hot: MarketStore, start_date: str) -> None:
@@ -258,7 +292,7 @@ def _copy_receipts_chunk(
     cursor.executemany(
         "INSERT OR REPLACE INTO source_route_receipts(" + ",".join(cols) + ") VALUES("
         + ",".join("?" for _ in cols) + ")",
-        [tuple(row) for row in rows],
+        _changed_receipt_rows(cursor, "source_route_receipts", cols, rows, chunk, placeholders),
     )
 
 
@@ -279,7 +313,7 @@ def _copy_attempts_chunk(
     cursor.executemany(
         "INSERT OR REPLACE INTO source_route_attempts(" + ",".join(cols) + ") VALUES("
         + ",".join("?" for _ in cols) + ")",
-        [tuple(row) for row in rows],
+        _changed_receipt_rows(cursor, "source_route_attempts", cols, rows, chunk, placeholders),
     )
 
 
@@ -295,7 +329,7 @@ def mirror_to_hot(
     if not start_date:
         return {"quotes": 0, "start": "", "end": "", "mode": "empty"}
     _copy_small_tables(full, hot, force=True)
-    written = _copy_quotes_window(full, hot, start_date)
+    written = _copy_quotes_window(full, hot, start_date, force=True)
     # 裁掉窗外旧行（rebuild 的 copy start 即窗口起点；仍显式 trim 保证幂等）。
     _trim_hot_before(hot, start_date)
     end_date = hot.conn.execute("SELECT MAX(trade_date) FROM quotes_daily").fetchone()[0] or ""
@@ -327,7 +361,15 @@ def hot_window_shallow(
     if str(hot_min) > keep_from:
         return True
     hot_days = int(
-        hot.conn.execute("SELECT COUNT(DISTINCT trade_date) FROM quotes_daily").fetchone()[0]
+        # 按日期主键跳到下一日，避免 DISTINCT 扫数百万条 code/date 索引。
+        # 仍数真实日 K，不能用日历表掩盖热库有日历但缺行情的情况。
+        hot.conn.execute(
+            "WITH RECURSIVE days(d) AS ("
+            " SELECT MIN(trade_date) FROM quotes_daily"
+            " UNION ALL SELECT (SELECT MIN(q.trade_date) FROM quotes_daily q"
+            " WHERE q.trade_date > days.d) FROM days WHERE d IS NOT NULL"
+            ") SELECT COUNT(d) FROM days"
+        ).fetchone()[0]
         or 0
     )
     expected = full.trading_days(start=keep_from)

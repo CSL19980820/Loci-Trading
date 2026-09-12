@@ -16,6 +16,7 @@ from src.market.infrastructure.polars_panel import (
     read_quotes_flat_polars,
 )
 from src.market.infrastructure.store_codes import MarketError, normalize_code
+from src.market.infrastructure.store_panel_window import cached_raw_panels
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
 
 
@@ -111,6 +112,39 @@ class MarketPanelMixin:
             where_sql += f" AND code IN ({','.join('?' * len(normalized))})"
             params.extend(normalized)
 
+        if not needed:
+            exists = self.conn.execute(
+                f"SELECT 1 FROM quotes_daily WHERE 1=1{where_sql} LIMIT 1", params,
+            ).fetchone()
+            if exists and min_bars > 0:
+                raise StopIteration
+            return {}
+
+        panels = cached_raw_panels(self, needed, codes=codes, start=start, end=end)
+        if panels is None:
+            panels = self._read_raw_panels(needed, columns, where_sql, params)
+        if not panels or all(panel.empty for panel in panels.values()):
+            return panels
+
+        if min_bars > 0:
+            reference = panels.get("close")
+            if reference is None:
+                reference = next(iter(panels.values()))
+            keep = reference.notna().sum(axis=0) >= min_bars
+            kept = reference.columns[keep]
+            panels = {field: panel[kept] for field, panel in panels.items()}
+
+        price_fields = [field for field in needed if field in PRICE_FIELDS]
+        if price_fields and adjust != "none":
+            ratio = _consolidate(self._factor_panel(panels[price_fields[0]], adjust))
+            for field in price_fields:
+                panels[field] = panels[field] * ratio
+        # 合并放在列筛选和复权之后，避免重新生成逐列内存块。
+        return {field: _consolidate(panel) for field, panel in panels.items()}
+
+    def _read_raw_panels(
+        self, needed: list[str], columns: str, where_sql: str, params: list[Any],
+    ) -> dict[str, pd.DataFrame]:
         flat: pd.DataFrame | None = None
         if polars_panel_enabled():
             flat = read_quotes_flat_polars(
@@ -134,24 +168,7 @@ class MarketPanelMixin:
 
         # 日历与证券索引只编码/排序一次；逐字段 pivot 会重复这份全量工作。
         wide = flat.pivot(index="trade_date", columns="code", values=needed)
-        panels = {field: wide[field] for field in needed}
-
-        if min_bars > 0:
-            reference = panels.get("close")
-            if reference is None:
-                reference = next(iter(panels.values()))
-            keep = reference.notna().sum(axis=0) >= min_bars
-            kept = reference.columns[keep]
-            panels = {field: panel[kept] for field, panel in panels.items()}
-
-        price_fields = [field for field in needed if field in PRICE_FIELDS]
-        if price_fields and adjust != "none":
-            ratio = _consolidate(self._factor_panel(panels[price_fields[0]], adjust))
-            for field in price_fields:
-                panels[field] = panels[field] * ratio
-        # 合并必须放在**所有**变换之后：pivot、列筛选、复权乘法中的任何一步
-        # 都会让结果重新变成每列一个内存块。见 _consolidate 的说明。
-        return {field: _consolidate(panel) for field, panel in panels.items()}
+        return {field: wide[field] for field in needed}
 
     def _factor_panel(self, reference: pd.DataFrame, adjust: str) -> pd.DataFrame:
         """构造与面板同形的复权比例矩阵，一次性乘上去。"""

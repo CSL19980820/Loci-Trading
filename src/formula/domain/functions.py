@@ -15,6 +15,14 @@ import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 
+try:
+    from pandas._libs.window.aggregations import roll_max as _roll_max
+    from pandas._libs.window.aggregations import roll_mean as _roll_mean
+    from pandas._libs.window.aggregations import roll_min as _roll_min
+    from pandas.core.indexers.objects import FixedWindowIndexer as _FixedWindowIndexer
+except ImportError:  # pandas 内部入口变更时退回公开 rolling API。
+    _roll_mean = _roll_min = _roll_max = _FixedWindowIndexer = None
+
 #: 面板或单票。两者在本模块里走完全相同的代码路径。
 Frame = Union[pd.Series, pd.DataFrame]
 F = TypeVar("F", pd.Series, pd.DataFrame)
@@ -44,7 +52,42 @@ def MA(series: F, periods: int) -> F:
     """MA(X, N)：N 周期简单均线。不足 N 根返回空值，与通达信一致。"""
     if periods <= 0:
         raise ValueError("MA 的周期必须为正")
-    return series.rolling(periods).mean()
+    result = _rolling_float64(series, periods, _roll_mean)
+    return result if result is not None else series.rolling(periods).mean()
+
+
+def _rolling_float64(series: F, periods: int, kernel: Callable | None) -> F | None:
+    """MA/HHV/LLV 复用 pandas 原内核，合并逐列准备；不适用时回落公开 API。"""
+    if (
+        kernel is None or _FixedWindowIndexer is None
+        or not isinstance(periods, (int, np.integer))
+        or isinstance(periods, (bool, np.bool_)) or periods <= 0
+        or type(series) not in (pd.Series, pd.DataFrame)
+        or pd.get_option("compute.use_numba")
+    ):
+        return None
+    dtypes = series.dtypes
+    plain_float = (
+        dtypes.eq(np.dtype(float)).all()
+        if isinstance(dtypes, pd.Series) else dtypes == np.dtype(float)
+    )
+    if not plain_float:
+        return None
+    try:
+        values, single = _as_matrix(series)
+        inf = np.isinf(values)
+        if inf.any():
+            values = np.where(inf, np.nan, values)
+        start, end = _FixedWindowIndexer(window_size=periods).get_window_bounds(len(values))
+        out = np.empty(values.shape, dtype=float, order="F")
+        # 保留原内核的 Kahan 累加、重复值及符号修正，不替换数值算法。
+        with np.errstate(all="ignore"):
+            for column in range(values.shape[1]):
+                out[:, column] = kernel(values[:, column], start, end, periods)
+        return _like(series, out[:, 0] if single else out)
+    except (AttributeError, TypeError, ValueError):
+        # 私有内核/索引器签名变更不能破坏公式公开接口。
+        return None
 
 
 def EMA(series: F, periods: int) -> F:
@@ -147,14 +190,16 @@ def HHV(series: F, periods: int) -> F:
     """HHV(X, N)：N 周期最高。N=0 表示历史最高。"""
     if periods == 0:
         return series.cummax()
-    return series.rolling(periods).max()
+    result = _rolling_float64(series, periods, _roll_max)
+    return result if result is not None else series.rolling(periods).max()
 
 
 def LLV(series: F, periods: int) -> F:
     """LLV(X, N)：N 周期最低。N=0 表示历史最低。"""
     if periods == 0:
         return series.cummin()
-    return series.rolling(periods).min()
+    result = _rolling_float64(series, periods, _roll_min)
+    return result if result is not None else series.rolling(periods).min()
 
 
 def STD(series: F, periods: int) -> F:
@@ -186,6 +231,20 @@ def AVEDEV(series: F, periods: int) -> F:
 
 def COUNT(condition: F, periods: int) -> F:
     """COUNT(COND, N)：N 周期内条件成立的次数。N=0 表示自上市累计。"""
+    values = np.asarray(condition)
+    if (
+        values.dtype == np.dtype(bool)
+        and isinstance(periods, (int, np.integer))
+        and not isinstance(periods, (bool, np.bool_))
+        and periods > 0
+    ):
+        # 比较条件只有 0/1；整数前缀相减精确，且不必让 rolling 逐股票调度。
+        # 数值输入仍保留原来的浮点求和语义（包括 NaN），不能强转成条件。
+        counts = np.cumsum(values, axis=0, dtype=np.int64)
+        counts[periods:] -= counts[:-periods]
+        out = counts.astype(float)
+        out[:periods - 1] = np.nan
+        return _like(condition, out)
     flags = _to_float_flags(condition)
     if periods == 0:
         return flags.cumsum()

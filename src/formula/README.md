@@ -6,6 +6,8 @@
 ## 边界
 纯计算，无 IO、无包发现、无数据库、无 LLM。
 
+`COUNT` 的原生布尔正整数窗口使用精确整数前缀计数；数值、缺失及特殊周期保留原路径。`MA`/`HHV`/`LLV` 的普通 float64 正整数窗口合并逐列准备，仍调用 pandas 原来的 `roll_mean`/`roll_max`/`roll_min` 内核，保持舍入与缺失值口径；私有接口不可用或签名变化时回退公开 rolling API。回归使用逐位等价检查，不能用浮点近似掩盖阈值漂移。
+
 ## 关键入口
 `MA`/`REF`/…；`compile_screen_formula()` / `evaluate_screen_formula()`；`src.formula.domain.qianlong`
 
