@@ -13,6 +13,8 @@ withDefaults(
     plain?: boolean
     padded?: boolean
     margin?: boolean
+    /** 吃满弹性父级剩余高度，表体/图在 sheet-slot 内层滚 */
+    fill?: boolean
   }>(),
   {
     mutedChip: false,
@@ -20,55 +22,47 @@ withDefaults(
     plain: false,
     padded: false,
     margin: false,
+    fill: false,
   },
 )
 </script>
 
 <template>
+  <!-- 区块壳：无阴影、1px hairline、圆角（D3）。plain=无框透明（筛选条）；quiet=弱标题 -->
   <section
-    class="sheet"
-    :class="{ 'sheet-quiet': quiet, 'sheet-plain': plain, mb: margin }"
+    class="sheet border-line bg-surface overflow-hidden rounded-md shadow-none"
+    :class="[
+      { 'sheet-plain rounded-none border-0 bg-transparent': plain },
+      margin ? 'mb-2' : '',
+      fill ? 'sheet-fill flex h-full min-h-0 flex-1 flex-col' : '',
+    ]"
   >
     <header
       v-if="title || $slots.header || $slots.actions || $slots.meta"
-      class="sheet-bar"
+      class="sheet-bar border-line bg-surface flex min-h-[var(--head-h)] flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b px-[var(--pad-sheet-x)] py-1"
       :class="{ 'quiet-bar': quiet }"
     >
       <slot name="header">
-        <h2>
+        <h2 class="m-0 flex min-w-0 flex-wrap items-center gap-2 font-sans text-title leading-tight font-bold">
           {{ title }}
-          <span v-if="chip" class="chip" :class="{ 'muted-chip': mutedChip }">{{ chip }}</span>
+          <span v-if="chip != null && chip !== ''" class="chip bg-seal-soft text-seal-ink inline-flex items-center rounded px-1 font-mono text-aux leading-normal font-semibold tabular-nums" :class="{ 'muted-chip bg-sunken text-mist font-medium': mutedChip }">{{ chip }}</span>
         </h2>
       </slot>
-      <div v-if="$slots.meta || $slots.actions" class="sheet-bar__right">
-        <span v-if="$slots.meta" class="sheet-meta"><slot name="meta" /></span>
-        <div v-if="$slots.actions" class="sheet-actions">
+      <div v-if="$slots.meta || $slots.actions" class="flex min-w-0 flex-wrap items-center gap-2">
+        <span v-if="$slots.meta" class="sheet-meta text-mist max-w-full truncate font-mono text-aux tabular-nums"><slot name="meta" /></span>
+        <div v-if="$slots.actions" class="sheet-actions flex flex-wrap items-center gap-1">
           <slot name="actions" />
         </div>
       </div>
     </header>
-    <div class="sheet-slot" :class="{ 'sheet-body': padded }">
+    <div
+      class="sheet-slot min-w-0"
+      :class="{
+        'sheet-body p-[var(--pad-sheet-y)_var(--pad-sheet-x)]': padded,
+        'flex min-h-0 flex-1 flex-col overflow-hidden': fill,
+      }"
+    >
       <slot />
     </div>
   </section>
 </template>
-
-<style scoped>
-.sheet-bar__right {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-  min-width: 0;
-}
-
-.sheet-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1);
-}
-
-.sheet-slot {
-  min-width: 0;
-}
-</style>

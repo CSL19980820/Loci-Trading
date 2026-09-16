@@ -30,24 +30,6 @@ const headline = computed(() => {
     data-testid="assistant-activity-strip"
     aria-label="子进程活动"
   >
-    <svg
-      v-if="liveCount > 0"
-      class="assistant-activity__flow"
-      viewBox="0 0 100 40"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <rect
-        class="assistant-activity__chase"
-        x="1"
-        y="1"
-        width="98"
-        height="38"
-        rx="7"
-        ry="7"
-        pathLength="100"
-      />
-    </svg>
     <header class="assistant-activity__head">
       <div class="assistant-activity__lead">
         <span class="assistant-activity__mark" aria-hidden="true" />
@@ -68,94 +50,13 @@ const headline = computed(() => {
 </template>
 
 <style scoped>
-.assistant-activity {
-  position: relative;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  margin: 0;
-  padding: .4rem .55rem;
-  border: 1px solid color-mix(in srgb, var(--lake) 18%, var(--rule));
-  border-radius: var(--ai-r-card);
-  background: color-mix(in srgb, var(--lake-soft) 28%, var(--panel));
-  overflow: hidden;
-}
-.assistant-activity__flow {
-  display: none;
-}
-.assistant-activity.is-live .assistant-activity__flow {
-  display: block;
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-  overflow: visible;
-}
-.assistant-activity__chase {
-  fill: none;
-  stroke: var(--lake);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-dasharray: 10 90;
-  animation: activity-shell-chase 1.7s linear infinite;
-}
-.assistant-activity__head {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .75rem;
-  margin-bottom: .35rem;
-}
-.assistant-activity__lead {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: .4rem;
-  font-size: var(--ai-fs-body);
-}
-.assistant-activity__lead strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 650;
-}
-.assistant-activity__mark {
-  flex: 0 0 auto;
-  width: .4rem;
-  height: .4rem;
-  border-radius: var(--ai-r-pill);
-  background: var(--lake);
-}
-.assistant-activity__hint {
-  flex: 0 0 auto;
-  color: var(--mist);
-  font-family: var(--mono);
-  font-size: var(--ai-fs-meta);
-  letter-spacing: .03em;
-  white-space: nowrap;
-}
-.assistant-activity__lane {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: .3rem;
-  width: 100%;
-  min-width: 0;
-}
-@keyframes activity-shell-chase {
-  to { stroke-dashoffset: -100; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .assistant-activity__chase { animation: none; opacity: 0; }
-  .assistant-activity.is-live {
-    border-color: color-mix(in srgb, var(--lake) 40%, var(--rule));
-    box-shadow: inset 2px 0 0 0 var(--lake);
-  }
-}
+.assistant-activity { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; margin: 0; padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface-sunken); overflow: hidden; }
+.assistant-activity.is-live { border-color: var(--seal-border); }
+.assistant-activity__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap-2); margin-bottom: var(--gap-2); }
+.assistant-activity__lead { display: flex; min-width: 0; align-items: center; gap: var(--gap-2); font-size: var(--ai-fs-body); }
+.assistant-activity__lead strong { font-weight: 600; }
+.assistant-activity__mark { flex: 0 0 auto; width: var(--gap-1); height: var(--gap-1); border-radius: var(--ai-r-pill); background: var(--mist); }
+.assistant-activity.is-live .assistant-activity__mark { background: var(--seal); }
+.assistant-activity__hint { color: var(--mist); font-size: var(--ai-fs-meta); }
+.assistant-activity__lane { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--gap-2); width: 100%; min-width: 0; }
 </style>

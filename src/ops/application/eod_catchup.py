@@ -143,6 +143,9 @@ def jobs_due_for_eod_catchup(
     for job in jobs:
         if not job.get("enabled", True):
             continue
+        config = job.get("config")
+        if isinstance(config, dict) and config.get("catch_up") is False:
+            continue
         kind = str(job.get("kind") or "")
         if kind not in _CATCHUP_KINDS:
             continue
@@ -203,12 +206,20 @@ def run_eod_catchup(
                         "盘后补跑跳过（当日已成功）：%s @%s", name, last_trading_day
                     )
                     continue
-                run_job(
+                catchup_job = dict(job)
+                if job.get("kind") == "screen":
+                    catchup_job["config"] = {**(job.get("config") or {}), "date": last_trading_day}
+                outcome = run_job(
                     store,
-                    str(job["id"]),
+                    catchup_job,
                     context=context_factory(),
                     trigger="catchup",
                 )
+                if outcome.get("status") == "skipped":
+                    skipped.append(name)
+                    continue
+                if outcome.get("status") != "success":
+                    raise RuntimeError(str(outcome.get("error") or "补跑任务未成功"))
                 ran.append(name)
                 logger.info("盘后补跑完成：%s @%s", name, last_trading_day)
             except Exception as exc:  # noqa: BLE001 — 单任务失败不挡其余

@@ -98,6 +98,7 @@ async function submit(): Promise<void> {
   <el-dialog
     v-model="open"
     title="悟道 A 股 · 内置 MCP"
+    class="ops-dialog"
     :width="dialogWidth()"
     destroy-on-close
   >
@@ -137,7 +138,7 @@ async function submit(): Promise<void> {
         <el-input v-model.trim="form.note" />
       </el-form-item>
       <el-form-item>
-        <el-switch v-model="form.is_active" active-text="启用" inactive-text="停用" />
+        <el-switch v-model="form.is_active" active-text="启用" inactive-text="停用" aria-label="启用悟道 MCP" />
       </el-form-item>
       <el-form-item>
         <el-switch
@@ -183,13 +184,17 @@ async function submit(): Promise<void> {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin: 0.5rem 0 0.25rem;
+  gap: var(--gap-2) var(--gap-3);
+  margin: var(--gap-3) 0;
+  padding: var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
 }
 
 .section {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--fs-body);
 }
 
 /* 表单是 label-position="top"，这一项要横过来，才能与标题真的同一行 */
@@ -200,18 +205,13 @@ async function submit(): Promise<void> {
   margin: 0 0 0 auto;
 }
 
-.quota-head__item :deep(.el-form-item__label) {
-  padding: 0;
-  line-height: 1.2;
-}
 
-.quota-head__item :deep(.el-form-item__content) {
-  margin: 0;
-}
 
+/* 三个数字项走全局 .form-grid（auto-fit minmax 自适应列数），不再手写 1fr 1fr */
 .quota-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 0 var(--gap-3);
 }
 </style>
+<style scoped src="./OpsDialogSurface.css"></style>

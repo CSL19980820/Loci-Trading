@@ -204,8 +204,8 @@ async function handleApplyBatch(): Promise<void> {
 </script>
 
 <template>
-  <div class="admin-pane">
-    <Sheet class="quota-batch" title="批量调整配额" :chip="`已选 ${selectedCount} 人`" padded>
+  <div class="quota-pane flex h-full min-h-0 flex-1 flex-col">
+    <Sheet class="quota-batch m-2 shrink-0" title="批量调整配额" :chip="`已选 ${selectedCount} 人`" padded>
       <template #actions>
         <el-button
           type="primary"
@@ -232,6 +232,7 @@ async function handleApplyBatch(): Promise<void> {
       :request="loadUsers"
       :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
       :toolbar-config="{ refresh: true }"
+      height="100%"
       row-key="id"
       stripe
       empty-text="没有匹配的账号"
@@ -241,8 +242,9 @@ async function handleApplyBatch(): Promise<void> {
       <template #toolbarButtons>
         <el-input
           v-model="keyword"
-          class="quota-search"
+          class="w-48"
           placeholder="登录账号 / 用户名称"
+          aria-label="筛选配额用户"
           size="small"
           clearable
           @keyup.enter="reload"
@@ -259,16 +261,7 @@ async function handleApplyBatch(): Promise<void> {
 </template>
 
 <style scoped>
-/*
- * 批量表单固定在上，表格吃满剩余高度并在内部滚。
- * 外边距给 --gap-2：Sheet 与表格工具栏各带一条 hairline，贴在一起会叠成一道脏边。
- */
-.quota-batch {
-  flex-shrink: 0;
-  margin: var(--gap-2);
-}
-
-.quota-search {
-  width: 12rem;
-}
+.quota-pane { min-width: 0; overflow: hidden; }
+.quota-batch { max-height: 48%; overflow-y: auto; overscroll-behavior: contain; }
+.quota-pane :deep(.el-input-number) { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 </style>

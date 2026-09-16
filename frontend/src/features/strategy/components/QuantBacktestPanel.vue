@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, toRef } from 'vue'
+import { InfoFilled, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
@@ -7,9 +8,7 @@ import { copyText } from '@/shared/lib/clipboard'
 import { strategyLabel } from '@/shared/lib/format'
 import type { StrategyInfo } from '@/shared/types/quant'
 
-import {
-  buildHorizonSummaryText,
-} from '../composables/quantBacktestSummary'
+import { buildHorizonSummaryText } from '../composables/quantBacktestSummary'
 import { useQuantBacktestPanel } from '../composables/useQuantBacktestPanel'
 import QuantBacktestCompareStrip from './QuantBacktestCompareStrip.vue'
 import QuantBacktestHorizonCard from './QuantBacktestHorizonCard.vue'
@@ -25,10 +24,7 @@ const props = defineProps<{
 
 const strategiesRef = computed(() => props.strategies)
 
-/**
- * 下拉与锁定框的文案一律中文：后端 name 缺失、或它本身就是 slug 形状
- * （`sanyuan-tail-v1`）时退回共享词表。value 仍是 slug，接口契约不变。
- */
+/** 后端名称缺失或仍是 slug 时只转换展示文案，不改变请求中的标识。 */
 function cnName(name: string | null | undefined, slug: string): string {
   const text = String(name || '').trim()
   if (text && !/^[a-z0-9][a-z0-9._-]*$/.test(text)) return text
@@ -38,46 +34,17 @@ function cnName(name: string | null | undefined, slug: string): string {
 const strategyOptions = computed(() =>
   props.strategies.map((s) => ({ slug: s.slug, label: cnName(s.name, s.slug) })),
 )
-
 const lockedLabel = computed(() => cnName(props.lockedName, String(props.lockedSlug || '')))
 const lockedSlugRef = toRef(props, 'lockedSlug')
 
 const {
-  strategySlug,
-  range,
-  mode,
-  busy,
-  elapsedSec,
-  expectedHint,
-  horizonResult,
-  tradeResult,
-  errorText,
-  activePreset,
-  showCost,
-  holdDays,
-  stopLossEnabled,
-  stopLossPct,
-  commissionBps,
-  stampDutyBps,
-  slippageBps,
-  entryLabel,
-  entryDetail,
-  subtitle,
-  rangeShortcuts,
-  tripCostPct,
-  resultMeta,
-  rangeLabel,
-  activeHasResult,
-  applyPreset,
-  onRangeChange,
-  disabledDate,
-  run,
-  stop,
-  skippedText,
-} = useQuantBacktestPanel({
-  strategies: strategiesRef,
-  lockedSlug: lockedSlugRef,
-})
+  strategySlug, range, mode, busy, elapsedSec, expectedHint,
+  horizonResult, tradeResult, errorText, activePreset, showCost,
+  holdDays, stopLossEnabled, stopLossPct, commissionBps, stampDutyBps, slippageBps,
+  entryLabel, entryDetail, subtitle, rangeShortcuts, tripCostPct,
+  resultMeta, rangeLabel, activeHasResult,
+  applyPreset, onRangeChange, disabledDate, run, stop, skippedText,
+} = useQuantBacktestPanel({ strategies: strategiesRef, lockedSlug: lockedSlugRef })
 
 async function copyHorizonSummary(): Promise<void> {
   if (!horizonResult.value) return
@@ -88,109 +55,57 @@ async function copyHorizonSummary(): Promise<void> {
     t1: horizonResult.value.horizons.t1 ?? null,
     t3: horizonResult.value.horizons.t3 ?? null,
   })
-  if (await copyText(text)) ElMessage.success('已复制 Horizon 摘要')
+  if (await copyText(text)) ElMessage.success('已复制回测摘要')
   else ElMessage.error('复制失败，请手动选中摘要文本复制')
 }
 </script>
 
 <template>
-  <div
-    class="bt"
-    v-loading="busy"
-    :element-loading-text="`正在回测全市场信号 · 已跑 ${elapsedSec}s · ${expectedHint}`"
-  >
-    <!--
-      不留「战法回测」标题：这块只出现在工坊的「回测」Tab 与策稿台底坞的「回测」页里，
-      两处高亮的分区名已经说完了。原来标题下面那行口径副标题（subtitle）也不留在版面上，
-      挂到「口径」切换器的 tooltip 上 —— 它本来就是解释这个切换器的。
-    -->
+  <section class="bt" :aria-busy="busy" aria-label="战法回测">
     <header class="bt-rail">
-      <el-form class="bt-rail__form" inline label-position="left" label-width="6.5em" @submit.prevent="run">
-        <el-form-item label="口径">
+      <el-form class="bt-rail__form" label-position="top" @submit.prevent="run">
+        <el-form-item label="回测口径" class="bt-field bt-field--mode">
           <el-tooltip placement="bottom-start" :content="subtitle">
-            <el-radio-group v-model="mode" :disabled="busy" size="default">
-              <el-radio-button value="horizon">Horizon T+N</el-radio-button>
+            <el-radio-group v-model="mode" :disabled="busy" aria-label="回测口径">
+              <el-radio-button value="horizon">信号 T+N</el-radio-button>
               <el-radio-button value="trade">成交回测</el-radio-button>
             </el-radio-group>
           </el-tooltip>
         </el-form-item>
-        <el-form-item label="战法">
-          <el-input
-            v-if="lockedSlug"
-            :model-value="lockedLabel"
-            readonly
-            style="width: 180px"
-          />
+        <el-form-item label="战法" class="bt-field bt-field--strategy">
+          <el-input v-if="lockedSlug" :model-value="lockedLabel" readonly />
           <el-select
-            v-else
-            v-model="strategySlug"
-            filterable
-            placeholder="选择战法"
-            style="width: 180px"
+            v-else v-model="strategySlug" filterable placeholder="选择战法"
             :disabled="loading || !strategies.length || busy"
           >
-            <el-option
-              v-for="s in strategyOptions"
-              :key="s.slug"
-              :label="s.label"
-              :value="s.slug"
-            />
+            <el-option v-for="s in strategyOptions" :key="s.slug" :label="s.label" :value="s.slug" />
           </el-select>
         </el-form-item>
-        <el-form-item label="区间">
+        <el-form-item label="回测区间" class="bt-field bt-field--range">
           <el-date-picker
-            v-model="range"
-            type="daterange"
-            value-format="YYYY-MM-DD"
-            start-placeholder="开始"
-            end-placeholder="结束"
-            :disabled-date="disabledDate"
-            :shortcuts="rangeShortcuts"
-            :disabled="busy"
-            style="width: 250px"
+            v-model="range" type="daterange" value-format="YYYY-MM-DD"
+            start-placeholder="开始日期" end-placeholder="结束日期"
+            :disabled-date="disabledDate" :shortcuts="rangeShortcuts" :disabled="busy"
             @change="onRangeChange"
           />
         </el-form-item>
-        <el-form-item>
-          <el-button-group class="bt-presets">
-            <el-button
-              :type="activePreset === 30 ? 'primary' : 'default'"
-              :disabled="busy"
-              @click="applyPreset(30)"
-            >
-              近一月
-            </el-button>
-            <el-button
-              :type="activePreset === 90 ? 'primary' : 'default'"
-              :disabled="busy"
-              @click="applyPreset(90)"
-            >
-              近三月
-            </el-button>
-            <el-button
-              :type="activePreset === 180 ? 'primary' : 'default'"
-              :disabled="busy"
-              @click="applyPreset(180)"
-            >
-              近六月
-            </el-button>
+        <div class="bt-presets" role="group" aria-label="快捷区间">
+          <el-button-group>
+            <el-button :type="activePreset === 30 ? 'primary' : 'default'" :disabled="busy" @click="applyPreset(30)">近一月</el-button>
+            <el-button :type="activePreset === 90 ? 'primary' : 'default'" :disabled="busy" @click="applyPreset(90)">近三月</el-button>
+            <el-button :type="activePreset === 180 ? 'primary' : 'default'" :disabled="busy" @click="applyPreset(180)">近六月</el-button>
           </el-button-group>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" :loading="busy" :disabled="!strategies.length" @click="run">
-            跑回测
-          </el-button>
-          <el-button v-if="busy" type="warning" plain @click="stop">停止回测</el-button>
-        </el-form-item>
-        <el-form-item>
-          <span class="bt-eta">
-            {{ busy ? `已跑 ${elapsedSec}s · ${expectedHint}` : `预计：${expectedHint}` }}
-          </span>
-        </el-form-item>
+        </div>
+        <div class="bt-actions">
+          <el-button type="primary" native-type="submit" :loading="busy" :disabled="!strategies.length">跑回测</el-button>
+          <el-tooltip v-if="busy" content="中止本页等待；已提交的服务端计算可能继续执行">
+            <el-button plain @click="stop">停止等待</el-button>
+          </el-tooltip>
+        </div>
       </el-form>
 
       <div v-if="mode === 'trade'" class="bt-trade-cfg">
-        <el-form inline label-position="left" label-width="6.5em">
+        <el-form inline label-position="left" label-width="5em" class="bt-config-form">
           <el-form-item label="持有日">
             <el-input-number v-model="holdDays" :min="1" :max="60" :disabled="busy" controls-position="right" />
           </el-form-item>
@@ -198,204 +113,66 @@ async function copyHorizonSummary(): Promise<void> {
             <el-switch v-model="stopLossEnabled" :disabled="busy" inline-prompt active-text="开" inactive-text="关" />
           </el-form-item>
           <el-form-item v-if="stopLossEnabled" label="止损%">
-            <el-input-number
-              v-model="stopLossPct"
-              :min="-50"
-              :max="0"
-              :step="0.5"
-              :disabled="busy"
-              controls-position="right"
-            />
+            <el-input-number v-model="stopLossPct" :min="-50" :max="0" :step="0.5" :disabled="busy" controls-position="right" />
           </el-form-item>
-          <el-form-item>
-            <el-button link type="primary" @click="showCost = !showCost">
-              {{ showCost ? '收起成本' : '成本参数' }}
-            </el-button>
-            <span class="bt-trip">一趟约 {{ tripCostPct.toFixed(2) }}%</span>
+          <el-form-item class="bt-cost-toggle">
+            <el-button link type="primary" :aria-expanded="showCost" @click="showCost = !showCost">{{ showCost ? '收起成本' : '成本参数' }}</el-button>
+            <span class="bt-trip">往返约 {{ tripCostPct.toFixed(2) }}%</span>
           </el-form-item>
         </el-form>
-        <el-form v-if="showCost" inline label-position="left" label-width="6.5em" class="bt-cost">
-          <el-form-item label="佣金bps">
+        <el-form v-if="showCost" inline label-position="left" label-width="6.5em" class="bt-config-form bt-cost">
+          <el-form-item label="佣金 bps">
             <el-input-number v-model="commissionBps" :min="0" :max="50" :step="0.5" :disabled="busy" controls-position="right" />
           </el-form-item>
-          <el-form-item label="印花税bps">
+          <el-form-item label="印花税 bps">
             <el-input-number v-model="stampDutyBps" :min="0" :max="50" :step="0.5" :disabled="busy" controls-position="right" />
           </el-form-item>
-          <el-form-item label="滑点bps">
+          <el-form-item label="滑点 bps">
             <el-input-number v-model="slippageBps" :min="0" :max="50" :step="0.5" :disabled="busy" controls-position="right" />
           </el-form-item>
         </el-form>
       </div>
 
-      <p class="bt-rail__meta">
-        入场 <strong>{{ entryLabel }}</strong>
-        <span class="dot">·</span>
-        {{ entryDetail }}
-        <span class="dot">·</span>
-        切换口径会保留上次结果 · 设置记在本会话
-      </p>
+      <div class="bt-context">
+        <el-tooltip :content="entryDetail" placement="bottom-start">
+          <span class="bt-entry" tabindex="0">入场 <strong>{{ entryLabel }}</strong><el-icon><InfoFilled /></el-icon></span>
+        </el-tooltip>
+        <el-tooltip :content="expectedHint" placement="bottom">
+          <span class="bt-eta" tabindex="0">全市场逐日回放</span>
+        </el-tooltip>
+        <span class="bt-context__hint">切换口径保留结果</span>
+      </div>
     </header>
 
-    <el-alert
-      v-if="errorText"
-      :title="errorText"
-      type="error"
-      show-icon
-      closable
-      class="bt-alert"
-      @close="errorText = ''"
-    />
+    <!-- 进度不能遮住操作区；stop 只取消客户端等待，不宣称已终止服务端任务。 -->
+    <div v-if="busy" class="bt-progress" role="status" aria-live="polite">
+      <el-icon class="is-loading"><Loading /></el-icon>
+      <span>正在回测<span class="bt-progress__time">已等待 {{ elapsedSec }}s</span></span>
+      <span class="bt-progress__hint">{{ expectedHint }}</span>
+    </div>
+    <el-alert v-if="errorText" :title="errorText" type="error" show-icon closable class="bt-alert" @close="errorText = ''" />
 
-    <EmptyState
-      v-if="!activeHasResult && !busy"
-      description="还没有回测结果"
-      reason="选好口径与战法后点「跑回测」"
-    />
+    <EmptyState v-if="!activeHasResult && !busy" description="还没有回测结果" reason="选好战法后点「跑回测」" />
 
-    <div v-if="mode === 'horizon' && horizonResult" class="bt-result" :key="`${resultMeta}-hz`">
+    <div v-if="mode === 'horizon' && horizonResult" :key="`${resultMeta}-hz`" class="bt-result">
       <div class="bt-result__bar">
-        <p class="bt-result__meta">{{ resultMeta }} · horizon</p>
-        <el-button size="small" @click="copyHorizonSummary">复制摘要</el-button>
+        <p class="bt-result__meta">{{ resultMeta }} · 信号回测</p>
+        <el-button @click="copyHorizonSummary">复制摘要</el-button>
       </div>
-      <QuantBacktestCompareStrip
-        :t1="horizonResult.horizons.t1"
-        :t3="horizonResult.horizons.t3"
-      />
+      <QuantBacktestCompareStrip :t1="horizonResult.horizons.t1" :t3="horizonResult.horizons.t3" />
       <div class="bt-horizons">
         <QuantBacktestHorizonCard title="T+1" :stats="horizonResult.horizons.t1 ?? null" />
         <QuantBacktestHorizonCard title="T+3" :stats="horizonResult.horizons.t3 ?? null" />
       </div>
-      <p class="bt-footnote">
-        高点口径是乐观上沿；收盘口径更接近可兑现。要看止损/成本/资金曲线请切「成交回测」（结果会保留）。
-      </p>
-      <p v-if="skippedText(horizonResult.skipped)" class="bt-skip">
-        跳过：{{ skippedText(horizonResult.skipped) }}
-      </p>
+      <p class="bt-footnote">高点口径是乐观上沿；收盘口径更接近可兑现。止损、成本与资金曲线见「成交回测」。</p>
+      <p v-if="skippedText(horizonResult.skipped)" class="bt-skip">跳过：{{ skippedText(horizonResult.skipped) }}</p>
     </div>
-
-    <div v-if="mode === 'trade' && tradeResult" class="bt-result" :key="`${resultMeta}-tr`">
-      <p class="bt-result__meta">{{ resultMeta }} · trade</p>
-      <QuantBacktestTradeResult
-        :result="tradeResult"
-        :strategy-label="strategySlug"
-        :range-label="rangeLabel"
-      />
-      <p v-if="skippedText(tradeResult.skipped)" class="bt-skip">
-        跳过：{{ skippedText(tradeResult.skipped) }}
-      </p>
+    <div v-if="mode === 'trade' && tradeResult" :key="`${resultMeta}-tr`" class="bt-result">
+      <p class="bt-result__meta">{{ resultMeta }} · 成交回测</p>
+      <QuantBacktestTradeResult :result="tradeResult" :strategy-label="strategySlug" :range-label="rangeLabel" />
+      <p v-if="skippedText(tradeResult.skipped)" class="bt-skip">跳过：{{ skippedText(tradeResult.skipped) }}</p>
     </div>
-  </div>
+  </section>
 </template>
 
-<style scoped>
-.bt {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-  min-height: 0;
-  padding: 0 var(--gap-1) var(--gap-2);
-  position: relative;
-}
-.bt-rail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-  padding: var(--gap-2) var(--gap-3);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--sheet) 92%, var(--paper)) 0%, var(--sheet) 100%);
-}
-
-.bt-rail__form {
-  margin: 0;
-}
-.bt-rail__form :deep(.el-form-item),
-.bt-trade-cfg :deep(.el-form-item),
-.bt-cost :deep(.el-form-item) {
-  margin-bottom: var(--gap-1);
-}
-.bt-trade-cfg {
-  padding-top: var(--gap-1);
-  border-top: 1px dashed var(--rule);
-}
-.bt-eta {
-  font-size: var(--fs-aux);
-  color: var(--mist);
-}
-
-.bt-trip {
-  margin-left: var(--gap-2);
-  font: var(--fs-aux)/1.4 var(--mono);
-  color: var(--mist);
-}
-.bt-rail__meta {
-  margin: 0;
-  font-size: var(--fs-aux);
-  color: var(--mist);
-  line-height: 1.45;
-}
-.bt-rail__meta strong {
-  color: var(--ink);
-  font-weight: 600;
-}
-.bt-rail__meta .dot {
-  margin: 0 var(--gap-1);
-  opacity: 0.5;
-}
-.bt-alert {
-  margin: 0;
-}
-.bt-result {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-  min-height: 0;
-  animation: bt-in 0.28s ease both;
-}
-.bt-result__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-1);
-}
-.bt-result__meta {
-  margin: 0;
-  font: var(--fs-aux)/1.4 var(--mono);
-  color: var(--mist);
-}
-.bt-horizons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap-2);
-  min-height: 0;
-}
-.bt-footnote,
-.bt-skip {
-  margin: 0;
-  font-size: var(--fs-aux);
-  color: var(--mist);
-  line-height: 1.45;
-}
-@keyframes bt-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .bt-result {
-    animation: none;
-  }
-}
-@media (max-width: 960px) {
-  .bt-horizons {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
+<style scoped src="./QuantBacktestPanel.css"></style>

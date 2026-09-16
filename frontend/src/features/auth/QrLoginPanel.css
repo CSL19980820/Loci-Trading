@@ -1,0 +1,53 @@
+.qr-panel {
+  /* 二维码保留固定扫描面积，不跟随工作台控件密度缩小。 */
+  --qr-size: 210px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-3);
+  width: 100%;
+  min-width: 0;
+}
+.qr-title { margin: 0; color: var(--ink); font-size: var(--fs-hero); font-weight: 700; }
+.qr-box-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(100%, var(--qr-size));
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+.qr-loading { display: flex; flex-direction: column; align-items: center; gap: var(--gap-3); color: var(--muted); }
+.qr-tip { font-size: var(--fs-aux); }
+.qr-box { position: relative; display: grid; place-items: center; width: 100%; height: 100%; }
+.qr-svg-wrap, .qr-img { width: calc(100% - var(--gap-4) * 2); height: calc(100% - var(--gap-4) * 2); object-fit: contain; }
+.qr-svg-wrap :deep(svg) { width: 100%; height: 100%; }
+.qr-fallback { padding: var(--gap-3); overflow-wrap: anywhere; text-align: center; font-size: var(--fs-aux); color: var(--muted); }
+.qr-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-2);
+  padding: var(--gap-3);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: center;
+  overflow-y: auto;
+}
+.mask-icon-circle { display: grid; place-items: center; width: var(--ctl-h); height: var(--ctl-h); color: var(--seal-ink); }
+.mask-expired > .el-icon, .mask-failed > .el-icon { color: var(--warn-ink); }
+.mask-text { margin: 0; font-size: var(--fs-body); font-weight: 600; overflow-wrap: anywhere; }
+.mask-sub { margin: 0; color: var(--muted); font-size: var(--fs-aux); }
+.mock-actions { width: 100%; }
+.mock-btn-group { display: flex; flex-wrap: wrap; gap: var(--gap-2); justify-content: center; }
+.mock-btn-group > .el-button { margin-left: 0; }
+.qr-footer { display: flex; flex-direction: column; align-items: center; gap: var(--gap-2); }
+.qr-expire-text { color: var(--muted); font: var(--fs-aux) / 1.5 var(--mono); font-variant-numeric: tabular-nums; }
+.qr-back-btn { color: var(--muted); font-size: var(--fs-body); }

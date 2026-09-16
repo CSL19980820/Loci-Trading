@@ -43,7 +43,9 @@ describe('useBoardInk · 大屏不擅自改用户外观', () => {
     expect(root.getAttribute('data-appearance')).toBe('paper')
   })
 
-  it('显式打开才钉墨黑；离开时交还给主题 store', async () => {
+  it.each(['day', 'paper', 'night'])('显式打开才钉墨黑；离开时交还给主题 store（%s）', async (appearance) => {
+    // 明确测试用户的选择，不假定产品默认主题永远是日间。
+    useThemeStore().setAppearance(appearance)
     const wrapper = mount(Probe)
     await nextTick()
 
@@ -55,9 +57,9 @@ describe('useBoardInk · 大屏不擅自改用户外观', () => {
 
     wrapper.unmount()
     await nextTick()
-    // store 里仍是 day（默认），所以交还后是 day 而不是「进来之前的 DOM 快照」
+    expect(root.getAttribute('data-appearance')).toBe(appearance)
     expect(root.getAttribute('data-appearance')).toBe(useThemeStore().appearanceId)
-    expect(root.classList.contains('dark')).toBe(false)
+    expect(root.classList.contains('dark')).toBe(appearance === 'night')
   })
 
   it('偏好记在 localStorage：下次进大屏直接是墨黑', async () => {

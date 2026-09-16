@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { InfoFilled, RefreshRight } from '@element-plus/icons-vue'
 
 import {
   CapabilityUnavailableError,
@@ -203,7 +204,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="page-fill">
+  <div class="page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
   <!-- 顶栏只剩「读数 + 操作」：页面标题由侧栏高亮的菜单项交代，口径全文沉进 ⓘ -->
   <PageToolbar :note="CALIBER_HINT">
     <template #stats>
@@ -214,7 +215,7 @@ onUnmounted(() => {
       <HeaderStat label="T+5 均收益" :tone="overallAvgTone">{{ signedPct(overallAvgReturn) }}</HeaderStat>
     </template>
     <template #actions>
-      <el-button size="small" :disabled="busy" @click="reload">刷新</el-button>
+      <el-button size="small" :icon="RefreshRight" :loading="busy" @click="reload">刷新</el-button>
     </template>
   </PageToolbar>
 
@@ -228,7 +229,7 @@ onUnmounted(() => {
       <el-select
         v-model="granularity"
         size="small"
-        class="granularity-select"
+        class="w-26 shrink-0"
         aria-label="分周期粒度"
         @change="refreshTrend"
       >
@@ -238,85 +239,48 @@ onUnmounted(() => {
     </template>
   </PageTabs>
 
-  <div class="page-scroll">
-  <el-alert v-if="error" :title="error" type="error" show-icon closable class="mb" @close="error = ''" />
+  <div class="winrate-content">
+    <el-alert v-if="error" :title="error" type="error" show-icon closable class="shrink-0" @close="error = ''" />
 
-  <template v-if="isOverview">
-    <Sheet title="战法横向对比" margin>
-      <template #actions>
-        <span class="wr-hint dim">
-          <span class="wr-hint-dot" />
-          点任意一行看它的样本证据
-        </span>
-      </template>
-      <WinRateCompareTable
-        :rows="summary"
-        :busy="busy"
-        @select="openStrategy"
-      />
-    </Sheet>
-    <Sheet :title="periodTitle">
-      <WinRatePeriodTable
-        :points="chartData"
-        :granularity="granularity"
-        :tags="allTags"
-        mode="matrix"
-      />
-    </Sheet>
-  </template>
+    <template v-if="isOverview">
+      <Sheet fill title="战法横向对比" class="winrate-primary">
+        <template #actions>
+          <el-tooltip content="点击战法行查看样本证据" placement="top">
+            <el-icon tabindex="0" aria-label="点击战法行查看样本证据" class="text-mist"><InfoFilled /></el-icon>
+          </el-tooltip>
+        </template>
+        <WinRateCompareTable :rows="summary" :busy="busy" @select="openStrategy" />
+      </Sheet>
+      <Sheet fill :title="periodTitle" class="winrate-period">
+        <WinRatePeriodTable :points="chartData" :granularity="granularity" :tags="allTags" mode="matrix" />
+      </Sheet>
+    </template>
 
-  <template v-else>
-    <Sheet :title="`${strategyShortLabel(view)} · 胜率与证据`" margin>
-      <WinRateStrategyPanel
-        :tag="view"
-        :summary="activeSummary"
-        :detail="detail"
-        :busy="detailBusy"
-        :selected-period="selectedPeriod"
-        @clear-period="selectedPeriod = null"
-      />
-    </Sheet>
-    <Sheet :title="periodTitle">
-      <WinRatePeriodTable
-        :points="chartData"
-        :granularity="granularity"
-        :tags="[view]"
-        :selected-period="selectedPeriod"
-        mode="single"
-        @select-period="(p) => selectedPeriod = (selectedPeriod === p ? null : p)"
-      />
-    </Sheet>
-  </template>
+    <template v-else>
+      <Sheet fill :title="`${strategyShortLabel(view)} · 胜率与证据`" class="winrate-primary">
+        <WinRateStrategyPanel
+          :tag="view"
+          :summary="activeSummary"
+          :detail="detail"
+          :busy="detailBusy"
+          :selected-period="selectedPeriod"
+          @clear-period="selectedPeriod = null"
+        />
+      </Sheet>
+      <Sheet fill :title="periodTitle" class="winrate-period">
+        <WinRatePeriodTable
+          :points="chartData"
+          :granularity="granularity"
+          :tags="[view]"
+          :selected-period="selectedPeriod"
+          mode="single"
+          @select-period="(p) => selectedPeriod = (selectedPeriod === p ? null : p)"
+        />
+      </Sheet>
+    </template>
   </div>
   </div>
 </template>
 
-<style scoped>
-.granularity-select {
-  width: 6.5rem;
-  flex-shrink: 0;
-}
 
-.mb {
-  margin-bottom: var(--gap-2);
-}
-
-.wr-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--fs-micro);
-  padding: 2px 8px;
-  border-radius: var(--radius);
-  background: var(--surface-sunken);
-  color: var(--text-tertiary);
-}
-
-.wr-hint-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--seal);
-  opacity: 0.7;
-}
-</style>
+<style scoped src="./WinRateView.css" />

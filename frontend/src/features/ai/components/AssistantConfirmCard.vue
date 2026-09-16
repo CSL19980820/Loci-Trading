@@ -120,12 +120,12 @@ onUnmounted(() => {
   >
     <header class="assistant-ask__head">
       <el-tooltip :content="interactionHint" placement="top">
-        <span class="assistant-ask__mark" role="img" :aria-label="interactionHint">?</span>
+        <span class="assistant-ask__mark" role="img" tabindex="0" :aria-label="interactionHint">?</span>
       </el-tooltip>
       <p class="assistant-ask__prompt">
         {{ ask?.prompt || (multi ? '请回答下列问题' : '等待你的确认') }}
       </p>
-      <el-tag v-if="ask?.risk" size="small" type="danger" effect="plain" class="assistant-ask__risk">
+      <el-tag v-if="ask?.risk" size="small" type="warning" effect="plain" class="assistant-ask__risk">
         {{ ask.risk }}
       </el-tag>
     </header>
@@ -149,6 +149,7 @@ onUnmounted(() => {
             class="assistant-ask__chip"
             size="small"
             :type="answers[question.id] === option ? 'primary' : 'default'"
+            :aria-pressed="answers[question.id] === option"
             @click="setAnswer(question.id, option)"
           >
             <span class="assistant-ask__chip-idx" aria-hidden="true">{{ index + 1 }}</span>
@@ -158,6 +159,7 @@ onUnmounted(() => {
         <el-input
           v-if="question.allow_free_text || !question.options?.length"
           v-model="answers[question.id]"
+          :aria-label="question.prompt"
           class="assistant-ask__free"
           size="small"
           type="textarea"
@@ -192,141 +194,24 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 交易台「抉择票」：冷灰底 + 琥珀问号，避开 cream/serif 与酸绿黑底默认套路 */
-.assistant-ask {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: .7rem .85rem .75rem;
-  border-radius: var(--ai-r-card);
-  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--rule));
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--warn) 8%, transparent) 0%,
-      transparent 42%
-    ),
-    var(--sheet);
-}
-.assistant-ask__head {
-  display: flex;
-  align-items: flex-start;
-  gap: .65rem;
-  min-width: 0;
-}
-.assistant-ask__mark {
-  flex: 0 0 auto;
-  width: 1.55rem;
-  height: 1.55rem;
-  display: grid;
-  place-items: center;
-  border-radius: var(--ai-r-card);
-  font-family: var(--mono);
-  font-size: var(--ai-fs-title);
-  font-weight: 700;
-  color: var(--sheet);
-  background: var(--warn);
-  line-height: 1;
-}
-.assistant-ask__prompt {
-  flex: 1 1 auto;
-  min-width: 0;
-  margin: 0;
-  font-size: var(--ai-fs-body);
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--ink);
-  letter-spacing: .01em;
-}
-.assistant-ask__risk {
-  flex: 0 0 auto;
-  margin-top: .1rem;
-}
-.assistant-ask__questions {
-  display: flex;
-  flex-direction: column;
-  gap: .7rem;
-  margin-top: .7rem;
-}
-.assistant-ask__question {
-  padding: .55rem .6rem;
-  border-radius: var(--ai-r-card);
-  border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
-  background: color-mix(in srgb, var(--sheet) 55%, transparent);
-}
-.assistant-ask__question[data-focused='1'] {
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--rule));
-}
-.assistant-ask__q-prompt {
-  margin: 0 0 .45rem;
-  font-size: var(--ai-fs-body);
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--ink);
-}
-.assistant-ask__q-idx {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.1rem;
-  margin-right: .35rem;
-  padding: 0 .2rem;
-  border-radius: var(--ai-r-chip);
-  font-family: var(--mono);
-  font-size: var(--ai-fs-meta);
-  font-weight: 700;
-  color: var(--sheet);
-  background: var(--warn);
-}
-.assistant-ask__rail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .4rem;
-  margin-top: .65rem;
-}
-.assistant-ask__question .assistant-ask__rail {
-  margin-top: 0;
-}
-.assistant-ask__chip {
-  --el-button-bg-color: color-mix(in srgb, var(--sheet) 70%, transparent);
-  --el-button-border-color: color-mix(in srgb, var(--warn) 40%, var(--rule));
-  --el-button-text-color: var(--ink);
-  --el-button-hover-bg-color: color-mix(in srgb, var(--warn) 18%, var(--sheet));
-  --el-button-hover-border-color: var(--warn);
-  --el-button-hover-text-color: var(--ink);
-  font-weight: 500;
-}
-.assistant-ask__chip-idx {
-  display: inline-grid;
-  place-items: center;
-  min-width: .95rem;
-  margin-right: .35rem;
-  padding: 0 .15rem;
-  border-radius: var(--ai-r-chip);
-  font-family: var(--mono);
-  font-size: var(--ai-fs-meta);
-  font-weight: 700;
-  color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 16%, transparent);
-}
-.assistant-ask__free {
-  margin-top: .45rem;
-}
-.assistant-ask__error {
-  margin: 0;
-  color: var(--loss);
-  font-size: var(--ai-fs-aux);
-}
-.assistant-ask__actions {
-  display: flex;
-  justify-content: flex-end;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .assistant-ask {
-    animation: assistant-ask-in .28s ease-out;
-  }
-}
-@keyframes assistant-ask-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+.assistant-ask { width: 100%; min-width: 0; box-sizing: border-box; padding: var(--gap-3); border-radius: var(--ai-r-card); border: 1px solid color-mix(in oklab, var(--warn) 40%, var(--rule)); background: var(--surface); }
+.assistant-ask__head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--gap-2); min-width: 0; }
+.assistant-ask__mark { flex: 0 0 auto; display: grid; place-items: center; width: var(--row-h-sm); height: var(--row-h-sm); border-radius: var(--ai-r-chip); font: 650 var(--ai-fs-body) var(--mono); color: var(--warn-ink); background: var(--warn-soft); }
+.assistant-ask__mark:focus-visible, .assistant-ask :deep(button:focus-visible) { outline: 2px solid var(--seal); outline-offset: -2px; }
+.assistant-ask__prompt { flex: 1; min-width: 0; margin: 0; font-size: var(--ai-fs-prose); font-weight: 600; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+.assistant-ask__risk { flex: 0 0 auto; }
+.assistant-ask__questions { display: flex; flex-direction: column; gap: var(--gap-3); margin-top: var(--gap-3); }
+.assistant-ask__question { padding: var(--gap-2); border-radius: var(--ai-r-chip); border: 1px solid var(--rule); background: var(--surface-sunken); }
+.assistant-ask__question[data-focused='1'] { border-color: var(--seal-border); }
+.assistant-ask__q-prompt { margin: 0 0 var(--gap-2); font-size: var(--ai-fs-body); font-weight: 600; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
+.assistant-ask__q-idx { display: inline-grid; place-items: center; min-width: var(--gap-4); margin-right: var(--gap-1); font: var(--ai-fs-meta) var(--mono); color: var(--mist); }
+.assistant-ask__rail { display: flex; flex-wrap: wrap; gap: var(--gap-2); margin-top: var(--gap-3); }
+.assistant-ask__question .assistant-ask__rail { margin-top: 0; }
+.assistant-ask__chip { --el-button-bg-color: var(--surface); --el-button-border-color: var(--border-default); --el-button-text-color: var(--ink); --el-button-hover-bg-color: var(--seal-soft); --el-button-hover-border-color: var(--seal-border); --el-button-hover-text-color: var(--ink); height: auto; min-height: var(--ctl-h); margin: 0; padding: var(--gap-2); max-width: 100%; white-space: normal; text-align: left; }
+.assistant-ask__chip :deep(> span) { line-height: 1.5; overflow-wrap: anywhere; }
+.assistant-ask__chip.el-button--primary { --el-button-bg-color: var(--seal-soft); --el-button-border-color: var(--seal); --el-button-text-color: var(--seal-ink); }
+.assistant-ask__chip-idx { flex-shrink: 0; display: inline-grid; place-items: center; min-width: var(--gap-4); margin-right: var(--gap-2); font: var(--ai-fs-meta) var(--mono); color: var(--mist); }
+.assistant-ask__free { margin-top: var(--gap-2); }
+.assistant-ask__error { margin: 0; color: var(--warn-ink); font-size: var(--ai-fs-body); }
+.assistant-ask__actions { display: flex; justify-content: flex-end; }
 </style>

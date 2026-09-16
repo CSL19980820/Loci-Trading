@@ -140,8 +140,8 @@ def save_provider(
     model: str = "",
     proxy_url: str = "",
     note: str = "",
-    validate: bool = True,
-    discover_models: bool = True,
+    validate: bool = False,
+    discover_models: bool = False,
     is_default: bool = False,
 ) -> dict[str, Any]:
     """新增或更新一个供应商。
@@ -177,6 +177,8 @@ def save_provider(
     )
 
     validated_at = existing.get("validated_at", "") if existing else ""
+    if api_key or (existing and any(existing.get(k, "") != v for k, v in {"base_url": base_url, "protocol": protocol, "default_model": model, "proxy_url": proxy_url}.items())):
+        validated_at = ""  # 旧连接的验证时间不能用于描述新配置。
     catalog = _catalog_from_record(existing)
     models_synced_at = existing.get("models_synced_at", "") if existing else ""
 

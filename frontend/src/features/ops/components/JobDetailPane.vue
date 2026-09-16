@@ -64,7 +64,7 @@ defineExpose({ reloadRuns, focusLatestFailure })
     <header class="job-detail__head">
       <h3 class="job-detail__title">{{ title }}</h3>
       <el-tag size="small" effect="plain">{{ kindLabel(job.kind) }}</el-tag>
-      <el-tag size="small" effect="light" :type="bound ? 'info' : 'danger'">
+      <el-tag size="small" effect="light" :type="bound ? 'info' : 'primary'">
         {{ jobOriginLabel(job) }}
       </el-tag>
       <el-tag v-if="!job.enabled" size="small" type="info" effect="light">停用</el-tag>
@@ -156,13 +156,18 @@ defineExpose({ reloadRuns, focusLatestFailure })
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: var(--gap-3);
+  overscroll-behavior: contain;
   min-height: 0;
   flex: 1 1 auto;
 }
 /* 一行到底：标题 + chip + 按钮；按钮靠右 */
 .job-detail__head {
   display: flex;
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
   align-items: center;
   gap: 0.35rem 0.5rem;
   flex-wrap: wrap;
@@ -171,8 +176,9 @@ defineExpose({ reloadRuns, focusLatestFailure })
 .job-detail__title {
   margin: 0;
   margin-right: 0.15rem;
-  font-size: 1.25rem;
+  font-size: var(--fs-title);
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .job-detail__actions {
   display: flex;
@@ -183,7 +189,8 @@ defineExpose({ reloadRuns, focusLatestFailure })
 }
 .job-detail__desc {
   width: 100%;
-  font-size: 0.95rem;
+  overflow: auto;
+  font-size: var(--fs-body);
   flex-shrink: 0;
 }
 .job-detail__desc :deep(.el-descriptions__label) {
@@ -191,7 +198,7 @@ defineExpose({ reloadRuns, focusLatestFailure })
   font-size: 0.9rem;
 }
 .job-detail__desc :deep(.el-descriptions__content) {
-  font-size: 0.95rem;
+  font-size: var(--fs-body);
 }
 /* 状态点与左栏同一套语义色，别在两处各挑一个红 */
 .job-detail__dot {
@@ -226,4 +233,6 @@ defineExpose({ reloadRuns, focusLatestFailure })
 .dim {
   color: var(--muted);
 }
+.job-detail__actions :deep(.el-button + .el-button) { margin-left: 0; }
+.job-detail > :deep(.job-runs-panel) { flex-shrink: 0; }
 </style>

@@ -13,7 +13,7 @@ import { mkdirSync } from 'node:fs'
 import { chromium } from 'playwright'
 
 const BASE = process.env.ADMIN_BASE || 'http://127.0.0.1:4174'
-const OUT = 'artifacts'
+const OUT = process.env.AUDIT_OUT || 'artifacts'
 const FIXED_NOW = new Date(2026, 7, 29, 10, 42, 5)
 const results = []
 
@@ -208,7 +208,14 @@ async function open(browser, path) {
   await page.clock.setFixedTime(FIXED_NOW)
   await page.route(
     (url) => new URL(url).pathname.startsWith('/api/'),
-    (route) => route.fulfill({ json: payloadFor(route.request().url()) }),
+    (route) => {
+      const endpoint = new URL(route.request().url()).pathname
+      // 登录页必须以未登录会话打开，否则实际上检查的是被重定向后的盘面。
+      if (path === '/login' && endpoint.endsWith('/auth/session')) {
+        return route.fulfill({ json: { authenticated: false, user: null } })
+      }
+      return route.fulfill({ json: payloadFor(route.request().url()) })
+    },
   )
   const errs = []
   page.on('pageerror', (e) => errs.push('pageerror: ' + e.message))
@@ -287,11 +294,11 @@ const TABS = [
     const el = document.querySelector('.rail-nav .el-menu-item.is-active')
     if (!el) return null
     const cs = getComputedStyle(el)
-    return { left: cs.borderInlineStartWidth, bg: cs.backgroundColor }
+    return { left: cs.borderInlineStartWidth, right: cs.borderInlineEndWidth, top: cs.borderTopWidth, bottom: cs.borderBottomWidth, bg: cs.backgroundColor }
   })
   check(
-    '分区选中态不画左竖条（改底色）',
-    activeBorder && parseFloat(activeBorder.left) === 0,
+    '分区选中态无单独左竖条（允许完整细边框）',
+    activeBorder && parseFloat(activeBorder.left) <= 1 && ['right', 'top', 'bottom'].every(side => activeBorder[side] === activeBorder.left),
     JSON.stringify(activeBorder),
   )
 
@@ -343,11 +350,14 @@ const TABS = [
   await page.getByRole('menuitem', { name: '用户管理' }).click()
   await page.waitForTimeout(1200)
   const rowActions = await page.evaluate(() => {
-    const cell = document.querySelector('.admin-content .row-actions')
+    const row = [...document.querySelectorAll('.admin-content .el-table__body tr')].find(el => el.getBoundingClientRect().height > 0)
+    const cell = row?.querySelector('td:last-child .cell')
     if (!cell) return null
+    const buttons = [...cell.querySelectorAll('button')].filter(el => el.getBoundingClientRect().height > 0)
+    const more = buttons.filter(el => el.closest('.el-dropdown'))
     return {
-      buttons: cell.querySelectorAll(':scope > .row-actions__slot > .el-button').length,
-      more: cell.querySelector('.el-dropdown .el-button')?.innerText.trim() || '',
+      buttons: buttons.filter(el => !el.closest('.el-dropdown')).length,
+      more: more.length === 1 ? more[0].innerText.trim() : '',
     }
   })
   check(
@@ -368,12 +378,10 @@ const TABS = [
   )
 
   // 新增用户入口
-  const created = await page.evaluate(() =>
-    [...document.querySelectorAll('.list-toolbar .el-button')].map((n) => n.innerText.trim()),
-  )
-  check('用户管理 · 有新增账号入口', created.includes('新增'), created.join(' / '))
+  const createButton = page.getByRole('button', { name: '新增', exact: true })
+  check('用户管理 · 有新增账号入口', await createButton.isVisible())
 
-  await page.getByRole('button', { name: '新增' }).click()
+  await createButton.click()
   await page.waitForTimeout(700)
   await page.screenshot({ path: `${OUT}/admin-create-user.png` })
   const dialogLabels = await page.evaluate(() =>
@@ -404,6 +412,8 @@ for (const route of ['/', '/pool', '/ops', '/quant', '/research', '/insights', '
 // 登录页不许再有「注册」入口
 {
   const page = await open(browser, '/login')
+  await page.locator('#auth-main').waitFor({ state: 'visible', timeout: 10000 })
+  check('登录页 · 未被重定向', new URL(page.url()).pathname === '/login')
   const hasSignup = await page.evaluate(() => document.body.innerText.includes('没有账号？'))
   check('登录页 · 已撤下自助注册入口', !hasSignup)
   await page.screenshot({ path: `${OUT}/admin-login.png` })

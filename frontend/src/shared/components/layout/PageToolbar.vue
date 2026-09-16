@@ -32,109 +32,50 @@ withDefaults(
 </script>
 
 <template>
+  <!-- 路由页顶部唯一功能行：筛选/读数/操作压进一行，随页固定不滚。note 只渲染一枚 ⓘ -->
   <div
-    class="page-toolbar"
-    :class="{ 'page-toolbar--dense': dense, 'page-toolbar--seamless': seamless }"
+    class="page-toolbar border-line bg-surface flex min-w-0 min-h-[calc(var(--ctl-h)+var(--gap-2))] flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-[var(--pad-sheet-x)] py-2"
+    :class="{ 'page-toolbar--dense min-h-[var(--ctl-h)] !py-1': dense, 'page-toolbar--seamless border-b-0': seamless }"
   >
-    <div v-if="$slots.default" class="page-toolbar__lead">
+    <div v-if="$slots.default" class="page-toolbar__filters flex min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1">
       <slot />
     </div>
 
-    <div v-if="$slots.stats" class="page-toolbar__stats">
+    <div v-if="$slots.stats" class="page-toolbar__stats ml-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
       <slot name="stats" />
- </div>
-
-    <div v-if="$slots.actions" class="page-toolbar__actions">
-      <slot name="actions" />
-      <el-tooltip v-if="note" :content="note" placement="bottom-end" :show-after="200">
-        <el-icon class="page-toolbar__note" tabindex="0" :aria-label="note"><InfoFilled /></el-icon>
-      </el-tooltip>
     </div>
-  <el-tooltip
-      v-else-if="note"
+
+    <div v-if="$slots.actions" class="page-toolbar__actions flex min-w-0 flex-wrap items-center gap-2" :class="{ 'ml-auto': !$slots.stats }">
+      <slot name="actions" />
+    </div>
+    <el-tooltip
+      v-if="note"
       :content="note"
       placement="bottom-end"
       :show-after="200"
     >
-      <el-icon class="page-toolbar__note page-toolbar__note--solo" tabindex="0" :aria-label="note">
-        <InfoFilled />
-      </el-icon>
-</el-tooltip>
+      <el-button text circle class="page-toolbar__note text-mist" :class="{ 'ml-auto': !$slots.default && !$slots.stats && !$slots.actions }" aria-label="口径说明">
+        <el-icon><InfoFilled /></el-icon>
+      </el-button>
+    </el-tooltip>
   </div>
 </template>
 
 <style scoped>
 .page-toolbar {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1) var(--gap-2);
-  min-height: calc(var(--ctl-h) + var(--gap-2));
-  padding: var(--gap-1) var(--pad-sheet-x);
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
-
-.page-toolbar--dense {
-  min-height: var(--ctl-h);
-  padding-block: 0;
+.page-toolbar__filters > :deep(*) {
+  max-width: 100%;
 }
-
-/* 下面紧跟 PageTabs / filter-bar 时，两条 hairline 会叠成一道脏边 */
-.page-toolbar--seamless {
-  border-bottom: 0;
+.page-toolbar__note.el-button {
+  width: var(--ctl-h);
+  margin: 0;
 }
-
-.page-toolbar__lead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1) var(--gap-2);
-  min-width: 0;
-}
-
-/* 读数与操作一起靠右；只有读数时它自己吃掉 auto margin */
-.page-toolbar__stats {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1) var(--gap-3);
-  min-width: 0;
-  margin-left: auto;
-}
-
-.page-toolbar__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-  margin-left: auto;
-}
-
-/* 读数在场时，操作区紧跟其后，不再各自抢 auto margin */
-.page-toolbar__stats + .page-toolbar__actions {
-  margin-left: 0;
-}
-
-/* 口径提示：一枚 ⓘ，不占文本宽度 */
-.page-toolbar__note {
-  flex-shrink: 0;
-  font-size: var(--fs-aux);
-  color: var(--mist);
-  cursor: help;
-}
-
-.page-toolbar__note:hover {
-  color: var(--muted);
-}
-
-.page-toolbar__note--solo {
-  margin-left: auto;
-}
-
-.page-toolbar__note:focus-visible {
-outline: 2px solid var(--seal);
-  outline-offset: 2px;
-  border-radius: var(--radius);
+@media (max-width: 640px) {
+  .page-toolbar { padding-inline: var(--gap-2); }
+  .page-toolbar__filters { flex: 1 1 100%; }
+  .page-toolbar__stats { margin-inline-start: 0; }
+  .page-toolbar__actions { margin-inline-start: auto; }
 }
 </style>

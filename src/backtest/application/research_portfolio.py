@@ -16,6 +16,8 @@ from datetime import date
 from math import floor, isfinite
 from typing import Any, Iterable, Sequence
 
+import pandas as pd
+
 from src.backtest.application.engine import Trade
 from src.backtest.application.research_portfolio_marks import (
     assert_cash_conservation,
@@ -61,8 +63,11 @@ class PortfolioResearchConfig:
     period: str = "month"
     include_data_end: bool = False
     allow_same_code_overlap: bool = False
+    account_model: str = "cost_until_exit"
 
     def __post_init__(self) -> None:
+        if not isinstance(self.account_model, str) or self.account_model not in {"cost_until_exit", "daily_close"}:
+            raise PortfolioResearchError("account_model 仅支持 cost_until_exit/daily_close")
         if not isfinite(float(self.initial_capital)) or self.initial_capital <= 0:
             raise PortfolioResearchError("initial_capital 必须是正数")
         if int(self.max_positions) != self.max_positions or self.max_positions <= 0:
@@ -78,6 +83,8 @@ class PortfolioResearchConfig:
 
     def to_dict(self) -> dict[str, Any]:
         body = asdict(self)
+        if self.account_model == "cost_until_exit":
+            body.pop("account_model")
         body["slot_capital"] = _round(self.slot_capital, 4)
         return body
 
@@ -139,6 +146,8 @@ class PortfolioDay:
     turnover_notional: float
     entries: int
     exits: int
+    market_value: float | None = None
+    unrealized_pnl: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         body = asdict(self)
@@ -151,6 +160,10 @@ class PortfolioDay:
             "turnover_notional",
         ):
             body[key] = _round(body[key])
+        for key in ("market_value", "unrealized_pnl"):
+            value = body.pop(key)
+            if value is not None:
+                body[key] = _round(value)
         return body
 
 
@@ -206,10 +219,11 @@ class PortfolioResearchResult:
     segments: list[PortfolioSegment] = field(default_factory=list)
     skipped: dict[str, int] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
+    open_allocations: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """返回只含基础类型的稳定结构；``inf`` 等不可 JSON 值转为 null。"""
-        return {
+        body = {
             "contract_version": "backtest-portfolio-research-v1",
             "config": dict(self.config),
             "sample_size": int(self.sample_size),
@@ -222,6 +236,9 @@ class PortfolioResearchResult:
             "skipped": dict(self.skipped),
             "failures": list(self.failures),
         }
+        if self.metrics.get("assumption", {}).get("account_model") == "daily_close":
+            body["open_allocations"] = _jsonable(self.open_allocations)
+        return body
 
 
 
@@ -252,6 +269,8 @@ def analyze_portfolio(
     config: PortfolioResearchConfig | None = None,
     trading_dates: Sequence[str] | None = None,
     strategy_slug: str = "",
+    closing_prices: pd.DataFrame | None = None,
+    adjustment_factors: pd.DataFrame | None = None,
 ) -> PortfolioResearchResult:
     """将单笔事件按固定槽位编排成组合研究账本。
 
@@ -260,6 +279,10 @@ def analyze_portfolio(
     交易都进入 ``skipped``，不会静默递补弱候选。
     """
     cfg = config or PortfolioResearchConfig()
+    if cfg.account_model == "daily_close":
+        from .research_portfolio_daily import analyze_daily_close
+        return analyze_daily_close(trades, cfg, trading_dates, strategy_slug,
+                                   closing_prices, adjustment_factors)
     candidates = _coerce_trade_list(trades)
     skipped: dict[str, int] = defaultdict(int)
     failures: list[str] = []

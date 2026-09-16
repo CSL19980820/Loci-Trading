@@ -3,7 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { getMcpServers, probeMcpServer, refreshMcpTools, type McpProbeResult } from '@/shared/api/quant'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import { dialogWidth } from '@/shared/lib/format'
 import type { McpServer, McpToolRow } from '@/shared/types/quant'
@@ -49,6 +49,14 @@ const akshareTools = computed(() =>
   catalogRows(current.value).filter((t) => t.group === 'akshare' || t.name.startsWith('ak_')),
 )
 const flatTools = computed(() => catalogRows(current.value))
+const laneRows = computed(() => laneTools.value as unknown as Record<string, unknown>[])
+const akshareRows = computed(() => akshareTools.value as unknown as Record<string, unknown>[])
+const flatRows = computed(() => flatTools.value as unknown as Record<string, unknown>[])
+
+const toolColumns: BasicTableColumn[] = [
+  { prop: 'name', label: '工具', minWidth: 140, slotName: 'name' },
+  { prop: 'description', label: '说明', minWidth: 160, slotName: 'description' },
+]
 
 function resetProbes(): void {
   serverProbe.value = null
@@ -166,7 +174,7 @@ onUnmounted(() => {
     v-model="open"
     align-center
     destroy-on-close
-    class="mcp-tools-dialog"
+    class="mcp-tools-dialog ops-dialog"
     append-to-body
     :width="dialogWidth()"
   >
@@ -223,38 +231,33 @@ onUnmounted(() => {
               {{ laneTools.length }}
             </el-tag>
           </header>
-          <el-table
-            v-if="laneTools.length"
-            :data="laneTools"
-            size="small"
+          <BasicTable
+            :columns="toolColumns"
+            :data-source="laneRows"
+            :pagination="false"
+            stripe
             row-key="name"
-            class="mcp-tools-table"
+            empty-text="这条线路还没报出工具"
+            empty-reason="点上方「刷新工具」重新发现一次。"
           >
-            <el-table-column label="工具" min-width="130">
-              <template #default="{ row }">
-                <span class="mono" :class="{ dim: row.available === false }">{{ row.name }}</span>
-                <el-tag
-                  v-if="row.available === false"
-                  size="small"
-                  type="info"
-                  effect="plain"
-                  class="avail-tag"
-                >
-                  线路停用
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="160" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="desc">{{ row.description || '—' }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <EmptyState
-            v-else
-            description="这条线路还没报出工具"
-            reason="点上方「刷新工具」重新发现一次。"
-          />
+            <template #name="{ row }">
+              <span class="mono" :class="{ dim: row.available === false }">{{ row.name }}</span>
+              <el-tag
+                v-if="row.available === false"
+                size="small"
+                type="info"
+                effect="plain"
+                class="avail-tag"
+              >
+                线路停用
+              </el-tag>
+            </template>
+            <template #description="{ row }">
+              <el-tooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
+                <span class="desc desc-clip">{{ row.description || '—' }}</span>
+              </el-tooltip>
+            </template>
+          </BasicTable>
         </section>
         <section class="mcp-detail-group">
           <header class="mcp-detail-group__head">
@@ -265,52 +268,46 @@ onUnmounted(() => {
               {{ akshareTools.length }}
             </el-tag>
           </header>
-          <el-table
-            v-if="akshareTools.length"
-            :data="akshareTools"
-            size="small"
+          <BasicTable
+            :columns="toolColumns"
+            :data-source="akshareRows"
+            :pagination="false"
+            stripe
             row-key="name"
-            class="mcp-tools-table"
+            empty-text="还没有接口上桌"
+            empty-reason="去工坊「数据源 → 按接口」勾选需要的"
           >
-            <el-table-column label="工具" min-width="140">
-              <template #default="{ row }">
-                <span class="mono">{{ row.name }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="说明" min-width="160" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="desc">{{ row.description || '—' }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <EmptyState v-else description="还没有接口上桌；去工坊「数据源 → 按接口」勾选需要的" />
+            <template #name="{ row }">
+              <span class="mono">{{ row.name }}</span>
+            </template>
+            <template #description="{ row }">
+              <el-tooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
+                <span class="desc desc-clip">{{ row.description || '—' }}</span>
+              </el-tooltip>
+            </template>
+          </BasicTable>
         </section>
       </template>
 
       <template v-else>
-        <el-table
-          v-if="flatTools.length"
-          :data="flatTools"
-          size="small"
+        <BasicTable
+          :columns="toolColumns"
+          :data-source="flatRows"
+          :pagination="false"
+          stripe
           row-key="name"
-          class="mcp-tools-table"
+          empty-text="这台服务还没报出工具"
+          empty-reason="点上方「刷新工具」重新发现一次。"
         >
-          <el-table-column label="工具" min-width="140">
-            <template #default="{ row }">
-              <span class="mono">{{ row.name }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="说明" min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">
-              <span class="desc">{{ row.description || '—' }}</span>
-            </template>
-          </el-table-column>
-        </el-table>
-        <EmptyState
-          v-else
-          description="这台服务还没报出工具"
-          reason="点上方「刷新工具」重新发现一次。"
-        />
+          <template #name="{ row }">
+            <span class="mono">{{ row.name }}</span>
+          </template>
+          <template #description="{ row }">
+            <el-tooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
+              <span class="desc desc-clip">{{ row.description || '—' }}</span>
+            </el-tooltip>
+          </template>
+        </BasicTable>
       </template>
     </div>
   </el-dialog>
@@ -320,7 +317,8 @@ onUnmounted(() => {
 .mcp-tools-head {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
   min-width: 0;
   padding-right: 1.5rem;
 }
@@ -358,13 +356,17 @@ onUnmounted(() => {
 .mcp-detail-group__head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.45rem;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  margin-bottom: var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
 }
 
 .mcp-detail-group h4 {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
 }
@@ -376,6 +378,15 @@ onUnmounted(() => {
 .desc,
 .dim {
   color: var(--mist);
+}
+
+.desc-clip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .avail-tag {
@@ -390,8 +401,8 @@ onUnmounted(() => {
 }
 </style>
 
-<style>
-/* 弹层挂 append-to-body，scoped 盖不到；限制视口高度，滚动只在 body */
+<style scoped>
+/* 高度受视口限制，滚动只在 body 内发生。 */
 .mcp-tools-dialog.el-dialog {
   display: flex;
   flex-direction: column;
@@ -401,20 +412,21 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.mcp-tools-dialog .el-dialog__header {
+.mcp-tools-dialog :deep(.el-dialog__header) {
   flex-shrink: 0;
   margin-right: 0;
   padding-bottom: 0.65rem;
 }
 
-.mcp-tools-dialog .el-dialog__body {
+.mcp-tools-dialog :deep(.el-dialog__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding-top: 0.35rem;
 }
 
-.mcp-tools-dialog .mcp-tools-table .cell {
+.mcp-tools-dialog :deep(.mcp-tools-table .cell) {
   line-height: 1.35;
 }
 </style>
+<style scoped src="./OpsDialogSurface.css"></style>

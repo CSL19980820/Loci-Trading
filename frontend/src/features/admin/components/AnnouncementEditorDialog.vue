@@ -176,6 +176,7 @@ async function onSubmit(): Promise<void> {
 
 <template>
   <el-dialog
+    class="admin-form-dialog dialog-body--scroll"
     :model-value="visible"
     :title="item ? '编辑公告' : '新建全站公告'"
     width="min(92vw, 680px)"
@@ -191,10 +192,8 @@ async function onSubmit(): Promise<void> {
     </BasicForm>
 
     <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="onClose">取消</el-button>
-        <el-button type="primary" :loading="loading" @click="onSubmit">保存并发布</el-button>
-      </div>
+      <el-button @click="onClose">取消</el-button>
+      <el-button type="primary" :loading="loading" @click="onSubmit">保存并发布</el-button>
     </template>
   </el-dialog>
 </template>
@@ -203,8 +202,10 @@ async function onSubmit(): Promise<void> {
 .md-preview-pane {
   width: 100%;
   /* 无下限：空预览就该只有一行高，不用 180px 撑一块死白 */
-  max-height: 20rem;
-  overflow-y: auto;
+  max-height: min(20rem, 50dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
   padding: var(--gap-2);
   background: var(--sheet);
   border: 1px solid var(--rule);
@@ -213,7 +214,11 @@ async function onSubmit(): Promise<void> {
   line-height: 1.6;
 }
 
-.placeholder-text {
+.md-preview-pane :deep(.placeholder-text) {
   color: var(--mist);
 }
+.md-preview-pane :deep(img) { max-width: 100%; height: auto; }
+.md-preview-pane :deep(pre) { overflow-x: auto; }
 </style>
+
+<style scoped src="./AdminDialog.css" />

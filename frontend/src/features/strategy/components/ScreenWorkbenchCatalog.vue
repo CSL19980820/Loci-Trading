@@ -2,6 +2,7 @@
 import { Search } from '@element-plus/icons-vue'
 import { computed, ref, watch } from 'vue'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type {
   ScreenSkillCatalog,
   ScreenSkillCatalogField,
@@ -235,10 +236,10 @@ function onRowDblClick(item: CatalogEntry): void {
           </span>
           <span v-if="item.summary !== item.title" class="catalog__row-summary">{{ item.summary }}</span>
         </el-button>
-        <el-empty
+        <EmptyState
           v-if="!loading && !visibleEntries.length"
-          :image-size="48"
-          description="无匹配项，试试别的关键词"
+          description="无匹配项"
+          reason="试试别的关键词"
         />
       </div>
 
@@ -337,8 +338,8 @@ function onRowDblClick(item: CatalogEntry): void {
   flex-direction: column;
   gap: 0.15rem;
   padding: 0.4rem;
-  border-right: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--panel-2) 70%, transparent);
+  border-right: none;
+  background: color-mix(in oklab, var(--panel-2) 70%, transparent);
 }
 
 .catalog--dialog .catalog__cats {
@@ -352,7 +353,7 @@ function onRowDblClick(item: CatalogEntry): void {
   padding: 0.4rem 0.45rem !important;
   border-radius: 2px;
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
 
 .catalog__cat :deep(.el-button__content) {
@@ -387,7 +388,7 @@ function onRowDblClick(item: CatalogEntry): void {
 }
 
 .catalog--dialog .catalog__list {
-  border-right: 1px solid var(--rule);
+  border-right: none;
   border-bottom: 0;
 }
 
@@ -445,7 +446,7 @@ function onRowDblClick(item: CatalogEntry): void {
 .catalog__row-summary {
   overflow: hidden;
   color: var(--mist);
-  font-size: 0.74rem;
+  font-size: var(--fs-aux);
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -469,7 +470,7 @@ function onRowDblClick(item: CatalogEntry): void {
 }
 
 .catalog__detail-head strong {
-  font-size: 0.95rem;
+  font-size: var(--fs-body);
   line-height: 1.35;
 }
 
@@ -481,7 +482,7 @@ function onRowDblClick(item: CatalogEntry): void {
 .catalog__desc {
   margin: 0;
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
   line-height: 1.5;
 }
 
@@ -510,7 +511,7 @@ function onRowDblClick(item: CatalogEntry): void {
   display: grid;
   place-items: center;
   color: var(--mist);
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
 }
 
 @media (max-width: 720px) {

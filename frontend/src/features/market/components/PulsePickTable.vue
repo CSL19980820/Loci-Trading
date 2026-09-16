@@ -1,8 +1,10 @@
 <script setup lang="ts">
 /** 今日选股：密度表，随窗口高度伸缩（至少 6 行可见）。 */
 import { computed } from 'vue'
+import { Tickets } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
 import { signedPct } from '@/shared/lib/format'
@@ -58,29 +60,22 @@ function openScreen(): void {
   <section class="pulse-panel">
     <header class="pulse-panel__head">
       <div class="pulse-panel__lead">
+        <el-icon class="pulse-panel__icon" aria-hidden="true"><Tickets /></el-icon>
         <h2 class="pulse-panel__title">{{ title }}</h2>
-        <span class="pulse-panel__meta">{{ rows.length ? `${rows.length} 只` : '' }}</span>
+        <span v-if="rows.length" class="pulse-panel__meta">{{ rows.length }}只</span>
       </div>
       <el-tooltip v-if="hint" :content="hint" placement="bottom-end" :show-after="200">
         <span class="pulse-panel__meta">{{ note }}</span>
       </el-tooltip>
       <span v-else class="pulse-panel__meta">{{ note }}</span>
     </header>
-    <el-table
-      v-if="rows.length"
-      :data="rows"
-      size="small"
-      stripe
-      height="100%"
-      class="pulse-table"
-      empty-text="—"
-    >
+    <el-table :data="rows" size="small" stripe height="100%" class="pulse-table">
       <el-table-column prop="rank" label="#" width="48" align="center" header-align="center">
         <template #default="{ row }">
           <span class="pulse-num pulse-dim">{{ row.rank }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="名称" width="104" align="center" header-align="center">
+      <el-table-column label="名称" min-width="160" align="left" header-align="left">
         <template #default="{ row }">
           <span class="pulse-name">
             <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
@@ -92,32 +87,36 @@ function openScreen(): void {
         v-if="showStrategy"
         label="战法"
         min-width="150"
-        align="center"
-        header-align="center"
-        show-overflow-tooltip
+        align="left"
+        header-align="left"
       >
         <template #default="{ row }">
-          <span class="pulse-dim pulse-clip">{{ strategyText(row as PulsePickRow) }}</span>
+          <el-tooltip :content="strategyText(row as PulsePickRow)" placement="top" :show-after="200">
+            <span class="pulse-dim pulse-clip">{{ strategyText(row as PulsePickRow) }}</span>
+          </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column label="今涨" width="90" align="center" header-align="center">
+      <el-table-column label="今涨" width="90" align="right" header-align="right">
         <template #default="{ row }">
           <span class="pulse-num" :class="tone(row.pct)">{{ signedPct(row.pct) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="评分" width="80" align="center" header-align="center">
+      <el-table-column label="评分" width="80" align="right" header-align="right">
         <template #default="{ row }">
           <span class="pulse-num pulse-dim">{{ fmtScore(row.score) }}</span>
         </template>
       </el-table-column>
+      <template #empty>
+        <el-tooltip v-if="emptyHint" :content="emptyHint" placement="top" :show-after="200">
+          <EmptyState class="pulse-panel__empty" :description="empty">
+            <el-button link type="primary" size="small" @click="openScreen">去选股</el-button>
+          </EmptyState>
+        </el-tooltip>
+        <EmptyState v-else class="pulse-panel__empty" :description="empty">
+          <el-button link type="primary" size="small" @click="openScreen">去选股</el-button>
+        </EmptyState>
+      </template>
     </el-table>
-    <div v-else class="pulse-panel__empty">
-      <el-tooltip v-if="emptyHint" :content="emptyHint" placement="top">
-        <span>{{ empty }}</span>
-      </el-tooltip>
-      <span v-else>{{ empty }}</span>
-      <el-button link type="primary" size="small" @click="openScreen">去选股</el-button>
-    </div>
   </section>
 </template>
 

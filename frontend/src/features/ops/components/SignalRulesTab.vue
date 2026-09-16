@@ -143,7 +143,7 @@ defineExpose({ load })
 
 <template>
   <SettingsPanel title="信号规则" :receipt="receipt">
-    <div v-loading="loading" class="rules">
+    <div v-loading="loading" class="rules-list" :aria-busy="loading">
       <el-alert
         v-if="loadError"
         :title="loadError"
@@ -181,6 +181,7 @@ defineExpose({ load })
             <span class="rule__param-label">{{ field.label }}</span>
             <el-input-number
               :model-value="rule.params[field.key]"
+              :aria-label="`${rule.label} · ${field.label}`"
               :min="field.min"
               :max="field.max"
               :step="field.step"
@@ -224,17 +225,8 @@ defineExpose({ load })
 </template>
 
 <style scoped>
-.rules {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  /*
-   * 超宽屏封顶：六条规则不该在 2560px 上摊成一条跑道（ui-spec §4：空白就是空白，
-   * 修法是缩小区块而不是把内容抻开）。88rem 是「身份 + 三参数 + 操作」排满时的
-   * 自然宽度，1600px 以内的常见窗口够不到它，行为不变。
-   */
-  max-width: 88rem;
-}
+.rules-list { display: flex; flex-direction: column; gap: var(--gap-2); width: 100%; min-width: 0; max-width: 88rem; }
+/* 规则行骨架见下方 .rule：超宽屏封顶 88rem 在模板工具类里，注释留此处备查。 */
 
 .rule {
   /*
@@ -252,13 +244,16 @@ defineExpose({ load })
     minmax(0, 1fr) /* 参数轨：吃弹性，内容右对齐 */
     auto; /* 恢复默认 */
   align-items: center;
-  gap: 2px var(--gap-3);
-  padding: var(--gap-1) 0 var(--gap-2);
-  border-bottom: 1px solid var(--rule);
+  gap: var(--gap-2) var(--gap-3);
+  min-width: 0;
+  padding: var(--gap-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .rule:last-child {
-  border-bottom: 0;
+  border-bottom: 1px solid var(--rule);
 }
 
 .rule--off .rule__label,
@@ -268,6 +263,7 @@ defineExpose({ load })
 
 .rule__id {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--gap-1);
   min-width: 0;
@@ -378,4 +374,10 @@ defineExpose({ load })
     justify-self: start;
   }
 }
+</style>
+<style scoped>
+.rule:focus-within { border-color: var(--seal-border); }
+.rule__num { width: 100%; }
+.rule--off { background: var(--surface-canvas); }
+@media (max-width: 1180px) { .rule { grid-template-columns: auto minmax(0, 1fr) auto; } .rule__params { grid-column: 2 / -1; display: flex; flex-wrap: wrap; justify-content: flex-start; } }
 </style>

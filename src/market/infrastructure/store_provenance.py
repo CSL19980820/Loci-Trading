@@ -142,9 +142,21 @@ class MarketProvenanceMixin(MarketProvenanceQueryMixin):
                 ],
                 cursor=cursor,
             )
+            submitted = sum(len(rows) for rows in rows_by_code.values())
             for code, receipt_id in receipt_ids.items():
+                code_rows = rows_by_code.get(code, ())
+                count = len(code_rows)
+                if written != submitted:
+                    # 只有部分旧行被权威保护挡住时才按主键核对，不能把尝试数写成成功数。
+                    count = sum(
+                        cursor.execute(
+                            "SELECT 1 FROM quotes_daily WHERE trade_date=? AND code=?"
+                            " AND receipt_id=?", (row[0], code, receipt_id)
+                        ).fetchone() is not None
+                        for row in code_rows
+                    ) if written else 0
                 self._record_rows_written(
-                    cursor, receipt_id, receipts_by_code[code], len(rows_by_code.get(code, ()))
+                    cursor, receipt_id, receipts_by_code[code], count
                 )
             self._bump_revisions(cursor, "source_receipts")
         return written

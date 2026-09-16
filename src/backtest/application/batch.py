@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.backtest.application.runner import backtest_strategy
+from src.backtest.application.runner import backtest_strategy, resolve_backtest_config
 from src.backtest.domain.models import BacktestConfig
 from src.market import MarketStore
 
@@ -24,6 +24,10 @@ def _config(config: dict[str, Any], *, hold_days: int | None = None) -> Backtest
         slippage_bps=float(config.get("slippage_bps", 5.0)),
         allow_limit_up_entry=bool(config.get("allow_limit_up_entry", False)),
         benchmark=config.get("benchmark", "000300"),
+        strict_limit_prices=bool(config.get("strict_limit_prices", False)),
+        economic_returns=bool(config.get("economic_returns", False)),
+        valuation_end=config.get("valuation_end"),
+        signal_dataset=config.get("signal_dataset"),
     )
 
 
@@ -32,6 +36,7 @@ def run_backtest_job(store: MarketStore, config: dict[str, Any]) -> dict[str, An
     slug = str(config.get("strategy") or "").strip()
     if not slug:
         raise ValueError("backtest 任务必须指定 strategy")
+    normalized = _config(config)
 
     result = backtest_strategy(
         store,
@@ -39,7 +44,9 @@ def run_backtest_job(store: MarketStore, config: dict[str, Any]) -> dict[str, An
         start=config.get("start"),
         end=config.get("end"),
         params=config.get("params"),
-        config=_config(config),
+        config=resolve_backtest_config(slug, {
+            key: getattr(normalized, key) for key in config if key in BacktestConfig.__dataclass_fields__
+        }),
         codes=config.get("codes"),
         universe=config.get("universe"),
     )

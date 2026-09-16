@@ -114,23 +114,24 @@ function toggling(id: string): boolean {
 <style scoped>
 .src-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
-  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: var(--gap-2);
   align-content: start;
 }
 
 .src-card {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.75rem 0.85rem 0.7rem;
+  gap: var(--gap-3);
+  min-width: 0;
+  padding: var(--gap-3);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--sheet);
+  background: var(--surface);
 }
 
 .src-card--off {
-  background: color-mix(in srgb, var(--sheet) 70%, var(--panel-2));
+  background: var(--surface-canvas);
 }
 
 .src-card--off .src-card__name strong {
@@ -153,13 +154,14 @@ function toggling(id: string): boolean {
 }
 
 .src-card__name strong {
-  font-family: var(--font-display);
-  font-size: 1.02rem;
+  font-family: var(--font);
+  font-size: var(--fs-title);
   line-height: 1.2;
 }
 
 .src-card__name code {
-  font: 0.72rem var(--mono);
+  font: var(--fs-aux) var(--mono);
+  overflow-wrap: anywhere;
   color: var(--mist);
 }
 
@@ -180,7 +182,7 @@ function toggling(id: string): boolean {
   border: 1px solid var(--rule);
   border-radius: 4px;
   background: var(--paper);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--ink);
 }
 
@@ -191,7 +193,8 @@ function toggling(id: string): boolean {
 }
 
 .tool-chip--bad {
-  border-color: color-mix(in srgb, var(--el-color-danger) 55%, var(--rule));
+  border-color: var(--warn);
+  background: var(--warn-soft);
 }
 
 .tool-chip__mark {
@@ -206,18 +209,19 @@ function toggling(id: string): boolean {
   gap: 0.35rem 0.6rem;
   margin-top: auto;
   padding-top: 0.45rem;
-  border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent);
+  border-top: 1px solid color-mix(in oklab, var(--rule) 60%, transparent);
 }
 
 .src-card__counts,
 .src-card__idle {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .src-card__counts b {
-  font: 650 0.82rem var(--mono);
+  font: 600 var(--fs-body) var(--mono);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 

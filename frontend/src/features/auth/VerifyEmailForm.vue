@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-
-const props = defineProps<{
+defineProps<{
   email: string
   code: string
   submitting?: boolean
@@ -24,13 +22,15 @@ const emit = defineEmits<{
       <span class="panel-target">{{ email }}</span>
     </div>
 
-    <el-form label-position="top" @submit.prevent="emit('submit')">
+    <el-form label-position="top" :aria-busy="submitting" @submit.prevent="emit('submit')">
       <el-form-item label="6 位验证码">
         <el-input
           :model-value="code"
           maxlength="8"
           placeholder="123456"
           class="code-input"
+          autocomplete="one-time-code"
+          inputmode="numeric"
           autofocus
           @update:model-value="emit('update:code', String($event))"
         />
@@ -68,63 +68,4 @@ const emit = defineEmits<{
   </div>
 </template>
 
-<style scoped>
-.panel-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin-bottom: 1.25rem;
-}
-
-.panel-title {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.panel-target {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 0.85rem;
-  color: var(--mist);
-}
-
-.code-input :deep(input) {
-  letter-spacing: 0.3em;
-  font-size: 1.2rem;
-  text-align: center;
-  font-weight: 600;
-}
-
-.resend-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.25rem;
-}
-
-.resend-label {
-  font-size: 0.82rem;
-  color: var(--mist);
-}
-
-.login-submit {
-  width: 100%;
-  height: 2.5rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.form-bottom-link {
-  text-align: center;
-  margin-top: 1rem;
-}
-
-.sub-link {
-  font-size: 0.82rem;
-  color: var(--mist);
-}
-</style>
+<style scoped src="./AuthForm.css" />

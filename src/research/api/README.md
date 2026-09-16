@@ -26,6 +26,10 @@
 
 ### 文件清单
 
+研究回测的新执行字段放在 `backtest_config`：`signal_dataset`（安全ID）、`strict_limit_prices`、`economic_returns`、`valuation_end`；`account_model="daily_close"` 与 `initial_capital/max_positions/lot_size` 放在请求顶层。快照模板的缺省值可由后端继承，显式值优先。数据集必须已导入当前租户并覆盖区间，否则任务失败。
+
+逐日账户摘要在 `conclusion.portfolio_summary`，完整明细在 `analysis.json`。该模式的重放响应增加 `portfolio_verification`，比较完整每日账户和未平仓；不一致会使 `matches_all_recomputed_execution=false`，不改变人工发布/否决权限和探索性状态。
+
 | 文件 | 工厂 | 负责的端点 |
 |---|---|---|
 | `router.py` | `build_research_router` | `catalog` / `profile/{code}` / `runs*` / `hypotheses*`；并 `include_router(build_research_backtest_router(...))`，store factory 形参原样透传 |

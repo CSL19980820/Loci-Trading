@@ -10,7 +10,7 @@
 > 同理 `var()` 一律不写 fallback：`:root` 恒定义的令牌写了 fallback，只是给改名那天
 > 留一个必然过期、还会静默生效的错值（只有**故意不定义**的令牌才需要 fallback）。
 >
-> 产品定位：**专业行情终端**（信息密度对标通达信 / 同花顺 / 悟道），保留一层克制的墨色账本气质。
+> 产品定位：**专业行情终端**（信息密度对标 TradingView / Bloomberg / 通达信），视觉语言走 shadcn zinc + 金融终端 hairline。
 > 「奶白纸 + 大号衬线中文标题 + 印章红品牌色」的书卷风已于 2026-08 退场。
 
 ## 目录
@@ -36,7 +36,7 @@
 
 `--up` / `--down`（及 `-soft` / `-ink` 变体）**只能**出现在：涨跌数字、涨跌箭头/标记、买卖方向标、
 K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab 下划线、事件点、评分徽章、
-成功/失败提示——**一律不用红绿**，用 `--seal`（品牌靛）/ `--warn` / `--info` / `--mist`。
+成功/失败提示——**一律不用红绿**，用 `--seal`（品牌朱红）/ `--warn` / `--info` / `--mist`。
 
 破坏性操作（删除、清库、重置）用 `--stamp`（印章红 `#c41e3a`），它与 `--up` 是两个不同的红：
 「删除」和「涨」不该长一样。
@@ -44,7 +44,7 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 ```css
 /* DO */
 .pct-cell { color: var(--up); }                 /* 涨跌数字 */
-.el-button--primary { background: var(--seal); } /* 主操作 = 品牌靛 */
+.el-button--primary { background: var(--seal); } /* 主操作 = 品牌朱红 */
 .progress__fill { background: var(--seal); }
 
 /* DON'T */
@@ -94,11 +94,11 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 | 令牌 | 定义 | 用途 |
 |---|---|---|
 | `--paper` | `var(--surface-canvas)`（色阶 3） | 页面底色（`.page-fill` / 主区） |
-| `--sheet` | `rgba(250,251,253,.94)`（色阶 2 的 sRGB 兑现 @94%） | 区块底色（Sheet / 页头 / 表体） |
+| `--sheet` | `rgba(252,253,254,.94)`（色阶 2 的 sRGB 兑现 @94%） | 区块底色（Sheet / 页头 / 表体） |
 | `--sheet-alt` | `var(--surface-sunken)`（色阶 4） | 表头、斑马行、次级底 |
-| `--rule` / `--rule-strong` | `#d0d6dc` / `#bec5cc`（色阶 7 / 8 的 sRGB 兑现） | 1px 分隔线 / 边框强调、次级按钮描边 |
+| `--rule` / `--rule-strong` | `#cdd1d8` / `#bac0c7`（色阶 7 / 8 的 sRGB 兑现） | 1px 分隔线 / 边框强调、次级按钮描边 |
 | `--rule-soft` | 色阶 7 @55% | 行级 hairline，密表里不至于变成栅格纸 |
-| `--ink` / `--muted` / `--mist` | `#1b252f` / `#4e5761` / `#626c76`（色阶 12 / 11 / 10 的 sRGB 兑现） | 正文数字 / 次要文字 / 弱文字与口径 |
+| `--ink` / `--muted` / `--mist` | `#192029` / `#4d5560` / `#626a73`（色阶 12 / 11 / 10 的 sRGB 兑现） | 正文数字 / 次要文字 / 弱文字与口径 |
 | `--seal` | `#cc323e` 朱红（随 `data-primary` 切换，见 §2.6） | **品牌主色**，EP primary 派生源 |
 | `--on-primary` | `#ffffff`（`shared/lib/theme.ts` 按 OKLCH 亮度阈值 0.62 决定黑白） | 压在**实心主色**上的文字色，保证 ≥4.5:1 |
 | `--seal-ink` / `--seal-soft` | 由 `--seal` 用 `color-mix(in oklab)` 派生（78% 混墨 / 12% 透明） | 主色文字态 / 主色浅底（选中行、hover 行、chip） |
@@ -122,15 +122,15 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 
 ### 2.2 其余三档外观（`style.theme.css`）
 
-四档外观：`day`（缺省 `:root`）/ `paper` 暖纸 / `night` 蓝灰 / `ink` 中性纯黑。
+四档外观：`day`（缺省 `:root`，shadcn zinc）/ `paper` 暖纸 / `night` TradingView 炭黑 / `ink` 中性纯黑。
 **每档只改中性色阶 `--n-1..12` 与少数「sRGB 兑现」键**，语义层（表面 / 边框 / 文字 / 底色别名）
 建在色阶上自动跟随：
 
 | 档 | 选择器 | 改了什么 |
 |---|---|---|
-| 暖纸 | `html[data-appearance='paper']` | 色阶换暖调 hue 82；`--sheet` `rgba(255,248,237,.95)`；涨跌不动 |
+| 暖纸 | `html[data-appearance='paper']` | 色阶换暖调 hue 80；`--sheet` `rgba(255,250,239,.94)`；涨跌不动 |
 | 夜盘公共层 | `html[data-appearance='night'], html[data-appearance='ink'], html.dark` | `color-scheme: dark`；涨跌提亮到 `--up #f67168` / `--down #57c37b`；阴影更重更散；`--seal-*` 派生比例重调 |
-| 夜间 | `html[data-appearance='night'], html.dark` | 色阶换蓝灰 hue 258；`--sheet` `rgba(23,30,39,.92)` |
+| 夜间 | `html[data-appearance='night'], html.dark` | 色阶换 TV 炭黑 hue 264；`--sheet` `rgba(23,27,33,.92)` |
 | 墨黑 | `html[data-appearance='ink']` | 色阶 chroma 全 0 纯灰；`--up #ff7b72` / `--down #5cd283` 再提一档 |
 
 夜盘那三个选择器**写在同一个选择器列表里**，不要再各存副本（历史上改前面被后面静默覆盖）。
@@ -139,7 +139,7 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 ### 2.3 字体与字阶
 
 ```
---font-sans / --font   -apple-system / BlinkMacSystemFont / Segoe UI / Roboto / PingFang SC / Hiragino Sans GB / Microsoft YaHei UI
+--font-sans / --font   Loci CJK + -apple-system / BlinkMacSystemFont / Segoe UI / Roboto
 --mono / --font-mono   JetBrains Mono / SF Mono / Roboto Mono / Consolas / Menlo
 --font-display         = --font-sans（历史别名，中文标题不换族）
 --font-serif    宋体族；**当前无消费方**，正文与标题一律不用
@@ -147,6 +147,7 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 
 **不挂任何 webfont**：`index.html` 的 Google Fonts `<link>` 与 `preconnect` 已删——国内网络基本
 拉不到，实际渲染一直是系统字，等于设计从未生效，还阻塞首屏。不要再加回来，也不要塞字体文件。
+`Loci CJK` 是 `local()` + `unicode-range` 的简体钉，不是网络字体。
 
 | 令牌 | 值 | 用在哪 |
 |---|---|---|
@@ -233,7 +234,7 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 | 数字列 | `align="right"` → 自动 mono + `tabular-nums` |
 | 代码列 | `class-name="is-code"` → mono + `.02em` |
 | 涨跌 | `class-name` / 单元格 class 用 `is-up` / `is-down` / `is-flat` |
-| 空表 | `empty-text` 一句话（≤14 字），空块高度 96px |
+| 空表 | `empty-text` 一句话（≤14 字），空块铺满表体并居中 |
 
 ```vue
 <!-- DO：数字列右对齐即得等宽 + tabular-nums -->
@@ -306,13 +307,13 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 
 ## 7. 空态规范
 
-用 `shared/components/ui/EmptyState.vue`。整块 **≤96px 高**，结构固定：
+用 `shared/components/ui/EmptyState.vue`。**铺满父级剩余高度并居中**，结构固定：
 
 1. 一行主文案 `description`：**为什么空**，≤14 字；
 2. 一行 `reason`（可选，12px）：**下一步做什么**，与主文案合计 ≤24 字；
 3. 最多一个主操作（默认插槽放 `el-button`）。
 
-**没有插图**：空不是异常，不需要一张图来渲染情绪（旧版 96px 插图 + 三行解释，比它要解释的表还高）。
+**没有插图**：空不是异常，不需要一张图来渲染情绪。不要再锁 96px——文案缩成小岛，主区会剩一整块白。
 
 ```vue
 <!-- DO -->
@@ -333,7 +334,7 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 
 | 规则 | 要求 |
 |---|---|
-| 页面不写介绍段落 | 页面开头不放「本页用于……」；口径写进 `PageHeader` 的 `note`（单行截断 + tooltip） |
+| 页面不写介绍段落 | 页面开头不放「本页用于……」；口径写进 `PageToolbar` 的 `note`（ⓘ + tooltip） |
 | 解释进 tooltip | 长解释一律 `el-tooltip` / `el-popover`，正文不留说明段 |
 | `el-alert` | 只报**当前真实异常**；`title` ≤20 字；**禁止 `description`**；不做常驻说明条 |
 | 按钮 | 动词短语，2-4 字：「选股」「重跑」「记一笔」；禁止「点击这里开始执行选股任务」 |
@@ -366,7 +367,7 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 | `Sheet` | 无阴影 + 1px 边 + `--radius` 圆角；`sheet-bar` 高 `--head-h` | `meta` 槽放 `--fs-aux` 弱色口径；`padded` 才有内边距，表格直接放 `default` 槽 |
 | `PageTabs` | 高 `--ctl-h`（`dense` 档 `--row-h-sm`），激活下划线 2px `--seal` | 放在 `.page-scroll` 外；badge 等宽 `--fs-kicker` |
 | `BasicTable` | 见 §5 | `size` 默认 `small`；放大态无阴影 |
-| `EmptyState` | 见 §7 | ≤96px |
+| `EmptyState` | 见 §7 | 铺满父级、内容居中 |
 | `PageContainer` | 左栏 + 右主体，`gap: --gap-2` | 左栏底色 `--sheet-alt` |
 | `HeaderActions` | 主操作在右，溢出进「更多」 | `danger` 用 `--stamp` |
 
@@ -442,7 +443,7 @@ K 线与量柱。品牌色、主按钮、选中态、进度条、链接、tab �
 - [ ] 表格行高走 `--row-h`、表头走 `--head-h`；数字列右对齐且等宽。
 - [ ] 区块间距 `--gap-2`；没有超过 `--gap-4` 的成片空白；业务卡片无 `box-shadow`。
 - [ ] 表单 label 列对齐；多列走 `.form-grid`；筛选条控件同高同基线。
-- [ ] 空态 ≤96px、≤24 字、最多一个操作；`el-alert` 无 `description`。
+- [ ] 空态铺满主区并居中、≤24 字、最多一个操作；`el-alert` 无 `description`。
 - [ ] 新增 CSS 全部用令牌，`var()` 不带 fallback；如有硬编码，注释写清 why。
 - [ ] 键盘 Tab 能走完主流程，`:focus-visible` 有 2px `--seal` 轮廓。
 - [ ] `prefers-reduced-motion: reduce` 下无动画。

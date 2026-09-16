@@ -19,8 +19,8 @@ class ProviderCreate(QuantModel):
     model: str = Field(default="", max_length=120)
     proxy_url: str = Field(default="", max_length=300)
     note: str = Field(default="", max_length=500)
-    validate_key: bool = True
-    discover_models: bool = True
+    validate_key: bool = False
+    discover_models: bool = False
     is_default: bool = False
 
 

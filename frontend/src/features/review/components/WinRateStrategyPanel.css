@@ -1,495 +1,57 @@
-/* 胜率面板的皮肤 - 现代量化金融终端风格 */
-
 .wr-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-3);
+  gap: var(--gap-2);
   width: 100%;
-}
-
-/* ── 顶部结论行 ──
- *
- * 这一屏要回答的只有一件事：这个战法值不值得跟。所以胜率是唯一的主数字，
- * 其余四项是它的口径注脚——**注脚不配卡片**。原来它们各带一圈边框，四个格子
- * 吃掉一整行高度，把真正要读的两张表挤到视口外（用户反馈「无法全部展示」）。
- *
- * 同时删掉三处装饰：顶部 3px 渐变条、胜率进度条（数字已经写了 50.0%，条形
- * 不增加任何信息）、卡片阴影（D3：业务卡片不挂阴影）。
- */
-.wr-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--gap-3) var(--gap-4);
-  padding: var(--gap-3) var(--gap-4);
-  border-radius: var(--radius);
-  border: 1px solid var(--border-subtle);
-  background: var(--surface);
-}
-
-.wr-summary__rate {
-  display: flex;
-  align-items: baseline;
-  gap: var(--gap-2);
-  /* 与右侧注脚之间留一道空档，不用竖线：对齐已经把两组分开了 */
-  margin-right: var(--gap-2);
-}
-
-.wr-summary__label {
-  font-size: var(--fs-aux);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-/* 本屏唯一的主数字。字阶里最大的是 --fs-tape(26px)，结论数字再大一档才压得住
- * 整屏；就近声明局部契约而不是往全局字阶塞一个只有这里用的值。 */
-.wr-summary__val {
-  --wr-rate-fs: 34px;
-  font-family: var(--mono);
-  font-size: var(--wr-rate-fs);
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-/* 四项口径注脚：标签与值上下叠，靠字号与颜色分层，不画框不铺底 */
-.wr-summary__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-3) var(--gap-4);
-  margin-left: auto;
-}
-
-.wr-fact {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 5.5rem;
-}
-
-.wr-fact__k {
-  font-size: var(--fs-micro);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-}
-
-.wr-fact__v {
-  font-size: var(--fs-body);
-  font-weight: 600;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-/* 公式是「这个胜率怎么算出来的」的证据，属于结论行的一部分，不该另起一块。
- * 原来是灰底 + 蓝色左边框的独立条，等于给一句说明文字配了两条装饰线。 */
-.wr-formula {
-  flex-basis: 100%;
-  margin-top: calc(var(--gap-1) * -1);
-  padding-top: var(--gap-2);
-  border-top: 1px solid var(--border-subtle);
-  font-size: var(--fs-aux);
-  color: var(--text-tertiary);
-  word-break: break-word;
-}
-
-.wr-formula__text {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ── 三张洞察卡 ──
- *
- * 去掉了 emoji 图标、顶部彩色条、hover 抬起与数字色底块。层次全部交给排版：
- * 标签(--fs-micro 灰) → 标的(--fs-title) → 数字(大 mono + 涨跌色)。
- * 涨跌语义只由数字自己的颜色承担（D1：涨跌色只属于价格类数字），
- * 卡片边框保持中性，三张一致——它们是同级证据，不是三种不同重要性的东西。
- */
-.wr-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--gap-3);
-}
-
-.wr-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
   min-width: 0;
-  padding: var(--gap-3) var(--gap-4);
-  border-radius: var(--radius);
-  border: 1px solid var(--border-subtle);
-  background: var(--surface);
-}
-
-.wr-card__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--gap-2);
-}
-
-.wr-card__k {
-  font-size: var(--fs-aux);
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.wr-card__date {
-  font-size: var(--fs-micro);
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.wr-card__body {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--gap-2);
-}
-
-.wr-card__target {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.wr-card__stock-link {
-  font-size: var(--fs-title);
-  font-weight: 600;
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.wr-card__stock-link:hover {
-  color: var(--seal);
-}
-
-.wr-card__metric {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  white-space: nowrap;
-}
-
-.wr-card__num {
-  font-family: var(--mono);
-  font-size: var(--fs-tape);
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-.wr-card__sub {
-  font-size: var(--fs-micro);
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.wr-card__empty {
-  font-size: var(--fs-aux);
-  color: var(--text-tertiary);
-  padding: var(--gap-2) 0;
-}
-
-/* 最佳持有期那张卡的 T+N：它是个标识不是数值，用中性色 + 轻底，
- * 不跟涨跌色抢语义 */
-.wr-horizon-pill {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--mono);
-  font-size: var(--fs-hero);
-  font-weight: 700;
-  color: var(--text-primary);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-}
-
-.wr-horizon-tip {
-  font-size: var(--fs-micro);
-  color: var(--text-tertiary);
-}
-
-/* ── 表格区块 (Grid Layout) ── */
-.wr-tables-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 32rem) minmax(0, 1fr);
-  gap: var(--gap-3);
-  align-items: start;
-  width: 100%;
-}
-
-/* 表格是这一屏的主角。区块本身不挂阴影（D3），边框用 --border-subtle，
- * 内距只留 --gap-2：省下的每一像素都归表格。 */
-.wr-block {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-1);
-  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
   padding: var(--gap-2);
-  border-radius: var(--radius);
-  background: var(--surface);
-  border: 1px solid var(--border-subtle);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
 }
-
-.wr-block__header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-2);
-  padding: 2px 4px var(--gap-1);
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: var(--gap-1);
-}
-
-.wr-block__title-wrap {
-  display: flex;
-  align-items: baseline;
-  gap: var(--gap-2);
-}
-
-.wr-block__title {
-  margin: 0;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text-primary);
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.wr-block__count {
-  font-size: var(--fs-aux);
-  font-weight: 600;
-  color: var(--text-tertiary);
-}
-
-.wr-block__tip {
-  font-size: var(--fs-micro);
-}
-
-.wr-block__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1);
-}
-
-.period-filter-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--seal);
-  background: color-mix(in oklab, var(--seal) 12%, transparent);
-  color: var(--seal);
-  font-size: var(--fs-micro);
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.period-filter-chip:hover {
-  background: var(--seal);
-  color: #fff;
-}
-
-.sample-search-input {
-  width: 7.5rem;
-}
-
-/* 便捷分段过滤器 */
-.sample-filter-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--surface-sunken);
-  padding: 2px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-subtle);
-}
-
-.filter-pill {
-  border: none;
-  background: transparent;
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  color: var(--text-secondary);
-  padding: 2px 8px;
-  border-radius: calc(var(--radius) - 1px);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  line-height: 1.4;
-}
-
-.filter-pill:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-}
-
-.filter-pill.is-active {
-  background: var(--surface);
-  color: var(--text-primary);
-  /* 原来是 box-shadow: 0 1px 2px rgba(0,0,0,.06)：写死的黑在 night/ink 两档
-     完全不可见，选中态在深色下等于没有反馈。边框四档都成立。 */
-  border-color: var(--border-strong);
-}
-
-.filter-pill--win.is-active {
-  color: var(--up);
-}
-
-.filter-pill--loss.is-active {
-  color: var(--down);
-}
-
-.filter-pill--pending.is-active {
-  color: var(--seal);
-}
-
-/* ── 表格内部元素 ── */
-.wr-table-stock-link {
-  font-weight: 600;
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.wr-table-stock-link:hover {
-  color: var(--seal);
-  text-decoration: underline;
-}
-
-.is-active-col {
-  background: color-mix(in oklab, var(--seal) 10%, transparent);
-  padding: 1px 4px;
-  border-radius: 2px;
-}
-
-.horizon-clickable-row {
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.horizon-clickable-row:hover {
-  background: var(--surface-hover) !important;
-}
-
-.is-active-horizon {
-  background: color-mix(in oklab, var(--seal) 12%, transparent) !important;
-}
-
-.wr-horizon-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.wr-best-badge {
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: 3px;
-  background: var(--seal);
-  color: #fff;
-  letter-spacing: 0.04em;
-}
-
-.wr-mini-meter {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  height: 1.5rem;
-  padding: 0 6px;
-  border-radius: 3px;
-  background: var(--surface-sunken);
-  overflow: hidden;
-}
-
-.wr-mini-meter__bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  background: color-mix(in oklab, var(--seal) 24%, transparent);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-}
-
-.wr-mini-meter__text {
-  position: relative;
-  z-index: 1;
-  font-weight: 700;
-  font-size: var(--fs-body);
-}
-
-/* 结果状态 Tag */
-.wr-outcome-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: var(--fs-micro);
-  font-weight: 700;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.wr-outcome-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.outcome-win {
-  background: color-mix(in oklab, var(--up) 14%, transparent);
-  color: var(--up);
-}
-
-.outcome-loss {
-  background: color-mix(in oklab, var(--down) 14%, transparent);
-  color: var(--down);
-}
-
-.outcome-pending {
-  background: var(--surface-sunken);
-  color: var(--text-tertiary);
-  border: 1px solid var(--border-subtle);
-}
-
-/* 最佳持有期高亮行 */
-:deep(.is-best-horizon) {
-  background: color-mix(in oklab, var(--seal) 8%, transparent) !important;
-  font-weight: 700;
-}
-
-:deep(.is-best-horizon td:first-child) {
-  position: relative;
-}
-
-/* 原来这里给最佳行的第一格加一条绝对定位的左色条。行内已经有「最佳」文字标签，
- * 色条是第二遍表达同一件事，而且它是全屏第七条装饰线。改成极轻的行底染色：
- * 扫视时能看出来，读数字时不抢注意力。 */
-:deep(.is-best-horizon) {
-  background: color-mix(in oklab, var(--seal) 5%, transparent);
-}
-
-@media (max-width: 980px) {
-  .wr-cards {
-    grid-template-columns: 1fr;
-  }
-
-  .wr-tables-grid {
-    grid-template-columns: 1fr;
-  }
-}
+.wr-panel > * { flex-shrink: 0; }
+.wr-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-3) var(--gap-4); padding: var(--gap-3); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface-sunken); }
+.wr-summary__rate { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-2); }
+.wr-summary__label { color: var(--muted); font-size: var(--fs-aux); }
+.wr-summary__val { font: 700 var(--fs-tape) / 1.15 var(--mono); font-variant-numeric: tabular-nums; }
+.wr-summary__facts { display: flex; flex-wrap: wrap; gap: var(--gap-3) var(--gap-4); margin-left: auto; }
+.wr-fact { display: flex; flex-direction: column; gap: var(--gap-1); }
+.wr-fact__k { color: var(--muted); font-size: var(--fs-aux); }
+.wr-fact__v { font-size: var(--fs-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wr-formula { flex-basis: 100%; margin: 0; padding-top: var(--gap-2); border-top: 1px solid var(--rule); font-size: var(--fs-aux); color: var(--muted); overflow-wrap: anywhere; }
+.wr-formula__text { font-variant-numeric: tabular-nums; }
+.wr-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap-2); }
+.wr-card { display: flex; flex-direction: column; gap: var(--gap-2); min-width: 0; padding: var(--gap-3); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+.wr-card__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gap-1) var(--gap-2); }
+.wr-card__k { font-size: var(--fs-body); font-weight: 600; color: var(--ink); }
+.wr-card__date, .wr-card__sub { font-size: var(--fs-aux); color: var(--muted); }
+.wr-card__body { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--gap-2); }
+.wr-card__target { display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; }
+.wr-card__stock-link, .wr-table-stock-link { color: var(--ink); font-weight: 600; }
+.wr-card__stock-link:hover, .wr-table-stock-link:hover { color: var(--seal-ink); }
+.wr-card__metric { display: flex; flex-direction: column; align-items: flex-end; gap: var(--gap-1); }
+.wr-card__num { font: 600 var(--fs-hero) / 1.2 var(--mono); font-variant-numeric: tabular-nums; }
+.wr-card__empty { color: var(--muted); font-size: var(--fs-aux); }
+.wr-horizon-pill { align-self: flex-start; color: var(--seal-ink); background: var(--seal-soft); border-radius: var(--radius); padding: 0 var(--gap-2); font: 600 var(--fs-title) / 1.5 var(--mono); }
+.wr-horizon-tip { color: var(--muted); font-size: var(--fs-aux); }
+.wr-tables-grid { display: grid; grid-template-columns: minmax(0, 32rem) minmax(0, 1fr); align-items: start; gap: var(--gap-2); width: 100%; min-width: 0; }
+.wr-block { display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.wr-block__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap-2); padding: var(--gap-2); border-bottom: 1px solid var(--rule); }
+.wr-block__title-wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-2); }
+.wr-block__title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1); margin: 0; font-size: var(--fs-body); font-weight: 600; color: var(--ink); }
+.wr-block__count, .wr-block__tip { font-size: var(--fs-aux); }
+.wr-horizon-badge { padding-inline: var(--gap-1); }
+.wr-best-badge { margin-left: var(--gap-1); padding-inline: var(--gap-1); border-radius: var(--radius); color: var(--seal-ink); background: var(--seal-soft); font-size: var(--fs-kicker); }
+.is-active-col { background: var(--seal-soft); border-radius: var(--radius); padding-inline: var(--gap-1); }
+.wr-outcome-tag { display: inline-flex; align-items: center; padding: 0 var(--gap-1); border: 1px solid var(--rule); border-radius: var(--radius); font-size: var(--fs-aux); font-weight: 600; }
+.outcome-win { color: var(--up); }
+.outcome-loss { color: var(--down); }
+.outcome-pending, .dim { color: var(--muted); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+:deep(.horizon-clickable-row) { cursor: pointer; }
+:deep(.is-best-horizon > td.el-table__cell) { background: color-mix(in oklab, var(--seal) 5%, var(--surface)); }
+:deep(.is-active-horizon > td.el-table__cell) { background: var(--seal-soft); }
+@media (max-width: 1280px) { .wr-tables-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 980px) { .wr-cards { grid-template-columns: minmax(0, 1fr); } .wr-summary__facts { margin-left: 0; } }

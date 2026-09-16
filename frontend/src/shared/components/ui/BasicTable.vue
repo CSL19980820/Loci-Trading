@@ -14,6 +14,8 @@ import type { TableInstance } from 'element-plus'
 import BasicTableColumns from './BasicTableColumns.vue'
 import BasicTableToolbar from './BasicTableToolbar.vue'
 import BasicTableVirtual from './BasicTableVirtual.vue'
+import EmptyState from './EmptyState.vue'
+
 import { createSpanMethod } from './basicTableMerge'
 import { canVirtualizeBasicTable } from './basicTableVirtualSupport'
 import { useBasicTableEdit } from './useBasicTableEdit'
@@ -41,6 +43,7 @@ const columns = defineModel<BasicTableColumn[]>('columns', { default: () => [] }
 
 defineSlots<{
   toolbarButtons?: () => unknown
+  empty?: () => unknown
   [name: string]: ((props: {
     row: Record<string, unknown>
     prop?: string
@@ -64,6 +67,7 @@ const props = withDefaults(
     height?: string | number
     maxHeight?: string | number
     emptyText?: string
+    emptyReason?: string
     toolbarConfig?: BasicTableToolbarConfig
     loading?: boolean
     virtualized?: boolean
@@ -97,11 +101,17 @@ const slots = useSlots()
 provide('basicTableSlots', slots)
 const tableRef = ref<TableInstance>()
 const virtualTableRef = ref<InstanceType<typeof BasicTableVirtual>>()
+const bodyRef = ref<HTMLElement>()
 const zoomed = ref(false)
+
+const fillParent = computed(() => props.height === '100%' || props.height === '100')
 
 // 注册顺序即生命周期钩子的调用顺序：高度先算（onMounted 里 calcOffsetHeight 在前），
 // 再发默认请求——与拆分前组件内那一个 onMounted 的语义一致。
-const { autoHeight } = useBasicTableHeight(props)
+const { autoHeight, fillHeight } = useBasicTableHeight(props, {
+  bodyRef,
+  fillParent: () => fillParent.value && !zoomed.value,
+})
 const { rows, innerLoading, pager, showPager, pagerOpts, fetch, reloadTable, restReload } =
   useBasicTableSource(props)
 const { resolveRowKey, isEditByRow, setEditRow, clearEdit, getRowEdit } = useBasicTableEdit(props)
@@ -116,7 +126,10 @@ const showToolbar = computed(
 
 const busy = computed(() => props.loading || innerLoading.value)
 
-const resolvedHeight = computed(() => props.height ?? autoHeight.value)
+const resolvedHeight = computed(() => {
+  if (fillParent.value && !zoomed.value) return fillHeight.value
+  return props.height ?? autoHeight.value
+})
 
 const spanMethod = computed(() =>
   createSpanMethod(props.mergeField ?? [], rows.value, columns.value),
@@ -206,7 +219,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="basic-table" :class="{ 'basic-table--zoom': zoomed }">
+  <div class="basic-table" :class="{ 'basic-table--zoom': zoomed, 'basic-table--fill': fillParent && !zoomed }">
     <BasicTableToolbar
       v-if="$slots.toolbarButtons || showToolbar"
       v-model:zoomed="zoomed"
@@ -220,7 +233,7 @@ defineExpose({
       </template>
     </BasicTableToolbar>
 
-    <div class="basic-table__body" v-loading="busy">
+    <div ref="bodyRef" class="basic-table__body" v-loading="busy">
       <BasicTableVirtual
         v-if="useVirtualized"
         ref="virtualTableRef"
@@ -228,6 +241,7 @@ defineExpose({
         :rows="rows"
         :row-key="typeof rowKey === 'string' ? rowKey : 'id'"
         :empty-text="emptyText"
+        :empty-reason="emptyReason"
         :border="border"
         :stripe="stripe"
         :size="size"
@@ -239,7 +253,13 @@ defineExpose({
         @cell-click="onCellClick"
         @selection-change="onSelectionChange"
         @update:field="onUpdateField"
-      />
+      >
+        <template #empty>
+          <slot name="empty">
+            <EmptyState :description="emptyText" :reason="emptyReason" />
+          </slot>
+        </template>
+      </BasicTableVirtual>
       <el-table
         v-else
         ref="tableRef"
@@ -264,6 +284,11 @@ defineExpose({
           :is-editing="isEditByRow"
           @update:field="onUpdateField"
         />
+        <template #empty>
+          <slot name="empty">
+            <EmptyState :description="emptyText" :reason="emptyReason" />
+          </slot>
+        </template>
       </el-table>
     </div>
 
@@ -302,13 +327,39 @@ defineExpose({
 }
 
 /*
+ * 页级满高：父级已经是 h-0 + flex-1（PageContainer #main）。
+ * 这里再给表体一条确定高度，el-table 的 height="100%" 才不会塌成内容高，
+ * 下面那块画布空洞就是这么来的。
+ */
+.basic-table--fill {
+  height: 100%;
+}
+
+.basic-table--fill .basic-table__body {
+  height: 0;
+  background-color: var(--surface);
+}
+
+.basic-table--fill :deep(.basic-table__el),
+.basic-table--fill :deep(.el-table),
+.basic-table--fill :deep(.el-table__inner-wrapper),
+.basic-table--fill :deep(.el-table__body-wrapper) {
+  height: 100%;
+  background-color: var(--surface);
+}
+.basic-table--fill :deep(.el-table__empty-block) {
+  height: 100%;
+  background: transparent;
+}
+
+/*
  * 放大态：整屏浮层。不加投影——终端里的层级靠边框与底色区分（D3 卡片无阴影），
  * 一圈 40px 的模糊阴影只会让下面的行看起来发灰。
  */
 .basic-table--zoom {
   position: fixed;
   inset: var(--gap-2);
-  z-index: 50;
+  z-index: var(--z-table-zoom);
   padding: var(--gap-2);
   background: var(--sheet);
   border: 1px solid var(--rule-strong);
@@ -318,25 +369,16 @@ defineExpose({
 .basic-table__body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
-/* 表格皮肤的真相在 style.components.css（el-table 与 BasicTable 同一套）；
-   这里只补作用域内必须的几项：行高、表头字色、贴边 padding。 */
-.basic-table__el {
-  width: 100%;
-  --el-table-header-bg-color: var(--sheet-alt);
-  --el-table-row-hover-bg-color: var(--seal-soft);
-  --el-table-border-color: var(--rule);
-  background: transparent;
-}
 
 .basic-table__el :deep(.el-table__header-wrapper th.el-table__cell) {
   height: var(--head-h);
   background: var(--sheet-alt);
   color: var(--muted);
   font-size: var(--fs-aux);
-  font-weight: 600;
+  font-weight: 400;
   text-align: center;
 }
 

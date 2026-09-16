@@ -300,7 +300,7 @@
 .bar-track {
   height: var(--gap-1);
   border-radius: 99px;
-  background: color-mix(in srgb, var(--rule) 80%, var(--paper));
+  background: color-mix(in oklab, var(--rule) 80%, var(--paper));
   overflow: hidden;
 }
 

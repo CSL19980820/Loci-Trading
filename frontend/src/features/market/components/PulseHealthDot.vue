@@ -61,51 +61,14 @@ function openJobs(): void {
 <template>
   <el-tooltip :content="tipText" placement="bottom-end" :show-after="120">
     <el-button
-      class="pulse-dot"
-      :class="{ 'is-bad': bad }"
       link
       size="small"
+      class="m-0 shrink-0 px-2"
       :aria-label="`作业健康：${tipText}`"
       @click="openJobs"
     >
-      <span class="pulse-dot__mark" aria-hidden="true" />
-      <span v-if="bad" class="pulse-dot__text">{{ lineText }}</span>
+      <span class="inline-block h-1.5 w-1.5 shrink-0 rounded-full" :class="bad ? 'bg-warn' : loading ? 'bg-mist' : 'bg-info'" aria-hidden="true" />
+      <span v-if="bad" class="text-warn ml-1 max-w-16 truncate">{{ lineText }}</span>
     </el-button>
   </el-tooltip>
 </template>
-
-<style scoped>
-.pulse-dot {
-  flex: 0 0 auto;
-  height: 20px;
-  /* 全局 .el-button--small 的 min-height 是 --ctl-h，页头这枚点必须一起压下来 */
-  min-height: 20px;
-  padding: 0 2px;
-  font-size: var(--fs-aux);
-  color: var(--mist);
-}
-
-.pulse-dot__mark {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--seal);
-  flex: 0 0 auto;
-}
-
-.pulse-dot.is-bad {
-  color: var(--warn);
-}
-
-.pulse-dot.is-bad .pulse-dot__mark {
-  background: var(--warn);
-}
-
-.pulse-dot__text {
-  margin-left: 5px;
-  max-width: 16ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>

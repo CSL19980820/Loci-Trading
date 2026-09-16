@@ -73,7 +73,7 @@ const baselineY = computed<number | null>(() => {
 
 <template>
   <svg
-    class="spark"
+    class="spark block h-full w-full"
     :class="`spark--${tone}`"
     :viewBox="`0 0 ${W} ${H}`"
     preserveAspectRatio="none"
@@ -99,9 +99,6 @@ const baselineY = computed<number | null>(() => {
 
 <style scoped>
 .spark {
-  display: block;
-  width: 100%;
-  height: 100%;
   overflow: visible;
 }
 

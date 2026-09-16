@@ -60,7 +60,7 @@ function buttonType(kind: Preset['kind']): '' | 'primary' | 'danger' {
 </script>
 
 <template>
-  <div class="list-toolbar">
+  <div class="inline-flex flex-wrap items-center gap-2">
     <el-button
       v-for="action in visible"
       :key="action.key"
@@ -70,6 +70,7 @@ function buttonType(kind: Preset['kind']): '' | 'primary' | 'danger' {
       :icon="action.icon"
       :loading="action.loading"
       :disabled="action.disabled"
+      class="m-0"
       @click="action.onClick()"
     >
       {{ action.label }}
@@ -77,33 +78,3 @@ function buttonType(kind: Preset['kind']): '' | 'primary' | 'danger' {
     <slot />
   </div>
 </template>
-
-<style scoped>
-.list-toolbar {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--gap-2);
-}
-
-.list-toolbar :deep(.el-button) {
-  height: var(--ctl-h);
-  margin: 0;
-}
-
-.list-toolbar :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-/* 破坏性操作用印章红（--stamp）：它既不是品牌色也不是涨跌色，全站只出现在删除类动作上 */
-.list-toolbar :deep(.el-button--danger.is-plain) {
-  --el-button-text-color: var(--stamp);
-  --el-button-bg-color: color-mix(in srgb, var(--stamp) 6%, var(--sheet));
-  --el-button-border-color: color-mix(in srgb, var(--stamp) 38%, var(--rule));
-  --el-button-hover-text-color: var(--sheet);
-  --el-button-hover-bg-color: var(--stamp);
-  --el-button-hover-border-color: var(--stamp);
-  --el-button-active-bg-color: var(--stamp);
-  --el-button-active-border-color: var(--stamp);
-}
-</style>

@@ -41,7 +41,7 @@ const value = computed({
 <template>
   <el-segmented
     v-model="value"
-    class="segment-switch"
+    class="segment-switch inline-flex min-h-[var(--ctl-h)] items-center border"
     size="small"
     :options="options"
     :aria-label="ariaLabel"
@@ -49,19 +49,18 @@ const value = computed({
 </template>
 
 <style scoped>
-/* 分段控件：控件高 28px、圆角 3px；选中态用品牌靛（D1：红绿只留给涨跌数字） */
+/* 保留 EP 的键盘选择和滑块，选中态与全站导航共用柔和主色。 */
 .segment-switch {
   --el-border-radius-base: var(--radius);
   --el-segmented-padding: 1px;
-  --el-segmented-bg-color: var(--sheet-alt);
+  --el-segmented-bg-color: var(--surface-sunken);
   --el-segmented-color: var(--muted);
-  --el-segmented-item-selected-color: var(--sheet);
-  --el-segmented-item-selected-bg-color: var(--seal);
-  --el-segmented-item-hover-color: var(--seal-ink);
-  --el-segmented-item-hover-bg-color: var(--seal-soft);
-  --el-segmented-item-active-bg-color: var(--seal-soft);
+  --el-segmented-item-selected-color: var(--seal-ink);
+  --el-segmented-item-selected-bg-color: var(--seal-soft);
+  --el-segmented-item-hover-color: var(--ink);
+  --el-segmented-item-hover-bg-color: var(--surface-hover);
+  --el-segmented-item-active-bg-color: var(--surface-active);
   --el-border-color: var(--rule);
-  min-height: var(--ctl-h);
   border: 1px solid var(--rule);
   font-size: var(--fs-body);
   font-weight: 500;

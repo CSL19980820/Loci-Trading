@@ -10,6 +10,7 @@ import {
 } from '../assistantAgentUi'
 import { localizeAgentLine } from '../toolLabel'
 import type { AiAgentProgress } from '@/shared/types/ai_assistant'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import AssistantToolReceiptList from './AssistantToolReceiptList.vue'
 
 const props = defineProps<{
@@ -58,6 +59,7 @@ function close(): void {
     width="min(92vw, 52rem)"
     top="5vh"
     append-to-body
+    :modal="false"
     :show-close="false"
     class="assistant-agent-thread-dialog"
     data-testid="assistant-agent-thread"
@@ -139,7 +141,7 @@ function close(): void {
         </div>
       </section>
     </template>
-    <el-empty v-else description="未选择子进程" />
+    <EmptyState v-else description="未选择子进程" />
   </el-dialog>
 </template>
 
@@ -153,18 +155,18 @@ function close(): void {
   width: 100%;
 }
 .assistant-agent-thread__header.is-running,
-.assistant-agent-thread__header.is-live { --dot: var(--lake); }
-.assistant-agent-thread__header.is-done { --dot: var(--lake); }
-.assistant-agent-thread__header.is-error { --dot: var(--loss); }
+.assistant-agent-thread__header.is-live { --dot: var(--ok); }
+.assistant-agent-thread__header.is-done { --dot: var(--ok); }
+.assistant-agent-thread__header.is-error { --dot: var(--warn); }
 .assistant-agent-thread__header.is-cancelled { --dot: var(--mist); }
-.assistant-agent-thread__header.is-queued { --dot: var(--blue); }
+.assistant-agent-thread__header.is-queued { --dot: var(--info); }
 .assistant-agent-thread__dot {
   flex: 0 0 auto;
   width: .55rem;
   height: .55rem;
   border-radius: var(--ai-r-pill);
   background: var(--dot);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--dot) 18%, transparent);
 }
 .assistant-agent-thread__header.is-live .assistant-agent-thread__dot {
   animation: thread-dot-pulse 1.4s ease-in-out infinite;
@@ -176,7 +178,7 @@ function close(): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-display);
+  font-family: var(--font);
   font-size: var(--ai-fs-title);
   font-weight: 650;
   line-height: 1.2;
@@ -188,8 +190,8 @@ function close(): void {
   font-weight: 600;
   white-space: nowrap;
 }
-.assistant-agent-thread__header.is-done .assistant-agent-thread__badge { color: var(--lake); }
-.assistant-agent-thread__header.is-error .assistant-agent-thread__badge { color: var(--loss); }
+.assistant-agent-thread__header.is-done .assistant-agent-thread__badge { color: var(--ok); }
+.assistant-agent-thread__header.is-error .assistant-agent-thread__badge { color: var(--warn); }
 .assistant-agent-thread__pct {
   flex: 0 0 auto;
   color: var(--mist);
@@ -209,30 +211,30 @@ function close(): void {
 .assistant-agent-thread__close:hover,
 .assistant-agent-thread__close:focus-visible {
   color: var(--ink) !important;
-  background: color-mix(in srgb, var(--ink) 6%, transparent) !important;
+  background: color-mix(in oklab, var(--ink) 6%, transparent) !important;
 }
 .assistant-agent-thread__meter {
   height: 3px;
   overflow: hidden;
   border-radius: var(--ai-r-pill);
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  background: color-mix(in oklab, var(--ink) 8%, transparent);
   margin-bottom: .75rem;
 }
 .assistant-agent-thread__meter-fill {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: var(--lake);
+  background: var(--ok);
   transition: width .25s ease;
 }
-.assistant-agent-thread__meter-fill.is-done { background: var(--lake); }
-.assistant-agent-thread__meter-fill.is-error { background: var(--loss); }
+.assistant-agent-thread__meter-fill.is-done { background: var(--ok); }
+.assistant-agent-thread__meter-fill.is-error { background: var(--warn); }
 .assistant-agent-thread__detail {
   margin: 0 0 .75rem;
   padding: .55rem .65rem;
   border: 1px solid var(--rule);
   border-radius: var(--ai-r-card);
-  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
+  background: color-mix(in oklab, var(--panel-2) 88%, transparent);
   font-size: var(--ai-fs-body);
   line-height: 1.45;
   white-space: pre-wrap;
@@ -278,7 +280,7 @@ function close(): void {
   top: 1.2rem;
   bottom: 0;
   width: 1px;
-  background: color-mix(in srgb, var(--rule) 85%, var(--ink) 8%);
+  background: color-mix(in oklab, var(--rule) 85%, var(--ink) 8%);
 }
 .assistant-agent-thread__step-index {
   display: grid;
@@ -294,9 +296,9 @@ function close(): void {
   z-index: 1;
 }
 .assistant-agent-thread__steps li.is-last .assistant-agent-thread__step-index {
-  border-color: color-mix(in srgb, var(--lake) 45%, var(--rule));
-  background: var(--lake-soft);
-  color: var(--lake);
+  border-color: color-mix(in oklab, var(--ok) 45%, var(--rule));
+  background: var(--ok-soft);
+  color: var(--ok);
 }
 .assistant-agent-thread__steps p {
   margin: .02rem 0 0;
@@ -309,9 +311,9 @@ function close(): void {
   align-items: baseline;
   gap: .5rem;
   padding: .6rem .7rem;
-  border: 1px solid color-mix(in srgb, var(--lake) 24%, var(--rule));
+  border: 1px solid color-mix(in oklab, var(--ok) 24%, var(--rule));
   border-radius: var(--ai-r-card);
-  background: color-mix(in srgb, var(--lake-soft) 40%, var(--panel));
+  background: color-mix(in oklab, var(--ok-soft) 40%, var(--panel));
 }
 .assistant-agent-thread__summary h4 {
   flex: 0 0 auto;
@@ -329,8 +331,8 @@ function close(): void {
   white-space: pre-wrap;
 }
 @keyframes thread-dot-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 16%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--dot) 10%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in oklab, var(--dot) 16%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--dot) 10%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
   .assistant-agent-thread__header.is-live .assistant-agent-thread__dot,
@@ -350,7 +352,7 @@ function close(): void {
   margin: 0;
   padding: .7rem .85rem;
   border-bottom: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
+  background: color-mix(in oklab, var(--panel-2) 88%, transparent);
 }
 .assistant-agent-thread-dialog .el-dialog__body {
   max-height: min(78dvh, 44rem);

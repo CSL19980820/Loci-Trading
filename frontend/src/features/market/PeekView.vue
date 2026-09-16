@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Close } from '@element-plus/icons-vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 import { getLiveTape, type LiveTapeItem } from '@/shared/api/quant'
 import { useLivePolling } from '@/shared/composables/useLivePolling'
@@ -40,7 +42,7 @@ function tone(pct: number | null | undefined): string {
 
 const clock = computed(() => {
   const raw = asOf.value
-  if (!raw) return '连接中…'
+  if (!raw) return error.value ? '报价未更新' : '等待行情…'
   const part = raw.split(' ')[1]
   return part ? part.slice(0, 8) : raw
 })
@@ -216,15 +218,14 @@ onUnmounted(() => {
           text
           circle
           size="small"
+          :icon="Close"
           aria-label="隐藏行情窗"
           @click.stop="onClose"
-        >
-          ×
-        </el-button>
+        />
       </div>
     </header>
 
-    <section class="peek-rail" aria-label="指数">
+    <section v-if="indices.length" class="peek-rail" aria-label="指数">
       <article
         v-for="item in indices"
         :key="item.code"
@@ -236,8 +237,13 @@ onUnmounted(() => {
         <b>{{ fmtPct(item.pct) }}</b>
       </article>
     </section>
+    <EmptyState
+      v-else
+      :description="error ? '行情暂不可用' : '暂无指数报价'"
+      :reason="error ? '等待下一次更新' : '等待行情更新'"
+    />
 
-    <p v-if="error" class="peek-err">{{ error }}</p>
+    <p v-if="error" class="peek-err" role="alert">{{ error }}</p>
   </main>
 </template>
 
@@ -263,6 +269,8 @@ onUnmounted(() => {
   margin: calc(var(--gap-1) * -1) calc(var(--gap-2) * -1) 0;
   padding: var(--gap-1) var(--gap-2);
   cursor: move;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sheet-alt);
 }
 .peek-head {
   display: flex;
@@ -295,21 +303,25 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .peek-rail {
-  display: flex;
-  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: 1px;
+  flex: 0 1 auto;
+  min-height: 0;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--sheet);
-  overflow: hidden;
+  background: var(--rule);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .peek-rail__cell {
   flex: 1;
   min-width: 0;
-  padding: var(--gap-1) 2px;
-  text-align: center;
+  padding: var(--gap-2);
+  text-align: left;
   display: grid;
-  gap: 1px;
-  border-left: 1px solid var(--rule);
+  gap: var(--gap-1);
+  background: var(--sheet);
 }
 .peek-rail__cell:first-child {
   border-left: none;
@@ -321,7 +333,7 @@ onUnmounted(() => {
 }
 /* D2：探头窗里最大的字是点位 */
 .peek-rail__cell .px {
-  font: 700 var(--fs-body) / 1.15 var(--mono);
+  font: 700 var(--fs-hero) / 1.15 var(--mono);
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
@@ -345,6 +357,10 @@ onUnmounted(() => {
   margin: 0;
   color: var(--warn);
   font-size: var(--fs-aux);
+  max-height: 4rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  flex-shrink: 0;
 }
 /* —— 贴边探头：矢量圆标（无位图毛边） —— */
 .peek--ghost {
@@ -360,7 +376,7 @@ onUnmounted(() => {
   * 品牌印记必须无论明暗都是「印章红盘 + 亮字」：字形跟着 --sheet 走会在
   * 夜盘翻成深色、直接消失在红盘里（参照 style.theme.css:117 的墨盘同款理由）。
   */
-  --peek-badge-glyph: #fff;
+  --peek-badge-glyph: var(--on-primary);
 }
 .icon-shift {
   width: 2.25rem;
@@ -380,7 +396,7 @@ onUnmounted(() => {
   width: 2.25rem;
   height: 2.25rem;
   display: block;
-  color: var(--stamp);
+  color: var(--seal);
   pointer-events: none;
   user-select: none;
   shape-rendering: geometricPrecision;
@@ -391,7 +407,8 @@ onUnmounted(() => {
 }
 </style>
 
-<!-- 缩进态透明嵌边；展开态强制不透明，避免竞态残留空白壳。探头窗取消 body min-width。 -->
+<!-- 缩进态透明嵌边；展开态强制不透明，避免竞态残留空白壳。探头窗取消 body min-width。
+     作用域：html[data-peek-phase] 只在 /peek 小窗存在，主应用无此属性，不会污染全局。 -->
 <style>
 /* 满屏高度的唯一声明处：scoped 里不再各态写一遍 min-height:100dvh */
 html[data-peek-phase],

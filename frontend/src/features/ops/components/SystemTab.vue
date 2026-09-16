@@ -213,7 +213,7 @@ defineExpose({
     </div>
 
     <template #foot>
-      <span class="foot-status" :class="{ 'is-dirty': dirty }">{{ footStatus() }}</span>
+      <span class="foot-status" role="status" :class="{ 'is-dirty': dirty }">{{ footStatus() }}</span>
       <el-button :disabled="busy || !dirty" @click="revertAll">全部还原</el-button>
       <el-button type="primary" :loading="busy" :disabled="!dirty" @click="saveAll">
         保存全部
@@ -230,7 +230,7 @@ defineExpose({
 .foot-status {
   margin-right: auto;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 

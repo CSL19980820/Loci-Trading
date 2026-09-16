@@ -34,9 +34,9 @@ const headline = computed(() => {
   <div v-if="issues.length" class="pulse-issues" role="status">
     <span class="pulse-issues__mark" aria-hidden="true">!</span>
     <span class="pulse-issues__text">{{ headline }}</span>
-    <el-popover placement="bottom-start" :width="380" trigger="click">
+    <el-popover placement="bottom-start" width="min(380px, calc(100vw - 32px))" trigger="click">
       <template #reference>
-        <el-button link type="primary" size="small">查看</el-button>
+        <el-button link type="primary" size="small">看报错详情</el-button>
       </template>
       <ul class="pulse-issues__list">
         <li v-for="issue in issues" :key="issue.key">
@@ -80,8 +80,7 @@ const headline = computed(() => {
 
 /* 两个 link 按钮压到 18px：异常条整体不超过 24px，出错也不许顶开主内容 */
 .pulse-issues :deep(.el-button) {
-  height: 18px;
-  min-height: 18px;
+  min-height: var(--ctl-h);
   padding: 0 2px;
   font-size: var(--fs-aux);
 }
@@ -94,6 +93,8 @@ const headline = computed(() => {
 }
 
 .pulse-issues__list {
+  max-height: 50vh;
+  overflow: auto;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -116,6 +117,6 @@ const headline = computed(() => {
 .pulse-issues__list span {
   font-size: var(--fs-aux);
   color: var(--mist);
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 </style>

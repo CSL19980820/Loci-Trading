@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 
 import { getSkill } from '@/shared/api/quant'
 import type { Skill, SkillJob } from '@/shared/types/quant'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 import ManualInline from './ManualInline.vue'
 import SkillJobConfigPanel from './SkillJobConfigPanel.vue'
@@ -257,10 +258,10 @@ async function saveJob(): Promise<void> {
                 </p>
               </template>
             </article>
-            <el-empty
+            <EmptyState
               v-else-if="!loadingBody"
-              :description="bodyError || '说明书只有元数据，没有正文'"
-              :image-size="72"
+              :description="bodyError ? '读不到说明书正文' : '说明书只有元数据'"
+              :reason="bodyError ? '确认技能目录仍在本机' : '没有正文可展示'"
             />
           </div>
         </el-tab-pane>
@@ -348,8 +349,8 @@ async function saveJob(): Promise<void> {
   font-size: 0.76rem;
 }
 .mono {
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.82rem;
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
 }
 .chip-row {
   display: flex;
@@ -413,8 +414,8 @@ async function saveJob(): Promise<void> {
   padding: 0.55rem 0.7rem;
   border-radius: var(--radius);
   background: var(--el-fill-color-light);
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.8rem;
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -445,7 +446,7 @@ async function saveJob(): Promise<void> {
 }
 .tool-desc {
   margin: 0.25rem 0 0.35rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
   line-height: 1.5;
   color: var(--muted);
 }

@@ -97,7 +97,9 @@ function onRerun(): void {
     class="assistant-turn"
     :class="[`is-${message.role}`, { 'is-streaming': streaming }]"
     data-testid="assistant-turn"
+    :aria-label="isUser ? '你的消息' : '助手消息'"
   >
+    <header class="assistant-turn__identity">{{ isUser ? '你' : 'Loci' }}</header>
     <template v-if="isUser">
       <div class="assistant-turn__bubble">
         <div v-if="message.images?.length" class="assistant-turn__images">
@@ -202,22 +204,22 @@ function onRerun(): void {
 }
 .assistant-turn__bubble {
   min-width: 0; max-width: 100%;
-  padding: .65rem .8rem;
+  padding: var(--gap-3);
   border: 1px solid var(--rule);
   border-radius: var(--ai-r-card); background: var(--panel-2);
   box-sizing: border-box;
 }
 .assistant-turn.is-assistant .assistant-turn__bubble {
   width: 100%;
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
-  border-color: color-mix(in srgb, var(--rule) 85%, transparent);
+  background: var(--surface);
+  border-color: color-mix(in oklab, var(--rule) 85%, transparent);
 }
 .assistant-turn.is-user .assistant-turn__bubble {
   max-width: min(100%, 42rem);
   background: var(--seal-soft);
-  border-color: color-mix(in srgb, var(--seal) 28%, var(--rule));
+  border-color: color-mix(in oklab, var(--seal) 28%, var(--rule));
 }
-.assistant-turn.is-streaming .assistant-turn__bubble { border-style: dashed; }
+.assistant-turn.is-streaming .assistant-turn__bubble { border-color: var(--seal-border); }
 .assistant-turn__images {
   display: flex;
   flex-wrap: wrap;
@@ -233,7 +235,7 @@ function onRerun(): void {
 }
 .assistant-turn__content {
   margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
-  color: var(--ink); font-size: var(--ai-fs-prose); line-height: 1.55;
+  color: var(--ink); font-size: var(--ai-fs-prose); line-height: 1.65;
   max-width: 100%;
   min-width: 0;
 }
@@ -260,7 +262,7 @@ function onRerun(): void {
 }
 .assistant-turn__content.is-markdown :deep(blockquote) {
   margin: .35rem 0 .55rem; padding: .2rem 0 .2rem .7rem;
-  border-left: 3px solid color-mix(in srgb, var(--el-color-primary) 45%, var(--rule));
+  border-left: 3px solid color-mix(in oklab, var(--el-color-primary) 45%, var(--rule));
   color: var(--muted);
 }
 .assistant-turn__content.is-markdown :deep(hr) {
@@ -282,11 +284,11 @@ function onRerun(): void {
   word-break: break-word;
 }
 .assistant-turn__content.is-markdown :deep(th) {
-  background: color-mix(in srgb, var(--ink) 6%, transparent); font-weight: 600;
+  background: color-mix(in oklab, var(--ink) 6%, transparent); font-weight: 600;
 }
 .assistant-turn__content.is-markdown :deep(code) {
   padding: .05rem .3rem; border-radius: var(--ai-r-chip);
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  background: color-mix(in oklab, var(--ink) 8%, transparent);
   font-family: var(--mono); font-size: .82em;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -295,7 +297,7 @@ function onRerun(): void {
   margin: .35rem 0 .55rem; padding: .55rem .65rem;
   max-width: 100%;
   overflow-x: auto;
-  border-radius: var(--ai-r-card); background: color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: var(--ai-r-card); background: color-mix(in oklab, var(--ink) 8%, transparent);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -306,4 +308,6 @@ function onRerun(): void {
   display: block; max-width: 100%; height: auto; margin: .35rem 0; border-radius: var(--ai-r-chip);
 }
 .assistant-turn__warning { width: 100%; min-width: 0; }
+.assistant-turn__identity { color: var(--mist); font-size: var(--ai-fs-body); font-weight: 600; }
+.assistant-turn.is-user .assistant-turn__identity { align-self: flex-end; }
 </style>

@@ -13,7 +13,7 @@
   display: flex;
   align-items: center;
   gap: var(--gap-2);
-  padding: var(--gap-1) var(--gap-3);
+  padding: var(--gap-2) var(--gap-3);
   flex-wrap: wrap;
 }
 .sw-back {
@@ -27,15 +27,16 @@
   min-width: 0;
   flex: 1 1 auto;
 }
-/* 中文标题走 sans + --fs-hero 上限（D2）：旧版 var(--font-display) 1.14rem 是衬线大标题 */
+/* 标的身份使用标题级，最大的读数留给最新价。 */
 .sw-name {
   font-family: var(--font-sans);
-  font-size: var(--fs-hero);
+  font-size: var(--fs-title);
   font-weight: 700;
   letter-spacing: 0.03em;
   line-height: 1.2;
 }
 .sw-code {
+  font-family: var(--mono);
   color: var(--mist);
   font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
@@ -86,6 +87,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 .sw-body {
   flex: 1 1 auto;
@@ -96,7 +98,7 @@
   flex-direction: column;
   padding: var(--gap-1) var(--gap-2) var(--gap-2);
 }
-.sw-body--quote .tdx-desk {
+.sw-body--quote :deep(.tdx-desk) {
   flex: 1 1 auto;
   min-height: 0;
 }

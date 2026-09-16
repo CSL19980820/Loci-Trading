@@ -26,8 +26,8 @@
 - **跳空不按限价成交**：低开穿过止损位只能按开盘价出，高开越过止盈价则卖
   在更高的开盘价。按限价记账会让偏差单向堆在最差的那批交易上。
 - **停牌**：成交量为 0 的交易日不可成交。
-- **成本**：双边佣金 + 卖出印花税 + 滑点。个人账户单边万三、印花税千一，
-  一趟下来约 0.2-0.3%，对短持有期策略足以吃掉大半利润。
+- **成本**：双边佣金 + 卖出税费 + 双边滑点，按实验配置计算。
+  默认数值仅为历史兼容，不表示现行税率或用户实际费率。
 
 ## 口径
 
@@ -37,7 +37,7 @@ alpha"，再谈"用多少仓位去打"。诊断用顺序复利曲线见 ``perfor
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -46,6 +46,7 @@ import pandas as pd
 from src.backtest.application.metrics import compute_metrics
 from src.backtest.application.performance import compute_trade_performance
 from src.backtest.domain.models import EXIT_REASONS, BacktestConfig, Trade
+from src.backtest.application.execution_contract import adjustment_factors, strict_price_masks
 
 __all__ = [
     "EXIT_REASONS",
@@ -69,7 +70,10 @@ class BacktestResult:
     def to_frame(self) -> pd.DataFrame:
         if not self.trades:
             return pd.DataFrame()
-        frame = pd.DataFrame([asdict(trade) for trade in self.trades])
+        frame = pd.DataFrame([
+            trade.to_dict(include_factors=bool(self.config.get("economic_returns")))
+            for trade in self.trades
+        ])
         frame["alpha_pct"] = [trade.alpha_pct for trade in self.trades]
         return frame
 
@@ -137,11 +141,31 @@ def run_backtest(
     声明，不由调用方随意指定——见 src/strategies/base.py 的说明。
     """
     cfg = config or BacktestConfig()
-    result = BacktestResult(strategy_slug=strategy_slug, config=asdict(cfg))
+    result = BacktestResult(strategy_slug=strategy_slug, config=cfg.to_dict())
+
+    if cfg.valuation_end is not None:
+        if not signals.index.is_unique or not signals.index.is_monotonic_increasing:
+            raise ValueError("valuation_end 要求唯一且按时间升序的执行日期")
+        count = int(np.searchsorted(
+            np.array([str(day)[:10] for day in signals.index]), cfg.valuation_end, side="right",
+        ))
+        signals = signals.iloc[:count]
+        panels = {
+            name: panel.iloc[:count] if isinstance(panel, pd.DataFrame) else panel
+            for name, panel in panels.items()
+        }
 
     if signals.empty:
         result.skipped["无信号"] = 0
         return result
+
+    if cfg.economic_returns or cfg.strict_limit_prices:
+        for name in ("open", "high", "low", "close", "volume"):
+            panel = panels.get(name)
+            if panel is not None and (
+                not panel.index.equals(signals.index) or not panel.columns.equals(signals.columns)
+            ):
+                raise ValueError(f"执行面板 {name} 必须与信号面板完全对齐")
 
     open_ = panels["open"]
     high = panels["high"]
@@ -157,9 +181,25 @@ def run_backtest(
     low_a = low.to_numpy(dtype=float)
     close_a = close.to_numpy(dtype=float)
     volume_a = volume.to_numpy(dtype=float) if volume is not None else None
+    factors = (
+        adjustment_factors(panels, close, required=cfg.economic_returns)
+        if cfg.economic_returns or cfg.strict_limit_prices else None
+    )
 
     # 一字板：全天最高等于最低。涨停一字买不进、跌停一字卖不出。
     one_word_up, one_word_down = _one_word_masks(high_a, low_a, close_a)
+    strict_entry = known_reference = None
+    if cfg.strict_limit_prices:
+        strict_entry, one_word_down, known_reference = strict_price_masks(
+            open_a, close_a, factors, codes, volume_a,
+        )
+    calc_open, calc_high, calc_low, calc_close = open_a, high_a, low_a, close_a
+    if cfg.economic_returns:
+        calc_open, calc_high, calc_low, calc_close = (
+            values * factors for values in (open_a, high_a, low_a, close_a)
+        )
+        if any(np.isinf(values).any() for values in (calc_open, calc_high, calc_low, calc_close)):
+            raise ValueError("经济价格计算溢出，无法回测")
 
     # 三种入场时点对应两个自由度：哪一天、用哪个价。
     #   open      当日开盘（9:25 竞价筛出来的，开盘就能买）
@@ -201,7 +241,14 @@ def run_backtest(
         if volume_a is not None and not volume_a[entry_idx, col] > 0:
             skip("入场日停牌")
             continue
-        if one_word_up[entry_idx, col] and not cfg.allow_limit_up_entry:
+        if cfg.strict_limit_prices:
+            if not known_reference[entry_idx, col]:
+                skip("入场日缺少涨跌停前收参考价")
+                continue
+            if strict_entry[entry_idx, col]:
+                skip("入场日涨停开盘买不进")
+                continue
+        if not cfg.strict_limit_prices and one_word_up[entry_idx, col] and not cfg.allow_limit_up_entry:
             skip("入场日一字板买不进")
             continue
 
@@ -228,37 +275,65 @@ def run_backtest(
 
         # T+1：最早在入场次日才能卖出。
         first_exit = entry_idx + max(1, cfg.hold_days)
+        entry_factor = float(factors[entry_idx, col]) if cfg.economic_returns else 1.0
+        entry_basis = entry_price * entry_factor
         exit_idx, exit_price, reason = _resolve_exit(
             col=col,
             entry_idx=entry_idx,
-            entry_price=entry_price,
+            entry_price=entry_basis,
             planned_exit=first_exit,
             cfg=cfg,
-            high_a=high_a,
-            low_a=low_a,
-            close_a=close_a,
-            open_a=open_a,
+            high_a=calc_high,
+            low_a=calc_low,
+            close_a=calc_close,
+            open_a=calc_open,
             one_word_down=one_word_down,
             volume_a=volume_a,
             last_index=len(dates) - 1,
         )
+        if cfg.valuation_end is not None and (
+            reason == "data_end" or exit_idx is None or not np.isfinite(exit_price) or exit_price <= 0
+        ):
+            # 截止前无法了结仍是持仓；最后可见价格只用于估值，不伪装成交。
+            usable = np.isfinite(calc_close[entry_idx:, col]) & (calc_close[entry_idx:, col] > 0)
+            if volume_a is not None:
+                usable &= volume_a[entry_idx:, col] > 0
+            valid = np.flatnonzero(usable)
+            exit_idx = entry_idx + int(valid[-1]) if valid.size else entry_idx
+            exit_price = float(calc_close[exit_idx, col]) if valid.size else float(entry_basis)
+            reason = "data_end"
         if exit_idx is None or not np.isfinite(exit_price) or exit_price <= 0:
             skip("持有期内始终无法卖出")
             continue
 
-        window = slice(entry_idx, exit_idx + 1)
-        highs = high_a[window, col]
-        lows = low_a[window, col]
-        mfe = (np.nanmax(highs) / entry_price - 1) * 100 if highs.size else 0.0
-        mae = (np.nanmin(lows) / entry_price - 1) * 100 if lows.size else 0.0
+        open_mark = cfg.valuation_end is not None and reason == "data_end"
+        holding_end = len(dates) - 1 if open_mark else exit_idx
+        exit_date = dates[holding_end]
+        window = slice(entry_idx, holding_end + 1)
+        highs = calc_high[window, col]
+        lows = calc_low[window, col]
+        if cfg.economic_returns:
+            traded = volume_a[window, col] > 0 if volume_a is not None else np.ones(highs.shape, dtype=bool)
+            highs = highs[traded & np.isfinite(highs) & (highs > 0)]
+            lows = lows[traded & np.isfinite(lows) & (lows > 0)]
+        mfe = (np.nanmax(highs) / entry_basis - 1) * 100 if highs.size else 0.0
+        mae = (np.nanmin(lows) / entry_basis - 1) * 100 if lows.size else 0.0
 
-        gross = (exit_price / entry_price - 1) * 100
+        gross = (exit_price / entry_basis - 1) * 100
         net = gross - cost
+        exit_factor = float(factors[exit_idx, col]) if cfg.economic_returns else 1.0
+        raw_exit_price = exit_price / exit_factor
+        if cfg.economic_returns:
+            # 原始开/收盘成交价直接取输入，避免乘因子再除回带来浮点尾差。
+            for raw, economic in ((close_a, calc_close), (open_a, calc_open)):
+                if exit_price == economic[exit_idx, col]:
+                    raw_exit_price = float(raw[exit_idx, col])
+                    break
 
         bench = None
         if benchmark_close is not None:
             bench = _benchmark_return(
-                benchmark_close, dates[entry_idx], dates[exit_idx]
+                benchmark_close, dates[entry_idx], exit_date
             )
 
         trades.append(
@@ -266,16 +341,18 @@ def run_backtest(
                 code=codes[col],
                 signal_date=dates[row],
                 entry_date=dates[entry_idx],
-                entry_price=round(float(entry_price), 4),
-                exit_date=dates[exit_idx],
-                exit_price=round(float(exit_price), 4),
-                hold_days=int(exit_idx - entry_idx),
-                gross_return_pct=round(float(gross), 4),
-                net_return_pct=round(float(net), 4),
-                mae_pct=round(float(mae), 4),
-                mfe_pct=round(float(mfe), 4),
+                entry_price=float(entry_price) if cfg.economic_returns else round(float(entry_price), 4),
+                exit_date=exit_date,
+                exit_price=float(raw_exit_price) if cfg.economic_returns else round(float(raw_exit_price), 4),
+                hold_days=int(holding_end - entry_idx),
+                gross_return_pct=float(gross) if cfg.economic_returns else round(float(gross), 4),
+                net_return_pct=float(net) if cfg.economic_returns else round(float(net), 4),
+                mae_pct=float(mae) if cfg.economic_returns else round(float(mae), 4),
+                mfe_pct=float(mfe) if cfg.economic_returns else round(float(mfe), 4),
                 exit_reason=reason,
                 benchmark_return_pct=bench,
+                entry_factor=entry_factor,
+                exit_factor=exit_factor,
             )
         )
 

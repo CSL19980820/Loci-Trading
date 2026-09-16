@@ -29,6 +29,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 #: **拆文件时清单要跟着走**：被搬走的那段代码一旦不在清单里，守卫就出现盲区，
 #: 而盲区是看不出来的——用例照样绿。
 _GUARDED_FILES = (
+    "src/ai/application/agent_execution.py",
     "src/ai/application/assistant_manager.py",
     # assistant_manager 的 `_run` 段（worker 线程里跑的那一整段，含证据子 Agent 扇出）
     # 拆到了这里；它也是「嵌套扇出也要包」这条纪律的落点。

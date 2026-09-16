@@ -13,12 +13,12 @@ defineProps<{
 <template>
   <el-form class="sys-form" label-position="right" label-width="6.5em" size="small" @submit.prevent>
     <el-form-item label="目录">
-      <el-input v-model="dir" />
+      <el-input v-model="dir" aria-label="数据目录" class="directory-input" />
     </el-form-item>
     <el-row :gutter="12">
       <el-col v-if="dataLoc?.discovered_dirs?.length" :xs="24" :lg="14">
         <el-form-item label="已发现">
-          <div class="disc-list">
+          <div class="flex flex-wrap gap-1">
             <el-button
               v-for="item in dataLoc.discovered_dirs"
               :key="item.path + item.source"
@@ -51,11 +51,7 @@ defineProps<{
 </template>
 
 <style scoped>
-.disc-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-1);
-}
+/* 发现目录按钮组：自动换行，间距 4px。 */
 
 .disc-bytes {
   margin-left: var(--gap-1);
@@ -82,4 +78,8 @@ defineProps<{
 .sys-form :deep(.el-input) {
   width: 100%;
 }
+</style>
+<style scoped>
+.directory-input :deep(.el-input__inner) { font-family: var(--mono); }
+.disc-bytes { font-variant-numeric: tabular-nums; }
 </style>

@@ -122,7 +122,7 @@ function goManual(row: HealthCheckRow): void {
 </script>
 
 <template>
-  <div class="check-list">
+  <div class="check-list" role="region" aria-label="数据检查项">
     <template v-if="hasPending">
       <template v-if="pendingTitle === '待检'">
         <!-- 标题与提示压成一行：两行只说了「待检 N 项，点扫描」一件事 -->
@@ -131,7 +131,7 @@ function goManual(row: HealthCheckRow): void {
           <span class="check-list__hint">点「一键扫描」开始核对</span>
         </h3>
         <div class="check-list__catalog" aria-label="检查目录">
-          <template v-for="group in pendingGroups" :key="group.name">
+          <section v-for="group in pendingGroups" :key="group.name" class="check-group">
             <p class="check-list__sub">{{ group.name }}（{{ group.rows.length }}）</p>
             <div
               v-for="row in group.rows"
@@ -145,7 +145,7 @@ function goManual(row: HealthCheckRow): void {
                 {{ statusLabel[row.status] }}
               </el-tag>
             </div>
-          </template>
+          </section>
         </div>
       </template>
       <template v-else>
@@ -192,6 +192,7 @@ function goManual(row: HealthCheckRow): void {
           <el-checkbox
             v-if="showActions && row.autoFixable"
             :model-value="selected.includes(row.id)"
+            :aria-label="`选择修复：${row.label}`"
             :disabled="!!repairBusy"
             @change="(v: boolean | string | number) => toggleRow(row.id, v)"
           />
@@ -233,7 +234,7 @@ function goManual(row: HealthCheckRow): void {
     </template>
 
     <template v-if="okRows.length && !hasPending">
-      <el-button type="primary" link class="check-list__fold" @click="okOpen = !okOpen">
+      <el-button type="primary" link class="check-list__fold" :aria-expanded="okOpen" @click="okOpen = !okOpen">
         已通过（{{ okRows.length }}）
         <span class="dim">{{ okOpen ? '收起' : '展开' }}</span>
       </el-button>
@@ -255,135 +256,4 @@ function goManual(row: HealthCheckRow): void {
   </div>
 </template>
 
-<style scoped>
-.check-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-1);
-  margin-top: var(--gap-1);
-}
-.check-list__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-2);
-  margin-top: var(--gap-1);
-}
-.check-list__title {
-  margin: var(--gap-1) 0 2px;
-  font-size: var(--fs-aux);
-  font-weight: 700;
-  color: var(--mist);
-  letter-spacing: 0.04em;
-}
-.check-list__sub {
-  margin: var(--gap-1) 0 0;
-  font-size: var(--fs-kicker);
-  font-weight: 700;
-  color: var(--mist);
-  letter-spacing: 0.03em;
-}
-/* 提示与标题同行：小一号、常规字重，只做尾注 */
-.check-list__hint {
-  margin-left: var(--gap-2);
-  font-size: var(--fs-kicker);
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--mist);
-}
-.check-list__catalog {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-1);
-}
-.check-list__catalog .check-list__sub {
-  margin: var(--gap-1) 0 0;
-}
-.check-list__catalog .check-list__sub:first-child {
-  margin-top: 0;
-}
-.check-list__fold {
-  margin: var(--gap-2) 0 0;
-  padding: 0 !important;
-  height: auto !important;
-  font-size: var(--fs-aux);
-  font-weight: 700;
-  color: var(--mist) !important;
-  justify-content: flex-start;
-}
-.check-list__fold:focus-visible {
-  outline: 2px solid var(--seal);
-  outline-offset: 2px;
-}
-/* D3：1px hairline + 3px 圆角，无阴影；行高由内容驱动 */
-.check-row {
-  display: grid;
-  grid-template-columns: 3.2rem minmax(0, 1fr) auto;
-  gap: var(--gap-2);
-  align-items: start;
-  padding: var(--gap-1) var(--gap-2);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-  font-size: var(--fs-body);
-  line-height: 1.45;
-}
-.check-row--selectable {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-.check-row--compact {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: var(--row-h);
-  padding: 0 var(--gap-2);
-}
-/* 阻断 / 提示的边框走状态色（--stamp / --warn），不借品牌色也不借涨跌色 */
-.check-row--block {
-  border-color: color-mix(in srgb, var(--stamp) 32%, var(--rule));
-  background: color-mix(in srgb, var(--stamp) 5%, var(--sheet));
-}
-.check-row--warn {
-  border-color: color-mix(in srgb, var(--warn) 32%, var(--rule));
-}
-.check-row--running {
-  border-color: color-mix(in srgb, var(--seal) 24%, var(--rule));
-}
-.check-row__group {
-  font-size: var(--fs-kicker);
-  color: var(--mist);
-  padding-top: 2px;
-}
-.check-row__group-inline {
-  display: inline-block;
-  margin-right: var(--gap-1);
-  font-size: var(--fs-kicker);
-  font-weight: 500;
-  color: var(--mist);
-}
-.check-row__body {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--gap-1);
-  min-width: 0;
-}
-.check-row__label {
-  margin: 0;
-  font-weight: 600;
-}
-.check-row__msg,
-.check-row__hint {
-  margin: 0;
-  font-size: var(--fs-aux);
-  color: var(--mist);
-}
-.check-row__badge {
-  flex-shrink: 0;
-  align-self: start;
-}
-.dim {
-  font-weight: 500;
-  margin-left: var(--gap-1);
-  opacity: 0.75;
-}
-</style>
+<style scoped src="./HealthCheckList.css" />

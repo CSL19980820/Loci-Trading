@@ -35,29 +35,26 @@
  */
 :root {
   color-scheme: light;
-  --mobile-nav-h: 3.5rem;
+  --mobile-nav-h: 52px;
 
-  /* ①原色阶 —— day：冷中性灰（hue 250，低彩度），干净、现代、不发蓝 */
-  --n-1: oklch(1 0 250);
-  --n-2: oklch(0.988 0.003 250);
-  --n-3: oklch(0.97 0.005 250);
-  --n-4: oklch(0.948 0.007 250);
-  --n-5: oklch(0.928 0.008 250);
-  --n-6: oklch(0.903 0.01 250);
-  --n-7: oklch(0.872 0.011 250);
-  --n-8: oklch(0.82 0.013 250);
-  --n-9: oklch(0.735 0.016 250);
+  /* ①原色阶 —— day：shadcn zinc（hue 255，近无彩），白面板浮在冷灰画布上 */
+  --n-1: oklch(1 0 255);
+  --n-2: oklch(0.994 0.002 255);
+  --n-3: oklch(0.968 0.005 255);
+  --n-4: oklch(0.946 0.006 255);
+  --n-5: oklch(0.926 0.007 255);
+  --n-6: oklch(0.900 0.008 255);
+  --n-7: oklch(0.860 0.010 255);
+  --n-8: oklch(0.805 0.012 255);
+  --n-9: oklch(0.725 0.014 255);
   /*
-* 10 / 11 档比 Radix 参考值压暗了一档，这是**刻意的**：
-   * 本仓 12px / 13px 的次要读数（口径、时间、代码、平盘价）大量走 --text-tertiary，
-   * 原来的 L0.62 在画布上只有 3.3:1、在表头下沉面上只有 3.1:1，AA 要求 4.5:1。
-   * 现在钉在「最暗的承载面（--surface-sunken）上仍 ≥4.5:1」这条线上，
-   * 同时保住 10↔11 之间 0.075 的 L 差，三档文字层次仍然分得开。
-   * 改这两个值前先跑 e2e/taste-audit.mjs，它会把对比度逐条量出来。
+   * 10 / 11 档按「最暗承载面（--surface-sunken）上仍 ≥4.5:1」钉死。
+   * 本仓 12px / 13px 次要读数大量走 --text-tertiary，L 再抬就会糊。
+   * 改这两个值前先跑 e2e/taste-audit.mjs。
    */
-  --n-10: oklch(0.525 0.02 250);
-  --n-11: oklch(0.4525 0.022 250);
-  --n-12: oklch(0.258 0.024 250);
+  --n-10: oklch(0.520 0.018 255);
+  --n-11: oklch(0.448 0.020 255);
+  --n-12: oklch(0.240 0.020 255);
 
   /* ②语义层 —— 表面四档 */
   --surface-raised: var(--n-1);
@@ -81,19 +78,19 @@
   /* —— 统一底色体系（语义别名，存量页大量在用） —— */
   --paper: var(--surface-canvas);
   /* sRGB 兑现：= --n-2 @94%（JS 读取：chartTokens / CodeEditor） */
-  --sheet: rgba(250, 251, 253, 0.94);
+  --sheet: #fcfdfe;
   --sheet-solid: var(--surface);
   --sheet-alt: var(--surface-sunken);
   /* sRGB 兑现：--rule = --n-7，--rule-strong = --n-8 */
-  --rule: #d0d6dc;
-  --rule-strong: #bec5cc;
+  --rule: #cdd1d8;
+  --rule-strong: #bac0c7;
   /* 行级 hairline：表格行间、列表项之间，比 --rule 再淡一档，密表里不至于变成栅格纸 */
   --rule-soft: color-mix(in oklab, var(--border-subtle) 55%, transparent);
 
   /* —— 正文与文字阶梯（sRGB 兑现：= --n-12 / --n-11 / --n-10） —— */
-  --ink: #1b252f;
-  --muted: #4e5761;
-  --mist: #626c76;
+  --ink: #192029;
+  --muted: #4d5560;
+  --mist: #626a73;
   --ink-soft: var(--text-secondary);
 
   /*
@@ -102,7 +99,7 @@
    * --on-primary 是**落在实心主色上**的文字色，由 shared/lib/theme.ts 按
    * OKLCH 亮度阈值决定黑白，保证对比度 ≥ 4.5:1。
    */
-  --seal: #cc323e;
+  --seal: #396ed6;
   --on-primary: #ffffff;
   /*
    * 派生档一律从 --seal 用 oklab 混出来，**不写死白底**（旧版 --seal-soft 是
@@ -185,9 +182,9 @@
 
   /* —— 形状与阴影 —— */
   --radius-sm: 4px;
-  --radius: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-pill: 9999px;
   --shadow-sm: 0 1px 2px 0 color-mix(in oklab, var(--n-12) 6%, transparent);
   --shadow: 0 1px 3px 0 color-mix(in oklab, var(--n-12) 7%, transparent),
@@ -198,7 +195,8 @@
 
   /* —— 字体系统（无衬线现代金融终端标准） —— */
   --font-serif: "Songti SC", "Source Han Serif SC", "Noto Serif SC", serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", sans-serif;
+  /* Loci CJK 只绑定简体本地字，汉字走 unicode-range，不会被 Segoe 的字体链接拽到繁体。 */
+  --font-sans: "Loci CJK", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font: var(--font-sans);
   --mono: "JetBrains Mono", "SF Mono", "Roboto Mono", Consolas, Menlo, monospace;
   --font-mono: var(--mono);
@@ -215,24 +213,39 @@
   --row-h: 32px;
   --row-h-sm: 28px;
   --head-h: 30px;
-  --ctl-h: 30px;
+  --ctl-h: 32px;
   /* 页面左右沟槽（右侧内容容器共用）。原先声明在 style.layout.css 顶部，
      密度令牌统一归口到 base，值不变 */
-  --pad-page-x: 12px;
+  --pad-page-x: 16px;
   --gap-1: 4px;
   --gap-2: 8px;
   --gap-3: 12px;
   --gap-4: 16px;
-  --pad-sheet-y: 10px;
+  --pad-sheet-y: 12px;
   --pad-sheet-x: 14px;
   --pad-sheet: var(--pad-sheet-y) var(--pad-sheet-x);
   --form-label-w: 7em;
+  /* —— 层叠顺序（全局遮罩序列只许出现在这组令牌；组件内部 z-index 0/1/2/3/5 另计） —— */
+  /* 档案 8000 盖住侧栏/底栏/FAB/常规弹层；档案内新弹层 8200+；
+     助手浮球平时 1900（常规弹层 2000+ 之下，不抢模态焦点）；
+     档案打开时由下条 html:has 提到 8100（盖住档案、让位于档案内弹层）；
+     表格放大 500：盖住侧栏/吸顶，仍在 EP 弹层之下；
+     跳链 1000：盖住壳层，仍在 EP 弹层之下（模态有焦点陷阱，届时跳链不可达） */
+  --z-mobile-nav: 35;
+  --z-record-fab: 40;
+  --z-sidebar: 100;
+  --z-sticky: 200;
+  --z-table-zoom: 500;
+  --z-skip-link: 1000;
+  --z-assistant-ball: 1900;
+  --z-archive: 8000;
+  --z-archive-popup: 8200;
   /* legacy aliases：存量页仍在引用，一律指向新值，不要删（删了全仓塌） */
   --bg: var(--paper);
   --panel: var(--sheet);
   --panel-2: var(--sheet-alt);
   /* --panel-rgb 供 rgba(var(--panel-rgb), a) 用，只能是裸分量，取 --n-2 的兑现值 */
-  --panel-rgb: 250, 251, 253;
+  --panel-rgb: 252, 253, 254;
   --line: var(--rule);
   --line-2: var(--rule-strong);
   --text: var(--ink);
@@ -287,259 +300,4 @@
   --el-box-shadow: var(--shadow);
   --el-box-shadow-light: var(--shadow-sm);
   --el-box-shadow-lighter: var(--shadow-sm);
-}
-
-/* ElDialog 默认 top：EP 自带 15vh；ConfigProvider.dialog 无 top 项。
-   显式 :top 会写内联 --el-dialog-margin-top 覆盖；align-center 用 margin:auto 不受影响。 */
-.el-dialog {
-  --el-dialog-margin-top: 5vh;
-  max-width: calc(100vw - 2rem);
-}
-
-/*
- * 弹窗 chrome 统一在这里管，不要每个弹窗自绘一套头。
- * 标题与区块标题同档（14px / 700 / 字距 .03em），不用衬线也不放大——弹窗里最大的字
- * 应该是它要你确认的那个数字。
- */
-.el-dialog__title {
-  font-family: var(--font);
-  font-size: var(--fs-title);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--ink);
-}
-
-.el-dialog__header {
-  margin-right: 0;
-  padding-bottom: var(--gap-2);
-  border-bottom: 1px solid var(--rule);
-}
-
-.el-dialog__footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--gap-2);
-  padding-top: var(--gap-3);
-  border-top: 1px solid var(--rule);
-}
-
-/* 破坏性/次要操作放最左，与「取消/主操作」拉开距离，避免占了取消位被误点 */
-.el-dialog__footer > .is-leading {
-  margin-right: auto;
-}
-
-/* MessageBox 正文按原文换行：快捷键清单等多行文案此前会被塌成一行 */
-.el-message-box__message {
-  white-space: pre-line;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#app {
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-body {
-  background-color: var(--paper);
-  color: var(--ink);
-  font-family: var(--font);
-  font-size: var(--fs-body);
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  font-feature-settings: "tnum" 1, "cv01" 1;
-}
-
-button,
-input,
-textarea,
-select {
-  font: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.55;
-  cursor: wait;
-}
-
-a {
-  color: inherit;
-}
-
-:where(a, button, input, textarea, select):focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-
-/* EP 控件与自绘交互层：清掉默认裸粗框，改用平滑的品牌焦点微光/柔和光晕，告别生硬突兀的红框 */
-:where(.el-button, .el-checkbox, .el-radio, .el-tabs__item):focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-}
-
-.skip-link {
-  position: fixed;
-  z-index: 40;
-  top: var(--gap-3);
-  left: var(--gap-3);
-  transform: translateY(-200%);
-  padding: var(--gap-1) var(--gap-2);
-  border-radius: var(--radius);
-  background: var(--seal);
-  color: var(--on-primary);
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.skip-link:focus {
-  transform: none;
-}
-
-.app-shell {
-  height: 100%;
-  height: 100dvh;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  overflow: hidden;
-}
-
-/*
- * 个股档案全屏蒙版：须盖过侧栏/底栏/FAB、进档前残留的 EP 弹层（≈2000）
- * 与 ECharts body tooltip。档案内新弹层由 App 的 ConfigProvider 抬到 8200+。
- */
-.archive-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 8000;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  height: 100dvh;
-  overflow: hidden;
-  background: var(--paper);
-  color: var(--ink);
-  isolation: isolate;
-}
-
-.archive-overlay > * {
-  flex: 1 1 auto;
-  min-height: 0;
-  min-width: 0;
-}
-
-.record-fab {
-  display: none;
-}
-
-@media (max-width: 980px) {
-  .record-fab {
-    display: block;
-    position: fixed;
-    right: var(--gap-4);
-    bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0) + var(--gap-3));
-    z-index: 40;
-  }
-
-  .app-shell--with-mobile-nav {
-    padding-bottom: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0));
-  }
-}
-
-.workspace {
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--paper);
-}
-
-.load-bar {
-  margin: 0;
-  flex-shrink: 0;
-}
-
-.load-bar .el-progress-bar__outer {
-  border-radius: 0;
-  background: transparent;
-}
-
-.banner {
-  margin: var(--gap-2) var(--gap-2) 0;
-  flex-shrink: 0;
-}
-
-.sync-banner-wrap {
-  flex-shrink: 0;
-  margin: var(--gap-2) var(--gap-2) 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-1);
-}
-
-.sync-banner-wrap .banner {
-  margin: 0;
-}
-
-.sync-progress {
-  padding: 0;
-}
-
-/* 进度尺：细轨 + 主色填充 + 等宽百分比（体检修复 / 顶栏共用）。D1：进度条不用红绿。 */
-.seal-meter {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: var(--gap-3);
-}
-
-.seal-meter__track {
-  height: var(--gap-1);
-  border-radius: 999px;
-  background: var(--surface-active);
-  overflow: hidden;
-}
-
-.seal-meter__fill {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--seal);
-  transition: width 0.35s ease;
-}
-
-.seal-meter--done .seal-meter__fill {
-  background: var(--seal-ink);
-}
-
-.seal-meter--err .seal-meter__fill {
-  background: var(--warn);
-}
-
-.seal-meter__pct {
-  color: var(--mist);
-  font-size: var(--fs-aux);
-  font-variant-numeric: tabular-nums;
-  font-family: var(--mono);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .seal-meter__fill {
-    transition: none;
-  }
 }

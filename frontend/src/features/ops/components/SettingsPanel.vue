@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import UiCard from '@/shared/components/ui/UiCard.vue'
+import UiCardContent from '@/shared/components/ui/UiCardContent.vue'
+import UiCardFooter from '@/shared/components/ui/UiCardFooter.vue'
+import UiCardHeader from '@/shared/components/ui/UiCardHeader.vue'
+import UiCardTitle from '@/shared/components/ui/UiCardTitle.vue'
 export type ReceiptPair = {
   key: string
   value: string
@@ -31,45 +36,49 @@ withDefaults(
 </script>
 
 <template>
-  <section class="settings-panel" :class="{ 'settings-panel--fill': fill }">
+  <UiCard
+    :aria-label="title"
+    class="settings-panel"
+    :class="{ 'settings-panel--fill': fill }"
+  >
     <!--
       标题保留（不是冗余）：≤900px 时 OpsView 把 rail 整条 `display:none` 塌成单列，
       左侧「rail 高亮即身份」当场消失；而且这个壳还被 `/quant?tab=jobs` 的 JobsTab
       复用——那条路由压根没有 rail。删了就有两处失去身份。
       代价压到最低：整个 head 恒为一行（标题 + 回执读数 + 主操作），回执超长省略。
     -->
-    <header class="settings-panel__head">
-      <h2 class="settings-panel__title">{{ title }}</h2>
-      <p v-if="receipt.length" class="settings-panel__receipt" aria-label="状态回执">
-        <template v-for="(pair, i) in receipt" :key="pair.key">
-          <span v-if="i > 0" class="settings-panel__sep" aria-hidden="true">·</span>
-          <el-button
-            v-if="pair.onClick"
-            link
-            class="settings-panel__pair settings-panel__pair--link"
-            :title="pair.hint"
-            @click="pair.onClick()"
-          >
-            <span class="settings-panel__k">{{ pair.key }}</span>
-            {{ pair.value }}
-          </el-button>
-          <span v-else class="settings-panel__pair" :title="pair.hint">
-            <span class="settings-panel__k">{{ pair.key }}</span>
-            {{ pair.value }}
-          </span>
-        </template>
-      </p>
-      <div v-if="$slots.action" class="settings-panel__action">
+    <UiCardHeader class="settings-panel__head">
+      <UiCardTitle class="settings-panel__title">{{ title }}</UiCardTitle>
+      <template #action>
+        <p v-if="receipt.length" class="settings-panel__receipt" aria-label="状态回执">
+          <template v-for="(pair, i) in receipt" :key="pair.key">
+            <span v-if="i > 0" class="mx-1" aria-hidden="true">·</span>
+            <el-button
+              v-if="pair.onClick"
+              link
+              class="settings-panel__pair settings-panel__pair--link"
+              :title="pair.hint"
+              @click="pair.onClick()"
+            >
+              <span class="text-mist">{{ pair.key }}</span>
+              {{ pair.value }}
+            </el-button>
+            <span v-else :title="pair.hint">
+              <span class="text-mist">{{ pair.key }}</span>
+              {{ pair.value }}
+            </span>
+          </template>
+        </p>
         <slot name="action" />
-      </div>
-    </header>
-    <div class="settings-panel__body">
+      </template>
+    </UiCardHeader>
+    <UiCardContent :padded="false" class="settings-panel__body">
       <slot />
-    </div>
-    <footer v-if="$slots.foot" class="settings-panel__foot">
+    </UiCardContent>
+    <UiCardFooter v-if="$slots.foot" class="settings-panel__foot">
       <slot name="foot" />
-    </footer>
-  </section>
+    </UiCardFooter>
+  </UiCard>
 </template>
 
 <style scoped>
@@ -78,16 +87,20 @@ withDefaults(
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
-  background: var(--sheet);
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
 }
 
 /* 恒为单行：标题 + 回执 + 主操作。回执让位（省略号），按钮永不换行下去 */
 .settings-panel__head {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--gap-1) var(--gap-3);
-  padding: var(--gap-1) var(--gap-3);
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  background: var(--surface-sunken);
   flex-shrink: 0;
   border-bottom: 1px solid var(--rule);
 }
@@ -136,8 +149,8 @@ withDefaults(
   text-decoration: underline dotted;
   text-underline-offset: 0.2em;
   --el-button-text-color: inherit;
-  --el-button-hover-text-color: var(--el-color-danger);
-  --el-button-active-text-color: var(--el-color-danger);
+  --el-button-hover-text-color: var(--seal-ink);
+  --el-button-active-text-color: var(--seal-ink);
 }
 
 .settings-panel__pair--link.el-button:hover,
@@ -163,7 +176,8 @@ withDefaults(
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 0.55rem 0.85rem 0.75rem;
+  padding: var(--gap-3);
+  overscroll-behavior: contain;
   width: 100%;
 }
 
@@ -177,10 +191,10 @@ withDefaults(
 .settings-panel__foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: var(--gap-2);
   justify-content: flex-end;
   align-items: center;
-  padding: 0.45rem 0.85rem;
+  padding: var(--gap-2) var(--gap-3);
   border-top: 1px solid var(--rule);
   flex-shrink: 0;
   width: 100%;

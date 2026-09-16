@@ -20,6 +20,7 @@ import {
   computeMinuteDayStats,
   formatMinutePxPct,
 } from '@/shared/lib/minuteChartOption'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import { useChartTheme } from '@/shared/lib/useChartTheme'
 
 echarts.use([
@@ -201,8 +202,8 @@ onBeforeUnmount(() => {
     destroy-on-close
     append-to-body
   >
-    <div class="minute-shell">
-      <header class="minute-head">
+    <div class="minute-shell flex min-h-0 min-w-0 flex-col">
+      <header class="minute-head flex min-w-0 shrink-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div class="minute-head__price mono" :class="pctTone">
           <template v-if="lastClose != null">
             {{ lastClose.toFixed(2) }}
@@ -212,29 +213,28 @@ onBeforeUnmount(() => {
           </template>
           <template v-else>—</template>
         </div>
-        <div class="minute-head__meta mist">
+        <div class="minute-head__meta mist flex flex-wrap gap-x-3 gap-y-1">
           <span v-if="prevClose != null">昨收 {{ prevClose.toFixed(2) }}</span>
           <template v-if="dayStats">
-            <span class="tone-up">高 {{ formatMinutePxPct(dayStats.high, prevClose) }}</span>
-            <span class="tone-down">低 {{ formatMinutePxPct(dayStats.low, prevClose) }}</span>
+            <span :class="prevClose == null || dayStats.high === prevClose ? '' : dayStats.high > prevClose ? 'tone-up' : 'tone-down'">高 {{ formatMinutePxPct(dayStats.high, prevClose) }}</span>
+            <span :class="prevClose == null || dayStats.low === prevClose ? '' : dayStats.low > prevClose ? 'tone-up' : 'tone-down'">低 {{ formatMinutePxPct(dayStats.low, prevClose) }}</span>
             <span v-if="dayStats.avg != null" class="tone-avg">
               均 {{ formatMinutePxPct(dayStats.avg, prevClose) }}
             </span>
           </template>
-          <span v-if="source">实时 · {{ source }}</span>
+          <span v-if="source">来源 {{ source }}</span>
           <span v-if="sessionAdjust === 'qfq'">前复权</span>
           <span v-else-if="sessionAdjust === 'hfq'">后复权</span>
           <span v-else>不复权</span>
-          <span>不落库</span>
         </div>
       </header>
 
-      <div class="minute-stage" :class="{ 'minute-stage--charted': hasBars }">
+      <div class="minute-stage flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" :class="{ 'minute-stage--charted': hasBars }">
         <div v-if="busy" class="tape-load" aria-live="polite" aria-busy="true">
           <div class="tape-load__track">
             <div class="tape-load__stitch" />
           </div>
-          <p class="tape-load__label">正在拉取 {{ tradeDate }} 分时走带…</p>
+          <p class="tape-load__label">正在获取 {{ tradeDate }} 分时…</p>
           <div class="tape-load__slots" aria-hidden="true">
             <span>09:30</span>
             <span>11:30</span>
@@ -243,13 +243,11 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-else-if="error" class="minute-error-wrap">
-          <el-empty :description="error" :image-size="64">
-            <template #extra>
-              <el-button type="primary" size="small" :loading="busy" @click="load">
-                重新拉取
-              </el-button>
-            </template>
-          </el-empty>
+          <EmptyState description="暂无分时数据" :reason="error">
+            <el-button type="primary" size="small" :loading="busy" @click="load">
+              重新拉取
+            </el-button>
+          </EmptyState>
         </div>
         <div v-show="hasBars" ref="chartEl" class="minute-chart" />
       </div>
@@ -264,18 +262,7 @@ onBeforeUnmount(() => {
 * + .minute-chart{height:360px} 三重定高叠加：无数据时近 800px 死白。
 */
 .minute-shell {
-  display: flex;
-  flex-direction: column;
   gap: var(--gap-2);
-  min-height: 0;
-}
-.minute-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--gap-1) var(--gap-3);
-  flex-shrink: 0;
 }
 /* D2：弹窗里最大的字是当前价 */
 .minute-head__price {
@@ -291,16 +278,11 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 .minute-head__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-1) var(--gap-3);
   font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
 }
 .minute-stage {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   background: var(--sheet);
@@ -312,7 +294,6 @@ onBeforeUnmount(() => {
   max-height: 26rem;
 }
 .minute-chart {
-  width: 100%;
   height: 100%;
 }
 .tape-load {

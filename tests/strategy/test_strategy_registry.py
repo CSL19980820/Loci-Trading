@@ -40,6 +40,7 @@ class RegistryTests(unittest.TestCase):
             },
         )
         self.assertNotIn("qianfu-close", described)
+        self.assertNotIn("impulse-pullback-tail-v1", described)
         self.assertNotIn("qianfu-1450", described)
         self.assertNotIn("sanyuan-tail-1450", described)
         self.assertNotIn("yangshi-tail-1450", described)

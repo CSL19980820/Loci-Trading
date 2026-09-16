@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { MinuteBar } from '@/shared/api/quant_market'
 
+import { readChartTokens } from './chartTokens'
 import {
   buildMinuteOption,
   computeMinuteDayStats,
@@ -9,7 +10,6 @@ import {
   formatMinutePxPct,
   saneMinuteAvg,
 } from './minuteChartOption'
-
 function bar(
   time: string,
   close: number,
@@ -78,7 +78,7 @@ describe('computeMinutePriceAxis', () => {
 })
 
 describe('buildMinuteOption', () => {
-  it('marks high low avg with price+pct and keeps blue price line', () => {
+  it('marks high low avg with price+pct and keeps info-colored price line', () => {
     const bars = [
       bar('09:31:00', 17.2, 17.25, 17.1, 17.2),
       bar('10:00:00', 17.55, 17.6, 17.4, 17.3),
@@ -92,7 +92,7 @@ describe('buildMinuteOption', () => {
     }>
     const price = series.find((s) => s.name === '分时')
     const avg = series.find((s) => s.name === '均价')
-    expect(price?.lineStyle?.color).toBe('#2563eb')
+    expect(price?.lineStyle?.color).toBe(readChartTokens().info)
     const names = price?.markPoint?.data?.map((d) => d.name)
     expect(names).toEqual(expect.arrayContaining(['高', '低', '现']))
     const highLabel = price?.markPoint?.data?.find((d) => d.name === '高')?.label?.formatter?.()

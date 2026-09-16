@@ -22,8 +22,8 @@
 
 .tdx-back {
   flex-shrink: 0;
-  height: 26px;
-  font-size: 12px;
+  min-height: var(--ctl-h);
+  font-size: var(--fs-aux);
   padding: 0 var(--gap-2);
   border-radius: var(--radius);
 }
@@ -74,12 +74,11 @@
  * 通达信/同花顺风格紧凑控件：周期/复权按钮组与均线按钮共用同一副皮肤。
  * 曾是两段逐字重复的 8 属性，各自再手写一份 night/ink/dark 覆盖；外观差异本就由
  * --sheet / --rule / --ink 自己切换，feature 层不该二次声明（令牌唯一真相）。
- * 盘面比全站再紧一档，所以局部把 --ctl-h 压到 26px，而不是绕过它写死高度——
- * 这样 EP 的 --el-component-size-small（:root 里指向 --ctl-h）也跟着一起收。
+ * 周期、复权与均线控件沿用 --ctl-h，保证与主工作台一致的可点击面积。
  */
 .tdx-btn-group,
 .tdx-ma-btn {
-  --ctl-h: 26px;
+  min-height: var(--ctl-h);
 }
 .tdx-btn-group :deep(.el-radio-button__inner),
 .tdx-ma-btn {
@@ -213,7 +212,7 @@
   padding: 0 var(--gap-1) 0 3.2rem;
   pointer-events: none;
   font-size: var(--fs-kicker);
-  background: color-mix(in srgb, var(--sheet) 82%, transparent);
+  background: color-mix(in oklab, var(--sheet) 82%, transparent);
 }
 
 /* 顶部位置由 KLINE_GRID_TOPS 经内联变量注入，与 ECharts grid 同源 */

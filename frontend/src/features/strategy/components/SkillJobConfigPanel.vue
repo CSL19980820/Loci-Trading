@@ -295,7 +295,7 @@ defineExpose({ save, saving, load })
   gap: 0.35rem 0.75rem;
 }
 .mono {
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.8rem;
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
 }
 </style>

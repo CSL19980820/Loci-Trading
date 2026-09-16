@@ -403,7 +403,8 @@ watch(
 
 .kline-chart__canvas {
   flex: 1 1 auto;
-  min-height: 360px;
+  /* 360px 是舒适值不是底线：矮视口里它会把档案页底部顶出可视区，改 clamp 让出 */
+  min-height: clamp(220px, 42dvh, 360px);
   width: 100%;
   height: 100%;
 }

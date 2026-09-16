@@ -138,9 +138,10 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
   gap: 0.75rem;
   padding: 0.9rem 1rem;
   border: 1px solid var(--rule);
-  border-radius: var(--radius, 8px);
-  background: var(--paper, var(--sheet));
+  border-radius: var(--radius);
+  background: var(--paper);
   min-width: 0;
+  container-type: inline-size;
 }
 .hz-card__head {
   display: flex;
@@ -174,7 +175,7 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 }
 .hz-hero__k {
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 .hz-hero__v {
@@ -193,23 +194,23 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 }
 .hz-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.45rem;
 }
 .hz-dist {
   padding: 0.45rem 0.55rem 0.35rem;
   border: 1px dashed var(--rule);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
 }
 .hz-dist__title {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
   margin-bottom: 0.25rem;
 }
 .hz-close {
   padding: 0.55rem 0.7rem;
-  border-radius: var(--radius, 8px);
-  background: color-mix(in srgb, var(--sheet) 70%, var(--paper));
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--sheet) 70%, var(--paper));
   border: 1px dashed var(--rule);
 }
 .hz-close__title {
@@ -248,5 +249,9 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 }
 .hz-month {
   width: 100%;
+}
+@container (max-width: 460px) {
+  .hz-grid { grid-template-columns: minmax(0, 1fr); }
+  .hz-hero { flex-wrap: wrap; gap: var(--gap-3); }
 }
 </style>

@@ -90,8 +90,24 @@ MCP/外部情报接入与限流；补本地行情仓算不出的数据。
 - 大批量量价仍走 market，不走 MCP 扫全市场
 - 禁忌：跨上下文深掏 `src.intel.infrastructure.*`；也不要从 intel 深掏 `src.market.infrastructure.*`
 
+## 有期限的MCP调用与并发会话
+
+外部HTTP `McpClient.call_tool(name, arguments, deadline=...)`新增可选截止时刻；公开的 `call_mcp_tool`、`guarded_client_call`透传同名参数。值为有限的 `time.monotonic()` 绝对时刻，省略时保持原调用方式；不要直接传入日期时间或相对秒数。取消与超期不能降级为普通工具取数失败。
+
+`infrastructure/mcp_deadline.py`以ContextVar保存期限，嵌套取更早值、退出恢复。可取消异步HTTP承接同步入口，初始化握手、初始化通知和工具请求共用剩余预算，HTTP收包也计入。退出时响应体和连接池各有最多125毫秒关闭宽限，合计最多250毫秒；清理失败不覆盖原有超时、取消或请求错误，原请求正常时才报告清理失败，同步portal保留原取消异常。URL/代理/重定向与响应大小约束保留，不修改共享 `client.timeout`。
+
+DNS超期或取消可放弃等待，但只读系统解析线程可能稍后才结束；迟到解析结果不再派发HTTP，不能称为强停DNS线程。`acquire_quota`有deadline时分段等待并持续检查，超期不再占位或派发HTTP。可选HTTP期限不代表所有本地同步适配器可强行中断，旧调用默认超时和配额规则仍有效。交易员向研究工具与悟道执行取价传入本轮期限，系统备用源迟到结果由取消检查及最终落账闸门排除，清理宽限不延长成交窗口。
+
+`McpClient`的 `_session_id`、`_request_id`、初始化状态均可变，不能跨并发线程或租户共享。交易员 `guardian_tools.agent_tools`使用thread-local并核对当前租户，线程首次调用或租户改变时建独立客户端；传播ContextVar不使共享客户端线程安全。Agent只对显式白名单的独立只读工具并发，其余保持顺序。
+
+执行与估值共用报价验证，主源缺失、异常、过期、未来或代码不符触发备用，备用仍同样校验并保留源错误。完整结构化数据可替代展示截断正文；只有截断文本而无完整结构化数据时明确报错，不视为查无数据。详见[交易员执行契约](../../docs/guardian-execution.md)及[Agent说明](../ai/README.md#agent-执行容量与交易员证据)。
+
 ## README 维护
 改 MCP 契约、限流、内置工具时必须更新本文。
 
 ## 相关测试
 `tests/intel/`
+
+### 配额排队期限补全（2026-09-15）
+
+acquire_quota新增可选deadline，call_mcp_tool/guarded_client_call传递同一截止时刻。有期限排队每次最多等待0.1秒，反复检查剩余时间，超过预算不再占名额或派发HTTP；未提供期限时保留原调用方式与供应商额度。回归tests/intel/test_quota_deadline_wait.py及test_mcp_deadline_calls.py。这不意味着Python能强停任意已运行的同步第三方函数。

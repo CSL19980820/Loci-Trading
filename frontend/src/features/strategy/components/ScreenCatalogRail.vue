@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Cpu, Search, SetUp } from '@element-plus/icons-vue'
 
 import { pct } from '@/shared/lib/format'
 import { sampleConfidence, winRateDisplayTone, winRateText } from '@/shared/lib/winrate'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 import type { ScreenCatalogItem } from '../composables/useScreenCatalog'
 
@@ -42,10 +44,11 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
 </script>
 
 <template>
-  <div class="catalog-rail" aria-label="选股能力目录">
+  <div class="catalog-rail strategy-surface" aria-label="选股能力目录">
     <div class="catalog-rail__tools">
       <el-radio-group
         :model-value="kindFilter"
+        aria-label="选股能力类型"
         size="small"
         @update:model-value="emit('update:kindFilter', $event as 'all' | 'engine' | 'skill')"
       >
@@ -58,11 +61,13 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
         clearable
         size="small"
         placeholder="搜名称"
+        :prefix-icon="Search"
+        aria-label="搜索战法或技能"
       />
     </div>
 
     <el-skeleton v-if="loading && !rows.length" :rows="6" animated />
-    <el-empty v-else-if="!visible.length" description="没有可跑的战法或技能" :image-size="56" />
+    <EmptyState v-else-if="!visible.length" :description="query ? '没有匹配项' : '暂无战法或技能'" :reason="query ? '清空搜索后重试' : '前往工坊创建'" />
     <ul v-else class="catalog-rail__list">
       <li
         v-for="row in visible"
@@ -72,14 +77,17 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
         <el-button
           class="catalog-row"
           text
+          :aria-pressed="row.id === selectedId"
+          :aria-label="`${row.name}，${row.kind === 'engine' ? '战法' : '技能'}${row.kind === 'skill' && !row.enabled ? '，已停用' : ''}`"
           @click="emit('select', row.id)"
         >
           <span class="catalog-row__main">
             <el-tag
               size="small"
-              :type="row.kind === 'engine' ? 'danger' : 'info'"
+              type="info"
               effect="plain"
             >
+              <el-icon aria-hidden="true"><component :is="row.kind === 'engine' ? SetUp : Cpu" /></el-icon>
               {{ row.kind === 'engine' ? '战法' : '技能' }}
             </el-tag>
             <strong class="catalog-row__name">{{ row.name }}</strong>
@@ -151,7 +159,7 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
 }
 
 .catalog-row__name {
-  font-family: var(--font-display);
+  font-family: var(--font);
   font-size: 0.88rem;
   font-weight: 650;
   overflow: hidden;
@@ -161,7 +169,7 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
 
 .catalog-row__stat {
   flex-shrink: 0;
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   display: inline-flex;
   align-items: baseline;
   gap: 0.35rem;
@@ -177,8 +185,8 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
 }
 
 .is-selected .catalog-row {
-  background: color-mix(in srgb, var(--seal-soft) 55%, var(--sheet));
-  border-color: color-mix(in srgb, var(--seal) 35%, var(--rule));
+  background: color-mix(in oklab, var(--seal-soft) 55%, var(--sheet));
+  border-color: color-mix(in oklab, var(--seal) 35%, var(--rule));
 }
 
 .is-disabled {
@@ -198,3 +206,4 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
   color: var(--down);
 }
 </style>
+<style scoped src="./StrategySurfaces.css"></style>

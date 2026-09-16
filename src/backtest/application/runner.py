@@ -5,9 +5,12 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
+import inspect
 from typing import Any, Mapping, Sequence
 
+import numpy as np
 import pandas as pd
 
 from src.backtest.application.engine import BacktestConfig, BacktestResult, run_backtest
@@ -36,6 +39,19 @@ from src.strategy.domain.base import (
 
 #: Horizon 信号窗最长自然日跨度（约 6 个月）。
 MAX_HORIZON_SPAN_DAYS = 186
+
+
+def resolve_backtest_config(
+    strategy: str | StrategyEngine, overrides: Mapping[str, Any] | None = None,
+) -> BacktestConfig:
+    """历史快照战法的完整执行默认值；调用方显式值优先，旧战法不变。"""
+    engine = get(strategy) if isinstance(strategy, str) else strategy
+    template = getattr(engine, "backtest_config", None) or {}
+    fields = BacktestConfig.__dataclass_fields__
+    defaults = {
+        key: value for key, value in template.items() if key in fields and key != "valuation_end"
+    } if template.get("signal_dataset") else {}
+    return BacktestConfig(**(defaults | dict(overrides or {})))
 
 
 def backtest_strategy(
@@ -288,7 +304,21 @@ def _prepare_signal_context(
         universe if universe is not None else getattr(engine, "default_universe", None)
     )
     effective_adjust = str(adjust or getattr(engine, "adjust", "qfq") or "qfq")
-    cfg = config or BacktestConfig()
+    template = getattr(engine, "backtest_config", None) or {}
+    cfg = config or resolve_backtest_config(engine)
+    if template.get("signal_dataset"):
+        start = start or template.get("start")
+        end = end or template.get("end")
+        if not cfg.signal_dataset:
+            raise StrategyError("该战法的历史回测必须使用14:50数据集，不能回退为收盘信号")
+        if tail_days is not None:
+            raise StrategyError("该战法的历史14:50数据用于成交回测，不支持horizon模式")
+    if cfg.signal_dataset and (not start or not end):
+        raise StrategyError("历史14:50回测必须指定开始和结束日期")
+    if cfg.signal_dataset and effective_adjust != "none":
+        raise StrategyError("历史14:50快照使用不复权输入，不支持替换为复权信号价")
+    if cfg.signal_dataset and cfg.valuation_end is None:
+        cfg = replace(cfg, valuation_end=end)
 
     try:
         resolved = resolve_universe(
@@ -308,8 +338,12 @@ def _prepare_signal_context(
     if not days:
         raise StrategyError("行情仓为空，请先执行 python market.py sync")
 
-    warmup = signal_history_bars(engine)
+    warmup = signal_history_bars(engine, params=params)
     load_start, load_end = _expand_range(days, start, end, warmup, tail)
+    if cfg.valuation_end is not None:
+        if start and cfg.valuation_end < start:
+            raise StrategyError("估值截止日不能早于信号开始日")
+        load_end = min(load_end, cfg.valuation_end)
 
     if not resolved.codes:
         raise StrategyError("股票池为空（检查板块范围 / 剔 ST / 证券列表是否已同步）")
@@ -359,6 +393,21 @@ def _prepare_signal_context(
         }
     if panels["close"].empty:
         raise StrategyError("所选区间没有行情数据")
+    if cfg.economic_returns:
+        if (execution_adjust or effective_adjust) != "none":
+            raise StrategyError("经济权益回测必须使用不复权执行价格")
+        adjusted = store.load_panel(
+            fields=("close",), codes=resolved.codes, start=load_start, end=load_end,
+            adjust="hfq", min_bars=engine.min_bars(),
+        )["close"].reindex(index=execution_panels["close"].index,
+                          columns=execution_panels["close"].columns)
+        raw = execution_panels["close"]
+        quoted = raw.gt(0) & execution_panels["volume"].gt(0)
+        if bool((quoted & ~(adjusted.gt(0) & np.isfinite(adjusted))).to_numpy().any()):
+            raise StrategyError("实际成交日缺少有效经济权益价格，不能猜测复权因子")
+        valid = quoted & adjusted.gt(0)
+        factors = (adjusted / raw).where(valid).ffill().fillna(1.0)
+        execution_panels = {**execution_panels, "__adjust_factor": factors}
 
     # 前视闸门：静态始终；大宇宙分片截断一致性（见 audit_sampling）
     from src.strategy.application.audit import LookAheadError, guard_strategy
@@ -368,7 +417,19 @@ def _prepare_signal_context(
     except LookAheadError as exc:
         raise StrategyError(str(exc)) from exc
 
-    signals = engine.compute(panels, resolved_params).signals
+    dataset_evidence = None
+    if cfg.signal_dataset:
+        from src.backtest.application.asof_signals import compute_asof_signals
+
+        try:
+            signals, dataset_evidence = compute_asof_signals(
+                engine, panels, resolved_params, dataset_id=cfg.signal_dataset,
+                start=str(start), end=str(end),
+            )
+        except (ValueError, KeyError, TypeError, OSError) as exc:
+            raise StrategyError(str(exc)) from exc
+    else:
+        signals = engine.compute(panels, resolved_params).signals
     if start:
         signals = signals[signals.index >= start]
     if end:
@@ -407,7 +468,8 @@ def _prepare_signal_context(
             codes=resolved.codes,
             start=load_start,
             end=load_end,
-        ),
+            include_source_details=not bool(cfg.signal_dataset),
+        ) | ({"signal_dataset": dataset_evidence} if dataset_evidence else {}),
     }
 
 
@@ -490,11 +552,16 @@ def _data_snapshot(
     codes: Sequence[str],
     start: str,
     end: str,
+    include_source_details: bool = True,
 ) -> dict[str, Any]:
     """兼容测试替身/旧读模型，同时优先保留查询范围来源证据。"""
-    try:
-        return dict(store.data_snapshot(codes=codes, start=start, end=end))
-    except TypeError as exc:
-        if "unexpected keyword" not in str(exc):
-            raise
-        return dict(store.data_snapshot())
+    method = store.data_snapshot
+    parameters = inspect.signature(method).parameters
+    accepts_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values())
+    kwargs: dict[str, Any] = {"codes": codes, "start": start, "end": end}
+    if not include_source_details:
+        kwargs["include_source_details"] = False
+    if not accepts_kwargs:
+        kwargs = {key: value for key, value in kwargs.items() if key in parameters}
+    # 不捕获方法内部TypeError后改做无范围全库查询。
+    return dict(method(**kwargs))

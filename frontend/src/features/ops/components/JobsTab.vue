@@ -398,7 +398,7 @@ defineExpose({ load, schedule })
       <el-button size="small" @click="load">重试</el-button>
     </el-alert>
 
-    <div v-else-if="jobs.length" class="jobs-desk">
+    <div v-else-if="jobs.length" class="jobs-layout">
       <JobsRail
         v-model:selected-id="selectedId"
         v-model:kind-filter="kindFilter"
@@ -429,7 +429,7 @@ defineExpose({ load, schedule })
     <EmptyState
       v-else-if="!jobsPending"
       description="还没有定时任务"
-      reason="任务负责按点自动跑选股、同步行情和推送。"
+      reason="新建任务或配置推荐同步"
     >
       <el-button type="primary" @click="emit('enable-recommended-sync')">配置推荐同步</el-button>
       <el-button @click="openCreate">新建任务</el-button>
@@ -453,26 +453,13 @@ defineExpose({ load, schedule })
 
 <style scoped>
 .jobs-alert {
-  margin: 0.55rem 0.85rem 0;
+  margin: var(--gap-2) var(--gap-3) 0;
   flex-shrink: 0;
 }
-.jobs-desk {
-  display: grid;
-  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
-  gap: 0.85rem;
-  min-height: 0;
-  flex: 1 1 auto;
-  min-width: 0;
-  padding: 0.55rem 0.85rem 0.75rem;
-  overflow: hidden;
-}
-.jobs-desk > :deep(.job-detail) {
+div > :deep(.job-detail) {
   min-height: 0;
   overflow: auto;
 }
-@media (max-width: 800px) {
-  .jobs-desk {
-    grid-template-columns: 1fr;
-  }
-}
+.jobs-layout { display: grid; flex: 1; min-width: 0; min-height: 0; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-3); overflow: hidden; }
+@media (max-width: 800px) { .jobs-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 24dvh) minmax(0, 1fr); } }
 </style>

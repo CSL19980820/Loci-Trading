@@ -31,7 +31,7 @@ const meterClass = computed(() => ({
       <strong>{{ head }}</strong>
       <span class="mono scan-progress__pct">{{ pct }}%</span>
     </div>
-    <div class="seal-meter" :class="meterClass" :aria-label="`进度 ${pct}%`">
+    <div class="seal-meter" :class="meterClass" role="progressbar" :aria-valuenow="pct" :aria-valuemin="0" :aria-valuemax="100" :aria-label="head">
       <div class="seal-meter__track">
         <div class="seal-meter__fill" :style="{ width: `${pct}%` }" />
       </div>
@@ -45,9 +45,9 @@ const meterClass = computed(() => ({
 .scan-progress {
   margin: 0 0 var(--gap-2);
   padding: var(--gap-2) var(--gap-3);
-  border: 1px solid color-mix(in srgb, var(--seal) 28%, var(--rule));
+  border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--seal-soft) 35%, var(--sheet));
+  background: var(--surface-sunken);
 }
 .scan-progress__head {
   display: flex;
@@ -72,15 +72,16 @@ const meterClass = computed(() => ({
 }
 
 .scan-progress__detail {
-  margin: 2px 0 0;
+  margin: var(--gap-1) 0 0;
+  overflow-wrap: anywhere;
   font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .seal-meter__track {
-  height: 4px;
+  height: var(--gap-1);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--rule) 70%, var(--sheet));
+  background: color-mix(in oklab, var(--rule) 70%, var(--sheet));
   overflow: hidden;
 }
 
@@ -92,7 +93,7 @@ const meterClass = computed(() => ({
 }
 
 .seal-meter--done .seal-meter__fill {
-  background: var(--success);
+  background: var(--ok);
 }
 
 .seal-meter--err .seal-meter__fill {

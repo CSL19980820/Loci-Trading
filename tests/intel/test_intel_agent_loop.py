@@ -7,7 +7,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -130,13 +130,25 @@ class AgentLoopTests(unittest.TestCase):
             tool_calls=[ToolCall(id=f"c{i}", name="t", arguments={}) for i in range(20)],
         )
         done = ChatResponse(text="好了", model="m")
+        executor = Mock(return_value={"text": "x"})
         with _patched_chat(side_effect=[many, done]):
             result = run_agent(
                 self.config, system="s", user_prompt="q",
-                tool_schemas=[{}], tool_executor=lambda n, a: {"text": "x"},
+                tool_schemas=[{}], tool_executor=executor,
                 max_calls_per_round=5,
             )
-        self.assertEqual(len(result.invocations), 5)
+        self.assertEqual(executor.call_count, 5)
+        # 超额请求仍须按原 ID 回复；预算限制实际执行，而不是抹去请求记录。
+        self.assertEqual(len(result.invocations), 20)
+        self.assertEqual([item.executed for item in result.invocations], [True] * 5 + [False] * 15)
+        expected_ids = [f"c{i}" for i in range(20)]
+        self.assertEqual([item.tool_call_id for item in result.invocations], expected_ids)
+        replies = [message for message in result.messages if message["role"] == "tool"]
+        self.assertEqual([message["tool_call_id"] for message in replies], expected_ids)
+        for message in replies[:5]:
+            self.assertEqual(message["content"], "x")
+        for message in replies[5:]:
+            self.assertIn("工具未执行", message["content"])
 
     def test_tool_failure_is_reported_to_the_model_not_swallowed(self) -> None:
         """返回空结果会让模型以为"查到了但没数据"，进而编造结论。"""

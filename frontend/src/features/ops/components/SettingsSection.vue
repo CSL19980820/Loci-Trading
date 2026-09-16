@@ -16,10 +16,11 @@ defineProps<{
     窄屏也只收窄槽宽，绝不让标题独占一行（见下方 media query）。
   -->
   <section :id="anchor" class="sys-section" :aria-label="title">
-    <aside class="sys-section__gutter" aria-hidden="true">
+    <aside class="sys-section__gutter">
       <h3 class="sys-section__title">{{ title }}</h3>
       <p
         class="sys-section__stamp"
+        role="status"
         :class="`sys-section__stamp--${stamp.kind}`"
       >
         <span
@@ -69,7 +70,7 @@ defineProps<{
 .sys-section__gutter {
   min-width: 0;
   padding-top: 0.2rem;
-  border-right: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
+  border-right: 1px solid color-mix(in oklab, var(--rule) 70%, transparent);
   padding-right: 0.75rem;
 }
 
@@ -144,7 +145,7 @@ defineProps<{
   }
 
   .sys-section__title {
-    font-size: 0.8rem;
+    font-size: var(--fs-aux);
   }
 }
 </style>

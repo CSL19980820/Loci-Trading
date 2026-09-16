@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { MoreFilled, Plus, Select, Setting } from '@element-plus/icons-vue'
+import { MoreFilled, Plus, Search, Select, Setting } from '@element-plus/icons-vue'
 import { computed, ref, watch } from 'vue'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { AiSessionSummary } from '@/shared/types/ai_assistant'
 
 type SessionContextCommand = 'archive' | 'restore' | 'delete'
@@ -141,11 +142,12 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
           size="small"
           clearable
           placeholder="搜索对话"
+          :prefix-icon="Search"
           aria-label="搜索历史对话"
         />
         <div class="assistant-session-rail__top-actions">
           <el-tooltip :content="selecting ? '取消选择' : '多选'">
-            <el-button :icon="Select" circle text aria-label="多选对话" :disabled="disabled" @click="selecting = !selecting; selected = []" />
+            <el-button :icon="Select" circle text :aria-label="selecting ? '取消多选' : '多选对话'" :aria-pressed="selecting" :disabled="disabled" @click="selecting = !selecting; selected = []" />
           </el-tooltip>
           <el-tooltip v-if="railTab === 'active'" content="新建对话">
             <el-button :icon="Plus" circle text aria-label="新建对话" :disabled="disabled" @click="emit('create')" />
@@ -159,10 +161,10 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
         <el-button size="small" type="danger" plain :disabled="!selected.length || disabled" @click="runBatch('delete')">删除</el-button>
       </div>
       <div v-loading="loading" class="assistant-session-rail__list">
-        <el-empty
+        <EmptyState
           v-if="!loading && !visibleSessions.length"
-          :image-size="48"
-          :description="railTab === 'archived' ? '没有归档对话' : '还没有对话'"
+          :description="keyword ? '未找到对话' : railTab === 'archived' ? '没有归档对话' : '还没有对话'"
+          :reason="keyword ? '换个关键词试试' : railTab === 'archived' ? '恢复后回到对话列表' : '新建对话开始提问'"
         />
         <div
           v-for="session in visibleSessions"
@@ -172,13 +174,14 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
         >
           <el-checkbox
             v-if="selecting"
+            :aria-label="`选择对话 ${session.title || '新对话'}`"
             :model-value="selected.includes(session.id)"
             :disabled="disabled"
             @change="(value: string | number | boolean) => toggleSelect(session.id, Boolean(value))"
           />
-          <el-button link class="assistant-session-row__main" :disabled="disabled" @click="emit('select', session.id)">
+          <el-button link class="assistant-session-row__main" :aria-current="session.id === activeId ? 'true' : undefined" :title="session.title || '新对话'" :disabled="disabled" @click="emit('select', session.id)">
             <span class="assistant-session-row__title">{{ session.title || '新对话' }}</span>
-            <small class="assistant-session-row__meta">{{ session.model || session.status }}</small>
+            <small class="assistant-session-row__meta" :title="session.model || session.status">{{ session.model || session.status }}</small>
           </el-button>
           <el-dropdown
             v-if="!selecting"
@@ -194,7 +197,7 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
               circle
               text
               size="small"
-              aria-label="对话操作"
+              :aria-label="`${session.title || '新对话'}的操作`"
               :disabled="disabled"
               @click.stop
             />
@@ -210,9 +213,7 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
       </div>
       <div class="assistant-session-rail__foot">
         <el-tooltip content="Loci" placement="top">
-          <el-button class="assistant-session-rail__loci" circle text aria-label="Loci" tabindex="-1">
-            <span class="assistant-session-rail__glyph" aria-hidden="true">LC</span>
-          </el-button>
+          <span class="assistant-session-rail__loci" aria-label="Loci"><span class="assistant-session-rail__glyph" aria-hidden="true">LC</span></span>
         </el-tooltip>
         <el-tooltip content="助手设置" placement="top">
           <el-button
@@ -230,228 +231,34 @@ function onContextCommand(sessionId: string, command: SessionContextCommand | st
 </template>
 
 <style scoped>
-.assistant-session-rail {
-  display: flex;
-  /*
-   * 同 AssistantTaskSidebar：shrink 因子 0 会让 min-width 失效、窄屏挤没正文区。
-   * 900px 以下由 AssistantPanel 的断点折成 48px rail，这里只兜中间地带。
-   */
-  flex: 0 1 280px;
-  min-width: 220px;
-  flex-direction: column;
-  border-right: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--panel-2) 92%, var(--ink) 2%);
-  transition: flex-basis .18s ease, width .18s ease;
-}
-.assistant-session-rail.is-collapsed {
-  flex: 0 0 48px;
-  /* 展开态的 min-width 会把 48px 的 rail 撑回 220px，折叠时必须清掉 */
-  min-width: 0;
-  width: 48px;
-  align-items: stretch;
-  justify-content: stretch;
-}
-.assistant-session-rail__collapsed {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  padding: .45rem 0 .55rem;
-  gap: .35rem;
-}
-.assistant-session-rail__collapsed-top {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: .25rem;
-}
-.assistant-session-rail__icon-btn {
-  margin: 0 !important;
-  width: 2rem !important;
-  height: 2rem !important;
-  padding: 0 !important;
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
-}
-.assistant-session-rail.is-collapsed :deep(.el-tooltip__trigger) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto;
-}
-.assistant-session-rail__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .35rem;
-  padding: .45rem .55rem .55rem;
-  border-top: 1px solid var(--rule);
-  margin-top: auto;
-}
-.assistant-session-rail__loci {
-  width: 2.1rem;
-  height: 2.1rem;
-}
-.assistant-session-rail__glyph {
-  display: grid;
-  place-items: center;
-  width: 1.7rem;
-  height: 1.7rem;
-  border-radius: var(--ai-r-card);
-  background: var(--ai-disc-face);
-  color: var(--ai-disc-ribbon);
-  font-size: var(--ai-fs-meta);
-  font-weight: 700;
-  letter-spacing: .04em;
-}
-.assistant-session-rail__head {
-  display: flex;
-  align-items: center;
-  gap: .25rem;
-  padding: .55rem .45rem 0 .65rem;
-}
-.assistant-session-rail__tabs {
-  min-width: 0;
-  flex: 1;
-}
-.assistant-session-rail__top {
-  display: flex;
-  align-items: center;
-  gap: .25rem;
-  padding: .45rem .55rem;
-  border-bottom: 1px solid var(--rule);
-}
-.assistant-session-rail__search {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.assistant-session-rail__top-actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 0;
-}
-.assistant-session-rail__top-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-.assistant-session-rail__batch {
-  display: flex;
-  align-items: center;
-  gap: .35rem;
-  padding: .4rem .65rem;
-  border-bottom: 1px solid var(--rule);
-  font-size: var(--ai-fs-aux);
-  color: var(--mist);
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
-}
-.assistant-session-rail__list {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  scrollbar-width: thin;
-  padding: .4rem;
-  display: flex;
-  flex-direction: column;
-  gap: .28rem;
-}
-/* 细滚动条而不是整个抹掉：长列表里用户需要位置感知 */
-.assistant-session-rail__list::-webkit-scrollbar {
-  width: 8px;
-}
-.assistant-session-rail__list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.assistant-session-rail__list::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: var(--ai-r-pill);
-  background: color-mix(in srgb, var(--ink) 18%, transparent);
-  background-clip: padding-box;
-}
-.assistant-session-row {
-  display: flex;
-  align-items: center;
-  gap: .2rem;
-  width: 100%;
-  padding: .4rem .45rem .4rem .55rem;
-  border-radius: var(--ai-r-card);
-  border: 1px solid transparent;
-}
-.assistant-session-row.is-active {
-  border-color: color-mix(in srgb, var(--seal) 35%, var(--rule));
-  background: var(--seal-soft);
-}
-.assistant-session-row__main {
-  display: flex !important;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: .18rem;
-  height: auto !important;
-  padding: .15rem 0 !important;
-  overflow: hidden;
-  color: var(--ink);
-  text-align: left;
-  line-height: 1.25;
-}
-.assistant-session-row__main :deep(.el-button__content),
-.assistant-session-row__main :deep(> span) {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: .08rem;
-  width: 100%;
-  min-width: 0;
-}
-.assistant-session-row__title,
-.assistant-session-row__meta {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-.assistant-session-row__title {
-  font-size: var(--ai-fs-body);
-  font-weight: 600;
-  color: var(--ink);
-}
-.assistant-session-row__meta {
-  color: var(--mist);
-  font-size: var(--ai-fs-meta);
-  font-weight: 400;
-}
-.assistant-session-row__more {
-  flex: 0 0 auto;
-  margin: 0 !important;
-  opacity: .35;
-}
-.assistant-session-row:hover .assistant-session-row__more,
-.assistant-session-row.is-active .assistant-session-row__more {
-  opacity: .9;
-}
-.assistant-session-row__danger { color: var(--el-color-danger); }
-
-.assistant-panel-toggle-icon {
-  display: block;
-  width: .95rem;
-  height: .85rem;
-  border: 1.5px solid currentColor;
-  border-radius: var(--ai-r-chip);
-  opacity: .85;
-}
-.assistant-panel-toggle-icon.is-left {
-  box-shadow: inset 4px 0 0 currentColor;
-}
-.assistant-panel-toggle-icon.is-left.is-open {
-  box-shadow: inset 5px 0 0 currentColor;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .assistant-session-rail { transition: none; }
-}
+.assistant-session-rail { display: flex; flex: 0 1 280px; min-width: 220px; min-height: 0; flex-direction: column; border-right: 1px solid var(--rule); background: var(--surface-sunken); }
+/* 与 Panel 的 JS 折叠断点一致；收起后必须清除展开态的最小宽度。 */
+.assistant-session-rail.is-collapsed { flex: 0 0 48px; min-width: 0; width: 48px; }
+.assistant-session-rail__collapsed { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: space-between; padding: var(--gap-2) 0; gap: var(--gap-2); }
+.assistant-session-rail__collapsed-top { display: flex; flex-direction: column; align-items: center; gap: var(--gap-2); }
+.assistant-session-rail__icon-btn { margin: 0 !important; width: var(--ctl-h) !important; height: var(--ctl-h) !important; padding: 0 !important; }
+.assistant-session-rail__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-2); padding: var(--gap-2) var(--gap-3); border-top: 1px solid var(--rule); margin-top: auto; }
+.assistant-session-rail__loci { display: inline-flex; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); }
+.assistant-session-rail__glyph { display: grid; place-items: center; width: var(--ctl-h); height: var(--ctl-h); border: 1px solid var(--rule); border-radius: var(--ai-r-chip); background: var(--surface); color: var(--seal-ink); font: 650 var(--ai-fs-meta) var(--mono); }
+.assistant-session-rail__head, .assistant-session-rail__top { display: flex; align-items: center; gap: var(--gap-1); padding: var(--gap-2); }
+.assistant-session-rail__top { border-bottom: 1px solid var(--rule); }
+.assistant-session-rail__tabs, .assistant-session-rail__search { min-width: 0; flex: 1; }
+.assistant-session-rail__top-actions { display: flex; flex: 0 0 auto; align-items: center; }
+.assistant-session-rail__top-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.assistant-session-rail__batch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1); padding: var(--gap-2); border-bottom: 1px solid var(--rule); font: var(--ai-fs-meta) var(--mono); color: var(--mist); background: var(--surface); }
+.assistant-session-rail__list { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; gap: var(--gap-1); padding: var(--gap-2); }
+.assistant-session-row { display: flex; align-items: center; gap: var(--gap-1); width: 100%; min-width: 0; box-sizing: border-box; padding: var(--gap-2); border-radius: var(--ai-r-card); border: 1px solid transparent; }
+.assistant-session-row:hover, .assistant-session-row:focus-within { background: var(--surface-hover); }
+.assistant-session-row.is-active { border-color: var(--seal-border); background: var(--seal-soft); }
+.assistant-session-row__main { display: flex !important; min-width: 0; flex: 1; flex-direction: column; align-items: flex-start; justify-content: center; height: auto !important; padding: 0 !important; overflow: hidden; color: var(--ink); text-align: left; line-height: 1.5; }
+.assistant-session-row__main :deep(> span) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap-1); width: 100%; min-width: 0; }
+.assistant-session-row__title, .assistant-session-row__meta { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.assistant-session-row__title { font-size: var(--ai-fs-body); font-weight: 600; color: var(--ink); }
+.assistant-session-row__meta { color: var(--mist); font: var(--ai-fs-meta) var(--mono); }
+.assistant-session-row__more { flex: 0 0 auto; margin: 0 !important; color: var(--mist); }
+.assistant-session-row__danger { color: var(--stamp); }
+.assistant-session-rail :deep(button:focus-visible) { outline: 2px solid var(--seal); outline-offset: -2px; }
+/* 折叠图标内的线代表真实面板分栏，不是装饰状态竖线。 */
+.assistant-panel-toggle-icon { display: block; width: 1em; height: .9em; border: 1.5px solid currentColor; border-radius: var(--ai-r-chip); }
+.assistant-panel-toggle-icon.is-left { box-shadow: inset 4px 0 0 currentColor; }
 </style>

@@ -131,6 +131,9 @@ class _BaseChannel:
         raise NotImplementedError
 
     def send(self, message: NotifyMessage, config: Mapping[str, Any]) -> bool:
+        from src.ops.application.notify_calendar import notification_silence_reason
+        if notification_silence_reason():
+            return False
         if not self.is_configured(config):
             logger.warning("notify channel %s skipped: not configured", self.name)
             return False

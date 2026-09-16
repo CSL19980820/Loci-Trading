@@ -23,8 +23,9 @@ _EXIT_TIP = "账本封存，明日再见"
 _ERROR_TIP = "开账未成，请查看日志"
 
 _CSS = """
+@font-face{font-family:"Loci CJK";src:local("Microsoft YaHei UI"),local("Microsoft YaHei"),local("PingFang SC"),local("Hiragino Sans GB"),local("Noto Sans SC");unicode-range:U+4E00-9FFF,U+3400-4DBF,U+F900-FAFF,U+3000-303F,U+FF00-FFEF;font-style:normal;font-weight:1 1000;font-display:swap}
 html,body{margin:0;height:100%;background:#e7ebf0;color:#0e1a29;
-font-family:"Microsoft YaHei UI","PingFang SC","Noto Sans SC","Segoe UI",system-ui,sans-serif}
+font-family:"Loci CJK",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-synthesis:none}
 #boot-splash,.loci-boot-root{position:fixed;inset:0;z-index:9999;overflow:hidden;
 background:#e7ebf0;transition:opacity .32s ease}
 #boot-splash.is-hide,.loci-boot-root.is-hide{opacity:0;pointer-events:none}

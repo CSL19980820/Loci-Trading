@@ -109,6 +109,7 @@ function isMoreItemActive(path: string): boolean {
       text
       class="nav-tab"
       :class="{ active: moreActive }"
+      :aria-expanded="drawerOpen"
       aria-label="更多导航"
       @click="drawerOpen = true"
     >
@@ -156,22 +157,16 @@ function isMoreItemActive(path: string): boolean {
  */
 @media (max-width: 980px) {
   .mobile-bottom-nav {
-    /*
-     * 52px + 安全区。壳的避让（.app-shell--with-mobile-nav）与 FAB 偏移读的是
-     * 全局 --mobile-nav-h，那边现在由 App.vue 就地覆写成同一个 52px；
-     * 令牌层把 --mobile-nav-h 落到 52px 后，这行与 App.vue 里那段一起删。
-     */
-    --mobile-nav-h: 52px;
     display: flex;
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 35;
+    z-index: var(--z-mobile-nav);
     height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0));
     padding-bottom: env(safe-area-inset-bottom, 0);
     border-top: 1px solid var(--rule);
-    background: var(--sheet-alt);
+    background: var(--surface);
   }
 
   .nav-tab {
@@ -189,7 +184,7 @@ function isMoreItemActive(path: string): boolean {
     background: transparent;
     color: var(--mist);
     font: inherit;
-    font-size: var(--fs-micro, 10px);
+    font-size: var(--fs-micro);
     font-weight: 500;
     line-height: 1.1;
     text-decoration: none;
@@ -218,7 +213,7 @@ function isMoreItemActive(path: string): boolean {
 
   .nav-tab .el-icon {
     margin: 0;
-    font-size: 18px;
+    font-size: var(--fs-hero);
   }
 
   .nav-label {
@@ -228,16 +223,17 @@ function isMoreItemActive(path: string): boolean {
     white-space: nowrap;
   }
 
-  /* 选中态是品牌靛，不是红：底栏和涨跌没有关系（D1） */
+  /* 选中态始终跟随主色，和涨跌语义分离。 */
   .nav-tab.active {
     color: var(--seal-ink);
+    background: var(--seal-soft);
     font-weight: 600;
   }
 
   .nav-tab.active.el-button:hover,
   .nav-tab.active.el-button:focus {
     color: var(--seal-ink);
-    background: transparent;
+    background: var(--seal-soft);
   }
 
   .nav-tab.active .el-icon {
@@ -280,7 +276,7 @@ function isMoreItemActive(path: string): boolean {
   background: var(--seal-soft);
   color: var(--seal-ink);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--seal);
+  border-color: var(--seal);
 }
 
 .more-link--action {

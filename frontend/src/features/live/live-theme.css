@@ -22,7 +22,7 @@
   --live-panel: var(--sheet);
   --live-head: var(--sheet-alt);
   --live-rule: var(--rule);
---live-rule-soft: var(--rule-soft);
+  --live-rule-soft: var(--rule-soft);
   --live-rule-strong: var(--rule-strong);
 
   /* —— 文字阶梯 —— */
@@ -87,52 +87,62 @@
   font-size: var(--fs-aux);
 }
 
-.live-board-theme * {
+/* 触屏行高：榜单/信号行 26px 在触屏上点不中，640 以下提到 40px */
+@media (max-width: 640px) {
+  .live-board-theme {
+    --live-rank-row-h: 40px;
+    --live-signal-row-h: 40px;
+  }
+}
+
+.live-board-theme :deep(*) {
   box-sizing: border-box;
 }
 
 /* D2：屏幕上最大的字必须是数字 —— 数字一律等宽 + 定宽字形 */
-.live-num {
+.live-board-theme :deep(.live-num) {
   font-family: var(--live-font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
 }
 
-.live-tone-up {
+.live-board-theme :deep(.live-tone-up) {
   color: var(--live-up);
 }
 
-.live-tone-down {
+.live-board-theme :deep(.live-tone-down) {
   color: var(--live-down);
 }
 
-.live-tone-flat {
+.live-board-theme :deep(.live-tone-flat) {
   color: var(--live-flat);
 }
 
 /* 区块通用外壳：无阴影、无大圆角，靠 hairline 与底色差分层（D3） */
-.live-block {
+.live-board-theme :deep(.live-block) {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
   background-color: var(--live-panel);
+  border: 1px solid var(--live-rule);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
-.live-block__head {
+.live-board-theme :deep(.live-block__head) {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-2);
   flex: none;
-  height: var(--live-block-head-h);
+  min-height: var(--live-block-head-h);
   padding: 0 var(--gap-2);
   background-color: var(--live-head);
   border-bottom: 1px solid var(--live-rule);
 }
 
-.live-block__title {
+.live-board-theme :deep(.live-block__title) {
   display: flex;
   align-items: center;
   gap: var(--gap-1);
@@ -143,17 +153,17 @@
   white-space: nowrap;
 }
 
-.live-block__body {
+.live-board-theme :deep(.live-block__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
 
-.live-flash-up {
+.live-board-theme :deep(.live-flash-up) {
   animation: live-flash-up-anim 320ms ease-out;
 }
 
-.live-flash-down {
+.live-board-theme :deep(.live-flash-down) {
   animation: live-flash-down-anim 320ms ease-out;
 }
 
@@ -177,8 +187,8 @@
 
 /* 闪烁 / 跑马灯 / 信号入场三处动效，统一在这里对降级偏好兜底 */
 @media (prefers-reduced-motion: reduce) {
-  .live-flash-up,
-  .live-flash-down {
+  .live-board-theme :deep(.live-flash-up),
+  .live-board-theme :deep(.live-flash-down) {
     animation: none;
   }
 }

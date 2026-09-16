@@ -19,12 +19,13 @@ const emit = defineEmits<{
       <h2 class="panel-title">找回密码</h2>
     </div>
 
-    <el-form label-position="top" @submit.prevent="emit('submit')">
+    <el-form label-position="top" :aria-busy="submitting" @submit.prevent="emit('submit')">
       <el-form-item label="注册邮箱">
         <el-input
           :model-value="email"
           :prefix-icon="Message"
           type="email"
+          autocomplete="email"
           placeholder="name@example.com"
           autofocus
           @update:model-value="emit('update:email', String($event))"
@@ -49,32 +50,4 @@ const emit = defineEmits<{
   </div>
 </template>
 
-<style scoped>
-.panel-head {
-  margin-bottom: 1.25rem;
-}
-
-.panel-title {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.login-submit {
-  width: 100%;
-  height: 2.5rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.form-bottom-link {
-  text-align: center;
-  margin-top: 1rem;
-}
-
-.sub-link {
-  font-size: 0.82rem;
-  color: var(--mist);
-}
-</style>
+<style scoped src="./AuthForm.css" />

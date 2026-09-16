@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Search, RefreshRight } from '@element-plus/icons-vue'
 /**
  * 用户管理。全站统一的「筛选栏 + BasicTable + RowActions」列表骨架，
  * 不再自绘 filter-bar / el-table / pagination-bar。
@@ -287,10 +288,10 @@ defineExpose({ handleToggleRole, handleToggleStatus })
 </script>
 
 <template>
-  <div class="admin-pane">
+  <div class="admin-pane admin-list">
     <PageContainer>
       <template #search>
-        <div class="admin-pane__filters">
+        <div class="min-w-0 flex-1">
           <BasicForm
             v-model="filters"
             :schemas="filterSchemas"
@@ -299,12 +300,11 @@ defineExpose({ handleToggleRole, handleToggleStatus })
             label-width="5em"
           />
         </div>
-        <div class="admin-pane__filter-actions">
-          <el-button type="primary" @click="reload">查询</el-button>
-          <el-button @click="onReset">重置</el-button>
+        <div class="flex shrink-0 flex-wrap items-center gap-2">
+          <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
         </div>
       </template>
-
       <template #main>
         <BasicTable
           ref="tableRef"
@@ -312,6 +312,7 @@ defineExpose({ handleToggleRole, handleToggleStatus })
           :request="loadUsers"
           :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
           :toolbar-config="{ refresh: true, custom: true }"
+          height="100%"
           row-key="id"
           stripe
           empty-text="没有匹配的账号"
@@ -407,3 +408,5 @@ defineExpose({ handleToggleRole, handleToggleStatus })
   margin-left: var(--gap-1);
 }
 </style>
+
+<style scoped src="./AdminList.css" />

@@ -187,7 +187,7 @@ watch(() => props.provider.name, () => {
 </script>
 
 <template>
-  <div class="qr-panel">
+  <div class="qr-panel" :aria-busy="starting || claiming">
     <h3 class="qr-title">{{ provider.label }} 登录</h3>
 
     <div class="qr-box-wrap">
@@ -197,7 +197,7 @@ watch(() => props.provider.name, () => {
       </div>
 
       <div v-else class="qr-box">
-        <div v-if="qrSvg" class="qr-svg-wrap" v-html="qrSvg" />
+        <div v-if="qrSvg" class="qr-svg-wrap" role="img" aria-label="登录二维码" v-html="qrSvg" />
         <img v-else-if="qrImageUrl" :src="qrImageUrl" alt="二维码" class="qr-img" />
         <div v-else class="qr-fallback">
           <p class="qr-fallback-link">{{ qrContent || state }}</p>
@@ -208,27 +208,27 @@ watch(() => props.provider.name, () => {
           <div class="mask-icon-circle">
             <el-icon :size="24"><Check /></el-icon>
           </div>
-          <p class="mask-text">扫描成功</p>
+          <p class="mask-text" role="status">扫描成功</p>
           <p class="mask-sub">请在手机上点击确认登录</p>
         </div>
 
-        <div v-else-if="qrStatus === 'expired'" class="qr-mask mask-expired" @click="initFlow">
+        <div v-else-if="qrStatus === 'expired'" class="qr-mask mask-expired">
           <el-icon :size="28"><RefreshRight /></el-icon>
-          <p class="mask-text">二维码已过期</p>
-          <p class="mask-sub">点击刷新</p>
+          <p class="mask-text" role="status">二维码已过期</p>
+          <el-button type="primary" size="small" @click="initFlow">刷新二维码</el-button>
         </div>
 
-        <div v-else-if="qrStatus === 'failed'" class="qr-mask mask-failed" @click="initFlow">
+        <div v-else-if="qrStatus === 'failed'" class="qr-mask mask-failed">
           <el-icon :size="28"><Close /></el-icon>
-          <p class="mask-text">{{ errorMessage || '登录失败' }}</p>
-          <p class="mask-sub">点击重试</p>
+          <p class="mask-text" role="status">{{ errorMessage || '登录失败' }}</p>
+          <el-button type="primary" size="small" @click="initFlow">重试</el-button>
         </div>
 
         <div v-else-if="qrStatus === 'confirmed' || qrStatus === 'consumed'" class="qr-mask mask-success">
           <div class="mask-icon-circle success">
             <el-icon :size="28"><Check /></el-icon>
           </div>
-          <p class="mask-text">登录成功</p>
+          <p class="mask-text" role="status">登录成功</p>
           <p class="mask-sub">正在跳转...</p>
         </div>
       </div>
@@ -267,163 +267,4 @@ watch(() => props.provider.name, () => {
   </div>
 </template>
 
-<style scoped>
-.qr-panel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1.5rem 1rem;
-  width: 100%;
-}
-
-.qr-title {
-  margin: 0 0 1rem;
-  font-size: 1.15rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.qr-box-wrap {
-  width: 210px;
-  height: 210px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius);
-  border: 1px solid var(--rule);
-  background: var(--sheet);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-
-.qr-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  color: var(--mist);
-}
-
-.qr-tip {
-  font-size: 0.82rem;
-}
-
-.qr-box {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  color: var(--ink);
-}
-
-.qr-svg-wrap {
-  width: 180px;
-  height: 180px;
-}
-
-.qr-img {
-  width: 180px;
-  height: 180px;
-  object-fit: contain;
-}
-
-.qr-fallback {
-  padding: 1rem;
-  word-break: break-all;
-  text-align: center;
-  font-size: 0.8rem;
-  color: var(--mist);
-}
-
-.qr-mask {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  padding: 1rem;
-  text-align: center;
-  backdrop-filter: blur(4px);
-  background: rgba(var(--panel-rgb, 255, 255, 255), 0.92);
-  transition: opacity 0.2s ease;
-}
-
-.mask-scanned {
-  color: var(--ink);
-}
-
-.mask-icon-circle {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 0.25rem;
-}
-
-.mask-icon-circle.success {
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-}
-
-.mask-expired,
-.mask-failed {
-  cursor: pointer;
-  color: var(--ink);
-}
-
-.mask-expired:hover,
-.mask-failed:hover {
-  background: rgba(var(--panel-rgb, 255, 255, 255), 0.96);
-}
-
-.mask-text {
-  margin: 0;
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.mask-sub {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--mist);
-}
-
-.mock-actions {
-  width: 100%;
-  margin-top: 1rem;
-}
-
-.mock-btn-group {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: center;
-}
-
-.qr-footer {
-  margin-top: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.qr-expire-text {
-  font-size: 0.78rem;
-  color: var(--mist);
-  font-variant-numeric: tabular-nums;
-}
-
-.qr-back-btn {
-  font-size: 0.85rem;
-  color: var(--mist);
-}
-</style>
+<style scoped src="./QrLoginPanel.css" />

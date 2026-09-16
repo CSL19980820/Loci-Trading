@@ -229,8 +229,8 @@ watch(filtered, () => {
       </span>
     </template>
 
-    <div class="ak-panel">
-      <div class="catalog-filters">
+    <div class="ak-panel flex min-h-0 min-w-0 flex-1 flex-col">
+      <div class="catalog-filters grid shrink-0">
         <el-input v-model="query" clearable placeholder="按接口名或说明筛选" aria-label="接口名筛选" />
         <el-select v-model="category" clearable placeholder="类目" aria-label="类目筛选">
           <el-option
@@ -310,7 +310,7 @@ watch(filtered, () => {
     @stop="emit('stop-batch')"
   />
 
-  <el-dialog v-model="visible" :title="selected ? `试跑 ${selected.name}` : '接口试跑'" width="720px" destroy-on-close>
+  <el-dialog v-model="visible" class="probe-dialog" :title="selected ? `试跑 ${selected.name}` : '接口试跑'" width="min(720px, 96vw)" destroy-on-close>
     <p v-if="selected" class="signature">{{ selected.signature }} · {{ selected.summary }}</p>
     <el-form label-position="right" label-width="6.5em" size="small" class="params-form" @submit.prevent="submitProbe">
       <el-form-item
@@ -328,6 +328,7 @@ watch(filtered, () => {
         <el-input-number
           v-else-if="inputKind(parameter) === 'number'"
           v-model="params[parameter.name]"
+          :aria-label="parameter.name"
           controls-position="right"
           :aria-invalid="Boolean(parameterErrors[parameter.name])"
         />
@@ -382,18 +383,15 @@ watch(filtered, () => {
   flex: 1 1 auto;
 }
 .ak-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1 1 auto;
   gap: var(--gap-2);
 }
-.version-hint { color: var(--warn); font-size: var(--fs-aux); }
 .catalog-filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--gap-2);
-  flex-shrink: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  padding: var(--gap-2);
+  background: var(--surface-sunken);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
 }
 /* 高度内容驱动：表体自己吃满剩余空间，空目录时不留 12rem 死白 */
 .ak-table-wrap {
@@ -412,11 +410,13 @@ watch(filtered, () => {
 /* 表单栅格挂在 el-form 自身：不插裸 div，label 宽仍由 EP 的 label-width 算 */
 .params-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
   gap: var(--gap-1) var(--gap-3);
   align-items: start;
 }
 .params-form :deep(.el-form-item) { margin-bottom: var(--gap-1); min-width: 0; }
 .parameter-meta { margin: 2px 0 0; color: var(--mist); font-size: var(--fs-kicker); line-height: 1.35; }
 .probe-summary { margin: var(--gap-2) 0; color: var(--mist); font-size: var(--fs-aux); font-variant-numeric: tabular-nums; }
+.probe-dialog :deep(.el-dialog__body) { max-height: 70dvh; overflow: auto; overscroll-behavior: contain; }
+.probe-dialog :deep(.el-dialog__footer) { border-top: 1px solid var(--rule); padding-top: var(--gap-3); }
 </style>

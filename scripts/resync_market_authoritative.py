@@ -1,16 +1,15 @@
 r"""用权威源（通达信）全量重写生产行情库。
 
-为什么需要这么一次性的动作：库里 1695 万行日 K 中有 1351 万行（79.7%）的
-``amount`` 是腾讯用 ``close × volume`` 合成的**假成交额**（实测
-``amount/(close*volume)`` 恒为 1.0000），覆盖 1990-12-19 至今全历史。换源只
-改变「以后写进来的数据」，已经躺在库里的假值不会自己消失。
+历史版本曾用 ``close × volume`` 合成腾讯日 K 的成交额。停止生成假值不会
+自动修复已落库的历史；本脚本严格只请求通达信，保留真实来源回执。
 
 安全性：
 
 - 走 ``upsert``，**只覆盖不删行**：通达信不返回的老日期（如 000001 早于
   1991-04-03 的那几周）原样保留。
-- 走 ``market_write_lock``，与 Loci 桌面端 / 调度 job 互斥，不会双写。
-- 按 watermark 断点续跑：中途挂掉再跑一次即可，已完成的票不会重来。
+- 走 ``market_write_lock``，与线上调度 job 互斥，不会双写。
+- 按批提交，中断前已写数据保留；重跑幂等。严格模式绕过水位，
+  ``--no-force`` 仅重刷增量近窗，不代表按证券断点续跑。
 - ``--dry-run`` 只统计不写。
 
 用法（仓库根目录）::
@@ -54,7 +53,7 @@ def survey(db_path: Path) -> dict:
         fabricated = conn.execute(
             "SELECT COUNT(*) FROM quotes_daily"
             " WHERE source IN (%s)" % placeholders
-            + " AND amount IS NOT NULL AND volume > 0 AND close > 0"
+            + " AND amount IS NOT NULL AND volume > 0 AND close > 0 AND high <> low"
             "   AND ABS(amount - close*volume) < ?",
             list(_FABRICATING_SOURCES) + [_SYNTH_EPSILON],
         ).fetchone()[0]
@@ -169,6 +168,7 @@ def main() -> int:
             workers=args.workers,
             min_interval=args.interval,
             force=not args.no_force,
+            authoritative_only=True,
             with_factors=False,
             with_today_spot=False,
             chunk_size=args.chunk,
@@ -188,7 +188,7 @@ def main() -> int:
     print_survey("改后:", after)
     fixed = before["fabricated"] - after["fabricated"]
     print("\n修正假成交额 %d 行" % fixed)
-    return 0
+    return 1 if report.failed else 0
 
 
 if __name__ == "__main__":

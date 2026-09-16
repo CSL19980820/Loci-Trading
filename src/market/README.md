@@ -1,9 +1,12 @@
 # 行情（market）
 
+选股行情门禁按目标交易日检查：未指定日期时，上海时区盘中/盘后使用当天，休市及开盘前使用上一已收盘交易日；显式历史日期保持原值。历史日覆盖未达 90% 仍阻断，并提示补齐该日历史行情，绝不调用今日现价或按盘中降级放行。`resolve_screen_trade_date` 与选股任务共用日期解析，回执 `coverage.trade_date` 标识实际检查日。
+
 ## 职责
 标的、日 K、同步编排、数据线路适配器、股票池。
 
 股票池默认包含主板、创业板和科创板并剔除 ST；高级筛选可显式加入北交所，并支持行业、代码包含/排除。默认值与可选能力必须分开描述，不能把“默认不选”实现成领域层永久禁止。
+创业板分类覆盖六位ASCII数字证券代码的整个 `30` 前缀（含 `302132` 中航成飞），不能只列举 `300` / `301`，否则单选创业板会漏票、单选主板会错收该票。身份依据见[巨潮上市公司要览](https://static.cninfo.com.cn/finalpage/enpage/302132_1.pdf)；该归类不替代证券列表对实际上市标的的约束。
 
 ## 边界
 只写 market.db；禁止写 palace.db。
@@ -16,15 +19,25 @@
 
 增量镜像先在热库写事务内逐块比对行情与日历的完整值，未变时不重写；回执和 attempts 也只写入新增或变化行。它不依赖可能漏记旁路修订的版本号，同日改价格、成交量、换手率或回执仍会同步。`quotes=0` 表示本次没有重写行情；显式 `mirror_to_hot` 继续强制重建。
 
-
 ## 关键入口
 `MarketStore` / `sync_quotes`；HTTP：`/api/market/*` `/api/universe/*`（现由 app.legacy.quant_router 挂载）；CLI：`python -m cli.market`
+
+### 权威行情保护（2026-09-11）
+
+- `tdx_daily` 建连后必须真正取到一根日 K 才采用该节点；握手成功但只回数量头的节点会关闭并换台。排序超时保留已成功的节点，候选池见 `tdx_servers.py`，包含生产验证过的公开券商节点。连接起点按计数器轮询，不能用线程 ID 取模（线程 ID 的内存对齐会让所有线程挤在同一台）。
+- `sync_quotes(authoritative_only=True)` 仅请求通达信、关闭交叉合并与回退，并绕过当天水位和上市日跳过；仍按增量近窗取数，`force=True` 才全历史重拉。不能同时传自定义 `sources`。
+- 已入库的 `source='tdx'` 正式日 K 只能被正式通达信数据更新，回退源和盘中 spot 不得覆盖；当日 15:00 前仍允许现价刷新，防止把盘中累计值冻结。写入数按实际更新行数返回，失败回执照常留存。
+- 腾讯历史日 K / flashdata 未提供成交额时 `amount` 留空，禁止再用 `close×volume` 合成；腾讯现价仍使用接口真实成交额。历史遗留假值须用权威源重写，不通过改阈值或清空数据消除告警。
+- 回退源水位不阻止同日重试；日终定稿和 `scripts/resync_market_authoritative.py` 均使用严格权威模式。回归：`tests/market/test_authoritative_integrity.py`。
 
 `load_panel` 对所有请求字段共用一次 `(trade_date, code)` pivot，避免逐字段重复编码和排序；
 返回值仍是按日期排序、按证券对齐的 pandas 数值面板，缺失值、复权与 `min_bars` 口径不变。
 可选 Polars 读取旁路按列转 NumPy 后交给 pandas，不再构造逐行字典。
 
 ## 如何扩展
+
+盘中选股的 `fetch_live_spot_bars(..., strict=True)` 为精确形态筛选提供严格输入模式：绕过已完成的 20 秒缓存，要求请求代码有当日完整、有限的 OHLCV；有成交时 OHLC 须为正。明确零量快照允许 O/H/L 为零但 C 须为正，原样留存，由严格预筛路径记入 `zero_volume_codes`，不叠成当天新 K。缺字段、NaN、负量不能当成零量；缺字段不能用现价回填，不根据成交额猜测改量，缺代码则明确中止。默认模式保持原有兼容行为。严格和普通请求的缓存键隔离，同一在途请求仍可共享。`screen()` 在结果快照中记录调用起止时刻；批量行情并非全市场原子同刻快照。
+
 新行情源：**写 fetcher（只取原始报文）+ 在 `domain/source_contract.py` 声明 FieldSpec**，再注册到 lane。
 归一（列映射 / 数值化 / 手→股 / 百分数→小数 / 缺列质检）只走 `infrastructure/pipeline.py`，
 **禁止**在 adapter 里再手写 rename 或乘除 100。对方改字段名 = 改契约一行；改 URL = 改 fetcher。
@@ -98,7 +111,7 @@
 | `store_summary.py` | 概览查询：`latest_bars` 走日历近窗+索引；`recent_amounts` 供 review 容量校验；`coverage` 走日历/证券表，行数取 `store_row_count.py` 的缓存 |
 | `store_row_count.py` | `quotes_daily` 行数缓存 `meta.quotes_daily_rows_v2 = "{base_date}\|{base_rows}"`：**冻结基数 + 活动尾巴**。总数 = 基数（`< base_date`）+ 主键前缀范围计数（`>= base_date`，只有近一两日）。写入路径增量维护：`store_rw` 上传落在基数区的行**批量**探测「是否已存在」（每 400 对主键拼一条 `VALUES` 临时表 JOIN 主键索引，不再逐对 `SELECT`——回填一票 250 个交易日原本就是 250 次往返）只计真正新增，批内出现新交易日就推进冻结线；热库裁窗 `note_trim_below` 按将删行数递减、重灌 `track_hot_window_rewrite` 按区间前后差修正（重灌深入基数区 >30 日即作废重建）。只有无缓存时才全表 COUNT 一次。**为什么**：上一版绑 `quotes_revision`，盘中每 5 分钟同步一次就作废，随后的 `coverage()` 要冷扫 400 MB 覆盖索引——线上 2026-09-04 实测 `GET /api/ops/data-location` 26～30 s，设置页遮罩跟着蒙 30 s |
 | `store_rw.trading_days` | 带 `start`/`end` 的空结果**不会**触发 `rebuild_calendar`（热库常见「尚无下一交易日」）；仅全局日历为空且有日 K 时才从 `quotes_daily` 重建 |
-| `store_provenance.py` | 来源回执原子写入；`persist_quote_bar_receipts` **先按 code 把载荷索引成 `dict[str, list[row]]` 再分发回执**（逐 code 过滤/计数是 5500×5500 次比较，实测占整次 spot 落库的 96%），同一 code 的多个交易日必须整段留在列表里，只留最后一行会静默丢数据；`store_provenance_query.py` 负责 `source_evidence(codes,start,end)` 只读查询（code 分片 + 先取 receipt_id 再反查，避免 EXISTS 扫千万行日 K） |
+| `store_provenance.py` | 来源回执原子写入；`persist_quote_bar_receipts` **先按 code 把载荷索引成 `dict[str, list[row]]` 再分发回执**（逐 code 过滤/计数是 5500×5500 次比较，实测占整次 spot 落库的 96%），同一 code 的多个交易日必须整段留在列表里，只留最后一行会静默丢数据；`store_provenance_query.py` 负责 `source_evidence(codes,start,end)` 只读查询（code 分片 + 先取 receipt_id 再反查，避免 EXISTS 扫千万行日 K）。默认保留完整详情；显式 `include_details=False`（`data_snapshot` 对应 `include_source_details=False`）仍保留全部实际报价关联 receipt/attempt，额外历史失败范围只做 SQL 汇总，标记 `receipt_details_omitted`，严格 PIT 拒绝。汇总失败范围可能与实际引用回执重叠，不可直接相加计算去重总量 |
 | `store_board_page.py` | 行情台分页：所属行业过滤、换手率排序/下限 |
 | `store_panel.py` | 全市场面板与 `_consolidate`；`_require_bounded_range` 拒绝 codes/start/end 全空的无范围调用 |
 | `duckdb_panel.py` | 可选 DuckDB 只读旁路（`LOCI_MARKET_DUCKDB=1`；失败回退 pandas） |
@@ -428,3 +441,7 @@ DEFAULT_ADAPTER_CONCURRENCY`）。多客户端大屏把同一条 lane 排成长�
 
 ## 相关测试
 `tests/market/`（含 `test_duckdb_panel.py` 与可选 `test_polars_panel.py`：旁路只读且与经典面板对齐；显式基准见 `tests/benchmarks/polars_benchmark.py`；`test_http_client.py`：行情代理回退与握手重试；`test_daily_window.py`：日 K 增量近窗；`test_bounded_reads.py`：`load_panel` 范围护栏与热库窗口分批搬运的峰值内存对照；`test_live_hub.py`：单采集器 / N 订阅者只取一次数、周期预算、失败退避与自动停表、SSE 首帧形状；`test_realtime_signals.py`：去抖与 cooldown、`provisional`/`adjust=none` 口径、面板日缓存；`test_watchlist.py`：preset 排序与 400 只硬上限；`test_store_row_count.py`：行数缓存在追加/回填/重复写/新交易日/热库裁窗与重灌后仍等于真 COUNT，且缓存建好后稳态不再全表 COUNT）
+
+报告未来交易日程：公开scheduled_trading_days读取已核验的交易所年度休市安排（当前2026）；它用于盘前/周末判定，不代表该日行情已入库。未知年度拒绝猜测，年度公告需更新。
+
+交易所休市日历由盘外任务自动读取官方页面并原子保存全局快照，导出scheduled_trading_days/calendar_trading_day/refresh_exchange_calendar；盘中不联网，超过72小时未核验按不可用处理。

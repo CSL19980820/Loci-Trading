@@ -30,11 +30,11 @@
 }
 
 .run-panel__status-row:hover {
-  background: color-mix(in srgb, var(--rule) 35%, transparent);
+  background: color-mix(in oklab, var(--rule) 35%, transparent);
 }
 
 .run-panel__status-row:focus-visible {
-  outline: 2px solid var(--accent, var(--up));
+  outline: 2px solid var(--seal);
   outline-offset: 1px;
 }
 
@@ -49,7 +49,7 @@
   flex-shrink: 0;
   transition: transform 0.18s ease;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--fs-body);
 }
 
 .run-panel__chevron.open {
@@ -57,8 +57,8 @@
 }
 
 .run-panel__status strong {
-  font-family: var(--font-display);
-  font-size: 1rem;
+  font-family: var(--font);
+  font-size: var(--fs-title);
 }
 
 .run-panel__log {
@@ -71,8 +71,8 @@
 }
 
 .run-panel__log--live {
-  border-color: color-mix(in srgb, var(--accent, var(--up)) 42%, var(--rule));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, var(--up)) 12%, transparent);
+  border-color: color-mix(in oklab, var(--seal) 42%, var(--rule));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--seal) 12%, transparent);
 }
 
 .log {
@@ -82,14 +82,14 @@
   max-height: 11rem;
   overflow: auto;
   scroll-behavior: smooth;
-  font-size: 0.74rem;
+  font-size: var(--fs-aux);
   line-height: 1.45;
   color: var(--mist);
 }
 
 .log li {
   padding: 0.16rem 0;
-  border-bottom: 1px dashed color-mix(in srgb, var(--rule) 70%, transparent);
+  border-bottom: 1px dashed color-mix(in oklab, var(--rule) 70%, transparent);
   transition: color 0.18s ease, background 0.18s ease;
 }
 
@@ -98,20 +98,20 @@
 }
 
 .log-line--ok {
-  color: color-mix(in srgb, var(--up) 78%, var(--ink));
+  color: var(--ok);
 }
 
 .log-line--err {
-  color: color-mix(in srgb, var(--loss) 82%, var(--ink));
+  color: var(--up-ink);
 }
 
 .log-line--wait {
-  color: color-mix(in srgb, var(--accent, var(--up)) 70%, var(--ink));
+  color: var(--seal-ink);
 }
 
 .log-line--fresh {
   color: var(--ink);
-  background: color-mix(in srgb, var(--accent, var(--up)) 10%, transparent);
+  background: var(--seal-soft);
   margin: 0 -0.35rem;
   padding-left: 0.35rem;
   padding-right: 0.35rem;
@@ -131,7 +131,7 @@
 
 .hitl-prompt {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
   color: var(--muted);
   line-height: 1.4;
 }
@@ -149,12 +149,12 @@
   font-size: 0.75rem;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--up) 14%, transparent);
+  background: color-mix(in oklab, var(--up) 14%, transparent);
   color: var(--up);
 }
 
 .mist-chip {
-  background: color-mix(in srgb, var(--rule) 55%, transparent);
+  background: color-mix(in oklab, var(--rule) 55%, transparent);
   color: var(--mist);
 }
 
@@ -244,6 +244,6 @@
 }
 
 .run-panel__abandon-note {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }

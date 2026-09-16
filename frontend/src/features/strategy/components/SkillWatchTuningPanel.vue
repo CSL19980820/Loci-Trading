@@ -120,13 +120,13 @@ defineExpose({ load })
 </script>
 
 <template>
-  <div v-loading="loading" class="watch-tuning">
+  <div v-loading="loading" class="flex min-w-0 flex-col gap-2">
     <el-alert
       v-if="disabledStages.length"
       type="warning"
       show-icon
       :closable="false"
-      class="mb"
+      class="mb-2 shrink-0"
       :title="`已关闭 ${disabledStages.map((s) => s.label).join('、')}，按降级口径运行`"
     />
 

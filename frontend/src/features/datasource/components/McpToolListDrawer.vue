@@ -4,6 +4,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { getMcpServers } from '@/shared/api/quant'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { McpServer } from '@/shared/types/quant'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 const BUILTIN_NAME = 'loci-market'
 
@@ -73,7 +74,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <el-drawer v-model="open" size="min(520px, 94vw)" direction="rtl">
+  <el-drawer v-model="open" class="source-mcp-drawer" size="min(520px, 100vw)" direction="rtl" append-to-body>
     <template #header="{ titleId, titleClass }">
       <div class="mcp-head">
         <h4 :id="titleId" :class="titleClass">MCP 工具清单</h4>
@@ -105,10 +106,10 @@ onUnmounted(() => {
             aria-label="筛选线路工具"
           />
         </header>
-        <el-empty
+        <EmptyState
           v-if="!laneShown.length"
           :description="laneTools.length ? '没有匹配的工具' : '所有取数线路都被停用了'"
-          :image-size="56"
+          reason="调整筛选或启用线路"
         />
         <ul v-else class="mcp-list">
           <li v-for="item in laneShown" :key="item.name">
@@ -135,10 +136,10 @@ onUnmounted(() => {
             aria-label="筛选 AkShare 工具"
           />
         </header>
-        <el-empty
+        <EmptyState
           v-if="!akshareShown.length"
-          :description="akshareTools.length ? '没有匹配的工具' : '未挂载 akshare_call（检查内置 MCP）'"
-          :image-size="56"
+          :description="akshareTools.length ? '没有匹配的工具' : '未挂载 akshare_call'"
+          reason="检查内置 MCP 是否挂载"
         />
         <ul v-else class="mcp-list">
           <li v-for="item in akshareShown" :key="item.name">
@@ -176,7 +177,7 @@ onUnmounted(() => {
 }
 
 .mcp-group {
-  margin-bottom: 0.9rem;
+  margin-bottom: var(--gap-3);
 }
 
 /* 标题不独占一行：计数与本块筛选框都挂在同一条功能行上 */
@@ -184,15 +185,20 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.4rem;
+  gap: var(--gap-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--gap-2);
+  padding: var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
   min-width: 0;
 }
 
 .mcp-group__title {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: 0.92rem;
+  font-family: var(--font);
+  font-size: var(--fs-body);
   white-space: nowrap;
 }
 
@@ -221,20 +227,21 @@ onUnmounted(() => {
 
 .mcp-list li {
   display: grid;
-  gap: 0.15rem;
-  padding: 0.4rem 0.55rem;
+  gap: var(--gap-1);
+  padding: var(--gap-2) var(--gap-3);
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  background: var(--paper);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .mcp-list code {
-  font: 650 0.8rem var(--mono);
+  font: 600 var(--fs-aux) var(--mono);
+  overflow-wrap: anywhere;
   color: var(--ink);
 }
 
 .mcp-list span {
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   line-height: 1.45;
   color: var(--muted);
   display: -webkit-box;
@@ -242,4 +249,9 @@ onUnmounted(() => {
   -webkit-line-clamp: 3;
   overflow: hidden;
 }
+</style>
+<style scoped>
+.mcp-head { flex-wrap: wrap; gap: var(--gap-2); }
+.source-mcp-drawer :deep(.el-drawer__header) { border-bottom: 1px solid var(--rule); padding-bottom: var(--gap-3); }
+.source-mcp-drawer :deep(.el-drawer__footer) { border-top: 1px solid var(--rule); background: var(--surface-sunken); }
 </style>

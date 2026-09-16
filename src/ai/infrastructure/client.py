@@ -22,6 +22,8 @@ from typing import Any
 
 import httpx2
 
+from src.ai.infrastructure.connection_retry import ConnectionRetryClient
+
 logger = logging.getLogger(__name__)
 
 PROTOCOLS = ("openai_compatible", "anthropic")
@@ -54,6 +56,8 @@ class ChatMessage:
     tool_call_id: str = ""
     #: 用户附图：data:image/...;base64,...（供多模态模型）
     images: list[str] = field(default_factory=list)
+    #: 部分推理模型要求后续工具轮原样回传；None与空字符串含义不同。
+    reasoning_content: str | None = None
 
 
 @dataclass
@@ -64,6 +68,7 @@ class ChatResponse:
     output_tokens: int = 0
     tool_calls: list[ToolCall] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
+    reasoning_content: str | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -102,7 +107,7 @@ def _client(config: ProviderConfig) -> httpx2.Client:
     kwargs: dict[str, Any] = {"timeout": config.timeout}
     if config.proxy_url:
         kwargs["proxy"] = config.proxy_url
-    return httpx2.Client(**kwargs)
+    return ConnectionRetryClient(**kwargs)
 
 
 _BEARER = re.compile(r"(?i)(bearer\s+)[^\s,;\"'}]+")
@@ -307,6 +312,10 @@ def _openai_messages(messages: list[ChatMessage], system: str) -> list[dict[str,
             )
         else:
             out.append({"role": message.role, "content": _openai_content(message)})
+        if message.role == "assistant" and message.reasoning_content is not None:
+            out[-1]["reasoning_content"] = message.reasoning_content
+            if out[-1]["content"] is None:
+                out[-1]["content"] = ""
     return out
 
 
@@ -367,6 +376,7 @@ def _chat_openai(
         output_tokens=int(usage.get("completion_tokens", 0) or 0),
         tool_calls=calls,
         raw=data,
+        reasoning_content=message.get("reasoning_content") if isinstance(message.get("reasoning_content"), str) else None,
     )
 
 
@@ -474,11 +484,7 @@ def _chat_anthropic(
 # --------------------------------------------------------------------------
 
 def validate(config: ProviderConfig) -> ChatResponse:
-    """发一次最小请求确认 Key 真的能用。
-
-    只在保存时调用一次。不做这一步的话，错误的 Key 要等到第一次定时任务
-    在半夜跑失败才被发现。
-    """
+    """用户主动测试时发一条短对话；保存配置默认不调用。"""
     probe = ProviderConfig(
         name=config.name,
         protocol=config.protocol,
@@ -486,9 +492,14 @@ def validate(config: ProviderConfig) -> ChatResponse:
         api_key=config.api_key,
         model=config.model,
         proxy_url=config.proxy_url,
-        timeout=LIST_MODELS_TIMEOUT,
+        timeout=config.timeout,
     )
-    return chat(probe, [ChatMessage(role="user", content="hi")], max_tokens=1, temperature=0.0)
+    # 推理模型也需要生成预算；1 token 会被部分兼容端点直接拒绝。
+    response = chat(probe, [ChatMessage(role="user", content="Reply with only OK.")],
+                    max_tokens=1024, temperature=0.0)
+    if not response.text.strip():
+        raise LLMError(f"{config.name} 测试未返回正文，请检查模型输出额度或稍后重试")
+    return response
 
 
 def list_models(config: ProviderConfig) -> list[dict[str, Any]]:

@@ -46,8 +46,9 @@ def build_ai_router(
                     name=payload.name, protocol=payload.protocol,
                     base_url=payload.base_url, api_key=payload.api_key,
                     model=payload.model, proxy_url=payload.proxy_url,
-                    note=payload.note, validate=payload.validate_key,
-                    discover_models=payload.discover_models,
+                    # 保存始终离线；兼容旧客户端字段，连通测试与目录刷新走独立接口。
+                    note=payload.note, validate=False,
+                    discover_models=False,
                     is_default=payload.is_default,
                 )
             except OpsError as exc:

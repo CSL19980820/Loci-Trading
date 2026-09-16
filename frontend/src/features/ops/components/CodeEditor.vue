@@ -24,6 +24,8 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const host = ref<HTMLDivElement | null>(null)
 const editorRef = shallowRef<MonacoEditorNs.IStandaloneCodeEditor | null>(null)
+/** Monaco 挂载失败时的降级开关：原生 textarea，保证内容永远可见 */
+const mountFailed = ref(false)
 
 type MonacoModule = typeof import('monaco-editor')
 
@@ -63,9 +65,25 @@ function isDarkAppearance(): boolean {
   return APPEARANCE_OPTIONS.find((o) => o.id === id)?.mode === 'dark'
 }
 
+/* Monaco defineTheme 只认 hex：--sheet 这类 sRGB 兑现是 rgba，直接传会整座编辑器挂掉
+   （mountEditor reject，白屏）。这里把 rgb()/rgba() 压成 hex，消化不了就回 fallback。 */
+function toHexColor(value: string): string | null {
+  const v = value.trim().toLowerCase()
+  const hex = v.match(/^#([0-9a-f]{6})$/)
+  if (hex) return `#${hex[1]}`
+  const hex3 = v.match(/^#([0-9a-f]{3})$/)
+  if (hex3) return `#${hex3[1].split('').map((c) => c + c).join('')}`
+  const rgb = v.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/)
+  if (rgb) {
+    const ch = (n: number): string => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')
+    return `#${ch(Number(rgb[1]))}${ch(Number(rgb[2]))}${ch(Number(rgb[3]))}`
+  }
+  return null
+}
+
 function cssVar(name: string, fallback: string): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return v || fallback
+  return toHexColor(v) ?? toHexColor(fallback) ?? fallback
 }
 
 function applyLociTheme(monaco: MonacoModule): void {
@@ -76,14 +94,14 @@ function applyLociTheme(monaco: MonacoModule): void {
     inherit: true,
     rules: [],
     colors: {
-      'editor.background': cssVar('--sheet', dark ? '#1a222d' : '#f7f9fc'),
-      'editor.foreground': cssVar('--ink', dark ? '#e8eef5' : '#142033'),
-      'editorLineNumber.foreground': cssVar('--mist', dark ? '#8b9aab' : '#5b6b7c'),
+      'editor.background': cssVar('--sheet', dark ? '#171b21' : '#fcfdfe'),
+      'editor.foreground': cssVar('--ink', dark ? '#f0f2f6' : '#192029'),
+      'editorLineNumber.foreground': cssVar('--mist', dark ? '#9fa3ac' : '#626a73'),
       'editor.selectionBackground': cssVar('--accent-soft', dark ? '#3a1a22' : '#fce8ec'),
-      'editorCursor.foreground': cssVar('--accent', dark ? '#e0576f' : '#c41e3a'),
-      'editorWidget.background': cssVar('--panel', dark ? '#141b24' : '#f7f9fc'),
-      'editorWidget.border': cssVar('--rule', dark ? '#2a3544' : '#d5dce6'),
-      'focusBorder': cssVar('--rule', dark ? '#2a3544' : '#d5dce6'),
+      'editorCursor.foreground': cssVar('--accent', dark ? '#e0576f' : '#cc323e'),
+      'editorWidget.background': cssVar('--panel', dark ? '#171b21' : '#fcfdfe'),
+      'editorWidget.border': cssVar('--rule', dark ? '#454a54' : '#cdd1d8'),
+      'focusBorder': cssVar('--rule', dark ? '#454a54' : '#cdd1d8'),
     },
   })
   monaco.editor.setTheme(themeName)
@@ -131,7 +149,11 @@ async function mountEditor(): Promise<void> {
 }
 
 onMounted(() => {
-  void mountEditor()
+  void mountEditor().catch((e: unknown) => {
+    // Monaco 主题色非法等挂载失败不能静默白屏：降级为原生 textarea（只读展示不变白）
+    mountFailed.value = true
+    console.error('[code-editor] mount failed, fallback to textarea', e)
+  })
 })
 
 onBeforeUnmount(() => {
@@ -200,22 +222,51 @@ defineExpose({ focusLine, insertText })
 
 <template>
   <div class="code-editor" :style="{ height }" data-testid="code-editor">
-    <div ref="host" class="code-editor__host" />
+    <!-- Monaco 挂载失败降级：内容仍可见可改，不留白板 -->
+    <textarea
+      v-if="mountFailed"
+      class="code-editor__fallback"
+      :value="modelValue"
+      :readonly="readOnly"
+      :aria-label="`${language} ${readOnly ? '代码预览' : '代码编辑器'}`"
+      spellcheck="false"
+      @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
+    />
+    <div v-else ref="host" class="code-editor__host" />
   </div>
 </template>
 
 <style scoped>
 .code-editor {
   width: 100%;
+  min-width: 0;
   min-height: 6rem;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--sheet);
+  background: var(--surface-canvas);
 }
 
 .code-editor__host {
   width: 100%;
   height: 100%;
 }
+
+.code-editor__fallback {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+  padding: var(--gap-2);
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+}
+.code-editor:focus-within { border-color: var(--seal); }
+.code-editor__fallback:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
 </style>

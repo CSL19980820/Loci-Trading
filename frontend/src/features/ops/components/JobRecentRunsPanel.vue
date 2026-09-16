@@ -236,13 +236,14 @@ defineExpose({ reload, focusLatestFailure })
 
 .job-runs-panel__table :deep(.basic-table__toolbar) {
   padding: var(--gap-1) var(--gap-2);
-  background: color-mix(in srgb, var(--panel-2) 70%, var(--sheet));
+  background: var(--surface-sunken);
 }
 
 .job-runs-panel__title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--gap-2);
   min-width: 0;
 }
 
@@ -329,7 +330,7 @@ defineExpose({ reload, focusLatestFailure })
 .job-runs-panel__err-more {
   flex: 0 0 auto;
   padding: 0 var(--gap-1);
-  border: 1px solid color-mix(in srgb, var(--el-color-danger) 35%, var(--rule));
+  border: 1px solid color-mix(in oklab, var(--el-color-danger) 35%, var(--rule));
   border-radius: var(--radius);
   font-size: var(--fs-kicker);
   color: var(--el-color-danger);

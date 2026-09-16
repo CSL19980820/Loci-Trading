@@ -35,6 +35,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx2
+from src.intel.infrastructure.mcp_deadline import active_deadline, deadline_request, deadline_scope, reraise_stop
 
 logger = logging.getLogger(__name__)
 
@@ -354,16 +355,21 @@ class McpClient:
             body["params"] = params
 
         try:
-            with self._client() as client:
-                with client.stream("POST", self.url, headers=self._headers(), json=body) as upstream:
-                    response = _BufferedResponse(
-                        status_code=upstream.status_code,
-                        headers={str(key).lower(): str(value) for key, value in upstream.headers.items()},
-                        text=_read_response_text(upstream, server=self.name),
-                    )
+            if active_deadline() is not None:
+                response = deadline_request(self, body)
+            else:
+                with self._client() as client:
+                    with client.stream("POST", self.url, headers=self._headers(), json=body) as upstream:
+                        response = _BufferedResponse(
+                            status_code=upstream.status_code,
+                            headers={str(key).lower(): str(value) for key, value in upstream.headers.items()},
+                            text=_read_response_text(upstream, server=self.name),
+                        )
         except McpError:
             raise
         except Exception as exc:
+            if active_deadline() is not None:
+                reraise_stop(exc)
             logger.warning("%s MCP 请求失败：%s", self.name, type(exc).__name__)
             raise McpError(f"{self.name} 请求失败（{type(exc).__name__}）") from exc
 
@@ -405,10 +411,15 @@ class McpClient:
         if params is not None:
             body["params"] = params
         try:
-            with self._client() as client:
-                with client.stream("POST", self.url, headers=self._headers(), json=body):
-                    pass
+            if active_deadline() is not None:
+                deadline_request(self, body, read_body=False)
+            else:
+                with self._client() as client:
+                    with client.stream("POST", self.url, headers=self._headers(), json=body):
+                        pass
         except Exception as exc:
+            if active_deadline() is not None:
+                reraise_stop(exc)
             logger.debug("%s 通知 %s 失败（可忽略）：%s", self.name, method, exc)
 
     # ---- 公开接口 -------------------------------------------------
@@ -486,13 +497,17 @@ class McpClient:
             cursor = next_cursor
         return tools
 
-    def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    def call_tool(self, name: str, arguments: dict[str, Any] | None = None, *,
+                  deadline: float | None = None) -> dict[str, Any]:
         """调用一个工具。
 
         返回 ``{"text": 拼好的文本, "is_error": bool, "raw": 原始 content}``。
         大多数 MCP server 把结构化结果塞在 text block 里的 JSON 字符串中，
         这里不强行解析——交给模型读，避免猜错格式。
         """
+        if deadline is not None:
+            with deadline_scope(deadline):
+                return self.call_tool(name, arguments)
         # 去掉可能带的 server 前缀。
         self.ensure_initialized()
         bare = name.split("__", 1)[1] if name.startswith(f"{self.name}__") else name

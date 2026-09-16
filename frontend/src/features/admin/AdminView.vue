@@ -41,10 +41,10 @@ function goHome(): void {
 </script>
 
 <template>
-  <div class="admin-view page-fill">
+  <div class="admin-view page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <!-- 非管理员权限拦截空态 -->
-    <div v-if="!isAdmin" class="admin-forbidden">
-      <EmptyState description="仅管理员可访问">
+    <div v-if="!isAdmin" class="admin-forbidden flex min-h-0 flex-1 items-center justify-center">
+      <EmptyState description="仅管理员可访问" reason="请联系管理员开通权限">
         <el-button type="primary" @click="goHome">返回首页</el-button>
       </EmptyState>
     </div>
@@ -71,7 +71,7 @@ function goHome(): void {
       </aside>
 
       <!-- 右侧主内容区 -->
-      <main class="admin-content">
+      <main class="admin-content" :aria-label="RAIL_ITEMS.find(item => item.name === activeTab)?.label">
         <OverviewTab v-if="activeTab === 'overview'" />
         <UsersTab v-else-if="activeTab === 'users'" />
         <QuotaTab v-else-if="activeTab === 'quota'" />
@@ -83,140 +83,4 @@ function goHome(): void {
   </div>
 </template>
 
-<style scoped>
-/* .page-fill 已给 flex 列 + 满高 + overflow:hidden；这里只补主体的收缩位，不再重复定高 */
-.admin-forbidden {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.admin-layout {
-  display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/*
- * 断点必须跟全站一致（980px = 侧栏消失、底栏出现的那条线）。
- * 原来写 768 时，769~980px 这段区间里左栏仍占 13rem 而侧栏已经收掉，
- * 右侧 8 列的用户表被挤爆。
- */
-@media (max-width: 980px) {
-  .admin-layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-}
-
-.admin-rail {
-  background: var(--sheet);
-  border-right: 1px solid var(--rule);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.rail-header {
-  height: var(--head-h);
-  display: flex;
-  align-items: center;
-  padding: 0 var(--gap-3);
-  border-bottom: 1px solid var(--rule);
-}
-
-/* 字号/字距/等宽由全局 .kicker 提供，这里只补颜色与不换行 */
-.rail-title {
-  color: var(--seal-ink);
-  white-space: nowrap;
-}
-
-.rail-nav {
-  --el-menu-bg-color: var(--sheet);
-  --el-menu-text-color: var(--muted);
-  --el-menu-hover-bg-color: var(--sheet-alt);
-  --el-menu-hover-text-color: var(--ink);
-  --el-menu-active-color: var(--seal-ink);
-  --el-menu-item-height: calc(var(--row-h) + var(--gap-1));
-  --el-menu-base-level-padding: var(--gap-3);
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  border-right: none;
-  padding: var(--gap-1) 0;
-}
-
-/*
- * 选中态与主侧栏（AppSidebar 的 .side-menu .is-active）保持同一种表达：
- * 淡印章底 + 印章字 + 加粗。**不再画左侧 2px 竖条**——全站到处都是这种
- * 左竖条时，它就不再是「选中」的信号，只是噪声（用户点名要去掉）。
- */
-.rail-nav :deep(.el-menu-item) {
-  font-size: var(--fs-body);
-  margin: 0 var(--gap-1);
-  border-radius: var(--radius);
-}
-
-.rail-nav :deep(.el-menu-item .el-icon) {
-  color: var(--mist);
-  margin-right: var(--gap-2);
-}
-
-.rail-nav :deep(.el-menu-item.is-active) {
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-  font-weight: 600;
-}
-
-.rail-nav :deep(.el-menu-item.is-active .el-icon) {
-  color: var(--seal-ink);
-}
-
-.rail-nav :deep(.el-menu-item:focus-visible) {
-  outline: 2px solid var(--seal);
-  outline-offset: -2px;
-}
-
-/* 窄屏：左栏折成一条横向分区条；选中态沿用同一套底色，不额外画线 */
-@media (max-width: 980px) {
-  .admin-rail {
-    flex-direction: row;
-    align-items: stretch;
-    border-right: none;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .rail-header {
-    border-bottom: none;
-    border-right: 1px solid var(--rule);
-    flex: 0 0 auto;
-  }
-
-  .rail-nav {
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: var(--gap-1);
-  }
-
-  .rail-nav :deep(.el-menu-item) {
-    flex: 0 0 auto;
-  }
-}
-
-/*
- * 分区面板自己吃满剩余高度并在内层滚（.admin-pane / .admin-pane__scroll）。
- * 这里若留 overflow-y:auto，表格分区就会出现「外层也能滚」的双滚动条。
- */
-.admin-content {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--paper);
-}
-</style>
+<style scoped src="./AdminView.css" />

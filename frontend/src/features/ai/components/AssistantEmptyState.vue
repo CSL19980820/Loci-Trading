@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ArrowRight } from '@element-plus/icons-vue'
 export type AssistantPromptCard = {
   id: string
   title: string
@@ -21,29 +22,12 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
 
 <template>
   <div class="assistant-empty" data-testid="assistant-empty">
-    <div class="assistant-empty__brand">
-      <svg class="assistant-empty__mark" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
-        <circle cx="24" cy="24" r="22" fill="var(--ai-disc-face)" />
-        <g fill="none" stroke="var(--ai-disc-ribbon)" stroke-linecap="round" stroke-linejoin="round">
-          <path stroke-width="2.2" d="M16.5 28.5 C17.8 18.5 24.5 15 29.5 19.5 C34.8 24.2 32.2 33.5 24.5 33.5 C19.5 33.5 16.2 30.8 16.5 28.5 Z" />
-          <path stroke-width="1.7" opacity="0.72" d="M19.5 18.5 C24.5 22 28.2 26.8 26.8 32.2" />
-        </g>
-        <circle cx="24" cy="24" r="2.2" fill="var(--seal)" />
-      </svg>
-      <span class="assistant-empty__wordmark" aria-hidden="true">落点</span>
-      <h3 class="assistant-empty__headline">今天想落在哪？</h3>
-    </div>
-    <p class="assistant-empty__sub">点一条范例，改完再发</p>
-    <ul class="assistant-empty__list" role="list">
-      <li v-for="card in prompts" :key="card.id" role="listitem">
-        <el-button
-          class="assistant-empty__row"
-          :disabled="busy || !providerReady"
-          :aria-label="card.title"
-          @click="emit('pick', card.prompt)"
-        >
-          <span class="assistant-empty__row-title">{{ card.title }}</span>
-          <span class="assistant-empty__row-hint">{{ card.hint }}</span>
+    <header class="assistant-empty__lead"><h3>开始对话</h3><p>选择示例，或直接输入问题</p></header>
+    <ul class="assistant-empty__list" aria-label="提问示例">
+      <li v-for="card in prompts" :key="card.id">
+        <el-button class="assistant-empty__row" :disabled="busy || !providerReady" :aria-label="card.title" :title="'填入输入框：' + card.hint" @click="emit('pick', card.prompt)">
+          <span class="assistant-empty__copy"><strong>{{ card.title }}</strong><span>{{ card.hint }}</span></span>
+          <el-icon class="assistant-empty__arrow" aria-hidden="true"><ArrowRight /></el-icon>
         </el-button>
       </li>
     </ul>
@@ -51,121 +35,23 @@ const emit = defineEmits<{ pick: [prompt: string] }>()
 </template>
 
 <style scoped>
-.assistant-empty {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: .55rem;
-  padding: 1rem 0 1.25rem;
-  width: 100%;
-  box-sizing: border-box;
-  text-align: center;
-}
-
-.assistant-empty__brand {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: .7rem;
-}
-
-.assistant-empty__mark {
-  width: 2.2rem;
-  height: 2.2rem;
-  display: block;
-  flex: 0 0 auto;
-}
-
-.assistant-empty__wordmark {
-  font-size: var(--ai-fs-title);
-  font-weight: 700;
-  letter-spacing: .18em;
-  color: var(--ink);
-}
-
-.assistant-empty__headline {
-  margin: 0;
-  /* 原为 padding-left + border-left: 1px solid var(--rule)：纯装饰竖分隔已删，层级交给上方 gap */
-  font-size: clamp(var(--ai-fs-title), 2.4vw, var(--fs-hero));
-  font-weight: 650;
-  letter-spacing: -.02em;
-  color: var(--ink);
-}
-
-.assistant-empty__sub {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--ai-fs-aux);
-  line-height: 1.4;
-}
-
+.assistant-empty { display: flex; min-height: 0; min-width: 0; flex: 1; flex-direction: column; align-items: center; justify-content: safe center; gap: var(--gap-3); overflow: auto; padding-block: var(--gap-4); scrollbar-width: thin; }
+.assistant-empty__lead { width: 100%; max-width: 44rem; }
+.assistant-empty__lead h3 { margin: 0; color: var(--ink); font-size: var(--ai-fs-title); font-weight: 650; }
+.assistant-empty__lead p { margin: var(--gap-1) 0 0; font-size: var(--ai-fs-body); color: var(--mist); }
 .assistant-empty__list {
-  list-style: none;
-  margin: .55rem 0 0;
-  padding: 0;
-  width: min(100%, 44rem);
-  display: flex;
-  flex-direction: column;
-  gap: var(--ai-gap-md);
-  text-align: left;
+  /* 16rem 是双行示例的最小阅读宽度，44rem 与原示例区宽度一致。 */
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: var(--gap-2); width: min(100%, 44rem); margin: 0; padding: 0; list-style: none;
 }
-
-/* 走 EP 变量而不是跟 .el-button:hover 拼特异性，换 EP 版本也不会被盖回去 */
+.assistant-empty__list li { min-width: 0; }
 .assistant-empty__row {
-  --el-button-bg-color: var(--panel);
-  --el-button-border-color: var(--rule);
-  --el-button-text-color: var(--ink);
-  --el-button-hover-bg-color: var(--seal-soft);
-  --el-button-hover-border-color: color-mix(in srgb, var(--seal) 55%, var(--rule));
-  --el-button-hover-text-color: var(--ink);
-  display: flex !important;
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
-  height: auto !important;
-  margin: 0 !important;
-  padding: .55rem .85rem !important;
-  border-radius: var(--ai-r-card);
-  box-sizing: border-box;
-  white-space: normal;
+  --el-button-bg-color: var(--surface); --el-button-text-color: var(--ink); --el-button-border-color: var(--rule); --el-button-hover-bg-color: var(--surface-hover); --el-button-hover-text-color: var(--ink); --el-button-hover-border-color: var(--seal-border);
+  width: 100%; height: auto; margin: 0; padding: var(--gap-3); border-radius: var(--ai-r-card); text-align: left; white-space: normal;
 }
-
-/* EP 把插槽裹进 span；不撑开就只有文字宽，两段文案挤在中间 */
-.assistant-empty__row :deep(.el-button__content),
-.assistant-empty__row :deep(> span) {
-  display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  width: 100%;
-  min-width: 0;
-}
-
-.assistant-empty__row-title {
-  flex: 0 0 auto;
-  font-size: var(--ai-fs-body);
-  font-weight: 650;
-  line-height: 1.35;
-  color: inherit;
-  white-space: nowrap;
-}
-
-.assistant-empty__row-hint {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--mist);
-  font-size: var(--ai-fs-aux);
-  line-height: 1.35;
-  font-weight: 400;
-  text-align: right;
-}
+.assistant-empty__row :deep(> span) { display: flex; align-items: center; gap: var(--gap-2); width: 100%; min-width: 0; }
+.assistant-empty__copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: var(--gap-1); }
+.assistant-empty__copy strong { font-size: var(--ai-fs-body); font-weight: 600; line-height: 1.5; }
+.assistant-empty__copy > span { font-size: var(--ai-fs-aux); color: var(--mist); line-height: 1.5; overflow-wrap: anywhere; }
+.assistant-empty__arrow { flex-shrink: 0; color: var(--seal-ink); }
+.assistant-empty__row:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
 </style>

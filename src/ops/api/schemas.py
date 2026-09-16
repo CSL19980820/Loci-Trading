@@ -14,6 +14,7 @@ from src.shared.api_models import QuantModel
 class JobCreate(QuantModel):
     name: str = Field(min_length=1, max_length=64)
     kind: Literal[
+        "guardian_delivery",
         "sync",
         "screen",
         "backtest",

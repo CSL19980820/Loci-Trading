@@ -81,8 +81,8 @@ const showGrade = computed(
 <style scoped>
 .seal-dial {
   position: relative;
-  width: 9.5rem;
-  height: 9.5rem;
+  width: calc(var(--gap-4) * 8);
+  height: calc(var(--gap-4) * 8);
   flex-shrink: 0;
 }
 
@@ -93,13 +93,13 @@ const showGrade = computed(
 }
 
 .seal-dial__track {
-  stroke: color-mix(in srgb, var(--rule) 85%, var(--sheet));
-  stroke-width: 8;
+  stroke: color-mix(in oklab, var(--rule) 85%, var(--sheet));
+  stroke-width: 6;
 }
 
 .seal-dial__arc {
   stroke: var(--seal);
-  stroke-width: 8;
+  stroke-width: 6;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.35s ease-out, stroke 0.2s ease;
 }
@@ -109,20 +109,19 @@ const showGrade = computed(
  * 曾导致「体检通过」和「体检失败」渲染成完全相同的颜色，只剩中心文字能区分。
  */
 .seal-dial--ok .seal-dial__arc {
-  stroke: var(--success);
+  stroke: var(--ok);
 }
 
 .seal-dial--bad .seal-dial__arc {
-  stroke: var(--loss);
+  stroke: var(--warn);
 }
 
 .seal-dial--busy .seal-dial__arc {
-  stroke: var(--warn);
-  animation: seal-arc-pulse 1.4s ease-in-out infinite;
+  stroke: var(--seal);
 }
 
 .seal-dial--idle .seal-dial__arc {
-  stroke: color-mix(in srgb, var(--mist) 62%, var(--rule));
+  stroke: color-mix(in oklab, var(--mist) 62%, var(--rule));
 }
 
 .seal-dial__core {
@@ -132,7 +131,7 @@ const showGrade = computed(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--gap-1);
   pointer-events: none;
 }
 
@@ -153,7 +152,7 @@ const showGrade = computed(
 }
 
 .seal-dial__score--word {
-  font-family: var(--font-sans);
+  font-family: var(--font);
   font-size: var(--fs-hero);
   letter-spacing: 0.08em;
   color: var(--mist);
@@ -164,13 +163,13 @@ const showGrade = computed(
   font-weight: 700;
   padding: 0 var(--gap-1);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--seal-soft) 70%, var(--sheet));
+  background: color-mix(in oklab, var(--seal-soft) 70%, var(--sheet));
   color: var(--seal-ink);
 }
 
 .seal-dial--ok .seal-dial__grade {
-  background: var(--success-soft);
-  color: var(--success);
+  background: var(--ok-soft);
+  color: var(--info-ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -180,13 +179,4 @@ const showGrade = computed(
   }
 }
 
-@keyframes seal-arc-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
 </style>

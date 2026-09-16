@@ -12,8 +12,8 @@ from src.market.infrastructure.store_quote_payload import (
     partition_valid_ohlc_rows,
     quote_payload_from_bars,
     quote_value_columns,
+    write_quote_payload,
 )
-from src.market.infrastructure.store_row_count import track_quote_upsert
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
 
 class MarketRwMixin:
@@ -209,39 +209,9 @@ class MarketRwMixin:
         if cursor is None:
             with self._transaction() as tx:
                 return self._write_quote_payload(payload, cursor=tx)
-        with track_quote_upsert(cursor, payload):
-            cursor.executemany(
-                """
-                INSERT INTO quotes_daily(trade_date, code, open, high, low, close,
-                                         volume, amount, outstanding_share, turnover,
-                                         source, receipt_id, fetched_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(trade_date, code) DO UPDATE SET
-                    open=excluded.open, high=excluded.high, low=excluded.low,
-                    close=excluded.close,
-                    -- 缺列的源经 _prepare_quote_frame 会补成 NULL；量额与股本
-                    -- 换手一样禁止被空值抹掉（0 是停牌日的真值，仍照常覆盖）。
-                    volume=COALESCE(excluded.volume, quotes_daily.volume),
-                    amount=COALESCE(excluded.amount, quotes_daily.amount),
-                    outstanding_share=COALESCE(
-                        excluded.outstanding_share, quotes_daily.outstanding_share
-                    ),
-                    turnover=COALESCE(excluded.turnover, quotes_daily.turnover),
-                    source=excluded.source,
-                    receipt_id=COALESCE(excluded.receipt_id, quotes_daily.receipt_id),
-                    fetched_at=excluded.fetched_at
-                """,
-                payload,
-            )
-        # 一批里同一交易日会重复上千次（全市场 spot 是 5500 行同一天）。日历表只关心
-        # 有哪些交易日，去重后再喂：5500 条 DO NOTHING 降到 1 条（实测 4.83 → 0.25 ms）。
-        cursor.executemany(
-            "INSERT INTO trading_calendar(trade_date, updated_at)"
-            " VALUES(?, datetime('now')) ON CONFLICT(trade_date) DO NOTHING",
-            [(trade_date,) for trade_date in dict.fromkeys(row[0] for row in payload)],
-        )
+        written = write_quote_payload(cursor, payload)
         self._bump_revisions(cursor, "quotes")
-        return len(payload)
+        return written
 
     def set_watermarks(
         self,

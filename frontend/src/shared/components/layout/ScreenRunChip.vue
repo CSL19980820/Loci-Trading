@@ -140,7 +140,7 @@ async function abandonRun(): Promise<void> {
 }
 
 .run-chip--busy {
-  border-color: color-mix(in srgb, var(--seal) 35%, var(--rule));
+  border-color: color-mix(in oklab, var(--seal) 35%, var(--rule));
   background: var(--seal-soft);
 }
 

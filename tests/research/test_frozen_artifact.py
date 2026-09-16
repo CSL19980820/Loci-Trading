@@ -11,6 +11,7 @@ replay 还要按 hash 逐字节核对。所以两件事必须钉死：
 from __future__ import annotations
 
 import json
+import tracemalloc
 
 import numpy as np
 import pandas as pd
@@ -86,6 +87,21 @@ def test_serialization_is_deterministic() -> None:
     first = payload_bytes(build_frozen_payload(_context(separate_execution=False)))
     second = payload_bytes(build_frozen_payload(_context(separate_execution=False)))
     assert first == second
+
+
+def test_large_unicode_payload_keeps_v2_bytes_with_bounded_encoding_memory() -> None:
+    # 输入和旧版期望值在计量前构造，只计序列化本身的额外分配。
+    payload = {"价格": [float(i) / 100 for i in range(100_000)], "说明": "真实行情😀\n"}
+    expected = (json.dumps(payload, ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+    tracemalloc.start()
+    try:
+        actual = payload_bytes(payload)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert actual == expected
+    assert peak < len(expected) * 4, "编码不可同时物化完整宽Unicode文本及其副本"
 
 
 def test_serialization_has_no_indent_padding() -> None:

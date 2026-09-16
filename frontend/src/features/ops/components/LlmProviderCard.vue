@@ -71,14 +71,16 @@ function onMore(command: string): void {
     role="button"
     tabindex="0"
     @click="emit('edit')"
-    @keydown.enter.prevent="emit('edit')"
+    :aria-label="`编辑 ${provider.name}`"
+    @keydown.enter.self.prevent="emit('edit')"
+    @keydown.space.self.prevent="emit('edit')"
   >
     <header class="prov-card__head">
       <span class="prov-card__avatar" aria-hidden="true">{{ initial }}</span>
       <div class="prov-card__identity">
         <div class="prov-card__title-row">
           <strong class="prov-card__name">{{ provider.name }}</strong>
-          <el-tag v-if="provider.is_default" size="small" type="danger" effect="plain">默认</el-tag>
+          <el-tag v-if="provider.is_default" size="small" type="primary" effect="plain">默认</el-tag>
           <el-tag v-if="!provider.has_key" size="small" type="info" effect="plain">缺密钥</el-tag>
         </div>
         <p class="prov-card__meta">{{ protocolLabel }}</p>
@@ -149,9 +151,10 @@ function onMore(command: string): void {
 .prov-card {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.7rem 0.75rem;
-  background: var(--sheet);
+  gap: var(--gap-2);
+  min-width: 0;
+  padding: var(--gap-3);
+  background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   cursor: pointer;
@@ -160,13 +163,13 @@ function onMore(command: string): void {
 
 .prov-card:hover,
 .prov-card:focus-visible {
-  border-color: color-mix(in srgb, var(--ink) 28%, var(--rule));
-  outline: none;
+  border-color: color-mix(in oklab, var(--ink) 28%, var(--rule));
+  background: var(--surface-hover);
 }
 
 .prov-card.is-default {
   border-color: var(--seal);
-  background: color-mix(in srgb, var(--seal-soft) 35%, var(--sheet));
+  background: color-mix(in oklab, var(--seal-soft) 35%, var(--sheet));
 }
 
 .prov-card__head {
@@ -182,9 +185,9 @@ function onMore(command: string): void {
   display: grid;
   place-items: center;
   border-radius: var(--radius);
-  font-family: var(--font-display);
+  font-family: var(--font);
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: var(--fs-body);
   color: var(--ink);
   background: var(--panel-2);
   border: 1px solid var(--rule);
@@ -209,14 +212,14 @@ function onMore(command: string): void {
 }
 
 .prov-card__name {
-  font-size: 0.9rem;
+  font-size: var(--fs-title);
   font-weight: 650;
   color: var(--ink);
 }
 
 .prov-card__meta {
   margin: 0.1rem 0 0;
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 
@@ -230,7 +233,7 @@ function onMore(command: string): void {
   border-radius: 4px;
   background: var(--panel-2);
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-kicker);
   line-height: 1.35;
   color: var(--mist);
   overflow: hidden;
@@ -262,7 +265,7 @@ function onMore(command: string): void {
 }
 
 .endpoint-strip__key.ok {
-  color: var(--lake);
+  color: var(--ok);
 }
 
 .prov-card__chips {
@@ -299,7 +302,7 @@ function onMore(command: string): void {
 
 .prov-card__empty {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 
@@ -314,7 +317,7 @@ function onMore(command: string): void {
 }
 
 .prov-card__count {
-  font-size: 0.7rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 
@@ -325,20 +328,23 @@ function onMore(command: string): void {
 }
 
 .prov-card__default-hint {
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
   padding: 0 0.35rem;
 }
 
 .set-default {
-  color: var(--lake);
+  color: var(--ok);
 }
 
 .set-default:hover {
-  color: var(--lake);
+  color: var(--ok);
 }
 
 :deep(.danger-item) {
   color: var(--el-color-danger);
 }
+.prov-card:focus-visible { outline:2px solid var(--seal); outline-offset:-2px; }
+.prov-card__foot, .prov-card__actions { flex-wrap:wrap; }
+@media(prefers-reduced-motion:reduce) { .prov-card { transition:none; } }
 </style>

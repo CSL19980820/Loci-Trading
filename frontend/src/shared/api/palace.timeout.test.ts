@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { apiRequest, getSession } from './palace'
+import { replayResearchBacktestRun } from './quant_research'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -14,6 +15,48 @@ afterEach(() => {
 })
 
 describe('palace request timeout', () => {
+  it('keeps ordinary POST first-response timeout at twenty seconds', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const pending = apiRequest('/small-write', { method: 'POST' }).catch((error: Error) => error)
+    await vi.advanceTimersByTimeAsync(19_999)
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await pending as Error).message).toContain('20 秒')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('only replay waits up to 300 seconds and does not forward timeoutMs to fetch', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const pending = replayResearchBacktestRun('run-1').catch((error: Error) => error)
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty('timeoutMs')
+    await vi.advanceTimersByTimeAsync(299_999)
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await pending as Error).message).toContain('300 秒')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('caller can still cancel replay before the long timeout without retry', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    const pending = replayResearchBacktestRun('run-1', { signal: controller.signal }).catch((error: Error) => error)
+    controller.abort()
+    expect((await pending as Error).name).toBe('AbortError')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('aborts a hung request instead of waiting forever', async () => {
     vi.useFakeTimers()
     // 永不 resolve 的 fetch，但尊重 signal —— 模拟后端挂死

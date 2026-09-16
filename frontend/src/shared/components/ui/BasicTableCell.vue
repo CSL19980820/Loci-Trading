@@ -78,6 +78,7 @@ function slotVNode() {
 </template>
 
 <style scoped>
+/* .cell-text 只用于 formatter/纯文本分支：slot/render 分支自管展示，省略与 tooltip 由列配置决定 */
 .cell-text {
   display: inline-block;
   max-width: 100%;

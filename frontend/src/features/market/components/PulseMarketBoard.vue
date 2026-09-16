@@ -1,8 +1,10 @@
 <script setup lang="ts">
 /** 库内样本榜：涨幅 / 换手 / 板块。口径解释一律进 tooltip，不占版面。 */
 import { computed } from 'vue'
+import { DataAnalysis } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
 import { signedPct } from '@/shared/lib/format'
@@ -23,6 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:tab': [tab: PulseBoardTab]
+  retry: []
 }>()
 
 const route = useRoute()
@@ -54,9 +57,6 @@ const tabs: { id: PulseBoardTab; label: string }[] = [
 
 const isSector = computed(() => props.tab === 'sector')
 const sectorList = computed(() => props.sectorRows ?? [])
-const hasRows = computed(() =>
-  isSector.value ? sectorList.value.length > 0 : props.rows.length > 0,
-)
 
 /** 口径 + 降级原因都进 tooltip：榜是「库内样本」不是全市场领涨。 */
 const scopeTip = computed(() =>
@@ -80,12 +80,13 @@ function tone(value: number | null | undefined): string {
   <section class="pulse-panel">
     <header class="pulse-panel__head">
       <div class="pulse-panel__lead">
+        <el-icon class="pulse-panel__icon" aria-hidden="true"><DataAnalysis /></el-icon>
         <h2 class="pulse-panel__title">样本榜</h2>
         <el-tooltip :content="scopeTip" placement="bottom-start" :show-after="200">
           <span class="pulse-panel__meta">库内 · {{ clockText || '—' }}</span>
         </el-tooltip>
       </div>
-      <div class="pulse-tabs">
+      <div class="pulse-tabs" role="group" aria-label="榜单口径">
         <el-button
           v-for="t in tabs"
           :key="t.id"
@@ -102,39 +103,44 @@ function tone(value: number | null | undefined): string {
     </header>
 
     <el-table
-      v-if="hasRows && isSector"
+      v-if="isSector"
       :data="sectorList"
       size="small"
       stripe
       height="100%"
       class="pulse-table"
     >
-      <el-table-column label="板块" min-width="96" align="center" header-align="center">
+      <el-table-column label="板块" min-width="96" align="left" header-align="left">
         <template #default="{ row }">
           <span class="pulse-name">{{ row.name }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="涨幅" width="76" align="center" header-align="center">
+      <el-table-column label="涨幅" width="76" align="right" header-align="right">
         <template #default="{ row }">
           <span class="pulse-num" :class="tone(row.pct)">{{ signedPct(row.pct) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="成分" width="56" align="center" header-align="center">
+      <el-table-column label="成分" width="56" align="right" header-align="right">
         <template #default="{ row }">
           <span class="pulse-num pulse-dim">{{ row.count }}</span>
         </template>
       </el-table-column>
+      <template #empty>
+        <EmptyState class="pulse-panel__empty" description="暂无行业样本">
+          <el-button link type="primary" size="small" @click="emit('retry')">重新加载</el-button>
+        </EmptyState>
+      </template>
     </el-table>
 
     <el-table
-      v-else-if="hasRows"
+      v-else
       :data="rows"
       size="small"
       stripe
       height="100%"
       class="pulse-table"
     >
-      <el-table-column label="名称" width="96" align="center" header-align="center">
+      <el-table-column label="名称" width="96" align="left" header-align="left">
         <template #default="{ row }">
           <span class="pulse-name">
             <StockLink :code="row.code" :name="row.name" :batch="batch" :show-code="false" />
@@ -144,8 +150,8 @@ function tone(value: number | null | undefined): string {
       <el-table-column
         :label="tab === 'turnover' ? '换手' : '涨幅'"
         width="76"
-        align="center"
-        header-align="center"
+        align="right"
+        header-align="right"
       >
         <template #default="{ row }">
           <span v-if="tab === 'turnover'" class="pulse-num">{{ fmtTurnover(row.turnover) }}</span>
@@ -154,17 +160,19 @@ function tone(value: number | null | undefined): string {
           </span>
         </template>
       </el-table-column>
-      <el-table-column label="板块" min-width="76" align="center" header-align="center" show-overflow-tooltip>
+      <el-table-column label="板块" min-width="76" align="left" header-align="left">
         <template #default="{ row }">
-          <span class="pulse-dim pulse-clip">{{ row.industry || '—' }}</span>
+          <el-tooltip :content="row.industry || '—'" placement="top" :show-after="200" :disabled="!row.industry">
+            <span class="pulse-dim pulse-clip">{{ row.industry || '—' }}</span>
+          </el-tooltip>
         </template>
       </el-table-column>
+      <template #empty>
+        <EmptyState class="pulse-panel__empty" description="暂无榜单">
+          <el-button link type="primary" size="small" @click="emit('retry')">重新加载</el-button>
+        </EmptyState>
+      </template>
     </el-table>
-
-    <div v-else class="pulse-panel__empty">
-      <span>{{ isSector ? '暂无行业样本' : '暂无榜单' }}</span>
-      <el-button link type="primary" size="small" @click="emit('update:tab', tab)">重新取数</el-button>
-    </div>
   </section>
 </template>
 

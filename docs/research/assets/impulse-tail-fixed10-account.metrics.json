@@ -1,0 +1,56 @@
+{
+  "data_kind": "saved_system_engine_historical_replay",
+  "online_full_research_accepted": false,
+  "display_range": [
+    "2025-01-01",
+    "2026-09-11"
+  ],
+  "accounts": {
+    "0.003": {
+      "round_trip_cost": 0.003,
+      "initial_capital": 200000.0,
+      "first_observation": "2025-01-02",
+      "last_observation": "2026-09-11",
+      "observations": 412,
+      "final_equity": 319335.3121742174,
+      "return_pct": 59.66765608710871,
+      "max_drawdown_pct": -10.7778750010604,
+      "max_drawdown_date": "2025-11-07",
+      "historical_peak_equity": 355214.6785025914,
+      "historical_peak_date": "2026-06-24",
+      "ending_drawdown_pct": -10.100755542992633,
+      "continuous_account_h2_return_pct": -6.794824192260895,
+      "closed_trades": 96,
+      "ending_open_positions": 0,
+      "source_sha256": {
+        "system_account_0.003_daily.csv": "c0691a5a1ff7fc28b286bd5534621aa4e196fdab7e0bc1b1549198469cf5bf81",
+        "system_account_0.003.json": "f93e505731ccd1fb78d1b1dd1589b12b01396e07fb921e6a965ddcbffe1ec379"
+      }
+    },
+    "0.006": {
+      "round_trip_cost": 0.006,
+      "initial_capital": 200000.0,
+      "first_observation": "2025-01-02",
+      "last_observation": "2026-09-11",
+      "observations": 412,
+      "final_equity": 298307.3201742173,
+      "return_pct": 49.15366008710864,
+      "max_drawdown_pct": -11.276538375722378,
+      "max_drawdown_date": "2025-11-07",
+      "historical_peak_equity": 330775.9610025912,
+      "historical_peak_date": "2026-06-24",
+      "ending_drawdown_pct": -9.815900989286085,
+      "continuous_account_h2_return_pct": -7.5141968849329,
+      "closed_trades": 96,
+      "ending_open_positions": 0,
+      "source_sha256": {
+        "system_account_0.006_daily.csv": "a747eaa03ca6f491f43bde7798d0d0eba1d47b28f4f20421916f119d518d47f7",
+        "system_account_0.006.json": "2bee45222a5ee300475dd009e6f816ab254a47c7c26e76ffc740325c6bb39276"
+      }
+    }
+  },
+  "outputs": [
+    "E:\\my_space\\stock-analyzer\\docs\\research\\assets\\impulse-tail-fixed10-account.png",
+    "E:\\my_space\\stock-analyzer\\docs\\research\\assets\\impulse-tail-fixed10-account.svg"
+  ]
+}

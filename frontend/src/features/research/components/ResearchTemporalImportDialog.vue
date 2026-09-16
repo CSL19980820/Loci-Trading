@@ -12,6 +12,7 @@ import type {
   ResearchPointInTimeFactPayload,
 } from '@/shared/types/quant-research'
 
+import UiField from '@/shared/components/ui/UiField.vue'
 export type ResearchTemporalImportKind = 'membership' | 'fact'
 
 const props = defineProps<{
@@ -187,25 +188,27 @@ async function submit(): Promise<void> {
   <el-dialog
     :model-value="visible"
     :title="title"
+    class="research-modal"
+    append-to-body
     width="min(92vw, 720px)"
     :close-on-click-modal="false"
     @update:model-value="emit('update:visible', $event)"
     @closed="close"
   >
-    <el-alert v-if="error" class="dialog-alert" type="error" show-icon :closable="false" :title="error" />
-    <el-form class="import-form" label-position="right" label-width="6.5em" size="small" @submit.prevent="submit">
-      <el-form-item label="批量 JSON" required>
-        <el-tooltip :content="hint" placement="top">
-          <el-input
-            v-model="raw"
-            type="textarea"
-            :autosize="{ minRows: 10, maxRows: 18 }"
-            :placeholder="placeholder"
-            spellcheck="false"
-          />
-        </el-tooltip>
-      </el-form-item>
-    </el-form>
+    <el-alert v-if="error" class="mt-2 shrink-0" type="error" show-icon :closable="false" :title="error" />
+    <div class="mt-2">
+      <UiField label="批量 JSON" required :description="hint">
+        <el-input
+          v-model="raw"
+          class="import-json"
+          aria-label="批量 JSON 内容"
+          type="textarea"
+          :autosize="{ minRows: 10, maxRows: 18 }"
+          :placeholder="placeholder"
+          spellcheck="false"
+        />
+      </UiField>
+    </div>
     <template #footer>
       <el-button :disabled="submitting" @click="close">取消</el-button>
       <el-button type="primary" :icon="UploadFilled" :loading="submitting" @click="submit">导入并校验</el-button>
@@ -217,3 +220,4 @@ async function submit(): Promise<void> {
 .dialog-alert { margin-top: var(--gap-2); }
 .import-form { margin-top: var(--gap-2); }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

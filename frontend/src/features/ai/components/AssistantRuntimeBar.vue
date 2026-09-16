@@ -131,112 +131,19 @@ function onThinkingChange(raw: string): void {
 </template>
 
 <style scoped>
-.assistant-runtime {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: .4rem;
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-.assistant-runtime__model {
-  width: 11rem;
-  flex: 0 1 11rem;
-  min-width: 0;
-}
-
-.assistant-runtime__thinking-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: .28rem;
-  flex: 0 0 auto;
-  min-width: 0;
-}
-
-.assistant-runtime__thinking {
-  width: 5.25rem;
-  flex: 0 0 auto;
-}
-
-.assistant-runtime__thinking-prefix {
-  color: var(--mist);
-  font-size: var(--ai-fs-aux);
-  flex: 0 0 auto;
-  line-height: 1;
-}
-
-/* EP select 默认 box-shadow 当边框；清掉内层 input 再描边，避免双线 */
-.assistant-runtime__model :deep(.el-select__wrapper),
-.assistant-runtime__thinking :deep(.el-select__wrapper) {
-  min-height: var(--ctl-h);
-  padding: 0 .55rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--ai-r-card);
-  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
-  box-shadow: none !important;
-}
-
-.assistant-runtime__model :deep(.el-select__wrapper.is-focused),
-.assistant-runtime__model :deep(.el-select__wrapper.is-hovering:not(.is-focused)),
-.assistant-runtime__thinking :deep(.el-select__wrapper.is-focused),
-.assistant-runtime__thinking :deep(.el-select__wrapper.is-hovering:not(.is-focused)) {
-  border-color: color-mix(in srgb, var(--seal) 45%, var(--rule));
-  box-shadow: none !important;
-}
-
-.assistant-runtime__model :deep(.el-select__selection),
-.assistant-runtime__thinking :deep(.el-select__selection),
-.assistant-runtime__model :deep(.el-select__selected-item),
-.assistant-runtime__thinking :deep(.el-select__selected-item),
-.assistant-runtime__model :deep(.el-select__input-wrapper),
-.assistant-runtime__thinking :deep(.el-select__input-wrapper),
-.assistant-runtime__model :deep(.el-select__input),
-.assistant-runtime__thinking :deep(.el-select__input) {
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
-  background: transparent;
-}
-
-.assistant-runtime__model :deep(.el-select__placeholder),
-.assistant-runtime__model :deep(.el-select__selected-item) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.assistant-runtime__option {
-  display: flex;
-  width: 100%;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: .75rem;
-}
-
-.assistant-runtime__option-model {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 选项被 teleport 到 body；契约块靠 .assistant-runtime-popper 把变量送进去 */
-.assistant-runtime__option-provider {
-  flex: 0 0 auto;
-  color: var(--mist);
-  font-size: var(--ai-fs-aux);
-}
-
-.assistant-runtime__sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
+.assistant-runtime { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2); min-width: 0; }
+/* 模型名称允许收缩；思考等级始终保留足够的点击宽度。 */
+.assistant-runtime__model { width: 11rem; flex: 1 1 8rem; min-width: 0; max-width: 100%; }
+.assistant-runtime__thinking-wrap { display: inline-flex; align-items: center; gap: var(--gap-1); flex: 0 0 auto; min-width: 0; }
+.assistant-runtime__thinking { width: calc(var(--ctl-h) * 2.5); }
+.assistant-runtime__thinking-prefix { color: var(--mist); font-size: var(--ai-fs-aux); }
+.assistant-runtime :deep(.el-select__wrapper) { min-height: var(--ctl-h); padding: 0 var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-chip); background: var(--surface-sunken); box-shadow: none; }
+.assistant-runtime :deep(.el-select__wrapper.is-hovering) { border-color: var(--border-strong); }
+.assistant-runtime :deep(.el-select__wrapper.is-focused) { border-color: var(--seal); outline: 2px solid var(--seal); outline-offset: -2px; }
+.assistant-runtime :deep(.el-select__selected-item), .assistant-runtime :deep(.el-select__input) { font-size: var(--ai-fs-body); }
+.assistant-runtime__model :deep(.el-select__placeholder), .assistant-runtime__model :deep(.el-select__selected-item) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-runtime__option { display: flex; width: 100%; align-items: baseline; justify-content: space-between; gap: var(--gap-3); }
+.assistant-runtime__option-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-runtime__option-provider { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; color: var(--mist); font-size: var(--ai-fs-aux); }
+.assistant-runtime__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 </style>

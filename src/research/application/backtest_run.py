@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 from typing import Any, Mapping
 
@@ -17,12 +17,14 @@ from src.backtest import (
     analyze_backtest_research,
     build_universe_control,
     execute_backtest_context,
+    resolve_backtest_config,
 )
 from src.research.application.backtest_run_phase import (
     ResearchBacktestError,
     assert_execution_alignment,
     prepare_research_backtest_context,
     slice_research_backtest_phase,
+    portfolio_market_inputs,
 )
 from src.research.application.backtest_support import (
     backtest_payload as _backtest_payload,
@@ -79,6 +81,7 @@ def run_research_backtest(
     initial_capital: float = 200_000.0,
     max_positions: int = 2,
     lot_size: int = 100,
+    account_model: str = "cost_until_exit",
     seed: int = 0,
     random_repeats: int = 500,
     bootstrap_iterations: int = 500,
@@ -102,7 +105,9 @@ def run_research_backtest(
         raise ResearchBacktestError(str(exc)) from exc
     if random_repeats <= 0:
         raise ResearchBacktestError("random_repeats 必须为正整数")
-    cfg = backtest_config or BacktestConfig()
+    cfg = backtest_config or resolve_backtest_config(strategy)
+    if account_model == "daily_close" and cfg.valuation_end is None:
+        cfg = replace(cfg, valuation_end=end)
     cards = run_card_store or ResearchRunCardStore()
     workflows = workflow_store or ResearchWorkflowStore(cards.root)
     memberships = membership_store or MembershipSnapshotStore()
@@ -135,7 +140,10 @@ def run_research_backtest(
     except Exception as exc:
         raise ResearchBacktestError(str(exc)) from exc
     engine = context["engine"]
+    cfg = context["config"]
     resolved = context["resolved"]
+    resolved_params = dict(context["resolved_params"])
+    panel_columns = int(context["panels"]["close"].shape[1])
     data_snapshot = dict(context["data_snapshot"])
     # 不能只把选中的 PIT 股票池写在可变 run card；冻结输入也必须携带其
     # 实际来源、载荷摘要和解析版本，重放时才不会重新解析今天的名单。
@@ -148,14 +156,18 @@ def run_research_backtest(
         "initial_capital": initial_capital,
         "max_positions": max_positions,
         "lot_size": lot_size,
+        "account_model": account_model,
     }
     frozen_payload = build_frozen_payload(
         context, split=split, research_settings=research_settings
     )
+    # 后续计算只消费冻结输入，不保留原行情面板与冻结副本两套大对象。
+    del context
     # 只序列化一次：这份字节既用来算 hash，也原样落盘（见 payload_bytes 的说明）。
     frozen_bytes = payload_bytes(frozen_payload)
     frozen_sha256 = hashlib.sha256(frozen_bytes).hexdigest()
     frozen_context = context_from_payload(frozen_payload)
+    del frozen_payload
     _assert_execution_alignment(frozen_context)
     data_snapshot["frozen_input_sha256"] = frozen_sha256
     data_snapshot["frozen_input_contract"] = CONTRACT_VERSION
@@ -181,10 +193,10 @@ def run_research_backtest(
         universe={**dict(resolved.spec), "universe_id": universe_id},
         universe_funnel={
             **resolved.funnel.to_dict(),
-            "panel_columns": int(context["panels"]["close"].shape[1]),
+            "panel_columns": panel_columns,
             "temporal_membership": membership_summary,
         },
-        params=dict(context["resolved_params"]),
+        params=resolved_params,
         backtest_config=cfg,
         data_snapshot=data_snapshot,
         source_evidence=(source_evidence,) if isinstance(source_evidence, Mapping) else (),
@@ -198,15 +210,20 @@ def run_research_backtest(
     workflows.create(workflow)
     current_card = card
     state: dict[str, Any] = {
-        "context": frozen_context,
         "membership_summary": membership_summary,
         "universe_id": universe_id,
         "result": None,
-        "control": None,
         "analysis": None,
         "validation_failures": [],
         "validation_warnings": [],
     }
+
+    def account_summary() -> dict[str, Any]:
+        analysis = state.get("analysis")
+        if account_model != "daily_close" or analysis is None:
+            return {}
+        return {"portfolio_summary": _json_safe(analysis.portfolio.metrics),
+                "portfolio_summary_artifact": "analysis.json"}
     def save_workflow(next_workflow: ResearchWorkflow) -> None:
         previous = workflows.load(next_workflow.run_id)
         workflows.save(
@@ -214,10 +231,22 @@ def run_research_backtest(
             expected_event_count=len(previous.events) if previous is not None else 0,
         )
     def capture_input(_: ResearchStage, __: ResearchWorkflow) -> StageOutcome:
+        nonlocal frozen_bytes
+        # 先落最大的冻结字节并释放，再构造来源摘要，避免写盘校验时两份大输入并存。
+        frozen_entry = cards.write_artifact(
+            current_card.run_id,
+            "frozen_input.json",
+            frozen_bytes,
+            artifact_type="frozen_research_input",
+            metadata={"input_sha256": frozen_sha256},
+        )
+        if frozen_entry.sha256 != frozen_sha256:
+            return StageOutcome.failed("冻结输入 artifact hash 不一致", retryable=False)
+        frozen_bytes = b""
         payload = {
             "run_card_input": current_card.input_payload(),
             "parameter_commitment": {
-                "params": dict(context["resolved_params"]),
+                "params": dict(resolved_params),
                 "committed_before_oos_execution": True,
             },
             "temporal_membership": membership_summary,
@@ -228,18 +257,9 @@ def run_research_backtest(
             payload,
             artifact_type="research_input",
         )
-        frozen_entry = cards.write_artifact(
-            current_card.run_id,
-            "frozen_input.json",
-            frozen_bytes,
-            artifact_type="frozen_research_input",
-            metadata={"input_sha256": frozen_sha256},
-        )
-        if frozen_entry.sha256 != frozen_sha256:
-            return StageOutcome.failed("冻结输入 artifact hash 不一致", retryable=False)
         return StageOutcome.succeeded(artifact_sha256=entry.sha256)
     def calculate(_: ResearchStage, __: ResearchWorkflow) -> StageOutcome:
-        nonlocal current_card
+        nonlocal current_card, frozen_context
         if strict_pit:
             failures = _input_evidence_failures(
                 membership=membership_summary,
@@ -280,10 +300,11 @@ def run_research_backtest(
                 initial_capital=initial_capital,
                 max_positions=max_positions,
                 lot_size=lot_size,
+                account_model=account_model,
             ),
-            trading_dates=[str(day) for day in frozen_context["panels"]["close"].index],
+            **portfolio_market_inputs(frozen_context, account_model),
             split=split,
-            parameters=dict(context["resolved_params"]),
+            parameters=dict(resolved_params),
             isolated_train=isolated_train,
             isolated_oos=isolated_oos,
             universe_trades=control.trades,
@@ -301,12 +322,12 @@ def run_research_backtest(
         state.update(
             {
                 "result": result,
-                "control": control,
                 "analysis": analysis,
-                "isolated_train": isolated_train,
-                "isolated_oos": isolated_oos,
             }
         )
+        # 计算产物已独立，不让行情面板与随后写盘的交易明细同时常驻。
+        frozen_context = {}
+        del risk_inputs
         entry = cards.write_artifact(
             current_card.run_id,
             "backtest.json",
@@ -318,6 +339,7 @@ def run_research_backtest(
             },
             artifact_type="backtest_execution",
         )
+        del control, isolated_train, isolated_oos
         cards.write_artifact(
             current_card.run_id,
             "analysis.json",
@@ -335,6 +357,7 @@ def run_research_backtest(
                 conclusion={
                     "status": "calculated",
                     "default_parameters_changed": False,
+                    **account_summary(),
                 },
             )
         )
@@ -398,6 +421,7 @@ def run_research_backtest(
                 risk_xray=_json_safe(analysis.risk_xray.to_dict()),
                 conclusion={
                     "status": "awaiting_human_review",
+                    **account_summary(),
                     "evidence_level": "exploratory" if exploratory_degraded else "strict",
                     "default_parameters_changed": False,
                     "next_step": "等待人工签署发布；未签署不得作为已通过证据",
@@ -444,6 +468,7 @@ def run_research_backtest(
                         },
                         conclusion={
                             "status": "rejected",
+                            **account_summary(),
                             "reasons": reasons,
                             "default_parameters_changed": False,
                         },
@@ -461,6 +486,7 @@ def run_research_backtest(
                         },
                         conclusion={
                             "status": "failed",
+                            **account_summary(),
                             "reasons": reasons,
                             "default_parameters_changed": False,
                         },

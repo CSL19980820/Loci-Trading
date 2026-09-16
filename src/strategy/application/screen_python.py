@@ -77,6 +77,20 @@ class PythonScreenEngine:
     def min_bars(self) -> int:
         return self.min_bars_value
 
+    @property
+    def history_bars(self):
+        """包入口可按运行参数声明实际历史需求，避免调大周期后被截短。"""
+        return getattr(self._load_callable(), "history_bars", None)
+
+    @property
+    def live_candidate_codes(self):
+        """可选的昨日预筛；未声明的包保持原全池实时路径。"""
+        return getattr(self._load_callable(), "live_candidate_codes", None)
+
+    @property
+    def strict_live_ohlcv(self) -> bool:
+        return getattr(self._load_callable(), "strict_live_ohlcv", False) is True
+
     def validate(self) -> None:
         """导入模块并解析入口点，不执行选股函数。"""
         self._load_callable()

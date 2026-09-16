@@ -167,10 +167,8 @@ def _parse_daily_rows(
             continue
         # 统一成「股」与新浪对齐；缩放系数按板块由 volume_scale 决定。
         volume = volume_src * volume_scale
-        # 腾讯日 K 不返回成交额，用收盘价估；与真实 VWAP 成交额有偏差，
-        # 因此 TencentAdapter.meta 把 amount 自报为 estimated_fields，
-        # 多源合并时任何源生成交额都能顶掉它。
-        amount = close * volume
+        # 此接口未提供成交额；未知值必须留空，不能用收盘价伪造全天 VWAP。
+        amount = None
         rows.append(
             {
                 "date": trade_date.date(),
@@ -243,7 +241,7 @@ def _parse_flashdata(text: str) -> pd.DataFrame:
                 "low": low,
                 "close": close,
                 "volume": volume,
-                "amount": close * volume,
+                "amount": None,
             }
         )
     if not rows:

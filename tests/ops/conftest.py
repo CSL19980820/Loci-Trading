@@ -5,6 +5,22 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _verified_notification_calendar(monkeypatch, request):
+    """非日历用例固定在已验证交易日，避免测试随真实周末或外部缓存漂移。"""
+    if request.node.path.name == 'test_calendar_silence.py':
+        return
+    import time
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from src.market.infrastructure import exchange_calendar
+    from src.market.domain.exchange_schedule import HOLIDAYS
+    from src.ops.application import notify_calendar
+    monkeypatch.setattr(exchange_calendar, 'read_calendar', lambda: {'checked_at': time.time(), 'years': {str(y): v for y, v in HOLIDAYS.items()}})
+    real = notify_calendar.notification_silence_reason
+    monkeypatch.setattr(notify_calendar, 'notification_silence_reason', lambda now=None: real(now or datetime(2026,9,14,10,tzinfo=ZoneInfo('Asia/Shanghai'))))
+
+
+@pytest.fixture(autouse=True)
 def _clear_skill_watch_short_caches() -> None:
     from src.ops.application.jobs.paper_quant_support import clear_market_gate_cache
     from src.ops.application.skill_watch.market_regime import clear_market_snapshot_cache

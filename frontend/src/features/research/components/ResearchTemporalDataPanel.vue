@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RefreshRight, Upload } from '@element-plus/icons-vue'
+import { Clock, RefreshRight, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 import {
@@ -12,7 +12,11 @@ import type {
   ResearchPointInTimeFact,
 } from '@/shared/types/quant-research'
 
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import UiCard from '@/shared/components/ui/UiCard.vue'
+import UiCardContent from '@/shared/components/ui/UiCardContent.vue'
+import UiCardHeader from '@/shared/components/ui/UiCardHeader.vue'
+import UiCardTitle from '@/shared/components/ui/UiCardTitle.vue'
 
 import ResearchTemporalImportDialog, { type ResearchTemporalImportKind } from './ResearchTemporalImportDialog.vue'
 
@@ -115,8 +119,8 @@ function membershipUnavailableReason(snapshot: ResearchMembershipSnapshot): stri
   return ''
 }
 
-function membershipRowKey(snapshot: ResearchMembershipSnapshot): string {
-  return `${snapshot.universe_id}:${snapshot.as_of}:${snapshot.snapshot_revision}`
+function membershipRowKey(row: Record<string, unknown>): string {
+  return `${String(row.universe_id ?? '')}:${String(row.as_of ?? '')}:${String(row.snapshot_revision ?? '')}`
 }
 
 async function loadMemberships(): Promise<void> {
@@ -195,15 +199,40 @@ function refreshImported(kind: ResearchTemporalImportKind): void {
   else void loadFacts()
 }
 
+const membershipRows = computed(() => memberships.value as unknown as Record<string, unknown>[])
+const factRows = computed(() => facts.value as unknown as Record<string, unknown>[])
+
+const membershipColumns: BasicTableColumn[] = [
+  { prop: 'universe_id', label: '股票池', minWidth: 132, showOverflowTooltip: true },
+  { prop: 'as_of', label: '快照日', width: 112 },
+  { prop: 'available_at', label: '可见日', width: 112 },
+  { prop: 'members', label: '成员', width: 78, slotName: 'members' },
+  { prop: 'status', label: '状态', width: 108, slotName: 'status' },
+  { prop: 'source_id', label: '来源 / 版本', minWidth: 150, showOverflowTooltip: true, slotName: 'source' },
+  { prop: 'payload_sha256', label: '抓取 / 载荷 / 解析', minWidth: 240, showOverflowTooltip: true, slotName: 'provenance' },
+  { prop: 'universe_id', label: '操作', width: 108, fixed: 'right', slotName: 'actions' },
+]
+
+const factColumns: BasicTableColumn[] = [
+  { prop: 'observation_id', label: '观察标识', minWidth: 148, showOverflowTooltip: true },
+  { prop: 'entity_id', label: '实体', width: 96, showOverflowTooltip: true },
+  { prop: 'fact_type', label: '类型', width: 84 },
+  { prop: 'observed_on', label: '观察日', width: 112 },
+  { prop: 'available_at', label: '可见日', width: 112 },
+  { prop: 'source_id', label: '来源 / 版本', minWidth: 150, showOverflowTooltip: true, slotName: 'source' },
+  { prop: 'payload_sha256', label: '抓取 / 载荷 / 解析', minWidth: 240, showOverflowTooltip: true, slotName: 'provenance' },
+]
+
 defineExpose({ loadMemberships, loadFacts })
 </script>
 
 <template>
-  <section class="temporal-panel" aria-label="历史研究数据">
-    <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
-    <header class="temporal-head">
-      <h4>历史数据</h4>
-    </header>
+  <UiCard class="research-surface" aria-label="历史研究数据">
+    <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行 -->
+    <UiCardHeader>
+      <UiCardTitle><el-icon aria-hidden="true"><Clock /></el-icon>历史数据</UiCardTitle>
+    </UiCardHeader>
+    <UiCardContent :padded="true">
 
     <section class="temporal-section" aria-label="历史股票池快照">
       <div class="subhead">
@@ -227,21 +256,33 @@ defineExpose({ loadMemberships, loadFacts })
         <span>解析结果</span><code>{{ resolvedMembershipLabel }}</code>
         <span v-if="membershipUnavailableReason(resolvedMembership)">{{ membershipUnavailableReason(resolvedMembership) }}</span>
       </div>
-      <el-table v-if="memberships.length" :data="memberships" size="small" :row-key="membershipRowKey">
-        <el-table-column prop="universe_id" label="股票池" min-width="132" align="center" header-align="center" show-overflow-tooltip />
-        <el-table-column prop="as_of" label="快照日" width="112" align="center" header-align="center" />
-        <el-table-column prop="available_at" label="可见日" width="112" align="center" header-align="center" />
-        <el-table-column label="成员" width="78" align="center" header-align="center"><template #default="{ row }">{{ row.members.length }}</template></el-table-column>
-        <el-table-column label="状态" width="108" align="center" header-align="center"><template #default="{ row }"><el-tag size="small" effect="plain" :type="membershipType(row)">{{ membershipLabel(row) }}</el-tag></template></el-table-column>
-        <el-table-column label="来源 / 版本" min-width="150" align="center" header-align="center" show-overflow-tooltip><template #default="{ row }"><el-link v-if="safeSourceUrl(row.source_url)" :href="safeSourceUrl(row.source_url)" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(row.source_id, row.snapshot_revision) }}</el-link><span v-else>{{ sourceText(row.source_id, row.snapshot_revision) }}</span></template></el-table-column>
-        <el-table-column label="抓取 / 载荷 / 解析" min-width="240" align="left" header-align="left" show-overflow-tooltip><template #default="{ row }"><code :title="provenanceText(row)">{{ provenanceText(row) }}</code></template></el-table-column>
-        <el-table-column label="操作" width="108" align="center" header-align="center" fixed="right"><template #default="{ row }"><el-button text size="small" :disabled="!canUseMembership(row)" :title="membershipUnavailableReason(row)" @click="useUniverse(row)">用于严格 PIT</el-button></template></el-table-column>
-      </el-table>
-      <EmptyState
-        v-else-if="membershipLoaded && !membershipLoading"
-        description="无快照"
-        reason="换条件，或点「导入快照」"
-      />
+      <BasicTable
+        :columns="membershipColumns"
+        :data-source="membershipRows"
+        :pagination="false"
+        :loading="membershipLoading"
+        :row-key="membershipRowKey"
+        stripe
+        :empty-text="membershipLoaded ? '无快照' : '尚未加载'"
+        :empty-reason="membershipLoaded ? '换条件，或点「导入快照」' : '先填条件点「读取快照」'"
+      >
+        <template #members="{ row }">
+          {{ Array.isArray(row.members) ? row.members.length : 0 }}
+        </template>
+        <template #status="{ row }">
+          <el-tag size="small" effect="plain" :type="membershipType(row as unknown as ResearchMembershipSnapshot)">{{ membershipLabel(row as unknown as ResearchMembershipSnapshot) }}</el-tag>
+        </template>
+        <template #source="{ row }">
+          <el-link v-if="safeSourceUrl(String(row.source_url || ''))" :href="safeSourceUrl(String(row.source_url || ''))" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(String(row.source_id || ''), String(row.snapshot_revision || '')) }}</el-link>
+          <span v-else>{{ sourceText(String(row.source_id || ''), String(row.snapshot_revision || '')) }}</span>
+        </template>
+        <template #provenance="{ row }">
+          <code :title="provenanceText(row as unknown as ResearchMembershipSnapshot)">{{ provenanceText(row as unknown as ResearchMembershipSnapshot) }}</code>
+        </template>
+        <template #actions="{ row }">
+          <el-button text size="small" :disabled="!canUseMembership(row as unknown as ResearchMembershipSnapshot)" :title="membershipUnavailableReason(row as unknown as ResearchMembershipSnapshot)" @click="useUniverse(row as unknown as ResearchMembershipSnapshot)">用于严格 PIT</el-button>
+        </template>
+      </BasicTable>
     </section>
 
     <section class="temporal-section" aria-label="PIT 事实">
@@ -268,20 +309,24 @@ defineExpose({ loadMemberships, loadFacts })
         <el-tag size="small" effect="plain" type="success">截至日可见</el-tag>
         <span>解析事实</span><code>{{ selectedFact.observation_id }} · {{ selectedFact.available_at }} · {{ selectedFact.revision }}</code>
       </div>
-      <el-table v-if="facts.length" :data="facts" size="small" row-key="observation_id">
-        <el-table-column prop="observation_id" label="观察标识" min-width="148" show-overflow-tooltip />
-        <el-table-column prop="entity_id" label="实体" width="96" show-overflow-tooltip />
-        <el-table-column prop="fact_type" label="类型" width="84" />
-        <el-table-column prop="observed_on" label="观察日" width="112" />
-        <el-table-column prop="available_at" label="可见日" width="112" />
-        <el-table-column label="来源 / 版本" min-width="150" show-overflow-tooltip><template #default="{ row }"><el-link v-if="safeSourceUrl(row.source_url)" :href="safeSourceUrl(row.source_url)" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(row.source_id, row.revision) }}</el-link><span v-else>{{ sourceText(row.source_id, row.revision) }}</span></template></el-table-column>
-        <el-table-column label="抓取 / 载荷 / 解析" min-width="240" show-overflow-tooltip><template #default="{ row }"><code :title="provenanceText(row)">{{ provenanceText(row) }}</code></template></el-table-column>
-      </el-table>
-      <EmptyState
-        v-else-if="factLoaded && !factLoading"
-        description="无事实"
-        reason="换条件，或点「导入事实」"
-      />
+      <BasicTable
+        :columns="factColumns"
+        :data-source="factRows"
+        :pagination="false"
+        :loading="factLoading"
+        row-key="observation_id"
+        stripe
+        :empty-text="factLoaded ? '无事实' : '尚未加载'"
+        :empty-reason="factLoaded ? '换条件，或点「导入事实」' : '先填条件点「读取事实」'"
+      >
+        <template #source="{ row }">
+          <el-link v-if="safeSourceUrl(String(row.source_url || ''))" :href="safeSourceUrl(String(row.source_url || ''))" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(String(row.source_id || ''), String(row.revision || '')) }}</el-link>
+          <span v-else>{{ sourceText(String(row.source_id || ''), String(row.revision || '')) }}</span>
+        </template>
+        <template #provenance="{ row }">
+          <code :title="provenanceText(row as unknown as ResearchPointInTimeFact)">{{ provenanceText(row as unknown as ResearchPointInTimeFact) }}</code>
+        </template>
+      </BasicTable>
     </section>
 
     <ResearchTemporalImportDialog
@@ -289,7 +334,8 @@ defineExpose({ loadMemberships, loadFacts })
       :kind="importKind"
       @imported="refreshImported"
     />
-  </section>
+    </UiCardContent>
+  </UiCard>
 </template>
 
 <style scoped>
@@ -314,3 +360,4 @@ code { color: var(--ink); font: var(--fs-aux) var(--mono); font-variant-numeric:
   .temporal-query :deep(.el-form-item) { width: 100%; }
 }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

@@ -119,6 +119,8 @@ const showGlobalConfirm = computed(() => {
     ref="scrollRoot"
     class="assistant-conversation"
     role="log"
+    aria-label="对话记录"
+    tabindex="0"
     aria-live="polite"
     @scroll.passive="onScroll"
   >
@@ -153,8 +155,9 @@ const showGlobalConfirm = computed(() => {
   overflow-x: hidden; overflow-y: auto;
   /* 滚动条是长会话里唯一的位置感知，只压细不隐藏 */
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--ink) 20%, transparent) transparent;
-  padding: 1rem 0 1.35rem;
+  scrollbar-color: color-mix(in oklab, var(--ink) 20%, transparent) transparent;
+  padding: var(--gap-3) 0;
+  overscroll-behavior: contain;
   align-items: stretch;
   width: 100%; box-sizing: border-box;
 }
@@ -167,14 +170,15 @@ const showGlobalConfirm = computed(() => {
 .assistant-conversation::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--ai-r-pill);
-  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  background: color-mix(in oklab, var(--ink) 18%, transparent);
   background-clip: padding-box;
 }
 .assistant-conversation:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--ink) 32%, transparent);
+  background: color-mix(in oklab, var(--ink) 32%, transparent);
   background-clip: padding-box;
 }
 .assistant-conversation__status {
-  margin: .15rem 0 0; color: var(--mist); font-size: var(--ai-fs-aux); width: 100%;
+  margin: var(--gap-1) 0 0; color: var(--mist); font-size: var(--ai-fs-aux); width: 100%;
 }
+.assistant-conversation:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
 </style>

@@ -30,7 +30,7 @@ const emit = defineEmits<{
       </p>
     </div>
 
-    <el-form label-position="top" @submit.prevent="emit('submit')">
+    <el-form label-position="top" :aria-busy="submitting" @submit.prevent="emit('submit')">
       <el-form-item label="账号或邮箱">
         <el-input
           :model-value="handle"
@@ -86,60 +86,4 @@ const emit = defineEmits<{
   </div>
 </template>
 
-<style scoped>
-.panel-head {
-  margin-bottom: var(--auth-head-gap, 1.25rem);
-}
-
-.panel-title {
-  margin: 0;
-  font-size: var(--auth-title-fs, 1.35rem);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--ink);
-}
-
-.panel-switch {
-  margin: 0.5rem 0 0;
-  font-size: 0.85rem;
-  color: var(--mist);
-}
-
-.label-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--gap-2);
-  width: 100%;
-}
-
-/* 账号是代码化字段（用户名 / 邮箱），等宽体不会把 l/1/I 弄混 */
-.signin-handle :deep(.el-input__inner) {
-  font-family: var(--mono);
-}
-
-.login-submit {
-  width: 100%;
-}
-
-.signin-providers :deep(.el-divider--horizontal) {
-  margin: 26px 0 18px;
-}
-
-.signin-providers :deep(.el-divider__text) {
-  font-size: var(--fs-aux);
-  color: var(--mist);
-  background: var(--auth-panel-bg, var(--sheet));
-}
-
-.signin-providers__row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: var(--gap-3);
-}
-
-.signin-providers__btn {
-  width: 100%;
-  margin-left: 0;
-}
-</style>
+<style scoped src="./AuthForm.css" />

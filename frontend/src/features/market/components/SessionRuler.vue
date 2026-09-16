@@ -55,7 +55,7 @@ const bars = computed(() => {
     return {
       id: seg.id,
       kind: seg.kind,
-    label: seg.label,
+      label: seg.label,
       left,
       width: pctOfMinute(seg.endMin) - left,
       fill: segmentFill(seg, fillMinute) * 100,
@@ -71,7 +71,7 @@ const legend = '09:15 竞价 · 09:30–11:30 早盘 · 11:30–13:00 午休 · 
 </script>
 
 <template>
-  <div class="ruler" :class="{ 'is-dim': state.dimmed }">
+  <div class="ruler flex w-full flex-none items-center gap-2" :class="{ 'is-dim': state.dimmed }">
     <span class="ruler__edge">09:15</span>
     <el-tooltip :content="legend" placement="bottom" :show-after="220">
       <div
@@ -115,10 +115,6 @@ const legend = '09:15 竞价 · 09:30–11:30 早盘 · 11:30–13:00 午休 · 
 
 <style scoped>
 .ruler {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-  flex: 0 0 auto;
   padding: 0 var(--gap-2) 2px;
 }
 
@@ -207,7 +203,7 @@ const legend = '09:15 竞价 · 09:30–11:30 早盘 · 11:30–13:00 午休 · 
   width: 2px;
   height: 10px;
   margin-left: -1px;
-  background: var(--stamp);
+  background: var(--seal);
   animation: ruler-breathe 2.6s ease-in-out infinite;
 }
 
@@ -231,5 +227,10 @@ const legend = '09:15 竞价 · 09:30–11:30 早盘 · 11:30–13:00 午休 · 
   .ruler__status {
     min-width: 0;
   }
+}
+@media (max-width: 640px) {
+  .ruler { flex-wrap: wrap; }
+  .ruler__rail { min-width: calc(100% - 4rem); }
+  .ruler__status { width: 100%; line-height: 1.4; }
 }
 </style>

@@ -1,3 +1,5 @@
+import type { BacktestExecutionConfig } from './backtest-config'
+
 export type ResearchQuality = 'full' | 'partial' | 'missing' | 'error'
 export type ResearchBudget = 'lite' | 'standard' | 'deep'
 export type ResearchSourceState = 'registered' | 'probed' | 'selected' | 'failed' | 'not_probed'
@@ -388,16 +390,8 @@ export interface CreateResearchBacktestRunPayload {
     oos_start: string
     oos_end: string
   }
-  backtest_config?: {
-    hold_days?: number
-    stop_loss_pct?: number | null
-    take_profit_pct?: number | null
-    commission_bps?: number
-    stamp_duty_bps?: number
-    slippage_bps?: number
-    allow_limit_up_entry?: boolean
-    benchmark?: string | null
-  }
+  backtest_config?: BacktestExecutionConfig
+  account_model?: 'daily_close'
   hypothesis_id?: string
   hypothesis_revision?: number
   initial_capital?: number

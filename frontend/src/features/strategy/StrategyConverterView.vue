@@ -14,6 +14,8 @@ import { computed } from 'vue'
 
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageTabs, { type PageTabItem } from '@/shared/components/ui/PageTabs.vue'
+import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 
 import QuantBacktestPanel from './components/QuantBacktestPanel.vue'
 import ScreenAiCopilot from './components/ScreenAiCopilot.vue'
@@ -114,28 +116,25 @@ function toggleAssist(): void {
 </script>
 
 <template>
-  <div class="page-fill workbench-page">
-    <header class="workbench-bar">
-      <div class="workbench-identity">
-        <el-tooltip content="返回工坊" placement="bottom">
-          <el-button
-            text
-            circle
-            :icon="ArrowLeft"
-            aria-label="返回工坊"
-            @click="router.push('/quant')"
-          />
-        </el-tooltip>
-        <el-input
-          v-model="draft.name"
-          class="workbench-name-input"
-          maxlength="64"
-          placeholder="未命名公式"
-          aria-label="公式名称"
+  <div class="workbench-page page-fill flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+    <PageToolbar>
+      <el-tooltip content="返回工坊" placement="bottom">
+        <el-button
+          text
+          circle
+          :icon="ArrowLeft"
+          aria-label="返回工坊"
+          @click="router.push('/quant')"
         />
-      </div>
-
-      <div class="workbench-actions">
+      </el-tooltip>
+      <el-input
+        v-model="draft.name"
+        class="workbench-name-input"
+        maxlength="64"
+        placeholder="未命名公式"
+        aria-label="公式名称"
+      />
+      <template #actions>
         <el-button :icon="Collection" aria-label="打开函数词典" @click="catalogOpen = true">
           函数
         </el-button>
@@ -201,12 +200,14 @@ function toggleAssist(): void {
           :plain="assistOpen"
           :icon="ChatDotRound"
           :aria-label="assistOpen ? '收起助手' : '展开助手'"
+          :aria-expanded="assistOpen"
+          aria-controls="strategy-copilot"
           @click="toggleAssist"
         >
           助手
         </el-button>
-      </div>
-    </header>
+      </template>
+    </PageToolbar>
 
     <PageTabs
       v-model="workbenchTab"
@@ -216,13 +217,13 @@ function toggleAssist(): void {
       aria-label="策稿分区"
     >
       <template #trailing>
-        <span>{{ editorLineCount }} 行</span>
-        <span>{{ fieldCount }} 字段</span>
-        <span>{{ paramCount }} 参数</span>
+        <UiBadge variant="secondary">{{ editorLineCount }} 行</UiBadge>
+        <UiBadge variant="secondary">{{ fieldCount }} 字段</UiBadge>
+        <UiBadge variant="secondary">{{ paramCount }} 参数</UiBadge>
       </template>
     </PageTabs>
 
-    <div v-if="error || conflict" class="workbench-flash">
+    <div v-if="error || conflict" class="flex shrink-0 flex-col gap-1.5">
       <el-alert
         v-if="error"
         :title="error"
@@ -253,9 +254,9 @@ function toggleAssist(): void {
         :status-tone="statusTone"
       />
 
-      <aside v-if="assistOpen" class="copilot-pane">
+      <aside v-if="assistOpen" id="strategy-copilot" class="copilot-pane" aria-label="公式助手">
         <div class="copilot-pane__head">
-          <strong>助手</strong>
+          <strong><el-icon aria-hidden="true"><ChatDotRound /></el-icon>助手</strong>
           <el-button text size="small" @click="assistOpen = false">收起</el-button>
         </div>
         <ScreenAiCopilot
@@ -332,6 +333,7 @@ function toggleAssist(): void {
       :screen-result="screenResult"
       :screen-busy="screenBusy || previewBusy"
       backtest-slot
+      @close="dockOpen = false"
       @focus-line="editor?.focusLine($event)"
     >
       <template #backtest>

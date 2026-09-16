@@ -60,7 +60,7 @@ def run_strategy_screen(owner: Any, args: dict[str, Any]) -> dict[str, Any]:
                 owner.market_db,
                 getattr(owner, "market_hot_db", None),
                 trade_date=str(args.get("trade_date") or date.today().isoformat()),
-                warmup_bars=signal_history_bars(engine),
+                warmup_bars=signal_history_bars(engine, params=args.get("params")),
             )
         # AI 工具与 Job/HTTP 共用进程级面板容量。助手调用是同步 tool round，
         # 容量已满时快速返回错误，避免把模型回合和线程长期堵在队列里。

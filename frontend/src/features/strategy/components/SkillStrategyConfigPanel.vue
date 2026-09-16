@@ -142,12 +142,12 @@ defineExpose({ save, saving, load })
 </script>
 
 <template>
-  <div v-loading="loading" class="strategy-skill-config">
+  <div v-loading="loading" class="flex min-w-0 flex-col gap-2">
     <el-tooltip
       placement="bottom-start"
       content="战法本身不带时间；盘中监测走 MCP + 本地量化信号"
     >
-      <p class="config-lede mb">盘后走 AI 全量选股，盘中走 MCP 监测；时点在此配</p>
+      <p class="text-aux text-mist m-0 mb-2">盘后走 AI 全量选股，盘中走 MCP 监测；时点在此配</p>
     </el-tooltip>
 
     <el-form label-position="right" label-width="6.5em" size="small">

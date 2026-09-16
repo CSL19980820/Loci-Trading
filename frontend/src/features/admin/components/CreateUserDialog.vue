@@ -53,7 +53,7 @@ const schemas: BasicFormSchema[] = [
   {
     field: 'password',
     label: '初始口令',
-    componentProps: { type: 'password', showPassword: true, placeholder: '至少 8 位' },
+    componentProps: { type: 'password', showPassword: true, placeholder: '至少 8 位', autocomplete: 'new-password' },
     hint: '首次登录须改密',
     rules: [
       { required: true, message: '填初始口令', trigger: 'change' },
@@ -114,6 +114,7 @@ async function onSubmit(): Promise<void> {
 
 <template>
   <el-dialog
+    class="admin-form-dialog dialog-body--scroll"
     v-model="open"
     title="新增用户"
     width="min(92vw, 560px)"
@@ -134,3 +135,5 @@ async function onSubmit(): Promise<void> {
     </template>
   </el-dialog>
 </template>
+
+<style scoped src="./AdminDialog.css" />

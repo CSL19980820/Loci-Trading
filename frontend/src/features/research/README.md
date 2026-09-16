@@ -1,5 +1,7 @@
 # research
 
+选择历史14:50战法时，回测表单带入模板日期、执行配置、20万元5仓100股整手、`daily_close` 和已声明train/OOS。`strictPit=false` 的原有探索性提示保留。账户摘要来自run的 `conclusion.portfolio_summary`，显示期末权益、收益、回撤、已平仓/未平仓和费用；明细仍在 `analysis.json`，不把单笔顺序复利当作账户净值。
+
 量化工坊中的研究证据台：默认只读查看，可由用户显式归档本次输入快照。
 
 - `ResearchPanel.vue`：标的、预算、质量快照、来源回执、21 维状态和显式归档，并编排可审计回测与假设面板。

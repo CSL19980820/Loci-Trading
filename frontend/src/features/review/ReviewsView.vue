@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { InfoFilled } from '@element-plus/icons-vue'
+import { InfoFilled, EditPen } from '@element-plus/icons-vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageContainer from '@/shared/components/layout/PageContainer.vue'
 import RecordDialog from '@/shared/components/dialogs/RecordDialog.vue'
 import Sparkline from '@/shared/components/charts/Sparkline.vue'
@@ -59,6 +58,13 @@ function entityTagType(type: string): 'primary' | 'warning' | 'success' | 'info'
 function onSaved(): void {
   void store.loadRoute(route, true)
 }
+
+function lessonText(row: Record<string, unknown>): string {
+  const parts: string[] = []
+  if (row.lesson) parts.push(`训 ${String(row.lesson)}`)
+  if (row.next_rule) parts.push(`规 ${String(row.next_rule)}`)
+  return parts.join(' · ') || '—'
+}
 </script>
 
 <template>
@@ -66,19 +72,20 @@ function onSaved(): void {
     <PageContainer>
       <template v-if="returnSeries.length" #topExpand>
         <div class="spark-wrap">
+          <div class="spark-caption"><span>已记录收益</span><span class="mono">{{ returnSeries.length }} 条</span></div>
           <Sparkline
             :values="returnSeries"
             :height="48"
             :color="(returnSeries[returnSeries.length - 1] ?? 0) >= 0 ? 'var(--up)' : 'var(--down)'"
-            label="收益"
+            label="收益（%）"
           />
         </div>
       </template>
       <template #main>
         <BasicTable
-          v-if="store.reviews.length"
           v-model:columns="columns"
           :data-source="tableRows"
+          :loading="store.loading"
           :pagination="{
             currentPage,
             pageSize,
@@ -87,15 +94,18 @@ function onSaved(): void {
             layout: 'total, prev, pager, next',
           }"
           :toolbar-config="{ custom: true }"
+          height="100%"
           stripe
           row-key="id"
+          empty-text="还没有复盘记录"
+          empty-reason="卖出或减仓后可补记一笔"
           @current-change="(page) => { currentPage = page }"
         >
           <!-- 主动作与口径并进表格自带的工具行：页面不再单开一条页头（任务 3） -->
           <template #toolbarButtons>
-            <el-button type="primary" size="small" @click="recordOpen = true">补记一笔</el-button>
+            <el-button type="primary" size="small" :icon="EditPen" @click="recordOpen = true">补记一笔</el-button>
             <el-tooltip :content="PAGE_NOTE" placement="bottom-start" :show-after="200">
-              <el-icon class="toolbar-note" tabindex="0" :aria-label="PAGE_NOTE"><InfoFilled /></el-icon>
+              <el-icon class="text-aux text-mist inline-flex shrink-0 cursor-help" tabindex="0" :aria-label="PAGE_NOTE"><InfoFilled /></el-icon>
             </el-tooltip>
           </template>
           <template #entity="{ row }">
@@ -115,22 +125,36 @@ function onSaved(): void {
             </span>
           </template>
           <template #lesson="{ row }">
-            <span v-if="row.lesson || row.next_rule" class="lesson-cell">
-              <template v-if="row.lesson">训 {{ row.lesson }}</template>
-              <template v-if="row.lesson && row.next_rule"> · </template>
-              <template v-if="row.next_rule">规 {{ row.next_rule }}</template>
-            </span>
-            <span v-else class="dim">—</span>
+            <el-tooltip
+              :content="lessonText(row)"
+              placement="top"
+              :show-after="150"
+              :disabled="!row.lesson && !row.next_rule"
+              popper-class="pool-reason-popper"
+            >
+              <span v-if="row.lesson || row.next_rule" class="lesson-cell lesson-clip">
+                <template v-if="row.lesson">训 {{ row.lesson }}</template>
+                <template v-if="row.lesson && row.next_rule"> · </template>
+                <template v-if="row.next_rule">规 {{ row.next_rule }}</template>
+              </span>
+              <span v-else class="dim">—</span>
+            </el-tooltip>
+          </template>
+          <template #empty>
+            <EmptyState description="还没有复盘记录" reason="卖出或减仓后可补记一笔">
+              <el-button type="primary" @click="recordOpen = true">补记一笔</el-button>
+            </EmptyState>
           </template>
         </BasicTable>
-        <PageBusy v-else-if="store.loading" label="加载复盘…" />
-        <EmptyState
-          v-else
-          description="还没有复盘记录"
-          reason="卖出或减仓后可补记一笔"
+        <el-alert
+          v-if="store.error && !store.reviews.length"
+          :title="store.error"
+          type="error"
+          show-icon
+          class="mb"
         >
-          <el-button type="primary" @click="recordOpen = true">补记一笔</el-button>
-        </EmptyState>
+          <el-button size="small" @click="store.loadRoute(route, true)">重试</el-button>
+        </el-alert>
       </template>
     </PageContainer>
 
@@ -139,7 +163,9 @@ function onSaved(): void {
 </template>
 
 <style scoped>
+.spark-caption { display: flex; align-items: baseline; gap: var(--gap-2); color: var(--muted); font-size: var(--fs-aux); }
 .spark-wrap {
+  background: var(--surface-sunken);
   padding: var(--gap-1) var(--gap-3);
   border-bottom: 1px solid var(--rule);
 }
@@ -147,6 +173,15 @@ function onSaved(): void {
 .lesson-cell {
   font-size: var(--fs-aux);
   color: var(--muted);
+}
+
+.lesson-clip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 /* 口径提示：一枚 ⓘ，不占文本宽度 */

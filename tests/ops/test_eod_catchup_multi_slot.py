@@ -144,7 +144,7 @@ class RunCatchupMultiSlotTests(unittest.TestCase):
             jobs=[_job(last_run_at="2026-09-02T14:50:51+08:00")],
         )
         now = datetime(2026, 9, 2, 17, 0, tzinfo=_TZ)
-        with mock.patch("src.ops.application.jobs.run_job") as run_job:
+        with mock.patch("src.ops.application.jobs.run_job", return_value={"status": "success"}) as run_job:
             out = run_eod_catchup(
                 ops_store_factory=lambda: store,
                 context_factory=lambda: None,
@@ -153,6 +153,7 @@ class RunCatchupMultiSlotTests(unittest.TestCase):
             )
         run_job.assert_called_once()
         self.assertEqual(run_job.call_args.kwargs.get("trigger"), "catchup")
+        self.assertEqual(run_job.call_args.args[1]["config"]["date"], "2026-09-02")
         self.assertEqual(out["ran"], ["screen:yangshi-tail-v1"])
         self.assertEqual(out["skipped"], [])
 

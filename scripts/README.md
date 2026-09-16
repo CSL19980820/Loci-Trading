@@ -4,6 +4,27 @@
 构建与一次性迁移 / 文档辅助脚本。非运行时依赖。
 
 ## 关键入口
+### 权威行情修复
+
+`resync_market_authoritative.py` 默认全历史重拉，`--no-force` 只重刷增量近窗，`--codes` 可限定证券。两种模式均严格只用通达信并绕过当日水位；主源不可用时保留失败回执、返回非零退出码，不再把腾讯回退视为权威修复。`--dry-run` 只统计；合成成交额统计与体检一致，排除单一成交价日。
+
+### 相对主题指数领先的回踩机会
+
+- `python -m scripts.relative_leader_prepare --source OLD_RESEARCH_DIR --root RESEARCH_DIR`：使用国证历史指数与冻结股票日线，筛选上涨阶段显著领先、回踩后仍保留超额优势的个股；基准映射在脚本和产物中明确记录。
+- `python -m scripts.participation_research --root RESEARCH_DIR --fund-root FUND_PAGES --policies relative_leader_rising_open relative_leader_falling_open --holds 10 20 --risk-budget 1000`：比较板块状态与持有窗口，使用已有成交引擎，限价订单预留当日名额。参与度、风险预算、跨期失败和历史机会见 [`相对领先回踩研究`](../docs/research/2026-09-11-relative-leader-pullbacks.md)。
+- `participation_prepare.py` / `participation_research.py` 同时保留独立平台突破及确认后复测的研究对照，不能把其中表现差的版本注册成生产策略。
+
+### 涨停回踩与资金右侧研究
+
+- `python -m scripts.limitup_rightside_features --db FROZEN_DB --events EVENT_PAGES --output PREPARED_DIR`：校验历史涨停事件，生成启动、缩量回踩、右侧再确认与滞后题材活跃股证据；不使用当前概念成分回填历史。
+- `python -m scripts.limitup_rightside_research --root RESEARCH_DIR`：消费冻结候选、价格及对应日资金榜，复用成交引擎和逐日盯市账本，比较三条路线与两个对照。配置、七个月结果、低仓位和小样本限制见 [`资金右侧研究`](../docs/research/2026-09-11-limitup-rightside.md)。
+
+### 七个月高盈亏比研究
+
+- `payoff_research_snapshot.py SOURCE TARGET`：通过只读附加连接冻结 2024-07 至 2026-08 的公共行情，生成来源、版本、完整性与 SHA-256 清单；目标文件必须不存在。
+- `high_payoff_research.py --db FROZEN_DB --output OUTPUT_DIR`：复用线上同版成交引擎，比较突破、动量、低波动突破及趋势回撤；2025 年同期筛选，2026-02 至 2026-08 验证。输出信号、逐笔交易、逐日盯市权益、成本压力及训练筛选记录。只读冻结库，不注册策略、不写候选池。
+- 股票池来自当前证券表，存在幸存者与历史 ST 状态缺口；追加探索不能称为未接触的独立样本外检验。规则、结果和复现方式见 [`七个月研究记录`](../docs/research/2026-09-11-high-payoff-seven-month.md)。
+
 ### 行情数据管线（选型 / 测速 / 校验）
 
 - `benchmark_data_sources.py` — **数据源全面测量**：逐源单票时延、并发梯度吞吐、批量宽度、字段完整度，折算全市场耗时。主源选型的证据来源。

@@ -76,20 +76,21 @@ def assert_cash_conservation(
     initial_capital: float,
     final_equity: float,
     realized_pnl_total: float,
+    unrealized_pnl_total: float = 0.0,
 ) -> None:
-    """收口不变式 I1：期末权益 = 初始资金 + 全部已实现盈亏。
-
-    所有持仓在结束时都会被结算回现金，因此期末不应残留任何未结算敞口。
-    这条一旦破，说明槽位释放、现金扣减或退出结算有一处漏了。
-    """
-    expected = float(initial_capital) + float(realized_pnl_total)
+    """权益守恒；逐日模式显式传入含已付开仓成本的未实现盈亏。"""
+    expected = float(initial_capital) + float(realized_pnl_total) + float(unrealized_pnl_total)
     actual = float(final_equity)
     gap = abs(actual - expected)
     if gap > max(CASH_TOLERANCE, abs(expected) * 1e-9):
+        unrealized = (
+            f"+ 未实现盈亏 {float(unrealized_pnl_total):.6f}" if unrealized_pnl_total else ""
+        )
         raise PortfolioInvariantError(
             "组合现金不守恒："
             f"期末权益 {actual:.6f} ≠ 初始 {float(initial_capital):.6f} "
-            f"+ 已实现盈亏 {float(realized_pnl_total):.6f}（差 {gap:.6f}）"
+            f"+ 已实现盈亏 {float(realized_pnl_total):.6f}"
+            f"{unrealized}（差 {gap:.6f}）"
         )
 
 

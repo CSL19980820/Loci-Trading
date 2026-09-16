@@ -36,15 +36,17 @@ function onUpdate(name: string | number): void {
 </script>
 
 <template>
+  <!-- 分区条=28px控件行。sticky 让它贴在 scroll 顶；badge 是等宽计数 -->
   <div
-    class="page-tabs"
-    :class="{ 'page-tabs--sticky': sticky, 'page-tabs--dense': dense }"
+    class="page-tabs bg-canvas mx-0 mb-2 shrink-0 px-[var(--pad-sheet-x)]"
+    :class="sticky ? 'page-tabs--sticky sticky top-[var(--page-tabs-sticky-top,0px)] z-[var(--z-sticky)] border-b border-[var(--rule)]' : ''"
   >
-    <div class="page-tabs__row">
+    <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
       <el-tabs
-        class="page-tabs__el"
+        class="min-w-0 flex-auto"
         :model-value="modelValue"
         :aria-label="ariaLabel"
+        :class="dense ? '[--el-tabs-header-height:var(--row-h-sm)]' : '[--el-tabs-header-height:var(--ctl-h)]'"
         @update:model-value="onUpdate"
       >
         <el-tab-pane
@@ -54,14 +56,14 @@ function onUpdate(name: string | number): void {
           :disabled="item.disabled"
         >
           <template #label>
-            <span class="page-tabs__label">{{ item.label }}</span>
-            <span v-if="item.badge != null && item.badge !== ''" class="page-tabs__badge">{{
+            <span>{{ item.label }}</span>
+            <span v-if="item.badge != null && item.badge !== ''" class="border-line bg-surface text-mist ml-1 inline-flex min-w-4 items-center justify-center rounded border px-1 font-mono text-[length:var(--fs-kicker)] leading-[1.4] font-semibold tabular-nums">{{
               item.badge
             }}</span>
           </template>
         </el-tab-pane>
       </el-tabs>
-      <div v-if="$slots.trailing" class="page-tabs__trailing">
+      <div v-if="$slots.trailing" class="page-tabs__trailing text-mist flex flex-none flex-wrap items-center gap-2 font-mono text-aux">
         <slot name="trailing" />
       </div>
     </div>
@@ -69,61 +71,15 @@ function onUpdate(name: string | number): void {
 </template>
 
 <style scoped>
-.page-tabs {
-  --page-tabs-sticky-top: 0px;
-  /* 分区条就是一条 28px 的控件行，不是导航横幅 */
-  --el-tabs-header-height: var(--ctl-h);
-  margin: 0 0 var(--gap-2);
-  padding: 0 var(--pad-sheet-x);
-  background: var(--paper);
-}
-
-.page-tabs__row {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-3);
-  min-width: 0;
-}
-
-.page-tabs__el {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.page-tabs__trailing {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-  color: var(--mist);
-  font: var(--fs-aux) / 1.4 var(--mono);
-  white-space: nowrap;
-}
-
-.page-tabs--sticky {
-  position: sticky;
-  top: var(--page-tabs-sticky-top);
-  z-index: 5;
-  margin-left: 0;
-  margin-right: 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.page-tabs--dense {
-  --el-tabs-header-height: var(--row-h-sm);
-  margin-bottom: var(--gap-1);
-}
-
-.page-tabs__el :deep(.el-tabs__header) {
+/* 通过作用域深层选择器调整 EP 子组件，保留其键盘与溢出导航。 */
+.min-w-0 :deep(.el-tabs__header) {
   margin: 0;
 }
-
-.page-tabs__el :deep(.el-tabs__nav-wrap::after) {
+.min-w-0 :deep(.el-tabs__nav-wrap::after) {
   height: 1px;
   background-color: var(--rule);
 }
-
-.page-tabs__el :deep(.el-tabs__item) {
+.min-w-0 :deep(.el-tabs__item) {
   display: inline-flex;
   align-items: center;
   gap: var(--gap-1);
@@ -132,50 +88,24 @@ function onUpdate(name: string | number): void {
   font: 500 var(--fs-body) / 1.25 var(--font);
   letter-spacing: 0.03em;
 }
-
-.page-tabs--dense .page-tabs__el :deep(.el-tabs__item) {
-  padding: 0 var(--gap-2);
-  font-size: var(--fs-aux);
-}
-
-.page-tabs__el :deep(.el-tabs__item:hover) {
+.min-w-0 :deep(.el-tabs__item:hover) {
   color: var(--ink);
 }
-
-.page-tabs__el :deep(.el-tabs__item.is-active) {
-  color: var(--ink);
+.min-w-0 :deep(.el-tabs__item.is-active) {
+  color: var(--seal-ink);
   font-weight: 700;
 }
-
-.page-tabs__el :deep(.el-tabs__active-bar) {
+.min-w-0 :deep(.el-tabs__active-bar) {
   height: 2px;
   background-color: var(--seal);
   border-radius: 1px;
 }
-
-.page-tabs__el :deep(.el-tabs__content) {
+.min-w-0 :deep(.el-tabs__content) {
   display: none;
 }
-
-.page-tabs__badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: var(--gap-4);
-  padding: 0 var(--gap-1);
-  border-radius: var(--radius);
-  background: var(--sheet);
-  border: 1px solid var(--rule);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: var(--fs-kicker);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-.page-tabs__el :deep(.el-tabs__item.is-active) .page-tabs__badge {
-  border-color: color-mix(in srgb, var(--seal) 35%, var(--rule));
+/* 选中态徽标：主色浅底+描边（D1：徽标不是价格，不上红绿） */
+.min-w-0 :deep(.el-tabs__item.is-active) .border-line {
+  border-color: color-mix(in oklab, var(--seal) 35%, var(--rule));
   background: var(--seal-soft);
   color: var(--seal-ink);
 }

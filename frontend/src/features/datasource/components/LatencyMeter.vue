@@ -37,7 +37,7 @@ const text = computed(() => (props.ms == null ? '—' : `${Math.round(props.ms)}
 
 <template>
   <span class="lat" :class="[`lat--${tone}`, { 'lat--over': overScale }]">
-    <span class="lat__track"><span class="lat__fill" :style="{ width }" /></span>
+    <span class="lat__track" aria-hidden="true"><span class="lat__fill" :style="{ width }" /></span>
     <b class="lat__ms">{{ text }}</b>
   </span>
 </template>
@@ -56,7 +56,7 @@ const text = computed(() => (props.ms == null ? '—' : `${Math.round(props.ms)}
   min-width: 2.5rem;
   height: 3px;
   border-radius: 2px;
-  background: color-mix(in srgb, var(--rule) 70%, transparent);
+  background: color-mix(in oklab, var(--rule) 70%, transparent);
   overflow: hidden;
 }
 
@@ -64,13 +64,13 @@ const text = computed(() => (props.ms == null ? '—' : `${Math.round(props.ms)}
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: 2px;
-  background: var(--ink);
+  background: var(--info);
   transition: width 0.18s ease-out;
 }
 
 .lat__ms {
   flex-shrink: 0;
-  font: 600 0.76rem var(--mono);
+  font: 600 var(--fs-aux) var(--mono);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
@@ -84,18 +84,21 @@ const text = computed(() => (props.ms == null ? '—' : `${Math.round(props.ms)}
 }
 
 .lat--bad .lat__fill {
-  background: var(--el-color-danger);
+  background: var(--warn);
 }
 
 .lat--bad .lat__ms {
-  color: var(--el-color-danger);
+  color: var(--warn-ink);
 }
 
 .lat--over .lat__fill {
   background-image: repeating-linear-gradient(
     115deg,
     transparent 0 3px,
-    color-mix(in srgb, var(--paper) 65%, transparent) 3px 5px
+    color-mix(in oklab, var(--paper) 65%, transparent) 3px 5px
   );
 }
+</style>
+<style scoped>
+@media (prefers-reduced-motion: reduce) { .lat__fill { transition: none; } }
 </style>

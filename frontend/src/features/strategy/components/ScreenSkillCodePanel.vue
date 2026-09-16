@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import CodeEditor from '@/features/ops/components/CodeEditor.vue'
+import UiField from '@/shared/components/ui/UiField.vue'
 import Sheet from '@/shared/components/layout/Sheet.vue'
 import type { ScreenSkillRuntime } from '@/shared/types/quant'
 
@@ -48,27 +49,27 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
     form-item label 也已经说清楚了。两种取值都属于白占一行。
   -->
   <Sheet padded margin>
-    <div class="meta-grid">
-      <el-form-item label="运行时">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-2">
+      <UiField label="运行时">
         <el-select
           :model-value="props.draft.runtime"
-          class="full"
+          class="w-full"
           @update:model-value="requestRuntimeChange"
         >
           <el-option label="公式（通达信兼容）" value="formula" />
           <el-option label="脚本（高级）" value="python" />
         </el-select>
-      </el-form-item>
-      <el-form-item v-if="props.draft.runtime === 'python'" label="入口函数" required :error="err('entrypoint')">
+      </UiField>
+      <UiField v-if="props.draft.runtime === 'python'" label="入口函数" required :error="err('entrypoint')">
         <el-input
           v-model.trim="props.draft.entrypoint"
           maxlength="80"
           placeholder="文件:函数名，例如 strategy.py:compute"
         />
-      </el-form-item>
-      <el-form-item v-else label="公式方言">
+      </UiField>
+      <UiField v-else label="公式方言">
         <el-input model-value="通达信 / 同花顺兼容写法" readonly />
-      </el-form-item>
+      </UiField>
     </div>
 
     <el-form-item

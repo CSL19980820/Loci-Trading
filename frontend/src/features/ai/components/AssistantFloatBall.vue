@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChatDotRound, Close } from '@element-plus/icons-vue'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 defineProps<{ open: boolean; busy?: boolean; unavailable?: boolean }>()
@@ -15,7 +16,8 @@ const style = computed(() => ({ right: `${position.value.right}px`, bottom: `${p
 /**
  * 底栏 + 「记一笔」FAB 的避让高度；两者都在 ≤980px 出现（与 AppSidebar 隐藏点一致）。
  * 断点此前写的 768，导致 769–980px 时浮球以为自己在桌面，落点正好压住 FAB，
- * 而浮球 z-index 3200 远高于 FAB 的 40，FAB 会被盖住且点不到。
+ * 断点此前写的 768，导致 769–980px 时浮球以为自己在桌面，落点正好压住 FAB，
+ * 而浮球 z-index（--z-assistant-ball）远高于 FAB（--z-record-fab），FAB 会被盖住且点不到。
  */
 function navClearancePx(): number {
   if (typeof window === 'undefined' || window.innerWidth > 980) return 0
@@ -126,144 +128,25 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
       @pointercancel="onPointerCancel"
       @click="onClick"
     >
-      <!-- Ink Ribbon Disc: dark plate + light ribbon knot + seal locus (open → X) -->
-      <svg class="ball-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
-        <g v-if="open" class="ball-mark__close" stroke="currentColor" stroke-width="2.6" stroke-linecap="round">
-          <line x1="17" y1="17" x2="31" y2="31" />
-          <line x1="31" y1="17" x2="17" y2="31" />
-        </g>
-        <g v-else class="ball-mark__ribbon" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-          <path
-            class="ball-mark__loop"
-            stroke-width="2.35"
-            d="M16.5 28.5 C17.8 18.5 24.5 15 29.5 19.5 C34.8 24.2 32.2 33.5 24.5 33.5 C19.5 33.5 16.2 30.8 16.5 28.5 Z"
-          />
-          <path class="ball-mark__sweep" stroke-width="1.85" opacity="0.72" d="M19.5 18.5 C24.5 22 28.2 26.8 26.8 32.2" />
-          <circle class="ball-mark__locus" cx="24" cy="24" r="2.15" fill="var(--seal)" stroke="none" />
-        </g>
-      </svg>
+      <el-icon class="ball-mark" aria-hidden="true"><Close v-if="open" /><ChatDotRound v-else /></el-icon>
     </el-button>
   </el-tooltip>
 </template>
 
 <style scoped>
-/* EP .is-circle defaults to width:32px — must beat that or the ball becomes an ellipse. */
+/* 尺寸与脚本中的拖拽边界保持一致；浮球使用公共浮层阴影。 */
 .assistant-float-ball.el-button.is-circle {
-  --ball-face: var(--ai-disc-face);
-  --ball-ribbon: var(--ai-disc-ribbon);
-  --el-button-size: 52px;
-  position: fixed;
-  z-index: 3200;
-  box-sizing: border-box;
-  width: 52px;
-  height: 52px;
-  min-width: 52px;
-  min-height: 52px;
-  padding: 0;
-  margin: 0;
-  aspect-ratio: 1 / 1;
-  border-radius: 50%;
-  border: 1px solid var(--ai-disc-edge);
-  background: var(--ball-face);
-  color: var(--ball-ribbon);
-  box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
-    0 10px 28px color-mix(in srgb, #000 28%, transparent);
-  touch-action: none;
-  transition:
-    width 0.18s ease,
-    height 0.18s ease,
-    min-width 0.18s ease,
-    min-height 0.18s ease,
-    transform 0.18s ease,
-    background 0.18s ease,
-    border-color 0.18s ease,
-    opacity 0.18s ease;
+  --ball-size: 52px;
+  position: fixed; z-index: var(--z-assistant-ball); display: grid; place-items: center; width: var(--ball-size); height: var(--ball-size); min-width: var(--ball-size); min-height: var(--ball-size); margin: 0; padding: 0; border: 1px solid var(--seal-border); border-radius: 50%; background: var(--surface-raised); color: var(--seal-ink); box-shadow: var(--shadow-hover); touch-action: none; transition: border-color var(--dur-fast), background var(--dur-fast);
 }
-
-.assistant-float-ball :deep(span) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-}
-
-.ball-mark {
-  width: 26px;
-  height: 26px;
-  display: block;
-  flex-shrink: 0;
-}
-
-.assistant-float-ball:focus-visible {
-  outline: 2px solid var(--seal);
-  outline-offset: 3px;
-}
-
-.assistant-float-ball.el-button.is-circle.is-open {
-  --el-button-size: 40px;
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
-}
-
-.assistant-float-ball.is-open .ball-mark {
-  width: 20px;
-  height: 20px;
-}
-
-.assistant-float-ball.is-unavailable {
-  --ball-face: #2a3038;
-  --ball-ribbon: #7a8494;
-  border-color: color-mix(in srgb, #fff 8%, transparent);
-  box-shadow: 0 6px 18px color-mix(in srgb, #000 18%, transparent);
-}
-
-.assistant-float-ball.is-unavailable .ball-mark__locus {
-  fill: #6b7280;
-}
-
-.assistant-float-ball.is-busy::after {
-  position: absolute;
-  inset: -5px;
-  border: 2px dashed var(--seal);
-  border-radius: 50%;
-  content: '';
-  opacity: 0.85;
-  pointer-events: none;
-  animation: orbit-spin 1.35s linear infinite;
-}
-
-.assistant-float-ball.is-dragging {
-  cursor: grabbing;
-  transition: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .assistant-float-ball:hover:not(.is-dragging) {
-    transform: scale(1.05);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .assistant-float-ball,
-  .assistant-float-ball.is-open {
-    transition: none;
-  }
-
-  .assistant-float-ball.is-busy::after {
-    animation: none;
-    opacity: 0.7;
-    border-style: solid;
-  }
-}
-
-@keyframes orbit-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+.assistant-float-ball.el-button.is-circle.is-open { --ball-size: 40px; }
+.assistant-float-ball.el-button.is-circle:hover { background: var(--surface-hover); border-color: var(--seal); }
+.assistant-float-ball :deep(> span) { display: flex; align-items: center; justify-content: center; }
+.assistant-float-ball .ball-mark { font-size: var(--fs-hero); }
+.assistant-float-ball:focus-visible { outline: 2px solid var(--seal); outline-offset: 3px; }
+.assistant-float-ball.el-button.is-unavailable { color: var(--mist); border-color: var(--rule); background: var(--surface-sunken); }
+.assistant-float-ball.is-busy::after { position: absolute; inset: calc(-1 * var(--gap-1)); border: 1px dashed var(--seal); border-radius: 50%; content: ''; pointer-events: none; animation: assistant-orbit 2s linear infinite; }
+.assistant-float-ball.is-dragging { cursor: grabbing; transition: none; }
+@keyframes assistant-orbit { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .assistant-float-ball.el-button.is-circle { transition: none; } .assistant-float-ball.is-busy::after { animation: none; border-style: solid; } }
 </style>

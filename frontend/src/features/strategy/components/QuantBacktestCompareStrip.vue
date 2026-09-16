@@ -30,9 +30,9 @@ const rows = computed(() => buildHorizonCompareRows(props.t1 ?? null, props.t3 ?
 <style scoped>
 .cmp {
   border: 1px solid var(--rule);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   padding: 0.55rem 0.7rem 0.35rem;
-  background: var(--paper, var(--sheet));
+  background: var(--paper);
 }
 .cmp__head {
   display: flex;
@@ -41,13 +41,13 @@ const rows = computed(() => buildHorizonCompareRows(props.t1 ?? null, props.t3 ?
   justify-content: space-between;
   gap: 0.35rem 0.75rem;
   margin-bottom: 0.35rem;
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   color: var(--ink);
   font-weight: 600;
 }
 .cmp__hint {
   font-weight: 400;
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 .cmp__table {

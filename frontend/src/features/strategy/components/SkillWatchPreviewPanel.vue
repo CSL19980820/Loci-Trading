@@ -10,6 +10,8 @@ import { ElMessage } from 'element-plus'
 
 import { getLeaderRoles, previewSkillWatch } from '@/shared/api/quant_ops'
 import { toErrorMessage } from '@/shared/lib/errors'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { LeaderMapEntry, LeaderRoleSummary, SkillWatchPreview, WatchTuningSuggestion } from '@/shared/types/quant'
 
 const props = defineProps<{
@@ -135,7 +137,7 @@ async function runPreview(): Promise<void> {
 </script>
 
 <template>
-  <div v-loading="running" class="watch-preview">
+  <div v-loading="running" class="flex min-w-0 flex-col gap-2">
     <!--
       原来这里恒定挂着两条 el-alert：一条报「悟道没装」，一条只是解释「预览是只读的」。
       后者不是异常、永远在，就是被禁的常驻说明条 —— 整条删掉，那句话挂到「立即预览」
@@ -147,11 +149,11 @@ async function runPreview(): Promise<void> {
       type="warning"
       show-icon
       :closable="false"
-      class="mb"
+      class="mb-2 shrink-0"
       :title="unavailableReason || '悟道 MCP 未装配，预览已停用'"
     />
 
-    <div class="bar">
+    <div class="flex flex-wrap items-center gap-2">
       <el-tooltip
         placement="bottom-start"
         content="用实时数据只读试跑一次：不写纸面舱、不推送、不调 AI；结果一律标注未经过前向验证，不构成买卖建议"
@@ -160,15 +162,16 @@ async function runPreview(): Promise<void> {
           立即预览
         </el-button>
       </el-tooltip>
-      <span v-if="preview?.trade_date" class="dim">交易日 {{ preview.trade_date }}</span>
-      <el-tag v-if="preview" size="small" type="warning" effect="plain">
+      <span v-if="preview?.trade_date" class="text-aux text-mist">交易日 {{ preview.trade_date }}</span>
+      <UiBadge v-if="preview" variant="warn">
         {{ preview.validation_label || '未经过前向验证' }}
-      </el-tag>
+      </UiBadge>
     </div>
 
-    <el-empty
+    <EmptyState
       v-if="!preview"
-      :description="available ? '尚未预览，点上方按钮试跑一次' : '悟道未装配，无法预览'"
+      :description="available ? '还没有预览结果' : '悟道未装配'"
+      :reason="available ? '点上方按钮试跑一次' : '装配后才能预览'"
     />
 
     <template v-else>

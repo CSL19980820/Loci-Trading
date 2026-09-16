@@ -11,6 +11,7 @@ import {
   revokeApiKey,
 } from '@/shared/api/auth'
 import { copyText } from '@/shared/lib/clipboard'
+import { dialogWidth } from '@/shared/lib/format'
 import { useUserStore } from '@/shared/stores/user'
 import type {
   ApiKeyItem,
@@ -19,6 +20,8 @@ import type {
   UserQuota,
   UserSessionRecord,
 } from '@/shared/types/auth'
+import PageTabs from '@/shared/components/ui/PageTabs.vue'
+import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import StatCard from '@/shared/components/ui/StatCard.vue'
 import AccountApiKeysPane from '@/features/auth/AccountApiKeysPane.vue'
 import AccountSecurityPane from '@/features/auth/AccountSecurityPane.vue'
@@ -26,7 +29,17 @@ import AccountSecurityPane from '@/features/auth/AccountSecurityPane.vue'
 const userStore = useUserStore()
 
 const activeTab = ref<'profile' | 'security' | 'quota' | 'apikeys'>('profile')
+const accountTabs = [
+  { name: 'profile', label: '个人资料' },
+  { name: 'security', label: '安全设置' },
+  { name: 'quota', label: '资源配额' },
+  { name: 'apikeys', label: '开放 API' },
+]
+
 const loading = ref<boolean>(false)
+/** 加载失败时禁用提交：空表单写回去会把昵称/简介清成空串 */
+const loadFailed = ref<boolean>(false)
+const loadError = ref<string>('')
 
 const profileForm = ref<{
   username: string
@@ -84,6 +97,8 @@ const quotaCards = computed(() => [
 
 async function loadAccountData(): Promise<void> {
   loading.value = true
+  loadFailed.value = false
+  loadError.value = ''
   try {
     const me = await getAuthMe()
     userStore.setUser(me.user)
@@ -98,7 +113,8 @@ async function loadAccountData(): Promise<void> {
       bio: me.user.bio || '',
     }
   } catch (err: unknown) {
-    ElMessage.error(err instanceof Error ? err.message : '加载账号信息失败')
+    loadFailed.value = true
+    loadError.value = err instanceof Error ? err.message : '加载账号信息失败'
   } finally {
     loading.value = false
   }
@@ -198,111 +214,118 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="account-page page-fill">
-    <div class="account-container page-scroll">
-      <!-- 页面头部 -->
-      <header class="account-header">
-        <div class="user-summary">
-          <el-avatar :size="56" :src="user?.avatar_url" class="user-avatar">
-            {{ (user?.display_name || user?.username || 'U').slice(0, 1).toUpperCase() }}
-          </el-avatar>
-          <div class="user-info">
-            <div class="user-title-row">
-              <h1 class="user-name">{{ user?.display_name || user?.username }}</h1>
-              <el-tag size="small" :type="user?.role === 'admin' ? 'danger' : 'info'" class="role-tag">
-                {{ user?.role === 'admin' ? '管理员' : '成员' }}
-              </el-tag>
-              <el-tag v-if="user?.status" size="small" :type="user.status === 'active' ? 'success' : 'warning'">
-                {{ user.status === 'active' ? '正常' : '待激活' }}
-              </el-tag>
-              <span class="user-sub">@{{ user?.username }} · {{ user?.email || '未绑定邮箱' }}</span>
-            </div>
-          </div>
+  <div class="page-fill flex min-h-0 flex-1 flex-col overflow-hidden">
+    <PageToolbar note="账号资料只改当前登录用户；配额由平台治理下发，本页只读。">
+      <div class="user-summary">
+        <el-avatar :size="28" :src="user?.avatar_url" class="user-avatar">
+          {{ (user?.display_name || user?.username || 'U').slice(0, 1).toUpperCase() }}
+        </el-avatar>
+        <strong class="user-name">{{ user?.display_name || user?.username }}</strong>
+        <el-tag size="small" :type="user?.role === 'admin' ? 'warning' : 'info'" effect="plain">
+          {{ user?.role === 'admin' ? '管理员' : '成员' }}
+        </el-tag>
+        <el-tag
+          v-if="user?.status"
+          size="small"
+          :type="user.status === 'active' ? 'success' : 'warning'"
+          effect="plain"
+        >
+          {{ user.status === 'active' ? '正常' : '待激活' }}
+        </el-tag>
+      </div>
+      <template #stats>
+        <span class="user-sub">@{{ user?.username }} · {{ user?.email || '未绑定邮箱' }}</span>
+      </template>
+    </PageToolbar>
+
+    <PageTabs v-model="activeTab" :items="accountTabs" aria-label="账号分区" />
+
+    <div class="account-body" v-loading="loading" :aria-busy="loading">
+      <el-alert
+        v-if="loadFailed"
+        :title="loadError || '加载账号信息失败'"
+        type="error"
+        show-icon
+        class="mb-2"
+      >
+        <el-button size="small" @click="loadAccountData">重试</el-button>
+      </el-alert>
+      <div v-show="activeTab === 'profile'" class="tab-pane-content profile-pane">
+        <el-form
+          class="profile-form"
+          label-position="right"
+          label-width="6.5em"
+          size="small"
+          @submit.prevent="handleSaveProfile"
+        >
+          <el-form-item label="登录账号名">
+            <el-input v-model="profileForm.username" placeholder="唯一登录账号" />
+          </el-form-item>
+          <el-form-item label="对外昵称">
+            <el-input v-model="profileForm.display_name" placeholder="设置展示昵称" />
+          </el-form-item>
+          <el-form-item label="头像 URL">
+            <el-input v-model="profileForm.avatar_url" placeholder="https://example.com/avatar.png" />
+          </el-form-item>
+          <el-form-item label="个人简介">
+            <el-input
+              v-model="profileForm.bio"
+              type="textarea"
+              :rows="3"
+              placeholder="介绍一下你自己"
+            />
+          </el-form-item>
+          <el-form-item class="mb-0">
+            <el-button
+              type="primary"
+              :loading="savingProfile"
+              :disabled="loadFailed || loading"
+              native-type="submit"
+            >
+              保存资料
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <AccountSecurityPane
+        v-show="activeTab === 'security'"
+        :user="user"
+        :identities="identities"
+        :sessions="sessions"
+        @refresh="loadAccountData"
+        @passwordChanged="onPasswordChanged"
+      />
+
+      <div v-show="activeTab === 'quota'" class="tab-pane-content">
+        <div class="quota-grid">
+          <StatCard
+            v-for="card in quotaCards"
+            :key="card.label"
+            :label="card.label"
+            :value="card.value"
+            :hint="card.hint"
+          />
         </div>
-      </header>
+      </div>
 
-      <!-- Tab 切换 -->
-      <el-tabs v-model="activeTab" class="account-tabs">
-        <!-- 1. 资料 -->
-        <el-tab-pane label="个人资料" name="profile">
-          <div class="tab-pane-content">
-            <el-form label-position="top" class="form-max" @submit.prevent="handleSaveProfile">
-              <el-form-item label="登录账号名">
-                <el-input v-model="profileForm.username" placeholder="唯一登录账号" />
-              </el-form-item>
-
-              <el-form-item label="对外昵称">
-                <el-input v-model="profileForm.display_name" placeholder="设置展示昵称" />
-              </el-form-item>
-
-              <el-form-item label="头像 URL">
-                <el-input v-model="profileForm.avatar_url" placeholder="https://example.com/avatar.png" />
-              </el-form-item>
-
-              <el-form-item label="个人简介">
-                <el-input
-                  v-model="profileForm.bio"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="介绍一下你自己"
-                />
-              </el-form-item>
-
-              <el-form-item>
-                <el-button type="primary" :loading="savingProfile" native-type="submit">
-                  保存资料
-                </el-button>
-              </el-form-item>
-            </el-form>
-          </div>
-        </el-tab-pane>
-
-        <!-- 2. 安全 -->
-        <el-tab-pane label="安全设置" name="security">
-          <AccountSecurityPane
-            :user="user"
-            :identities="identities"
-            :sessions="sessions"
-            @refresh="loadAccountData"
-            @passwordChanged="onPasswordChanged"
-          />
-        </el-tab-pane>
-
-        <!-- 3. 配额 -->
-        <el-tab-pane label="资源配额" name="quota">
-          <div class="tab-pane-content">
-            <div class="quota-grid">
-              <StatCard
-                v-for="card in quotaCards"
-                :key="card.label"
-                :label="card.label"
-                :value="card.value"
-                :hint="card.hint"
-              />
-            </div>
-          </div>
-        </el-tab-pane>
-
-        <!-- 4. 开放 API -->
-        <el-tab-pane label="开放 API" name="apikeys">
-          <AccountApiKeysPane
-            :api-keys="apiKeys"
-            :loading="loadingKeys"
-            @create="createKeyDialogVisible = true"
-            @revoke="handleRevokeApiKey"
-          />
-        </el-tab-pane>
-      </el-tabs>
+      <AccountApiKeysPane
+        v-show="activeTab === 'apikeys'"
+        :api-keys="apiKeys"
+        :loading="loadingKeys"
+        @create="createKeyDialogVisible = true"
+        @revoke="handleRevokeApiKey"
+      />
     </div>
 
     <!-- 创建 API Key 弹窗 -->
-    <el-dialog v-model="createKeyDialogVisible" title="新建 API Key" width="460px">
-      <el-form label-position="top">
+    <el-dialog v-model="createKeyDialogVisible" title="新建 API Key" :width="dialogWidth()" class="dialog-body--scroll">
+      <el-form label-position="right" label-width="6.5em" size="small">
         <el-form-item label="Key 名称" required>
           <el-input v-model="newKeyName" placeholder="例如：my-trading-bot" autofocus />
         </el-form-item>
-        <el-form-item label="权限范围">
-          <el-select v-model="newKeyScopes" style="width: 100%">
+        <el-form-item label="权限范围" class="mb-0">
+          <el-select v-model="newKeyScopes" class="w-full">
             <el-option label="只读 (read)" value="read" />
             <el-option label="读写 (read,write)" value="read,write" />
           </el-select>
@@ -318,7 +341,8 @@ onMounted(async () => {
     <el-dialog
       v-model="keySuccessDialogVisible"
       title="API Key 创建成功"
-      width="500px"
+      class="dialog-body--scroll"
+      :width="dialogWidth()"
       :close-on-click-modal="false"
       :show-close="false"
     >
@@ -349,96 +373,4 @@ onMounted(async () => {
     </el-dialog>
   </div>
 </template>
-
-<style scoped>
-/* .page-fill 已给满高 flex 列；这里不再重复 height:100%，也不用 2rem 内边距垫白 */
-.account-container {
-  max-width: 72rem;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.account-header {
-  padding-bottom: var(--gap-2);
-  border-bottom: 1px solid var(--rule);
-}
-
-.user-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-3);
-}
-
-.user-avatar {
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-  font-weight: 600;
-  font-size: var(--fs-hero);
-}
-
-.user-title-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--gap-2);
-}
-
-/* D2：中文标题 17px / 700 / .03em，不换字族 */
-.user-name {
-  margin: 0;
-  font-size: var(--fs-hero);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--ink);
-}
-
-.user-sub {
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-aux);
-  color: var(--mist);
-}
-
-.tab-pane-content {
-  padding-top: var(--gap-2);
-}
-
-.form-max {
-  max-width: 30rem;
-}
-
-/* auto-fill + minmax：卡片不足时不留硬空格 */
-.quota-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
-  align-items: start;
-  gap: var(--gap-2);
-}
-
-.key-success-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-}
-
-.key-display-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-2);
-  padding: var(--gap-2) var(--gap-3);
-  background: var(--sheet-alt);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-}
-
-.key-code {
-  font-family: var(--mono);
-  font-size: var(--fs-body);
-  color: var(--seal-ink);
-  word-break: break-all;
-}
-</style>
+<style scoped src="./AccountView.css" />

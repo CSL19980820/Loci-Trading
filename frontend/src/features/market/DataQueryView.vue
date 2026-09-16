@@ -29,6 +29,7 @@ const router = useRouter()
 const busy = ref(false)
 const error = ref('')
 const liveError = ref('')
+const liveDetailOpen = ref(false)
 const coverage = ref<MarketCoverage | null>(null)
 const coverageLoaded = ref(false)
 const basicFormRef = ref<InstanceType<typeof BasicForm>>()
@@ -123,57 +124,57 @@ const filterSchemas = computed<BasicFormSchema[]>(() => [
 
 const columns = ref<BasicTableColumn[]>([
   { prop: 'code', label: '代码', width: 88, align: 'center', headerAlign: 'center', slotName: 'code' },
-  { prop: 'name', label: '名称', minWidth: 108, align: 'center', headerAlign: 'center', showOverflowTooltip: true },
+  { prop: 'name', label: '名称', minWidth: 108, align: 'left', headerAlign: 'left', showOverflowTooltip: true },
   {
     prop: 'industry',
     label: '所属行业',
     minWidth: 110,
-    align: 'center',
-    headerAlign: 'center',
+    align: 'left',
+    headerAlign: 'left',
     showOverflowTooltip: true,
     formatter: (row) => String(row.industry || '—'),
   },
-  { prop: 'price', label: '最新', width: 92, align: 'center', headerAlign: 'center', slotName: 'price' },
-  { prop: 'pct', label: '涨跌%', width: 100, align: 'center', headerAlign: 'center', slotName: 'pct' },
-  { prop: 'change', label: '涨跌', width: 80, align: 'center', headerAlign: 'center', slotName: 'change' },
+  { prop: 'price', label: '最新', width: 92, align: 'right', headerAlign: 'right', slotName: 'price' },
+  { prop: 'pct', label: '涨跌%', width: 100, align: 'right', headerAlign: 'right', slotName: 'pct' },
+  { prop: 'change', label: '涨跌', width: 80, align: 'right', headerAlign: 'right', slotName: 'change' },
   {
     prop: 'turnover',
     label: '换手率',
     width: 92,
-    align: 'center',
-    headerAlign: 'center',
+    align: 'right',
+    headerAlign: 'right',
     formatter: (row) => fmtTurnover(row.turnover as number | null),
   },
   {
     prop: 'open',
     label: '今开',
     width: 84,
-    align: 'center',
-    headerAlign: 'center',
+    align: 'right',
+    headerAlign: 'right',
     formatter: (row) => fmtPrice(row.open as number | null),
   },
   {
     prop: 'high',
     label: '最高',
     width: 84,
-    align: 'center',
-    headerAlign: 'center',
+    align: 'right',
+    headerAlign: 'right',
     formatter: (row) => fmtPrice(row.high as number | null),
   },
   {
     prop: 'low',
     label: '最低',
     width: 84,
-    align: 'center',
-    headerAlign: 'center',
+    align: 'right',
+    headerAlign: 'right',
     formatter: (row) => fmtPrice(row.low as number | null),
   },
   {
     prop: 'amount',
     label: '成交额',
     minWidth: 100,
-    align: 'center',
-    headerAlign: 'center',
+    align: 'right',
+    headerAlign: 'right',
     formatter: (row) => fmtAmount(row.amount as number | null),
   },
   { prop: 'ok', label: '来源', width: 72, align: 'center', headerAlign: 'center', slotName: 'source' },
@@ -200,6 +201,10 @@ const batch = computed(() => ({
   ),
 }))
 const hasMarket = computed(() => (coverage.value?.rows ?? 0) > 0)
+/** 是否挂了筛选条件：空表时区分“没数据”与“筛得太狠” */
+const hasFilter = computed(
+  () => Boolean(filters.keyword.trim() || filters.industry || filters.turnoverMin != null),
+)
 
 function syncFiltersToQuery(): void {
   marketQ.value = filters.keyword.trim()
@@ -296,31 +301,35 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page-fill data-desk">
+  <div class="page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <el-alert
       v-if="error"
       :title="error"
       type="error"
       show-icon
       closable
-      class="desk-alert"
+      class="mb-2 shrink-0"
       @close="error = ''"
     />
-    <!-- 真实异常才上条：标题压到 12 字，原始报错进 tooltip（不写 description） -->
-    <el-tooltip v-if="liveError" :content="liveError" placement="bottom-start" :show-after="200">
-      <el-alert
-        title="实时行情不可用，改显日线"
-        type="warning"
-        show-icon
-        closable
-        class="desk-alert"
-        @close="liveError = ''"
-      />
-    </el-tooltip>
+    <!-- 实时行情降级：标题一行，原文进可展开详情（tooltip 触屏不可达） -->
+    <el-alert
+      v-if="liveError"
+      title="实时行情不可用，改显日线"
+      type="warning"
+      show-icon
+      closable
+      class="mb-2 shrink-0"
+      @close="liveError = ''"
+    >
+      <el-button link size="small" :aria-expanded="liveDetailOpen" aria-controls="market-live-error" @click="liveDetailOpen = !liveDetailOpen">
+        {{ liveDetailOpen ? '收起原文' : '看原文' }}
+      </el-button>
+      <p v-if="liveDetailOpen" id="market-live-error" class="text-aux text-mist m-0 max-h-32 overflow-auto break-words leading-snug">{{ liveError }}</p>
+    </el-alert>
 
     <PageContainer>
       <template #search>
-        <div class="desk-search-form">
+        <div class="min-w-0 flex-1">
           <BasicForm
             ref="basicFormRef"
             v-model="filterModel"
@@ -331,7 +340,7 @@ onMounted(async () => {
             size="small"
           />
         </div>
-        <div class="desk-search-actions">
+        <div class="flex shrink-0 flex-wrap items-center gap-2">
           <el-button type="primary" :icon="Search" :loading="busy" @click="handleSubmit">查询</el-button>
           <el-button :icon="RefreshRight" :loading="busy" @click="handleReset">重置</el-button>
         </div>
@@ -340,7 +349,7 @@ onMounted(async () => {
         <EmptyState
           v-if="coverageLoaded && !hasMarket"
           description="还没有历史日 K"
-          reason="market.db 里还没有行情"
+          reason="同步行情后即可查询"
         >
           <el-button type="primary" @click="goBootstrapHint">去同步行情</el-button>
         </EmptyState>
@@ -348,6 +357,7 @@ onMounted(async () => {
           <PageBusy overlay :busy="busy" />
           <BasicTable
             v-model:columns="columns"
+            class="board-table"
             :data-source="tableRows"
             :pagination="{
               currentPage: page,
@@ -358,9 +368,11 @@ onMounted(async () => {
             }"
             :toolbar-config="{ refresh: true, custom: true }"
             :loading="busy"
+            height="100%"
             stripe
             row-key="code"
-            empty-text="无证券"
+            :empty-text="hasFilter ? '没有匹配的证券' : '暂无证券'"
+            empty-reason="调整关键词或重置筛选"
             @row-click="onRowClick"
             @current-change="onPageChange"
             @size-change="onSizeChange"
@@ -403,59 +415,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.data-desk {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-  /* height 由 .page-fill 给（layout.css:46 已 height:100%）；这里只要能收缩 */
-  min-height: 0;
-  overflow: hidden;
-}
-.desk-alert {
-  margin: 0;
-  flex-shrink: 0;
-}
-.desk-search-form {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.desk-search-form :deep(.el-form-item) {
-  margin-bottom: 0;
-}
-.desk-search-form :deep(.el-form-item__content),
-.desk-search-form :deep(.el-input),
-.desk-search-form :deep(.el-select),
-.desk-search-form :deep(.el-input-number) {
-  width: 100%;
-  min-width: 0;
-}
-.desk-search-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-  flex-shrink: 0;
-  margin-left: auto;
-}
-@media (max-width: 700px) {
-  :deep(.page-container__search) {
-    flex-direction: column;
-    flex-wrap: nowrap;
-  }
-  .desk-search-form,
-  .desk-search-actions {
-    width: 100%;
-    flex: 0 0 auto;
-  }
-  .desk-search-form :deep(.el-form-item__content),
-  .desk-search-form :deep(.el-input),
-  .desk-search-form :deep(.el-select),
-  .desk-search-form :deep(.el-input-number) {
-    min-width: 0;
-  }
-  .desk-search-actions {
-    justify-content: flex-end;
-  }
-}
 .desk-main {
   position: relative;
   flex: 1 1 auto;
@@ -475,7 +434,12 @@ onMounted(async () => {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
-:deep(.el-table__row) {
+/* 前缀限本页：裸 deep 会命中全站所有表 */
+:deep(.board-table .el-table__row) {
   cursor: pointer;
+}
+:deep(.board-table td.is-right .cell) {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 </style>

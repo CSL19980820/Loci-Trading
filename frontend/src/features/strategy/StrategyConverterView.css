@@ -1,35 +1,4 @@
-.workbench-page {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  background: var(--paper);
-}
-
-.workbench-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.65rem;
-  min-height: 3rem;
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet);
-}
-
-.workbench-identity,
-.workbench-actions {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 0.4rem;
-}
-
-.workbench-identity {
-  flex: 1 1 auto;
-}
-
+.workbench-page { min-width: 0; }
 .workbench-name-input {
   width: min(18rem, 42vw);
 }
@@ -43,46 +12,12 @@
 .workbench-name-input :deep(.el-input__inner) {
   font-weight: 600;
 }
-
-.workbench-actions {
-  flex: 0 1 auto;
-  justify-content: flex-end;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.workbench-actions::-webkit-scrollbar {
-  display: none;
-}
-
-.workbench-actions > .el-button + .el-button {
-  margin-left: 0;
-}
-
-.workbench-page > .page-tabs {
-  flex: 0 0 auto;
-  margin-bottom: 0;
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet);
-}
-
-@media (max-width: 640px) {
-  .workbench-page > .page-tabs .page-tabs__trailing span:not(:first-child) {
-    display: none;
-  }
-}
-
-.workbench-flash {
-  display: grid;
-  gap: 0.35rem;
-  padding: 0.4rem 0.7rem 0;
-  background: var(--paper);
-}
+.workbench-name-input:focus-within { outline: 2px solid var(--seal); outline-offset: 2px; border-radius: var(--radius); }
 
 .workbench-settings {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 0.75rem 0.85rem 1rem;
+  padding: var(--gap-2);
 }
 
 .workbench-shell {
@@ -91,6 +26,10 @@
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--sheet);
 }
 
 .workbench-shell--assist {
@@ -100,13 +39,13 @@
 .copilot-pane {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: var(--gap-2);
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 0.55rem 0.65rem;
+  padding: var(--gap-2);
   border-left: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--sheet) 82%, var(--paper));
+  background: var(--sheet-alt);
 }
 
 .copilot-pane__head {
@@ -116,7 +55,10 @@
 }
 
 .copilot-pane__head strong {
-  font-size: 0.86rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  font-size: var(--fs-body);
 }
 
 @media (max-width: 900px) {
@@ -126,19 +68,19 @@
 
   .workbench-shell--assist {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(8rem, 1fr) minmax(0, 40%);
   }
 
+  /* 窄屏助手 pane 不再直接消失：收成底部可展开区，仍可点开看建议 */
   .workbench-shell--assist .copilot-pane {
-    display: none;
+    border-left: none;
+    border-top: 1px solid var(--rule);
+    max-height: 40dvh;
   }
 }
 
 @media (max-width: 640px) {
-  .workbench-actions .el-button :deep(span) {
+  .workbench-secondary :deep(span) {
     display: none;
-  }
-
-  .workbench-actions .el-button {
-    padding-inline: 0.55rem;
   }
 }

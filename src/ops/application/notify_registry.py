@@ -211,6 +211,10 @@ def dispatch_report(
     覆盖只影响本次，不落库。
     """
     wanted = [str(n).strip().lower() for n in channels] if channels else channel_names()
+    from src.ops.application.notify_calendar import notification_silence_reason
+    silence = notification_silence_reason()
+    if silence:
+        return {"results": {name: False for name in wanted}, "sent": [], "suppressed": wanted, "unconfigured": [], "skipped": silence}
     overrides = {str(k).strip().lower(): dict(v) for k, v in (config_overrides or {}).items()}
     selected: list[tuple[Any, dict[str, Any]]] = []
     unconfigured: list[str] = []

@@ -34,12 +34,12 @@ function close(): void {
   >
     <section class="theme-block">
       <h3 class="theme-block__kicker">外观</h3>
-      <div class="appearance-row">
+      <div class="grid grid-cols-4 gap-2">
         <button
           v-for="item in store.appearances"
           :key="item.id"
           type="button"
-          class="appearance"
+          class="appearance flex min-w-0 cursor-pointer flex-col items-stretch gap-1 border-0 bg-transparent p-0 text-left"
           :class="{ 'appearance--on': store.appearanceId === item.id }"
           :aria-pressed="store.appearanceId === item.id"
           @click="store.setAppearance(item.id)"
@@ -69,12 +69,12 @@ function close(): void {
 
     <section class="theme-block">
       <h3 class="theme-block__kicker">主色</h3>
-      <div class="swatch-row">
+      <div class="flex flex-wrap gap-1">
         <button
           v-for="item in store.primaries"
           :key="item.id"
           type="button"
-          class="swatch"
+          class="swatch inline-flex h-[var(--ctl-h)] items-center border px-2"
           :class="{ 'swatch--on': store.primaryId === item.id }"
           :style="{ '--sw': item.color }"
           :aria-pressed="store.primaryId === item.id"

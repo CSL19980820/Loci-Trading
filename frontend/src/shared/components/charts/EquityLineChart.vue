@@ -104,7 +104,7 @@ function buildOption(): echarts.EChartsCoreOption {
         lineStyle: { width: 2, color },
         itemStyle: { color },
         // 面积必须跟着线走：此前写死为绿色，账本盈利时是「红线罩着一片绿」
-        areaStyle: { color: `color-mix(in srgb, ${color} 12%, transparent)` },
+        areaStyle: { color: `color-mix(in oklab, ${color} 12%, transparent)` },
         label: {
           show: showAllLabels,
           position: 'top',
@@ -193,13 +193,13 @@ watch(
 .equity-line-chart {
   position: relative;
   width: 100%;
-  min-height: 12rem;
+  min-height: clamp(9rem, 24dvh, 12rem);
 }
 
 .equity-line-chart--fill {
   flex: 1 1 auto;
   height: 100%;
-  min-height: 12rem;
+  min-height: clamp(9rem, 24dvh, 12rem);
 }
 
 .equity-line-chart__canvas {
@@ -208,6 +208,7 @@ watch(
   min-height: inherit;
 }
 
+/* 图内读数浮层，组件内部层叠，不进全局 --z-* 序列 */
 .equity-line-chart__overlay {
   position: absolute;
   top: 0.35rem;
@@ -217,7 +218,7 @@ watch(
   font: 600 0.82rem/1.2 var(--mono);
   font-variant-numeric: tabular-nums;
   color: var(--mist);
-  background: color-mix(in srgb, var(--sheet) 82%, transparent);
+  background: color-mix(in oklab, var(--sheet) 82%, transparent);
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
 }

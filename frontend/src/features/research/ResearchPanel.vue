@@ -10,6 +10,7 @@ import {
 } from '@element-plus/icons-vue'
 
 import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
+import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
@@ -37,6 +38,14 @@ const props = defineProps<{
 const code = ref(String(props.initialCode || '').trim())
 const budget = ref<ResearchBudget>('standard')
 const selectedKey = ref('2_kline')
+const section = ref('profile')
+const sectionTabs = [
+  { name: 'profile', label: '标的剖面' },
+  { name: 'factor', label: '因子实验' },
+  { name: 'temporal', label: '时点数据' },
+  { name: 'backtest', label: '研究回测' },
+  { name: 'hypothesis', label: '假说审核' },
+]
 const backtestPanel = ref<{
   load: () => Promise<void>
   setHistoricalUniverse: (universeId: string) => void
@@ -220,7 +229,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="research-panel" aria-label="研究剖面">
+  <div class="research-panel page-fill" aria-label="研究工作台">
     <PageBusy v-if="catalogLoading && !catalog" label="加载研究目录…" />
 
     <!--
@@ -254,7 +263,7 @@ onMounted(() => {
         <el-button text :icon="RefreshRight" :disabled="loading" aria-label="刷新研究剖面" @click="refresh" />
       </form>
       <template #stats>
-        <HeaderStat label="维度" :value="dimensionsCount || 21" />
+        <HeaderStat label="维度" :value="catalog ? dimensionsCount : '—'" />
       </template>
     </PageToolbar>
 
@@ -268,6 +277,9 @@ onMounted(() => {
       @close="error = ''"
     />
 
+    <PageTabs v-model="section" :items="sectionTabs" :sticky="false" dense aria-label="研究分区" />
+    <div class="research-content">
+    <div v-show="section === 'profile'" class="research-section">
     <ResearchRunPanel
       :runs="runs"
       :active-run="activeRun"
@@ -293,7 +305,7 @@ onMounted(() => {
         </div>
         <div class="summary-metric">
           <span>完整度</span>
-          <strong>{{ ((quality?.completeness_ratio || 0) * 100).toFixed(0) }}%</strong>
+          <strong>{{ quality?.completeness_ratio == null ? '—' : `${(quality.completeness_ratio * 100).toFixed(0)}%` }}</strong>
         </div>
         <div class="summary-metric">
           <span>版本锚点</span>
@@ -382,7 +394,7 @@ onMounted(() => {
     <section v-else-if="catalog" class="catalog-blank" aria-label="研究目录预览">
       <EmptyState
         description="输入证券代码读取研究剖面"
-        reason="目录已就绪；当前只读取本地行情，不触发外部来源。"
+        reason="填写代码后点击读取"
       />
       <div class="source-band">
         <span class="research-kicker">来源登记</span>
@@ -392,164 +404,14 @@ onMounted(() => {
       </div>
     </section>
 
-    <ResearchFactorPanel />
-    <ResearchTemporalDataPanel @select-universe="selectHistoricalUniverse" />
-    <ResearchBacktestPanel ref="backtestPanel" />
-    <ResearchHypothesisPanel ref="hypothesisPanel" />
+    </div>
+    <div v-show="section === 'factor'" class="research-section"><ResearchFactorPanel /></div>
+    <div v-show="section === 'temporal'" class="research-section"><ResearchTemporalDataPanel @select-universe="selectHistoricalUniverse" /></div>
+    <div v-show="section === 'backtest'" class="research-section"><ResearchBacktestPanel ref="backtestPanel" /></div>
+    <div v-show="section === 'hypothesis'" class="research-section"><ResearchHypothesisPanel ref="hypothesisPanel" /></div>
+    </div>
   </div>
 </template>
 
-<style scoped>
-.research-panel {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 0.75rem;
-  min-height: 0;
-  padding: 0.15rem 0.35rem 0.8rem;
-  color: var(--ink);
-}
-
-.research-summary {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-}
-
-/* 行内：kicker 以前是 display:block，硬把标签和它标注的那排 tag 拆成两行 */
-.research-kicker {
-  color: var(--mist);
-  font-size: var(--fs-kicker);
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
-
-/* 页头这条功能行：控件挤在一起，靠 PageToolbar 的左槽吃宽度 */
-.research-query {
-  display: flex;
-  align-items: center;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-}
-
-.research-code {
-  width: 12rem;
-}
-
-.research-query :deep(.el-radio-group) {
-  display: flex;
-}
-
-.research-alert {
-  margin: 0;
-}
-
-.telemetry-tag {
-  margin: 0 var(--gap-1) var(--gap-1) 0;
-}
-
-.research-summary {
-  display: grid;
-  grid-template-columns: minmax(13rem, 1.8fr) repeat(4, minmax(6.5rem, 1fr));
-  align-items: stretch;
-  overflow: hidden;
-}
-
-.subject-lockup,
-.summary-metric {
-  min-width: 0;
-  padding: 0.72rem 0.9rem;
-}
-
-.subject-lockup {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.6rem;
-  border-inline-end: 1px solid var(--rule);
-}
-
-
-.subject-lockup strong {
-  font-size: 1.05rem;
-}
-
-.subject-lockup span:last-child {
-  color: var(--mist);
-  font-size: 0.78rem;
-}
-
-code {
-  font-family: var(--mono);
-  font-size: 0.74rem;
-  overflow-wrap: anywhere;
-}
-
-.summary-metric {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.25rem;
-  border-inline-end: 1px solid var(--rule);
-}
-
-.summary-metric:last-child {
-  border-inline-end: 0;
-}
-
-.summary-metric > span {
-  color: var(--mist);
-  font-size: 0.72rem;
-}
-
-.summary-metric strong {
-  font: 700 1rem/1.2 var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.summary-metric strong.is-warning {
-  color: var(--warn);
-}
-
-.research-layout {
-  display: grid;
-  grid-template-columns: minmax(18rem, 0.72fr) minmax(0, 1.7fr);
-  gap: 0.75rem;
-  min-height: 0;
-}
-
-.catalog-blank {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
-
-.source-band {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.75rem 0.9rem;
-  border-block: 1px solid var(--rule);
-}
-
-.source-receipts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.2rem 0.1rem;
-}
-
-.source-receipts .research-kicker {
-  margin-inline-end: 0.25rem;
-}
-
-.source-band .research-kicker {
-  margin-inline-end: 0.25rem;
-}
-
-</style>
+<style scoped src="./ResearchPanel.css"></style>
 <style scoped src="./ResearchPanel.responsive.css"></style>

@@ -22,9 +22,9 @@ const emit = defineEmits<{
 const passwordStrength = computed(() => {
   const p = props.newPassword
   if (!p) return { text: '', color: '' }
-  if (p.length < 8) return { text: '太短（至少 8 位）', color: 'var(--warn)' }
-  if (p.length < 12) return { text: '适中', color: 'var(--info)' }
-  return { text: '很好', color: 'var(--seal)' }
+  if (p.length < 8) return { text: '太短（至少 8 位）', color: 'var(--warn-ink)' }
+  if (p.length < 12) return { text: '适中', color: 'var(--info-ink)' }
+  return { text: '很好', color: 'var(--seal-ink)' }
 })
 </script>
 
@@ -34,12 +34,14 @@ const passwordStrength = computed(() => {
       <h2 class="panel-title">重置密码</h2>
     </div>
 
-    <el-form label-position="top" @submit.prevent="emit('submit')">
+    <el-form label-position="top" :aria-busy="submitting" @submit.prevent="emit('submit')">
       <el-form-item v-if="!token" label="6 位验证码">
         <el-input
           :model-value="code"
           maxlength="8"
           placeholder="输入验证码"
+          autocomplete="one-time-code"
+          inputmode="numeric"
           autofocus
           @update:model-value="emit('update:code', String($event))"
         />
@@ -90,37 +92,4 @@ const passwordStrength = computed(() => {
   </div>
 </template>
 
-<style scoped>
-.panel-head {
-  margin-bottom: 1.25rem;
-}
-
-.panel-title {
-  margin: 0;
-  font-size: 1.35rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.strength-tip {
-  font-size: 0.78rem;
-  margin-top: 0.25rem;
-}
-
-.login-submit {
-  width: 100%;
-  height: 2.5rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.form-bottom-link {
-  text-align: center;
-  margin-top: 1rem;
-}
-
-.sub-link {
-  font-size: 0.82rem;
-  color: var(--mist);
-}
-</style>
+<style scoped src="./AuthForm.css" />

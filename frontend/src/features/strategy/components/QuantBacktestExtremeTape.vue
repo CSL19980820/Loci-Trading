@@ -65,9 +65,9 @@ function archiveTo(date: string) {
   gap: 0.55rem 0.85rem;
   align-items: center;
   padding: 0.65rem 0.8rem;
-  border-radius: var(--radius, 6px);
+  border-radius: var(--radius);
   border: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--sheet) 88%, var(--paper));
+  background: color-mix(in oklab, var(--sheet) 88%, var(--paper));
   min-width: 0;
 }
 /* 原为 border-left: 3px solid --up/--down：涨跌语义收进 __tag（D1 价格红绿），整块只留 hairline 外框 */
@@ -78,7 +78,7 @@ function archiveTo(date: string) {
   color: var(--down);
 }
 .extreme-tape__tag {
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -123,7 +123,7 @@ function archiveTo(date: string) {
 .date-jump {
   color: inherit;
   text-decoration: none;
-  border-bottom: 1px dashed color-mix(in srgb, var(--mist) 55%, transparent);
+  border-bottom: 1px dashed color-mix(in oklab, var(--mist) 55%, transparent);
 }
 .date-jump:hover {
   color: var(--ink);
@@ -133,9 +133,10 @@ function archiveTo(date: string) {
   grid-column: 2 / -1;
   margin: 0;
   color: var(--mist);
-  font-size: 0.85rem;
+  font-size: var(--fs-body);
 }
-@media (max-width: 720px) {
+/* 卡片常在双栏回测中，必须按卡片而非整个浏览器的宽度切换。 */
+@container (max-width: 640px) {
   .extreme-tape {
     grid-template-columns: auto 1fr;
   }

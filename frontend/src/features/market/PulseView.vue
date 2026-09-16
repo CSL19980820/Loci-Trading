@@ -7,6 +7,8 @@
  */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { Monitor, Refresh, RefreshRight } from '@element-plus/icons-vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import PulseHealthDot from './components/PulseHealthDot.vue'
 import PulseIndexStrip from './components/PulseIndexStrip.vue'
 import PulseMarketBoard from './components/PulseMarketBoard.vue'
@@ -15,6 +17,7 @@ import PulseStatusBar, { type PulseIssue } from './components/PulseStatusBar.vue
 import PulseTrackTable from './components/PulseTrackTable.vue'
 import PulseWatchRail from './components/PulseWatchRail.vue'
 import SessionRuler from './components/SessionRuler.vue'
+import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import {
   todayEmptyShort,
   todayEmptyText,
@@ -137,20 +140,14 @@ const tradeDateText = computed(() => session.value?.today || '—')
 </script>
 
 <template>
-  <div class="page-fill pulse" v-loading="loading">
-    <header class="pulse__bar">
-      <div class="pulse__bar-brand">
-        <h1 class="pulse__title">盘面全景</h1>
-        <div class="pulse__meta-group">
-          <span class="pulse__day">{{ tradeDateText }}</span>
-          <span class="pulse__phase-tag" :class="session?.live_allowed ? 'is-live' : 'is-closed'">
-            {{ sessionText }}
-          </span>
-          <span class="pulse__clock">{{ asOfText || '--:--:--' }}</span>
-        </div>
-      </div>
-      <span class="pulse__spacer" />
-      <div class="pulse__actions">
+  <div class="page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden" v-loading="loading">
+    <PageToolbar>
+      <span class="font-mono text-aux whitespace-nowrap tabular-nums text-mist">{{ tradeDateText }}</span>
+      <UiBadge :variant="session?.live_allowed ? 'info' : 'secondary'">
+        {{ sessionText }}
+      </UiBadge>
+      <span class="font-mono text-aux whitespace-nowrap tabular-nums text-mist" aria-label="行情快照时间">{{ asOfText || '--:--:--' }}</span>
+      <template #actions>
         <PulseHealthDot
           :loading="healthLoading"
           :error="healthError"
@@ -158,18 +155,18 @@ const tradeDateText = computed(() => session.value?.today || '—')
           :has-enabled-screen-job="hasEnabledScreenJob"
           :next-screen-run-at="nextScreenRunAt"
         />
-        <el-button @click="goLive">实时大屏</el-button>
-        <el-button :loading="spotPersistBusy" :disabled="loading" @click="persistSpot">
+        <el-button :icon="Monitor" @click="goLive">实时大屏</el-button>
+        <el-button :icon="Refresh" :loading="spotPersistBusy" :disabled="loading" @click="persistSpot">
           同步现价
         </el-button>
-        <el-button type="primary" :loading="loading" @click="refreshAll">刷新数据</el-button>
-      </div>
-    </header>
+        <el-button type="primary" :icon="RefreshRight" :loading="loading" @click="refreshAll">刷新数据</el-button>
+      </template>
+    </PageToolbar>
     <SessionRuler :is-trading-day="session?.is_trading_day ?? null" />
 
     <PulseStatusBar :issues="issues" :busy="loading" @retry="refreshAll" />
 
-    <div class="page-scroll pulse__body">
+    <div class="page-scroll pulse-home__body">
       <PulseIndexStrip
         :indices="indices"
         :alert-count="alertCount"
@@ -184,7 +181,7 @@ const tradeDateText = computed(() => session.value?.today || '—')
         :brief-error="briefError"
       />
 
-      <div class="pulse__grid">
+      <div class="pulse-home__upper">
         <PulseTrackTable
           title="近选跟踪"
           :note="trackMeta"
@@ -201,11 +198,12 @@ const tradeDateText = computed(() => session.value?.today || '—')
           :as-of="boardAsOf"
           :pct-of="effectivePct"
           @update:tab="setBoardTab"
+          @retry="refreshAll"
         />
       </div>
 
       <PulsePickTable
-        class="pulse__today"
+        class="pulse-home__today"
         title="今日选股"
         :note="todayMeta"
         :hint="todayHint"
@@ -218,121 +216,4 @@ const tradeDateText = computed(() => session.value?.today || '—')
   </div>
 </template>
 
-<style scoped>
-.pulse {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  min-height: 0;
-  position: relative;
-  background: var(--paper);
-  overflow: hidden;
-}
-
-.pulse__bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-3);
-  padding: var(--pad-sheet-y) var(--gap-4);
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet);
-  min-width: 0;
-  z-index: 10;
-}
-
-.pulse__bar-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-3);
-  min-width: 0;
-}
-
-.pulse__title {
-  margin: 0;
-  font-family: var(--font);
-  font-size: var(--fs-hero);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.pulse__meta-group {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-}
-
-.pulse__day,
-.pulse__clock {
-  font-family: var(--font-mono);
-  font-size: var(--fs-aux);
-  font-variant-numeric: tabular-nums;
-  color: var(--mist);
-  white-space: nowrap;
-}
-
-.pulse__phase-tag {
-  /* pill 竖向内边距必须小于 --gap-1 才不把页头顶高一档，密度令牌没有这一档 */
-  --phase-tag-pad-y: 2px;
-  font-size: var(--fs-aux);
-  font-weight: 600;
-  padding: var(--phase-tag-pad-y) var(--gap-2);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-}
-/* D1：红绿只属于价格。「开盘中」是会话状态，走非价格语义的健康色 --ok（四档外观已校准） */
-.pulse__phase-tag.is-live {
-  background: var(--ok-soft);
-  color: var(--ok);
-  border: 1px solid color-mix(in oklab, var(--ok) 25%, transparent);
-}
-.pulse__phase-tag.is-closed {
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-  border: 1px solid var(--rule);
-}
-
-.pulse__spacer {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.pulse__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-}
-
-.pulse__body.page-scroll {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-3);
-  padding: var(--gap-4);
-  min-height: 0;
-  z-index: 1;
-}
-.pulse__grid {
-  flex: 1 1 58%;
-  min-height: 280px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.68fr) minmax(0, 0.92fr);
-  gap: var(--gap-3);
-}
-
-.pulse__today {
-  flex: 1 1 42%;
-  min-height: 240px;
-}
-
-@media (max-width: 960px) {
-  .pulse__grid {
-    grid-template-columns: 1fr;
-  }
-  .pulse__body.page-scroll {
-    padding: var(--gap-3) var(--gap-4);
-  }
-}
-</style>
+<style scoped src="./PulseView.css"></style>

@@ -52,6 +52,16 @@ describe('ThemeDialog', () => {
     }
   })
 
+  it('点外观档即时生效，且 html 挂上对应 data-appearance', async () => {
+    const wrapper = mountDialog()
+    const store = useThemeStore()
+    const night = APPEARANCE_OPTIONS.find((item) => item.id === 'night')!
+    const idx = APPEARANCE_OPTIONS.findIndex((item) => item.id === 'night')
+    await wrapper.findAll('.appearance')[idx]!.trigger('click')
+    expect(store.appearanceId).toBe(night.id)
+    expect(document.documentElement.getAttribute('data-appearance')).toBe('night')
+  })
+
   it('取色器选色 → 切到自定义 + 写内联色阶 + 亮出「已按对比度自动校正」', async () => {
     const wrapper = mountDialog()
     const store = useThemeStore()

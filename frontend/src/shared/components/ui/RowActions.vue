@@ -32,7 +32,7 @@ function onMore(key: string): void {
 </script>
 
 <template>
-  <div class="row-actions" @click.stop>
+  <div class="inline-flex flex-nowrap items-center justify-end gap-0 whitespace-nowrap" @click.stop>
     <el-tooltip
       v-for="action in primary"
       :key="action.key"
@@ -41,12 +41,13 @@ function onMore(key: string): void {
       placement="top"
       :show-after="200"
     >
-      <span class="row-actions__slot">
+      <span class="inline-flex items-center">
         <el-button
           text
           :type="action.type || 'primary'"
           size="small"
           :disabled="action.disabled"
+          class="m-0 px-1"
           @click="action.onClick"
         >
           {{ action.label }}
@@ -73,39 +74,13 @@ function onMore(key: string): void {
 </template>
 
 <style scoped>
-.row-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-
-.row-actions :deep(.el-button) {
-  height: var(--ctl-h);
-  margin: 0;
-  padding: 0 var(--gap-1);
-}
-
-.row-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
 /* 行内删除类动作同样走印章红，不借 EP 默认 danger 的橙红 */
-.row-actions :deep(.el-button--danger.is-text) {
+.inline-flex :deep(.el-button) {
+  margin: 0;
+}
+.inline-flex :deep(.el-button--danger.is-text) {
   --el-button-text-color: var(--stamp);
   --el-button-hover-text-color: var(--stamp);
-  --el-button-hover-bg-color: color-mix(in srgb, var(--stamp) 8%, transparent);
-}
-
-.row-actions :deep(.el-dropdown) {
-  margin-left: 0;
-}
-
-/* 置灰按钮外面那层 tooltip 触发器不能吃掉行高，否则操作列比别的列高 1~2px */
-.row-actions__slot {
-  display: inline-flex;
-  align-items: center;
+  --el-button-hover-bg-color: color-mix(in oklab, var(--stamp) 8%, transparent);
 }
 </style>

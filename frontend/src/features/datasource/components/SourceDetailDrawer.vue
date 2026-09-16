@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import LatencyMeter from './LatencyMeter.vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { SourceRow, SourceTool } from '../composables/useDataSources'
 
 const props = defineProps<{
@@ -49,7 +50,7 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
 </script>
 
 <template>
-  <el-drawer v-model="open" size="min(540px, 94vw)" direction="rtl">
+  <el-drawer v-model="open" class="source-detail-drawer" size="min(540px, 100vw)" direction="rtl" append-to-body>
     <template #header="{ titleId, titleClass }">
       <div class="ds-detail__head">
         <div class="ds-detail__name">
@@ -94,7 +95,7 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
           :loading="probing"
           @click="emit('probe', row.id)"
         >
-          测这家的连通性
+          探测连接
         </el-button>
       </div>
 
@@ -164,7 +165,7 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
         </el-table-column>
       </el-table>
     </template>
-    <el-empty v-else description="未选中数据源" />
+    <EmptyState v-else description="未选中数据源" reason="在列表里点一行查看" />
   </el-drawer>
 </template>
 
@@ -173,7 +174,8 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: var(--gap-3);
+  flex-wrap: wrap;
   width: 100%;
   /* 右上角是抽屉自带的关闭按钮，给它留出位置 */
   padding-right: 1.6rem;
@@ -181,7 +183,7 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
 
 .ds-detail__name h4 {
   margin: 0;
-  font: 600 1.02rem/1.3 var(--font-display);
+  font: 600 var(--fs-title)/1.3 var(--font);
   color: var(--ink);
 }
 
@@ -203,23 +205,28 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  margin: 0 0 0.55rem;
+  gap: var(--gap-2);
+  margin: 0 0 var(--gap-3);
+  padding: var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
 }
 
 .ds-detail__counts {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .ds-detail__counts b {
-  font: 650 0.86rem var(--mono);
+  font: 600 var(--fs-body) var(--mono);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 
 .ds-detail__jump {
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   vertical-align: baseline;
 }
 
@@ -255,4 +262,7 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
 .dim {
   color: var(--mist);
 }
+.ds-detail__name { min-width: 0; }
+.source-detail-drawer :deep(.el-drawer__header) { border-bottom: 1px solid var(--rule); padding-bottom: var(--gap-3); }
+.source-detail-drawer :deep(.el-drawer__body) { overscroll-behavior: contain; }
 </style>

@@ -69,7 +69,6 @@ const filterSchemas: BasicFormSchema[] = [
     field: 'dateRange',
     label: '选股日期',
     component: 'date-picker',
-    colSpan: 10,
     componentProps: {
       type: 'daterange',
       'value-format': 'YYYY-MM-DD',
@@ -230,7 +229,7 @@ function onToolbarRefresh(): void {
         ref="basicFormRef"
         v-model="filterModel"
         :schemas="filterSchemas"
-        :col-props="{ span: 24 }"
+        :columns="1"
         label-width="6.5em"
         class="history-panel__form"
       />
@@ -301,7 +300,7 @@ function onToolbarRefresh(): void {
           ? `${detailRow.capability} · ${detailRow.tradeDate} · ${detailRow.count} 只`
           : '详情'
       "
-      width="40rem"
+      width="min(92vw, 40rem)"
       destroy-on-close
       class="history-detail-dialog"
     >
@@ -399,7 +398,4 @@ function onToolbarRefresh(): void {
 </style>
 
 <style>
-.history-detail-dialog.el-dialog {
-  max-width: 96vw;
-}
 </style>

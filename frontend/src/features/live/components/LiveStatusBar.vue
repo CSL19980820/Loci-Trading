@@ -52,11 +52,11 @@ const STATUS_TEXT: Record<ConnectionStatus, string> = {
 </script>
 
 <template>
-  <footer class="statusbar" :class="{ 'statusbar--stale': stale }">
-    <div class="statusbar__left">
+  <footer class="statusbar flex w-full flex-none items-center justify-between gap-3" :class="{ 'statusbar--stale': stale }">
+    <div class="statusbar__left flex min-w-0 flex-1 items-center gap-1" tabindex="0" aria-label="行情数据状态">
       <span class="statusbar__item">
         <span class="statusbar__k">源</span>
-        <span class="statusbar__v">{{ source || 'SSE' }}</span>
+        <span class="statusbar__v">{{ source || '—' }}</span>
       </span>
       <span class="statusbar__sep" aria-hidden="true">·</span>
       <span class="statusbar__item">
@@ -109,10 +109,6 @@ const STATUS_TEXT: Record<ConnectionStatus, string> = {
 
 <style scoped>
 .statusbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--gap-3);
   height: var(--live-status-h);
   padding: 0 var(--gap-3);
@@ -123,19 +119,19 @@ const STATUS_TEXT: Record<ConnectionStatus, string> = {
 }
 
 .statusbar--stale {
-  opacity: 0.6;
+  border-top-color: var(--live-warn);
 }
 
 .statusbar__left {
-  display: flex;
-  align-items: center;
   gap: var(--gap-1);
-  min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
 }
 
 .statusbar__item {
   display: flex;
+  flex-shrink: 0;
   align-items: baseline;
   gap: 3px;
   white-space: nowrap;

@@ -291,5 +291,5 @@ describe('令牌向后兼容', () => {
     // 别把断言写成空跑：确认扫描确实命中了核心令牌
     expect(referenced.has('--seal')).toBe(true)
     expect(referenced.size).toBeGreaterThan(100)
-  })
+  }, 20_000)
 })

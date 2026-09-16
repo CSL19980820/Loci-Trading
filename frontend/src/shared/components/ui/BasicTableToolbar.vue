@@ -33,11 +33,11 @@ const customizableColumns = computed(() =>
 </script>
 
 <template>
-  <div class="basic-table__toolbar">
-    <div class="basic-table__toolbar-left">
+  <div class="basic-table__toolbar flex w-full shrink-0 items-center justify-start gap-2 border-b px-[var(--pad-sheet-x)] py-1">
+    <div class="basic-table__toolbar-left flex flex-wrap items-center gap-2">
       <slot name="buttons" />
     </div>
-    <div class="basic-table__toolbar-right">
+    <div class="basic-table__toolbar-right ml-auto flex flex-wrap items-center gap-2">
       <el-button
         v-if="config?.refresh"
         size="small"
@@ -80,26 +80,8 @@ const customizableColumns = computed(() =>
 
 <style scoped>
 .basic-table__toolbar {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  gap: var(--gap-2);
-  padding: var(--gap-1) var(--pad-sheet-x);
   border-bottom: 1px solid var(--rule);
   background: var(--sheet-alt);
-  flex-shrink: 0;
-}
-
-.basic-table__toolbar-left,
-.basic-table__toolbar-right {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-2);
-}
-
-.basic-table__toolbar-right {
-  margin-left: auto;
 }
 
 .basic-table__toolbar-left :deep(.el-button),

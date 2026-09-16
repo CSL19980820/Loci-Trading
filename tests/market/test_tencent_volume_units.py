@@ -1,8 +1,8 @@
 """腾讯日 K 成交量单位：科创板返回「股」，其余板块返回「手」。
 
 实测 2026-08：688/689 若按手 ×100，隐含换手率会到 170%~290%（物理不可能）。
-该源的 amount 由 close*volume 合成，所以 amount/(volume*close) 恒为 1，
-`scale_lot_volumes` 的比值判据识别不出这类膨胀，只能靠板块 + 换手率判据。
+历史版本曾合成 amount，无法用 amount/(volume*close) 识别错量。
+当前历史接口 amount 留空；现价接口继续使用源生的成交额。
 """
 from __future__ import annotations
 
@@ -36,9 +36,9 @@ class DailyVolumeScaleTests(unittest.TestCase):
         main = tencent._parse_daily_rows(raw, volume_scale=100.0)
         self.assertEqual(float(star.iloc[0]["volume"]), 1_000.0)
         self.assertEqual(float(main.iloc[0]["volume"]), 100_000.0)
-        # amount 由 close*volume 合成，必须跟着量一起缩放
-        self.assertEqual(float(star.iloc[0]["amount"]), 12.0 * 1_000.0)
-        self.assertEqual(float(main.iloc[0]["amount"]), 12.0 * 100_000.0)
+        # 日 K 未提供成交额，禁止拿 close*volume 代替。
+        self.assertTrue(pd.isna(star.iloc[0]["amount"]))
+        self.assertTrue(pd.isna(main.iloc[0]["amount"]))
 
 
 class RescaleStarDailyVolumesTests(unittest.TestCase):

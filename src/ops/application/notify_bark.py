@@ -21,6 +21,10 @@ def send_bark_text(
     body: str,
     server_url: str = "",
 ) -> dict[str, Any]:
+    from src.ops.application.notify_calendar import notification_silence_reason
+    silence = notification_silence_reason()
+    if silence:
+        return {"success": False, "skipped": silence}
     key = (device_key or "").strip()
     if not key:
         raise BarkError("Bark 需要 device_key")

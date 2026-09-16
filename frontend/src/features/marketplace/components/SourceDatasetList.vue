@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 import type { AkshareCatalogCapability } from '@/shared/types/quant'
 
@@ -39,58 +40,77 @@ watch(
 
 <template>
   <div class="dataset-list">
-    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="mb" />
-    <p v-else-if="!loading && !datasets.length" class="dim">
-      本机 akshare 目录里没有归到该来源的接口。
-    </p>
+    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="mb">
+      <el-button :disabled="loading" @click="load(sourceId)">重试</el-button>
+    </el-alert>
     <el-table
-      v-else
       v-loading="loading"
       :data="rows"
       size="small"
-      height="18rem"
+      height="min(36dvh, 18rem)"
       row-key="name"
       class="dataset-table"
       @row-click="onRowClick"
     >
       <el-table-column prop="name" label="接口" min-width="180">
         <template #default="{ row }">
-          <span class="mono">{{ row.name }}</span>
+          <el-button link class="mono" :aria-label="`查看接口 ${row.name}`" @click.stop="onRowClick(row)">{{ row.name }}</el-button>
         </template>
       </el-table-column>
-      <el-table-column prop="summary" label="作用" min-width="220" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.summary || '上游未写说明' }}</template>
-      </el-table-column>
-      <el-table-column label="入参" min-width="150" show-overflow-tooltip>
+      <el-table-column prop="summary" label="作用" min-width="220">
         <template #default="{ row }">
-          <span class="mono dim">
-            {{ paramSummary(row as unknown as AkshareCatalogCapability) }}
-          </span>
+          <el-tooltip :content="row.summary || '上游未写说明'" placement="top" :show-after="150">
+            <span class="doc-clip">{{ row.summary || '上游未写说明' }}</span>
+          </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column prop="returns" label="返回" min-width="140" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.returns || '—' }}</template>
+      <el-table-column label="入参" min-width="150">
+        <template #default="{ row }">
+          <el-tooltip :content="paramSummary(row as unknown as AkshareCatalogCapability)" placement="top" :show-after="150">
+            <span class="mono dim doc-clip">
+              {{ paramSummary(row as unknown as AkshareCatalogCapability) }}
+            </span>
+          </el-tooltip>
+        </template>
       </el-table-column>
+      <el-table-column prop="returns" label="返回" min-width="140">
+        <template #default="{ row }">
+          <el-tooltip :content="row.returns || '—'" placement="top" :show-after="150" :disabled="!row.returns">
+            <span class="doc-clip">{{ row.returns || '—' }}</span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+      <template #empty><EmptyState :description="error ? '接口加载失败' : '此来源暂无接口'" /></template>
     </el-table>
   </div>
 </template>
 
 <style scoped>
 .dataset-list {
-  margin-top: 0.45rem;
+  min-width: 0;
+  margin-top: var(--gap-2);
 }
 .dataset-table :deep(.el-table__row) {
   cursor: pointer;
 }
 .mb {
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--gap-2);
 }
 .mono {
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.78rem;
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+}
+
+.doc-clip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 .dim {
   color: var(--mist);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
 </style>

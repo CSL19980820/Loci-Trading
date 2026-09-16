@@ -8,7 +8,7 @@
 - `NAV_LABELS` 登记为 `admin: { path: '/admin', title: '管理后台' }`（不配置 `short`，不上主侧栏，由头像菜单「管理后台」进入）。
 - 非管理员直接通过 URL 访问 `/admin` 时，由 `AdminView.vue` 内部检测 `!userStore.isAdmin` 呈现「需要管理员权限」受限空态并提供「返回首页」引导，不堵塞全局路由守卫。
 
-## 公共骨架（五个分区共用，别再各写各的）
+## 公共骨架（六个分区共用）
 
 | 件                                                                                             | 落点                          | 用途                                                                                                                            |
 | ---------------------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -25,14 +25,15 @@
 1. **平台总览 (`OverviewTab.vue`)**
    - `.admin-pane` + `.admin-pane__scroll`：整块在内层滚，页面级不出滚动条；间距一律 `--gap-*`，不留自绘魔法值。
    - 四张核心数字卡走 `StatCard`（`label` / `value` / `hint`），口径写在卡上的 `hint`（如「全平台注册账号」），**不再靠悬停 tooltip 才看得见**；
-     外层 `auto-fit minmax(180px, 1fr)` 自适应列数并 `align-items: start`，卡高由内容决定。
+     外层 `auto-fit minmax(min(100%, 11rem), 1fr)` 自适应列数并 `align-items: start`，卡高由内容决定。
+   - 首次读取显示骨架，失败显示错误；只有获取过数据才展示数字面板，避免请求失败时把初始零值显示为真实统计。
    - 当月大模型用量前 10 名（ECharts 水平条形图，按需引入，跟随日间/夜间主题切换）；画布高度跟着面板长，条厚封顶 24px（只有两三个用户时不画成色块）。
    - 最近 20 条审计事件改用 `BasicTable`（`:data-source` + `:pagination="false"`，**不设 `max-height`**，表体吃满面板并在 `.basic-table__body` 内层滚）：
      列为时间 / 操作人（空则「系统」）/ 操作类型（中文 `el-tag`）/ 目标对象。
      **不用时间线**：它自带左侧竖轴线与节点圆点（正是全站在清的装饰线），而这块数据本就是四列的表，表格才能对齐列、截断长目标串并限高滚动。
-     空态走 `EmptyState`（「还没有审计事件」+「管理动作会实时落在这里」），不用带插图的空态。
-   - 两栏面板仍是 `Sheet`，且**吃满数字卡以下的全部剩余高度**（`.overview-panels { flex: 1 1 auto; min-height: 24rem }`，`Sheet` 与 `.sheet-slot` 逐层转成纵向 flex）：
-     写死 280px 图 + 320px 表时，1080p 的下半屏是一整片死白。窄屏断点用全站的 980px（侧栏消失、底栏出现那条线），单列后改回内容定高，不另立门户。
+     空态走 `BasicTable` 的 `empty-text` / `empty-reason`（「还没有审计事件」+「管理动作会实时落在这里」），列头始终露出，不用带插图的整页空态。
+   - 两栏面板仍是 `Sheet`，且**吃满数字卡以下的全部剩余高度**（`.overview-panels { flex: 1 1 auto; min-height: 0 }`，`Sheet` 与 `.sheet-slot` 逐层转成纵向 flex）：
+     图与表跟着面板长，不写死 24rem / 17rem；窄屏断点用全站的 980px（侧栏消失、底栏出现那条线），单列后改回内容定高，不另立门户。
 2. **用户管理 (`UsersTab.vue`)**
    - 骨架：`.admin-pane` + `PageContainer` + `BasicForm` 三格筛选（关键词 / 账号状态 / 角色）+ `BasicTable` 分页（每页 20，可切 50 / 100），工具行给「新增」「刷新」「列设置」。
      旧版是自绘 `.filter-bar` + 裸 `el-table` + 自绘 `.pagination-bar`，与全站列表页各长各的。
@@ -84,9 +85,17 @@
    - **前端分页**：`GET /admin/announcements` 既不吃分页参数也不吃筛选参数，一次返回全量；公告总量是十量级（运营手写、过期即删），
      所以一次拉全、在 `computed` 里筛、本地切页（每页 20，`:data-source` + `pagination` 对象由父级控页）。真到千量级再给后端加参数，届时换成 `:request` 即可，列定义不动。
    - 列：级别（中文 `el-tag`）/ 标题 / 发布人 / 发布时间 / 过期时间（空显示「不过期」）/ 操作（`RowActions` `:max-visible="1"`：编辑常驻，「预览正文」与「删除」进「更多」）。
-   - **正文不进列表**：全文在「预览正文」弹窗里读（`width="min(92vw, 560px)"`，正文限高样式写在非 scoped 块，因为弹窗 teleport 到 body）。
+   - **正文不进列表**：全文在「预览正文」弹窗里读（`width="min(92vw, 560px)"`，正文使用 `dialog-body--scroll`，Markdown 后代通过 scoped `:deep()` 设置样式）。
      旧版把每条公告的 Markdown 全文摊在卡片里，三条就能拉出两屏；级别也不再用左侧色条标记 —— 那正是全站在清的装饰线。
    - 「发布新公告」并进 `BasicTable` 的 `#toolbarButtons`（`ListToolbar` 的 `create`），**不另起一条 `PageToolbar`**（`features/README.md`：能一条不要两条）。
    - 编辑弹窗 (`AnnouncementEditorDialog.vue`)：`BasicForm`（`:columns="2"`，正文 `fullRow` + `textarea`），级别选项取自 `LEVEL_OPTIONS`（通知 / 警告 / 严重）；
      「编辑 / 预览」是一个 schema 字段，正文与预览靠 `hidden` 互斥，Markdown 实时预览保持原有实现。
    - 渲染安全：通过 `marked` + `dompurify` 净化 Markdown 渲染。
+
+## 布局与弹层
+
+`AdminView.css` 管理 11rem 侧边分区与内容区。980px 以下切换为可横向滚动的分区栏；当前分区、悬停与键盘焦点用中性表面、细边框及主题文字区分。列表仍复用全站 `.admin-pane`/`PageContainer`/`BasicTable`，局部 `AdminList.css` 只补充筛选区域收缩与操作换行。
+
+新增用户、单用户配额、重置密码、站内通知和公告编辑五种弹层共用 scoped `AdminDialog.css`，宽度受 `92vw` 限制，正文使用 `dialog-body--scroll`，长标题及底部操作可换行。单用户配额按真实请求切换保存忙态，并在请求期间阻止重复提交；批量配额的空值与 `-1` 语义保持不变，批量编辑区域内部滚动，给下方用户表保留空间。
+
+公告预览通过 scoped `AnnouncementPreview.css` 与 `:deep()` 设置 Markdown 后代样式；图片不超过容器，代码块和表格可横向滚动。Teleport 不要求取消组件作用域。审计详情将时间、操作人、类型、目标、结果和 IP 分成响应式事实格，原始参数仍使用可读的结构化正文。

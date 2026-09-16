@@ -187,7 +187,7 @@ onUnmounted(() => {
       <el-button type="primary" :disabled="busy" @click="openCreate">+ 添加供应商</el-button>
     </template>
 
-    <div v-if="providers.length" class="prov-grid">
+    <div v-if="providers.length" class="provider-grid">
       <LlmProviderCard
         v-for="row in providers"
         :key="row.id"
@@ -223,14 +223,5 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* auto-fill：只配 1 家供应商时不再撑出 2 个空位，也不用两级断点补救 */
-.prov-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--gap-2);
-  padding: var(--gap-2) var(--gap-3);
-  align-content: start;
-  min-height: 0;
-  overflow: auto;
-}
+.provider-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr)); align-content:start; gap:var(--gap-2); min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; padding:var(--gap-3); }
 </style>

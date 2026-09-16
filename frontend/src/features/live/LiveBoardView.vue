@@ -68,8 +68,8 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
 </script>
 
 <template>
-  <div class="page-fill page-fill--flush live-board live-board-theme">
-    <!-- page-fill--flush：壳给右侧容器加了左右内边距，这个逃生舱让大屏保持满幅 -->
+  <div class="page-fill page-fill--flush live-board live-board-theme flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
+    <!-- 满幅：壳给右侧容器加了左右沟槽，大屏自己左右无内边距吃满 -->
     <LiveTopBar
       :status="status"
       :as-of="lastAsOf"
@@ -97,7 +97,7 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
             :rows="rankRows[col.key] ?? []"
             :value-type="col.valueType"
             :accent="col.accent"
-      :status="status"
+            :status="status"
             :empty-hint="col.hint"
           />
         </div>
@@ -120,13 +120,7 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
   </div>
 </template>
 
-<!--
-  live-theme.css 必须是**全局**样式：里面的 .live-block / .live-num / --live-* 由
-各子组件消费，套上 scoped 的 data-v 属性后子组件内部元素匹配不到。
--->
-<style>
-@import './live-theme.css';
-</style>
+<style scoped src="./live-theme.css"></style>
 
 <style scoped>
 /* .page-fill 已经给了 flex:1 / height:100% / overflow:hidden（style.layout.css） */
@@ -137,7 +131,6 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
   height: 100%;
   overflow: hidden;
   background-color: var(--live-bg);
-  user-select: none;
 }
 
 /*
@@ -149,15 +142,15 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  gap: 1px;
-  background-color: var(--live-rule);
+  gap: var(--gap-2);
+  padding: var(--gap-2);
   overflow: hidden;
 }
 
 .live-board__left {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--gap-2);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -169,8 +162,7 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background-color: var(--live-rule);
+  gap: var(--gap-2);
   overflow: hidden;
 }
 
@@ -186,8 +178,26 @@ const rankRows = computed<Record<string, QuoteRow[]>>(() => ({
 @media (max-width: 1100px) {
   .live-board__main {
     grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: minmax(14rem, auto);
+    grid-template-rows: auto minmax(18rem, 1fr);
     overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .live-board__left {
+    min-height: calc(var(--live-heat-h) + 32rem);
+  }
+  .live-board__ranks {
+    min-height: 32rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .live-board__ranks {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(12rem, 1fr));
+    min-height: calc(48rem + var(--gap-2) * 3);
+  }
+  .live-board__left {
+    min-height: calc(var(--live-heat-h) + 48rem + var(--gap-2) * 4);
   }
 }
 </style>

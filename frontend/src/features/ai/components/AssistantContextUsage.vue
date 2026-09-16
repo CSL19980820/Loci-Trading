@@ -34,7 +34,7 @@ const ringDash = computed(() => {
     offset: circumference * (1 - pct),
     // 三档走语义色：此前健康用品牌色、警告用「品牌色掺琥珀」，
     // 换琥珀主题后两者算出来几乎同色，70% 这道警戒线会直接消失。
-    tone: pct >= 90 ? 'var(--loss)' : pct >= 70 ? 'var(--warn)' : 'var(--mist)',
+    tone: pct >= 90 ? 'var(--warn-ink)' : pct >= 70 ? 'var(--warn)' : 'var(--mist)',
   }
 })
 
@@ -105,7 +105,7 @@ function close(): void {
         <header class="ctx-usage__head">
           <h3 class="ctx-usage__title">{{ title }}</h3>
           <el-tooltip content="粗估喂模上下文（汉字≈1、其它≈4字/token），非供应商计费账单" placement="top">
-            <span class="ctx-usage__summary mono">{{ summary }}</span>
+            <span class="ctx-usage__summary mono" tabindex="0">{{ summary }}</span>
           </el-tooltip>
           <el-button
             class="ctx-usage__close"
@@ -159,9 +159,9 @@ function close(): void {
   display: inline-flex !important;
   align-items: center;
   gap: .35rem;
-  height: 28px !important;
+  height: var(--ctl-h) !important;
   padding: 0 .35rem !important;
-  border-radius: var(--ai-r-pill) !important;
+  border-radius: var(--ai-r-chip) !important;
   color: var(--mist) !important;
 }
 
@@ -185,7 +185,7 @@ function close(): void {
 }
 
 .ctx-usage__ring-track {
-  stroke: color-mix(in srgb, var(--rule) 80%, transparent);
+  stroke: color-mix(in oklab, var(--rule) 80%, transparent);
 }
 
 .ctx-usage__ring-value {
@@ -246,9 +246,9 @@ function close(): void {
   border-radius: var(--ai-r-card);
   font-size: var(--ai-fs-aux);
   line-height: 1.4;
-  color: color-mix(in srgb, var(--loss) 85%, var(--ink));
-  background: color-mix(in srgb, var(--loss) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--loss) 28%, transparent);
+  color: color-mix(in oklab, var(--warn) 85%, var(--ink));
+  background: color-mix(in oklab, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warn) 28%, transparent);
 }
 
 .ctx-usage__compact {
@@ -257,9 +257,9 @@ function close(): void {
   border-radius: var(--ai-r-card);
   font-size: var(--ai-fs-aux);
   line-height: 1.4;
-  color: color-mix(in srgb, var(--info) 90%, var(--ink));
-  background: color-mix(in srgb, var(--info) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--info) 24%, transparent);
+  color: color-mix(in oklab, var(--info) 90%, var(--ink));
+  background: color-mix(in oklab, var(--info) 10%, transparent);
+  border: 1px solid color-mix(in oklab, var(--info) 24%, transparent);
 }
 
 .ctx-usage__bar {
@@ -268,7 +268,7 @@ function close(): void {
   height: 8px;
   overflow: hidden;
   border-radius: var(--ai-r-pill);
-  background: color-mix(in srgb, var(--rule) 55%, transparent);
+  background: color-mix(in oklab, var(--rule) 55%, transparent);
 }
 
 .ctx-usage__bar-seg {
@@ -320,4 +320,8 @@ function close(): void {
 .mono {
   font-family: var(--mono);
 }
+.ctx-usage__row { padding-block: var(--gap-1); border-bottom: 1px solid var(--rule-soft); }
+.ctx-usage__panel { max-height: 70dvh; overflow: auto; scrollbar-width: thin; }
+.ctx-usage__trigger:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
+@media (prefers-reduced-motion: reduce) { .ctx-usage__ring-value { transition: none; } }
 </style>

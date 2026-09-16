@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import * as echarts from 'echarts/core'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -36,7 +37,7 @@ function buildOption(): echarts.EChartsCoreOption {
       formatter: (params: any) => {
         const item = Array.isArray(params) ? params[0] : params
         if (!item) return ''
-        return `<strong>${item.name}</strong><br/>${Number(item.value).toLocaleString()} tokens`
+        return `<strong>${item.name}</strong><br/>${formatTokens(Number(item.value))} tokens（词元）`
       },
     },
     grid: {
@@ -67,7 +68,7 @@ function buildOption(): echarts.EChartsCoreOption {
     },
     series: [
       {
-        name: 'LLM 用量',
+        name: 'LLM 用量（tokens）',
         type: 'bar',
         data: values,
         // 面板吃满高度后，只有两三个用户时 ECharts 会把条画成 200px 厚的色块；
@@ -122,35 +123,31 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="top-llm-chart">
-    <div v-if="items.length > 0" ref="chartEl" class="chart-canvas" role="img" aria-label="LLM 用量排行图" />
-    <el-empty v-else description="本月暂无 LLM 用量记录" :image-size="64" />
+    <div v-if="items.length > 0" ref="chartEl" class="chart-canvas" role="img" aria-label="当月大模型用量排行图" />
+    <EmptyState v-else description="本月暂无大模型用量" reason="有调用后自动统计" />
   </div>
 </template>
 
 <style scoped>
 .top-llm-chart {
   width: 100%;
-  /* 高度由父容器给：零数据时不该留 260px 死白 */
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: calc(var(--row-h) * 8);
   display: flex;
   align-items: stretch;
-  justify-content: center;
+  justify-content: stretch;
 }
 
-/*
- * 画布跟着父容器长高（ECharts 有 ResizeObserver，拉高会自己重绘）。
- * 写死 280px 时，面板被拉到 600px 也只画 280px，剩下的全是死白；
- * min-height 保证父容器没给高度（普通块级父级）时条形图仍读得出来。
- */
 .chart-canvas {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   height: 100%;
-  min-height: 17rem;
+  min-height: 0;
 }
 
-/* 空态不该被 stretch 拉成一条：自己居中，图仍是图 */
-.top-llm-chart :deep(.el-empty) {
-  margin: auto 0;
+.top-llm-chart :deep(.empty-state) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 </style>

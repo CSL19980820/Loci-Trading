@@ -3,13 +3,13 @@ import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { Clock, InfoFilled, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 
 import { getMarketSession, getProviders } from '@/shared/api/quant'
 import { strategyLabel } from '@/shared/lib/format'
 import { useScreenRunStore } from '@/shared/stores/screenRun'
 import type { LlmProvider, ScreenResult } from '@/shared/types/quant'
-
+import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import ScreenCatalogRail from './components/ScreenCatalogRail.vue'
 import ScreenHistoryPanel from './components/ScreenHistoryPanel.vue'
 import ScreenRunBanners from './components/ScreenRunBanners.vue'
@@ -159,6 +159,12 @@ const primaryDisabled = computed(() => {
 })
 
 const detailDisabled = computed(() => !selected.value)
+/** 详情随选中变：战法详情/技能详情，未选中时说清先选 */
+const detailLabel = computed(() => {
+  if (selected.value?.kind === 'skill') return '技能详情'
+  if (selected.value?.kind === 'engine') return '战法详情'
+  return '详情'
+})
 
 /**
  * 并发到顶时的提示。
@@ -296,9 +302,6 @@ watch(
   },
 )
 
-watch(historyError, (err) => {
-  if (err) runError.value = err instanceof Error ? err.message : String(err)
-})
 
 async function refreshAll(): Promise<void> {
   await loadCatalog()
@@ -426,42 +429,46 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page-fill screen-desk">
-    <header class="screen-desk__bar">
-      <div class="screen-desk__bar-left">
-        <TradeDateRangeField v-model="dateRange" :last-trading-day="lastTradingDay" />
-        <el-checkbox v-model="recordCandidates" :disabled="selected?.kind === 'skill'">
-          入库候选
-        </el-checkbox>
-        <el-select
-          v-if="selected?.kind === 'skill'"
-          v-model="skillProvider"
-          placeholder="LLM"
-          size="small"
-          filterable
-          style="width: 8.5rem"
-        >
-          <el-option v-for="p in providers" :key="p.name" :label="p.name" :value="p.name" />
-        </el-select>
-      </div>
-      <div class="screen-desk__bar-spacer" />
-      <div class="screen-desk__bar-right">
-        <el-button :disabled="detailDisabled" @click="openDetail">详情</el-button>
-        <el-button :disabled="!selected" @click="openHistory">入库历史</el-button>
+  <div class="screen-workspace page-fill flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+    <PageToolbar>
+      <TradeDateRangeField v-model="dateRange" :last-trading-day="lastTradingDay" />
+      <el-checkbox v-model="recordCandidates" :disabled="selected?.kind === 'skill'">
+        入库候选
+      </el-checkbox>
+      <el-select
+        v-if="selected?.kind === 'skill'"
+        v-model="skillProvider"
+        placeholder="LLM"
+        aria-label="技能模型供应商"
+        size="small"
+        filterable
+        style="width: 8.5rem"
+      >
+        <el-option v-for="p in providers" :key="p.name" :label="p.name" :value="p.name" />
+      </el-select>
+      <template #actions>
+        <el-button :icon="InfoFilled" :disabled="detailDisabled" @click="openDetail">{{ detailLabel }}</el-button>
+        <el-button :icon="Clock" :disabled="!selected" @click="openHistory">入库历史</el-button>
         <el-button :icon="RefreshRight" :loading="catalogLoading" @click="refreshAll">
           刷新
         </el-button>
-        <el-button
-          type="primary"
-          :icon="VideoPlay"
-          :loading="selected?.kind === 'skill' && skillBusy"
-          :disabled="primaryDisabled"
-          @click="runPrimary"
+        <el-tooltip
+          :content="selected ? '' : '先在左侧选一个战法或技能'"
+          placement="bottom-end"
+          :disabled="Boolean(selected)"
         >
-          {{ primaryLabel }}
-        </el-button>
-      </div>
-    </header>
+          <el-button
+            type="primary"
+            :icon="VideoPlay"
+            :loading="selected?.kind === 'skill' && skillBusy"
+            :disabled="primaryDisabled"
+            @click="runPrimary"
+          >
+            {{ primaryLabel }}
+          </el-button>
+        </el-tooltip>
+      </template>
+    </PageToolbar>
 
     <el-alert
       v-if="pageError"
@@ -469,7 +476,7 @@ onMounted(() => {
       type="error"
       show-icon
       closable
-      class="screen-desk__alert"
+      class="m-0 shrink-0"
       @close="runError = ''"
     />
 
@@ -484,8 +491,8 @@ onMounted(() => {
       @dismiss-abandoned="screenRun.dismissAbandoned(engineSlug)"
     />
 
-    <div class="screen-desk__body">
-      <aside class="screen-desk__rail">
+    <div class="screen-workspace-grid">
+      <aside class="border-line bg-surface min-h-0 overflow-hidden rounded-md border" aria-label="战法与技能目录">
         <ScreenCatalogRail
           v-model:kind-filter="kindFilter"
           :rows="filtered"
@@ -495,7 +502,7 @@ onMounted(() => {
         />
       </aside>
 
-      <div class="screen-desk__main">
+      <div class="screen-workspace-run flex min-h-0 min-w-0 flex-col" role="region" aria-label="选股执行与结果">
         <ScreenRunPanel
           :kind="selected?.kind ?? null"
           :selected-name="selected?.name ?? ''"
@@ -515,16 +522,24 @@ onMounted(() => {
         />
       </div>
     </div>
-
     <el-dialog
       v-model="historyOpen"
       :title="historyTitle"
-      width="56rem"
+      width="min(92vw, 56rem)"
       top="6vh"
       destroy-on-close
       append-to-body
       class="screen-history-dialog"
     >
+      <el-alert
+        v-if="historyError"
+        :title="historyError instanceof Error ? historyError.message : String(historyError)"
+        type="error"
+        show-icon
+        class="mb"
+      >
+        <el-button size="small" @click="refetchHistory">重试</el-button>
+      </el-alert>
       <div class="screen-history-toolbar mb">
         <el-switch
           v-model="historyIncludeBackfill"
@@ -537,7 +552,7 @@ onMounted(() => {
         :capability-name="selected?.name ?? ''"
         :history="history"
         :loading="historyPending"
-      :running="engineRunning"
+        :running="engineRunning"
         @rerun="onRerun"
         @refresh="refetchHistory"
       />
@@ -552,15 +567,4 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped src="./ScreenHistoryView.css"></style>
-
-<style>
-.screen-history-dialog.el-dialog {
-  max-width: 96vw;
-}
-
-.screen-history-dialog .el-dialog__body {
-  padding-top: 0.45rem;
-  padding-bottom: 0.85rem;
-}
-</style>
+<style scoped src="./ScreenWorkspace.css"></style>

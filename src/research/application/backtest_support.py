@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-from dataclasses import asdict
 from datetime import date
 import hashlib
 import json
@@ -257,6 +256,8 @@ def input_evidence_failures(
         failures.append("严格证据请求缺少完整 PIT 历史股票池快照或存在生存者偏差")
     evidence = data_snapshot.get("source_evidence")
     if isinstance(evidence, Mapping):
+        if strict_pit and evidence.get("receipt_details_omitted"):
+            failures.append("严格证据请求不能使用未展开逐条回执的来源摘要")
         unresolved = evidence.get("unresolved_codes") or []
         invalid = int(
             evidence.get("invalid_ohlc_rows", evidence.get("invalid_ohlc", 0)) or 0
@@ -363,6 +364,8 @@ def validation_warnings(
         return dedupe(warnings)
     if evidence.get("attempts_not_observed"):
         warnings.append("探索运行未观测到行情来源 attempts，不能作为严格证据")
+    if evidence.get("receipt_details_omitted"):
+        warnings.append("本次保留实际报价关联回执，其他历史失败回执仅汇总，不能作为完整严格PIT证据")
 
     provenance = market_provenance_failures(evidence)
     if provenance:
@@ -426,7 +429,8 @@ def backtest_payload(result: BacktestResult | None) -> dict[str, Any] | None:
         "performance": json_safe(result.performance),
         "skipped": dict(result.skipped),
         "trades": [
-            {**asdict(item), "alpha_pct": item.alpha_pct}
+            {**item.to_dict(include_factors=bool(result.config.get("economic_returns"))),
+             "alpha_pct": item.alpha_pct}
             for item in result.trades
         ],
     }

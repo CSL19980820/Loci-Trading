@@ -297,7 +297,7 @@ export function derivePrimaryScale(hex: string, mode: ThemeMode = 'light'): Prim
 /* ───────────────────────── 外观与内置主色 ───────────────────────── */
 
 /**
- * 四档外观。区别**不只是明暗**：中性色的色相倾向（冷灰 / 暖米 / 蓝灰 / 纯黑）、
+ * 四档外观。区别**不只是明暗**：中性色的色相倾向（zinc / 暖米 / TV 炭黑 / 纯黑）、
  * 对比度强度、表面层级差都不一样。
  *
  * preview 的四个色值 = style.theme.css 里该档 --n-3 / --n-2 / --n-7 / --n-12 的兑现值
@@ -308,33 +308,33 @@ export const APPEARANCE_OPTIONS: AppearanceOption[] = [
     id: 'day',
     label: '日间',
     mode: 'light',
-    swatch: '#f3f5f8',
-    hint: '冷中性灰',
-    preview: { canvas: '#f3f5f8', surface: '#fafbfd', border: '#d0d6dc', text: '#1b252f' },
+    swatch: '#f2f5f8',
+    hint: 'zinc 冷灰',
+    preview: { canvas: '#f2f5f8', surface: '#fcfdfe', border: '#cdd1d8', text: '#192029' },
   },
   {
     id: 'paper',
     label: '暖纸',
     mode: 'light',
-    swatch: '#fbf1e1',
+    swatch: '#faf0e0',
     hint: '暖米护眼',
-    preview: { canvas: '#fbf1e1', surface: '#fff8ed', border: '#ded2be', text: '#2c261b' },
+    preview: { canvas: '#faf0e0', surface: '#fffaef', border: '#dcd0bc', text: '#2a2318' },
   },
   {
     id: 'night',
     label: '夜间',
     mode: 'dark',
-    swatch: '#0e141c',
-    hint: '蓝灰科技',
-    preview: { canvas: '#0e141c', surface: '#171e27', border: '#2f3640', text: '#f0f4f9' },
+    swatch: '#0a111c',
+    hint: '深蓝终端',
+    preview: { canvas: '#0a111c', surface: '#141e2e', border: '#303947', text: '#f1f5fa' },
   },
   {
     id: 'ink',
     label: '墨黑',
     mode: 'dark',
-    swatch: '#070707',
+    swatch: '#050505',
     hint: '纯黑高反差',
-    preview: { canvas: '#070707', surface: '#131313', border: '#2e2e2e', text: '#ffffff' },
+    preview: { canvas: '#050505', surface: '#131313', border: '#3a3a3a', text: '#ffffff' },
   },
 ]
 
@@ -374,8 +374,8 @@ export const CUSTOM_PRESETS: string[] = [
 export const APPEARANCE_KEY = 'loci-appearance'
 export const PRIMARY_KEY = 'loci-primary'
 export const CUSTOM_PRIMARY_KEY = 'loci-primary-custom'
-export const DEFAULT_APPEARANCE = 'day'
-export const DEFAULT_PRIMARY = 'seal'
+export const DEFAULT_APPEARANCE = 'night'
+export const DEFAULT_PRIMARY = 'blue'
 /** primaryId === CUSTOM_PRIMARY_ID 时，主色从 CUSTOM_PRIMARY_KEY 读 */
 export const CUSTOM_PRIMARY_ID = 'custom'
 export const DEFAULT_CUSTOM_COLOR = '#3269e0'

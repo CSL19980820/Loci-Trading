@@ -50,6 +50,8 @@ MANAGED_JOB_PREFIXES: tuple[str, ...] = ("screen:",)
 
 #: 托管任务名散落在各 ``ensure_*`` 模块里的常量（store_helpers 之外的那几个）。
 _EXTRA_MANAGED_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("src.ops.application.jobs.guardian_delivery", ("MANAGED_GUARDIAN_DELIVERY",)),
+    ("src.ops.application.ensure_guardian_review_jobs", ("MANAGED_GUARDIAN_PREMARKET", "MANAGED_GUARDIAN_DAILY", "MANAGED_GUARDIAN_WEEKLY", "MANAGED_EXCHANGE_CALENDAR")),
     (
         "src.ops.application.ensure_intel_jobs",
         ("MANAGED_INTEL_OPEN", "MANAGED_INTEL_INTRADAY", "MANAGED_INTEL_CLOSE"),

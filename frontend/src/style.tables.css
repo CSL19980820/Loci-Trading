@@ -1,0 +1,184 @@
+/* —— 表格皮肤：el-table / BasicTable / 存量 table.dense 共用一套密度 —— */
+.el-table {
+  --el-table-border-color: var(--border-subtle);
+  --el-table-bg-color: var(--surface);
+  --el-table-tr-bg-color: var(--surface);
+  --el-table-header-bg-color: var(--surface-sunken);
+  --el-table-header-text-color: var(--text-secondary);
+  --el-table-text-color: var(--text-primary);
+  /* 行 hover 用中性层（表格滑过去不该整行刷成品牌色），选中行才用主色浅底 */
+  --el-table-row-hover-bg-color: var(--surface-hover);
+  --el-table-current-row-bg-color: var(--seal-soft);
+  --el-table-fixed-box-shadow: none;
+  font-size: var(--fs-body);
+  box-shadow: none;
+  background: var(--surface);
+}
+
+.el-table th.el-table__cell {
+  height: var(--head-h);
+  padding: 0;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.el-table td.el-table__cell {
+  height: var(--row-h);
+  padding: var(--gap-1) 0;
+  text-align: center;
+  background-color: var(--surface);
+}
+
+/*
+ * 斑马纹：条纹取画布档（比面板深一点点），表头取下沉档（更深）——
+ * 三档表面拉开，长表格扫行时不用靠边框找位置。只改颜色，不动行高。
+ */
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: var(--surface-canvas);
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped:hover td.el-table__cell {
+  background: var(--surface-hover);
+}
+
+
+/* 空白表体不伪造行线；真实数据行保留分隔，空态明确说明下一步。 */
+.el-table__body-wrapper,
+.el-table__body-wrapper .el-scrollbar,
+.el-table__body-wrapper .el-scrollbar__wrap {
+  background-color: var(--surface);
+}
+.el-table .cell {
+  padding-left: var(--gap-2);
+  padding-right: var(--gap-2);
+  line-height: 1.35;
+  word-break: normal;
+  text-align: center;
+}
+
+.el-table th.el-table__cell .cell {
+  text-align: center;
+}
+
+/* 只有明确为 left 或 right 时允许覆盖全局默认居中 */
+.el-table td.is-left .cell,
+.el-table th.is-left .cell,
+.el-table .cell.text-left {
+  text-align: left;
+}
+
+.el-table td.is-right .cell,
+.el-table th.is-right .cell,
+.el-table .cell.text-right {
+  text-align: right;
+}
+
+/*
+ * 等宽与数字/代码列字体：等宽 + tabular-nums，默认居中展示
+ */
+.el-table td.is-num .cell,
+.el-table td.is-right .cell,
+.el-table .mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 代码列：等宽 + 略放字距 */
+.el-table td.is-code .cell {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* 涨跌语义标记（D1：只有这三个类允许上红绿） */
+.el-table .is-up,
+.el-table .cell .is-up {
+  color: var(--up);
+}
+
+.el-table .is-down,
+.el-table .cell .is-down {
+  color: var(--down);
+}
+
+.el-table .is-flat {
+  color: var(--flat);
+}
+
+.el-table__empty-block {
+  min-height: 0;
+  height: 100%;
+  background: transparent;
+  align-items: stretch;
+}
+
+.el-table__empty-text {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: stretch;
+  font-size: var(--fs-body);
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+.el-table__empty-text .empty-state {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+/*
+ * table.dense 是存量自绘业务表（新代码一律 el-table，见 AGENTS.md §3.3.1）。
+ * 选择器保留只为存量页不塌，视觉分叉已经收掉：这里与上面 el-table 同一套密度。
+ */
+table.dense th {
+  height: var(--head-h);
+  padding: 0 var(--gap-2);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+table.dense td {
+  height: var(--row-h);
+  padding: var(--gap-1) var(--gap-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-body);
+  vertical-align: middle;
+}
+
+table.dense tbody tr.click-row {
+  cursor: pointer;
+}
+
+table.dense tbody tr.click-row:hover {
+  background: var(--surface-hover);
+}
+
+table.dense tfoot td {
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+  font-weight: 700;
+}
+
+table.dense .r,
+table.dense .mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}

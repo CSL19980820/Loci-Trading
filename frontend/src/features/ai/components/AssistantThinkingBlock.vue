@@ -51,6 +51,7 @@ watch(
     ref="rootRef"
     class="assistant-thinking"
     data-testid="assistant-thinking"
+    aria-label="思考过程"
   >
     <Thinking
       v-model="expanded"
@@ -75,6 +76,14 @@ watch(
 /* 思考流式时限高 + 内滚，避免把结论/工具顶出视口；隐藏滚动条仍可滚 */
 .assistant-thinking :deep(.elx-thinking__content pre) {
   max-height: 12rem;
+  padding: var(--gap-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--ai-r-chip);
+  background: var(--surface-sunken);
+  color: var(--muted);
+  font-size: var(--ai-fs-body);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -87,7 +96,7 @@ watch(
 .assistant-thinking :deep(.elx-thinking__content pre)::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: var(--ai-r-pill);
-  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  background: color-mix(in oklab, var(--ink) 18%, transparent);
   background-clip: padding-box;
 }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ArrowDown } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -81,7 +82,7 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
     <el-dropdown v-if="needsOverflow" trigger="click" @command="onMore">
       <el-button size="small">
         更多
-        <span class="header-actions__caret" aria-hidden="true">▾</span>
+        <el-icon class="header-actions__caret" aria-hidden="true"><ArrowDown /></el-icon>
       </el-button>
       <template #dropdown>
         <el-dropdown-menu>
@@ -89,7 +90,7 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
             v-for="action in overflowActions"
             :key="action.key"
             :command="action.key"
-            :disabled="action.disabled"
+            :disabled="action.disabled || action.loading"
           >
             {{ action.label }}
           </el-dropdown-item>
@@ -115,22 +116,20 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
 .header-actions {
   display: inline-flex;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  min-width: 0;
   gap: var(--gap-2);
 }
 
 .header-actions :deep(.el-button) {
   margin: 0;
-  background: var(--sheet);
-  border-color: var(--rule-strong);
-  color: var(--ink);
 }
 
 /*
  * 主操作按钮的文字色必须跟 --on-primary（theme.ts 按主色 OKLCH 亮度定黑白）。
  * 写死 #fff 会在浅主色下失效：amber 档 #fff/#d79700 只有 2.53:1，远低于 AA 的 4.5:1。
  */
-.header-actions :deep(.el-button--primary) {
+.header-actions :deep(.el-button--primary:not(.is-disabled)) {
   background: var(--el-color-primary);
   border-color: var(--el-color-primary);
   color: var(--on-primary);
@@ -139,7 +138,7 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
 /* 破坏性操作用印章红（--stamp），不用涨跌红：删除和「涨」不该是同一个红 */
 .header-actions :deep(.el-button--danger.is-plain) {
   background: transparent;
-  border-color: color-mix(in srgb, var(--stamp) 45%, var(--rule));
+  border-color: color-mix(in oklab, var(--stamp) 45%, var(--rule));
   color: var(--stamp);
 }
 

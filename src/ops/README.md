@@ -2,10 +2,27 @@
 
 ## 职责
 定时任务、技能包、通知、调度器、运维配置。
+
+行情日终 `today_refresh` 的定稿阶段仅使用通达信，并绕过当日水位重新取数；通达信失败不会再落回退源并返回 `ok`。定稿失败数计入任务顶层 `failed`，由既有运行器记录失败；近窗重试与热库镜像仍沿用原流水线。
 其中 `application/screen/` 负责 formula/Python Screen Skill 包的磁盘存储、历史归档、zip 路径校验与 revision 锁；不负责编译或执行选股。
 
 ## 边界
 写 ops.db；技能文件在 data/skills。
+
+选股任务在入口解析一次目标交易日，行情门禁、热库选择和策略计算均使用该日期；子租户也只读检查同一目标日。启动补跑将待补交易日传入本次 screen 配置，不修改持久化任务日期；根据执行回执分别记录成功、跳过和失败，失败不会再记成补跑完成。
+
+### 固定时点筛选
+
+普通 `screen` 任务可显式配置 `snapshot_time="14:50"`、`snapshot_grace_minutes=2`、`trading_days_only=true`、`catch_up=false`。`jobs/screen_schedule_guard.py` 在入口、选股前、选股返回后及开始入库前检查上海时区窗口及市场交易日历，只有 [14:50:00,14:52:00) 和明确交易日才允许开始持久化；日历缺失/过期、休市、错过窗口或执行迟到均记录 skipped。不承诺 SQLite 事务完成瞬间仍在窗口内。`catch_up=false` 禁止盘后拿最终日 K 补跑。未设置这些字段的旧任务不改变行为。
+
+“一线定乾坤·首板次日”使用 `screen:yixian-auction`，交易日 09:25 触发，
+`snapshot_time="09:25"`、宽限 2 分钟、`catch_up=false`；`top_n=0` 保留全部命中，
+`use_ai_pick=false`、`push_wecom=false`、`paper_quant_enabled=false`，仅写目标租户候选与回执。
+任务不复制 `params`，指标编辑器保存后，运行时加载最新指标默认参数。
+原 `impulse-pullback-tail-v1` 的普通及绑定选股任务均下线，历史回执保留。
+`snapshot_schedule.checked_at` 是门禁时间，真实抓取起止见 `data_snapshot`。
+测试：`tests/ops/test_screen_schedule_guard.py`、`tests/strategy/test_yixian_auction.py`。
+
 Skill 清单解析在 `application/skill_manifest.py`；安装/解压/发现仍在 `application/skills.py`。
 HTTP：`api/skills.py`（目录/安装/生成）+ `api/skill_runs_api.py`（对话 Run）+ `api/skill_jobs_api.py`（战法配置/定时绑定）。
 
@@ -1023,3 +1040,40 @@ protect 契约拦着，而且方向也反了（community 是被依赖方）。
   `publish_id` 保底最近 1 条、**用户作品一行不少**。
 
 跑：`.\.venv\Scripts\python.exe -m pytest tests/ops tests/ai tests/community -q`
+## 自主交易员入口（2026-09）
+
+`guardian`任务按交易日51个五分钟时点研判；09:25、11:30、15:00仅分析。策略池是参考，模型可自主交易池外沪深北A股。20万元租户独立模拟账户按分记账，保留T+1、股数、资金和费用规则。
+入口为`jobs/guardian.py`，配置为`guardian_config.py`；会计规则经ledger公开API提供。历史迁移、页面及报告见[自主交易员](../../docs/guardian.md)，当前安全边界见[执行契约](../../docs/guardian-execution.md)。
+
+决策完整性由`guardian_completion.py`核验，最多一次无工具修复。买卖必须提供`execution`的价格授权与带时区有效期；最终成交价来自核验后的新鲜报价。`guardian_quotes.py`统一主备报价、估值与执行校验。
+`guardian_order_repair.py`仅在尚未落账时有限缩量、撤回或修正留仓名单，保留原拒单；不得新增交易、放宽价限或延长有效期。`withdrawn`、错过成交窗口及其他受阻意图不能伪装为主动无动作。
+`guardian_outcome.py`区分主动no_action与rejected/partial_execution。研究预算270秒，提交同时检查墙钟和单调耗时小于300秒，并复核取消、配置和owner；仅分析边界保持静默，执行受阻按failed及通知设置处理。
+结构化`risk_plans`按动作后的持仓原子安装，null保留、[]撤回；合同绑定数量/开仓批次，每股每轮止损优先且最多一笔，最终报价与T+1仍有效。只有匹配fills消费合同，旧自然语言计划不自动成为合同。
+`guardian_delivery.py`及ledger通知存储按通道ID快照目标；按`attempts, slot`升序领取租约，避免旧失败消息阻塞新告警，仅重试未成功目标。补发不重跑研究或成交，外部投递不承诺exactly-once。
+
+常态和收盘最多4只、盘中临时最多8只；`close_keep_codes`由模型选择并覆盖T+1锁定股票。14:50起执行最后有效名单，14:55续跑；缺价或收盘未收敛保留实际成交并明确失败，不补造卖出。名称迁移沿用原任务ID和账户，自主观察池不改变资金。
+
+`ensure_guardian_review_jobs`维护盘前08:50、日复盘15:45、当周最后交易日15:55的报告；失败可补跑，成功报告防重。财务数字由账本和收盘价计算，模型仅解释与提出条件化计划、待验证经验。
+报告、研判、咨询及格式修复使用模型输出额度，未配置时默认328000；共用`REPLY_STYLE`。报告检查结束原因、完整字段和证据引用，保留修复诊断，未通过不得保存成功。
+报告正文按1700 UTF-8字节分段，标题加正文不超过2048字节；逐段回执支持续传，补发不重复调用模型。明确计划股数复用账本申报校验，非法数量由模型修复；按同一快照展示“卖出→剩余”，持仓变化后由`premarket_plan_context`使旧数量失效，保留原报告。
+报告按账户→全局→逐股→机会→经验展示；策略候选即使未被评价也保留并标明“未评价”。盘前/日/周分别使用上一交易日/当日/当周信号，保留`strategy_slug/rule_version`。
+休市日全系统业务通知静默，日历于06:30/18:30更新、07:30补重试。只读咨询保留独立实际背景、幂等请求和多轮历史，不修改模拟账户。
+相关测试见`tests/ops/test_guardian*.py`、`tests/ledger/test_guardian_cash_account.py`、`tests/ledger/test_guardian_position_limit.py`；执行契约列出对应回归入口，不以文档记载代替实际验证。
+
+### 交易员决策证据与机会复核
+
+`guardian_evidence.py` 提供 `guardian_decision_history` 只读工具：按日期、股票、时段和分页返回原始逐股理由、条件变化、其他买入意图、成交与拒单。咨询自动带入问题指定日期的首批轮次；不能把最近5轮之外的记录说成不存在。研判前账户优先使用当轮快照，旧记录只按该轮之前的成交流水重建现金和可卖股数，不拿收盘状态代替开盘。
+
+自动研判在调用模型前保存 `decision_context`（账户、实际 `position_policy`、候选输入和盘前计划），成功与失败提交均保留。未记录历史规则时明确缺失，禁止以当前提示词反推历史程序约束。模型理由、程序拒单、事后行情评价分开归因；未记录逐股决策的候选标记 `not_recorded`，不补写主动放弃。每轮优先复核待触发机会，修改等待条件需说明新增事实及其时点，保留自主选择权。
+
+复盘分开统计 `failed_cycles` 和 `expired_cycles`，逐股回顾消费原始条件变化与规则证据。回归见 `tests/ops/test_guardian_evidence.py` 及交易员主流程/复盘测试。
+
+历史查询默认提供决策原文和输入摘要，保留每只候选及信号时间；使用 `guardian_decision_history` 的 `code` 与 `include_inputs=true` 获取完整原始信号，避免每次把多轮重复明细全部塞入上下文。摘要与原始查询的股票覆盖和决策内容有等价测试。
+
+### 交易员研究能力与可靠性补全（2026-09-15）
+
+研判、咨询、复盘统一叠加`guardian_research_tools`工作台：原行情工具 + system__系统只读能力 + 账户、实时主备报价、任意决策预演、组合情景、十进制算术和历史证据。研究不设固定轮数/单轮工具总次数，使用实际运行期限；保留用户模型、思考和输出容量，不增加战法、单股资金比例或持有天数限制。报告不再限制20只评价，完整计划覆盖由真实输入决定。
+
+执行边界统一为用户授权的固定基准2%容差（含2%）；9.00上限允许9.01/9.18，拒绝9.19。`bind_execution_references`是唯一市价基准绑定入口；预检、按分成交价和风险回执共用验证器，旧风险合同ID兼容可选字段。首次风险触发仍严格判断，单股缺价不再阻塞全部模型研究。
+
+完整执行通知逐目标/逐分段保存回执；`guardian_delivery`是租户补发任务，工作日08:00—20:55每五分钟运行，不研究、不撮合，失败可续传且成功段不重发。GET guardian返回待发积压。配置部分保存不重置thinking/parallel_tools等已有字段，不复活已停用任务。来源目录展示或成交后通知故障不推翻已核账成交。失败回执保存original_decision、failure_stage和preflight_fills，未提交的预演不计fills。详细语义及局限以[执行契约](../../docs/guardian-execution.md)为准。

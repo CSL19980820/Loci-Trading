@@ -35,11 +35,11 @@ function safeHref(href: string): string {
   padding: 0.05em 0.3em;
   border-radius: 3px;
   background: var(--el-fill-color-light);
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--mono);
   font-size: 0.92em;
 }
 .md-inline-link {
-  color: var(--seal-ink, var(--el-color-primary));
+  color: var(--seal-ink);
   text-decoration: underline;
   text-underline-offset: 2px;
 }

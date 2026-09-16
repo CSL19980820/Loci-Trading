@@ -25,18 +25,18 @@ export type ChartTokens = {
 
 /** SSR / 测试环境下没有真实 CSSOM 时的兜底，取默认「日间 + 朱红」档 */
 const FALLBACK: ChartTokens = {
-  up: '#c41e3a',
-  down: '#0f6b5c',
-  warn: '#b45309',
-  info: '#2563eb',
-  seal: '#c41e3a',
-  ink: '#142033',
-  muted: '#3d4d5f',
-  mist: '#5b6b7c',
-  rule: '#d5dce6',
-  sheet: '#f7f9fc',
-  maPalette: ['#c41e3a', '#2563eb', '#b45309', '#7c3aed', '#0f6b5c', '#0891b2', '#be185d', '#ca8a04'],
-  mono: '"IBM Plex Mono", "Cascadia Code", "SF Mono", ui-monospace, monospace',
+  up: '#c8282a',
+  down: '#00793a',
+  warn: '#a05e00',
+  info: '#1174b4',
+  seal: '#cc323e',
+  ink: '#192029',
+  muted: '#4d5560',
+  mist: '#626a73',
+  rule: '#cdd1d8',
+  sheet: '#fcfdfe',
+  maPalette: ['#c8282a', '#1174b4', '#a05e00', '#7c3aed', '#00793a', '#0891b2', '#be185d', '#ca8a04'],
+  mono: '"JetBrains Mono", "SF Mono", "Roboto Mono", Consolas, Menlo, monospace',
 }
 
 /**

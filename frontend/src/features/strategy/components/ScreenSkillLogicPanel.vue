@@ -173,7 +173,7 @@ function logicErr(index: number, id: string, part: string): string {
 }
 
 .logic-card {
-  border-color: color-mix(in srgb, var(--rule) 84%, transparent);
+  border-color: color-mix(in oklab, var(--rule) 84%, transparent);
 }
 
 .logic-card--error {

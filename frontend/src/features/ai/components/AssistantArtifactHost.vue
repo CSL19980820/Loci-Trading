@@ -22,7 +22,7 @@ const kind = computed(() => props.artifact.kind)
 </script>
 
 <template>
-  <div class="assistant-artifact-host" data-testid="assistant-artifact">
+  <div class="assistant-artifact-host flex w-full min-w-0 flex-col" data-testid="assistant-artifact">
     <el-skeleton v-if="loading" animated :rows="4" class="assistant-artifact-host__skeleton">
       <template #template>
         <el-skeleton-item variant="h3" style="width: 40%; margin-bottom: .5rem" />
@@ -53,7 +53,6 @@ const kind = computed(() => props.artifact.kind)
 </template>
 
 <style scoped>
-.assistant-artifact-host { width: 100%; min-width: 0; }
 .assistant-artifact-host__skeleton {
   padding: .55rem; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--panel-2);
 }

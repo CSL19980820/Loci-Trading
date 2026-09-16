@@ -142,7 +142,7 @@ function setAkshareBatchOpen(open: boolean): void {
 </script>
 
 <template>
-  <div class="ds-panel">
+  <div class="ds-panel min-w-0 overflow-hidden" aria-label="数据源控制台">
     <header class="ds-bar">
       <SegmentSwitch
         v-model="view"
@@ -261,8 +261,8 @@ function setAkshareBatchOpen(open: boolean): void {
       </template>
       <EmptyState
         v-else
-        description="这台机器上没有报出任何数据源"
-        reason="点下面的「刷新」重读一次；仍为空说明程序里的取数源没装上。"
+        description="暂无数据源"
+        reason="刷新后检查服务配置"
       >
         <el-button type="primary" @click="load()">刷新</el-button>
       </EmptyState>
@@ -297,17 +297,21 @@ function setAkshareBatchOpen(open: boolean): void {
   align-items: center;
   gap: var(--gap-2) var(--gap-3);
   flex-shrink: 0;
-  padding: 0 var(--gap-1) var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  margin-bottom: var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
-/* 视图切换是这一页的主导航，比工具条更该被一眼看到 */
+/* 视图切换是这一页的主导航，比工具条更该被一眼看到；inset/选中阴影是控件质感（非业务卡片），保留 */
 .ds-views {
   --el-segmented-padding: 0.2rem;
   --el-segmented-item-selected-bg-color: var(--paper);
   padding: 0.2rem;
   border: 1px solid var(--rule);
   border-radius: calc(var(--radius) + 2px);
-  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--ink) 6%, transparent);
+  background: var(--surface-sunken);
 }
 
 .ds-views :deep(.el-segmented__item) {
@@ -317,7 +321,7 @@ function setAkshareBatchOpen(open: boolean): void {
 }
 
 .ds-views :deep(.el-segmented__item.is-selected) {
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 12%, transparent);
+  color: var(--seal-ink);
 }
 
 .ds-readout {

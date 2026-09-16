@@ -1,0 +1,27 @@
+.account-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--gap-2) var(--pad-sheet-x);
+}
+.user-summary { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: var(--gap-2); }
+.user-avatar { flex: 0 0 auto; background: var(--seal-soft); color: var(--seal-ink); font-size: var(--fs-body); font-weight: 700; }
+.user-name { margin: 0; max-width: 100%; overflow-wrap: anywhere; font-size: var(--fs-title); font-weight: 700; color: var(--ink); }
+.user-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-aux) / 1.5 var(--mono); color: var(--muted); }
+.tab-pane-content { min-width: 0; }
+.profile-pane { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); padding: var(--gap-3); }
+.profile-form { max-width: 42rem; }
+.quota-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); align-items: start; gap: var(--gap-2); }
+.key-success-body { display: flex; flex-direction: column; gap: var(--gap-2); }
+.key-display-box {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--gap-2); padding: var(--gap-3); background: var(--surface-sunken);
+  border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.key-code { min-width: 0; flex: 1 1 16em; font: var(--fs-body) / 1.6 var(--mono); color: var(--seal-ink); overflow-wrap: anywhere; user-select: all; }
+.key-display-box > .el-button { flex: 0 0 auto; }

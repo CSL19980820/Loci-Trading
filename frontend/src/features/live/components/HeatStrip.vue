@@ -141,17 +141,17 @@ const ticks = computed(() =>
 
 <template>
   <section class="heat live-block" aria-label="全市场涨跌分布">
-    <header class="live-block__head">
+    <header class="live-block__head flex w-full flex-none items-center justify-between gap-2">
       <span class="live-block__title">涨跌分布</span>
-      <div class="heat__readout live-num">
+      <div class="heat__readout live-num flex flex-none items-baseline gap-2">
         <span class="heat__stat heat__stat--up">涨 {{ hasData ? upCount : '—' }}</span>
         <span class="heat__stat heat__stat--flat">平 {{ hasData ? flatCount : '—' }}</span>
         <span class="heat__stat heat__stat--down">跌 {{ hasData ? downCount : '—' }}</span>
-        <span class="heat__total">/ {{ hasData ? totalCount : 0 }} 家</span>
+        <span class="heat__total">/ {{ hasData ? totalCount : '—' }} 家</span>
       </div>
     </header>
 
-    <div class="heat__body">
+    <div class="heat__body flex min-h-0 flex-1 flex-col justify-center gap-2 px-3" tabindex="0" aria-label="涨跌档位详情">
       <div class="heat__bar" :class="{ 'heat__bar--void': !hasData }">
         <div
           v-for="seg in segments"
@@ -187,9 +187,6 @@ const ticks = computed(() =>
 }
 
 .heat__readout {
-  display: flex;
-  align-items: baseline;
-  gap: var(--gap-2);
   font-size: var(--fs-body);
   font-weight: 700;
 }
@@ -213,18 +210,15 @@ const ticks = computed(() =>
 }
 
 .heat__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--gap-2);
   padding: 0 var(--gap-3);
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .heat__bar {
   display: flex;
   width: 100%;
+  min-width: 25rem;
   height: 14px;
   background-color: var(--live-head);
   overflow: hidden;
@@ -246,6 +240,7 @@ const ticks = computed(() =>
   display: grid;
   grid-template-columns: repeat(11, minmax(0, 1fr));
   align-items: end;
+  min-width: 25rem;
 }
 
 .heat__tick {

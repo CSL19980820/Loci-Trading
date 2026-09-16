@@ -1,0 +1,157 @@
+/*
+ * —— 管理后台分区壳 ——
+ * 五个分区（总览 / 用户 / 配额 / 日志 / 公告）共用同一套「筛选行 + 表体」骨架。
+ * 收在全局层是因为它们本来就该长一样：此前每个 Tab 各写一份 `.xxx-tab`，
+ * 于是 padding 有 1.25rem 也有 0、筛选条有的贴边有的悬空、分页有的干脆没有。
+ */
+.admin-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+.admin-pane__filters {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 筛选条里的 form-item 不带底距：行高由 PageContainer 的 search 槽统一给 */
+.admin-pane__filters .el-form-item {
+  margin-bottom: 0;
+}
+
+.admin-pane__filter-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  flex-shrink: 0;
+}
+
+/* 非表格分区（总览 / 配额 / 公告）：滚动下沉到这里，不许出文档级滚动条 */
+.admin-pane__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+}
+
+/* —— legacy 原子类：新代码用 EP + token，这些只维持存量页不塌 —— */
+.primary-button,
+.quiet-button,
+.icon-button {
+  border: 0;
+  border-radius: var(--radius);
+  height: var(--ctl-h);
+  transition: background 80ms ease;
+}
+
+.primary-button {
+  padding: 0 var(--gap-3);
+  background: var(--seal);
+  color: var(--on-primary);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.primary-button:hover {
+  background: var(--seal-hover);
+}
+
+.quiet-button {
+  padding: 0 var(--gap-2);
+  border: 1px solid var(--border-default);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-body);
+}
+
+.quiet-button:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.text-link {
+  color: var(--seal-ink);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.text-link:hover,
+.stock-link:hover,
+a:hover {
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.r {
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--text-secondary);
+}
+
+.dim {
+  color: var(--text-tertiary);
+}
+
+.code {
+  color: var(--text-tertiary);
+  font: var(--fs-aux) / 1.4 var(--mono);
+  letter-spacing: 0.02em;
+}
+
+.stock-link {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.stock-link:hover {
+  color: var(--seal-ink);
+}
+
+/* 涨跌语义标记的全局版本（表格外的数字同样只用这三个类上色） */
+.tone-up,
+.is-up {
+  color: var(--up);
+}
+
+.tone-down,
+.is-down {
+  color: var(--down);
+}
+
+.tone-flat,
+.is-flat {
+  color: var(--flat);
+}
+
+/* 报价字号：页面上最大的字必须是数字（D2） */
+.tape-num {
+  font: 700 var(--fs-tape) / 1.05 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 微标：11px 大写 + 字距，等宽——中文小标签也走它，不再放大标题充层级 */
+.kicker {
+  font: 600 var(--fs-kicker) / 1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-tertiary);
+}
+
+.empty-state {
+  background-color: transparent;
+}

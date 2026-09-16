@@ -1,0 +1,32 @@
+/* 各运维弹层以 scoped src 引用，样式随组件隔离。 */
+.ops-dialog :deep(.el-dialog__header),
+.ops-drawer :deep(.el-drawer__header) {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: var(--gap-3);
+  margin-bottom: var(--gap-3);
+}
+.ops-dialog :deep(.el-dialog__body),
+.ops-drawer :deep(.el-drawer__body) {
+  min-width: 0;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.ops-dialog :deep(.el-dialog__body) {
+  max-height: calc(100dvh - var(--ctl-h) * 5);
+  overflow: auto;
+}
+.ops-dialog :deep(.el-dialog__footer),
+.ops-drawer :deep(.el-drawer__footer) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+  border-top: 1px solid var(--rule);
+  padding-top: var(--gap-3);
+}
+.ops-dialog :deep(.el-dialog__footer > .el-button),
+.ops-drawer :deep(.el-drawer__footer > .el-button) { margin-left: 0; }
+@media (max-width: 640px) {
+  .ops-dialog :deep(.el-dialog__body) { max-height: calc(100dvh - var(--ctl-h) * 6); }
+}

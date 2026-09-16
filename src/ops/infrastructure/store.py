@@ -154,6 +154,16 @@ class OpsStore(
         finally:
             cursor.close()
 
+    @contextmanager
+    def guardian_commit_guard(self, run_id: str) -> Iterator[None]:
+        """Serialize final ledger commits with cancellation/configuration writes."""
+        with self._transaction(immediate=True):
+            if run_id:
+                run = self.get_run(run_id)
+                if run is None or run["status"] != "running" or run.get("cancel_requested"):
+                    raise OpsError("交易员运行已取消或结束，拒绝提交")
+            yield
+
     def init_schema(self) -> None:
         with self._transaction() as cursor:
             cursor.executescript(_SCHEMA)

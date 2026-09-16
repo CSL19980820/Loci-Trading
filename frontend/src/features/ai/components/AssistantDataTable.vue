@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { artifactShellTitle, parseTablePayload } from '../assistantArtifacts'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
 import './assistant-card.css'
@@ -37,7 +38,7 @@ function cellText(value: unknown): string {
       <h3>{{ artifactShellTitle(artifact) }}</h3>
       <el-tag size="small" type="info">{{ payload.rows.length }} 行</el-tag>
     </div>
-    <template v-if="payload.columns.length && payload.rows.length">
+    <template v-if="payload.columns.length">
       <el-table
         :data="pagedRows"
         size="small"
@@ -68,7 +69,7 @@ function cellText(value: unknown): string {
         :total="payload.rows.length"
       />
     </template>
-    <el-empty v-else :image-size="48" description="工具未返回表格数据" />
+    <EmptyState v-else description="工具未返回表格数据" reason="缩小范围重问" />
   </section>
 </template>
 

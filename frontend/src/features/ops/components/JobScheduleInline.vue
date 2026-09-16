@@ -13,6 +13,8 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 
+import UiCard from '@/shared/components/ui/UiCard.vue'
+import UiCardContent from '@/shared/components/ui/UiCardContent.vue'
 import type { Job } from '@/shared/types/quant'
 
 import {
@@ -139,83 +141,86 @@ defineExpose({ open })
 </script>
 
 <template>
-  <section class="job-sched" aria-label="就地改时点">
-    <header class="job-sched__bar">
-      <span class="job-sched__now">
-        <span class="job-sched__label">调度</span>
-        <span class="mono">{{ job.cron || '仅手动' }}</span>
-      </span>
-      <el-button v-if="!open" size="small" :disabled="busy" @click="open = true">
-        改时点
-      </el-button>
-    </header>
-
-    <div v-if="open" class="job-sched__form">
-      <el-radio-group v-model="draft.mode" size="small">
-        <el-radio-button value="off">仅手动</el-radio-button>
-        <el-radio-button value="once">每交易日定点</el-radio-button>
-        <el-radio-button value="interval">盘中间隔</el-radio-button>
-      </el-radio-group>
-
-      <div v-if="draft.mode === 'once'" class="job-sched__row">
-        <span class="job-sched__label">时点</span>
-        <el-select v-model="draft.run_hour" size="small" class="job-sched__pick">
-          <el-option v-for="h in HOURS" :key="`h${h}`" :label="String(h).padStart(2, '0')" :value="h" />
-        </el-select>
-        <span class="job-sched__sep">:</span>
-        <el-select v-model="draft.run_minute" size="small" class="job-sched__pick">
-          <el-option v-for="m in MINUTES" :key="`m${m}`" :label="String(m).padStart(2, '0')" :value="m" />
-        </el-select>
-        <span class="job-sched__hint">只在交易日（周一至周五）触发</span>
+  <UiCard class="shrink-0 min-w-0 overflow-hidden" aria-label="就地改时点">
+    <UiCardContent :padded="true">
+      <div class="flex min-w-0 items-center justify-between gap-2">
+        <span class="flex min-w-0 items-baseline gap-1 overflow-hidden">
+          <span class="text-aux text-mist">调度</span>
+          <span class="text-body truncate font-mono tabular-nums">{{ job.cron || '仅手动' }}</span>
+        </span>
+        <el-button v-if="!open" size="small" :disabled="busy" @click="open = true">
+          改时点
+        </el-button>
       </div>
+    </UiCardContent>
+    <UiCardContent v-if="open" :padded="true">
+      <div class="flex min-w-0 flex-col gap-1">
+        <el-radio-group v-model="draft.mode" size="small" aria-label="任务调度方式" class="schedule-modes">
+          <el-radio-button value="off">仅手动</el-radio-button>
+          <el-radio-button value="once">每交易日定点</el-radio-button>
+          <el-radio-button value="interval">盘中间隔</el-radio-button>
+        </el-radio-group>
 
-      <div v-else-if="draft.mode === 'interval'" class="job-sched__row">
-        <span class="job-sched__label">每</span>
-        <el-select v-model="draft.interval_minutes" size="small" class="job-sched__pick">
-          <el-option v-for="n in TRADING_INTERVALS" :key="`i${n}`" :label="`${n} 分钟`" :value="n" />
-        </el-select>
-        <span class="job-sched__label">时段</span>
-        <el-select v-model="draft.window_start_hour" size="small" class="job-sched__pick">
-          <el-option v-for="h in HOURS" :key="`ws${h}`" :label="String(h).padStart(2, '0')" :value="h" />
-        </el-select>
-        <span class="job-sched__sep">—</span>
-        <el-select v-model="draft.window_end_hour" size="small" class="job-sched__pick">
-          <el-option v-for="h in HOURS" :key="`we${h}`" :label="String(h).padStart(2, '0')" :value="h" />
-        </el-select>
-        <span class="job-sched__hint">点</span>
+        <div v-if="draft.mode === 'once'" class="flex flex-wrap items-center gap-1">
+          <span class="text-aux text-mist">时点</span>
+          <el-select v-model="draft.run_hour" size="small" class="w-24 shrink-0" aria-label="执行小时">
+            <el-option v-for="h in HOURS" :key="`h${h}`" :label="String(h).padStart(2, '0')" :value="h" />
+          </el-select>
+          <span class="text-mist">:</span>
+          <el-select v-model="draft.run_minute" size="small" class="w-24 shrink-0" aria-label="执行分钟">
+            <el-option v-for="m in MINUTES" :key="`m${m}`" :label="String(m).padStart(2, '0')" :value="m" />
+          </el-select>
+          <span class="text-aux text-mist">只在交易日（周一至周五）触发</span>
+        </div>
+
+        <div v-else-if="draft.mode === 'interval'" class="flex flex-wrap items-center gap-1">
+          <span class="text-aux text-mist">每</span>
+          <el-select v-model="draft.interval_minutes" size="small" class="w-24 shrink-0" aria-label="执行间隔">
+            <el-option v-for="n in TRADING_INTERVALS" :key="`i${n}`" :label="`${n} 分钟`" :value="n" />
+          </el-select>
+          <span class="text-aux text-mist">时段</span>
+          <el-select v-model="draft.window_start_hour" size="small" class="w-24 shrink-0" aria-label="时段开始小时">
+            <el-option v-for="h in HOURS" :key="`ws${h}`" :label="String(h).padStart(2, '0')" :value="h" />
+          </el-select>
+          <span class="text-mist">—</span>
+          <el-select v-model="draft.window_end_hour" size="small" class="w-24 shrink-0" aria-label="时段结束小时">
+            <el-option v-for="h in HOURS" :key="`we${h}`" :label="String(h).padStart(2, '0')" :value="h" />
+          </el-select>
+          <span class="text-aux text-mist">点</span>
+        </div>
+
+        <p class="text-aux m-0 flex flex-wrap items-baseline gap-1">
+          <span class="text-mist">cron</span>
+          <span class="truncate font-mono tabular-nums">{{ composed || '（不定时，只能手动跑）' }}</span>
+        </p>
+        <p v-if="composed" class="text-aux m-0 flex flex-wrap items-baseline gap-1">
+          <span class="text-mist">接下来</span>
+          <span v-if="nextRuns && nextRuns.length" class="font-mono tabular-nums">{{ nextRuns.join(' · ') }}</span>
+          <span v-else class="text-warn">无法预览这个表达式</span>
+        </p>
+
+        <el-alert
+          v-if="tooFrequent"
+          type="warning"
+          show-icon
+          :closable="false"
+          :title="cronTooFrequentTitle(intervalSeconds)"
+        />
+
+        <div class="flex justify-end gap-1">
+          <el-button size="small" @click="cancel">取消</el-button>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="busy || !dirty"
+            @click="submit"
+          >
+            保存时点
+          </el-button>
+        </div>
       </div>
-
-      <p class="job-sched__preview">
-        <span class="job-sched__label">cron</span>
-        <span class="mono">{{ composed || '（不定时，只能手动跑）' }}</span>
-      </p>
-      <p v-if="composed" class="job-sched__preview">
-        <span class="job-sched__label">接下来</span>
-        <span v-if="nextRuns && nextRuns.length" class="mono">{{ nextRuns.join(' · ') }}</span>
-        <span v-else class="job-sched__warn">无法预览这个表达式</span>
-      </p>
-
-      <el-alert
-        v-if="tooFrequent"
-        type="warning"
-        show-icon
-        :closable="false"
-        :title="cronTooFrequentTitle(intervalSeconds)"
-      />
-
-      <div class="job-sched__actions">
-        <el-button size="small" @click="cancel">取消</el-button>
-      <el-button
-        size="small"
-        type="primary"
-        :disabled="busy || !dirty"
-        @click="submit"
-      >
-        保存时点
-      </el-button>
-      </div>
-    </div>
-  </section>
+    </UiCardContent>
+  </UiCard>
 </template>
 
 <style scoped>
@@ -303,4 +308,7 @@ defineExpose({ open })
   overflow: hidden;
   text-overflow: ellipsis;
 }
+</style>
+<style scoped>
+.schedule-modes { max-width: 100%; flex-wrap: nowrap; overflow-x: auto; }
 </style>

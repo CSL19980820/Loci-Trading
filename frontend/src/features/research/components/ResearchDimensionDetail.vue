@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CircleCheck } from '@element-plus/icons-vue'
+import { CircleCheck, InfoFilled } from '@element-plus/icons-vue'
 
 import type { ResearchQuality } from '@/shared/types/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
@@ -65,12 +65,12 @@ function sourceText(row: ResearchDimensionRow): string {
 </script>
 
 <template>
-  <section v-if="props.row" class="dimension-detail" aria-live="polite">
+  <section v-if="props.row" class="dimension-detail research-surface" aria-live="polite">
     <header class="detail-head">
       <div>
         <span class="research-kicker">{{ props.row.group }} · {{ props.row.key }}</span>
         <h3>{{ props.row.name }}</h3>
-        <p>{{ props.row.summary }}</p>
+        <el-tooltip v-if="props.row.summary" :content="props.row.summary" placement="top"><el-icon tabindex="0" aria-label="维度说明"><InfoFilled /></el-icon></el-tooltip>
       </div>
       <el-tag :type="qualityType(result?.quality)" effect="plain">
         {{ qualityText(result?.quality) }}
@@ -99,10 +99,10 @@ function sourceText(row: ResearchDimensionRow): string {
         </div>
         <el-table :data="recentRows" size="small" height="250" stripe>
           <el-table-column prop="trade_date" label="日期" width="112" align="center" header-align="center" />
-          <el-table-column prop="close" label="收盘" align="center" header-align="center" />
-          <el-table-column prop="ma20" label="MA20" align="center" header-align="center" />
-          <el-table-column prop="rsi14" label="RSI14" align="center" header-align="center" />
-          <el-table-column prop="macd_hist" label="MACD 柱" align="center" header-align="center" />
+          <el-table-column prop="close" label="收盘" align="right" header-align="right" />
+          <el-table-column prop="ma20" label="MA20" align="right" header-align="right" />
+          <el-table-column prop="rsi14" label="RSI14" align="right" header-align="right" />
+          <el-table-column prop="macd_hist" label="MACD 柱" align="right" header-align="right" />
         </el-table>
       </div>
     </template>
@@ -196,7 +196,7 @@ function sourceText(row: ResearchDimensionRow): string {
 .technical-grid,
 .value-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: 1px;
   margin: var(--gap-2) var(--pad-sheet-x);
   border: 1px solid var(--rule);
@@ -256,7 +256,7 @@ function sourceText(row: ResearchDimensionRow): string {
   margin: 0 var(--pad-sheet-x) var(--gap-2);
   padding: var(--gap-2) var(--gap-3);
   /* 原为 border-inline-start: 3px solid var(--seal)：左竖条改为 1px hairline 外框 */
-  border: 1px solid color-mix(in srgb, var(--seal) 24%, var(--rule));
+  border: 1px solid color-mix(in oklab, var(--seal) 24%, var(--rule));
   border-radius: var(--radius);
   background: var(--seal-soft);
   color: var(--seal-ink);
@@ -268,7 +268,7 @@ function sourceText(row: ResearchDimensionRow): string {
   font-weight: 700;
 }
 
-/* 证据已绑定是「完成」而非「下跌」：走品牌靛，不借涨跌色（D1） */
+/* 证据已绑定是「完成」而非「下跌」：走品牌朱红，不借涨跌色（D1） */
 .evidence-strip {
   /* 同上：去掉左竖条，改用中性 hairline 外框 */
   border-color: var(--rule);
@@ -283,3 +283,4 @@ function sourceText(row: ResearchDimensionRow): string {
   overflow-wrap: anywhere;
 }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

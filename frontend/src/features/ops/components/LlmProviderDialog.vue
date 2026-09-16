@@ -130,8 +130,8 @@ function submit(): void {
     proxy_url: form.proxy_url.trim(),
     note: form.note.trim(),
     is_default: form.is_default,
-    validate_key: isEdit.value ? Boolean(form.api_key.trim()) : true,
-    discover_models: !isEdit.value,
+    validate_key: false,
+    discover_models: false,
   })
 }
 </script>
@@ -143,7 +143,7 @@ function submit(): void {
     :width="dialogWidth"
     destroy-on-close
     align-center
-    class="llm-provider-dialog"
+    class="llm-provider-dialog ops-dialog"
     @closed="form.api_key = ''"
   >
     <p v-if="isEdit" class="dialog-sub mono">名称即线路 id，已有引用不会断</p>
@@ -156,6 +156,7 @@ function submit(): void {
               <span class="sec__title">身份</span>
               <el-switch
                 v-model="form.is_default"
+                aria-label="设为默认供应商"
                 :disabled="busy"
                 size="small"
                 inline-prompt
@@ -203,7 +204,7 @@ function submit(): void {
               <el-form-item label="默认模型">
                 <el-input
                   v-model.trim="form.model"
-                  placeholder="留空则取目录第一个"
+                  placeholder="模型 ID，可稍后配置"
                   :disabled="busy"
                 />
               </el-form-item>
@@ -274,7 +275,7 @@ function submit(): void {
             <EmptyState
               v-else
               description="还没有模型目录"
-              reason="先保存并校验，再拉取"
+              reason="保存后可按需拉取模型"
             />
           </div>
         </aside>
@@ -291,7 +292,7 @@ function submit(): void {
         :disabled="!isEdit"
       >
         <el-button type="primary" :loading="busy" @click="submit">
-          {{ isEdit ? '保存' : '保存并校验' }}
+          保存
         </el-button>
       </el-tooltip>
     </template>
@@ -301,7 +302,7 @@ function submit(): void {
 <style scoped>
 .dialog-sub {
   margin: -0.25rem 0 0.55rem;
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 
@@ -331,7 +332,7 @@ function submit(): void {
 
 .sec {
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
   background: var(--sheet);
 }
@@ -341,9 +342,9 @@ function submit(): void {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.35rem 0.65rem;
+  padding: var(--gap-2) var(--gap-3);
   border-bottom: 1px solid var(--rule);
-  background: var(--panel-2);
+  background: var(--surface-sunken);
 }
 
 .sec__title {
@@ -354,7 +355,7 @@ function submit(): void {
 }
 
 .sec__stat {
-  font-size: 0.7rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 
@@ -364,8 +365,8 @@ function submit(): void {
 
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0 var(--gap-2);
 }
 
 .form-grid .full-span {
@@ -402,10 +403,10 @@ function submit(): void {
 
 .preview-row {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 0.4rem;
   padding: 0.3rem 0.45rem;
-  font-size: 0.7rem;
+  font-size: var(--fs-kicker);
   border-top: 1px solid var(--rule);
   color: var(--ink);
   background: var(--sheet);
@@ -416,7 +417,7 @@ function submit(): void {
 }
 
 .preview-row.is-default {
-  background: color-mix(in srgb, var(--seal-soft) 55%, var(--sheet));
+  background: color-mix(in oklab, var(--seal-soft) 55%, var(--sheet));
 }
 
 .preview-id {
@@ -438,12 +439,13 @@ function submit(): void {
   color: var(--mist);
 }
 
-:deep(.el-form-item) {
-  margin-bottom: 0.55rem;
+/* 前缀限本弹窗：裸 deep 会污染全站 dialog */
+:deep(.llm-provider-dialog .el-form-item) {
+  margin-bottom: var(--gap-2);
 }
 
-:deep(.el-form-item__label) {
-  margin-bottom: 0.15rem !important;
+:deep(.llm-provider-dialog .el-form-item__label) {
+  margin-bottom: var(--gap-1);
 }
 
 @media (max-width: 760px) {
@@ -456,3 +458,4 @@ function submit(): void {
   }
 }
 </style>
+<style scoped src="./OpsDialogSurface.css"></style>

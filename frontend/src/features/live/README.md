@@ -6,16 +6,16 @@
 - **职责**：建立行情/信号双 SSE 长连接与退避重连；把全市场快照渲染成定高信息带（指数 / 涨跌分布 / 四榜单 / 信号流）；收盘或断连时给出**得体**的降级形态。
 - **边界**：只渲染与消费，不发明数字；不引第二套 UI 库；页面根为 `.page-fill`，不产生文档级滚动条。
 
-## 2. 版型（2026-08 重构后）
+## 2. 版型
 
 ```
 .page-fill.page-fill--flush.live-board   ← 逃生舱：壳给右侧容器加了内边距，大屏要满幅
-├─ LiveTopBar        定高 40px   标识 / 时段 / 时钟 / 会话胶囊 / 刷新 / 全屏 / 返回
-├─ IndexBar       定高 64px   5 个固定指数槽位，1px hairline 分隔，右侧 SVG 微图
-├─ main      flex:1    grid 1.6fr : 1fr，gap 1px（hairline 由容器底色透出）
+├─ LiveTopBar        最小高度由令牌控制；窄屏操作换行，时钟明确为本机时间
+├─ IndexBar          5 个固定指数槽位，窄屏可横向浏览，不隐藏尾部指数
+├─ main      flex:1    grid 1.6fr : 1fr，gap --gap-2；窄屏切成单列内滚
 │   ├─ 左列
 │   │   ├─ HeatStrip 定高 110px  stacked bar + 11 档刻度
-│   │   └─ ranks     flex:1      2×2 榜单栅格（≥1800px 摊成 1×4）
+│   │   └─ ranks     flex:1      2×2 榜单栅格（≥1800px 为 1×4，≤640px 为四行）
 │   └─ SignalStream  整列吃满
 ├─ TickerTape        定高 22px   **无数据时整条不渲染**
 └─ LiveStatusBar     定高 24px   源 / 链路 / 标的 / 信号 / 快照时间 + 合规短语
@@ -23,9 +23,9 @@
 
 三条硬约束（对应 `docs/ui-spec.md` D1/D2/D3）：
 
-- **D1**：红绿只给价格。涨跌榜色条、指数涨跌、信号方向可用红绿；换手率榜用 `--info`、成交额榜用 `--warn`、连接健康用 `--info`（**绝不用绿**，绿在本仓是「跌」）。
+- **D1**：红绿只给价格。榜单方向、指数涨跌和信号报价使用涨跌色；信号的交易意图使用信息色或提醒色，零涨跌为中性。换手榜用 `--info`、成交额榜用 `--warn`、连接健康用 `--info`。
 - **D2**：最大的字是数字。指数点位与顶栏时钟用 `--fs-hero` 等宽 `tabular-nums`，中文标题一律 `--fs-aux`。
-- **D3**：密度优先。全页 **零 box-shadow**，圆角不超过 `--radius`，块与块靠 1px hairline + 底色差分层。
+- **D3**：密度优先。面板无阴影，圆角、边界和间距统一使用令牌；列表内滚，窄屏保持每个区块可达。
 
 ## 3. 空态纪律（重构的首要目标）
 
@@ -35,7 +35,7 @@
 |---|---|---|
 | 会话级（「已收盘·展示最近快照」） | **只有** `LiveTopBar` 的胶囊 | 一行短句，全屏唯一 |
 | 块级（信号流 / 四榜单） | `LiveEmptyState` 默认形态 | ≤8 字短语，`--fs-kicker`，居中，整块 ≤40px |
-| 指数带 | 不出空态 | 槽位与名称保留，数值位 `—`，整条带降透明度 |
+| 指数带 | 不出空态 | 槽位与名称保留，数值位 `—`，保持文字对比度 |
 | 涨跌分布 | 不出空态 | stacked bar 压成 1px hairline，刻度值 `—` |
 | 跑马灯 | 不出空态 | 整条不渲染 |
 
@@ -46,15 +46,15 @@
 
 | 文件 | 说明 |
 |---|---|
-| `LiveBoardView.vue` | 版型编排；`live-theme.css` 在**非 scoped** style 里 `@import`（子组件要吃 `.live-block` / `.live-num`） |
+| `LiveBoardView.vue` | 版型编排；以 `style scoped src="./live-theme.css"` 引入主题，通用块和数字样式用 `.live-board-theme :deep(...)` 限定在大屏内部 |
 | `live-theme.css` | `--live-*` 全部由全局令牌派生，**出现 `#` 即 bug**；高度契约也定义在这里 |
 | `components/LiveTopBar.vue` | 顶栏 + 全屏唯一的会话胶囊 |
 | `components/IndexBar.vue` | 高密度指数带（固定 5 槽：上证 / 深成 / 创业板 / 科创50 / 沪深300） |
 | `components/IndexSparkline.vue` | 纯 SVG 分时微图；0 点画灰 hairline，1 点画当前点位水平线 + 昨收虚线，≥2 点画折线，**不造假数据** |
 | `components/HeatStrip.vue` | 涨跌分布：stacked bar + 11 档刻度 |
-| `components/RankColumn.vue` | 榜单列；列头 2px 识别色条；行高 26px |
-| `components/SignalStream.vue` | 信号流；不再挂红字免责声明；条数读 `SIGNAL_MAX_ITEMS` |
-| `components/TickerTape.vue` | 底部跑马灯，空则不渲染 |
+| `components/RankColumn.vue` | 榜单列；列头圆点区分口径；行高沿用令牌，数字右对齐 |
+| `components/SignalStream.vue` | 双行信号：报价与标的在首行，策略与说明在次行；条数读 `SIGNAL_MAX_ITEMS` |
+| `components/TickerTape.vue` | 空则不渲染；鼠标悬停或键盘焦点进入时暂停，重复副本不进入焦点序列，减少动画时可手动横滚 |
 | `components/LiveStatusBar.vue` | 状态栏 + 收编后的合规短语（`--live-dim`，非红） |
 | `components/LiveEmptyState.vue` | 极窄块级空态 |
 | `lib/sessionCopy.ts` | 会话/块级文案唯一出处 |

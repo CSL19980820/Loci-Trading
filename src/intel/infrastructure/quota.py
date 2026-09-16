@@ -194,7 +194,7 @@ def _prune_inflight(now: float) -> None:
             del _INFLIGHT[key]
 
 
-def acquire_quota(pool: McpQuotaPool) -> dict[str, Any]:
+def acquire_quota(pool: McpQuotaPool, *, deadline: float | None = None) -> dict[str, Any]:
     """占用一次配额。日配额用尽抛 McpQuotaError；每分钟名额满则**排队等待**。
 
     检查与占位在同一把锁里完成，避免多线程读到同一个旧计数后一起过闸；等待放在
@@ -209,11 +209,14 @@ def acquire_quota(pool: McpQuotaPool) -> dict[str, Any]:
     每分钟窗口按 ``_tenant()`` 分桶（依据见模块头那段长注释）。三者错开一个，就会
     出现「A 明明没用过，却被 B 的在途调用顶成配额已用尽」。
     """
+    from src.intel.infrastructure.mcp_deadline import check_deadline
+    check_deadline(deadline)
     limits = quota_limits()
     day = trade_date_today()
     pool_limit = limits.structured if pool == "structured" else limits.skill
     give_up_at = time.monotonic() + _MINUTE_WAIT_MAX_SECONDS
     while True:
+        check_deadline(deadline)
         # 每轮重取：等待发生在锁外，理论上跨轮可能换了上下文。
         tenant = _tenant()
         with _THREAD_LOCK:
@@ -234,6 +237,7 @@ def acquire_quota(pool: McpQuotaPool) -> dict[str, Any]:
                 raise McpQuotaError(f"MCP 日总配额已用尽（{total_used}/{limits.daily_total}）")
             wait = _minute_slot_wait(tenant, limits.per_minute, now)
             if wait <= 0.0:
+                check_deadline(deadline)
                 _MINUTE_WINDOW.setdefault(tenant, []).append(now)
                 _INFLIGHT.setdefault((tenant, pool), []).append(now + _INFLIGHT_TTL_SECONDS)
                 break
@@ -241,7 +245,11 @@ def acquire_quota(pool: McpQuotaPool) -> dict[str, Any]:
         if remaining <= 0.0:
             raise McpQuotaError("MCP 每分钟名额等待超时，请降低并发后重试")
         # 睡到最早那次调用滑出窗口；多线程同时醒来由锁内复检兜住。
-        time.sleep(min(wait, remaining) + 0.01)
+        delay = min(wait, remaining) + 0.01
+        if deadline is not None:
+            check_deadline(deadline)
+            delay = min(delay, max(0, deadline - time.monotonic()), 0.1)
+        time.sleep(delay)
     return quota_snapshot(trade_date=day)
 
 

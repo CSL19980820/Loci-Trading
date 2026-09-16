@@ -9,13 +9,11 @@
  * 不再各存副本（历史上 components / tail 各抄一份，改前面被后面静默覆盖）。
  *
  * 四档外观不是「同一张脸换明暗」，性格来自中性色的**色相倾向 + 对比强度 + 表面层级差**：
- *   day   冷中性灰 hue 250 / 低彩度 —— 干净现代，白面板浮在浅灰画布上
- *   paper 暖米 hue 82 / 彩度抬到 0.024-0.032 —— 一眼看得出是米色，不是「白里带点脏」
- *   night 蓝灰 hue 258 —— 深邃科技感，表面层级差拉到 4 档
- *   ink   中性纯黑 chroma 0 —— OLED 友好，画布近纯黑、正文纯白，对比度最高
- *
+ *   day   shadcn zinc hue 255 / 近无彩 —— 白面板浮在冷灰画布上
+ *   paper 暖米 hue 80 / 彩度抬到 0.024-0.032 —— 一眼看得出是米色
+ *   night TradingView 炭黑 hue 264 —— 蓝灰终端，表面层级差拉到 4 档
+ *   ink   中性纯黑 chroma 0 —— OLED 友好，画布近纯黑、正文纯白
  * 边界（D1）：主题只换「底色 + 品牌主色」，**不换涨跌语义色的角色**——
- * 涨跌只在明暗之间换到对应对比度的红/绿，绝不跟随 data-primary。
  *
  * 「sRGB 兑现」注释的含义见 style.base.css 文件头：那几个键会被 JS（ECharts /
  * Monaco）通过 getComputedStyle 读走，只能是 hex/rgba 字面量，注释里写着它等于哪一阶。
@@ -23,28 +21,28 @@
 
 /* ═══════════════ 外观：暖纸（warm ivory，长时间盯盘护眼） ═══════════════ */
 html[data-appearance='paper'] {
-  --n-1: oklch(0.995 0.01 82);
-  --n-2: oklch(0.982 0.016 82);
-  --n-3: oklch(0.962 0.024 82);
-  --n-4: oklch(0.938 0.028 82);
-  --n-5: oklch(0.918 0.03 82);
-  --n-6: oklch(0.895 0.032 82);
-  --n-7: oklch(0.868 0.03 82);
-  --n-8: oklch(0.815 0.03 82);
-  --n-9: oklch(0.73 0.03 82);
+  --n-1: oklch(0.996 0.010 80);
+  --n-2: oklch(0.986 0.016 80);
+  --n-3: oklch(0.960 0.024 80);
+  --n-4: oklch(0.936 0.028 80);
+  --n-5: oklch(0.916 0.030 80);
+  --n-6: oklch(0.892 0.032 80);
+  --n-7: oklch(0.862 0.030 80);
+  --n-8: oklch(0.808 0.030 80);
+  --n-9: oklch(0.722 0.030 80);
   /* 同 base：10/11 档压暗到「下沉面上仍 ≥4.5:1」，暖调的 chroma 保持不动 */
-  --n-10: oklch(0.5225 0.028 82);
-  --n-11: oklch(0.4475 0.026 82);
-  --n-12: oklch(0.272 0.022 82);
+  --n-10: oklch(0.518 0.028 80);
+  --n-11: oklch(0.442 0.026 80);
+  --n-12: oklch(0.262 0.022 80);
 
-  /* sRGB 兑现：--sheet = --n-2 @95%，文字三档 = --n-12 / --n-11 / --n-10，线 = --n-7 / --n-8 */
-  --sheet: rgba(255, 248, 237, 0.95);
-  --ink: #2c261b;
-  --muted: #5c5343;
-  --mist: #726858;
-  --rule: #ded2be;
-  --rule-strong: #ccc1ad;
-  --panel-rgb: 255, 248, 237;
+  /* sRGB 兑现：--sheet = --n-2 @94%，文字三档 = --n-12 / --n-11 / --n-10，线 = --n-7 / --n-8 */
+  --sheet: #fffaef;
+  --ink: #2a2318;
+  --muted: #5b5243;
+  --mist: #716756;
+  --rule: #dcd0bc;
+  --rule-strong: #cbbfab;
+  --panel-rgb: 255, 250, 239;
   --shadow-sm: 0 1px 2px 0 color-mix(in oklab, var(--n-12) 7%, transparent);
   --shadow: 0 1px 3px 0 color-mix(in oklab, var(--n-12) 8%, transparent);
 }
@@ -100,61 +98,59 @@ html.dark {
   --shadow-watercolor: 0 4px 18px rgba(0, 0, 0, 0.5);
 }
 
-/* ═══════════════ 外观：夜间（蓝灰科技感） ═══════════════ */
 html[data-appearance='night'],
 html.dark {
-  --n-1: oklch(0.278 0.022 258);
-  --n-2: oklch(0.232 0.021 258);
-  --n-3: oklch(0.19 0.019 258);
-  --n-4: oklch(0.158 0.017 258);
-  --n-5: oklch(0.272 0.022 258);
-  --n-6: oklch(0.315 0.023 258);
-  --n-7: oklch(0.33 0.021 258);
-  --n-8: oklch(0.395 0.021 258);
-  --n-9: oklch(0.47 0.02 258);
+  --n-1: oklch(0.285 0.035 258);
+  --n-2: oklch(0.235 0.033 258);
+  --n-3: oklch(0.177 0.025 258);
+  --n-4: oklch(0.152 0.021 258);
+  --n-5: oklch(0.277 0.032 258);
+  --n-6: oklch(0.321 0.033 258);
+  --n-7: oklch(0.342 0.028 258);
+  --n-8: oklch(0.402 0.031 258);
+  --n-9: oklch(0.480 0.028 258);
   /*
- * 深色档同样按「最亮的承载面（--surface-active / n-6）上仍 ≥4.5:1」定。
-   * 原来的 L0.62 在浮起面板上只有 3.67:1——夜盘里所有 12-13px 的次要读数
-   * （时间、代码、平盘价、口径）都糊，是最招人烦的那一档。
+   * 深色档按「最亮承载面（--surface-active / n-6）上仍 ≥4.5:1」定。
+   * 夜盘 12-13px 次要读数（时间、代码、平盘价、口径）全走 --n-10。
    */
-  --n-10: oklch(0.7075 0.02 258);
-  --n-11: oklch(0.782 0.017 258);
-  --n-12: oklch(0.965 0.008 258);
+  --n-10: oklch(0.738 0.018 258);
+  --n-11: oklch(0.833 0.014 258);
+  --n-12: oklch(0.968 0.008 258);
 
-  /* sRGB 兑现：--sheet = --n-2 @92%（深色档留一点透，让弹层与面板分得开） */
-  --sheet: rgba(23, 30, 39, 0.92);
-  --ink: #f0f4f9;
-  --muted: #b0b9c5;
-  --mist: #99a1ad;
-  --rule: #2f3640;
-  --rule-strong: #3f4752;
-  --panel-rgb: 23, 30, 39;
+  /* sRGB 兑现：与上方 OKLCH 色阶一致，图表/编辑器共用不透明面板。 */
+  --sheet: #141e2e;
+  --ink: #f1f5fa;
+  --muted: #c3c9d2;
+  --mist: #a3abb6;
+  --rule: #303947;
+  --rule-strong: #3e4959;
+  --panel-rgb: 20, 30, 46;
 }
 
 /* ═══════════════ 外观：墨黑（中性纯黑 / OLED / 最高对比） ═══════════════ */
 html[data-appearance='ink'] {
   /* chroma 全 0：纯中性灰阶，不带任何色偏，这是它和 night 最直观的区别 */
-  --n-1: oklch(0.245 0 0);
-  --n-2: oklch(0.185 0 0);
-  --n-3: oklch(0.13 0 0);
-  --n-4: oklch(0.09 0 0);
-  --n-5: oklch(0.275 0 0);
-  --n-6: oklch(0.315 0 0);
-  --n-7: oklch(0.3 0 0);
-  --n-8: oklch(0.37 0 0);
-  --n-9: oklch(0.46 0 0);
+  --n-1: oklch(0.250 0 0);
+  --n-2: oklch(0.188 0 0);
+  --n-3: oklch(0.118 0 0);
+  --n-4: oklch(0.078 0 0);
+  --n-5: oklch(0.278 0 0);
+  --n-6: oklch(0.318 0 0);
+  --n-7: oklch(0.300 0 0);
+  --n-8: oklch(0.372 0 0);
+  --n-9: oklch(0.455 0 0);
   /* 同 night：抬到浮起面上仍 ≥4.5:1 */
-  --n-10: oklch(0.7075 0 0);
-  --n-11: oklch(0.815 0 0);
+  --n-10: oklch(0.710 0 0);
+  --n-11: oklch(0.822 0 0);
   --n-12: oklch(1 0 0);
 
   /* sRGB 兑现：= --n-2 / --n-12 / --n-11 / --n-10 / --n-7 / --n-8 */
-  --sheet: rgba(19, 19, 19, 0.95);
+  --sheet: #131313;
   --ink: #ffffff;
-  --muted: #c3c3c3;
+  --muted: #c5c5c5;
   --mist: #a1a1a1;
-  --rule: #2e2e2e;
-  --rule-strong: #404040;
+  --rule: #3a3a3a;
+  --rule-strong: #525252;
   --panel-rgb: 19, 19, 19;
 
   /* 高对比档：涨跌与状态色再提一档，配合纯黑底 */
@@ -335,8 +331,8 @@ html[data-primary] {
   --el-color-primary-light-8: color-mix(in oklab, var(--seal) 20%, var(--n-1));
   --el-color-primary-light-9: var(--seal-soft);
   --el-color-primary-dark-2: var(--seal-active);
-  --el-color-success: var(--success);
-  --el-color-success-light-9: var(--success-soft);
+  --el-color-success: var(--ok);
+  --el-color-success-light-9: var(--ok-soft);
   /* 危险操作用印章红，不用涨跌红：删除按钮和「涨」不该是同一个红 */
   --el-color-danger: var(--stamp);
   --el-color-danger-light-9: color-mix(in oklab, var(--stamp) 12%, transparent);
@@ -372,11 +368,10 @@ html.dark {
  * `--seal-ink` 正是为此存在的「主色文字态」：深色档里它朝白提亮，实测 6.4–8.3 : 1。
  * 这里只改**文字色**，不动填充色——所以实心主按钮仍是品牌本色 + 白字。
  *
- * 明亮档不需要这一段：那里 --seal 当文字本来就够暗。
+ * 文字按钮在四档都使用文字态：日间/暖纸的表格底上，靖蓝本色实测仅 4.39 / 4.25:1。
+ * 标签、链接等其余控件保留下面已经校准的深色覆盖。
  */
-html[data-appearance='night'] :is(.el-button--primary.is-text, .el-button--primary.is-link),
-html[data-appearance='ink'] :is(.el-button--primary.is-text, .el-button--primary.is-link),
-html.dark :is(.el-button--primary.is-text, .el-button--primary.is-link) {
+:root :is(.el-button--primary.is-text, .el-button--primary.is-link) {
   --el-button-text-color: var(--seal-ink);
   --el-button-hover-text-color: var(--seal-ink);
   --el-button-active-text-color: var(--seal-ink);

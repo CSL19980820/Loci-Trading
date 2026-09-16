@@ -4,6 +4,10 @@
 `compare` / `optimize` 默认以 `execution_mode=process` 交给受控 `spawn` worker，避免大面板计算占满 API 进程；调试或小样本可在请求体中显式传 `execution_mode=thread`。
 说明：`/api/screen-skills*` 的 HTTP 契约在本域 `api/screen_skills_router.py`，编排在 `application/screen_skills.py`（2026-08 从组合根搬入）；包读写经 `src.ops` 包根，公式编译与选股执行也在本域。
 
+战法定时配置保存时保留表单未承载的 `params`、`snapshot_time`、`catch_up` 等既有配置，
+避免编辑时间/股票池后丢失实时门禁。Python 指标包运行产生的 `__pycache__/*.pyc` 不算包正文，
+不阻断后续参数保存或导出；上传的包文件仍按原白名单验证。
+
 选股响应：
 - `picks` 是沿用战法 `entry_timing` 与正式回测口径的精选；`watch_picks` 是弱市降级的低吸观察，形状与 `picks` 一致并带 `intent=observe`。观察票可用 `decision=观察` 留档，但不计正式胜率、不进入自动次日开盘预案。
 

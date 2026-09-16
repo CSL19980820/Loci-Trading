@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Search, RefreshRight } from '@element-plus/icons-vue'
 /**
  * 登录日志。与审计日志同一条流、同一套「筛选栏 + BasicTable + 分页」骨架，
  * 但问的是另一个问题：谁、什么时候、用什么方式、从哪个 IP 进来的，成没成。
@@ -96,7 +97,7 @@ function rowClassName(data: { row: Record<string, unknown> }): string {
 </script>
 
 <template>
-  <div class="admin-pane">
+  <div class="admin-pane admin-list">
     <PageContainer>
       <template #search>
         <div class="admin-pane__filters">
@@ -109,8 +110,8 @@ function rowClassName(data: { row: Record<string, unknown> }): string {
           />
         </div>
         <div class="admin-pane__filter-actions">
-          <el-button type="primary" @click="reload">查询</el-button>
-          <el-button @click="onReset">重置</el-button>
+          <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
         </div>
       </template>
 
@@ -122,6 +123,7 @@ function rowClassName(data: { row: Record<string, unknown> }): string {
           :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
           :toolbar-config="{ refresh: true, custom: true }"
           :row-class-name="rowClassName"
+          height="100%"
           row-key="id"
           stripe
           empty-text="没有匹配的登录记录"
@@ -179,6 +181,8 @@ function rowClassName(data: { row: Record<string, unknown> }): string {
  * 8% 是刻意压到「扫得出、读不烦」的下限：连着二十行也不会把表变成一片黄。
  */
 .admin-pane :deep(.el-table__row.logins-row--alert > td.el-table__cell) {
-  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  background: color-mix(in oklab, var(--warn) 8%, transparent);
 }
 </style>
+
+<style scoped src="./AdminList.css" />

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -20,6 +20,16 @@ class BacktestConfigRequest(BaseModel):
     slippage_bps: float = Field(default=5.0, ge=0, le=1_000)
     allow_limit_up_entry: bool = False
     benchmark: str | None = Field(default="000300", max_length=16)
+    strict_limit_prices: bool = False
+    economic_returns: bool = False
+    valuation_end: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    signal_dataset: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$")
+
+    @model_validator(mode="after")
+    def validate_valuation_end(self) -> BacktestConfigRequest:
+        if self.valuation_end is not None:
+            _parse_date(self.valuation_end, "valuation_end")
+        return self
 
 
 class TrainOOSSplitRequest(BaseModel):
@@ -62,6 +72,7 @@ class ResearchBacktestRequest(BaseModel):
     initial_capital: float = Field(default=200_000.0, gt=0, le=100_000_000)
     max_positions: int = Field(default=2, ge=1, le=100)
     lot_size: int = Field(default=100, ge=1, le=100_000)
+    account_model: Literal["cost_until_exit", "daily_close"] = "cost_until_exit"
     seed: int = Field(default=0, ge=0, le=2_147_483_647)
     random_repeats: int = Field(default=500, ge=1, le=2_000)
     bootstrap_iterations: int = Field(default=500, ge=1, le=2_000)

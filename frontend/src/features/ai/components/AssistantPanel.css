@@ -1,0 +1,103 @@
+.assistant-panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--ink);
+}
+.assistant-panel__head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.assistant-panel__identity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--ai-fs-body);
+}
+.assistant-panel__identity .el-icon { flex-shrink: 0; color: var(--seal-ink); }
+.assistant-panel__identity strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-panel__model {
+  margin-left: auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--mist);
+  font: var(--ai-fs-meta) var(--mono);
+}
+.assistant-panel__close { flex-shrink: 0; margin-left: auto; }
+.assistant-panel__model + .assistant-panel__close { margin-left: 0; }
+.assistant-panel__alert { margin: var(--gap-2) var(--gap-3) 0; }
+.assistant-panel__provider-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+}
+.assistant-panel__provider-empty .assistant-panel__alert { flex: 1; margin: 0; }
+.assistant-panel__body {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.assistant-panel__stage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  background: var(--surface-canvas);
+  container-type: inline-size;
+}
+.assistant-panel__composer {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: var(--gap-3);
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+.assistant-panel__stage :deep(.assistant-conversation),
+.assistant-panel__stage :deep(.assistant-empty) {
+  padding-inline: var(--gap-3);
+  box-sizing: border-box;
+}
+.assistant-panel :deep(button:focus-visible) {
+  outline: 2px solid var(--seal);
+  outline-offset: -2px;
+}
+@media (max-width: 640px) {
+  .assistant-panel__head { padding: var(--gap-1) var(--gap-2); }
+  .assistant-panel__model { display: none; }
+  .assistant-panel__composer { padding: var(--gap-2); }
+}
+@media (max-width: 1100px) {
+  /* 手机与窄平板都用覆盖侧栏，保留完整的对话和输入宽度。 */
+  .assistant-panel__body :deep(.assistant-session-rail:not(.is-collapsed)),
+  .assistant-panel__body :deep(.assistant-task-sidebar:not(.is-collapsed)) {
+    position: absolute;
+    inset-block: 0;
+    z-index: 3;
+    width: min(280px, calc(100% - 44px));
+    min-width: 0;
+  }
+  .assistant-panel__body :deep(.assistant-session-rail:not(.is-collapsed)) { left: 0; }
+  .assistant-panel__body :deep(.assistant-task-sidebar:not(.is-collapsed)) { right: 0; }
+}

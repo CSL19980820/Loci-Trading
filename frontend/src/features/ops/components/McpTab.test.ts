@@ -29,14 +29,13 @@ function deferred<T>() {
 const stubs = {
   SettingsPanel: { props: ['receipt'], template: '<div>{{ receipt[0].value }}<slot /></div>' },
   EmptyState: { template: '<div><slot /></div>' },
+  BasicTable: { template: '<div><slot /></div>' },
   McpToolsDialog: true,
   WudaoMcpDialog: true,
   'el-button': {
     emits: ['click'],
     template: '<button @click="$emit(\'click\', $event)"><slot /></button>',
   },
-  'el-table': { template: '<div><slot /></div>' },
-  'el-table-column': true,
   'el-dialog': { template: '<div><slot /><slot name="footer" /></div>' },
   'el-form': { template: '<form><slot /></form>' },
   'el-form-item': { template: '<div><slot /></div>' },

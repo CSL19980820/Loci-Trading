@@ -44,12 +44,13 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
   <el-dialog
     v-model="open"
     title="一键全测"
+    class="batch-probe-dialog"
     width="min(920px, 96vw)"
     destroy-on-close
     :close-on-click-modal="!busy"
   >
-    <div class="batch-head">
-      <el-progress :percentage="percent" :status="busy ? undefined : percent >= 100 ? 'success' : undefined" />
+    <div class="batch-head flex min-w-0 flex-col gap-2">
+      <el-progress aria-label="批量探测进度" :percentage="percent" :status="busy ? undefined : percent >= 100 ? 'success' : undefined" />
       <p class="batch-readout">
         进度 <b>{{ progress.done }}</b> / {{ progress.total || '—' }}
         <span class="sep">·</span>通 <b class="ok">{{ progress.ok }}</b>
@@ -88,7 +89,7 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
 </template>
 
 <style scoped>
-.batch-head { display: flex; flex-direction: column; gap: var(--gap-2); margin-bottom: var(--gap-2); }
+.batch-head { gap: var(--gap-2); margin-bottom: var(--gap-3); padding: var(--gap-3); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface-sunken); }
 .batch-readout { margin: 0; font-size: var(--fs-aux); color: var(--mist); }
 .batch-readout b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
 /* 通/败是探测结果，不是涨跌：走状态色，不借 --up / --down（D1） */
@@ -99,4 +100,6 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
 .is-fail { color: var(--warn); }
 /* 高度内容驱动：结果少时表就矮，不再用 min-height 撑出 360px 空表 */
 .batch-table { min-height: 0; }
+.batch-probe-dialog :deep(.el-dialog__body) { max-height: 70dvh; overflow: auto; overscroll-behavior: contain; }
+.batch-probe-dialog :deep(.el-dialog__footer) { border-top: 1px solid var(--rule); padding-top: var(--gap-3); }
 </style>

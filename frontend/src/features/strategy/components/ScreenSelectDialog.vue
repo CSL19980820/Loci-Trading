@@ -130,7 +130,7 @@ function submit(): void {
 .select-dialog__note {
   margin: 0 0 0 5rem;
   color: var(--mist);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
 
 .select-dialog__sep {

@@ -15,11 +15,16 @@ import { distributeVirtualColumnWidths } from './basicTableVirtualSupport'
 
 type BasicRow = Record<string, unknown>
 
+defineSlots<{
+  empty?: () => unknown
+}>()
+
 const props = defineProps<{
   columns: BasicTableColumn[]
   rows: BasicRow[]
   rowKey: string
   emptyText: string
+  emptyReason?: string
   border: boolean
   stripe: boolean
   size: 'large' | 'default' | 'small'
@@ -46,7 +51,8 @@ const rowHeight = computed(() => {
   return 32
 })
 
-const headerHeight = computed(() => (props.size === 'large' ? 48 : 40))
+/* 与 --head-h（30px）对齐；large 才跟 48 行高走。勿写 40，会比实体表头高出一截。 */
+const headerHeight = computed(() => (props.size === 'large' ? 48 : 30))
 
 const numericMaxHeight = computed(() => {
   if (typeof props.maxHeight === 'number') return props.maxHeight
@@ -294,7 +300,9 @@ defineExpose({
           class="basic-table__virtual-el"
         >
           <template #empty>
-            <EmptyState :description="emptyText" />
+            <slot name="empty">
+              <EmptyState :description="emptyText" :reason="emptyReason" />
+            </slot>
           </template>
         </el-table-v2>
       </template>
@@ -309,6 +317,14 @@ defineExpose({
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
+  background-color: var(--surface);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--row-h) - 1px),
+    var(--rule-strong) calc(var(--row-h) - 1px),
+    var(--rule-strong) var(--row-h)
+  );
 }
 
 .basic-table__virtual-resizer {
@@ -319,18 +335,23 @@ defineExpose({
 
 .basic-table__virtual-el {
   width: 100%;
-  --el-table-header-bg-color: var(--panel-2);
-  --el-table-row-hover-bg-color: color-mix(in srgb, var(--panel-2) 70%, var(--sheet));
-  --el-table-border-color: var(--rule);
+  background: transparent;
+}
+.basic-table__virtual-el :deep(.el-table-v2__table),
+.basic-table__virtual-el :deep(.el-table-v2__main),
+.basic-table__virtual-el :deep(.el-table-v2__body),
+.basic-table__virtual-el :deep(.el-vl__wrapper) {
   background: transparent;
 }
 
 .basic-table__virtual-el :deep(.el-table-v2__header-cell) {
-  background: var(--panel-2);
-  color: var(--mist);
-  font-weight: 600;
+  background: var(--sheet-alt);
+  color: var(--muted);
+  font-size: var(--fs-aux);
+  font-weight: 400;
 }
 
+/* 组件内部层叠（冻结列压行），不进全局 --z-* 序列 */
 .basic-table__virtual-el :deep(.el-table-v2__left),
 .basic-table__virtual-el :deep(.el-table-v2__right) {
   z-index: 3;
@@ -338,15 +359,23 @@ defineExpose({
 
 .basic-table__virtual-el :deep(.el-table-v2__row-cell) {
   padding: 0 0.65rem;
-  background-color: var(--sheet);
+  background-color: var(--surface);
+}
+
+/* 窄屏固定列不再悬浮盖字：阴影与背景收掉，列随表横滚 */
+@media (max-width: 900px) {
+  .basic-table__virtual-el :deep(.el-table-v2__left),
+  .basic-table__virtual-el :deep(.el-table-v2__right) {
+    box-shadow: none;
+  }
 }
 
 .basic-table__virtual-el :deep(.el-table-v2__row:hover .el-table-v2__row-cell) {
-  background-color: color-mix(in srgb, var(--panel-2) 70%, var(--sheet));
+  background-color: var(--surface-hover);
 }
 
 .basic-table__virtual--stripe :deep(.el-table-v2__row:nth-child(odd) .el-table-v2__row-cell) {
-  background-color: color-mix(in srgb, var(--panel-2) 55%, var(--sheet));
+  background-color: var(--surface-canvas);
 }
 
 .basic-table__virtual--border :deep(.el-table-v2__row-cell),
@@ -355,17 +384,18 @@ defineExpose({
   border-bottom: 1px solid var(--rule);
 }
 
+/* 单元格容器只裁剪：省略只作用文本节点，按钮/tag/复选框不再被强制单行 */
 .basic-table__virtual-cell {
   width: 100%;
   min-width: 0;
   display: flex;
   align-items: center;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
-.basic-table__virtual-cell :deep(*) {
+.basic-table__virtual-cell :deep(.cell-text),
+.basic-table__virtual-cell :deep(.pool-reason-text),
+.basic-table__virtual-cell :deep(.el-table-v2__row-cell-text) {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -381,7 +411,7 @@ defineExpose({
 }
 
 .basic-table__virtual-el :deep([tabindex='0']:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--seal);
   outline-offset: -2px;
 }
 </style>

@@ -294,6 +294,22 @@ class QuantApiTests(unittest.TestCase):
         gone = self.client.get("/api/strategies/qianlong-close-v3/job").json()
         self.assertFalse(gone["bound"])
 
+    def test_strategy_job_save_preserves_snapshot_guards_and_params(self) -> None:
+        from src.ops import OpsStore
+
+        config = {"strategy": "qianlong-close-v3", "snapshot_time": "09:25",
+                  "snapshot_grace_minutes": 2, "catch_up": False,
+                  "trading_days_only": True, "params": {"price_min": 9.0}}
+        with OpsStore() as store:
+            store.create_job(name="screen:qianlong-close-v3", kind="screen", config=config)
+        response = self.client.put("/api/strategies/qianlong-close-v3/job", json={
+            "schedule_mode": "once", "run_hour": 9, "run_minute": 25, "push_wecom": False,
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        actual = response.json()["config"]
+        for key, value in config.items():
+            self.assertEqual(actual[key], value)
+
     def test_skill_job_upsert_persists_push_wecom(self) -> None:
         """技能详情保存定时 + 推送开关，写入 skill:{slug}。"""
         install = self.client.post(

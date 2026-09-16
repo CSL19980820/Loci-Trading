@@ -25,23 +25,24 @@ const hasTopExpand = computed(() => Boolean(slots.topExpand))
 </script>
 
 <template>
+  <!-- 双栏页容器：左 rail + 右主区。高度链靠 flex 传递，滚动只在左栏/表体内 -->
   <div
-    class="page-container"
+    class="page-container relative flex h-full min-h-0 w-full flex-1 gap-[var(--pc-gap)] overflow-hidden p-[var(--pc-padding)]"
     :style="{
       '--pc-left-width': leftWidth,
       '--pc-padding': padding,
       '--pc-gap': gap,
     }"
   >
-    <aside v-if="hasLeft" class="page-container__left">
+    <aside v-if="hasLeft" class="page-container__left bg-surface border-line h-full min-h-0 w-[var(--pc-left-width)] shrink-0 overflow-auto rounded-md border">
       <slot name="left" />
     </aside>
-    <div class="page-container__body">
+    <div class="page-container__body flex h-full w-0 min-h-0 min-w-0 flex-1 flex-col bg-transparent">
       <slot v-if="hasTopExpand" name="topExpand" />
-      <div v-if="hasSearch" class="page-container__search">
+      <div v-if="hasSearch" class="page-container__search border-line bg-surface flex shrink-0 flex-wrap items-center gap-2 border-b px-[var(--pad-sheet-x)] py-2">
         <slot name="search" />
       </div>
-      <div v-if="hasMain" class="page-container__main">
+      <div v-if="hasMain" class="page-container__main flex h-0 min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden p-0">
         <slot name="main" />
       </div>
       <slot />
@@ -50,58 +51,17 @@ const hasTopExpand = computed(() => Boolean(slots.topExpand))
 </template>
 
 <style scoped>
-.page-container {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  padding: var(--pc-padding);
-  gap: var(--pc-gap);
-  position: relative;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-.page-container__left {
-  width: var(--pc-left-width);
-  flex-shrink: 0;
-  height: 100%;
-  min-height: 0;
-  overflow: auto;
-  border-right: 1px solid var(--rule);
-  background: var(--sheet-alt);
-}
-
-.page-container__body {
-  width: 0;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: transparent;
-}
-
-.page-container__search {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-2);
-  align-items: center;
-  padding: var(--gap-1) var(--pad-sheet-x);
-  border-bottom: 1px solid var(--rule);
-}
-
-.page-container__main {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  height: 0;
-  padding: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+.page-container__left { overscroll-behavior: contain; }
+.page-container__search > :deep(*) { max-width: 100%; }
+@media (max-width: 640px) {
+  .page-container { flex-direction: column; }
+  .page-container__left {
+    width: 100%;
+    height: auto;
+    max-height: 35%;
+    flex-shrink: 1;
+  }
+  .page-container__body { width: 100%; height: 0; }
+  .page-container__search { padding-inline: var(--gap-2); }
 }
 </style>

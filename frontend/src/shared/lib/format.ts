@@ -200,6 +200,7 @@ export function entryTimingLabel(value: string): string {
 
 /** 候选/历史里出现的战法 slug → 中文名（含旧别名）。 */
 const STRATEGY_LABELS: Record<string, string> = {
+  'impulse-pullback-tail-v1': '涨停大涨回落转强·十日',
   潜龙: '潜龙出海',
   qianlong: '潜龙出海',
   'qianlong-v1': '潜龙出海',

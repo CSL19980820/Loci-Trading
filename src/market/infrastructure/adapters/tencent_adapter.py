@@ -26,7 +26,7 @@ class TencentAdapter(MarketAdapter):
         description=(
             "qt.gtimg 现价 + ifzq 日 K；分页拼全历史，不经 akshare。"
             "主 path 被 WAF 时换同 host kline；握手超时跳过该 host，直连 ifzq 快败，"
-            "近窗再失败走 flashdata。日 K 无成交额，amount 由 close×volume 估算"
+            "近窗再失败走 flashdata。日 K 未提供成交额，amount 留空"
             "（现价通道的 amount 是源生值）。"
         ),
         base_url="https://proxy.finance.qq.com",

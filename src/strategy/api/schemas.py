@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Literal
 
 from pydantic import Field, model_validator
@@ -65,6 +66,10 @@ class BacktestRequest(QuantModel):
     commission_bps: float = Field(default=3.0, ge=0, le=100)
     stamp_duty_bps: float = Field(default=10.0, ge=0, le=100)
     slippage_bps: float = Field(default=5.0, ge=0, le=100)
+    strict_limit_prices: bool = False
+    economic_returns: bool = False
+    valuation_end: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    signal_dataset: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$")
     benchmark: str | None = Field(default="000300", pattern=r"^\d{6}$")
     codes: list[str] | None = None
     params: dict[str, Any] | None = None
@@ -74,8 +79,12 @@ class BacktestRequest(QuantModel):
 
     @model_validator(mode="after")
     def _horizon_needs_range(self) -> BacktestRequest:
+        if self.valuation_end is not None:
+            date.fromisoformat(self.valuation_end)
         if self.mode != "horizon":
             return self
+        if self.signal_dataset:
+            raise ValueError("历史14:50数据集用于成交回测，请选择trade模式")
         if not self.start or not self.end:
             raise ValueError("horizon 回测必须指定 start 与 end")
         if self.horizons is not None:

@@ -208,8 +208,7 @@ function setBoard(id: BoardId, checked: boolean): void {
 </template>
 
 <style scoped>
-.detail-form :deep(.el-form-item__label) { color: var(--mist); }
-.detail-form :deep(.el-form-item) { margin-bottom: 0.85rem; }
+/* label 色与间距走全局表皮肤（style.components.css），本页不再私调 */
 .param-desc { width: 100%; }
 .param-desc :deep(.el-descriptions__body) { background: transparent; }
 .board-col { display: flex; flex-direction: column; gap: 0.25rem; }
@@ -220,8 +219,8 @@ function setBoard(id: BoardId, checked: boolean): void {
 .interval-select { width: 7.5rem; }
 .time-sep { padding: 0 0.1rem; }
 .preview-lines { display: flex; flex-direction: column; gap: 0.15rem; }
-.preview-line, .mono { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-variant-numeric: tabular-nums; }
-.preview-line { font-size: 0.82rem; font-weight: 600; }
-.dim { color: var(--mist); font-size: 0.82rem; }
+.preview-line, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.preview-line { font-size: var(--fs-aux); font-weight: 600; }
+.dim { color: var(--mist); font-size: var(--fs-aux); }
 .hint { margin-left: 0.55rem; }
 </style>

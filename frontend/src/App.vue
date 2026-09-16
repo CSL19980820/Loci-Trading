@@ -33,7 +33,7 @@ const isPublicRoute = computed(
   () => route.meta.public === true || route.name === 'peek' || isPeekWindow,
 )
 const archiveOpen = computed(() => route.name === 'archive')
-/** 档案蒙版 z-index=8000；打开档案时抬高 EP 弹层起点，避免记一笔/分时被盖住 */
+/** 档案蒙版 z-index=var(--z-archive)；打开档案时抬高 EP 弹层起点到 var(--z-archive-popup)，避免记一笔/分时被盖住 */
 const epPopupZIndex = computed(() => (archiveOpen.value ? 8200 : 2000))
 
 const recordOpen = ref(false)
@@ -341,8 +341,8 @@ function goAccount(): void {
 
 /* 阻塞：琥珀底 + 加粗，轨上唯一「必须动手」的一档（D1：不用红） */
 .rail-chip--block {
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--rule));
-  background: color-mix(in srgb, var(--warn) 10%, var(--sheet));
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--rule));
+  background: color-mix(in oklab, var(--warn) 10%, var(--sheet));
 }
 
 .rail-chip--block .rail-chip__icon {
@@ -363,7 +363,7 @@ function goAccount(): void {
 }
 
 .rail-chip--busy {
-  border-color: color-mix(in srgb, var(--seal) 35%, var(--rule));
+  border-color: color-mix(in oklab, var(--seal) 35%, var(--rule));
   background: var(--seal-soft);
 }
 
@@ -420,6 +420,7 @@ function goAccount(): void {
  * 2px 进度线：绝对定位，不占布局。无轨时吸主区顶边，有轨时压住轨底那条 1px
  * hairline——加载时它变成进度条，加载完又变回分隔线，正文一帧都不位移。
  */
+/* 壳内部 2px 进度线，不进全局 --z-* 序列 */
 .load-line {
   position: absolute;
   top: 0;
@@ -428,7 +429,7 @@ function goAccount(): void {
   z-index: 3;
   height: 2px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--seal) 15%, transparent);
+  background: color-mix(in oklab, var(--seal) 15%, transparent);
   pointer-events: none;
 }
 
@@ -478,13 +479,4 @@ function goAccount(): void {
   }
 }
 
-/*
- * 底栏高度改成 52px（见 MobileBottomNav）。壳的避让读 --mobile-nav-h，
- * 而令牌层现在还是 3.5rem，先在壳上就地覆写；令牌落到 52px 后删掉这一段。
- */
-@media (max-width: 980px) {
-  .app-shell {
-    --mobile-nav-h: 52px;
-  }
-}
 </style>

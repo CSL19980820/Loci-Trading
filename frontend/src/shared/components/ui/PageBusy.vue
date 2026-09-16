@@ -47,7 +47,7 @@ withDefaults(
   position: absolute;
   inset: 0;
   z-index: 5;
-  background: color-mix(in srgb, var(--sheet) 78%, transparent);
+  background: color-mix(in oklab, var(--sheet) 78%, transparent);
 }
 
 .page-busy-spin {

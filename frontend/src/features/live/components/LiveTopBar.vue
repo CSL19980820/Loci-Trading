@@ -8,6 +8,7 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Back, FullScreen, Moon, RefreshRight } from '@element-plus/icons-vue'
 import { BRAND_MARK, BRAND_NAME } from '@/shared/lib/brand'
 import { describeSession } from '../lib/sessionCopy'
 import type { ConnectionStatus } from '../composables/useLiveBoard'
@@ -120,7 +121,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <header class="topbar">
+  <header class="topbar flex w-full flex-none items-center justify-between gap-3">
     <div class="topbar__brand">
       <!-- 印章红只留给 logo：D1 明令它既不是品牌色也不是涨跌色 -->
       <span class="topbar__mark">{{ BRAND_MARK }}</span>
@@ -128,20 +129,20 @@ onUnmounted(() => {
       <span class="topbar__tag">盯盘大屏</span>
     </div>
 
-    <div class="topbar__center">
+    <div class="topbar__center flex min-w-0 items-baseline gap-2">
       <span v-if="showPhase" class="topbar__phase">{{ session.phase }}</span>
-      <span class="topbar__clock live-num">{{ clock }}</span>
+      <time class="topbar__clock live-num" :datetime="clock" aria-label="本机时间">{{ clock }}</time>
       <span v-if="lagText" class="topbar__lag live-num">{{ lagText }}</span>
     </div>
 
-    <div class="topbar__actions">
+    <div class="topbar__actions flex items-center gap-2">
       <!-- 全屏唯一的会话级声明 -->
       <span class="topbar__session" :class="`topbar__session--${session.tone}`" role="status">
         <i class="topbar__dot" aria-hidden="true" />
         {{ session.text }}
       </span>
 
-      <el-button size="small" text class="topbar__btn" @click="emit('refresh')">刷新</el-button>
+      <el-button size="small" text class="topbar__btn" :icon="RefreshRight" @click="emit('refresh')">刷新</el-button>
       <el-tooltip
         :content="inkOn ? '恢复为你选的外观' : '仅本页切到墨黑，不改你的外观设置'"
         placement="bottom"
@@ -153,28 +154,25 @@ onUnmounted(() => {
           class="topbar__btn"
           :class="{ 'topbar__btn--on': inkOn }"
           :aria-pressed="Boolean(inkOn)"
+          :icon="Moon"
           @click="emit('toggleInk')"
         >
           暗色
         </el-button>
       </el-tooltip>
-      <el-button size="small" text class="topbar__btn" @click="toggleFullscreen">
+      <el-button size="small" text class="topbar__btn" :icon="FullScreen" :aria-pressed="isFullscreen" @click="toggleFullscreen">
         {{ isFullscreen ? '退出全屏' : '全屏' }}
       </el-button>
-      <el-button size="small" text class="topbar__btn" @click="leaveBoard">返回</el-button>
+      <el-button size="small" text class="topbar__btn" :icon="Back" @click="leaveBoard">返回</el-button>
     </div>
   </header>
 </template>
 
 <style scoped>
 .topbar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--gap-3);
-  height: var(--live-topbar-h);
-  padding: 0 var(--gap-3);
+  min-height: var(--live-topbar-h);
+  padding: var(--gap-1) var(--gap-3);
   background-color: var(--live-head);
   border-bottom: 1px solid var(--live-rule);
 }
@@ -211,37 +209,22 @@ onUnmounted(() => {
 }
 
 .topbar__center {
-  display: flex;
-  align-items: baseline;
-  gap: var(--gap-2);
   min-width: 0;
+  flex-shrink: 0;
 }
 
-.topbar__phase {
-  font-size: var(--fs-aux);
-  letter-spacing: 0.08em;
-  color: var(--live-muted);
-  white-space: nowrap;
-}
-
-/* D2：顶栏最大的字是时钟数字 */
 .topbar__clock {
   font-size: var(--fs-hero);
   font-weight: 700;
-  line-height: 1;
   color: var(--live-text);
+  line-height: 1.2;
 }
 
+.topbar__phase,
 .topbar__lag {
+  color: var(--live-dim);
   font-size: var(--fs-kicker);
-  color: var(--live-warn);
   white-space: nowrap;
-}
-
-.topbar__actions {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
 }
 
 .topbar__session {
@@ -285,7 +268,7 @@ onUnmounted(() => {
   --el-button-text-color: var(--live-muted);
   --el-button-hover-text-color: var(--live-accent);
   --el-button-hover-bg-color: transparent;
-  height: 22px;
+  min-height: var(--ctl-h);
   padding: 0 var(--gap-1);
   font-size: var(--fs-kicker);
 }
@@ -302,9 +285,25 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1100px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: var(--gap-1) var(--gap-2);
+  }
+  .topbar__center {
+    margin-left: auto;
+  }
+  .topbar__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    min-width: 0;
+  }
   .topbar__tag,
   .topbar__name {
     display: none;
   }
+}
+@media (max-width: 740px) {
+  .topbar__actions { width: 100%; gap: var(--gap-1); }
+  .topbar__session { flex: 1 1 100%; white-space: normal; }
 }
 </style>

@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { runBacktest, runHorizonBacktest } from '@/shared/api/quant'
 import { toErrorMessage } from '@/shared/lib/errors'
 import { useBacktestPanelStore } from '@/shared/stores/backtestPanel'
+import type { StrategyBacktestTemplate } from '@/shared/types/backtest-config'
 import type {
   BacktestResult,
   HorizonBacktestResult,
@@ -122,10 +123,11 @@ export function useQuantBacktestPanel(opts: {
   )
 
   watch(
-    selected,
-    (s) => {
+    () => selected.value?.slug,
+    () => {
+      const s = selected.value
       if (!s) return
-      const cfg = (s.backtest_config || {}) as Record<string, unknown>
+      const cfg = (s.backtest_config || {}) as StrategyBacktestTemplate
       const fromCfg = Number(cfg.hold_days)
       const fromParams = Number(s.params?.hold_days)
       if (Number.isFinite(fromCfg) && fromCfg > 0) holdDays.value = fromCfg
@@ -136,6 +138,14 @@ export function useQuantBacktestPanel(opts: {
       } else if (cfg.stop_loss_pct === null) {
         stopLossEnabled.value = false
       }
+      if (typeof cfg.commission_bps === 'number') commissionBps.value = cfg.commission_bps
+      if (typeof cfg.stamp_duty_bps === 'number') stampDutyBps.value = cfg.stamp_duty_bps
+      if (typeof cfg.slippage_bps === 'number') slippageBps.value = cfg.slippage_bps
+      if (cfg.start && cfg.end) {
+        range.value = [cfg.start, cfg.end]
+        activePreset.value = null
+      }
+      if (cfg.signal_dataset) mode.value = 'trade'
     },
     { immediate: true },
   )
@@ -194,6 +204,9 @@ export function useQuantBacktestPanel(opts: {
 
   const entryDetail = computed(() => {
     if (mode.value === 'trade') {
+      if (selected.value?.backtest_config?.signal_dataset) {
+        return `持有期 ${holdDays.value} 表示买入后 ${holdDays.value} 个交易日（含买入日 ${holdDays.value + 1} 日）· 费用为实验假设`
+      }
       return '按入场价模拟买卖（止损/持有期）· 成本计入净收益'
     }
     const timing = entryTiming.value
@@ -311,6 +324,10 @@ export function useQuantBacktestPanel(opts: {
       ElMessage.warning('结束日不能早于开始日')
       return
     }
+    if (mode.value === 'horizon' && selected.value?.backtest_config?.signal_dataset) {
+      ElMessage.warning('该战法的历史14:50数据用于成交回测，请选择成交模式')
+      return
+    }
     if (mode.value === 'horizon' && span > 186) {
       ElMessage.warning('Horizon 一次性回测最长约 6 个月（186 天）')
       return
@@ -345,6 +362,7 @@ export function useQuantBacktestPanel(opts: {
         if (!n1 && !n3) ElMessage.info('区间内没有可评估的信号事件')
         else ElMessage.success(`Horizon 完成 · T+1 ${n1} 笔 · T+3 ${n3} 笔`)
       } else {
+        const cfg = (selected.value?.backtest_config || {}) as StrategyBacktestTemplate
         const next = await runBacktest(
           {
             strategy: strategySlug.value,
@@ -356,6 +374,13 @@ export function useQuantBacktestPanel(opts: {
             commission_bps: commissionBps.value,
             stamp_duty_bps: stampDutyBps.value,
             slippage_bps: slippageBps.value,
+            ...(cfg.take_profit_pct !== undefined ? { take_profit_pct: cfg.take_profit_pct } : {}),
+            ...(cfg.benchmark !== undefined ? { benchmark: cfg.benchmark } : {}),
+            ...(cfg.strict_limit_prices !== undefined ? { strict_limit_prices: cfg.strict_limit_prices } : {}),
+            ...(cfg.economic_returns !== undefined ? { economic_returns: cfg.economic_returns } : {}),
+            ...(cfg.signal_dataset !== undefined ? { signal_dataset: cfg.signal_dataset } : {}),
+            // 估值末日始终跟随本次用户选择，不能固化为模板创建时的日期。
+            ...(cfg.valuation_end !== undefined ? { valuation_end: end } : {}),
             include_trades: true,
           },
           { signal: ctrl.signal },

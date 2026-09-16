@@ -45,7 +45,7 @@ const tone = computed<string>(() =>
 </script>
 
 <template>
-  <div class="live-empty" :class="[`live-empty--${tone}`, { 'live-empty--verbose': verbose }]">
+  <div class="live-empty flex w-full items-center justify-center" :class="[`live-empty--${tone}`, { 'live-empty--verbose': verbose }]">
     <span class="live-empty__text">{{ text }}</span>
   </div>
 </template>
@@ -53,10 +53,6 @@ const tone = computed<string>(() =>
 <style scoped>
 /* 定高 40px：空/非空切换时块内布局零位移 */
 .live-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
   max-height: 40px;
   padding: var(--gap-1) var(--gap-2);
   font-family: var(--live-font-sans);

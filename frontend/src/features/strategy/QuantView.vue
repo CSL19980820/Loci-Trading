@@ -233,7 +233,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page-fill">
+  <div class="workshop-page page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <PageBusy
       overlay
       :busy="activeTab !== 'research' && busy && !coverage && !strategies.length && !skills.length"
@@ -244,7 +244,7 @@ onMounted(() => {
       type="error"
       show-icon
       closable
-      class="mb"
+      class="mb-2 shrink-0"
       @close="unavailable = ''"
     >
       <!-- alert 里只留能点的东西：那句「先同步行情」按钮自己就说完了（AGENTS.md 禁常驻说明） -->
@@ -256,11 +256,11 @@ onMounted(() => {
     </el-alert>
 
     <el-alert
-      v-if="coverage && coverage.codes === 0"
+      v-if="coverage && coverage.codes === 0 && !unavailable"
       type="warning"
       show-icon
       :closable="false"
-      class="mb"
+      class="mb-2 shrink-0"
       title="行情仓为空：选股会失败"
     >
       <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket"
@@ -268,9 +268,9 @@ onMounted(() => {
       >
     </el-alert>
 
-    <PageTabs v-model="activeTab" :items="workshopTabs" aria-label="工坊分区" />
+    <PageTabs v-model="activeTab" :items="workshopTabs" dense aria-label="工坊分区" />
 
-    <div class="page-scroll workshop-scroll">
+    <div class="workshop-body">
       <!-- v-if 只管「进过没」，v-show 才是当前 Tab：见 mountedTabs 的注释 -->
       <div
         v-if="mountedTabs.has('engines')"
@@ -355,21 +355,32 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.mb {
-  margin-bottom: 0.65rem;
+.workshop-page, .workshop-body, .workshop-body > .page-pane { min-width: 0; }
+.research-pane, .market-pane { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.backtest-pane { overflow: auto; overscroll-behavior: contain; }
+.workshop-body {
+  display: flex;
+  min-height: 0;
+  height: 0;
+  flex: 1 1 0%;
+  flex-direction: column;
+  gap: var(--gap-2);
+  overflow: hidden;
+  padding: var(--gap-2);
 }
 
-.workshop-scroll {
-  padding-bottom: 0;
-  position: relative;
+.workshop-body > .page-pane {
   min-height: 0;
+  height: 0;
+  flex: 1 1 0%;
 }
+
 .market-pane,
 .sources-pane,
 .jobs-pane,
 .backtest-pane,
 .paper-pane {
-  padding: 0 0.35rem 0;
+  padding: 0;
 }
 .sources-pane {
   display: flex;

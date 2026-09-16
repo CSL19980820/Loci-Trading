@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from typing import Any
+import sqlite3
 
 import pandas as pd
 
 from src.market.infrastructure.store_codes import MarketError, normalize_code
 from src.market.infrastructure.store_schema import PANEL_FIELDS
+from src.market.infrastructure.store_row_count import track_quote_upsert
 
 #: 参数行里数值列的排列，**与 quotes_daily 的 INSERT 语句一致**。
 #: 刻意不复用 ``PANEL_FIELDS``：那份常量里 ``turnover`` 排在 ``outstanding_share``
@@ -112,3 +114,43 @@ def quote_value_columns(frame: pd.DataFrame) -> list[list[Any]]:
         [None if value != value else value for value in frame[field].tolist()]
         for field in QUOTE_VALUE_FIELDS
     ]
+
+
+def write_quote_payload(cursor: sqlite3.Cursor, payload: list[tuple[Any, ...]]) -> int:
+    """在调用方事务中写日 K 与日历，保护已定稿权威行并返回实际写入数。"""
+    with track_quote_upsert(cursor, payload):
+        cursor.executemany(
+            """
+            INSERT INTO quotes_daily(trade_date, code, open, high, low, close,
+                                     volume, amount, outstanding_share, turnover,
+                                     source, receipt_id, fetched_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(trade_date, code) DO UPDATE SET
+                open=excluded.open, high=excluded.high, low=excluded.low,
+                close=excluded.close,
+                -- 缺列的源经 _prepare_quote_frame 会补成 NULL；量额与股本
+                -- 换手一样禁止被空值抹掉（0 是停牌日的真值，仍照常覆盖）。
+                volume=COALESCE(excluded.volume, quotes_daily.volume),
+                amount=COALESCE(excluded.amount, quotes_daily.amount),
+                outstanding_share=COALESCE(
+                    excluded.outstanding_share, quotes_daily.outstanding_share
+                ),
+                turnover=COALESCE(excluded.turnover, quotes_daily.turnover),
+                source=excluded.source,
+                receipt_id=COALESCE(excluded.receipt_id, quotes_daily.receipt_id),
+                fetched_at=excluded.fetched_at
+            WHERE quotes_daily.source <> 'tdx' OR excluded.source = 'tdx'
+               OR (quotes_daily.trade_date = date('now', 'localtime')
+                   AND time('now', 'localtime') < '15:00:00')
+            """,
+            payload,
+        )
+        written = cursor.rowcount
+    # 一批里同一交易日会重复上千次（全市场 spot 是 5500 行同一天）。日历表只关心
+    # 有哪些交易日，去重后再喂：5500 条 DO NOTHING 降到 1 条（实测 4.83 → 0.25 ms）。
+    cursor.executemany(
+        "INSERT INTO trading_calendar(trade_date, updated_at)"
+        " VALUES(?, datetime('now')) ON CONFLICT(trade_date) DO NOTHING",
+        [(trade_date,) for trade_date in dict.fromkeys(row[0] for row in payload)],
+    )
+    return written

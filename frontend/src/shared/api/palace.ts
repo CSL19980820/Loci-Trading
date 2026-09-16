@@ -15,6 +15,11 @@ const MAX_GET_RETRIES = 4
 const REQUEST_TIMEOUT_MS = 20_000
 const TIMEOUT_REASON = 'loci-request-timeout'
 
+export interface ApiRequestInit extends RequestInit {
+  /** 等待首响应的期限；普通请求仍为20秒。 */
+  timeoutMs?: number
+}
+
 export interface SessionStatus {
   authenticated: boolean
   username: string
@@ -46,7 +51,8 @@ function sleep(ms: number): Promise<void> {
   })
 }
 
-async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
+async function requestOnce<T>(path: string, options?: ApiRequestInit): Promise<T> {
+  const { timeoutMs = REQUEST_TIMEOUT_MS, ...init } = options ?? {}
   const headers = new Headers(init?.headers)
   // FormData 必须让浏览器自己设 Content-Type——它要在里面带 multipart
   // 的 boundary，手工设会让后端解析不出文件。
@@ -58,7 +64,7 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
   // 界面会僵在加载态且没有任何交代。超时按可重试处理（等价于 504），
   // 调用方主动取消则原样上抛、不重试。
   const timer = new AbortController()
-  const timeout = window.setTimeout(() => timer.abort(TIMEOUT_REASON), REQUEST_TIMEOUT_MS)
+  const timeout = window.setTimeout(() => timer.abort(TIMEOUT_REASON), timeoutMs)
   const caller = init?.signal
   if (caller) {
     if (caller.aborted) timer.abort(caller.reason)
@@ -74,7 +80,7 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
     })
   } catch (caught: unknown) {
     if (timer.signal.reason === TIMEOUT_REASON) {
-      const error = new Error(`请求超时（${REQUEST_TIMEOUT_MS / 1000} 秒未响应）`) as Error & {
+      const error = new Error(`请求超时（${timeoutMs / 1000} 秒未响应）`) as Error & {
         retryable?: boolean
       }
       error.retryable = true
@@ -106,7 +112,7 @@ async function requestOnce<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /** 读接口遇 5xx/繁忙时自动退避重试；写接口不重试，避免重复记账。 */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: ApiRequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase()
   const canRetry = method === 'GET' || method === 'HEAD'
   let attempt = 0

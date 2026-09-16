@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
+import { Download, Upload, VideoPlay } from '@element-plus/icons-vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
 
 import { probeAkshareCatalog } from '@/shared/api/quant'
 import { dialogWidth } from '@/shared/lib/format'
@@ -124,22 +127,26 @@ watch(
     destroy-on-close
     class="dataset-dialog"
   >
-    <template v-if="dataset">
+    <div v-if="dataset" class="dataset-body">
       <p class="purpose">{{ dataset.summary || '上游未写说明' }}</p>
 
       <div class="block">
         <!-- 入参 / 出参是弹窗里并列的两块，标题必须留着区分；但不让它空占一行：
              和出参那行一样，条数读数压到同一行上 -->
         <div class="block-head">
-          <span class="block-title">入参</span>
+          <span class="block-title"><el-icon aria-hidden="true"><Upload /></el-icon>入参</span>
           <span class="block-count">{{ paramRows.length }} 项</span>
         </div>
         <el-table :data="paramRows" size="small" row-key="name" empty-text="该接口不需要入参">
           <el-table-column prop="name" label="参数" min-width="130">
             <template #default="{ row }"><span class="mono">{{ row.name }}</span></template>
           </el-table-column>
-          <el-table-column label="说明" min-width="150" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.doc || '—' }}</template>
+          <el-table-column label="说明" min-width="150">
+            <template #default="{ row }">
+              <el-tooltip :content="row.doc || '—'" placement="top" :show-after="150" :disabled="!row.doc">
+                <span class="doc-clip">{{ row.doc || '—' }}</span>
+              </el-tooltip>
+            </template>
           </el-table-column>
           <el-table-column label="必填" width="70">
             <template #default="{ row }">
@@ -150,7 +157,7 @@ watch(
           </el-table-column>
           <el-table-column label="取值" min-width="140">
             <template #default="{ row }">
-              <el-input v-model="values[row.name]" size="small" :placeholder="row.annotation" />
+              <el-input v-model="values[row.name]" size="small" :placeholder="row.annotation" :aria-label="`${row.name} 取值`" />
             </template>
           </el-table-column>
         </el-table>
@@ -158,8 +165,8 @@ watch(
 
       <div class="block">
         <div class="block-head">
-          <span class="block-title">出参</span>
-          <el-button size="small" :loading="probing" @click="runProbe">取出参</el-button>
+          <span class="block-title"><el-icon aria-hidden="true"><Download /></el-icon>出参</span>
+          <el-button type="primary" plain size="small" :icon="VideoPlay" :loading="probing" @click="runProbe">取出参</el-button>
         </div>
         <p v-if="dataset.returns" class="dim declared">上游声明：{{ dataset.returns }}</p>
         <el-alert
@@ -188,28 +195,33 @@ watch(
             </template>
           </el-table-column>
         </el-table>
-        <p v-else-if="!probing" class="dim">
-          {{ probed ? '这次试跑没返回任何列。' : '出参要实跑一次才知道，点「取出参」。' }}
-        </p>
+        <PageBusy v-else-if="probing" label="正在读取出参…" />
+        <EmptyState v-else :description="probed ? '此次未返回字段' : '尚未读取出参'" :reason="probed ? '' : '点击取出参运行接口'" />
       </div>
-    </template>
+    </div>
+    <EmptyState v-else description="未选择接口" />
   </el-dialog>
 </template>
 
 <style scoped>
+.dataset-body { max-height: 68dvh; overflow: auto; overscroll-behavior: contain; }
 .purpose {
-  margin: 0 0 0.75rem;
-  font-size: 0.84rem;
+  margin: 0 0 var(--gap-2);
+  font-size: var(--fs-aux);
   line-height: 1.5;
   color: var(--muted);
 }
-.block + .block {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--el-border-color-lighter);
+.block {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
+.block + .block { margin-top: var(--gap-2); }
 .block-title {
-  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  font-size: var(--fs-aux);
   font-weight: 600;
 }
 .block-count {
@@ -221,20 +233,32 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.45rem;
+  gap: var(--gap-2);
+  padding: var(--gap-2);
+  background: var(--sheet-alt);
+  border-bottom: 1px solid var(--rule);
 }
 .declared {
-  margin: 0 0 0.5rem;
+  margin: var(--gap-2);
 }
 .mb {
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--gap-2);
 }
 .mono {
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.78rem;
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+}
+
+.doc-clip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 .dim {
   color: var(--mist);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
 </style>

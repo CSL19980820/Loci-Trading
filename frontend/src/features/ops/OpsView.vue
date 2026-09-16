@@ -4,9 +4,11 @@ import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 
 import HeaderActions from '@/shared/components/layout/HeaderActions.vue'
+import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import LlmTab from './components/LlmTab.vue'
+import GuardianTab from './components/GuardianTab.vue'
 import McpTab from './components/McpTab.vue'
 import PackTab from './components/PackTab.vue'
 import SignalRulesTab from './components/SignalRulesTab.vue'
@@ -27,7 +29,7 @@ type SystemTabExpose = TabLoadable & {
   isDirty: () => boolean
 }
 
-const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'signals', 'pack'])
+const TAB_NAMES = new Set<string>(['mcp', 'llm', 'guardian', 'system', 'signals', 'pack'])
 
 const SYSTEM_LEGACY: Record<string, string> = {
   'data-dir': 'sys-location',
@@ -74,6 +76,7 @@ const activeTab = ref<OpsTab>(normalizeTab(route.query.tab))
 const visited = reactive<Record<OpsTab, boolean>>({
   mcp: false,
   llm: false,
+  guardian: false,
   signals: false,
   system: false,
   pack: false,
@@ -100,6 +103,7 @@ const railGroups = computed((): SettingsRailGroup[] => [
       // 缩写降为副标：主标说人话，MCP / LLM 仍留着，老用户才认得出是同一处
       { name: 'mcp', label: '工具连接', ...summaries.mcp, tail: `MCP · ${summaries.mcp.tail}` },
       { name: 'llm', label: 'AI 模型', ...summaries.llm, tail: `LLM · ${summaries.llm.tail}` },
+      { name: 'guardian', label: '自主交易员', ...summaries.guardian },
       // 信号规则：大屏那条信号流按什么口径报，得能在系统里改，不能只活在后端代码里
       { name: 'signals', label: '信号规则', ...summaries.signals },
     ],
@@ -133,6 +137,7 @@ const mobileTabs = computed(() =>
 
 const mcpTab = ref<TabLoadable | null>(null)
 const llmTab = ref<TabLoadable | null>(null)
+const guardianTab = ref<(TabLoadable & { isDirty: () => boolean }) | null>(null)
 const signalsTab = ref<TabLoadable | null>(null)
 const systemTab = ref<SystemTabExpose | null>(null)
 const packTab = ref<TabLoadable | null>(null)
@@ -146,6 +151,7 @@ function tabLoader(tab: OpsTab): TabLoadable | null {
   const map: Record<OpsTab, { value: TabLoadable | null }> = {
     mcp: mcpTab,
     llm: llmTab,
+    guardian: guardianTab,
     signals: signalsTab,
     system: systemTab,
     pack: packTab,
@@ -158,9 +164,10 @@ function systemIsDirty(): boolean {
 }
 
 async function confirmLeaveDirty(): Promise<boolean> {
-  if (!visited.system || !systemIsDirty()) return true
+  const guardianDirty = visited.guardian && Boolean(guardianTab.value?.isDirty())
+  if ((!visited.system || !systemIsDirty()) && !guardianDirty) return true
   try {
-    await ElMessageBox.confirm('系统页有未保存改动，离开将丢失。', '未保存', {
+    await ElMessageBox.confirm(guardianDirty ? '交易员设置有未保存改动，离开将丢失。' : '系统页有未保存改动，离开将丢失。', '未保存', {
       confirmButtonText: '离开',
       cancelButtonText: '留下',
       type: 'warning',
@@ -194,7 +201,7 @@ function onAppearanceChanged(): void {
 }
 
 watch(activeTab, async (tab, prev) => {
-  if (prev === 'system' && tab !== 'system' && !(await confirmLeaveDirty())) {
+  if ((prev === 'system' || prev === 'guardian') && tab !== prev && !(await confirmLeaveDirty())) {
     activeTab.value = 'system'
     return
   }
@@ -223,11 +230,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page-fill ops-desk">
-    <header class="ops-hero">
-      <strong>设置</strong>
-      <HeaderActions :actions="[{ key: 'reload', label: '刷新', disabled: busy, onClick: reload }]" />
-    </header>
+  <div class="page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <PageToolbar v-if="activeTab !== 'guardian'">
+      <template #actions>
+        <HeaderActions :actions="[{ key: 'reload', label: '刷新', disabled: busy, onClick: reload }]" />
+      </template>
+    </PageToolbar>
 
     <el-alert
       v-if="notice"
@@ -235,7 +243,7 @@ onMounted(() => {
       type="success"
       show-icon
       closable
-      class="ops-alert"
+      class="mb-2 shrink-0"
       @close="notice = ''"
     />
     <el-alert
@@ -244,10 +252,9 @@ onMounted(() => {
       type="error"
       show-icon
       closable
-      class="ops-alert"
+      class="mb-2 shrink-0"
       @close="errorText = ''"
     />
-
     <div class="ops-mobile-tabs">
       <PageTabs
         v-model="activeTab"
@@ -261,14 +268,14 @@ onMounted(() => {
     <div class="ops-layout">
       <SettingsRail
         v-model="activeTab"
-        class="ops-rail"
+        class="ops-rail min-h-0"
         :groups="railGroups"
         :active-anchor="activeAnchor"
         @select-anchor="goAnchor"
       />
 
       <div
-        class="ops-body page-pane"
+        class="relative flex min-h-0 min-w-0 flex-col overflow-hidden"
         role="tabpanel"
         :aria-label="railGroups.flatMap((g) => g.items).find((i) => i.name === activeTab)?.label || '设置'"
       >
@@ -278,6 +285,9 @@ onMounted(() => {
         </div>
         <div v-if="visited.llm" v-show="activeTab === 'llm'" class="ops-pane">
           <LlmTab ref="llmTab" @changed="refreshSummaries" />
+        </div>
+        <div v-if="visited.guardian" v-show="activeTab === 'guardian'" class="ops-pane">
+          <GuardianTab ref="guardianTab" @summary="Object.assign(summaries.guardian, $event)" />
         </div>
         <div v-if="visited.signals" v-show="activeTab === 'signals'" class="ops-pane">
           <SignalRulesTab ref="signalsTab" @summary="applySignalSummary" />
@@ -298,33 +308,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.ops-desk {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.ops-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.55rem 0.85rem;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.ops-hero strong {
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  font-weight: 600;
-}
-
-.ops-alert {
-  margin: 0.55rem 0.85rem 0;
-  flex-shrink: 0;
-}
-
+.ops-layout { display: grid; flex: 1; min-width: 0; min-height: 0; grid-template-columns: 13rem minmax(0, 1fr); gap: var(--gap-2); overflow: hidden; }
 .ops-mobile-tabs {
   display: none;
   flex-shrink: 0;
@@ -333,29 +317,8 @@ onMounted(() => {
 
 .ops-mobile-tabs :deep(.page-tabs) {
   margin-bottom: 0;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-}
-
-.ops-layout {
-  display: grid;
-  grid-template-columns: 12rem minmax(0, 1fr);
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.ops-rail {
-  min-height: 0;
-}
-
-.ops-body {
-  position: relative;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  padding-left: var(--gap-2);
+  padding-right: var(--gap-2);
 }
 
 .ops-pane {
@@ -364,6 +327,9 @@ onMounted(() => {
   flex: 1 1 auto;
   min-height: 0;
   height: 100%;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .ops-pane :deep(.settings-panel) {
@@ -372,16 +338,12 @@ onMounted(() => {
 }
 
 @media (max-width: 900px) {
+  .ops-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .ops-rail {
     display: none;
   }
-
   .ops-mobile-tabs {
     display: block;
-  }
-
-  .ops-layout {
-    grid-template-columns: 1fr;
   }
 }
 </style>

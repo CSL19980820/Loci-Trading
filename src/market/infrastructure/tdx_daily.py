@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+from itertools import count
 import os
 from pathlib import Path
 import threading
@@ -23,6 +24,7 @@ from typing import Any
 import pandas as pd
 
 from src.market.infrastructure.store_codes import normalize_code
+from src.market.infrastructure.tdx_servers import _SERVERS
 
 
 #: 服务器排序缓存有效期。行情服务器名单变化以周计，6 小时足够新，
@@ -33,75 +35,6 @@ _CACHE_TTL_SEC = 6 * 3600.0
 class TdxDailyError(RuntimeError):
     """通达信日线读取失败。"""
 
-
-#: 公开行情服务器池。**必须同时包含「云托管」与「传统电信线路」两族**——
-#: 这不是冗余,是因为可达性**按部署环境分裂**,实测:
-#:
-#:   | 环境        | 云托管(8.x/47.x/12x.x) | 传统线路(115.x/180.x/218.x) |
-#: |----------------------|------------------------|------------------------------|
-#: | 云服务器(qianlong)   | **0/37 可用**    | 5/15 可用,47-87ms          |
-#:   | 本机(家宽,限流期)    | 0/38 | 0/11   |
-#:
-#: 只放云托管那一族的后果已经发生过:生产服务器整整没用上主源,1235 万行日 K
-#: 全部回落到 tencent(合成假成交额)与 baostock,而报错只说「全池 38 台重探后
-#: 仍无可用」——看不出「池子本身就不适配这个网络环境」。
-#:
-#: **池子要大**:单台常年可用率不高,实测某次只剩 2 台活着;池子小 + 排序结果
-#: 落盘缓存,就会出现「缓存钉住的两台同时挂掉、接下来 6 小时整条源静默全废」。
-#: ``_connection`` 因此在全池失败时会作废缓存重探一次。
-_SERVERS: tuple[tuple[str, int], ...] = (
-    # ---- 传统电信线路(云服务器上唯一能通的一族;2026-08-25 从生产实测)----
-    ("180.153.18.170", 7709),
-    ("60.12.136.250", 7709),
-    ("218.75.126.9", 7709),
-    ("115.238.90.165", 7709),
-    ("115.238.56.198", 7709),
-    ("124.160.88.183", 7709),
-    ("218.108.98.244", 7709),
-    ("114.80.63.12", 7709),
-    ("180.153.18.171", 7709),
-    ("180.153.39.51", 7709),
-    ("119.147.212.81", 7709),
-    # ---- 云托管(家宽环境可达)----
-    ("110.41.147.114", 7709),
-    ("8.129.13.54", 7709),
-    ("120.24.149.49", 7709),
-    ("47.113.94.204", 7709),
-    ("8.129.174.169", 7709),
-    ("110.41.154.219", 7709),
-    ("124.70.176.52", 7709),
-    ("47.100.236.28", 7709),
-    ("101.133.214.242", 7709),
-    ("47.116.21.80", 7709),
-    ("47.116.105.28", 7709),
-    ("124.70.199.56", 7709),
-    ("121.36.54.217", 7709),
-    ("121.36.81.195", 7709),
-    ("123.249.15.60", 7709),
-    ("124.71.85.110", 7709),
-    ("139.9.51.18", 7709),
-    ("139.159.239.163", 7709),
-    ("106.14.201.131", 7709),
-    ("106.14.190.242", 7709),
-    ("121.36.225.169", 7709),
-    ("123.60.70.228", 7709),
-    ("123.60.73.44", 7709),
-    ("124.70.133.119", 7709),
-    ("124.71.187.72", 7709),
-    ("124.71.187.122", 7709),
-    ("119.97.185.59", 7709),
-    ("47.107.64.168", 7709),
-    ("124.70.75.113", 7709),
-    ("124.71.9.153", 7709),
-    ("123.60.84.66", 7709),
-    ("120.46.186.223", 7709),
-    ("124.70.22.210", 7709),
-    ("139.9.133.247", 7709),
-    ("116.205.163.254", 7709),
-    ("116.205.171.132", 7709),
-    ("116.205.183.150", 7709),
-    ("120.76.152.87", 7709),
-)
 
 #: 单次请求最多 800 根——协议上限，再大服务端直接截断。
 PAGE_BARS = 800
@@ -120,6 +53,7 @@ _CONNECT_TIMEOUT = 4.0
 _MAX_CONN_FAILURES = 3
 
 _LOCAL = threading.local()
+_HOST_SEQUENCE = count()
 _RANKED: list[tuple[str, int]] = []
 _RANK_LOCK = threading.Lock()
 #: 单次建连最多试几台。整池挂掉时走完全池 × 4s 超时 = 152s，而这条路径
@@ -258,12 +192,12 @@ def rank_servers(*, timeout: float = 2.0, use_cache: bool = True) -> list:
         if cached:
             return cached
     pool = ThreadPoolExecutor(max_workers=len(_servers()) or 1)
+    scored = []
     try:
         futures = {
             pool.submit(_probe_one, host, port, timeout): (host, port)
             for host, port in _servers()
         }
-        scored = []
         for future in as_completed(futures, timeout=timeout * 3):
             host, port = futures[future]
             try:
@@ -273,7 +207,7 @@ def rank_servers(*, timeout: float = 2.0, use_cache: bool = True) -> list:
             if rtt is not None:
                 scored.append((rtt, host, port))
     except TimeoutError:
-        scored = []
+        pass  # 慢节点不能抹掉已经返回的健康节点。
     finally:
         pool.shutdown(wait=False)
     scored.sort()
@@ -311,23 +245,31 @@ def _drop_connection() -> None:
 
 
 def _try_hosts(hosts: list, api_class: Any, *, budget: int) -> tuple[Any, list[str]]:
-    """按线程 id 错开起点连，**最多试 ``budget`` 台**；返回 (连接, 失败原因)。
+    """按轮询序号错开起点连，**最多试 ``budget`` 台**；返回 (连接, 失败原因)。
 
     有预算这件事是必需的：整池不可用时，走完 38 台 × 4s 超时就是 152s，
     而这条路径在每一票上都会重来一次——全市场同步会直接跑不完。
     """
     if not hosts:
         return None, []
-    # 线程 id 错开起点，避免十几条线程全压在最快那台上被限流。
-    offset = threading.get_ident() % len(hosts)
+    # 线程 ID 常按 8/16 对齐，取模会让所有线程挤在同一台；用原生计数器轮询。
+    offset = next(_HOST_SEQUENCE) % len(hosts)
     errors: list[str] = []
     for step in range(min(len(hosts), max(1, int(budget)))):
         host, port = hosts[(offset + step) % len(hosts)]
         candidate = api_class(raise_exception=True, auto_retry=True)
         try:
             candidate.connect(host, port, time_out=_CONNECT_TIMEOUT)
+            # 握手/证券数量可用，不代表 K 线可用；坏节点会只回数量头。
+            if not candidate.get_security_bars(_CATEGORY_DAY, 1, "600000", 0, 1):
+                raise TdxDailyError("握手成功但日 K 探测为空")
         except Exception as exc:
-            errors.append(f"{host}:{port} {type(exc).__name__}")
+            cause = exc.__cause__ or exc.__context__ or exc
+            errors.append(f"{host}:{port} {type(cause).__name__}: {cause}")
+            try:
+                candidate.disconnect()
+            except Exception:
+                pass
             continue
         _LOCAL.api = candidate
         _LOCAL.host = f"{host}:{port}"

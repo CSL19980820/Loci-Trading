@@ -48,3 +48,18 @@
 - `GET /api/ops/version`：产品版本（与 `src/shared/version.py` / 前端 `release.ts` 对齐）。
 - `GET /api/ops/share-pack/status`：是否已有编译产物、可选附件体积（**不**回传解压密码）。
 - `POST /api/ops/share-pack`：`{"include":["algorithms","ledger",…],"password":"…"}` → 加密 zip；密码须匹配服务端固定值；`algorithms` 控制是否打入内置战法/公式；写操作需会话/Bearer。
+## 智能守护
+
+主面板返回实时股票池与持有计划；配置放在前端抽屉。`decisions` / `analysis` 保留包括 `hold`
+在内的模型判断，`fills` / `rejects` 分别表示模拟执行结果，避免把建议当成成交。
+
+`GET/PUT /api/ops/guardian` 统一读写当前租户配置和守护汇总，
+`POST /api/ops/guardian/scan` 鉴权后返回 202 并在后台执行一轮。
+PUT 创建/更新唯一 guardian 任务并 reload；固定交易时段十分钟频率。
+不接受 db 路径参数，不从组合根捕获主租户的私有库路径。见 `docs/guardian.md`。
+
+交易员报告：GET /api/ops/guardian包含轻量reports目录；GET /api/ops/guardian/reviews/{period}/{day}读取报告；POST /api/ops/guardian/reviews/run鉴权后排队补跑，严格校验交易日与时间，不在HTTP线程生成报告。
+
+### 交易员可靠性接口（2026-09-15）
+
+GET /api/ops/guardian增加delivery积压摘要（pending、sending、total、oldest_slot）。PUT仅更新显式提供字段，保留高级模型配置及实际任务启停状态；仍要求写授权。新增guardian_delivery租户任务仅补发已有通知，不触发模型、改变持仓或重放成交；启用交易员时幂等建立，不占自建任务额度。交易员实际调度为五分钟，非旧文案中的十分钟。

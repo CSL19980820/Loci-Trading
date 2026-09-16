@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Connection, Cpu, SetUp } from '@element-plus/icons-vue'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import RowActions, { type RowAction } from '@/shared/components/ui/RowActions.vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 
 import {
   KIND_LABEL,
@@ -29,7 +32,7 @@ const tableRows = computed(() => props.rows as unknown as Record<string, unknown
 const columns = computed<BasicTableColumn[]>(() => {
   const cols: BasicTableColumn[] = [
     { prop: 'kind', label: '品类', width: 100, align: 'center', headerAlign: 'center', slotName: 'kind' },
-    { prop: 'name', label: '名称', minWidth: 180, align: 'center', headerAlign: 'center', slotName: 'name' },
+    { prop: 'name', label: '名称', minWidth: 180, align: 'left', headerAlign: 'left', slotName: 'name' },
     { prop: 'trust', label: '信任', width: 88, align: 'center', headerAlign: 'center', slotName: 'trust' },
     { prop: 'badges', label: '契约', minWidth: 160, align: 'center', headerAlign: 'center', slotName: 'badges' },
     { prop: 'description', label: '说明', minWidth: 220, align: 'left', headerAlign: 'left', showOverflowTooltip: true, slotName: 'description' },
@@ -38,11 +41,7 @@ const columns = computed<BasicTableColumn[]>(() => {
   return cols
 })
 
-function kindTone(kind: MarketKind): 'warning' | 'danger' | 'info' {
-  if (kind === 'source') return 'warning'
-  if (kind === 'strategy') return 'danger'
-  return 'info'
-}
+const kindIcons = { source: Connection, strategy: SetUp, skill: Cpu }
 
 function openLabel(item: MarketPackage): string {
   if (item.kind === 'source') return '数据源'
@@ -79,20 +78,21 @@ function onRowClick(row: Record<string, unknown>): void {
     @row-click="onRowClick"
   >
     <template #kind="{ row }">
-      <el-tag size="small" :type="kindTone(row.kind as MarketKind)" effect="plain">
+      <UiBadge variant="secondary">
+        <el-icon aria-hidden="true"><component :is="kindIcons[row.kind as MarketKind]" /></el-icon>
         {{ KIND_LABEL[row.kind as MarketKind] }}
-      </el-tag>
+      </UiBadge>
     </template>
     <template #name="{ row }">
       <div class="name-cell">
-        <strong>{{ row.name }}</strong>
+        <el-button link class="package-name" :aria-label="`查看${row.name}详情`" @click.stop="onRowClick(row)">{{ row.name }}</el-button>
         <span v-if="row.version" class="version">版本 {{ row.version }}</span>
       </div>
     </template>
     <template #trust="{ row }">
-      <el-tag size="small" effect="light" :type="row.trust === 'official' ? 'success' : 'info'">
+      <UiBadge :variant="row.trust === 'official' ? 'info' : 'secondary'">
         {{ row.trust === 'official' ? '官方' : '本机' }}
-      </el-tag>
+      </UiBadge>
       <el-tag v-if="row.enabled === false" size="small" type="info" effect="plain" class="ml">
         停用
       </el-tag>
@@ -116,6 +116,7 @@ function onRowClick(row: Record<string, unknown>): void {
     <template #actions="{ row }">
       <RowActions :actions="rowActions(row)" />
     </template>
+    <template #empty><slot name="empty"><EmptyState description="货架为空" /></slot></template>
   </BasicTable>
 </template>
 
@@ -123,24 +124,28 @@ function onRowClick(row: Record<string, unknown>): void {
 .name-cell {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: var(--gap-1);
   min-width: 0;
 }
 .version {
-  font-size: 0.72rem;
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 .badge {
-  margin: 0 0.25rem 0.2rem 0;
+  margin: 0 var(--gap-1) var(--gap-1) 0;
 }
 .ml {
-  margin-left: 0.25rem;
+  margin-left: var(--gap-1);
 }
 .dim {
   color: var(--mist);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
-:deep(.is-selected) {
-  --el-table-tr-bg-color: color-mix(in srgb, var(--seal-soft, #f3e6dc) 55%, transparent);
+/* 选中行用主色浅底（全局 --el-table-current-row-bg-color 同值）；前缀限本表 */
+.market-shelf :deep(.el-table__row.is-selected) {
+  --el-table-tr-bg-color: var(--seal-soft);
 }
+.package-name { justify-content: flex-start; font-weight: 600; white-space: normal; text-align: left; }
+.package-name:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
 </style>

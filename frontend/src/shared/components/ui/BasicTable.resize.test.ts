@@ -43,9 +43,9 @@ describe('BasicTable resize listener', () => {
     const wrapper = mount(BasicTable, { props: { offsetHeight: 0 } })
     wrapper.unmount()
 
- expect(ownResizeHandlers(add)).toHaveLength(1)
+    expect(ownResizeHandlers(add)).toHaveLength(1)
     expect(ownResizeHandlers(remove)).toEqual(ownResizeHandlers(add))
-})
+  })
 
   it('recomputes the table height when offsetHeight changes at runtime', async () => {
     const wrapper = mount(BasicTable, { props: { offsetHeight: 0 } })
@@ -55,6 +55,24 @@ describe('BasicTable resize listener', () => {
     await wrapper.setProps({ offsetHeight: 200 })
     expect(table().props('height')).toBe(Math.max(120, window.innerHeight - 200))
 
+    wrapper.unmount()
+  })
+
+  it('feeds the body clientHeight to el-table when height is 100%', async () => {
+    const wrapper = mount(BasicTable, {
+      props: { height: '100%' },
+      attachTo: document.body,
+    })
+    const bodyEl = wrapper.find('.basic-table__body').element as HTMLElement
+    Object.defineProperty(bodyEl, 'clientHeight', { configurable: true, get: () => 640 })
+    window.dispatchEvent(new Event('resize'))
+    await wrapper.vm.$nextTick()
+    const { promise, resolve } = Promise.withResolvers<void>()
+    requestAnimationFrame(() => resolve())
+    await promise
+    const table = wrapper.findComponent({ name: 'ElTable' })
+    expect(wrapper.classes()).toContain('basic-table--fill')
+    expect(table.props('height')).toBe(640)
     wrapper.unmount()
   })
 })

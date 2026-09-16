@@ -4,6 +4,7 @@ import { Check } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 import { publishResearchBacktestRun } from '@/shared/api/quant_research'
+import UiField from '@/shared/components/ui/UiField.vue'
 import type {
   ResearchBacktestPublicationResult,
   ResearchBacktestRun,
@@ -75,20 +76,17 @@ async function publish(): Promise<void> {
   <el-dialog
     :model-value="visible"
     title="人工签署发布"
+    class="research-modal"
+    append-to-body
     width="min(92vw, 640px)"
     :close-on-click-modal="false"
     @update:model-value="emit('update:visible', $event)"
     @closed="close"
   >
-    <el-alert
-      type="warning"
-      show-icon
-      :closable="false"
-      title="签署只发布研究证据，不改生产参数"
-    />
+    <p class="review-context">签署仅发布研究证据</p>
     <el-descriptions class="manifest-facts" :column="1" border size="small">
       <el-descriptions-item label="run id"><code>{{ run?.run_id || '未提供' }}</code></el-descriptions-item>
-      <el-descriptions-item label="artifact manifest SHA-256"><code>{{ manifestSha256 || '后端未提供' }}</code></el-descriptions-item>
+      <el-descriptions-item label="证据摘要"><code>{{ manifestSha256 || '后端未提供' }}</code></el-descriptions-item>
       <el-descriptions-item label="验证状态">{{ run?.validation?.status || '未提供' }}</el-descriptions-item>
     </el-descriptions>
     <el-alert
@@ -100,14 +98,14 @@ async function publish(): Promise<void> {
       class="dialog-alert"
     />
     <el-alert v-if="error" type="error" show-icon :closable="false" :title="error" class="dialog-alert" />
-    <el-form class="publish-form" label-position="right" label-width="6.5em" size="small" @submit.prevent="publish">
-      <el-form-item label="审核人" required>
-        <el-input v-model="form.reviewer" maxlength="128" show-word-limit />
-      </el-form-item>
-      <el-form-item label="审核理由" required>
-        <el-input v-model="form.reason" type="textarea" :rows="3" maxlength="2000" show-word-limit />
-      </el-form-item>
-    </el-form>
+    <div class="mt-2 flex flex-col gap-2">
+      <UiField label="审核人" required :error="error && !form.reviewer.trim() ? '请填写审核人' : ''">
+        <el-input v-model="form.reviewer" aria-label="审核人" maxlength="128" show-word-limit />
+      </UiField>
+      <UiField label="审核理由" required :error="error && !form.reason.trim() ? '请填写审核理由' : ''">
+        <el-input v-model="form.reason" aria-label="审核理由" type="textarea" :rows="3" maxlength="2000" show-word-limit />
+      </UiField>
+    </div>
     <template #footer>
       <el-button :disabled="submitting" @click="close">取消</el-button>
       <el-button type="primary" :icon="Check" :disabled="!canPublish" :loading="submitting" @click="publish">
@@ -123,3 +121,4 @@ async function publish(): Promise<void> {
 .dialog-alert { margin-top: var(--gap-2); }
 .publish-form { margin-top: var(--gap-2); }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

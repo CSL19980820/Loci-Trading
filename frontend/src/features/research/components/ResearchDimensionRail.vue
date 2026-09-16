@@ -44,7 +44,7 @@ function select(key: string): void {
 </script>
 
 <template>
-  <section class="dimension-rail" aria-label="研究维度目录">
+  <section class="dimension-rail research-surface" aria-label="研究维度目录">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <header class="section-head">
       <h3>维度目录</h3>
@@ -62,12 +62,11 @@ function select(key: string): void {
     >
       <el-table-column min-width="180">
         <template #default="{ row }">
-          <el-button text class="dimension-name" @click.stop="select(row.key)">
+          <el-button text class="dimension-name" :aria-pressed="row.key === props.selectedKey" :aria-label="`${row.name}，${qualityText(row.result?.quality)}`" @click.stop="select(row.key)">
             <el-icon :class="`quality-${row.result?.quality || 'missing'}`" aria-hidden="true">
               <component :is="statusIcon(row.result?.quality)" />
             </el-icon>
-            <span>{{ row.name }}</span>
-            <code>{{ row.key }}</code>
+            <span :title="`${row.name} · ${row.key}`">{{ row.name }}</span>
           </el-button>
         </template>
       </el-table-column>
@@ -95,15 +94,15 @@ function select(key: string): void {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.82rem 0.9rem;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
   border-bottom: 1px solid var(--rule);
 }
 
 .section-head h3 {
-  margin: 0.22rem 0 0;
+  margin: var(--gap-1) 0 0;
   color: var(--ink);
-  font-size: 0.98rem;
+  font-size: var(--fs-title);
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -113,7 +112,7 @@ function select(key: string): void {
   padding: 0.2rem 0.45rem;
   border: 1px solid var(--rule);
   color: var(--mist);
-  font: 0.75rem/1.2 var(--mono);
+  font: var(--fs-aux)/1.2 var(--mono);
   text-align: center;
 }
 
@@ -125,9 +124,7 @@ function select(key: string): void {
   cursor: pointer;
 }
 
-.dimension-table :deep(.el-table__cell) {
-  padding: 0.45rem 0.55rem;
-}
+
 
 .dimension-name {
   display: inline-flex;
@@ -144,12 +141,12 @@ function select(key: string): void {
 .dimension-name code {
   color: var(--mist);
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: var(--fs-aux);
   overflow-wrap: anywhere;
 }
 
 .quality-full {
-  color: var(--lake);
+  color: var(--ok);
 }
 
 .quality-partial {
@@ -161,7 +158,7 @@ function select(key: string): void {
 }
 
 .quality-error {
-  color: var(--loss);
+  color: var(--warn);
 }
 
 @media (max-width: 820px) {
@@ -171,3 +168,4 @@ function select(key: string): void {
   }
 }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

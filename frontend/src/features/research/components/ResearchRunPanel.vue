@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue'
 import { Download, RefreshRight, Search } from '@element-plus/icons-vue'
 
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import type { ResearchRun } from '@/shared/types/quant'
-
 const props = defineProps<{
   runs: ResearchRun[]
   activeRun: ResearchRun | null
@@ -35,18 +35,28 @@ function runType(value: ResearchRun['status']): 'success' | 'warning' | 'info' |
   return 'info'
 }
 
+const tableRows = computed(() => props.runs as unknown as Record<string, unknown>[])
+
+const columns: BasicTableColumn[] = [
+  { prop: 'id', label: 'run id', minWidth: 190, showOverflowTooltip: true },
+  { prop: 'status', label: '状态', width: 86, slotName: 'status' },
+  { prop: 'code', label: '标的', width: 84 },
+  { prop: 'as_of', label: '截止日', width: 116 },
+  { prop: 'id', label: '动作', width: 172, fixed: 'right', slotName: 'actions' },
+]
+
 function submit(): void {
   emit('load', runId.value)
 }
 </script>
 
 <template>
-  <section class="run-panel" aria-label="研究 run">
+  <section class="run-panel research-surface" aria-label="研究 run">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <!-- 「只列本次会话的 run」这句口径进 tooltip：页面上不留介绍段 -->
     <header class="run-head">
       <el-tooltip placement="bottom-start" content="只列本次会话已创建或读取的 run；持久历史列表要等后端列表接口">
-        <h3>研究 run</h3>
+        <h3><el-icon aria-hidden="true"><RefreshRight /></el-icon>研究批次</h3>
       </el-tooltip>
       <form class="run-query" @submit.prevent="submit">
         <el-input
@@ -62,32 +72,35 @@ function submit(): void {
       </form>
     </header>
 
-    <el-table v-if="props.runs.length" :data="props.runs" size="small" row-key="id" highlight-current-row>
-      <el-table-column prop="id" label="run id" min-width="190" show-overflow-tooltip />
-      <el-table-column label="状态" width="86">
-        <template #default="{ row }">
-          <el-tag size="small" effect="plain" :type="runType(row.status)">{{ runStatus(row.status) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="code" label="标的" width="84" />
-      <el-table-column prop="as_of" label="截止日" width="116" />
-      <el-table-column label="动作" width="172" fixed="right">
-        <template #default="{ row }">
-          <el-button text size="small" :loading="props.loading && row.id === props.activeRun?.id" @click="emit('load', row.id)">
-            查看
-          </el-button>
-          <el-button
-            v-if="row.status === 'error'"
-            text
-            size="small"
-            :icon="RefreshRight"
-            :loading="props.loading && row.id === props.activeRun?.id"
-            @click="emit('resume', row.id)"
-          >恢复</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-    <el-empty v-else description="这次会话还没有跑过任务" :image-size="54" />
+    <BasicTable
+      :columns="columns"
+      :data-source="tableRows"
+      :pagination="false"
+      :loading="props.loading"
+      row-key="id"
+      stripe
+      empty-text="还没有跑过任务"
+      empty-reason="归档剖面或按编号读取"
+    >
+      <template #status="{ row }">
+        <el-tag size="small" effect="plain" :type="runType(row.status as ResearchRun['status'])">
+          {{ runStatus(row.status as ResearchRun['status']) }}
+        </el-tag>
+      </template>
+      <template #actions="{ row }">
+        <el-button text size="small" :loading="props.loading && row.id === props.activeRun?.id" @click="emit('load', String(row.id))">
+          查看
+        </el-button>
+        <el-button
+          v-if="row.status === 'error'"
+          text
+          size="small"
+          :icon="RefreshRight"
+          :loading="props.loading && row.id === props.activeRun?.id"
+          @click="emit('resume', String(row.id))"
+        >恢复</el-button>
+      </template>
+    </BasicTable>
 
     <div v-if="props.activeRun" class="run-detail">
       <div class="run-detail-head">
@@ -97,12 +110,12 @@ function submit(): void {
         </el-link>
       </div>
       <div class="run-facts">
-        <span>策略输入 <strong>未在当前研究 run 契约中提供</strong></span>
+        <span>策略输入 <strong>未提供</strong></span>
         <span>行情版本 <code>{{ props.activeRun.market_revision || '—' }}</code></span>
         <span>输入指纹 <code>{{ props.activeRun.input_sha256 || '—' }}</code></span>
       </div>
       <div class="stage-strip" aria-label="研究阶段">
-        <el-tag v-for="(stage, name) in props.activeRun.stages" :key="name" size="small" effect="plain" type="success">
+        <el-tag v-for="(stage, name) in props.activeRun.stages" :key="name" size="small" effect="plain" type="info">
           {{ name }} · {{ stage.status }} · {{ stage.output_sha256.slice(0, 12) }}…
         </el-tag>
       </div>
@@ -119,10 +132,11 @@ function submit(): void {
 .run-query .el-input { flex: 1 1 auto; }
 .run-panel :deep(.el-table) { width: 100%; }
 .run-detail { padding: 0.75rem 0.9rem; border-top: 1px solid var(--rule); }
-.run-detail-head { align-items: center; color: var(--mist); font-size: 0.78rem; }
-.run-detail-head code, .run-facts code { color: var(--ink); font-family: var(--mono); font-size: 0.72rem; overflow-wrap: anywhere; }
+.run-detail-head { align-items: center; color: var(--mist); font-size: var(--fs-aux); }
+.run-detail-head code, .run-facts code { color: var(--ink); font-family: var(--mono); font-size: var(--fs-kicker); overflow-wrap: anywhere; }
 .run-facts { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin-top: 0.52rem; color: var(--mist); font-size: 0.75rem; }
 .run-facts strong { color: var(--seal-ink); font-weight: 600; }
 .stage-strip { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem; }
 @media (max-width: 700px) { .run-head { flex-direction: column; } .run-query { min-width: 0; width: 100%; } }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

@@ -291,8 +291,7 @@ def _finalize_today_with_authoritative(
     代价：通达信本地二进制近窗 20 根，全市场约 2 分钟（ADR-013 实测增量
     43.1 票/秒）。排在 spot 之后，不影响 15:30 选股吃当日快照。
 
-    失败只记录不抛：spot 行还在库里，有临时行比当天没有数据强，不该把整条
-    日终任务刷红。体检的 ``last_day_authoritative`` 会在 16 点之后把它报出来。
+    严格限定通达信且重新取数；失败进入任务 failed，不能把回退成功称为定稿。
     """
     from src.market import MarketStore, sync_quotes
 
@@ -306,13 +305,14 @@ def _finalize_today_with_authoritative(
             # 复权因子上面已单独刷过；当日 spot 也已写过。这一趟只补正式日 K。
             with_factors=False,
             with_today_spot=False,
+            authoritative_only=True,
             progress=progress,
         )
     except Exception as exc:
         logger.warning("日终定稿（权威源重写当日）失败：%s", exc)
-        return {"status": "failed", "error": f"{type(exc).__name__}: {exc}"[:500]}
+        return {"status": "failed", "failed": len(codes), "error": f"{type(exc).__name__}: {exc}"[:500]}
     return {
-        "status": "ok",
+        "status": "failed" if report.failed else "ok",
         "succeeded": report.succeeded,
         "skipped": report.skipped,
         "failed": report.failed,
@@ -475,6 +475,7 @@ def _execute_sync_locked(
     _compact_source_evidence(report_payload)
     return {
         **report_payload,
+        "failed": int(report_payload.get("failed") or 0) + int(finalize.get("failed") or 0),
         "rows_written": int(report_payload.get("rows_written") or 0)
         + spot_rows
         + int(finalize.get("rows_written") or 0),

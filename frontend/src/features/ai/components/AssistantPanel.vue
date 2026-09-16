@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ChatDotRound, Close } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 
@@ -201,6 +202,8 @@ onUnmounted(() => {
 
 function setHistoryOpen(value: boolean): void {
   historyOpen.value = value
+  // 覆盖侧栏同一时刻只展开一侧；不改写另一侧的持久偏好。
+  if (value && !hasRoom(1101)) taskSidebarOpen.value = false
   userToggled.history = true
   autoCollapsed.history = false
   localStorage.setItem(HISTORY_KEY, value ? '1' : '0')
@@ -237,6 +240,7 @@ function openAgent(agentId: string): void {
 
 function setTaskSidebarOpen(value: boolean, byUser = true): void {
   taskSidebarOpen.value = value
+  if (value && !hasRoom(1101)) historyOpen.value = false
   if (byUser) {
     userToggled.task = true
     autoCollapsed.task = false
@@ -261,10 +265,19 @@ function setTaskSidebarOpen(value: boolean, byUser = true): void {
     @update:model-value="(value: boolean) => !value && emit('close')"
   >
     <section
-      class="assistant-panel"
+      class="assistant-panel flex min-h-0 flex-col overflow-hidden"
       :class="{ 'has-rail': historyOpen, 'has-task': taskSidebarOpen }"
       aria-label="落点助手"
     >
+      <header class="assistant-panel__head">
+        <span class="assistant-panel__identity"><el-icon><ChatDotRound /></el-icon><strong>{{ title || 'Loci 助手' }}</strong></span>
+        <el-tag v-if="waitingUser" size="small" type="warning" effect="plain">等待确认</el-tag>
+        <el-tag v-else-if="busy" size="small" effect="plain">运行中</el-tag>
+        <span v-if="model" class="assistant-panel__model" :title="model">{{ model }}</span>
+        <el-tooltip content="关闭助手 · Esc">
+          <el-button class="assistant-panel__close" :icon="Close" text circle aria-label="关闭助手" @click="emit('close')" />
+        </el-tooltip>
+      </header>
       <el-alert
         v-if="error"
         class="assistant-panel__alert"
@@ -283,7 +296,7 @@ function setTaskSidebarOpen(value: boolean, byUser = true): void {
           show-icon
         />
         <el-button data-testid="assistant-configure-provider" type="primary" plain size="small" @click="emit('configure')">
-          配置 LLM 厂商
+          配置模型
         </el-button>
       </div>
 
@@ -367,60 +380,7 @@ function setTaskSidebarOpen(value: boolean, byUser = true): void {
   </el-dialog>
 </template>
 
-<style scoped>
-/* 尺寸契约（--ai-gap / --ai-fs / --ai-r / --ai-cat）在文件末尾的 unscoped 块里。 */
-.assistant-panel {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  background:
-    radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--seal) 8%, transparent), transparent 55%),
-    var(--sheet);
-  color: var(--ink);
-}
-
-.assistant-panel__alert { margin: .45rem .85rem 0; }
-
-.assistant-panel__provider-empty {
-  display: flex;
-  align-items: center;
-  gap: .55rem;
-  padding: .45rem .85rem;
-}
-
-.assistant-panel__provider-empty .assistant-panel__alert {
-  flex: 1 1 auto;
-  margin: 0;
-}
-
-.assistant-panel__body {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-}
-
-.assistant-panel__stage {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-}
-
-.assistant-panel__composer {
-  flex: 0 0 auto;
-  padding: .6rem .85rem .75rem;
-  border-top: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
-}
-
-.assistant-panel__stage :deep(.assistant-conversation),
-.assistant-panel__stage :deep(.assistant-empty) {
-  padding-inline: var(--ai-pad-x);
-  box-sizing: border-box;
-}
-</style>
+<style scoped src="./AssistantPanel.css"></style>
 
 <!-- Dialog shell must be unscoped: el-dialog teleports to body. -->
 <style>
@@ -436,14 +396,14 @@ function setTaskSidebarOpen(value: boolean, byUser = true): void {
 .assistant-runtime-popper,
 .ctx-usage-popper {
   /* 紧凑内容型：行内有气口，块与块别糊、也别拉成空白大海 */
-  --ai-gap-xs: .25rem;
-  --ai-gap-sm: .4rem;
-  --ai-gap-md: .55rem;
-  --ai-gap-lg: .8rem;
-  --ai-pad-y: .32rem;
-  --ai-pad-x: .55rem;
-  --ai-block-pad: .4rem .55rem;
-  --ai-row-min: 1.9rem;
+  --ai-gap-xs: var(--gap-1);
+  --ai-gap-sm: var(--gap-2);
+  --ai-gap-md: var(--gap-2);
+  --ai-gap-lg: var(--gap-3);
+  --ai-pad-y: var(--gap-2);
+  --ai-pad-x: var(--gap-3);
+  --ai-block-pad: var(--ai-pad-y) var(--ai-pad-x);
+  --ai-row-min: var(--ctl-h);
   --ai-process-max: 100%;
 
   /*
@@ -466,8 +426,8 @@ function setTaskSidebarOpen(value: boolean, byUser = true): void {
 
   /* 圆角：卡片跟全站 --radius，chip 收一档，pill 走胶囊 */
   --ai-r-card: var(--radius);
-  --ai-r-chip: 4px;
-  --ai-r-pill: 999px;
+  --ai-r-chip: var(--radius-sm);
+  --ai-r-pill: var(--radius-pill);
 
   /*
    * 上下文构成条的定性分类色：只负责「八段互相可分」，不承载涨跌 / 成败语义，
@@ -524,10 +484,14 @@ html.dark
   padding: 0 !important;
   margin: 0;
 }
-.assistant-dialog .el-dialog__body {
+.assistant-dialog > .el-dialog__body {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   height: 100%;
   min-height: 0;
+  /* 普通表单弹窗的全局 68dvh 限高不适用于已自行管理滚动的助手工作台。 */
+  max-height: none;
   /* 去掉 dialog 默认内边距，内容贴齐弹窗内沿 */
   padding: 0 !important;
   margin: 0 !important;
@@ -543,5 +507,15 @@ html.dark
   align-items: flex-start;
   justify-content: center;
   padding-top: 0;
+}
+@media (max-width: 640px) {
+  .assistant-dialog.el-dialog {
+    width: calc(100% - var(--gap-4)) !important;
+    max-width: calc(100vw - var(--gap-4));
+    height: calc(100dvh - var(--gap-4));
+    max-height: calc(100dvh - var(--gap-4));
+    margin-block: var(--gap-2) !important;
+  }
+  .ctx-usage-popper { max-width: calc(100vw - var(--gap-4)); }
 }
 </style>

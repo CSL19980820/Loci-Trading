@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
+import pandas as pd
+
 from src.backtest.application.engine import BacktestResult, Trade
 from src.backtest.application.research_portfolio import (
     PortfolioResearchConfig,
@@ -74,6 +76,8 @@ def analyze_backtest_research(
     strategy_slug: str = "",
     portfolio_config: PortfolioResearchConfig | None = None,
     trading_dates: Sequence[str] | None = None,
+    closing_prices: pd.DataFrame | None = None,
+    adjustment_factors: pd.DataFrame | None = None,
     split: TrainOOSSplit | None = None,
     parameters: dict[str, Any] | None = None,
     isolated_train: BacktestResult | None = None,
@@ -104,6 +108,8 @@ def analyze_backtest_research(
         config=portfolio_config,
         trading_dates=trading_dates,
         strategy_slug=slug,
+        **({"closing_prices": closing_prices, "adjustment_factors": adjustment_factors}
+           if portfolio_config and portfolio_config.account_model == "daily_close" else {}),
     )
     risk = risk_xray(
         trades,

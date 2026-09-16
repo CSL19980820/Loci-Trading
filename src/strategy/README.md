@@ -20,6 +20,24 @@
 - 历史污染行（隔日写入却标成 `api:screen*`）在连 `palace.db` 时幂等改标为 `api:screen_backfill`
 
 ## 关键入口
+
+### 一线定乾坤·首板次日（2026-09-12）
+
+`yixian-auction` 是可编辑 Python Screen Skill，包在 `templates/skills/yixian-auction/`。
+昨日首板 + 地量 + 放量 + KDJ/MACD 条件，今日仅按开盘涨幅选股。默认只选主板，
+关闭 ST/退市/停牌过滤及额外上市自然日限制；无行业、市值、价格、宽度和 Top-N 限制。
+18 个参数均在指标参数表编辑，定时任务不固定复制参数，下一次运行读取保存后的默认值。
+详见 [指标说明与参数](../../templates/skills/yixian-auction/SKILL.md)。
+
+Python 包的入口函数可带 `history_bars(params)`、`live_candidate_codes(panels,date,params)`
+和 `strict_live_ohlcv=True` 属性。未声明者沿用原逻辑；声明者按有效参数计算预热长度，
+并只向昨日条件合格股票请求严格实时报价。所有选股/回测入口传递实际参数给
+`signal_history_bars`，热库不足时按原规则回退全量库。开盘入场指标不会因当天零量而丢弃
+有效开盘价；缺失开盘字段仍不允许用现价回填。
+
+`impulse-pullback-tail-v1`（涨停大涨回落转强·十日）已按用户要求从活动注册表下线，
+删除其定时任务；源码仅供历史研究重放，不再自行注册。历史候选与研究记录保留。
+
 `StrategyEngine`（domain/base）；`screen`（可带 `on_progress`；盘中选今天自动 `live_overlay`：实时日 K 叠内存，不写行情库）；
 HTTP：`/api/strategies/*`、`POST /api/strategies/screen`（默认 `record_candidates=true`；多日请用异步接口）、
 `GET|POST /api/screen/run`（异步进度 + 默认入库；支持 `start`/`end` 区间 ≤31 自然日，按交易日循环通用 `screen` + 同日同池入库；**进度按战法分槽**：`GET` 不带参返回聚合快照 `{...当前这一个, runs: {slug: 槽}, running_strategies}`，带 `?strategy=` 只看一个；`POST /api/screen/run/cancel?strategy=` 点名停一个，省略则停全部）、`GET /api/screen/today?date=`、`GET /api/screen/history?live_only=`（默认真选）、`GET /api/screen/history/batch`（多战法一次返回，供盘面）。

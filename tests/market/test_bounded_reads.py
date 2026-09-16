@@ -152,6 +152,9 @@ class _SpyCursor:
     def __iter__(self):
         return iter(self._cursor)
 
+    def close(self) -> None:
+        self._cursor.close()
+
 
 class _FailingCursor(_SpyCursor):
     """第 fail_at 批 fetchmany 之后抛错，用来验证事务整体回滚。"""
@@ -232,7 +235,9 @@ class HotWindowCopyStreamingTests(unittest.TestCase):
     def test_copy_uses_fetchmany_batches_not_fetchall(self) -> None:
         """读侧不许再 fetchall：那正是把整个窗口物化两份的那一步。"""
         log = self._spy(_SpyCursor)
-        written = store_hot._copy_quotes_window(self.full, self.hot, self.days[0])
+        written = store_hot._copy_quotes_window(
+            self.full, self.hot, self.days[0], force=True
+        )
 
         self.assertEqual(written, self.total)
         self.assertNotIn("fetchall", log)
@@ -246,7 +251,9 @@ class HotWindowCopyStreamingTests(unittest.TestCase):
         batch = 128
         with mock.patch.object(store_hot, "_COPY_BATCH_ROWS", batch):
             log = self._spy(_SpyCursor)
-            written = store_hot._copy_quotes_window(self.full, self.hot, self.days[0])
+            written = store_hot._copy_quotes_window(
+                self.full, self.hot, self.days[0], force=True
+            )
 
         self.assertEqual(written, self.total)
         self.assertLessEqual(max(log["fetchmany"]), batch)
@@ -254,7 +261,7 @@ class HotWindowCopyStreamingTests(unittest.TestCase):
 
     def test_copy_writes_every_row_and_column(self) -> None:
         """分批不能丢行、不能错列：逐行逐列与全量库比对。"""
-        store_hot._copy_quotes_window(self.full, self.hot, self.days[0])
+        store_hot._copy_quotes_window(self.full, self.hot, self.days[0], force=True)
         self.assertEqual(
             self.hot.conn.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0],
             self.total,
@@ -270,9 +277,11 @@ class HotWindowCopyStreamingTests(unittest.TestCase):
 
     def test_partial_window_copy_keeps_older_rows(self) -> None:
         """增量场景：只搬 [start, ∞)，窗口外的旧行不受影响。"""
-        store_hot._copy_quotes_window(self.full, self.hot, self.days[0])
+        store_hot._copy_quotes_window(self.full, self.hot, self.days[0], force=True)
         cut = self.days[self.DAYS - 5]
-        written = store_hot._copy_quotes_window(self.full, self.hot, cut)
+        written = store_hot._copy_quotes_window(
+            self.full, self.hot, cut, force=True
+        )
         self.assertEqual(written, 5 * self.CODES)
         self.assertEqual(
             self.hot.conn.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0],
@@ -286,7 +295,7 @@ class HotWindowCopyStreamingTests(unittest.TestCase):
         天数与末日，看不出中间少了几百万行。这里模拟第 2 批搬运失败：DELETE 与
         已写入的批必须一起回滚，热库保持上一轮的完整窗口。
         """
-        store_hot._copy_quotes_window(self.full, self.hot, self.days[0])
+        store_hot._copy_quotes_window(self.full, self.hot, self.days[0], force=True)
         before = self.hot.conn.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0]
         self.assertEqual(before, self.total)
 
@@ -296,7 +305,9 @@ class HotWindowCopyStreamingTests(unittest.TestCase):
         with mock.patch.object(store_hot, "_COPY_BATCH_ROWS", 100):
             self._spy(failing)
             with self.assertRaises(RuntimeError):
-                store_hot._copy_quotes_window(self.full, self.hot, self.days[0])
+                store_hot._copy_quotes_window(
+                    self.full, self.hot, self.days[0], force=True
+                )
 
         after = self.hot.conn.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0]
         self.assertEqual(after, before, "写事务未回滚：热库出现了残缺窗口")
@@ -312,7 +323,9 @@ class HotWindowCopyStreamingTests(unittest.TestCase):
 
         self.hot._transaction = counting_transaction  # type: ignore[method-assign]
         try:
-            store_hot._copy_quotes_window(self.full, self.hot, self.days[0])
+            store_hot._copy_quotes_window(
+                self.full, self.hot, self.days[0], force=True
+            )
         finally:
             self.hot._transaction = real_transaction  # type: ignore[method-assign]
         self.assertEqual(len(opened), 2, "copy 一次 + 回执一次；多出来的是被拆开的事务")

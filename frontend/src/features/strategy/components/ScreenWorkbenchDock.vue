@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Close } from '@element-plus/icons-vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import type { Pick, ScreenResult, ScreenSkillPreviewResponse } from '@/shared/types/quant'
 
@@ -21,6 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   focusLine: [line: number]
+  close: []
 }>()
 
 const diagnostics = computed(() => props.preview?.diagnostics ?? [])
@@ -47,7 +50,7 @@ function onDiagClick(line?: number | null): void {
 <template>
   <section
     class="report-dock"
-    :class="{ 'report-dock--open': open }"
+    :class="{ 'report-dock--open': open, 'report-dock--backtest': open && activeTab === 'bt' }"
     aria-label="结果坞"
   >
     <div v-if="open" class="report-dock__toolbar">
@@ -60,31 +63,27 @@ function onDiagClick(line?: number | null): void {
         <el-radio-button value="picks">选股</el-radio-button>
         <el-radio-button v-if="backtestSlot" value="bt">回测</el-radio-button>
       </el-radio-group>
+      <el-button text circle :icon="Close" aria-label="收起结果面板" @click="emit('close')" />
     </div>
 
     <div v-if="open" v-loading="screenBusy" class="report-dock__body">
-      <div v-show="activeTab === 'diag'" class="dock-pane">
-        <el-empty
+      <div v-show="activeTab === 'diag'" class="flex min-w-0 flex-col gap-1 p-2">
+        <EmptyState
           v-if="!diagnostics.length"
-          :image-size="40"
           description="无诊断"
         />
         <el-button
           v-for="diag in diagnostics"
           :key="`${diag.code}-${diag.line}-${diag.message}`"
           text
-          class="dock-diag"
+          class="m-0 flex w-full items-center gap-2 px-2 py-1 text-left"
           @click="onDiagClick(diag.line)"
         >
-          <el-tag
-            size="small"
-            :type="diag.severity === 'error' ? 'danger' : diag.severity === 'warning' ? 'warning' : 'info'"
-            effect="plain"
-          >
+          <UiBadge :variant="diag.severity === 'error' ? 'stamp' : diag.severity === 'warning' ? 'warn' : 'info'">
             {{ diag.code }}
-          </el-tag>
-          <span>{{ diag.message }}</span>
-          <small v-if="diag.line != null">L{{ diag.line }}</small>
+          </UiBadge>
+          <span class="min-w-0 flex-1 truncate">{{ diag.message }}</span>
+          <small v-if="diag.line != null" class="text-aux text-mist shrink-0 font-mono">L{{ diag.line }}</small>
         </el-button>
       </div>
 
@@ -154,18 +153,23 @@ function onDiagClick(line?: number | null): void {
 }
 
 .report-dock--open {
-  grid-template-rows: 2.35rem minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   flex: 0 0 min(14.5rem, 40%);
   border-top: 1px solid var(--rule);
 }
-
+/* 回测含表单与图表，给它更大的结果区域；编辑区始终保留。 */
+.report-dock--backtest { flex-basis: min(32rem, 60%); }
 .report-dock__toolbar {
   display: flex;
   align-items: center;
-  padding: 0.35rem 0.7rem;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-1) var(--gap-2);
   border-bottom: 1px solid var(--rule);
   background: var(--panel-2);
 }
+.report-dock__toolbar > .el-button { flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) { .report-dock { transition: none; } }
 
 .report-dock__body {
   min-height: 0;

@@ -18,7 +18,7 @@
 | UI 例外 | `vue-element-plus-x` 仅限助手层，由 [ADR-006](../docs/adr/ADR-006-assistant-rich-render-and-streaming.md) 决策 4 授权；业务页保持 Element Plus |
 | 图表 | ECharts 6（`echarts/core` + 按需 `use()`，勿全量引） |
 | 只读查询 | `@pinia/colada`（`use*Query.ts`），只读列表优先走它 |
-| 样式 | 本仓 CSS 变量六层体系（`style.*.css`）。Tailwind 4 已装但**只有 `PulseView.vue` 在用**，新代码不要扩大它的使用面 |
+| 样式 | 本仓 CSS 变量六层体系（`style.*.css`）+ Tailwind 4 工具类（颜色/字号/间距必须映射 `style.base.css` 令牌，见 `style.tw-theme.css`）。交互底座仍是 Element Plus；禁止再引入另一套组件库 |
 | 代码编辑 | Ops 大段文本用 `features/ops/components/CodeEditor.vue`（Monaco）；勿另引 UI 库 |
 | 包管理 | **bun** |
 | 别名 | `@/` → `frontend/src/` |
@@ -182,8 +182,8 @@ Element Plus 已**按需注册**（§1.1，模板照常写 `<el-xxx>`，无需�
 3. 图表容器（ECharts / Lightweight Charts）内部 DOM
 4. Monaco `CodeEditor` 编辑区
 5. 极薄封装壳（如 `PageTabs`/`SegmentSwitch`）——**内部应优先 `el-segmented` / `el-radio-group` / `el-tabs`，禁止无限期留裸 `<button>`**
-6. `shared/components/ui/EmptyState.vue` 内部是三个纯文本节点，不再包 `el-empty`——把 el-empty
-   收进 96px 要逐条对抗它的插图槽与 40px 留白，收完也只剩这三个节点（见 `docs/ui-spec.md` §7）。
+6. `shared/components/ui/EmptyState.vue` 内部是三个纯文本节点，不再包 `el-empty`——
+   铺满父级剩余高度并居中（见 `docs/ui-spec.md` §7）。
    业务页**仍然禁止**自绘空态：一律用 `EmptyState`（或存量 `el-empty`，已被全局压密）。
 
 **封装规矩：**
@@ -229,7 +229,7 @@ export const usePalaceStore = defineStore('palace', () => {
 
 ### 3.7 模板与 UI
 
-- 空态：`EmptyState`（为什么空 + 下一步，合计 ≤24 字，整块 ≤96px）。
+- 空态：`EmptyState`（为什么空 + 下一步，合计 ≤24 字，铺满父级并居中）。
 - 数字：`shared/lib/format` 的 `pct` / `signedPct` / `price` / `money` / `compactNumber`；涨跌色用现有 tone class。**不要在 feature 里另写一份格式化**——此前 `fmtPct` 被手抄了 9 份、`fmtPrice` 5 份，精度和正负号口径已经开始分叉。
 - 样式：只用 `style.*.css` 的 CSS 令牌（见 §3.9 与 [`docs/ui-spec.md`](docs/ui-spec.md)）；禁止魔法色值/字号。
 - 列表 `v-for` 必须稳定 `:key`；慎用 `v-html`。
@@ -282,7 +282,7 @@ export const usePalaceStore = defineStore('palace', () => {
 | 表格 | `el-table` / `BasicTable`；数字列 `align="right"`（自动等宽 + tabular-nums），代码列 `class-name="is-code"`，涨跌用 `is-up`/`is-down`/`is-flat`；表格贴 Sheet 边 | 皮肤在 `style.components.css`，SFC 不重写行高与配色 |
 | 表单 | `el-form` + `el-form-item`；多列用 `.form-grid`（`auto-fit minmax(260px,1fr)`）；筛选条用 `.filter-bar .filters`（控件同高 `--ctl-h`）；label 宽 `--form-label-w` | 禁止自绘 label 行、禁止局部改 `el-form` 栅格 |
 | 文案 | 页面不写介绍段落；解释进 tooltip；`el-alert` 只报当前真实异常、标题 ≤20 字、**禁 `description`**；按钮用动词短语 | 见 `docs/ui-spec.md` §8 |
-| 字体 | 不挂 webfont（Google Fonts `<link>` 已从 `index.html` 删除，国内拉不到还阻塞首屏）；`--font-display` 已等于 `--font-sans` | `--font` / `--mono` |
+| 字体 | 不挂 webfont；汉字走 `Loci CJK`（`local()` 简体系统字 + `unicode-range`），拉丁走系统 UI；`--font-display` 已等于 `--font-sans` | `--font` / `--mono` |
 | 无障碍与响应式 | `:focus-visible` 2px `--seal` 轮廓可见；`prefers-reduced-motion` 生效；980px / 640px 不塌、无文档级滚动条 | §3.7.1 |
 
 ## 4. 反模式表（Agent 自查）
@@ -317,8 +317,8 @@ export const usePalaceStore = defineStore('palace', () => {
 | `el-alert` 写 `description` 长说明 / 当常驻说明条 | 只报当前真实异常，`title` ≤20 字；解释进 `el-tooltip` |
 | 硬编码颜色 / 字号 / 间距（`#hex`、`px` 字号、裸 `rem` 间距） | 用令牌；确实无法用令牌时必须写注释说明 why（`docs/ui-spec.md` §11.6） |
 | 用 `min-height` / 大 `padding` 撑空，或写死 `repeat(N,1fr)` 但内容不足 | `flex:1 1 auto; min-height:0` 吃满；栅格用 `repeat(auto-fit, minmax(…,1fr))` |
-| 页面顶部写介绍段落 / 副标题段 | 口径进 `PageHeader` 的 `note`（单行 + tooltip）或 docs；页面只放数据与操作 |
-| 空态用大插图 + 三行解释（`el-empty :image-size="120"`） | `EmptyState`：一行主文案 ≤14 字 + 一行下一步，整块 ≤96px |
+| 页面顶部写介绍段落 / 副标题段 | 口径进 `PageToolbar` 的 `note`（ⓘ + tooltip）或 docs；页面只放数据与操作 |
+| 空态用大插图 + 三行解释，或锁 96px 缩成小岛 | `EmptyState`：一行主文案 ≤14 字 + 一行下一步，铺满主区居中 |
 | 在 SFC 里重写 `el-table` / `el-form` 的行高与配色 | 改 `style.components.css` 全局层一次，别在 32 个页面各调一遍 |
 
 ## 5. 命令与自检

@@ -1,7 +1,6 @@
 """screen 任务执行器：选股与候选池落库。"""
 from __future__ import annotations
 
-from datetime import date
 import json
 import logging
 import re
@@ -19,7 +18,7 @@ from src.shared.tenancy import is_primary_tenant
 logger = logging.getLogger(__name__)
 
 
-def _await_shared_quotes(context: JobContext) -> dict[str, Any]:
+def _await_shared_quotes(context: JobContext, trade_date: str) -> dict[str, Any]:
     """子租户选股前的**只读**行情就绪检查。
 
     不传任何 code，所以 ``ensure_today_quotes_for_screen`` 只会度量覆盖率、
@@ -35,7 +34,7 @@ def _await_shared_quotes(context: JobContext) -> dict[str, Any]:
 
     try:
         with context.market() as store:
-            ensured = ensure_today_quotes_for_screen(store, [])
+            ensured = ensure_today_quotes_for_screen(store, [], trade_date=trade_date)
     except ScreenSpotError as exc:
         raise JobSkipped(
             f"当日行情尚未就绪（{exc}）；行情由主账号的同步任务统一写，"
@@ -64,7 +63,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     多租户：**子账号既不刷 spot、也不镜像热库**。行情是全局共享事实，写它的是
     主账号的系统级同步任务；子账号只读，当日行情没就绪就落 skipped 等下一轮。
     """
-    from src.market import should_overlay_live
+    from src.market import resolve_screen_trade_date, should_overlay_live
     from src.strategy import get, screen
     from src.strategy.domain.base import signal_history_bars
 
@@ -72,8 +71,14 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     if not slug:
         raise JobError("screen 任务必须指定 strategy")
 
+    from src.ops.application.jobs.screen_schedule_guard import guard_screen_schedule
+
+    schedule_check = guard_screen_schedule(config, context)
+
     # 盘中选今天：自己拉实时 overlay，不写 market.db、不镜像热库、不跟同步抢锁。
     live_overlay = should_overlay_live(config.get("date"))
+    with context.market() as store:
+        trade_date = resolve_screen_trade_date(store, config.get("date"))
 
     # 行情是**全局共享事实**：写 ``market.db`` 的只有主租户的系统级同步任务。
     # 子租户的选股只该**读**——它去补 spot 就要经 ``apply_today_spot`` 抢全局
@@ -113,6 +118,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
                     spot_codes,
                     instrument_types=spot_types or None,
                     force_refresh=bool(config.get("force_spot_refresh", False)),
+                    trade_date=trade_date,
                 )
             spot_rows = int(ensured.get("written") or 0)
             spot_refresh_meta = {
@@ -136,7 +142,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             "message": "盘中选股走独立实时行情，不写 market.db、不跟同步抢锁",
         }
     elif not primary:
-        spot_refresh_meta.update(_await_shared_quotes(context))
+        spot_refresh_meta.update(_await_shared_quotes(context, trade_date))
 
     # 策略声明 requires_full_history 时跳过热库镜像，直接读全量库。
     # 否则尽量镜像后读热库；镜像失败、热库落后于全量、或**目标日的预热日历
@@ -156,7 +162,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
         # 定义的问题，不是「热库不可用」。混进下面那个 except 会把两件事说成同一件，
         # 还会把战法配置错误藏成一次「安静地慢一点」的全量库选股。
         try:
-            warmup_bars = signal_history_bars(engine)
+            warmup_bars = signal_history_bars(engine, params=config.get("params"))
         except Exception as exc:
             raise JobError(f"战法 {slug} 的指标预热长度算不出来（{exc}）") from exc
         try:
@@ -175,7 +181,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
                 reason = hot_fallback_reason(
                     full,
                     hot,
-                    trade_date=str(config.get("date") or date.today().isoformat()),
+                    trade_date=trade_date,
                     warmup_bars=warmup_bars,
                     live_overlay=live_overlay,
                 )
@@ -187,15 +193,21 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             logger.warning("热库不可用，回退全量库选股：%s", exc)
 
     with (context.market_hot() if use_hot else context.market()) as store:
+        if schedule_check:
+            # 历史加载/排队可能跨过截止点，取实时行情前再检查一次。
+            schedule_check = guard_screen_schedule(config, context)
         result = screen(
             store,
             str(slug),
-            trade_date=config.get("date"),
+            trade_date=trade_date,
             params=config.get("params"),
             codes=config.get("codes"),
             universe=config.get("universe"),
             live_overlay=live_overlay,
         )
+        if schedule_check:
+            # 拉行情或计算超时也不得把迟到结果写成指定尾盘快照。
+            schedule_check = guard_screen_schedule(config, context)
         names = {
             item["code"]: item["name"] for item in store.list_instruments(status="")
         } if config.get("record_candidates") else {}
@@ -302,6 +314,9 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
                 for p in list(getattr(result, "watch_picks", None) or [])
             ]
 
+        if schedule_check:
+            # 名称查询等后处理也可能跨窗；这里约束开始持久化的时刻。
+            schedule_check = guard_screen_schedule(config, context)
         payload["recorded"] = persist_screen_candidates(
             _Bag(),
             palace_db=context.palace_db or default_palace_db(),
@@ -311,6 +326,10 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             source="job:screen",
             top_n=0,
         )
+    if schedule_check:
+        if not config.get("record_candidates"):
+            schedule_check = guard_screen_schedule(config, context)
+        payload["snapshot_schedule"] = schedule_check
     return payload
 
 

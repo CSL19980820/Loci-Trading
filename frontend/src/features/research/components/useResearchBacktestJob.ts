@@ -8,7 +8,7 @@
  *
  * 面板那边留下的是展示：指标分组、战法下拉文案、证据与 artifact 的摆法。
  */
-import { onActivated, onDeactivated, onUnmounted, ref } from 'vue'
+import { computed, onActivated, onDeactivated, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { getStrategies } from '@/shared/api/quant'
@@ -21,6 +21,7 @@ import {
   submitResearchBacktestJob,
 } from '@/shared/api/quant_research'
 import type { StrategyInfo } from '@/shared/types/quant'
+import type { BacktestExecutionConfig, StrategyBacktestTemplate } from '@/shared/types/backtest-config'
 import type {
   ResearchBacktestJob,
   ResearchBacktestPublicationResult,
@@ -58,6 +59,24 @@ export function useResearchBacktestJob() {
     historicalUniverseId: '',
     strictPit: false,
   })
+
+  const selected = computed(() => strategies.value.find((item) => item.slug === form.value.strategy.trim()))
+  const template = computed(() => (selected.value?.backtest_config || {}) as StrategyBacktestTemplate)
+  watch(
+    () => selected.value?.slug,
+    () => {
+      const cfg = template.value
+      if (typeof cfg.hold_days === 'number') form.value.holdDays = cfg.hold_days
+      if (typeof cfg.initial_capital === 'number') form.value.initialCapital = cfg.initial_capital
+      if (typeof cfg.max_positions === 'number') form.value.maxPositions = cfg.max_positions
+      if (cfg.start && cfg.end) range.value = [cfg.start, cfg.end]
+      if (cfg.split) {
+        trainRange.value = [cfg.split.train_start, cfg.split.train_end]
+        oosRange.value = [cfg.split.oos_start, cfg.split.oos_end]
+      }
+    },
+    { immediate: true },
+  )
 
   function updateRun(next: ResearchBacktestRun): void {
     const index = runs.value.findIndex((item) => item.run_id === next.run_id)
@@ -150,13 +169,25 @@ export function useResearchBacktestJob() {
     activeJob.value = null
     pollingFailed.value = false
     try {
+      const cfg = template.value
+      const backtestConfig: BacktestExecutionConfig = { hold_days: form.value.holdDays }
+      const executionKeys = [
+        'stop_loss_pct', 'take_profit_pct', 'commission_bps', 'stamp_duty_bps', 'slippage_bps',
+        'allow_limit_up_entry', 'benchmark', 'strict_limit_prices', 'economic_returns', 'signal_dataset',
+      ] as const
+      for (const key of executionKeys) {
+        if (cfg[key] !== undefined) Object.assign(backtestConfig, { [key]: cfg[key] })
+      }
+      if (cfg.valuation_end !== undefined) backtestConfig.valuation_end = range.value[1]
       const result = await submitResearchBacktestJob({
         strategy: form.value.strategy.trim(),
         start: range.value[0],
         end: range.value[1],
-        backtest_config: { hold_days: form.value.holdDays },
+        backtest_config: backtestConfig,
         initial_capital: form.value.initialCapital,
         max_positions: form.value.maxPositions,
+        ...(cfg.account_model !== undefined ? { account_model: cfg.account_model } : {}),
+        ...(cfg.lot_size !== undefined ? { lot_size: cfg.lot_size } : {}),
         split: hasTrain && hasOos ? {
           train_start: trainRange.value[0], train_end: trainRange.value[1],
           oos_start: oosRange.value[0], oos_end: oosRange.value[1],

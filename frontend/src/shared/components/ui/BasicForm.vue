@@ -306,7 +306,7 @@ defineExpose({
     :size="size"
     :disabled="disabled"
     require-asterisk-position="right"
-    class="basic-form"
+    class="basic-form w-full items-start gap-x-3"
     :class="gridClass"
     v-bind="attrs"
     @submit.prevent
@@ -376,9 +376,6 @@ defineExpose({
  * 栅格直接落在 el-form 上：列宽 260px 起，列数由容器宽度决定，内容不足不留硬空格。
  * 行距交给全局 `.el-form .el-form-item{margin-bottom:var(--gap-2)}`，这里只管列间距。
  */
-.basic-form {
-  width: 100%;
-}
 
 .basic-form--c1,
 .basic-form--c2,

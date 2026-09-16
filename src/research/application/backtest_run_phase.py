@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
+from dataclasses import replace
 
 import pandas as pd
 
@@ -146,8 +147,27 @@ def slice_research_backtest_phase(context: Mapping[str, Any], start: str, end: s
             raise ResearchBacktestError("benchmark_close 缺少 phase 的交易日索引")
         phase["benchmark_close"] = benchmark.loc[phase_signals.index].copy()
     phase.update(signals=phase_signals, start=start, end=end)
+    if context["config"].valuation_end is not None:
+        phase["config"] = replace(context["config"], valuation_end=min(end, context["config"].valuation_end))
     assert_execution_alignment(phase)
     return phase
+
+
+def portfolio_market_inputs(context: Mapping[str, Any], account_model: str) -> dict[str, Any]:
+    """账户观察期不包含指标预热日；停牌占位价不作为新的经济估值。"""
+    panels = context.get("execution_panels", context["panels"])
+    close = panels["close"]
+    if account_model != "daily_close":
+        return {"trading_dates": [str(day) for day in context["panels"]["close"].index]}
+    start = context.get("start") or str(close.index.min())
+    end = context["config"].valuation_end or context.get("end") or str(close.index.max())
+    close = close.loc[(close.index >= start) & (close.index <= end)]
+    factors = panels.get("__adjust_factor")
+    return {
+        "trading_dates": [str(day) for day in close.index],
+        "closing_prices": close.where(panels["volume"].reindex_like(close).gt(0)),
+        "adjustment_factors": factors.reindex_like(close) if factors is not None else None,
+    }
 
 
 __all__ = [
@@ -155,4 +175,5 @@ __all__ = [
     "assert_execution_alignment",
     "prepare_research_backtest_context",
     "slice_research_backtest_phase",
+    "portfolio_market_inputs",
 ]

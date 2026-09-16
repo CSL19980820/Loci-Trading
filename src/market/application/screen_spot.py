@@ -160,6 +160,32 @@ def _intraday_soft_pass(
     }
 
 
+def resolve_screen_trade_date(
+    store: MarketStore, trade_date: str | None = None, *, now: datetime | None = None
+) -> str:
+    """显式日期优先；默认按上海交易时段选今日或上一已收盘日。"""
+    from src.market.application.session import build_session_status
+
+    current = now or datetime.now(_TZ)
+    current = current.replace(tzinfo=_TZ) if current.tzinfo is None else current.astimezone(_TZ)
+    if trade_date:
+        target = date.fromisoformat(trade_date).isoformat()
+        if target > current.date().isoformat():
+            raise ScreenSpotError(f"选股目标日 {target} 尚未到来")
+        return target
+    session = build_session_status(
+        coverage={}, trading_days=store.trading_days(), now=current
+    )
+    target = (
+        current.date().isoformat()
+        if in_open_session(store, now=current)
+        else session["expected_last_date"]
+    )
+    if not target:
+        raise ScreenSpotError("无法确定选股目标交易日，请先同步交易日历")
+    return str(target)
+
+
 def ensure_today_quotes_for_screen(
     store: MarketStore,
     codes: Sequence[str],
@@ -167,8 +193,9 @@ def ensure_today_quotes_for_screen(
     instrument_types: dict[str, str] | None = None,
     min_coverage_ratio: float = DEFAULT_SCREEN_COVERAGE_FLOOR,
     force_refresh: bool = False,
+    trade_date: str | None = None,
 ) -> dict[str, Any]:
-    """保证选股可读到今日日 K；能跳过 spot 就跳过。
+    """保证选股可读到目标日日 K；历史日只检查，今日才允许刷新 spot。
 
     返回字段：
     - status: skipped | refreshed | reused_after_busy | degraded_intraday
@@ -180,9 +207,23 @@ def ensure_today_quotes_for_screen(
     """
     from src.market.infrastructure.sync_spot import apply_today_spot
 
-    today = date.today().isoformat()
+    today = datetime.now(_TZ).date().isoformat()
+    target = resolve_screen_trade_date(store, trade_date)
     floor = float(min_coverage_ratio)
-    before = measure_day_coverage(store, today)
+    before = measure_day_coverage(store, target)
+
+    # 现价只能补今天；历史/休市选股不能拿今天的 spot 修补目标日或污染日期。
+    if target != today:
+        if not coverage_ready(before, floor=floor):
+            raise ScreenSpotError(
+                f"选股目标日 {target} 行情不足（覆盖 {before['present']}/{before['listed']}="
+                f"{before['ratio']:.1%}，需要 ≥{floor:.0%}），请先补齐该日历史行情"
+            )
+        return {
+            "status": "skipped", "written": 0, "requested": len(codes),
+            "coverage": before, "degraded": False,
+            "message": f"选股目标日 {target} 行情已就绪（覆盖 {before['ratio']:.1%}），跳过现价重刷",
+        }
 
     if not force_refresh and coverage_ready(before, floor=floor):
         msg = (

@@ -2,12 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { RefreshRight, Upload } from '@element-plus/icons-vue'
 
 import { removeSkill } from '@/shared/api/quant'
-import HeaderActions from '@/shared/components/layout/HeaderActions.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
 
@@ -87,7 +87,7 @@ const detailOpen = ref(false)
 const tabItems = computed(() => [
   { name: 'browse', label: '浏览', badge: counts.value.all || undefined },
   { name: 'installed', label: '已装', badge: installed.value.length || undefined },
-  { name: 'publish', label: '发布' },
+  { name: 'publish', label: '安装' },
 ])
 
 const kindOptions: { value: MarketKind | 'all'; label: string }[] = [
@@ -177,15 +177,13 @@ defineExpose({ load })
 </script>
 
 <template>
-  <div class="market-panel" :class="{ 'market-panel--embedded': embedded }">
+  <div class="market-panel flex min-h-0 min-w-0 flex-1 flex-col" :class="{ 'page-fill': !embedded }">
     <div class="market-subhead">
-      <PageTabs v-model="shelfTab" :items="tabItems" :sticky="false" dense aria-label="市场货架分区" />
-      <HeaderActions
-        :actions="[
-          { key: 'reload', label: '刷新', disabled: loading, onClick: () => void load() },
-          { key: 'publish', label: '安装 zip', kind: 'primary', onClick: goPublish },
-        ]"
-      />
+      <PageTabs class="market-shelf-tabs" v-model="shelfTab" :items="tabItems" :sticky="false" dense aria-label="市场货架分区" />
+      <div class="market-actions">
+        <el-button :icon="RefreshRight" :loading="loading" @click="load">刷新</el-button>
+        <el-button v-if="shelfTab !== 'publish'" type="primary" :icon="Upload" @click="goPublish">安装技能</el-button>
+      </div>
     </div>
 
     <el-alert
@@ -201,15 +199,15 @@ defineExpose({ load })
     <div class="market-body">
       <template v-if="shelfTab !== 'publish'">
         <div class="market-toolbar">
-          <el-radio-group v-model="kindFilter" size="small">
+          <el-radio-group v-model="kindFilter" size="small" aria-label="货品分类">
             <el-radio-button v-for="opt in kindOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
             </el-radio-button>
           </el-radio-group>
+          <UiBadge v-if="!loading" variant="secondary">{{ shelfRows.length }} 项</UiBadge>
         </div>
 
-        <PageBusy v-if="loading && !shelfRows.length" label="加载货架…" />
-        <section v-else-if="shelfRows.length" class="market-shelf-wrap" aria-label="货架">
+        <section class="market-shelf-wrap" aria-label="货架">
           <MarketShelfTable
             :rows="shelfRows"
             :selected-id="selectedId"
@@ -218,15 +216,15 @@ defineExpose({ load })
             @select="onRowSelect"
             @open="openPackage"
             @remove="removePackage"
-          />
+          >
+            <template #empty>
+              <EmptyState :description="error ? '货架加载失败' : '暂无此类货品'">
+                <el-button v-if="error" :icon="RefreshRight" @click="load">重试</el-button>
+                <el-button v-else type="primary" :icon="Upload" @click="goPublish">安装技能</el-button>
+              </EmptyState>
+            </template>
+          </MarketShelfTable>
         </section>
-        <EmptyState
-          v-else
-          description="货架还没有这类货品"
-  reason="去「发布」安装 Skill zip"
-        >
-          <el-button type="primary" @click="goPublish">去发布 / 安装</el-button>
-        </EmptyState>
       </template>
 
       <MarketPublishPanel
@@ -248,58 +246,46 @@ defineExpose({ load })
 </template>
 
 <style scoped>
-.market-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  /* flex:1 已吃满父级高度；再写 height:100% 只会互相打架（体检 §4.4） */
-  flex: 1 1 auto;
-}
-
-.market-panel--embedded {
-  background: transparent;
-}
-
 .market-subhead {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
   flex-shrink: 0;
-  padding-right: 0.35rem;
 }
-
-.market-subhead :deep(.page-tabs) {
+.market-shelf-tabs {
   flex: 1;
   min-width: 0;
-  margin-bottom: 0.45rem;
-  padding-left: 0;
-  padding-right: 0;
+  margin: 0;
+  padding: 0;
   background: transparent;
 }
-
+.market-actions,
+.market-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+  flex-shrink: 0;
+}
+.market-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.market-toolbar { justify-content: space-between; }
 .market-alert {
-  margin: 0 0 0.55rem;
+  margin: var(--gap-2) 0 0;
   flex-shrink: 0;
 }
 
 .market-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.15rem 0 0.5rem;
+  min-width: 0;
+  min-height: 0;
+  gap: var(--gap-2);
+  padding-top: var(--gap-2);
+  overflow: hidden;
 }
 
-.market-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.65rem;
-  flex-shrink: 0;
-}
 
 /* 高度内容驱动：货架空时不留 12rem 死白，长列表由表体自滚 */
 .market-shelf-wrap {
@@ -311,6 +297,10 @@ defineExpose({ load })
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+@media (max-width: 640px) {
+  .market-shelf-tabs { flex-basis: 100%; }
+  .market-actions { margin-left: auto; }
 }
 
 </style>

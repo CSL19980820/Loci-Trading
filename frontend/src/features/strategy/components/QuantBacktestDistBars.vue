@@ -76,16 +76,16 @@ const bars = computed(() => {
   width: 100%;
   max-width: 14px;
   border-radius: 2px 2px 0 0;
-  background: color-mix(in srgb, var(--mist) 45%, transparent);
+  background: color-mix(in oklab, var(--mist) 45%, transparent);
 }
 .dist__bar.is-up {
-  background: color-mix(in srgb, var(--up) 70%, transparent);
+  background: color-mix(in oklab, var(--up) 70%, transparent);
 }
 .dist__bar.is-down {
-  background: color-mix(in srgb, var(--down) 70%, transparent);
+  background: color-mix(in oklab, var(--down) 70%, transparent);
 }
 .dist__bar.is-zero {
-  background: color-mix(in srgb, var(--mist) 55%, transparent);
+  background: color-mix(in oklab, var(--mist) 55%, transparent);
 }
 .dist__axis {
   display: flex;

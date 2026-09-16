@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
+import { ChatDotRound, Close } from '@element-plus/icons-vue'
 
 import AssistantFloatBall from './AssistantFloatBall.vue'
 
@@ -33,19 +34,24 @@ describe('AssistantFloatBall', () => {
     expect(wrapper.emitted('toggle')).toHaveLength(1)
   })
 
-  it('renders the ribbon knot when closed and morphs to X when open', async () => {
+  it('switches the conversation icon and accessible action when opening', async () => {
     const wrapper = mount(AssistantFloatBall, {
       props: { open: false },
       global: { stubs },
     })
 
-    expect(wrapper.find('.ball-mark__ribbon').exists()).toBe(true)
-    expect(wrapper.find('.ball-mark__close').exists()).toBe(false)
+    expect(wrapper.findComponent(ChatDotRound).exists()).toBe(true)
+    expect(wrapper.findComponent(Close).exists()).toBe(false)
+    expect(wrapper.get('button').attributes('aria-label')).toBe('打开 Loci 助手')
+    expect(wrapper.get('button').attributes('aria-expanded')).toBe('false')
 
     await wrapper.setProps({ open: true })
-    expect(wrapper.find('.ball-mark__ribbon').exists()).toBe(false)
-    expect(wrapper.find('.ball-mark__close').exists()).toBe(true)
+    expect(wrapper.findComponent(ChatDotRound).exists()).toBe(false)
+    expect(wrapper.findComponent(Close).exists()).toBe(true)
     expect(wrapper.get('button').classes()).toContain('is-open')
+    expect(wrapper.get('button').attributes('aria-label')).toBe('关闭 Loci 助手')
+    expect(wrapper.get('button').attributes('aria-expanded')).toBe('true')
+    wrapper.unmount()
   })
 
   it('marks busy and unavailable states on the launcher', async () => {

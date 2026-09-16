@@ -3,6 +3,7 @@ import { MagicStick } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 
 import { THINKING_OPTIONS, type LlmModelOption } from '@/shared/lib/llm'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import type { LlmProvider } from '@/shared/types/quant'
 
 const props = withDefaults(
@@ -34,21 +35,17 @@ const canGenerate = computed(() => Boolean(props.instruction.trim() && props.pro
 </script>
 
 <template>
-  <section class="copilot" :class="{ 'copilot--compact': compact }" aria-label="AI 策略助手">
+  <section class="flex h-full min-w-0 flex-col gap-2" :class="{ 'gap-1.5': compact }" aria-label="AI 策略助手">
     <!--
       compact（策稿台侧栏）里不再印「改公式」：外层侧栏头上已经写着「助手」，
       两行说的是同一件事。这一行现在只留真正有信息量的来源状态 tag —— 它决定
       能不能点「生成」，以前反而只在 compact 里被藏掉了。
     -->
-    <div class="copilot__head">
-      <strong v-if="!compact">生成或修改中文策略脉络</strong>
-      <el-tag
-        size="small"
-        :type="referencesReady ? 'success' : 'warning'"
-        effect="plain"
-      >
+    <div class="flex items-start justify-between gap-2">
+      <strong v-if="!compact" class="text-title font-bold">生成或修改中文策略脉络</strong>
+      <UiBadge :variant="referencesReady ? 'ok' : 'warn'">
         {{ referencesReady ? '来源已完整' : '待补来源' }}
-      </el-tag>
+      </UiBadge>
     </div>
 
     <el-input

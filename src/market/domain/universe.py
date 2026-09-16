@@ -101,7 +101,7 @@ def classify_board(code: str) -> str:
     text = str(code).strip().zfill(6)
     if text.startswith(("688", "689")):
         return "star"
-    if text.startswith(("300", "301")):
+    if len(text) == 6 and text.isascii() and text.isdigit() and text.startswith("30"):
         return "chi_next"
     if text.startswith(("4", "8", "92")):
         return "bse"

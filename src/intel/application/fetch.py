@@ -18,6 +18,7 @@ from src.intel.infrastructure.intel_cache import (
     write_cached_snapshot,
 )
 from src.intel.infrastructure.mcp import McpClient, McpError
+from src.intel.infrastructure.mcp_deadline import check_deadline, reraise_stop
 from src.intel.infrastructure.quota import (
     McpQuotaError,
     McpQuotaPool,
@@ -335,6 +336,7 @@ def call_mcp_tool(
     cache_max_age_minutes: int | None = None,
     market_store: MarketStore | None = None,
     skip_quota: bool = False,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
     """调用外部 MCP 工具；默认走 skill 池并扣配额。
 
@@ -352,6 +354,7 @@ def call_mcp_tool(
       真调一次、真扣一次；失败结果另存一行（不顶掉还能用的成功快照），冷却期内
       直接兑现，不进配额闸门。
     """
+    check_deadline(deadline)
     arguments, clamped = clamp_mcp_arguments_with_notes(arguments)
     trade_date = trade_date_today()
     store = market_store
@@ -406,7 +409,7 @@ def call_mcp_tool(
 
     if not skip_quota:
         try:
-            acquire_quota(pool)
+            acquire_quota(pool, **({"deadline": deadline} if deadline is not None else {}))
         except McpQuotaError as exc:
             if is_resident_wudao_server(server):
                 reason = str(exc) or "MCP 配额用尽"
@@ -418,9 +421,12 @@ def call_mcp_tool(
 
     from src.intel.infrastructure.registry import build_client
 
+    check_deadline(deadline)
     try:
         client = build_client(server)
     except Exception as exc:
+        if deadline is not None:
+            reraise_stop(exc)
         if is_resident_wudao_server(server):
             reason = str(exc) or "悟道 MCP 不可用"
             logger.info("call_mcp_tool 建连失败软跳过 %s：%s", tool, reason)
@@ -432,8 +438,11 @@ def call_mcp_tool(
         raise McpError(f"{server} 不是外部 HTTP MCP，无法直接 call_tool")
 
     try:
-        result = client.call_tool(tool, arguments)
+        check_deadline(deadline)
+        result = client.call_tool(tool, arguments, **({"deadline": deadline} if deadline is not None else {}))
     except Exception as exc:
+        if deadline is not None:
+            reraise_stop(exc)
         if is_resident_wudao_server(server):
             reason = str(exc) or "悟道 MCP 调用失败"
             logger.info("call_mcp_tool 调用软跳过 %s：%s", tool, reason)
@@ -520,12 +529,15 @@ def guarded_client_call(
     arguments: dict[str, Any] | None,
     *,
     pool: McpQuotaPool = "skill",
+    deadline: float | None = None,
 ) -> dict[str, Any]:
     """供 Agent executor 使用：扣 skill 池配额后委托 client.call_tool。"""
     args, clamped = clamp_mcp_arguments_with_notes(arguments)
     try:
-        acquire_quota(pool)
-        result = client.call_tool(name, args)
+        check_deadline(deadline)
+        acquire_quota(pool, **({"deadline": deadline} if deadline is not None else {}))
+        check_deadline(deadline)
+        result = client.call_tool(name, args, **({"deadline": deadline} if deadline is not None else {}))
         # 与 call_mcp_tool 同一条口径：参数被拒的调用服务端没执行，不记账。
         wasted = _rejected_before_execution(result)
         if not wasted:

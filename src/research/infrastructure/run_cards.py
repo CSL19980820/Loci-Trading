@@ -52,12 +52,31 @@ def _sha256_bytes(content: bytes) -> str:
 
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
+        normalized = {str(key): _json_safe(item) for key, item in value.items()}
+        if isinstance(value, dict) and all(
+            isinstance(key, str) and normalized[key] is item for key, item in value.items()
+        ):
+            return value
+        return normalized
     if isinstance(value, (list, tuple)):
-        return [_json_safe(item) for item in value]
+        normalized = [_json_safe(item) for item in value]
+        if isinstance(value, list) and all(left is right for left, right in zip(value, normalized)):
+            return value
+        return normalized
     if isinstance(value, float) and not isfinite(value):
         return None
     return value
+
+
+def _write_json_file(path: Path, value: Any, *, default: Any = None) -> tuple[str, int]:
+    """直接编码到临时文件，保留字节契约且不在内存中积累整份工件。"""
+    with path.open("x", encoding="utf-8", newline="\n") as stream:
+        json.dump(_json_safe(value), stream, ensure_ascii=False, indent=2,
+                  sort_keys=True, allow_nan=False, default=default)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    return _sha256_file(path), path.stat().st_size
 
 
 class ResearchRunCardStore:
@@ -118,30 +137,16 @@ class ResearchRunCardStore:
     @staticmethod
     def _atomic_json_write(path: Path, payload: Mapping[str, Any]) -> str:
         path.parent.mkdir(parents=True, exist_ok=True)
-        content = (
-            json.dumps(
-                _json_safe(payload),
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
-                allow_nan=False,
-                default=str,
-            )
-            + "\n"
-        ).encode("utf-8")
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            with temporary.open("xb") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
+            digest, _ = _write_json_file(temporary, payload, default=str)
             temporary.replace(path)
         finally:
             try:
                 temporary.unlink()
             except FileNotFoundError:
                 pass
-        return _sha256_bytes(content)
+        return digest
 
     @staticmethod
     def _atomic_bytes_write(path: Path, content: bytes) -> None:
@@ -208,8 +213,11 @@ class ResearchRunCardStore:
         }
         self._atomic_json_write(self._manifest_path(card.run_id), payload)
 
-    def _save_unlocked(self, card: ResearchRunCard) -> ResearchRunCard:
-        existing = self._load_unlocked(card.run_id)
+    def _save_unlocked(
+        self, card: ResearchRunCard, *, existing: ResearchRunCard | None = None,
+    ) -> ResearchRunCard:
+        if existing is None:
+            existing = self._load_unlocked(card.run_id)
         if existing is not None:
             if existing.input_sha256 != card.input_sha256:
                 raise RunCardImmutableError(
@@ -381,65 +389,72 @@ class ResearchRunCardStore:
         self,
         run_id: str,
         path: str,
-        content: bytes | str | Mapping[str, Any],
+        content: bytes | str | Path | Mapping[str, Any],
         *,
         artifact_type: str = "",
         metadata: Mapping[str, Any] | None = None,
         created_at: str | None = None,
     ) -> ArtifactManifestEntry:
         """以原子方式写入 run 目录内文件并追加 manifest 条目。"""
-        if isinstance(content, bytes):
-            body = content
-        elif isinstance(content, str):
-            body = content.encode("utf-8")
-        else:
-            body = (
-                json.dumps(
-                    _json_safe(content),
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    indent=2,
-                    allow_nan=False,
-                )
-                + "\n"
-            ).encode("utf-8")
-
-        with _JSON_LOCK:
-            card = self._load_unlocked(run_id)
-            if card is None:
-                raise RunCardNotFoundError(f"找不到研究 run card：{run_id}")
-            target = self._artifact_target(self._run_dir(run_id), path)
-            digest = _sha256_bytes(body)
-            self._assert_terminal_artifact_allowed(
-                card,
-                path=path,
-                artifact_type=artifact_type,
-                sha256=digest,
-            )
-            if target.is_file():
-                existing_digest = _sha256_file(target)
-                if existing_digest != digest:
-                    raise RunCardImmutableError(f"artifact 已存在且内容不同：{path}")
+        run_dir = self._run_dir(run_id)
+        target = self._artifact_target(run_dir, path)
+        temporary: Path | None = None
+        try:
+            if isinstance(content, Path):
+                if not self._card_path(run_id).is_file():
+                    raise RunCardNotFoundError(f"找不到研究 run card：{run_id}")
+                temporary = run_dir / f".artifact-{uuid.uuid4().hex}.tmp"
+                hasher, size = hashlib.sha256(), 0
+                with content.open("rb") as source, temporary.open("xb") as output:
+                    for chunk in iter(lambda: source.read(65536), b""):
+                        output.write(chunk)
+                        hasher.update(chunk)
+                        size += len(chunk)
+                    output.flush()
+                    os.fsync(output.fileno())
+                digest = hasher.hexdigest()
+            elif isinstance(content, (bytes, str)):
+                body = content if isinstance(content, bytes) else content.encode("utf-8")
+                digest, size = _sha256_bytes(body), len(body)
             else:
-                self._atomic_bytes_write(target, body)
-            entry = ArtifactManifestEntry(
-                path=path,
-                sha256=digest,
-                created_at=created_at or _utc_now(),
-                size_bytes=len(body),
-                artifact_type=artifact_type,
-                metadata=dict(metadata or {}),
-            )
-            current = {item.path: item for item in card.artifact_manifest}
-            previous = current.get(entry.path)
-            if previous is not None and previous.sha256 != entry.sha256:
-                raise RunCardImmutableError(f"artifact manifest 已存在且 hash 不同：{path}")
-            current[entry.path] = previous or entry
-            next_card = card.with_updates(
-                artifact_manifest=tuple(current[key] for key in sorted(current)),
-            )
-            self._save_unlocked(next_card)
-            return current[entry.path]
+                if not self._card_path(run_id).is_file():
+                    raise RunCardNotFoundError(f"找不到研究 run card：{run_id}")
+                temporary = run_dir / f".artifact-{uuid.uuid4().hex}.tmp"
+                digest, size = _write_json_file(temporary, content)
+            with _JSON_LOCK:
+                card = self._load_unlocked(run_id)
+                if card is None:
+                    raise RunCardNotFoundError(f"找不到研究 run card：{run_id}")
+                target = self._artifact_target(run_dir, path)
+                self._assert_terminal_artifact_allowed(
+                    card, path=path, artifact_type=artifact_type, sha256=digest,
+                )
+                if target.is_file():
+                    if _sha256_file(target) != digest:
+                        raise RunCardImmutableError(f"artifact 已存在且内容不同：{path}")
+                elif temporary is not None:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    temporary.replace(target)
+                else:
+                    self._atomic_bytes_write(target, body)
+                entry = ArtifactManifestEntry(
+                    path=path, sha256=digest, created_at=created_at or _utc_now(),
+                    size_bytes=size, artifact_type=artifact_type, metadata=dict(metadata or {}),
+                )
+                current = {item.path: item for item in card.artifact_manifest}
+                previous = current.get(entry.path)
+                if previous is not None and previous.sha256 != entry.sha256:
+                    raise RunCardImmutableError(f"artifact manifest 已存在且 hash 不同：{path}")
+                current[entry.path] = previous or entry
+                next_card = card.with_updates(
+                    artifact_manifest=tuple(current[key] for key in sorted(current)),
+                )
+                # 同一锁内已读并校验过旧card，避免再构造一份完整来源对象。
+                self._save_unlocked(next_card, existing=card)
+                return current[entry.path]
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     add_artifact = write_artifact
 

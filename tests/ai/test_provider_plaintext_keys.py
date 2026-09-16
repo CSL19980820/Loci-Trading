@@ -12,6 +12,32 @@ from src.ai.infrastructure.providers import (
 from src.ops import OpsError, OpsStore
 
 
+def test_save_defaults_to_offline_without_probe_or_model_discovery(tmp_path, monkeypatch) -> None:
+    from unittest.mock import Mock
+    from src.ai.api.schemas import ProviderCreate
+    probe = Mock(side_effect=AssertionError("保存不应校验上游"))
+    discover = Mock(side_effect=AssertionError("保存不应拉取模型目录"))
+    monkeypatch.setattr("src.ai.infrastructure.providers.probe_provider", probe)
+    monkeypatch.setattr("src.ai.infrastructure.providers.fetch_models", discover)
+    payload = ProviderCreate(name="offline", base_url="https://example.invalid/v1", api_key="test-key", model="m")
+    assert not payload.validate_key and not payload.discover_models
+    with OpsStore(tmp_path / "offline.db") as store:
+        saved = save_provider(store, name=payload.name, base_url=payload.base_url, api_key=payload.api_key, model=payload.model, protocol=payload.protocol)
+        assert saved["default_model"] == "m" and saved["has_key"]
+    probe.assert_not_called()
+    discover.assert_not_called()
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.ai.api.router import build_ai_router
+    app = FastAPI()
+    app.include_router(build_ai_router(write_dependency=lambda: None, ops_db=str(tmp_path / "http.db")))
+    with TestClient(app) as client:
+        response = client.post("/api/providers", json={**payload.model_dump(), "validate_key": True, "discover_models": True})
+        assert response.status_code == 201
+    probe.assert_not_called()
+    discover.assert_not_called()
+
+
 def test_provider_key_plain_round_trip(tmp_path) -> None:
     store = OpsStore(tmp_path / "ops.db")
     try:

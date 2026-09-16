@@ -1,0 +1,4 @@
+.admin-form-dialog :deep(.el-dialog__title) { overflow-wrap: anywhere; line-height: 1.5; }
+.admin-form-dialog :deep(.el-dialog__body) { min-width: 0; overscroll-behavior: contain; }
+.admin-form-dialog :deep(.el-dialog__footer) { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--gap-2); }
+.admin-form-dialog :deep(.el-dialog__footer .el-button) { margin-left: 0; }

@@ -6,16 +6,17 @@
 |---|---|
 | `PageBusy` | 加载态：一行 28px 的转圈 + 文案（`busy`/`label`/`overlay`）；不撑高度，首屏无数据用占位、有内容刷新用 `overlay`（父级需 `position:relative`） |
 | `PageTabs` | 页级分区切换（`el-tabs` + 朱印底线）；`v-model` + `items`；可选 `#trailing` 槽；面板由父级 `v-show` 编排 |
-| `SegmentSwitch` | 页头紧凑分段（`el-segmented`，28px）；`v-model` + `items`（name/label/disabled）；选中态是品牌靛 |
+| `SegmentSwitch` | 页头紧凑分段（`el-segmented`，28px）；`v-model` + `items`（name/label/disabled）；选中态是表面抬起，不是实心主色 |
 | `BasicForm` | **全站表单契约**的唯一实现；`schemas` + `v-model` + `columns`；见下文 |
 | `BasicTable` | 配置化表格；`columns` + `dataSource`/`request`；见下文 |
 | `ListToolbar` | 列表工具栏（28px）；`config` 按键开关：`create`/`batchDelete`/`import`/`export`；不写或 `false` 不显示，写 `{ onClick, disabled?, loading?, show? }` 即接线。`batchDelete` 自动走印章红 |
 | `RowActions` | 行内动作（28px 文字按钮 + 「更多」下拉）；`actions` + `maxVisible`；`type:'danger'` 走印章红 |
 | `StatCard` | 读数卡：数值 26px 等宽 + 11px 标签 + 可选 12px 副信息；见下文 |
-| `HeaderStat` | 页头行内读数，专供 `PageHeader` 的 `stats` 槽；不带卡片壳（页头已有分隔线，再套 `StatCard` 会变「卡中卡」） |
-| `EmptyState` | 空态：一行主文案 + 一行「下一步」，整块 ≤96px，无插图 |
+| `HeaderStat` | 页头行内读数，专供 `PageToolbar` 的 `stats` 槽；不带卡片壳（页头已有分隔线，再套 `StatCard` 会变「卡中卡」） |
+| `EmptyState` | 空态：一行主文案 + 一行「下一步」，铺满父级并居中，无插图 |
+| `UiButton` / `UiCard` / `UiBadge` / `UiInput` | shadcn 构造原子；颜色指回本仓令牌，尺寸对齐 `--ctl-h` |
 
-页头本身是布局件，在 `shared/components/layout/PageHeader.vue`。
+页头本身是布局件，在 `shared/components/layout/PageToolbar.vue`。
 
 ---
 
@@ -172,7 +173,7 @@ async function save() {
 - `dataSource` + `pagination` 对象：外部控页；`@current-change` / `@size-change`
 - `pagination=false`：无分页（短列表）
 - `pagination=true` / `{}`：内置分页（默认 layout 含 jumper）
-- `virtualized`：启用 `el-table-v2`；与完整数据 `dataSource`、`pagination=false` 搭配用于大表。空态走 `EmptyState`（`emptyText` 作为主文案）；多级表头、展开、列筛选/排序、合并单元格或函数 `rowKey` 会自动回退到 `el-table`
+- `virtualized`：启用 `el-table-v2`；与完整数据 `dataSource`、`pagination=false` 搭配用于大表。空态一律走 `EmptyState`（`emptyText` 作主文案，`emptyReason` 作下一步）；多级表头、展开、列筛选/排序、合并单元格或函数 `rowKey` 会自动回退到 `el-table`，但 `#empty` 槽仍在，不把整表卸掉
 
 **能力**：`v-model:columns`、`toolbarConfig`（refresh / zoom / custom 列设置）、`mergeField`、`editConfig`+`editRender`、多级表头 `children`、列 `filters`/`filterMethod`、`formatter`/`render`/`slotName`、`offsetHeight`、`cell-click`/`row-click`/`selection-change`
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useLocalStorage } from '@vueuse/core'
 import { computed, ref, watch } from 'vue'
+import { Back, Setting } from '@element-plus/icons-vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import KlineReadout from './KlineReadout.vue'
@@ -176,6 +177,7 @@ watch(
       <el-button
         v-if="!embedded"
         class="tdx-back"
+        :icon="Back"
         size="small"
         @click="emit('close')"
       >
@@ -192,6 +194,7 @@ watch(
       <div class="tdx-controls">
         <el-radio-group
           :model-value="period"
+          aria-label="K 线周期"
           size="small"
           class="tdx-btn-group"
           @update:model-value="emit('update:period', $event as KPeriod)"
@@ -204,6 +207,7 @@ watch(
         </el-radio-group>
         <el-radio-group
           :model-value="adjust"
+          aria-label="复权方式"
           size="small"
           class="tdx-btn-group"
           @update:model-value="
@@ -215,26 +219,27 @@ watch(
           <el-radio-button value="hfq">后复权</el-radio-button>
           <el-radio-button value="none">不复权</el-radio-button>
         </el-radio-group>
-        <el-popover v-model:visible="maPopover" placement="bottom-end" :width="280" trigger="click">
+        <el-popover v-model:visible="maPopover" placement="bottom-end" width="min(280px, calc(100vw - 32px))" trigger="click">
           <template #reference>
-            <el-button size="small" class="tdx-ma-btn">均线设置</el-button>
+            <el-button size="small" class="tdx-ma-btn" :icon="Setting" :aria-expanded="maPopover">均线设置</el-button>
           </template>
           <p class="tdx-ma-pop__title">主图均线周期</p>
-          <p class="tdx-ma-pop__hint">可改成 5 / 13 / 21 等；留空并应用 = 不画该线。全部清空则不显示均线。</p>
+          <p class="tdx-ma-pop__hint">输入周期，留空可隐藏该条均线。</p>
           <div class="tdx-ma-pop__list">
             <div v-for="(_, idx) in maDraft" :key="idx" class="tdx-ma-pop__row">
               <span class="tdx-ma-pop__label">MA{{ idx + 1 }}</span>
               <el-input
                 v-model="maDraft[idx]"
+                :aria-label="`第 ${idx + 1} 条均线周期`"
                 size="small"
                 placeholder="周期"
                 inputmode="numeric"
               />
-              <el-button size="small" text type="danger" @click="removeMaSlot(idx)">删</el-button>
+              <el-button size="small" text :aria-label="`删除第 ${idx + 1} 条均线`" @click="removeMaSlot(idx)">删除</el-button>
             </div>
           </div>
           <div class="tdx-ma-pop__actions">
-            <el-button size="small" text @click="addMaSlot">加一行</el-button>
+            <el-button size="small" text :disabled="maDraft.length >= 8" @click="addMaSlot">加一行</el-button>
             <el-button size="small" text @click="resetMaDefault">恢复默认</el-button>
             <el-button size="small" text @click="clearAllMa">全清</el-button>
             <el-button size="small" type="primary" @click="applyMaDraft">应用</el-button>
@@ -261,7 +266,7 @@ watch(
     <div class="tdx-chart-wrap" :style="gridTopVars">
       <PageBusy overlay :busy="busy" label="加载行情…" />
       <KlineChart
-        v-if="quote"
+        v-if="quote?.bars?.length"
         class="tdx-chart"
         :bars="quote.bars"
         :period="period"
@@ -277,7 +282,11 @@ watch(
         @need-history="emit('needHistory')"
         @bar-dblclick="onBarDblclick"
       />
-      <EmptyState v-else-if="!busy" description="该证券暂无本机日线。" />
+      <EmptyState
+        v-else-if="!busy"
+        :description="quote ? '暂无 K 线' : '暂无日线'"
+        reason="同步行情后再查看"
+      />
 
       <KlineReadout
         v-if="showFloat && locked"
@@ -287,7 +296,7 @@ watch(
         @close="floatClosed = true"
       />
 
-      <div v-if="locked && quote" class="tdx-pane tdx-pane--vol" aria-live="polite">
+      <div v-if="locked && quote" class="tdx-pane tdx-pane--vol" role="group" aria-label="成交量读数">
         <span class="tdx-pane__tag">量</span>
         <span class="mono tdx-pane__item">VOL:{{ fmtVol(locked.volume) }}</span>
         <span
@@ -300,9 +309,10 @@ watch(
         </span>
       </div>
 
-      <div v-if="quote" class="tdx-pane tdx-pane--ind" aria-live="polite">
+      <div v-if="quote" class="tdx-pane tdx-pane--ind" role="group" aria-label="指标读数">
         <el-radio-group
           class="tdx-ind-switch"
+          aria-label="副图指标"
           size="small"
           :model-value="indicator"
           @update:model-value="emit('update:indicator', $event as IndicatorKind)"

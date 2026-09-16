@@ -58,9 +58,12 @@ const areaPath = computed(() => {
 </script>
 
 <template>
+  <!-- width/height prop 同时写进 viewBox 与 CSS 高：否则调用方 :height=48 只改坐标系，
+       CSS 的 5.5rem 会把图拉伸，prop 成摆设 -->
   <svg
     class="sparkline"
     :viewBox="`0 0 ${width} ${height}`"
+    :style="{ height: `${height}px` }"
     role="img"
     :aria-label="label"
     preserveAspectRatio="none"

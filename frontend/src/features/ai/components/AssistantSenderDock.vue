@@ -86,11 +86,11 @@ const slashItems = computed(() => {
 const placeholder = computed(() => {
   if (props.waitingUser) return '回复助手以继续…'
   if (!props.providerReady) return '配置模型后即可开始对话'
-  return '问持仓… / 激活技能 · Enter 发送 · 可附图'
+  return '输入问题，或用 / 选择技能'
 })
 
 const hint = computed(() => {
-  if (props.busy) return '运行中，关闭弹窗也可继续等待'
+  if (props.busy) return '运行中'
   if (props.waitingUser) return '等待你的确认'
   if (!props.providerReady) return '模型未配置'
   if (activeSkill.value) return `技能 /${activeSkill.value.slug}`
@@ -325,7 +325,7 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
 
 <template>
   <div
-    class="assistant-sender"
+    class="assistant-sender flex w-full min-w-0 flex-col overflow-hidden"
     :class="{ 'is-generating': busy, 'is-locked': sessionLocked || !providerReady }"
     data-testid="assistant-sender"
     @keydown="onSlashKeydown"
@@ -350,7 +350,8 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
         text
         role="option"
         :aria-selected="index === slashIndex"
-        @mousedown.prevent="pickSkill(item)"
+        @mousedown.prevent
+        @click="pickSkill(item)"
       >
         <span class="assistant-sender__slash-copy">
           <strong>/{{ item.slug }}</strong>
@@ -371,7 +372,7 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
           type="danger"
           circle
           size="small"
-          aria-label="移除图片"
+          :aria-label="`移除第 ${index + 1} 张图片`"
           @click="removeImage(index)"
         >
           ×
@@ -383,6 +384,7 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
       class="assistant-sender__x"
       :class="{ 'has-sender-bar': true, 'is-generating': busy }"
       :placeholder="placeholder"
+      aria-label="消息内容"
       submit-type="enter"
       variant="default"
       clearable

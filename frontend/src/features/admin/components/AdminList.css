@@ -1,0 +1,4 @@
+.admin-list { min-width: 0; }
+.admin-list .admin-pane__filters { flex: 1 1 24rem; min-width: 0; }
+.admin-list .admin-pane__filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2); }
+.admin-list .is-code { font-family: var(--mono); font-variant-numeric: tabular-nums; }

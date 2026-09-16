@@ -1,5 +1,6 @@
 /** 量化 API 共用请求层：503 → CapabilityUnavailableError。 */
 import { apiRequest } from '@/shared/api/palace'
+import type { ApiRequestInit } from '@/shared/api/palace'
 
 /** 依赖缺失导致的功能不可用。与普通请求失败区分开，便于界面给出不同引导。 */
 export class CapabilityUnavailableError extends Error {
@@ -9,7 +10,7 @@ export class CapabilityUnavailableError extends Error {
   }
 }
 
-export async function quantRequest<T>(path: string, init?: RequestInit): Promise<T> {
+export async function quantRequest<T>(path: string, init?: ApiRequestInit): Promise<T> {
   try {
     return await apiRequest<T>(path, init)
   } catch (caught: unknown) {

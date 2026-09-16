@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Check, Plus, RefreshRight } from '@element-plus/icons-vue'
+import { Check, Collection, Plus, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 import {
@@ -15,7 +15,8 @@ import type {
   ResearchHypothesisStatus,
 } from '@/shared/types/quant'
 
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import UiField from '@/shared/components/ui/UiField.vue'
 
 const hypotheses = ref<ResearchHypothesis[]>([])
 const selectedId = ref('')
@@ -41,6 +42,23 @@ const reviewForm = ref({ actor: '', reason: '', runId: '', artifactSha: '', summ
 const selected = computed(() => hypotheses.value.find((item) => item.hypothesis_id === selectedId.value) || null)
 const canStartTesting = computed(() => selected.value?.status === 'exploring')
 const canMonitor = computed(() => selected.value?.status === 'validated')
+
+const hypothesisRows = computed(() => hypotheses.value as unknown as Record<string, unknown>[])
+const evidenceRows = computed(() => (selected.value?.evidence_links ?? []) as unknown as Record<string, unknown>[])
+
+const hypothesisColumns: BasicTableColumn[] = [
+  { prop: 'hypothesis_id', label: 'ID', minWidth: 120, showOverflowTooltip: true },
+  { prop: 'title', label: '标题', minWidth: 160, showOverflowTooltip: true },
+  { prop: 'status', label: '状态', width: 94, slotName: 'status' },
+  { prop: 'revision', label: '修订', width: 68 },
+  { prop: 'hypothesis_id', label: '审核', width: 76, fixed: 'right', slotName: 'review' },
+]
+
+const evidenceColumns: BasicTableColumn[] = [
+  { prop: 'run_id', label: '批次', minWidth: 120 },
+  { prop: 'summary', label: '摘要', minWidth: 160, showOverflowTooltip: true },
+  { prop: 'artifact_sha256', label: '证据指纹', minWidth: 150, slotName: 'hash' },
+]
 
 function statusType(status: ResearchHypothesisStatus): 'success' | 'warning' | 'info' | 'danger' {
   if (status === 'validated') return 'success'
@@ -181,10 +199,10 @@ defineExpose({ load })
 </script>
 
 <template>
-  <section class="hypothesis-panel" aria-label="研究假设与人工审核">
+  <section class="hypothesis-panel research-surface" aria-label="研究假设与人工审核">
     <header class="section-head">
       <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
-      <h3>假设与人工审核</h3>
+      <h3><el-icon aria-hidden="true"><Collection /></el-icon>假设与人工审核</h3>
       <el-button size="small" :icon="RefreshRight" :loading="loading" @click="load">刷新</el-button>
     </header>
     <el-form
@@ -226,14 +244,24 @@ defineExpose({ load })
       </el-form-item>
     </el-form>
     <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="panel-alert" />
-    <el-table v-if="hypotheses.length" :data="hypotheses" size="small" row-key="hypothesis_id" highlight-current-row @row-click="selectedId = $event.hypothesis_id">
-      <el-table-column prop="hypothesis_id" label="ID" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
-      <el-table-column label="状态" width="94"><template #default="{ row }"><el-tag size="small" effect="plain" :type="statusType(row.status)">{{ row.status }}</el-tag></template></el-table-column>
-      <el-table-column prop="revision" label="修订" width="68" />
-      <el-table-column label="审核" width="76" fixed="right"><template #default="{ row }"><el-button text size="small" @click.stop="selectedId = row.hypothesis_id; reviewOpen = true">审核</el-button></template></el-table-column>
-    </el-table>
-    <EmptyState v-else-if="!loading" description="还没有假设" reason="先写清验证目标与通过门槛" />
+    <BasicTable
+      :columns="hypothesisColumns"
+      :data-source="hypothesisRows"
+      :pagination="false"
+      :loading="loading"
+      row-key="hypothesis_id"
+      stripe
+      empty-text="还没有假设"
+      empty-reason="先写清验证目标与通过门槛"
+      @row-click="(row) => { selectedId = String(row.hypothesis_id) }"
+    >
+      <template #status="{ row }">
+        <el-tag size="small" effect="plain" :type="statusType(row.status as ResearchHypothesisStatus)">{{ row.status }}</el-tag>
+      </template>
+      <template #review="{ row }">
+        <el-button text size="small" @click.stop="selectedId = String(row.hypothesis_id); reviewOpen = true">审核</el-button>
+      </template>
+    </BasicTable>
     <section v-if="selected" class="hypothesis-detail">
       <div class="detail-head">
         <div><strong>{{ selected.title }}</strong><code>{{ selected.hypothesis_id }} · r{{ selected.revision }}</code></div>
@@ -258,15 +286,21 @@ defineExpose({ load })
       </div>
       <div class="evidence-list">
         <span>关联证据</span>
-        <el-table v-if="selected.evidence_links.length" :data="selected.evidence_links" size="small">
-          <el-table-column prop="run_id" label="批次" min-width="120" />
-          <el-table-column prop="summary" label="摘要" min-width="160" show-overflow-tooltip />
-          <el-table-column label="证据指纹" min-width="150"><template #default="{ row }"><code :title="row.artifact_sha256">{{ row.artifact_sha256.slice(0, 16) }}...</code></template></el-table-column>
-        </el-table>
-        <EmptyState v-else description="还没有挂上证据" reason="点「人工审核」补一条" />
+        <BasicTable
+          :columns="evidenceColumns"
+          :data-source="evidenceRows"
+          :pagination="false"
+          stripe
+          empty-text="还没有挂上证据"
+          empty-reason="点「人工审核」补一条"
+        >
+          <template #hash="{ row }">
+            <code :title="String(row.artifact_sha256)">{{ String(row.artifact_sha256).slice(0, 16) }}...</code>
+          </template>
+        </BasicTable>
       </div>
     </section>
-    <el-dialog v-model="reviewOpen" title="人工审核" width="min(92vw, 640px)" :close-on-click-modal="false">
+    <el-dialog v-model="reviewOpen" class="research-modal" append-to-body title="人工审核" width="min(92vw, 640px)" :close-on-click-modal="false">
       <el-alert
         v-if="reviewDecision === 'validated'"
         type="info"
@@ -275,25 +309,35 @@ defineExpose({ load })
         show-icon
         class="panel-alert panel-alert--flush"
       />
-      <el-form class="review-form" label-position="right" label-width="6.5em" size="small">
-        <el-form-item label="决定">
-          <el-radio-group v-model="reviewDecision">
+      <div class="review-fields">
+        <UiField label="决定">
+          <el-radio-group v-model="reviewDecision" aria-label="审核决定">
             <el-radio-button value="validated">通过</el-radio-button>
             <el-radio-button value="rejected">否决</el-radio-button>
           </el-radio-group>
-        </el-form-item>
-        <el-form-item label="操作者" required><el-input v-model="reviewForm.actor" /></el-form-item>
-        <el-form-item label="审核理由" required><el-input v-model="reviewForm.reason" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="证据批次"><el-input v-model="reviewForm.runId" /></el-form-item>
-        <el-form-item label="证据指纹"><el-input v-model="reviewForm.artifactSha" /></el-form-item>
-        <el-form-item label="证据摘要"><el-input v-model="reviewForm.summary" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="观测指标">
-          <el-tooltip content="数值 JSON 对象；缺项留空，不要估算" placement="top">
-            <el-input v-model="reviewForm.metricsJson" type="textarea" :rows="2" placeholder='{"profit_factor": 1.2}' />
-          </el-tooltip>
-        </el-form-item>
-        <el-form-item label="截止日"><el-date-picker v-model="reviewForm.asOf" value-format="YYYY-MM-DD" /></el-form-item>
-      </el-form>
+        </UiField>
+        <UiField label="操作者" required>
+          <el-input v-model="reviewForm.actor" />
+        </UiField>
+        <UiField label="审核理由" required>
+          <el-input v-model="reviewForm.reason" type="textarea" :rows="2" />
+        </UiField>
+        <UiField label="证据批次">
+          <el-input v-model="reviewForm.runId" />
+        </UiField>
+        <UiField label="证据指纹">
+          <el-input v-model="reviewForm.artifactSha" />
+        </UiField>
+        <UiField label="证据摘要">
+          <el-input v-model="reviewForm.summary" type="textarea" :rows="2" />
+        </UiField>
+        <UiField label="观测指标" description="数值 JSON 对象；缺项留空，不要估算">
+          <el-input v-model="reviewForm.metricsJson" type="textarea" :rows="2" placeholder='{"profit_factor": 1.2}' />
+        </UiField>
+        <UiField label="截止日">
+          <el-date-picker v-model="reviewForm.asOf" value-format="YYYY-MM-DD" />
+        </UiField>
+      </div>
       <template #footer>
         <el-button @click="reviewOpen = false">取消</el-button>
         <el-button type="primary" :loading="transitioning" @click="review">记录审核</el-button>
@@ -349,3 +393,4 @@ defineExpose({ load })
   .section-head, .detail-head { flex-direction: column; }
 }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

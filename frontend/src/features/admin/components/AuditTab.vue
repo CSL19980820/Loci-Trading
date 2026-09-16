@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Search, RefreshRight } from '@element-plus/icons-vue'
 /**
  * 审计日志。全站统一的「筛选栏 + BasicTable + 分页」列表骨架。
  *
@@ -126,7 +127,7 @@ function openDetail(row: AuditLogItem): void {
 </script>
 
 <template>
-  <div class="admin-pane">
+  <div class="admin-pane admin-list">
     <PageContainer>
       <template #search>
         <div class="admin-pane__filters">
@@ -139,8 +140,8 @@ function openDetail(row: AuditLogItem): void {
           />
         </div>
         <div class="admin-pane__filter-actions">
-          <el-button type="primary" @click="reload">查询</el-button>
-          <el-button @click="onReset">重置</el-button>
+          <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
+          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
         </div>
       </template>
 
@@ -151,6 +152,7 @@ function openDetail(row: AuditLogItem): void {
           :request="loadAudit"
           :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
           :toolbar-config="{ refresh: true, custom: true }"
+          height="100%"
           row-key="id"
           stripe
           empty-text="没有匹配的审计记录"
@@ -198,7 +200,7 @@ function openDetail(row: AuditLogItem): void {
       width="min(92vw, 560px)"
       append-to-body
       destroy-on-close
-      class="audit-detail-dialog"
+      class="audit-detail-dialog dialog-body--scroll"
     >
       <template v-if="detailRow">
         <dl class="audit-facts">
@@ -212,7 +214,7 @@ function openDetail(row: AuditLogItem): void {
         <EmptyState
           v-else
           description="这条操作没有附加参数"
-          reason="只有携带请求体的操作才会留下结构化详情。"
+          reason="未记录附加参数"
         />
       </template>
     </el-dialog>
@@ -237,23 +239,27 @@ function openDetail(row: AuditLogItem): void {
 /* 事实格：label 压到 11px 让位给值，值走等宽以便对齐时间戳与 IP */
 .audit-facts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
   gap: var(--gap-2) var(--gap-3);
   margin: 0 0 var(--gap-3);
 }
 
 .audit-facts__cell {
+  padding: var(--gap-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
   min-width: 0;
 }
 
 .audit-facts__key {
-  font-size: 11px;
+  font-size: var(--fs-kicker);
   line-height: 1.4;
   color: var(--mist);
 }
 
 .audit-facts__val {
-  margin: 2px 0 0;
+  margin: var(--gap-1) 0 0;
   font-family: var(--mono);
   font-size: var(--fs-aux);
   line-height: 1.5;
@@ -277,10 +283,5 @@ function openDetail(row: AuditLogItem): void {
 }
 </style>
 
-<!-- el-dialog teleport 到 body，正文限高只能写在非 scoped 里 -->
-<style>
-.audit-detail-dialog .el-dialog__body {
-  max-height: min(62vh, 30rem);
-  overflow: auto;
-}
-</style>
+
+<style scoped src="./AdminList.css" />

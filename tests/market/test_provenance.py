@@ -9,6 +9,60 @@ import pandas as pd
 from src.market import MarketStore, SourceAttemptRecord, SourceRouteReceipt
 
 
+def test_source_summary_keeps_full_scope_without_loading_receipt_details(tmp_path, monkeypatch):
+    from src.research.application.backtest_support import input_evidence_failures, validation_warnings
+
+    with MarketStore(tmp_path / "summary.db") as store:
+        store.upsert_quotes("300001", pd.DataFrame({
+            "date": ["2025-01-02", "2025-01-03"], "open": [10., 11.],
+            "high": [11., 12.], "low": [9., 10.], "close": [10.5, 11.5],
+            "volume": [100., 200.], "amount": [1000., 2200.],
+        }), source="fixture")
+        full = store.source_evidence(codes=["300001", "300002"], start="2025-01-01", end="2025-01-31")
+        def forbidden(*args, **kwargs):
+            raise AssertionError("summary must not materialize receipt or attempt rows")
+        monkeypatch.setattr(store, "_unlinked_receipt_ids", forbidden)
+        summary = store.data_snapshot(codes=["300001", "300002"], start="2025-01-01",
+                                      end="2025-01-31", include_source_details=False)["source_evidence"]
+    for key in ("requested_codes", "observed_codes", "unresolved_codes", "sources", "field_coverage", "invalid_ohlc_rows"):
+        assert summary[key] == full[key]
+    assert summary["receipt_details_omitted"]
+    assert summary["receipt_detail_basis"] == "all_quote_linked_receipts"
+    assert summary["receipts"] == full["receipts"]
+    assert summary["historical_failure_scope"]["receipt_count"] == 0
+    snapshot = {"source_evidence": summary}
+    membership = {"pit_membership": True, "degraded": False, "survivorship_bias": False}
+    strict = input_evidence_failures(membership=membership, strict_pit=True, data_snapshot=snapshot)
+    assert any("逐条回执" in item for item in strict)
+    assert any("仅汇总" in item for item in validation_warnings(membership=membership, strict_pit=False, data_snapshot=snapshot))
+
+
+def test_compact_source_keeps_linked_receipts_and_aggregates_extra_failures(tmp_path, monkeypatch):
+    with MarketStore(tmp_path / "linked.db") as store:
+        receipt = {"code": "300001", "lane": "hist_daily", "selected_source": "fixture-good",
+                   "attempts": [{"source_id": "fixture-good", "state": "selected"}]}
+        bars = [{"code": "300001", "date": "2025-01-02", "open": 10., "high": 11.,
+                 "low": 9., "close": 10.5, "volume": 1000.}]
+        store.persist_quote_bar_receipts([receipt], bars, source="fixture-good")
+        for number in range(4):
+            store.persist_source_receipt({"receipt_id": f"failed-{number}", "code": "300001",
+                "lane": "hist_daily", "state": "failed", "unresolved": True,
+                "request_start": "2025-01-01", "request_end": "2025-01-31",
+                "attempts": [{"source_id": "fixture-bad", "state": "failed", "error": "timeout"}]})
+        full = store.source_evidence(codes=["300001"], start="2025-01-01", end="2025-01-31")
+        def forbidden(*args, **kwargs):
+            raise AssertionError("must not materialize historical failed receipt IDs")
+        monkeypatch.setattr(store, "_unlinked_receipt_ids", forbidden)
+        compact = store.source_evidence(codes=["300001"], start="2025-01-01", end="2025-01-31", include_details=False)
+    assert len(full["receipts"]) == 5
+    assert len(compact["receipts"]) == 1 and len(compact["attempts"]) == 1
+    assert compact["receipts"][0]["selected_source"] == "fixture-good"
+    assert compact["receipts"][0] == next(r for r in full["receipts"] if r["selected_source"] == "fixture-good")
+    assert compact["historical_failure_scope"]["receipt_count"] == 4
+    assert compact["historical_failure_scope"]["by_state"] == {"failed": 4}
+    assert compact["field_coverage"] == full["field_coverage"]
+
+
 def test_data_snapshot_contains_source_coverage_and_unresolved_codes(tmp_path: Path) -> None:
     with MarketStore(tmp_path / "market.db") as store:
         store.upsert_quotes(

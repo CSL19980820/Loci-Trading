@@ -276,7 +276,7 @@ function onSubmit(): void {
 </script>
 
 <template>
-  <el-dialog v-model="open" :title="title" width="40rem" destroy-on-close>
+  <el-dialog v-model="open" class="ops-dialog" :title="title" width="min(40rem, 96vw)" destroy-on-close>
     <!-- 唯一的错误位：校验与后端 4xx 都落这儿 -->
     <el-alert
       v-if="shownError"
@@ -292,7 +292,7 @@ function onSubmit(): void {
       <span class="form-quota__dim">（系统托管任务 {{ quota.managed }} 条，不占额度）</span>
     </p>
     <el-form
-      class="form-grid"
+      class="job-editor-form"
       label-position="right"
       label-width="6.5em"
       size="small"
@@ -364,10 +364,10 @@ function onSubmit(): void {
             <el-option label="仅重刷当日" value="today_refresh" />
           </el-select>
         </el-form-item>
-        <el-form-item label="workers">
+        <el-form-item label="并发数">
           <el-input-number v-model="form.workers" :min="1" :max="16" />
         </el-form-item>
-        <el-form-item label="force 重拉">
+        <el-form-item label="强制重拉">
           <el-switch v-model="form.force" />
         </el-form-item>
       </template>
@@ -389,7 +389,7 @@ function onSubmit(): void {
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="top_n">
+        <el-form-item label="选取数量">
           <el-input-number v-model="form.topN" :min="0" :max="200" />
         </el-form-item>
         <el-form-item label="写入候选池">
@@ -521,6 +521,8 @@ function onSubmit(): void {
 .mono {
   font-family: var(--mono);
 }
-/* 栅格、.full-span、.full 与窄屏单列都在全局 .form-grid（style.components.css）里，
-   本文件不再另立一套，否则 label 宽度又会被局部规则算歪。 */
+.job-editor-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); column-gap: var(--gap-3); }
+.job-editor-form .full-span { grid-column: 1 / -1; }
+.job-editor-form :deep(.el-form-item__content) { min-width: 0; }
 </style>
+<style scoped src="./OpsDialogSurface.css"></style>

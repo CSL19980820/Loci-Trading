@@ -79,7 +79,9 @@ defineExpose({ focusLine, insertText })
 <style scoped>
 .editor-stage {
   display: grid;
-  grid-template-rows: minmax(12rem, 1fr) 1.75rem;
+  /* 结果坞与助手展开时仍把状态栏留在可视范围，编辑器自己滚动。 */
+  grid-template-rows: minmax(0, 1fr) var(--ctl-h);
+  overflow: hidden;
   min-width: 0;
   min-height: 0;
   background: var(--sheet);
@@ -118,11 +120,11 @@ defineExpose({ focusLine, insertText })
 }
 
 .editor-stage__status--ok .editor-stage__status-left {
-  color: var(--lake);
+  color: var(--ok);
 }
 
 .editor-stage__status--error .editor-stage__status-left {
-  color: var(--loss);
+  color: var(--warn);
 }
 
 @media (max-width: 640px) {

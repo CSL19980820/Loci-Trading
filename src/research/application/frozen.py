@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import hashlib
+import io
 import json
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -156,16 +157,17 @@ def payload_bytes(payload: Mapping[str, Any]) -> bytes:
 
     `sort_keys` 保证同一份输入永远得到同一个 hash；紧凑分隔符则是 v2 的体积优化。
     """
-    return (
-        json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        + "\n"
-    ).encode("utf-8")
+    # 直接分块编码UTF-8，避免带中文/非BMP字符的整份Unicode文本及换行复制。
+    # json.dump与旧dumps使用相同编码契约，现存artifact的字节/hash保持不变。
+    with io.BytesIO() as buffer:
+        with io.TextIOWrapper(buffer, encoding="utf-8", newline="\n") as stream:
+            json.dump(
+                payload, stream, ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            )
+            stream.write("\n")
+            stream.flush()
+            return buffer.getvalue()
 
 
 def payload_sha256(payload: Mapping[str, Any]) -> str:
@@ -204,6 +206,13 @@ def context_from_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         engine = pth252_engine_from_frozen_params(
             dict(payload.get("resolved_params") or {})
         )
+    elif strategy == "impulse-pullback-tail-v1":
+        # This strategy is intentionally retired from the active catalogue, but
+        # historical research artifacts must remain replayable.  Reconstruct
+        # the versioned engine here without making it selectable for new jobs.
+        from src.strategy.application.impulse_pullback import ImpulsePullbackTailV1
+
+        engine = ImpulsePullbackTailV1()
     else:
         engine = get(strategy)
     if str(payload.get("strategy_revision") or "") != str(getattr(engine, "strategy_revision", "")):

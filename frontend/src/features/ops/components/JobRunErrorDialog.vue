@@ -68,7 +68,8 @@ async function copyAll(): Promise<void> {
   <el-dialog
     v-model="open"
     title="这次为什么失败"
-    width="46rem"
+    class="ops-dialog"
+    width="min(46rem, 96vw)"
     append-to-body
     destroy-on-close
   >
@@ -114,7 +115,7 @@ async function copyAll(): Promise<void> {
 
     <template #footer>
       <el-button :disabled="!run" @click="copyAll">复制全文</el-button>
-      <el-button type="primary" @click="open = false">知道了</el-button>
+      <el-button type="primary" @click="open = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>
@@ -129,8 +130,12 @@ async function copyAll(): Promise<void> {
 
 .run-error__meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-  gap: 0.3rem 0.9rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: var(--gap-2) var(--gap-3);
+  padding: var(--gap-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
   margin: 0;
 }
 
@@ -156,14 +161,14 @@ async function copyAll(): Promise<void> {
 
 .run-error__body {
   margin: 0;
-  padding: 0.6rem 0.75rem;
+  padding: var(--gap-3);
   max-height: 24rem;
   overflow: auto;
-  border: 1px solid color-mix(in srgb, var(--el-color-danger) 30%, var(--rule));
+  border: 1px solid color-mix(in oklab, var(--el-color-danger) 30%, var(--rule));
   border-radius: var(--radius);
-  background: var(--panel-2);
+  background: var(--surface-canvas);
   font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -185,3 +190,4 @@ async function copyAll(): Promise<void> {
   color: var(--muted);
 }
 </style>
+<style scoped src="./OpsDialogSurface.css"></style>

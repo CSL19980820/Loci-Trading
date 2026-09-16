@@ -97,7 +97,7 @@ function resetTemplate(): void {
         <el-tag v-else-if="clearPending" size="small" type="warning" effect="plain">待清除</el-tag>
         <el-tag v-else size="small" type="info" effect="plain">未配</el-tag>
         <span class="fail-label">失败自动推</span>
-        <el-switch v-model="sync.push_wecom_on_fail" />
+        <el-switch v-model="sync.push_wecom_on_fail" aria-label="任务失败自动推送" />
       </div>
     </el-form-item>
 
@@ -107,6 +107,7 @@ function resetTemplate(): void {
         <el-tooltip placement="top-start" :content="presetHint" :disabled="!presetHint">
           <el-radio-group
             :model-value="screenTemplate.preset"
+            aria-label="选股推送样式"
             size="small"
             @change="onPresetChange"
           >
@@ -124,7 +125,7 @@ function resetTemplate(): void {
 
     <el-form-item label="低吸观察">
       <div class="preset-wrap">
-        <el-switch v-model="screenTemplate.show_watch_picks" />
+        <el-switch v-model="screenTemplate.show_watch_picks" aria-label="推送低吸观察" />
         <span class="switch-hint">
           关＝推送不显示观察票（不计正式胜率的那批），正式空时直接显示「暂无符合条件的标的」
         </span>
@@ -281,11 +282,13 @@ function resetTemplate(): void {
   margin-left: 1px;
   font-size: var(--fs-aux);
   color: var(--mist);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .preset-wrap {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-1) var(--gap-2);
@@ -307,7 +310,7 @@ function resetTemplate(): void {
 
 .preview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: var(--gap-2) var(--gap-3);
   width: 100%;
 }
@@ -315,10 +318,10 @@ function resetTemplate(): void {
 .preview-tape {
   margin: 0;
   /* 原为 border-left: 2px solid color-mix(--seal/--rule)：左竖条改为 1px hairline 外框 + 极淡印章底色 */
-  padding: var(--gap-1) var(--gap-2);
+  padding: var(--gap-3);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--seal, var(--ink)) 6%, transparent);
+  background: var(--surface-sunken);
   min-width: 0;
 }
 
@@ -350,4 +353,8 @@ function resetTemplate(): void {
     grid-template-columns: 1fr;
   }
 }
+</style>
+<style scoped>
+.preset-wrap :deep(.el-radio-group) { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+.token-row :deep(.el-button + .el-button), .inline-actions :deep(.el-button + .el-button) { margin-left: 0; }
 </style>

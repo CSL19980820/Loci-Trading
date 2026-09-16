@@ -67,12 +67,6 @@ function toggle(): void {
   expanded.value = !expanded.value
 }
 
-function onKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    toggle()
-  }
-}
 </script>
 
 <template>
@@ -83,24 +77,21 @@ function onKeydown(event: KeyboardEvent): void {
     aria-label="本机回执"
     data-testid="assistant-receipts"
   >
-    <div
+    <el-button
+      text
       class="assistant-receipts__toggle"
-      role="button"
-      tabindex="0"
       :aria-expanded="expanded"
       @click="toggle"
-      @keydown="onKeydown"
     >
-      <span class="assistant-receipts__flow" aria-hidden="true" />
       <span class="assistant-receipts__left">
         <span class="assistant-receipts__pulse" aria-hidden="true" />
-        <strong class="assistant-receipts__overview">{{ overview }}</strong>
+        <strong class="assistant-receipts__overview" :title="overview">{{ overview }}</strong>
       </span>
       <span class="assistant-receipts__right">
         <small v-if="overviewMs" class="assistant-receipts__ms">{{ overviewMs }}</small>
         <span class="assistant-receipts__chevron">{{ expanded ? '收起' : '展开' }}</span>
       </span>
-    </div>
+    </el-button>
     <div v-if="expanded" class="assistant-receipts__list">
       <AssistantToolReceiptRow
         v-for="tool in tools"
@@ -113,164 +104,19 @@ function onKeydown(event: KeyboardEvent): void {
 </template>
 
 <style scoped>
-.assistant-receipts {
-  position: relative;
-  display: grid;
-  gap: .3rem;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-  padding: .35rem .5rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--ai-r-card);
-  background: var(--panel-2);
-  overflow: hidden;
-}
-.assistant-receipts.is-featured {
-  border-color: color-mix(in srgb, var(--el-color-primary) 35%, var(--rule));
-}
-.assistant-receipts.is-quiet {
-  border-color: var(--rule);
-  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
-}
-.assistant-receipts.is-running {
-  border-style: dashed;
-  border-color: color-mix(in srgb, var(--el-color-primary) 40%, var(--rule));
-}
-.assistant-receipts__toggle {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .75rem;
-  width: 100%;
-  max-width: 100%;
-  min-height: var(--ai-row-min);
-  padding: .22rem .15rem;
-  margin: 0;
-  box-sizing: border-box;
-  cursor: pointer;
-  overflow: hidden;
-}
-.assistant-receipts__toggle:hover,
-.assistant-receipts__toggle:focus-visible {
-  background: color-mix(in srgb, var(--ink) 3.5%, transparent);
-  outline: none;
-  border-radius: var(--ai-r-chip);
-}
-.assistant-receipts__toggle:focus-visible {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--seal) 28%, transparent);
-}
-.assistant-receipts__flow {
-  display: none;
-}
-.assistant-receipts.is-running .assistant-receipts__flow {
-  display: block;
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    110deg,
-    transparent 0%,
-    transparent 38%,
-    color-mix(in srgb, var(--el-color-primary) 14%, transparent) 50%,
-    transparent 62%,
-    transparent 100%
-  );
-  background-size: 220% 100%;
-  animation: receipts-shell-flow 1.5s linear infinite;
-}
-.assistant-receipts__left,
-.assistant-receipts__right {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: .45rem;
-  min-width: 0;
-}
-.assistant-receipts__left {
-  flex: 1 1 auto;
-}
-.assistant-receipts__right {
-  flex: 0 0 auto;
-  margin-left: auto;
-  gap: .65rem;
-}
-.assistant-receipts__pulse {
-  flex: 0 0 auto;
-  display: block;
-  width: .4rem;
-  height: .4rem;
-  border-radius: var(--ai-r-pill);
-  background: var(--mist);
-}
-.assistant-receipts.is-running .assistant-receipts__pulse {
-  background: var(--el-color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 22%, transparent);
-  animation: assistant-receipts-pulse 1.2s ease-in-out infinite;
-}
-.assistant-receipts.is-featured:not(.is-quiet) .assistant-receipts__pulse {
-  background: var(--el-color-primary);
-}
-.assistant-receipts__overview {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--ai-fs-body);
-  font-weight: 650;
-  color: var(--ink);
-  text-align: left;
-}
-.assistant-receipts__ms {
-  flex: 0 0 auto;
-  color: var(--mist);
-  font-family: var(--mono);
-  font-size: var(--ai-fs-meta);
-  font-variant-numeric: tabular-nums;
-}
-.assistant-receipts__chevron {
-  flex: 0 0 auto;
-  font-size: var(--ai-fs-meta);
-  color: var(--mist);
-  font-weight: 500;
-  opacity: .85;
-}
-.assistant-receipts__toggle:hover .assistant-receipts__chevron {
-  color: var(--ink);
-  opacity: 1;
-}
-.assistant-receipts__list {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: .28rem;
-  width: 100%;
-  min-width: 0;
-}
-@keyframes assistant-receipts-pulse {
-  0%, 100% {
-    opacity: 1;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 18%, transparent);
-  }
-  50% {
-    opacity: .7;
-    box-shadow: 0 0 0 5px color-mix(in srgb, var(--el-color-primary) 8%, transparent);
-  }
-}
-@keyframes receipts-shell-flow {
-  0% { background-position: 100% 0; }
-  100% { background-position: -100% 0; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .assistant-receipts.is-running .assistant-receipts__pulse,
-  .assistant-receipts.is-running .assistant-receipts__flow {
-    animation: none;
-  }
-  .assistant-receipts.is-running .assistant-receipts__flow {
-    display: none;
-  }
-}
+.assistant-receipts { display: grid; gap: var(--gap-1); width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; padding: var(--gap-1); border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface-sunken); overflow: hidden; }
+.assistant-receipts.is-running { border-color: var(--seal-border); }
+.assistant-receipts__toggle { width: 100%; max-width: 100%; height: auto; min-height: var(--ai-row-min); padding: var(--gap-2); margin: 0; color: var(--ink); white-space: normal; }
+.assistant-receipts__toggle :deep(> span) { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-2); width: 100%; min-width: 0; }
+.assistant-receipts__toggle:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
+.assistant-receipts__left, .assistant-receipts__right { display: inline-flex; align-items: center; gap: var(--gap-2); min-width: 0; }
+.assistant-receipts__left { flex: 1; }
+.assistant-receipts__right { flex: 0 0 auto; margin-left: auto; }
+.assistant-receipts__pulse { flex: 0 0 auto; width: var(--gap-1); height: var(--gap-1); border-radius: var(--ai-r-pill); background: var(--mist); }
+.assistant-receipts.is-running .assistant-receipts__pulse { background: var(--seal); }
+.assistant-receipts__overview { min-width: 0; font-size: var(--ai-fs-body); font-weight: 600; text-align: left; overflow-wrap: anywhere; }
+.assistant-receipts__ms, .assistant-receipts__chevron { color: var(--mist); font-size: var(--ai-fs-meta); }
+.assistant-receipts__ms { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.assistant-receipts__list { display: grid; gap: var(--gap-1); width: 100%; min-width: 0; }
+@container (max-width: 400px) { .assistant-receipts__toggle :deep(> span) { flex-wrap: wrap; } }
 </style>

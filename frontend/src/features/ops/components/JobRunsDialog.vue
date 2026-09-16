@@ -9,7 +9,6 @@ import { batchDeleteJobRuns } from '@/shared/api/quant'
 import BasicTable, {
   type BasicTableColumn,
 } from '@/shared/components/ui/BasicTable.vue'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import type { JobRun } from '@/shared/types/quant'
@@ -155,13 +154,13 @@ defineExpose({ load })
   <el-dialog
     v-model="open"
     title="执行历史"
-    width="72rem"
+    width="min(92vw, 72rem)"
     top="6vh"
     destroy-on-close
-    class="job-runs-dialog"
+    class="job-runs-dialog ops-dialog"
     append-to-body
   >
-    <div v-if="runs.length || busy" class="runs-body">
+    <div class="runs-body">
       <BasicTable
         ref="basicTableRef"
         v-model:columns="columns"
@@ -174,6 +173,7 @@ defineExpose({ load })
         row-key="id"
         height="100%"
         empty-text="还没有执行记录"
+        empty-reason="任务跑过一次后出现在这里"
         @selection-change="onSelectionChange"
         @refresh="load"
       >
@@ -197,13 +197,15 @@ defineExpose({ load })
         </template>
       </BasicTable>
     </div>
-    <EmptyState v-else description="还没有执行记录" />
   </el-dialog>
 </template>
 
 <style scoped>
 .runs-body {
-  height: min(68vh, 36rem);
+  height: min(68dvh, 36rem);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -233,12 +235,9 @@ defineExpose({ load })
 }
 </style>
 
-<style>
-.job-runs-dialog.el-dialog {
-  max-width: 96vw;
-}
-
-.job-runs-dialog .el-dialog__body {
+<style scoped>
+.job-runs-dialog :deep(.el-dialog__body) {
   padding-top: var(--gap-2);
 }
 </style>
+<style scoped src="./OpsDialogSurface.css"></style>

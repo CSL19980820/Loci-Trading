@@ -298,6 +298,9 @@ def _collect_files(folder: Path) -> list[str]:
         if path.is_symlink():
             raise ScreenPackageError(f"不允许的符号链接：{path.name}")
         relative = str(path.relative_to(folder)).replace("\\", "/")
+        # Python 导入产生的缓存不是包正文；否则运行一次后参数保存/导出会失败。
+        if "__pycache__" in Path(relative).parts and path.suffix == ".pyc":
+            continue
         _validate_relative_path(relative)
         files.append(relative)
     if not files:

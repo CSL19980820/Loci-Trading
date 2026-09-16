@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import logging
+import math
 import threading
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
@@ -33,6 +34,7 @@ _CACHE_AT = 0.0
 _CACHE_BARS: dict[str, dict[str, float]] = {}
 _CACHE_ERROR: BaseException | None = None
 _INFLIGHT: threading.Event | None = None
+_INFLIGHT_KEY = ""
 
 
 class ScreenLiveError(RuntimeError):
@@ -72,13 +74,14 @@ def should_overlay_live(
 
 def reset_live_spot_cache() -> None:
     """测试用：清掉进程内实时快照。"""
-    global _CACHE_KEY, _CACHE_AT, _CACHE_BARS, _CACHE_ERROR, _INFLIGHT
+    global _CACHE_KEY, _CACHE_AT, _CACHE_BARS, _CACHE_ERROR, _INFLIGHT, _INFLIGHT_KEY
     with _CACHE_LOCK:
         _CACHE_KEY = ""
         _CACHE_AT = 0.0
         _CACHE_BARS = {}
         _CACHE_ERROR = None
         _INFLIGHT = None
+        _INFLIGHT_KEY = ""
 
 
 def _remember_live_spot(
@@ -97,44 +100,51 @@ def fetch_live_spot_bars(
     codes: Sequence[str],
     *,
     instrument_types: Mapping[str, str] | None = None,
+    strict: bool = False,
 ) -> dict[str, dict[str, float]]:
-    """拉今日 spot，只回内存。同一进程 20 秒内相同代码集共用一次 HTTP。"""
+    """拉今日 spot；strict绕过已完成缓存并要求全部代码真实OHLCV齐全。"""
     import time
 
     from src.market.infrastructure.adapters import AdapterError, fetch_spot_routed
     from src.market.infrastructure.sync_spot import dated_spot_adapter_ids
 
-    global _INFLIGHT
+    global _INFLIGHT, _INFLIGHT_KEY
 
     normalized = [normalize_code(code) for code in codes]
     if not normalized:
         return {}
     today = date.today().isoformat()
-    key = f"{today}:{','.join(sorted(set(normalized)))}"
+    key = f"{today}:{int(strict)}:{','.join(sorted(set(normalized)))}"
 
     with _CACHE_LOCK:
         if (
-            _CACHE_KEY == key
+            not strict
+            and _CACHE_KEY == key
             and _CACHE_BARS
             and time.monotonic() - _CACHE_AT < _CACHE_TTL_SEC
         ):
             return {code: dict(bar) for code, bar in _CACHE_BARS.items()}
-        if _CACHE_KEY == key and _CACHE_ERROR is not None:
+        if not strict and _CACHE_KEY == key and _CACHE_ERROR is not None:
             if time.monotonic() - _CACHE_AT < _CACHE_TTL_SEC:
                 raise ScreenLiveError(str(_CACHE_ERROR)) from _CACHE_ERROR
         if _INFLIGHT is None:
             _INFLIGHT = threading.Event()
+            _INFLIGHT_KEY = key
             owner = True
         else:
             owner = False
             waiter = _INFLIGHT
+            waiter_key = _INFLIGHT_KEY
 
     if not owner:
-        waiter.wait(timeout=90)
+        if not waiter.wait(timeout=90):
+            raise ScreenLiveError("盘中选股等待实时行情超时")
+        if waiter_key != key:
+            return fetch_live_spot_bars(codes, instrument_types=instrument_types, strict=strict)
         with _CACHE_LOCK:
             if _CACHE_KEY == key and _CACHE_BARS:
                 return {code: dict(bar) for code, bar in _CACHE_BARS.items()}
-            if _CACHE_ERROR is not None:
+            if _CACHE_KEY == key and _CACHE_ERROR is not None:
                 raise ScreenLiveError(str(_CACHE_ERROR)) from _CACHE_ERROR
         raise ScreenLiveError("盘中选股实时行情未返回")
 
@@ -144,7 +154,16 @@ def fetch_live_spot_bars(
             instrument_types=dict(instrument_types) if instrument_types else None,
             adapter_ids=dated_spot_adapter_ids(),
         )
-        bars = _spot_frame_to_bars(spot, today)
+        bars = _spot_frame_to_bars(spot, today, strict=strict)
+        if strict:
+            missing = sorted(set(normalized) - set(bars))
+            if missing:
+                examples = ", ".join(missing[:5])
+                raise ScreenLiveError(
+                    f"严格盘中行情缺少{len(missing)}/{len(set(normalized))}只合格当日OHLCV"
+                    f"（示例：{examples}），已中止，不使用旧日K或回填价格"
+                )
+            bars = {code: bars[code] for code in sorted(set(normalized))}
         if not bars:
             raise ScreenLiveError("盘中选股实时行情为空或日期不是今天")
         with _CACHE_LOCK:
@@ -168,6 +187,7 @@ def fetch_live_spot_bars(
         with _CACHE_LOCK:
             done = _INFLIGHT
             _INFLIGHT = None
+            _INFLIGHT_KEY = ""
         if done is not None:
             done.set()
 
@@ -287,7 +307,9 @@ def _row_number(row: Any, name: str, fallback: float) -> float:
     return value if pd.notna(value) else fallback
 
 
-def _spot_frame_to_bars(spot: pd.DataFrame | None, today: str) -> dict[str, dict[str, float]]:
+def _spot_frame_to_bars(
+    spot: pd.DataFrame | None, today: str, *, strict: bool = False,
+) -> dict[str, dict[str, float]]:
     if spot is None or spot.empty:
         return {}
     frame = spot.copy()
@@ -305,6 +327,24 @@ def _spot_frame_to_bars(spot: pd.DataFrame | None, today: str) -> dict[str, dict
         except Exception:
             continue
         if not code or close <= 0 or day != today:
+            continue
+
+        if strict:
+            try:
+                bar = {name: float(getattr(row, name))
+                       for name in ("open", "high", "low", "close", "volume")}
+            except (AttributeError, TypeError, ValueError):
+                continue
+            if not all(math.isfinite(value) for value in bar.values()):
+                continue
+            if any(bar[name] < 0 for name in ("open", "high", "low")) or bar["volume"] < 0:
+                continue
+            # 完整、明确的零量报价可以表示停牌；有成交时OHLC仍必须为正。
+            if bar["volume"] > 0 and any(bar[name] <= 0 for name in ("open", "high", "low")):
+                continue
+            # Routed行情已归一为股；严格路径不得再根据amount猜测并改写成交量。
+            bar["amount"] = _row_number(row, "amount", 0.0)
+            bars[code] = bar
             continue
 
         amount = _row_number(row, "amount", 0.0)

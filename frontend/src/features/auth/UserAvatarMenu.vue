@@ -57,7 +57,7 @@ async function onCommand(cmd: string): Promise<void> {
 </script>
 
 <template>
-  <div class="user-menu-wrap" :class="{ 'user-menu-wrap--collapsed': collapsed }">
+  <div class="user-menu-wrap w-full" :class="{ 'user-menu-wrap--collapsed': collapsed }">
     <el-dropdown trigger="click" placement="top-start" @command="onCommand">
       <!-- 触发器用 el-button text：焦点环 / 禁用态 / 主题联动全部跟 EP 走，不再手画 -->
       <el-button
@@ -106,7 +106,6 @@ async function onCommand(cmd: string): Promise<void> {
 
 <style scoped>
 .user-menu-wrap {
-  width: 100%;
   padding-top: var(--gap-1);
   border-top: 1px solid var(--rule);
 }
@@ -187,12 +186,17 @@ async function onCommand(cmd: string): Promise<void> {
 }
 
 .menu-user-name {
+  overflow-wrap: anywhere;
+  max-width: 24em;
   font-size: var(--fs-body);
   font-weight: 600;
   color: var(--ink);
 }
 
 .menu-user-handle {
+  overflow-wrap: anywhere;
+  max-width: 24em;
+  font-family: var(--mono);
   font-size: var(--fs-aux);
   color: var(--mist);
 }
@@ -203,7 +207,7 @@ async function onCommand(cmd: string): Promise<void> {
   padding: 0 var(--gap-1);
   border-radius: 999px;
   background: var(--seal);
-  color: var(--sheet);
+  color: var(--on-primary);
   font-family: var(--mono);
   font-size: var(--fs-kicker);
   font-variant-numeric: tabular-nums;

@@ -15,7 +15,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="assistant-msg-actions" data-testid="assistant-msg-actions">
+  <div class="assistant-msg-actions mt-1 flex flex-wrap items-center gap-1" data-testid="assistant-msg-actions">
     <el-button
       class="assistant-msg-actions__btn"
       text
@@ -42,27 +42,6 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.assistant-msg-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.1rem;
-  margin-top: 0.2rem;
-  opacity: 0.72;
-  transition: opacity 0.15s ease;
-}
-.assistant-turn:hover .assistant-msg-actions,
-.assistant-msg-actions:focus-within {
-  opacity: 1;
-}
-.assistant-msg-actions__btn {
-  --el-button-text-color: var(--mist);
-  --el-button-hover-text-color: var(--ink);
-  height: 1.55rem;
-  padding: 0 0.35rem;
-  font-size: var(--ai-fs-aux);
-}
-@media (hover: none) {
-  .assistant-msg-actions { opacity: 1; }
-}
+.assistant-msg-actions__btn { --el-button-text-color: var(--mist); --el-button-hover-text-color: var(--ink); --el-button-hover-bg-color: var(--surface-hover); height: var(--ctl-h); margin: 0; padding-inline: var(--gap-2); font-size: var(--ai-fs-body); }
+.assistant-msg-actions__btn:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
 </style>

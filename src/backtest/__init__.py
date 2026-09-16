@@ -8,6 +8,7 @@ from src.backtest.application.engine import (
     run_backtest,
 )
 from src.backtest.application.performance import compute_trade_performance
+from src.backtest.infrastructure.signal_dataset import import_signal_dataset
 from src.backtest.application.fast_engine import (
     describe_fast_backend,
     fast_backtest_enabled,
@@ -30,6 +31,7 @@ from src.backtest.application.runner import (
     build_universe_control,
     execute_backtest_context,
     prepare_backtest_context,
+    resolve_backtest_config,
 )
 from src.backtest.application.research_analysis import (
     BacktestResearchAnalysis,
@@ -78,12 +80,14 @@ __all__ = [
     "build_universe_control",
     "compute_metrics",
     "compute_trade_performance",
+    "import_signal_dataset",
     "describe_fast_backend",
     "entry_day_offset",
     "fast_backtest_enabled",
     "mark_day_offset",
     "execute_backtest_context",
     "prepare_backtest_context",
+    "resolve_backtest_config",
     "run_backtest",
     "run_backtest_job",
     "run_compare_job",

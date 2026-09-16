@@ -172,9 +172,12 @@ export function importResearchPointInTimeFacts(
 
 export function replayResearchBacktestRun(
   runId: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<ResearchReplayResult> {
   return quantRequest(`/research/backtest-runs/${encodeURIComponent(runId)}/replay`, {
     method: 'POST',
+    timeoutMs: 300_000,
+    signal: options.signal,
   })
 }
 

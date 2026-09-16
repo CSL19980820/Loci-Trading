@@ -90,7 +90,7 @@ const allVoid = computed(() => cells.value.every((c) => c.row === null))
 </script>
 
 <template>
-  <section class="index-bar" :class="{ 'index-bar--void': allVoid }" aria-label="主要指数">
+  <section class="index-bar grid w-full flex-none" :class="{ 'index-bar--void': allVoid }" aria-label="主要指数" tabindex="0">
     <div
       v-for="cell in cells"
       :key="cell.key"
@@ -122,9 +122,10 @@ const allVoid = computed(() => cells.value.every((c) => c.row === null))
 
 <style scoped>
 .index-bar {
-  flex: none;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(13rem, 1fr));
+  overflow-x: auto;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
   height: var(--live-indexbar-h);
   background-color: var(--live-panel);
   border-bottom: 1px solid var(--live-rule);
@@ -133,7 +134,7 @@ const allVoid = computed(() => cells.value.every((c) => c.row === null))
 
 /* 无数据不是「消失」，只是「暗下来」 */
 .index-bar--void {
-  opacity: 0.62;
+  background-color: var(--live-head);
 }
 
 .idx {
@@ -257,25 +258,15 @@ const allVoid = computed(() => cells.value.every((c) => c.row === null))
   height: 30px;
 }
 
-/* 窄屏依次折叠尾部槽位，剩下的仍保持同一套排版 */
-@media (max-width: 1280px) {
-  .index-bar {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .idx:nth-child(5) {
-    display: none;
-  }
-}
-
+/* 五个指数在窄屏仍可横向浏览，名称与点位不再被挤成省略号。 */
 @media (max-width: 960px) {
   .index-bar {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .idx:nth-child(4) {
-    display: none;
+    grid-template-columns: repeat(5, minmax(10rem, 1fr));
   }
   .idx__spark {
     display: none;
   }
+  .idx { grid-template-columns: minmax(0, 1fr); }
+  .idx__nums { flex-wrap: wrap; }
 }
 </style>

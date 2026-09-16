@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import { candidateDecisions, decimal, percent } from '../assistantArtifacts'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
 import './assistant-card.css'
@@ -61,7 +62,7 @@ function metricTone(value: number | undefined): string {
         <p class="assistant-candidate__reason"><span>理由</span>{{ candidate.reason || '—' }}</p>
       </article>
     </div>
-    <el-empty v-else :image-size="48" description="工具未返回可展示的数据" />
+    <EmptyState v-else description="暂无可展示的数据" reason="先跑一次选股" />
   </section>
 </template>
 

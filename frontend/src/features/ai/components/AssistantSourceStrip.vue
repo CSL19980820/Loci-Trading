@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import { artifactShellTitle, parseSources } from '../assistantArtifacts'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
 import './assistant-card.css'
@@ -33,7 +34,7 @@ const sources = computed(() => parseSources(props.artifact.data ?? {}))
         <span v-if="source.date" class="assistant-source-strip__meta">{{ source.date }}</span>
       </el-tag>
     </div>
-    <el-empty v-else :image-size="40" description="无来源条目" />
+    <EmptyState v-else description="无来源条目" reason="换个问法重问" />
   </section>
 </template>
 

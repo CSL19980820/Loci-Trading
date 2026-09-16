@@ -1,7 +1,13 @@
-@import "tailwindcss";
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "./style.tw-theme.css";
 @import "./style.base.css";
+@import "./style.foundation.css";
 @import "./style.layout.css";
 @import "./style.components.css";
+@import "./style.tables.css";
+@import "./style.utilities.css";
 @import "./style.content.css";
 @import "./style.tail.css";
 /* 主题最后加载：外观/主色需覆盖前面各层的 token 默认值 */

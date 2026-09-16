@@ -33,6 +33,13 @@ class ClassifyBoardTests(unittest.TestCase):
         self.assertTrue(is_st_name("ST 假名"))
         self.assertFalse(is_st_name("宁德时代"))
 
+    def test_chinext_includes_302132_and_requires_a_valid_six_digit_code(self) -> None:
+        self.assertEqual(classify_board("302132"), "chi_next")
+        self.assertEqual(classify_board(" 302132 "), "chi_next")
+        self.assertEqual(classify_board("30AB12"), "other")
+        self.assertEqual(classify_board("3021320"), "other")
+        self.assertNotEqual(classify_board("30１２３４"), "chi_next")
+
 
 class ExpandSpecTests(unittest.TestCase):
     def test_default_excludes_st_and_bse(self) -> None:
@@ -140,6 +147,17 @@ class ResolveUniverseTests(unittest.TestCase):
     def test_main_only(self) -> None:
         resolved = resolve_universe(self.store, {"preset": "main_only"})
         self.assertEqual(resolved.codes, ["600000"])
+
+    def test_302132_is_in_chinext_universe_and_not_mainboard(self) -> None:
+        self.store.upsert_instruments([
+            {"code": "302132", "name": "中航成飞", "market": "sz", "board": "创业板",
+             "instrument_type": "STOCK", "status": "normal"},
+        ])
+        growth = resolve_universe(self.store, {"boards": ["chi_next"], "min_list_days": 0})
+        main = resolve_universe(self.store, {"boards": ["main"], "min_list_days": 0})
+        self.assertEqual(growth.codes, ["300750", "302132"])
+        self.assertEqual(growth.meta["302132"]["board_bucket"], "chi_next")
+        self.assertNotIn("302132", main.codes)
 
 
 if __name__ == "__main__":

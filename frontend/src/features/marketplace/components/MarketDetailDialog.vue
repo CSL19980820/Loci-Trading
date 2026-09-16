@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Delete, Right } from '@element-plus/icons-vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 import { dialogWidth } from '@/shared/lib/format'
 import type { AkshareCatalogCapability } from '@/shared/types/quant'
@@ -65,12 +68,12 @@ function onRemove(): void {
     destroy-on-close
     class="market-detail-dialog"
   >
-    <template v-if="item">
+    <div v-if="item" class="market-detail-body">
       <div class="meta-grid">
         <div class="meta-cell"><span class="dim">品类</span><strong>{{ kindLabel }}</strong></div>
         <div class="meta-cell"><span class="dim">信任</span><strong>{{ trustLabel }}</strong></div>
         <div class="meta-cell"><span class="dim">版本</span><strong>{{ versionLabel }}</strong></div>
-        <div class="meta-cell"><span class="dim">状态</span><strong>{{ stateLabel }}</strong></div>
+        <div class="meta-cell"><span class="dim">状态</span><UiBadge :variant="item.enabled === false ? 'secondary' : 'info'">{{ stateLabel }}</UiBadge></div>
       </div>
       <div v-if="item.kind === 'source'" class="meta-desc">
         <span class="dim">来源地址</span>
@@ -84,11 +87,12 @@ function onRemove(): void {
       <section v-if="item.kind === 'source'" class="section" aria-label="数据列表">
         <SourceDatasetList :source-id="item.slug" @select="onPickDataset" />
       </section>
-    </template>
+    </div>
+    <EmptyState v-else description="未选择货品" />
 
     <template #footer>
-      <el-button v-if="canRemove" type="danger" plain @click="onRemove">卸载</el-button>
-      <el-button type="primary" :disabled="!item" @click="onOpen">{{ openLabel }}</el-button>
+      <el-button v-if="canRemove" type="danger" :icon="Delete" plain @click="onRemove">卸载</el-button>
+      <el-button type="primary" :icon="Right" :disabled="!item" @click="onOpen">{{ openLabel }}</el-button>
     </template>
 
     <SourceDatasetDialog v-model="datasetOpen" :dataset="dataset" />
@@ -96,31 +100,38 @@ function onRemove(): void {
 </template>
 
 <style scoped>
+.market-detail-body { max-height: 68dvh; overflow: auto; overscroll-behavior: contain; }
 .meta-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr));
+  gap: var(--gap-2);
 }
 .meta-cell,
 .meta-desc {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.45rem 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  gap: var(--gap-1);
+  padding: var(--gap-2);
+  min-width: 0;
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--sheet-alt);
 }
+.meta-desc { margin-top: var(--gap-2); background: var(--sheet); }
 .dim {
   color: var(--mist);
-  font-size: 0.76rem;
+  font-size: var(--fs-aux);
 }
 .section {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--el-border-color-lighter);
+  margin-top: var(--gap-2);
+  padding-top: var(--gap-2);
+  border-top: 1px solid var(--rule);
 }
 .url {
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.8rem;
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
   word-break: break-all;
 }
 </style>

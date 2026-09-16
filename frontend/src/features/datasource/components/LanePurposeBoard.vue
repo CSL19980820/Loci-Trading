@@ -71,7 +71,7 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
 
 <template>
   <div class="lane-board">
-    <section v-for="row in rows" :key="row.lane" class="lane-card">
+    <section v-for="row in rows" :key="row.lane" class="lane-card" :aria-label="row.label">
       <header class="lane-card__head">
         <div class="lane-card__title">
           <strong>{{ row.label }}</strong>
@@ -219,18 +219,19 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
 .lane-board {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--gap-2);
   /* 高度随内容；滚动由 DataSourcePanel .ds-body 承担 */
   flex: 0 0 auto;
   min-height: min-content;
-  padding-bottom: 0.35rem;
+  padding-bottom: var(--gap-2);
 }
 
 .lane-card {
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--sheet);
-  padding: 0.6rem 0.75rem 0.5rem;
+  background: var(--surface);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .lane-card__head {
@@ -238,8 +239,10 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.45rem 0.75rem;
-  margin-bottom: 0.45rem;
+  gap: var(--gap-2) var(--gap-3);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-sunken);
 }
 
 .lane-card__title {
@@ -251,17 +254,18 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
 }
 
 .lane-card__title strong {
-  font-family: var(--font-display);
-  font-size: 1rem;
+  font-family: var(--font);
+  font-size: var(--fs-title);
 }
 
 .lane-card__meta {
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
 .lane-card__meta b {
-  font: 650 0.82rem var(--mono);
+  font: 600 var(--fs-body) var(--mono);
+  font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 
@@ -291,8 +295,9 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
 }
 
 .lane-card__empty {
-  margin: 0.15rem 0 0.35rem;
-  font-size: 0.8rem;
+  margin: 0;
+  padding: var(--gap-3);
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
@@ -321,4 +326,6 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
 .dim {
   color: var(--mist);
 }
+.lane-card__tools :deep(.el-button + .el-button) { margin-left: 0; }
+@media (max-width: 640px) { .lane-card__tools { width: 100%; gap: var(--gap-2); } }
 </style>

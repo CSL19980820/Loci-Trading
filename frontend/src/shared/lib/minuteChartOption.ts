@@ -363,7 +363,7 @@ export function buildMinuteOption(opts: {
             : undefined,
       },
       {
-        name: '成交量',
+        name: '成交量（股）',
         type: 'bar',
         data: volumes,
         xAxisIndex: 1,

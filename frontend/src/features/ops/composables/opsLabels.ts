@@ -57,6 +57,9 @@ export function kindLabel(kind: string): string {
       alert_scan: '价格提醒扫描',
       strategy_monitor: '纸面盯盘',
       paper_eod: '纸面日终',
+      guardian: '自主交易员',
+      guardian_review: '交易员复盘与计划',
+      exchange_calendar: '交易所日历更新',
     }[kind] ?? kind
   )
 }

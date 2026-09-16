@@ -210,6 +210,12 @@ watch(tokens, () => render())
  */
 .role-timeline {
   width: 100%;
+  min-width: 0;
+  padding: var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  box-sizing: border-box;
 }
 
 .role-timeline--chart {
@@ -218,6 +224,7 @@ watch(tokens, () => render())
 
 .role-timeline__canvas {
   width: 100%;
+  min-width: 0;
   height: 100%;
 }
 </style>

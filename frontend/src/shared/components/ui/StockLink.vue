@@ -72,7 +72,7 @@ defineExpose({ openWithBatch })
 </script>
 
 <template>
-  <RouterLink :to="archiveTo" class="stock-link" @click="onClick">
+  <RouterLink :to="archiveTo" class="stock-link whitespace-nowrap" @click="onClick">
     <template v-if="name">
       {{ name }}
       <span v-if="showCode" class="code">{{ code }}</span>
@@ -80,12 +80,7 @@ defineExpose({ openWithBatch })
     <template v-else>{{ code }}</template>
   </RouterLink>
 </template>
-
 <style scoped>
-/* 密表里名称+代码必须一行到底：换行会把 28px 行高顶成两行，整表节奏就散了 */
-.stock-link {
-  white-space: nowrap;
-}
 
 .stock-link .code {
   margin-left: var(--gap-1);

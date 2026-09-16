@@ -49,6 +49,6 @@ describe('AssistantDecisionChart', () => {
       global: { stubs },
     })
 
-    expect(wrapper.text()).toContain('工具未返回可展示的数据')
+    expect(wrapper.text()).toContain('暂无可展示的数据')
   })
 })

@@ -21,6 +21,9 @@ export interface Skill {
 }
 
 export type JobKind =
+  | 'guardian'
+  | 'guardian_review'
+  | 'exchange_calendar'
   | 'sync'
   | 'screen'
   | 'backtest'

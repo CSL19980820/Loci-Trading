@@ -7,9 +7,9 @@
  * 与 KeepAlive 停表）在 useResearchBacktestJob，状态词表在 researchBacktestStatus。
  */
 import { computed, ref } from 'vue'
-import { Download, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { DataLine, Download, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import { researchArtifactUrl } from '@/shared/api/quant_research'
 import { strategyLabel } from '@/shared/lib/format'
 
@@ -64,7 +64,7 @@ const rejectionOpen = ref(false)
 const detailGroups = computed(() => {
   const run = selectedRun.value
   if (!run) return []
-  return [
+  const groups = [
     ['回测指标', run.metrics],
     ['验证结果', run.validation],
     ['风险透视', run.risk_xray],
@@ -75,6 +75,26 @@ const detailGroups = computed(() => {
       value: printable(value),
     })),
   }))
+  const conclusion = run.conclusion as Record<string, unknown> | undefined
+  const account = conclusion?.portfolio_summary as Record<string, unknown> | undefined
+  if (account) {
+    const number = (key: string, suffix = '') => {
+      const value = account[key]
+      return typeof value === 'number' && Number.isFinite(value)
+        ? `${value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}${suffix}`
+        : '—'
+    }
+    groups.unshift({ title: '资金账户（每日收盘估值）', items: [
+      { key: '初始资金', value: number('initial_capital', ' 元') },
+      { key: '期末权益', value: number('final_equity', ' 元') },
+      { key: '账户收益', value: number('return_pct', '%') },
+      { key: '最大回撤', value: number('max_drawdown_pct', '%') },
+      { key: '已平仓交易', value: number('closed_trades', ' 笔') },
+      { key: '未平仓', value: number('open_positions', ' 笔') },
+      { key: '已计费用', value: number('fees_paid', ' 元') },
+    ] })
+  }
+  return groups
 })
 
 /**
@@ -108,14 +128,42 @@ const replaySummary = computed(() => (
   replayResult.value ? summarizeReplayComparison(replayResult.value.comparison) : null
 ))
 
+const runRows = computed(() => runs.value as unknown as Record<string, unknown>[])
+
+const runColumns: BasicTableColumn[] = [
+  { prop: 'run_id', label: 'run id', minWidth: 180, showOverflowTooltip: true },
+  { prop: 'strategy_slug', label: '战法', minWidth: 120, showOverflowTooltip: true, formatter: (row) => strategyLabel(String(row.strategy_slug ?? '')) },
+  { prop: 'status', label: '状态', width: 90, slotName: 'status' },
+  { prop: 'actual_as_of', label: '截止日', width: 116 },
+  { prop: 'run_id', label: '操作', width: 82, fixed: 'right', slotName: 'actions' },
+]
+
+const sourceEvidenceTableRows = computed(() => sourceEvidenceRows.value as unknown as Record<string, unknown>[])
+const artifactRows = computed(() => (selectedRun.value?.artifact_manifest ?? []) as unknown as Record<string, unknown>[])
+
+const sourceEvidenceColumns: BasicTableColumn[] = [
+  { prop: 'kind', label: '证据类型', width: 96 },
+  { prop: 'sourceId', label: '来源', width: 140, showOverflowTooltip: true },
+  { prop: 'state', label: '状态', width: 100, showOverflowTooltip: true },
+  { prop: 'sourceUrl', label: '链接', minWidth: 160, showOverflowTooltip: true, slotName: 'url' },
+  { prop: 'detail', label: '来源回执', minWidth: 240, showOverflowTooltip: true },
+]
+
+const artifactColumns: BasicTableColumn[] = [
+  { prop: 'path', label: '路径', minWidth: 180, showOverflowTooltip: true },
+  { prop: 'artifact_type', label: '类型', width: 140, showOverflowTooltip: true },
+  { prop: 'sha256', label: 'SHA-256', minWidth: 150, slotName: 'hash' },
+  { prop: 'path', label: '下载', width: 76, fixed: 'right', slotName: 'download' },
+]
+
 defineExpose({ load, setHistoricalUniverse })
 </script>
 
 <template>
-  <section class="backtest-panel" aria-label="可审计研究回测">
+  <section class="backtest-panel research-surface" aria-label="可审计研究回测">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <header class="section-head">
-      <h3>研究回测</h3>
+      <h3><el-icon aria-hidden="true"><DataLine /></el-icon>研究回测</h3>
       <el-button size="small" :icon="RefreshRight" :loading="loading" @click="load">刷新</el-button>
     </header>
 
@@ -195,24 +243,23 @@ defineExpose({ load, setHistoricalUniverse })
       </div>
     </section>
 
-    <el-table v-if="runs.length" :data="runs" size="small" row-key="run_id" highlight-current-row>
-      <el-table-column prop="run_id" label="run id" min-width="180" show-overflow-tooltip />
-      <el-table-column label="战法" min-width="120" show-overflow-tooltip>
-        <template #default="{ row }">{{ strategyLabel(row.strategy_slug) }}</template>
-      </el-table-column>
-      <el-table-column label="状态" width="90">
-        <template #default="{ row }"><el-tag size="small" effect="plain" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
-      </el-table-column>
-      <el-table-column prop="actual_as_of" label="截止日" width="116" />
-      <el-table-column label="操作" width="82" fixed="right">
-        <template #default="{ row }"><el-button text size="small" @click="selectRun(row.run_id)">查看</el-button></template>
-      </el-table-column>
-    </el-table>
-    <EmptyState
-      v-else-if="!loading"
-      description="还没有跑过研究回测"
-      reason="填好区间后点「提交回测」"
-    />
+    <BasicTable
+      :columns="runColumns"
+      :data-source="runRows"
+      :pagination="false"
+      :loading="loading"
+      row-key="run_id"
+      stripe
+      empty-text="还没有跑过研究回测"
+      empty-reason="填好区间后点「提交回测」"
+    >
+      <template #status="{ row }">
+        <el-tag size="small" effect="plain" :type="statusType(String(row.status))">{{ statusLabel(String(row.status)) }}</el-tag>
+      </template>
+      <template #actions="{ row }">
+        <el-button text size="small" @click="selectRun(String(row.run_id))">查看该轮</el-button>
+      </template>
+    </BasicTable>
 
     <template v-if="selectedRun">
       <div class="run-detail-head">
@@ -315,24 +362,35 @@ defineExpose({ load, setHistoricalUniverse })
           :closable="false"
           class="evidence-alert"
         />
-        <el-table v-if="sourceEvidenceRows.length" :data="sourceEvidenceRows" size="small">
-          <el-table-column prop="kind" label="证据类型" width="96" />
-          <el-table-column prop="sourceId" label="来源" width="140" show-overflow-tooltip />
-          <el-table-column prop="state" label="状态" width="100" show-overflow-tooltip />
-          <el-table-column label="链接" min-width="160" show-overflow-tooltip><template #default="{ row }"><el-link v-if="row.sourceUrl" :href="row.sourceUrl" target="_blank" rel="noopener noreferrer">{{ row.sourceUrl }}</el-link><span v-else class="missing">后端未提供链接</span></template></el-table-column>
-          <el-table-column prop="detail" label="来源回执" min-width="240" show-overflow-tooltip />
-        </el-table>
-        <span v-else class="missing">后端未提供 source_evidence</span>
+        <BasicTable
+          :columns="sourceEvidenceColumns"
+          :data-source="sourceEvidenceTableRows"
+          :pagination="false"
+          stripe
+          empty-text="暂无来源证据"
+        >
+          <template #url="{ row }">
+            <el-link v-if="row.sourceUrl" :href="String(row.sourceUrl)" target="_blank" rel="noopener noreferrer">{{ row.sourceUrl }}</el-link>
+            <span v-else class="missing">后端未提供链接</span>
+          </template>
+        </BasicTable>
       </section>
       <section class="artifact-section">
-        <div class="artifact-head"><h4>Artifact manifest</h4><code :title="selectedRun.artifact_manifest_sha256">{{ selectedRun.artifact_manifest_sha256 || '后端未提供摘要' }}</code></div>
-        <el-table v-if="selectedRun.artifact_manifest.length" :data="selectedRun.artifact_manifest" size="small">
-          <el-table-column prop="path" label="路径" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="artifact_type" label="类型" width="140" show-overflow-tooltip />
-          <el-table-column label="SHA-256" min-width="150"><template #default="{ row }"><code :title="row.sha256">{{ row.sha256.slice(0, 16) }}...</code></template></el-table-column>
-          <el-table-column label="下载" width="76" fixed="right"><template #default="{ row }"><el-link :href="researchArtifactUrl(selectedRun!.run_id, row.path)" :icon="Download" aria-label="下载 artifact" /></template></el-table-column>
-        </el-table>
-        <span v-else class="missing">后端未提供 artifact</span>
+        <div class="artifact-head"><h4>证据文件清单</h4><code :title="selectedRun.artifact_manifest_sha256">{{ selectedRun.artifact_manifest_sha256 || '后端未提供摘要' }}</code></div>
+        <BasicTable
+          :columns="artifactColumns"
+          :data-source="artifactRows"
+          :pagination="false"
+          stripe
+          empty-text="暂无证据文件"
+        >
+          <template #hash="{ row }">
+            <code :title="String(row.sha256 || '')">{{ String(row.sha256 || '').slice(0, 16) }}...</code>
+          </template>
+          <template #download="{ row }">
+            <el-link :href="researchArtifactUrl(selectedRun!.run_id, String(row.path))" :icon="Download" aria-label="下载 artifact" />
+          </template>
+        </BasicTable>
       </section>
     </template>
     <ResearchPublicationDialog
@@ -388,3 +446,4 @@ code { color: var(--ink); font-family: var(--mono); font-size: var(--fs-aux); fo
   .form-wide :deep(.el-form-item__content) { max-width: none; }
 }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

@@ -108,7 +108,7 @@ const items = computed<RankItem[]>(() =>
 </script>
 
 <template>
-  <section class="rank live-block" :class="`rank--${accent}`">
+  <section class="rank live-block" :class="`rank--${accent}`" :aria-label="title">
     <header class="live-block__head">
       <span class="live-block__title">
         <i class="rank__mark" aria-hidden="true" />
@@ -128,7 +128,9 @@ const items = computed<RankItem[]>(() =>
         }"
       >
         <span class="rank__idx live-num">{{ idx + 1 }}</span>
-        <StockLink :code="item.code" :name="item.name" :show-code="false" class="rank__name" />
+        <el-tooltip :content="item.name ? `${item.name} ${item.code}` : item.code" placement="top" :show-after="300">
+          <StockLink :code="item.code" :name="item.name" :show-code="false" class="rank__name" />
+        </el-tooltip>
         <span class="rank__code live-num">{{ item.code }}</span>
         <span class="rank__val live-num" :class="item.valueClass">{{ item.value }}</span>
       </div>
@@ -143,11 +145,12 @@ const items = computed<RankItem[]>(() =>
   height: 100%;
 }
 
-/* 列头识别条：2px，四列一眼可辨 */
+/* 圆点区分报价方向与榜单口径，不占用标题宽度。 */
 .rank__mark {
   display: inline-block;
-  width: 2px;
-  height: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   margin-right: var(--gap-1);
   background-color: var(--live-flat);
 }
@@ -188,6 +191,11 @@ const items = computed<RankItem[]>(() =>
   border-bottom: 1px solid var(--live-rule-soft);
 }
 
+.rank__row:hover,
+.rank__row:focus-within {
+  background-color: var(--surface-hover);
+}
+
 .rank__idx {
   font-size: var(--fs-kicker);
   color: var(--live-dim);
@@ -226,6 +234,7 @@ const items = computed<RankItem[]>(() =>
 }
 
 @media (max-width: 1100px) {
+  .rank__row { grid-template-columns: 1.5rem minmax(0, 1fr) auto; }
   .rank__code {
     display: none;
   }

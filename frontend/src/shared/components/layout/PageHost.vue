@@ -36,7 +36,7 @@ watch(
   <Teleport to="body">
     <div
       v-if="component && route.name === 'archive'"
-      class="archive-overlay"
+      class="archive-overlay fixed inset-0 z-[var(--z-archive)] flex h-full w-full flex-col overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-label="个股档案"

@@ -1,5 +1,7 @@
 # 限界上下文地图
 
+历史时点回测新增租户私有 `backtest_datasets/`：backtest显式导入带SHA校验的不可覆盖数据集，不写 `market.db`、`palace.db` 或 `ops.db`。research经backtest公开入口消费，把实际信号、执行价格、因子和数据集SHA冻结到既有 `research_runs/`；逐日账户与重放仍沿原链路，不创建另一套交易服务。
+
 ```
 app (组合根)
  ├── identity ──► shared（身份、角色、配额、审计、通知；写 identity.db）

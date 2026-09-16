@@ -137,7 +137,7 @@ export function buildKlineOption(opts: {
   const allMarks = [...limitMarks, ...strategyMarks]
   const series: Record<string, unknown>[] = [
     {
-      name: 'K线',
+      name: 'K线（元）',
       type: 'candlestick',
       data: candle,
       xAxisIndex: 0,
@@ -155,7 +155,7 @@ export function buildKlineOption(opts: {
         position: 'top',
         distance: 1,
         fontSize: 9,
-        fontFamily: 'IBM Plex Mono, Cascadia Code, ui-monospace, monospace',
+        fontFamily: t.mono,
         color: t.muted,
         formatter: (p: { data?: number[] | { value?: number[] } }) => {
           const raw = p.data
@@ -168,7 +168,7 @@ export function buildKlineOption(opts: {
       },
     },
     {
-      name: '成交量',
+      name: '成交量（股）',
       type: 'bar',
       data: volumes,
       xAxisIndex: 1,

@@ -1,0 +1,96 @@
+"""One bounded preflight correction; never loosens a price limit or repeats a fill."""
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime
+from typing import Any
+
+from src.ops.application.guardian_contract import completion_error
+from src.ops.application.guardian_completion import run_accounted_agent
+from src.ops.application.guardian_decision import GuardianDecision, TRADE_ACTIONS, parse_decision
+
+
+def validate_correction(original: GuardianDecision, corrected: GuardianDecision) -> None:
+    old = {(o.code, o.action): o for o in original.orders if o.action in TRADE_ACTIONS}
+    trades = [o for o in original.orders if o.action in TRADE_ACTIONS]
+    if len(old) != len(trades):
+        raise ValueError("重复交易意图不能自动修正")
+    seen = set()
+    for item in corrected.orders:
+        if item.action not in TRADE_ACTIONS:
+            continue
+        key = (item.code, item.action)
+        if key not in old or key in seen:
+            raise ValueError("修正不得新增股票、改变方向或重复原意图")
+        seen.add(key)
+        before = old[key]
+        if item.quantity > before.quantity:
+            raise ValueError("修正不得扩大原申报数量")
+        if item.execution is None:
+            raise ValueError("修正仍需明确execution")
+        prior = before.execution
+        if prior is None:
+            continue
+        if datetime.fromisoformat(item.execution.valid_until) > datetime.fromisoformat(prior.valid_until):
+            raise ValueError("修正不得延长原意图有效期")
+        if item.execution.reference_price != prior.reference_price:
+            raise ValueError("修正不得移动已绑定的执行参考价")
+        if prior.kind == "limit":
+            if item.execution.kind != "limit":
+                raise ValueError("修正不得将条件单变为市价意图")
+            if prior.min_price is not None and (item.execution.min_price is None or item.execution.min_price < prior.min_price):
+                raise ValueError("修正不得降低原价格下限")
+            if prior.max_price is not None and (item.execution.max_price is None or item.execution.max_price > prior.max_price):
+                raise ValueError("修正不得提高原价格上限")
+
+
+def repair_preflight(store: Any, cfg: dict, decision: GuardianDecision, meta: dict, state: dict,
+                     quotes: dict, rejects: list[dict], *, check_cancelled: Any, deadline: float) -> GuardianDecision:
+    allowed = {"quantity", "cash", "position_limit", "t_plus_one", "close_plan", "account_rule"}
+    continuation = meta.get("_repair")
+    if not continuation or not any(r.get("reject_code") in allowed for r in rejects):
+        return decision
+    if deadline - time.monotonic() < 20:
+        meta["preflight_repair"] = {"status": "skipped", "reason": "剩余时间不足，保留拒单并等待下一轮"}
+        return decision
+    from src.ai import ChatMessage, resolve_config
+    from src.ai.application.agent_messages import messages_from_json
+    from src.ops.application.jobs.context import JobCancelled, JobTimedOut
+
+    try:
+        check_cancelled()
+        provider = resolve_config(store, cfg["provider"], model=cfg["model"], timeout=max(0.001, deadline - time.monotonic()))
+        if provider.model != cfg["model"]:
+            raise ValueError("所选模型已停用")
+        messages = messages_from_json(continuation["messages"])
+        text = continuation.get("text") or decision.model_dump_json()
+        if not messages or messages[-1].role != "assistant" or messages[-1].content != text:
+            messages.append(ChatMessage(role="assistant", content=text))
+        request = {"preflight_only": True, "portfolio": state, "quotes": quotes, "rejections": rejects,
+                   "original_decision": decision.model_dump(mode="json"),
+                   "instruction": "尚未发生任何成交。本次只允许根据拒单原因降低股数、撤回不可执行意图、修正收盘留仓名单；不得新增股票、重复或改变买卖方向，不得扩大股数、放宽价格边界或延长有效期。以合法手数替代非法半手，不能由程序随意取整。保留所有其他约束，输出完整决策JSON，不调用工具。"}
+        messages.append(ChatMessage(role="user", content=json.dumps(request, ensure_ascii=False)))
+        result = run_accounted_agent(provider, store, meta, system=continuation["system"], messages=messages, max_rounds=1, max_calls_per_round=0,
+                           max_tokens=provider.max_output_tokens or 328000, temperature=0, thinking=cfg.get("thinking", ""),
+                           deadline=deadline, check_cancelled=check_cancelled, allow_hitl=False)
+        diagnostic = {"status": "failed", "finish_reason": result.finish_reason, "original_rejects": rejects}
+        meta["preflight_repair"] = diagnostic
+        error = completion_error(result, "订单修正")
+        if error:
+            raise ValueError(error)
+        corrected = parse_decision(result.text, require_execution_terms=True)
+        validate_correction(decision, corrected)
+        check_cancelled()
+        diagnostic.update(status="corrected", decision=corrected.model_dump(mode="json"))
+        return corrected.model_copy(update={"orders": [o for o in decision.orders if o.action not in TRADE_ACTIONS]
+                                            + [o for o in corrected.orders if o.action in TRADE_ACTIONS]})
+    except (JobCancelled, JobTimedOut, TimeoutError) as exc:
+        exc.usage = meta
+        raise
+    except (ValueError, RuntimeError) as exc:
+        meta.setdefault("preflight_repair", {}) .update(status="failed", error=str(exc))
+        return decision
+    except BaseException as exc:
+        exc.usage = meta
+        raise

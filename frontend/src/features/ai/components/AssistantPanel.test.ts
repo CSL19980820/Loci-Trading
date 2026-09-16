@@ -46,10 +46,12 @@ describe('AssistantPanel', () => {
           AssistantEmptyState: { template: '<div />' },
           AssistantSenderDock: { template: '<div />' },
           AssistantSessionRail: {
+            name: 'AssistantSessionRail',
             props: ['collapsed'],
             template: '<aside data-testid="session-rail" :data-collapsed="collapsed" />',
           },
           AssistantTaskSidebar: {
+            name: 'AssistantTaskSidebar',
             props: ['open'],
             template: '<aside data-testid="task-sidebar" :data-open="open" />',
           },
@@ -181,5 +183,26 @@ describe('AssistantPanel', () => {
 
     expect(wrapper.get('[data-testid="session-rail"]').attributes('data-collapsed')).toBe('false')
     expect(wrapper.get('[data-testid="task-sidebar"]').attributes('data-open')).toBe('true')
+  })
+
+  it('窄屏互斥展开侧栏，但保留另一侧的持久偏好', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    const wrapper = mountWithSidebarProbes()
+    const history = wrapper.getComponent({ name: 'AssistantSessionRail' })
+    const task = wrapper.getComponent({ name: 'AssistantTaskSidebar' })
+    history.vm.$emit('update:collapsed', false)
+    await nextTick()
+    expect(history.attributes('data-collapsed')).toBe('false')
+    task.vm.$emit('update:open', true)
+    await nextTick()
+    expect(task.attributes('data-open')).toBe('true')
+    expect(history.attributes('data-collapsed')).toBe('true')
+    expect(localStorage.getItem('loci.assistant.historyOpen')).toBe('1')
+    history.vm.$emit('update:collapsed', false)
+    await nextTick()
+    expect(history.attributes('data-collapsed')).toBe('false')
+    expect(task.attributes('data-open')).toBe('false')
+    expect(localStorage.getItem('loci.assistant.taskSidebarOpen')).toBe('1')
+    wrapper.unmount()
   })
 })

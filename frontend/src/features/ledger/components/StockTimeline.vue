@@ -18,11 +18,11 @@ function candidateSummary(event: TimelineEvent): string {
 
 <template>
   <ol class="sw-tl">
-    <li v-for="event in events" :key="event.id" class="sw-tl__item is-cand">
+    <li v-for="event in events" :key="event.id" class="sw-tl__item" :class="{ 'is-cand': event.type === 'candidate' }">
       <span class="sw-tl__date mono">{{ event.date }}</span>
       <span class="sw-tl__tag">{{ typeLabel(event.type) }}</span>
       <strong class="sw-tl__title">{{ event.label }}</strong>
-      <span class="sw-tl__body">{{ candidateSummary(event) }}</span>
+      <span class="sw-tl__body" :title="candidateSummary(event)">{{ candidateSummary(event) }}</span>
       <span class="sw-tl__foot mono dim">{{ shortTime(event.created_at) }}</span>
     </li>
   </ol>
@@ -66,7 +66,7 @@ function candidateSummary(event: TimelineEvent): string {
   font-size: var(--fs-kicker);
   line-height: 1.4;
   padding: 0 var(--gap-1);
-  border: 1px solid color-mix(in srgb, var(--seal) 42%, var(--rule));
+  border: 1px solid color-mix(in oklab, var(--seal) 42%, var(--rule));
   border-radius: var(--radius);
   background: var(--seal-soft);
   color: var(--seal-ink);

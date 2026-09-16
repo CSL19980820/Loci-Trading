@@ -187,7 +187,7 @@ def preview_screen_skill(
             store_cm = open_screen_store(
                 market_db,
                 trade_date=str(payload.run.trade_date or date.today().isoformat()),
-                warmup_bars=signal_history_bars(engine),
+                warmup_bars=signal_history_bars(engine, params=payload.run.params),
             )
         with store_cm as store:
             result = screen(

@@ -2,7 +2,7 @@
 
 > **类型**：Explanation（排序杠杆对照）  
 > **执行日**：2026-08-13  
-> **脚本**：[`scripts/_tmp_incumbent_rank_levers.py`](../../scripts/_tmp_incumbent_rank_levers.py)  
+> **脚本**：已清理（一次性研究脚本；结论保留在本文，原始数字见下方数据文件）
 > **原始数字**：[`_scratch_incumbent_rank_levers.json`](_scratch_incumbent_rank_levers.json)  
 > **相关**：[`2026-08-incumbent-strategy-full-sample-benchmark.md`](2026-08-incumbent-strategy-full-sample-benchmark.md)、`src/strategy/application/qianlong.py`、`src/strategy/application/tail_resonance.py`
 

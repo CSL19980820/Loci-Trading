@@ -28,11 +28,11 @@ export const DEFAULT_MA_PERIODS: number[] = [5, 10, 20, 30, 60, 120, 250]
 export const KLINE_GRID_TOPS = { vol: 52, ind: 70 } as const
 
 export const MA_LINE_COLORS = [
-  '#c41e3a',
-  '#2563eb',
-  '#d97706',
+  '#c8282a',
+  '#1174b4',
+  '#a05e00',
   '#7c3aed',
-  '#0f6b5c',
+  '#00793a',
   '#0891b2',
   '#be185d',
   '#ca8a04',

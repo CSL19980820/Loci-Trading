@@ -32,9 +32,9 @@ const revokingSessions = ref<boolean>(false)
 const passwordStrength = computed(() => {
   const p = passwordForm.value.new_password
   if (!p) return { text: '', color: '' }
-  if (p.length < 8) return { text: '太短（至少 8 位）', color: 'var(--warn)' }
-  if (p.length < 12) return { text: '适中', color: 'var(--info)' }
-  return { text: '很好', color: 'var(--seal)' }
+  if (p.length < 8) return { text: '太短（至少 8 位）', color: 'var(--warn-ink)' }
+  if (p.length < 12) return { text: '适中', color: 'var(--info-ink)' }
+  return { text: '很好', color: 'var(--seal-ink)' }
 })
 
 async function handleChangePassword(): Promise<void> {
@@ -124,6 +124,7 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
             type="password"
             show-password
             placeholder="输入当前密码"
+            autocomplete="current-password"
           />
         </el-form-item>
 
@@ -133,6 +134,7 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
             type="password"
             show-password
             placeholder="至少 8 位新密码"
+            autocomplete="new-password"
           />
         </el-form-item>
 
@@ -142,12 +144,11 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
             type="password"
             show-password
             placeholder="再次输入新密码"
+            autocomplete="new-password"
           />
         </el-form-item>
       </el-form>
     </section>
-
-    <el-divider />
 
     <!-- 登录设备 / 会话 -->
     <section class="sec-section">
@@ -165,7 +166,8 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
         </el-button>
       </div>
 
-      <div class="session-list">
+      <EmptyState v-if="sessions.length === 0" description="暂无登录设备" />
+      <div v-else class="session-list">
         <div v-for="s in sessions" :key="s.id" class="session-item">
           <div class="session-info">
             <div class="session-line">
@@ -179,15 +181,17 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
       </div>
     </section>
 
-    <el-divider />
-
     <!-- 第三方绑定 -->
     <section class="sec-section">
       <div class="sec-header-row">
         <h3 class="sec-title">第三方账号</h3>
         <el-tag size="small" type="info" round>{{ identities.length }}</el-tag>
       </div>
-      <EmptyState v-if="identities.length === 0" description="还没绑定第三方账号" />
+      <EmptyState
+        v-if="identities.length === 0"
+        description="还没绑定第三方账号"
+        reason="当前版本暂不支持自助绑定"
+      />
       <div v-else class="identity-list">
         <div v-for="idItem in identities" :key="idItem.id" class="identity-item">
           <div class="id-info">
@@ -209,100 +213,4 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
   </div>
 </template>
 
-<style scoped>
-.form-max {
-  max-width: 480px;
-}
-
-.sec-chip {
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.sec-section {
-  padding: 0.5rem 0;
-}
-
-.sec-header-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.sec-header-row .el-button {
-  margin-left: auto;
-}
-
-.sec-title {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.session-list,
-.identity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.session-item,
-.identity-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background: var(--panel-2);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-sm);
-}
-
-.session-line {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.session-ip {
-  font-weight: 550;
-  font-size: 0.9rem;
-  color: var(--ink);
-}
-
-.session-ua {
-  font-size: 0.78rem;
-  color: var(--mist);
-  margin-top: 0.2rem;
-}
-
-.session-time {
-  font-size: 0.75rem;
-  color: var(--mist);
-  margin-top: 0.15rem;
-}
-
-.id-info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.id-provider {
-  font-weight: 600;
-  text-transform: capitalize;
-  color: var(--ink);
-}
-
-.id-name {
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-}
-
-.id-time {
-  font-size: 0.78rem;
-  color: var(--mist);
-}
-
-</style>
+<style scoped src="./AccountSecurityPane.css" />

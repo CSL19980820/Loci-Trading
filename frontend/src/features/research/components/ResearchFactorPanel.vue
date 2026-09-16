@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onActivated, onDeactivated, onUnmounted, ref } from 'vue'
-import { Download, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { DataAnalysis, Download, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 import {
@@ -15,6 +15,9 @@ import type {
   ResearchBacktestJob,
   ResearchBacktestRun,
 } from '@/shared/types/quant-research'
+
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import UiField from '@/shared/components/ui/UiField.vue'
 
 type FactorForm = {
   range: [string, string]
@@ -222,20 +225,28 @@ onActivated(() => {
   if (status && status !== 'completed' && status !== 'failed') retryPolling()
 })
 onUnmounted(stopPolling)
+const artifactRows = computed(() => (completedRun.value?.artifact_manifest ?? []) as unknown as Record<string, unknown>[])
+
+const artifactColumns: BasicTableColumn[] = [
+  { prop: 'path', label: '路径', minWidth: 180, showOverflowTooltip: true },
+  { prop: 'artifact_type', label: '类型', width: 130, showOverflowTooltip: true },
+  { prop: 'path', label: '下载', width: 76, fixed: 'right', slotName: 'download' },
+]
+
 </script>
 
 <template>
-  <section class="factor-panel" aria-labelledby="pth252-title">
+  <section class="factor-panel research-surface" aria-labelledby="pth252-title">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <header class="section-head">
-      <h3 id="pth252-title">PTH252</h3>
+      <h3 id="pth252-title"><el-icon aria-hidden="true"><DataAnalysis /></el-icon>PTH252</h3>
       <el-tooltip content="研究候选，不改变生产策略。Top 10% 只保留可成交标的；数据缺失或不可成交的位置留空，不以弱票替补。" placement="top">
-        <el-tag type="warning" effect="plain">仅研究</el-tag>
+        <el-tag type="info" effect="plain">仅研究</el-tag>
       </el-tooltip>
     </header>
 
-    <el-form label-position="right" label-width="6.5em" size="small" class="factor-form" @submit.prevent="submit">
-      <el-form-item label="样本区间" class="form-wide">
+    <div class="factor-form">
+      <UiField class="form-wide" label="样本区间">
         <el-date-picker
           v-model="form.range"
           type="daterange"
@@ -244,26 +255,26 @@ onUnmounted(stopPolling)
           start-placeholder="开始日"
           end-placeholder="结束日"
         />
-      </el-form-item>
-      <el-form-item label="train 开始">
+      </UiField>
+      <UiField label="train 开始">
         <el-date-picker v-model="form.split.train_start" type="date" value-format="YYYY-MM-DD" />
-      </el-form-item>
-      <el-form-item label="train 结束">
+      </UiField>
+      <UiField label="train 结束">
         <el-date-picker v-model="form.split.train_end" type="date" value-format="YYYY-MM-DD" />
-      </el-form-item>
-      <el-form-item label="OOS 开始">
+      </UiField>
+      <UiField label="OOS 开始">
         <el-date-picker v-model="form.split.oos_start" type="date" value-format="YYYY-MM-DD" />
-      </el-form-item>
-      <el-form-item label="OOS 结束">
+      </UiField>
+      <UiField label="OOS 结束">
         <el-date-picker v-model="form.split.oos_end" type="date" value-format="YYYY-MM-DD" />
-      </el-form-item>
-      <el-form-item label="历史股票池" class="form-wide">
+      </UiField>
+      <UiField label="历史股票池">
         <el-input v-model="form.historicalUniverseId" placeholder="例如 a-share-pit-v1" clearable />
-      </el-form-item>
-      <el-form-item class="form-action" label-width="0">
+      </UiField>
+      <div class="flex items-end">
         <el-button type="primary" :icon="VideoPlay" :loading="submitting" @click="submit">提交实验</el-button>
-      </el-form-item>
-    </el-form>
+      </div>
+    </div>
 
     <div class="fixed-config" aria-label="固定实验配置">
       <span>Top quantile 0.9</span>
@@ -327,24 +338,25 @@ onUnmounted(stopPolling)
         </section>
       </div>
       <section class="artifact-section">
-        <h4>Artifacts</h4>
-        <el-table v-if="completedRun.artifact_manifest.length" :data="completedRun.artifact_manifest" size="small">
-          <el-table-column prop="path" label="路径" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="artifact_type" label="类型" width="130" show-overflow-tooltip />
-          <el-table-column label="下载" width="76" fixed="right">
-            <template #default="{ row }">
-              <el-link
-                :href="researchArtifactUrl(completedRun!.run_id, row.path)"
-                :icon="Download"
-                :aria-label="`下载 artifact ${row.path}`"
-              />
-            </template>
-</el-table-column>
-</el-table>
-<span v-else class="missing">后端未提供 artifact</span>
-</section>
-</template>
-</section>
+        <h4>实验文件</h4>
+        <BasicTable
+          :columns="artifactColumns"
+          :data-source="artifactRows"
+          :pagination="false"
+          stripe
+          empty-text="后端未提供 artifact"
+        >
+          <template #download="{ row }">
+            <el-link
+              :href="researchArtifactUrl(completedRun!.run_id, String(row.path))"
+              :icon="Download"
+              :aria-label="`下载 artifact ${row.path}`"
+            />
+          </template>
+        </BasicTable>
+      </section>
+    </template>
+  </section>
 </template>
 
 <style scoped>
@@ -384,3 +396,4 @@ code { color: var(--ink); font-family: var(--mono); font-size: var(--fs-aux); fo
   .form-wide :deep(.el-form-item__content) { max-width: none; }
 }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

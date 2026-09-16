@@ -256,18 +256,18 @@ function toggleLog(): void {
     </div>
 
     <div v-if="kind === 'engine'" class="run-panel__picks">
-      <div v-if="lastResult" class="picks-head">
+      <div class="picks-head">
         <strong>
-          {{ lastResult.range && lastResult.range.trading_days > 1 ? '区间末日' : '今日结果' }}
-          · {{ lastResult.trade_date }}
+          {{ lastResult?.range && lastResult.range.trading_days > 1 ? '区间末日' : '今日结果' }}
+          <template v-if="lastResult"> · {{ lastResult.trade_date }}</template>
         </strong>
         <span class="mist">
-          正式 {{ lastResult.picks.length }} 只 · 观察 {{ lastResult.watch_picks?.length ?? 0 }} 只
+          正式 {{ lastResult?.picks.length ?? 0 }} 只 · 观察 {{ lastResult?.watch_picks?.length ?? 0 }} 只
         </span>
-        <span v-if="lastResult.range && lastResult.range.trading_days > 1" class="chip mist-chip">
+        <span v-if="lastResult?.range && lastResult.range.trading_days > 1" class="chip mist-chip">
           共 {{ lastResult.range.trading_days }} 日
         </span>
-        <span v-if="lastResult.recorded" class="chip">
+        <span v-if="lastResult?.recorded" class="chip">
           已入库
           {{
             lastResult.recorded.written_total != null
@@ -276,9 +276,8 @@ function toggleLog(): void {
           }}
         </span>
       </div>
-      <!-- 未跑过时不再顶一条「今日结果 —」的空标题栏，直接由下方空态说明下一步 -->
       <div class="picks-body">
-        <section v-if="pickRows.length" class="result-section">
+        <section class="result-section">
           <div class="result-section__title">
             <strong>正式精选</strong>
             <span class="mist">沿用原战法入场与胜率口径</span>
@@ -289,8 +288,8 @@ function toggleLog(): void {
             :pagination="false"
             row-key="code"
             stripe
-            height="100%"
-            empty-text="无正式精选"
+            :empty-text="lastResult ? '该日无正式精选' : '今天还没跑过选股'"
+            :empty-reason="lastResult ? '未满足入场条件' : '选中左侧战法后点右上角「选股」；15:30 自动跑一遍'"
           >
             <template #code="{ row }">
               <StockLink
@@ -302,7 +301,7 @@ function toggleLog(): void {
             </template>
           </BasicTable>
         </section>
-        <section v-if="watchRows.length" class="result-section">
+        <section v-if="lastResult" class="result-section">
           <div class="result-section__title">
             <strong>低吸观察</strong>
             <el-tag size="small" type="warning" effect="plain">不计正式胜率</el-tag>
@@ -313,7 +312,6 @@ function toggleLog(): void {
             :pagination="false"
             row-key="code"
             stripe
-            height="100%"
             empty-text="无低吸观察"
           >
             <template #code="{ row }">
@@ -326,17 +324,6 @@ function toggleLog(): void {
             </template>
           </BasicTable>
         </section>
-        <EmptyState
-          v-if="lastResult && !pickRows.length && !watchRows.length"
-          class="picks-empty"
-          description="该日无标的满足条件"
-        />
-        <EmptyState
-          v-else-if="!lastResult"
-          class="picks-empty"
-          description="今天还没跑过选股"
-          reason="选中左侧战法后点右上角「选股」；15:30 自动跑一遍"
-        />
       </div>
     </div>
 

@@ -20,7 +20,6 @@ import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import Sheet from '@/shared/components/layout/Sheet.vue'
 import BasicTable from '@/shared/components/ui/BasicTable.vue'
 import type { BasicTableColumn } from '@/shared/components/ui/basicTableTypes'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import StatCard from '@/shared/components/ui/StatCard.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { AdminOverviewResponse } from '@/shared/types/admin'
@@ -28,6 +27,8 @@ import { actionLabel, logTime } from '../lib/adminDict'
 import TopLlmChart from './TopLlmChart.vue'
 
 const loading = ref(false)
+const loaded = ref(false)
+const loadError = ref('')
 const overview = ref<AdminOverviewResponse>({
   users: 0,
   admins: 0,
@@ -96,10 +97,13 @@ const auditColumns = ref<BasicTableColumn[]>([
 
 async function loadData(): Promise<void> {
   loading.value = true
+  loadError.value = ''
   try {
     overview.value = await getAdminOverview()
+    loaded.value = true
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '加载总览数据失败'))
+    loadError.value = toErrorMessage(caught, '加载总览数据失败')
+    ElMessage.error(loadError.value)
   } finally {
     loading.value = false
   }
@@ -125,7 +129,9 @@ onMounted(() => {
       </template>
     </PageToolbar>
 
-    <div class="admin-pane__scroll">
+    <el-alert v-if="loadError" :title="loadError" type="error" show-icon :closable="false" />
+    <el-skeleton v-if="loading && !loaded" :rows="6" class="overview-skeleton" />
+    <div v-if="loaded" class="admin-pane__scroll">
       <div class="overview-metrics">
         <StatCard
           v-for="metric in metrics"
@@ -137,18 +143,20 @@ onMounted(() => {
       </div>
 
       <div class="overview-panels">
-        <Sheet title="当月大模型用量" chip="前 10 名" padded>
+        <Sheet fill title="当月大模型用量" chip="前 10 名" padded>
           <TopLlmChart :items="overview.top_llm_usage" />
         </Sheet>
 
-        <Sheet title="最近审计事件" chip="最新 20 条" padded>
+        <Sheet fill title="最近审计事件" chip="最新 20 条">
           <BasicTable
-            v-if="auditRows.length > 0"
             v-model:columns="auditColumns"
             :data-source="auditRows"
             :pagination="false"
+            height="100%"
             row-key="id"
             stripe
+            empty-text="还没有审计事件"
+            empty-reason="管理动作会实时落在这里"
           >
             <template #action="{ row }">
               <el-tag size="small" type="info" effect="plain">
@@ -156,7 +164,6 @@ onMounted(() => {
               </el-tag>
             </template>
           </BasicTable>
-          <EmptyState v-else description="还没有审计事件" reason="管理动作会实时落在这里" />
         </Sheet>
       </div>
     </div>
@@ -164,61 +171,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* 卡高由内容决定：align-items:start 让只有一张卡有副信息时不被拉齐成死白 */
-.overview-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--gap-2);
-  align-items: start;
-  flex: 0 0 auto;
-}
-
-/*
- * 总览是「一屏读完」的看板：两块面板吃满数字卡以下的**全部**剩余高度。
- * 原来两块都由内容定高（图表 280px、审计表 max-height 320px），
- * 于是 1080p 下半屏是一整片死白，而右边的审计表还在 320px 的窗口里滚 20 条。
- * min-height 是矮视口的下限：比这更矮就让 .admin-pane__scroll 去滚，不把图表压扁。
- */
-.overview-panels {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap-2);
-  flex: 1 1 auto;
-  min-height: 24rem;
-}
-
-/*
- * 980px = 全站断点（侧栏消失、底栏出现的那条线），不另立门户。
- * 单列后两块各自读内容高：撑满只会让人滚两屏才看到审计表。
- */
+.overview-skeleton { padding: var(--gap-3); }
+.overview-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: var(--gap-2); flex: 0 0 auto; }
+.overview-panels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap-2); flex: 1 1 auto; min-height: 0; }
 @media (max-width: 980px) {
-  .overview-panels {
-    grid-template-columns: 1fr;
-    flex: 0 0 auto;
-    min-height: 0;
-  }
-}
-
-/*
- * grid 子项要显式收缩位（宽度不撑破列），并且自己是纵向 flex：
- * 高度这才能一路传到图表画布与表体，由它们在内层滚。
- */
-.overview-panels > .sheet {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.overview-panels > .sheet :deep(.sheet-slot) {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 空态没有内容高度，居中比顶在标题下更像「这里本来该有东西」 */
-.overview-panels > .sheet :deep(.empty-state) {
-  margin: auto 0;
+  .overview-panels { grid-template-columns: minmax(0, 1fr); flex: 0 0 auto; }
+  .overview-panels > :deep(.sheet) { height: auto; min-height: calc(var(--row-h) * 10); }
 }
 </style>

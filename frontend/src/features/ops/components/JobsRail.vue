@@ -67,6 +67,8 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
         tabindex="0"
         class="job-row"
         :class="{ active: row.id === selectedId }"
+        :aria-pressed="row.id === selectedId"
+        :aria-label="`${row.title} · ${row.healthText}`"
         @click="selectedId = row.id"
         @keydown.enter.prevent="selectedId = row.id"
         @keydown.space.prevent="selectedId = row.id"
@@ -74,7 +76,7 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
         <div class="job-row-top">
           <span class="job-dot" :class="`job-dot--${row.health}`" :title="row.healthText" />
           <strong>{{ row.title }}</strong>
-          <el-tag size="small" effect="light" :type="row.bound ? 'info' : 'danger'">
+          <el-tag size="small" effect="light" :type="row.bound ? 'info' : 'primary'">
             {{ row.originText }}
           </el-tag>
         </div>
@@ -86,7 +88,7 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
           </span>
         </div>
       </div>
-      <EmptyState v-if="!rows.length" description="这个筛选下没有任务，换上面的两个筛选看看" />
+      <EmptyState v-if="!rows.length" description="没有匹配的任务" reason="调整类型或结果筛选" />
     </el-scrollbar>
   </aside>
 </template>
@@ -95,15 +97,18 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
 .jobs-rail {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: var(--gap-2);
+  min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--rule);
-  padding-right: 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: var(--gap-2);
+  background: var(--surface-sunken);
 }
 
 .jobs-filters {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.35rem;
   flex-shrink: 0;
 }
@@ -126,14 +131,14 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
   border: 1px solid transparent;
   background: transparent;
   color: inherit;
-  border-radius: 6px;
-  padding: 0.55rem 0.6rem;
-  margin-bottom: 0.25rem;
+  border-radius: var(--radius);
+  padding: var(--gap-2);
+  margin-bottom: var(--gap-1);
   cursor: pointer;
 }
 
 .job-row:hover {
-  background: color-mix(in srgb, var(--panel) 80%, var(--rule));
+  background: var(--surface-hover);
 }
 
 /* 全局焦点环只覆盖原生控件，自绘行要自己补，否则键盘用户看不见选到了哪一行 */
@@ -143,8 +148,8 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
 }
 
 .job-row.active {
-  border-color: var(--rule);
-  background: var(--seal-soft);
+  border-color: var(--seal-border);
+  background: var(--surface-active);
 }
 
 .job-row-top {
@@ -156,7 +161,7 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
 .job-row-top strong {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 0.92rem;
+  font-size: var(--fs-body);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -168,12 +173,12 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
   justify-content: space-between;
   gap: 0.35rem;
   margin-top: 0.25rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--muted);
 }
 
 .job-row-meta .on {
-  color: var(--success);
+  color: var(--ok);
 }
 
 .job-row-meta .off {
@@ -234,11 +239,7 @@ flex: 0 0 auto;
 
 @media (max-width: 800px) {
   .jobs-rail {
-    border-right: none;
-    padding-right: 0;
-    border-bottom: 1px solid var(--rule);
-    padding-bottom: 0.65rem;
-    max-height: 14rem;
+    max-height: 100%;
   }
 }
 </style>

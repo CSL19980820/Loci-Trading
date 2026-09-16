@@ -2,8 +2,10 @@
 
 运维页（侧栏「设置」）：模型与本机系统配置。
 
+展示约定：导航、读数、表单和正文使用现有 surface / rule / seal、字号与间距令牌；默认模型与选中项使用主题色，涨跌使用 up / down。设置区保持 `page-fill`，列表、报告及咨询消息在内部滚动；窄屏导航改用 PageTabs。任务编辑、执行记录、错误全文、LLM 与 MCP 弹层通过 `OpsDialogSurface.css` 的 `style scoped src` 复用视口高度和页脚布局，禁止改为全局导入。键盘焦点、开关名称和实时保存状态必须保留。
+
 - 壳：`OpsView.vue` — **左脊索引**（`SettingsRail`）+ 右面板；`?tab=` 路由；按当前 tab 按需 `load`；窄屏折成单条 `PageTabs`
-- 面板壳：`SettingsPanel.vue`（**头恒为一行**：标题 + 回执读数 + 主操作，回执超宽省略；标题保留是因为 ≤900px rail 隐藏、且 `/quant` 的 `JobsTab` 复用同一个壳）；联内壳 `SettingsSection.vue`（左槽联名 + 印章状态，窄屏只收窄左槽不塌成单列；无选中粉底）
+- 面板壳：`SettingsPanel.vue`（标题 + 回执读数 + 主操作；可用宽度不足时换行，回执可省略；≤900px rail 隐藏，且 `/quant` 的 `JobsTab` 复用同一个壳；`fill` 让 body 吃满剩余高度，MCP / LLM / 定时任务名册用，表单页不要传）；联内壳 `SettingsSection.vue`（左槽联名 + 可读保存状态，窄屏收窄左槽）
 - **`SignalRulesTab`**（rail「模型与工具」分区，`?tab=signals`）：大屏实时信号的规则维护。**一条两行**：第一行只放控件（`el-switch` + 中文名 + `code` + 可调参数 `el-input-number` + 文字按钮「恢复默认」），第二行整宽给口径说明（单行截断 + `el-tooltip` 全文，ui-spec §8）。参数轨吃弹性并**右对齐收口**，所以 1~3 个参数的行右缘一致——旧版把弹性留给口径之外的空隙，参数块会随参数个数左右横跳，六行右缘全是锯齿；壳也别再传 `fill`（那会把 body padding 置 0，内容贴边）。**改完即时 PUT**，失败整条回滚并 `ElMessage.error` 报后端原话。参数口径优先用后端 `param_specs`（键 / 中文名 / 上下限 / 单位 / 整数），缺席才退到 `composables/signalRuleMeta.ts` 的静态表。接口：`GET /api/market/signals/rules`、`PUT /api/market/signals/rules/{rule_id}`（早期契约 `/market/signal-rules` 作 404 回退）。rail 尾注「N/M 启用」由面板 `@summary` 回传，不进 `useSettingsSummaries` 的全局批量拉取
 - Tab：`McpTab` · `LlmTab`（供应商**卡片名册** + 分区编辑 `LlmProviderDialog` + `LlmModelCatalogDrawer`）· **`SystemTab`**（四联纵向；标题回执含版本号；页脚「保存全部」）· **`PackTab`**（一键打包 → 加密 zip）
 - `PackTab` **默认出脱敏包**：运维库与 MCP 只带骨架，API Key / Webhook / 纸面交易记录都不进包。勾了「账本」或「包含我的密钥与个人记录」会变红条警告并高亮该行；打包完成的提示会说明是脱敏包还是含个人数据（读响应头 `X-Loci-Sanitized`）
@@ -38,3 +40,26 @@
 - 文案纪律：ops 下不留常驻介绍段（规则进 `el-tooltip` / placeholder），`el-alert` 只报真实异常、标题 ≤20 字且禁 `description`；读数（下次触发 / 今日剩余额度 / 告警证据行）留在页面上，必要时用 `HeaderStat`
 - `McpTab`「添加外部 MCP」按钮在「外部 MCP」那一行（标题 + 计数 chip + 按钮同排），面板头只留「配置悟道」
 - slug 不上展示位：`JobRunsDialog` 任务列与 `JobRunErrorDialog` 把 `screen:{slug}` / `skill:{slug}` 过一遍 `cnStrategyName`；`PaperQuantPanel`「战法标识」输入框旁挂中文名 chip
+## 智能守护
+
+`/ops?tab=guardian`：`GuardianTab.vue` 展示观察/持有/仓位概览、可筛选股票池、持有计划和模型研判。
+`GuardianSettingsDrawer.vue` 独立承载模型、提示词及通知草稿；主面板可以直接启停并提交研判。
+持有与买卖分开表达，持有不产生模拟成交。后台刷新可取消且不覆盖编辑中的配置；窄屏优先展示模型结论。
+沿用客户模型目录与推送通道。样式由 `GuardianTab.css` scoped src 加载。
+测试：`GuardianTab.test.ts`；业务边界见 `docs/guardian.md`。
+
+### 守护现金账户
+
+`GuardianAccountPanel` 展示20万元账户的资产、现金、逐股持仓/可卖股数、含费成本与盈亏，以及分页成交流水和个股累计盈亏。策略池仅参考，交易范围不受其限制。T+1与佣金万2.5免5由后端执行，前端只展示已记账数字及行情时间。
+
+自主交易员（原智能守护）：新增止盈/止损动作、持股计划与持久自主观察池；策略外观察不产生交易，现金与T+1规则不变。名称迁移沿用原任务ID及账户。详见 docs/guardian.md。
+
+交易员持仓默认3只、符合当日可卖退出计划的换仓例外最多4只；成功和异常通知均优先展示完整含费持仓成本。新增测试 tests/ledger/test_guardian_position_limit.py。
+
+GuardianReviewPanel展示盘前/日/周复盘的完整正文、状态和回执，支持历史选择与后台补跑；不重复拉取状态未变的报告，不把生成失败显示为已完成。
+
+自主交易员按账户与持仓、复盘与计划、观察与研判分区。GuardianReportDocument渲染服务端语义分区，同股票的回顾与全部行动计划集中呈现，运行口径默认折叠。
+
+自主交易员新增“与交易员沟通”，保存话题和实际持仓背景，异步轮询回答并支持连续追问；请求失败重试保持request_id。咨询不执行交易。日内无成交显示无动作，边界预案显示仅研判。
+
+咨询话题及请求编号通过 `shared/lib/uuid.ts` 生成：优先使用原生 `randomUUID`，HTTP 环境回退到 `getRandomValues` 生成 UUID v4。首次进入、新话题、历史加载失败后的提问及网络失败重试均覆盖 HTTP 兼容回归测试。

@@ -4,7 +4,11 @@ import { Link } from '@element-plus/icons-vue'
 
 import type { ResearchProfile, ResearchQualitySnapshot, ResearchRun } from '@/shared/types/quant'
 
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import UiCard from '@/shared/components/ui/UiCard.vue'
+import UiCardHeader from '@/shared/components/ui/UiCardHeader.vue'
+import UiCardTitle from '@/shared/components/ui/UiCardTitle.vue'
 
 const props = defineProps<{
   profile: ResearchProfile
@@ -15,8 +19,6 @@ const quality = computed<ResearchQualitySnapshot>(() => props.profile.quality)
 const evidence = computed(() => props.profile.dimensions.flatMap((dimension) =>
   dimension.evidence.map((item) => ({ ...item, dimension: dimension.name })),
 ))
-const findingType = (severity: 'critical' | 'warning' | 'info'): 'danger' | 'warning' | 'info' =>
-  severity === 'critical' ? 'danger' : severity === 'warning' ? 'warning' : 'info'
 const healthEntries = computed(() => Object.entries(quality.value.market_health || {}).filter(([, value]) => value !== null && value !== undefined && value !== ''))
 const snapshotEntries = computed(() => Object.entries(props.profile.market_snapshot || {})
   .filter(([, value]) => value !== null && value !== undefined && value !== '')
@@ -37,63 +39,81 @@ const riskItems = computed(() => [
   { key: 'gate', label: '验证失败 / 门禁', value: quality.value.findings.length ? `${quality.value.findings.length} 项` : '未发现' },
   { key: 'revision', label: '行情快照', value: String(props.profile.market_snapshot.market_revision || quality.value.market_revision || '') },
 ].filter((item) => item.value))
+
+const findingRows = computed(() => quality.value.findings as unknown as Record<string, unknown>[])
+const evidenceRows = computed(() => evidence.value as unknown as Record<string, unknown>[])
+
+const findingColumns: BasicTableColumn[] = [
+  { prop: 'severity', label: '级别', width: 84, slotName: 'severity' },
+  { prop: 'code', label: '规则', width: 170, showOverflowTooltip: true },
+  { prop: 'message', label: '事实', minWidth: 240, showOverflowTooltip: true },
+  { prop: 'suggested_fix', label: '缺口处理', minWidth: 190, showOverflowTooltip: true },
+]
+
+const evidenceColumns: BasicTableColumn[] = [
+  { prop: 'dimension', label: '维度', width: 120, showOverflowTooltip: true },
+  { prop: 'source_id', label: '来源', width: 120 },
+  { prop: 'as_of', label: '截止日', width: 112 },
+  { prop: 'payload_sha256', label: 'hash / 链接', minWidth: 230, slotName: 'hash' },
+]
 </script>
 
 <template>
-  <section class="evidence-panel" aria-label="证据与风险透视">
-    <header class="section-head">
-      <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
-      <h3>证据与风险透视</h3>
-      <el-tag size="small" effect="plain" :type="quality.blocked ? 'danger' : 'success'">
-        {{ quality.blocked ? 'blocked' : '可查看' }}
-      </el-tag>
-    </header>
-    <div v-if="riskItems.length" class="risk-grid">
-      <div v-for="item in riskItems" :key="item.key"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div>
+  <UiCard class="research-surface" aria-label="证据与风险透视">
+    <UiCardHeader>
+      <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行 -->
+      <UiCardTitle><el-icon aria-hidden="true"><Link /></el-icon>证据与风险透视</UiCardTitle>
+      <template #action>
+        <UiBadge :variant="quality.blocked ? 'stamp' : 'ok'">
+          {{ quality.blocked ? '已阻断' : '可查看' }}
+        </UiBadge>
+      </template>
+    </UiCardHeader>
+    <div v-if="riskItems.length" class="border-line grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-px border-b bg-[var(--rule)]">
+      <div v-for="item in riskItems" :key="item.key" class="bg-surface min-w-0 px-3 py-2">
+        <span class="text-aux text-mist block">{{ item.label }}</span>
+        <strong class="text-body text-ink mt-1 block font-mono leading-snug font-bold break-all tabular-nums">{{ item.value }}</strong>
+      </div>
     </div>
-    <div v-if="snapshotEntries.length" class="snapshot-list">
-      <span class="subhead">MARKET SNAPSHOT</span>
-      <span v-for="[key, value] in snapshotEntries" :key="key" class="snapshot-item"><code>{{ key }}</code> {{ value }}</span>
+    <div v-if="snapshotEntries.length" class="border-line text-aux text-mist flex flex-wrap gap-x-3 gap-y-1 border-b px-[var(--pad-sheet-x)] py-[var(--pad-sheet-y)]">
+      <span class="text-mist basis-full">行情快照</span>
+      <span v-for="[key, value] in snapshotEntries" :key="key" class="max-w-full break-all"><code class="font-mono tabular-nums">{{ key }}</code> {{ value }}</span>
     </div>
-    <div v-if="healthEntries.length" class="health-list">
-      <span class="subhead">行情健康事实</span>
-      <span v-for="[key, value] in healthEntries" :key="key" class="health-item"><code>{{ key }}</code> {{ String(value) }}</span>
+    <div v-if="healthEntries.length" class="border-line text-aux text-mist flex flex-wrap gap-x-3 gap-y-1 border-b px-[var(--pad-sheet-x)] py-[var(--pad-sheet-y)]">
+      <span class="text-mist basis-full">行情健康事实</span>
+      <span v-for="[key, value] in healthEntries" :key="key"><code class="font-mono tabular-nums">{{ key }}</code> {{ String(value) }}</span>
     </div>
-    <el-table v-if="quality.findings.length" :data="quality.findings" size="small" class="finding-table">
-      <el-table-column label="级别" width="84"><template #default="{ row }"><el-tag size="small" effect="plain" :type="findingType(row.severity)">{{ row.severity }}</el-tag></template></el-table-column>
-      <el-table-column prop="code" label="规则" width="170" show-overflow-tooltip />
-      <el-table-column prop="message" label="事实" min-width="240" show-overflow-tooltip />
-      <el-table-column prop="suggested_fix" label="缺口处理" min-width="190" show-overflow-tooltip />
-    </el-table>
-    <EmptyState v-else description="没有验证问题" reason="门禁通过，无需处理" />
-    <div class="evidence-head"><span class="subhead">SOURCE EVIDENCE · {{ evidence.length }}</span><span v-if="props.run">run {{ props.run.id }}</span></div>
-    <el-table v-if="evidence.length" :data="evidence" size="small" class="finding-table">
-      <el-table-column prop="dimension" label="维度" width="120" show-overflow-tooltip />
-      <el-table-column prop="source_id" label="来源" width="120" />
-      <el-table-column prop="as_of" label="截止日" width="112" />
-      <el-table-column label="hash / 链接" min-width="230">
-        <template #default="{ row }">
-          <el-link v-if="row.source_url" :href="row.source_url" target="_blank" rel="noopener noreferrer" :icon="Link">{{ row.title || row.source_id }}</el-link>
-          <code v-else :title="row.payload_sha256">{{ row.payload_sha256 || '无 hash' }}</code>
-        </template>
-</el-table-column>
-</el-table>
-<EmptyState v-else description="没有来源证据" reason="读取剖面后由后端回执填入" />
-</section>
+    <BasicTable
+      :columns="findingColumns"
+      :data-source="findingRows"
+      :pagination="false"
+      stripe
+      empty-text="没有验证问题"
+      empty-reason=""
+    >
+      <template #severity="{ row }">
+        <UiBadge :variant="row.severity === 'critical' ? 'stamp' : row.severity === 'warning' ? 'warn' : 'info'">{{ row.severity }}</UiBadge>
+      </template>
+    </BasicTable>
+    <div class="border-line text-aux text-mist flex justify-between gap-3 border-t px-[var(--pad-sheet-x)] pt-2 pb-1"><span>来源证据 · {{ evidence.length }}</span><span v-if="props.run">run {{ props.run.id }}</span></div>
+    <BasicTable
+      :columns="evidenceColumns"
+      :data-source="evidenceRows"
+      :pagination="false"
+      stripe
+      empty-text="没有来源证据"
+      empty-reason="读取剖面后由后端回执填入"
+    >
+      <template #hash="{ row }">
+        <el-link v-if="row.source_url" :href="String(row.source_url)" target="_blank" rel="noopener noreferrer" :icon="Link">{{ row.title || row.source_id }}</el-link>
+        <code v-else :title="String(row.payload_sha256 || '')">{{ row.payload_sha256 || '无 hash' }}</code>
+      </template>
+    </BasicTable>
+  </UiCard>
 </template>
 
 <style scoped>
-.evidence-panel { border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); overflow: hidden; }
-.section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gap-3); padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); }
-.section-head h3 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: .03em; }
-.risk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1px; background: var(--rule); border-bottom: 1px solid var(--rule); }
-.risk-grid > div { min-width: 0; padding: var(--gap-2) var(--gap-3); background: var(--sheet); }
-.risk-grid span, .subhead { display: block; color: var(--mist); font-size: var(--fs-aux); }
-.risk-grid strong { display: block; margin-top: var(--gap-1); color: var(--ink); font: 700 var(--fs-body)/1.3 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.health-list, .snapshot-list { display: flex; flex-wrap: wrap; gap: var(--gap-1) var(--gap-3); padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); color: var(--mist); font-size: var(--fs-aux); }
-.health-list .subhead, .snapshot-list .subhead { flex-basis: 100%; }
-.snapshot-item { max-width: 100%; overflow-wrap: anywhere; }
+/* 皮肤已上移到 UiCard + 工具类；el-table 穿透与 code 等宽保留 */
 .health-item code, code { font-family: var(--mono); font-size: var(--fs-aux); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.finding-table { width: 100%; }
-.evidence-head { display: flex; justify-content: space-between; gap: var(--gap-3); padding: var(--gap-2) var(--pad-sheet-x) var(--gap-1); border-top: 1px solid var(--rule); color: var(--mist); font-size: var(--fs-aux); }
 </style>
+<style scoped src="./ResearchSurfaces.css"></style>

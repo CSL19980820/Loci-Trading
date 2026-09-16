@@ -140,7 +140,7 @@ function rowRequired(row: ScreenSkillDraftModel['references'][number]): boolean 
 }
 
 .reference-card {
-  border-color: color-mix(in srgb, var(--rule) 84%, transparent);
+  border-color: color-mix(in oklab, var(--rule) 84%, transparent);
 }
 
 .reference-card--error {

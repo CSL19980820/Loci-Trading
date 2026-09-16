@@ -51,9 +51,10 @@ async function onSubmit(): Promise<void> {
 
 <template>
   <el-dialog
+    class="admin-form-dialog dialog-body--scroll"
     :model-value="visible"
     :title="`发送站内通知 - ${user?.display_name || user?.username}`"
-    width="480px"
+    width="min(92vw, 560px)"
     @close="onClose"
   >
     <el-form label-position="right" label-width="6.5em" size="small">
@@ -73,10 +74,10 @@ async function onSubmit(): Promise<void> {
     </el-form>
 
     <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="onClose">取消</el-button>
-        <el-button type="primary" :loading="loading" @click="onSubmit">发送通知</el-button>
-      </div>
+      <el-button @click="onClose">取消</el-button>
+      <el-button type="primary" :loading="loading" @click="onSubmit">发送通知</el-button>
     </template>
   </el-dialog>
 </template>
+
+<style scoped src="./AdminDialog.css" />

@@ -94,9 +94,10 @@ def test_backtest_job_executor_resolves_paths_for_the_submitting_tenant(monkeypa
         seen["tenant"] = current_tenant()
         seen["runs_dir"] = str(research_runs_dir())
         done.set()
-        return SimpleNamespace(to_dict=lambda: {"run_card": {"run_id": "run-1"}})
+        return SimpleNamespace(run_card=SimpleNamespace(run_id="run-1"))
 
     monkeypatch.setattr(mod, "run_research_backtest", fake_backtest)
+    monkeypatch.setattr("src.strategy.get", lambda _slug: SimpleNamespace(backtest_config={}))
     router = mod.build_research_backtest_router(
         write_dependency=lambda: None,
         market_store_factory=lambda _db: nullcontext(None),

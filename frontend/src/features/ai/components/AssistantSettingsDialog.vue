@@ -11,6 +11,7 @@ import {
   resetAiProfileDefaults,
 } from '@/shared/api/ai_assistant'
 import type { AiAssistantProfile } from '@/shared/types/ai_assistant'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import {
   MEMORY_QUOTAS,
@@ -159,11 +160,12 @@ onMounted(() => { if (props.open) void load() })
     width="780px"
     align-center
     append-to-body
+    :modal="false"
     destroy-on-close
     class="assistant-settings-dialog"
     data-testid="assistant-settings-dialog"
   >
-    <div v-loading="loading" class="assistant-settings">
+    <el-form v-loading="loading" class="assistant-settings" :disabled="loading || saving || resetting" :aria-busy="loading">
       <el-tabs v-model="tab" class="assistant-settings__tabs">
         <el-tab-pane label="指令" name="instructions">
           <div class="assistant-settings__split">
@@ -171,8 +173,9 @@ onMounted(() => { if (props.open) void load() })
               <span class="assistant-settings__label">关于你</span>
               <el-input
                 v-model="aboutUser"
+                aria-label="关于你"
                 type="textarea"
-                :rows="8"
+                :rows="10"
                 maxlength="2000"
                 show-word-limit
                 resize="none"
@@ -183,8 +186,9 @@ onMounted(() => { if (props.open) void load() })
               <span class="assistant-settings__label">回答偏好</span>
               <el-input
                 v-model="responseStyle"
+                aria-label="回答偏好"
                 type="textarea"
-                :rows="12"
+                :rows="10"
                 maxlength="4000"
                 show-word-limit
                 resize="none"
@@ -198,11 +202,11 @@ onMounted(() => { if (props.open) void load() })
           <div class="assistant-settings__stack">
             <div v-for="(rule, index) in rules" :key="`${index}-${rule}`" class="assistant-settings__line">
               <span>{{ rule }}</span>
-              <el-button :icon="Delete" circle text size="small" aria-label="删除规则" @click="removeRule(index)" />
+              <el-button :icon="Delete" circle text size="small" :aria-label="`删除第 ${index + 1} 条规则`" @click="removeRule(index)" />
             </div>
-            <p v-if="!rules.length" class="assistant-settings__empty">还没有硬规则</p>
+            <EmptyState v-if="!rules.length" description="暂无规则" />
             <div class="assistant-settings__composer">
-              <el-input v-model="newRule" placeholder="新增一条硬规则，回车添加" @keyup.enter="addRule" />
+              <el-input v-model="newRule" aria-label="新增规则" placeholder="新增一条硬规则，回车添加" @keyup.enter="addRule" />
               <el-button :icon="Plus" @click="addRule">添加</el-button>
             </div>
           </div>
@@ -212,17 +216,17 @@ onMounted(() => { if (props.open) void load() })
           <div class="assistant-settings__toolbar">
             <label class="assistant-settings__chip">
               <span>记忆</span>
-              <el-switch v-model="memoryEnabled" size="small" />
+              <el-switch v-model="memoryEnabled" size="small" aria-label="启用记忆" />
             </label>
-            <span class="assistant-settings__sep" aria-hidden="true" />
             <label class="assistant-settings__chip">
               <span>满轮整理</span>
-              <el-switch v-model="autoMemoryEnabled" size="small" :disabled="!memoryEnabled" />
+              <el-switch v-model="autoMemoryEnabled" size="small" aria-label="自动整理记忆" :disabled="!memoryEnabled" />
             </label>
             <label class="assistant-settings__chip is-grow">
               <span>频率</span>
               <el-input-number
                 v-model="autoMemoryMinTurns"
+                aria-label="记忆整理间隔"
                 :min="5"
                 :max="100"
                 size="small"
@@ -242,6 +246,7 @@ onMounted(() => { if (props.open) void load() })
               <span class="assistant-settings__cap-bar" aria-hidden="true"><i :style="{ width: `${userPct}%` }" /></span>
               <el-input
                 v-model="userDoc"
+                aria-label="用户画像文档"
                 type="textarea"
                 :rows="12"
                 :maxlength="MEMORY_QUOTAS.user"
@@ -258,6 +263,7 @@ onMounted(() => { if (props.open) void load() })
               <span class="assistant-settings__cap-bar" aria-hidden="true"><i :style="{ width: `${workPct}%` }" /></span>
               <el-input
                 v-model="workDoc"
+                aria-label="工作记忆文档"
                 type="textarea"
                 :rows="12"
                 :maxlength="MEMORY_QUOTAS.memory"
@@ -269,160 +275,43 @@ onMounted(() => { if (props.open) void load() })
           </div>
         </el-tab-pane>
       </el-tabs>
-    </div>
+    </el-form>
 
     <template #footer>
-      <el-button :loading="resetting" :disabled="saving" @click="restoreDefaults">恢复默认</el-button>
-      <el-button type="primary" :loading="saving" :disabled="resetting" @click="saveProfile">保存</el-button>
+      <el-button :loading="resetting" :disabled="loading || saving" @click="restoreDefaults">恢复默认</el-button>
+      <el-button type="primary" :loading="saving" :disabled="loading || resetting" @click="saveProfile">保存</el-button>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
-/* 高度内容驱动：设置项少时不撑半屏空白，长内容仍在 dialog 内滚（体检 §4.2） */
-.assistant-settings {
-  max-height: min(72dvh, 44rem);
-  overflow: auto;
-}
-
-.assistant-settings__tabs :deep(.el-tabs__header) { margin: 0 0 .7rem; }
-.assistant-settings__tabs :deep(.el-tabs__nav-wrap::after) { height: 1px; }
-.assistant-settings__tabs :deep(.el-tabs__item) {
-  height: 2.2rem;
-  font-size: var(--ai-fs-body);
-  padding: 0 1rem;
-}
-
-.assistant-settings__split,
-.assistant-settings__docs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: .75rem 1rem;
-}
-
-.assistant-settings__field {
-  display: flex;
-  flex-direction: column;
-  gap: .3rem;
-  margin: 0;
-  min-width: 0;
-}
-
-.assistant-settings__label {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: .5rem;
-  font-size: var(--ai-fs-body);
-  font-weight: 650;
-  color: var(--ink);
-}
-
-.assistant-settings__label small {
-  font-family: var(--mono);
-  font-size: var(--ai-fs-meta);
-  font-weight: 500;
-  color: var(--mist);
-}
-
-.assistant-settings__cap-bar {
-  display: block;
-  height: 3px;
-  border-radius: var(--ai-r-pill);
-  background: color-mix(in srgb, var(--rule) 80%, transparent);
-  overflow: hidden;
-}
-
-.assistant-settings__cap-bar i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--seal) 72%, var(--ink));
-}
-
-.assistant-settings__stack {
-  display: flex;
-  flex-direction: column;
-  gap: .2rem;
-}
-
-.assistant-settings__line {
-  display: flex;
-  align-items: flex-start;
-  gap: .45rem;
-  padding: .4rem .15rem;
-  border-bottom: 1px solid var(--rule);
-}
-
-.assistant-settings__line span {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--ai-fs-body);
-  line-height: 1.45;
-}
-
-.assistant-settings__empty {
-  margin: .35rem 0;
-  font-size: var(--ai-fs-aux);
-  color: var(--mist);
-}
-
-.assistant-settings__composer {
-  display: flex;
-  gap: .4rem;
-  margin-top: .55rem;
-  padding-top: .55rem;
-  border-top: 1px solid var(--rule);
-}
-
-.assistant-settings__toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .55rem .85rem;
-  margin-bottom: .7rem;
-  padding: .4rem .55rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--ai-r-card);
-  background: color-mix(in srgb, var(--panel-2) 80%, transparent);
-}
-
-.assistant-settings__chip {
-  display: inline-flex;
-  align-items: center;
-  gap: .4rem;
-  margin: 0;
-  font-size: var(--ai-fs-body);
-  color: var(--ink);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
+.assistant-settings { min-height: 0; max-height: min(70dvh, 44rem); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.assistant-settings__tabs :deep(.el-tabs__header) { margin: 0 0 var(--gap-3); position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.assistant-settings__tabs :deep(.el-tabs__nav-wrap::after) { height: 1px; background: var(--rule); }
+.assistant-settings__tabs :deep(.el-tabs__item) { height: var(--ctl-h); font-size: var(--ai-fs-body); padding: 0 var(--gap-4); }
+.assistant-settings__split, .assistant-settings__docs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--gap-3); }
+.assistant-settings__field { display: flex; flex-direction: column; gap: var(--gap-2); margin: 0; min-width: 0; }
+.assistant-settings__field :deep(.el-textarea__inner) { font-size: var(--ai-fs-body); line-height: 1.6; }
+.assistant-settings__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gap-2); font-size: var(--ai-fs-body); font-weight: 600; color: var(--ink); }
+.assistant-settings__label small { font: var(--ai-fs-meta) var(--mono); font-variant-numeric: tabular-nums; color: var(--mist); }
+.assistant-settings__cap-bar { display: block; height: var(--gap-1); border-radius: var(--ai-r-pill); background: var(--rule); overflow: hidden; }
+.assistant-settings__cap-bar i { display: block; height: 100%; border-radius: inherit; background: var(--seal); }
+.assistant-settings__stack { display: flex; flex-direction: column; gap: var(--gap-2); }
+.assistant-settings__line { display: flex; align-items: center; gap: var(--gap-2); padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-chip); background: var(--surface-sunken); }
+.assistant-settings__line > span { flex: 1; min-width: 0; font-size: var(--ai-fs-body); line-height: 1.5; overflow-wrap: anywhere; }
+.assistant-settings__composer { display: flex; gap: var(--gap-2); padding-top: var(--gap-2); }
+.assistant-settings__composer :deep(.el-input) { min-width: 0; }
+.assistant-settings__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2) var(--gap-3); margin-bottom: var(--gap-3); padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface-sunken); }
+.assistant-settings__chip { display: inline-flex; align-items: center; gap: var(--gap-2); margin: 0; font-size: var(--ai-fs-body); color: var(--ink); white-space: nowrap; }
 .assistant-settings__chip.is-grow { margin-left: auto; }
-.assistant-settings__chip :deep(.el-input-number) { width: 5.6rem; }
+.assistant-settings__chip :deep(.el-input-number) { width: calc(var(--ctl-h) * 3); }
 .assistant-settings__unit { color: var(--mist); font-size: var(--ai-fs-aux); }
-.assistant-settings__sep {
-  width: 1px;
-  height: 1rem;
-  background: var(--rule);
-}
-
-@media (max-width: 720px) {
-  .assistant-settings__split,
-  .assistant-settings__docs { grid-template-columns: 1fr; }
-  .assistant-settings__chip.is-grow { margin-left: 0; }
-}
+@media (max-width: 720px) { .assistant-settings__split, .assistant-settings__docs { grid-template-columns: minmax(0, 1fr); } .assistant-settings__chip.is-grow { margin-left: 0; } }
 </style>
 
 <style>
-.assistant-settings-dialog.el-dialog {
-  width: min(780px, calc(100vw - 1.5rem)) !important;
-  max-width: calc(100vw - 1.5rem);
-}
-.assistant-settings-dialog .el-dialog__header { padding-bottom: .35rem; }
-.assistant-settings-dialog .el-dialog__body {
-  padding-top: .15rem;
-  padding-bottom: .25rem;
-}
-.assistant-settings-dialog .el-dialog__footer { padding-top: .55rem; }
+.assistant-settings-dialog.el-dialog { width: min(780px, calc(100vw - var(--gap-4))) !important; max-width: calc(100vw - var(--gap-4)); max-height: 90dvh; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+.assistant-settings-dialog .el-dialog__header { flex-shrink: 0; padding: var(--gap-3); border-bottom: 1px solid var(--rule); background: var(--surface-raised); }
+.assistant-settings-dialog .el-dialog__body { display: flex; min-height: 0; flex-direction: column; overflow: hidden; padding: var(--gap-3); }
+.assistant-settings-dialog .el-dialog__footer { flex-shrink: 0; padding: var(--gap-3); border-top: 1px solid var(--rule); background: var(--surface); }
 </style>

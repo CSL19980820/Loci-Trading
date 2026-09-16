@@ -12,9 +12,11 @@
   padding: var(--ai-gap-md);
   border: 1px solid var(--rule);
   border-radius: var(--ai-r-card);
-  background: var(--panel-2);
+  background: var(--surface);
   width: 100%;
   min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* 只有一行标签的条状卡（来源条）纵向再收一档 */
@@ -24,13 +26,20 @@
 
 .assistant-card__heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--ai-gap-sm);
   margin-bottom: var(--ai-gap-sm);
+  padding-bottom: var(--ai-gap-sm);
+  border-bottom: 1px solid var(--rule-soft);
+  min-width: 0;
 }
 
 .assistant-card h3 {
   margin: 0;
   font-size: var(--ai-fs-body);
+  font-weight: 650;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }

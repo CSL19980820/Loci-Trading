@@ -27,10 +27,10 @@ function toneClass(pct: number): string {
 </script>
 
 <template>
-  <div v-if="items.length" class="tape">
+  <div v-if="items.length" class="tape flex w-full flex-none items-center overflow-hidden">
     <div class="tape__track">
       <!-- 两份相同列表首尾相接 = 无缝循环；副本对读屏隐藏 -->
-      <div v-for="copy in 2" :key="copy" class="tape__group" :aria-hidden="copy === 2 || undefined">
+      <div v-for="copy in 2" :key="copy" class="tape__group" :aria-hidden="copy === 2 || undefined" :inert="copy === 2">
         <span v-for="item in items" :key="`${copy}-${item.key}`" class="tape__item">
           <StockLink :code="item.code" :name="item.name" :show-code="false" class="tape__name" />
           <span class="tape__px live-num" :class="toneClass(item.pct)">{{
@@ -47,11 +47,7 @@ function toneClass(pct: number): string {
 
 <style scoped>
 .tape {
-  flex: none;
-  display: flex;
-  align-items: center;
   height: var(--live-tape-h);
-  overflow: hidden;
   background-color: var(--live-panel);
   border-top: 1px solid var(--live-rule);
 }
@@ -63,7 +59,8 @@ function toneClass(pct: number): string {
   animation: tape-scroll 240s linear infinite;
 }
 
-.tape:hover .tape__track {
+.tape:hover .tape__track,
+.tape:focus-within .tape__track {
   animation-play-state: paused;
 }
 
@@ -111,6 +108,7 @@ function toneClass(pct: number): string {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tape { overflow-x: auto; }
   .tape__track {
     animation: none;
   }

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { artifactShellTitle, parseEquityPayload } from '../assistantArtifacts'
 import EquityLineChart from '@/shared/components/charts/EquityLineChart.vue'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
 import './assistant-card.css'
@@ -23,6 +24,6 @@ const ready = computed(() => series.value.dates.length > 1 && series.value.value
       :values="series.values"
       :height="200"
     />
-    <el-empty v-else :image-size="48" description="净值序列不足，画不出曲线" />
+    <EmptyState v-else description="净值序列不足" reason="多攒几天数据再看" />
   </section>
 </template>

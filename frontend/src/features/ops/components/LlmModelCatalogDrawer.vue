@@ -141,7 +141,8 @@ async function saveCatalog(): Promise<void> {
     :title="title"
     size="min(64rem, 92vw)"
     destroy-on-close
-    class="model-catalog-drawer"
+    append-to-body
+    class="model-catalog-drawer ops-drawer"
   >
     <template v-if="provider">
       <section class="sec">
@@ -157,6 +158,7 @@ async function saveCatalog(): Promise<void> {
               filterable
               clearable
               placeholder="默认模型"
+              aria-label="默认模型"
               class="default-select"
               :disabled="busy"
             >
@@ -185,6 +187,7 @@ async function saveCatalog(): Promise<void> {
                 <template #default="{ row }">
                   <el-switch
                     v-model="row.enabled"
+                    :aria-label="`启用模型 ${row.id}`"
                     size="small"
                     :disabled="busy || row.id === defaultModel"
                   />
@@ -198,7 +201,7 @@ async function saveCatalog(): Promise<void> {
                     <el-tag
                       v-if="row.id === defaultModel"
                       size="small"
-                      type="danger"
+                      type="primary"
                       effect="plain"
                       class="id-cell__tag"
                     >
@@ -307,7 +310,7 @@ async function saveCatalog(): Promise<void> {
 <style scoped>
 .sec {
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
   margin-bottom: 0.7rem;
   background: var(--sheet);
@@ -318,20 +321,20 @@ async function saveCatalog(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.4rem 0.7rem;
+  padding: var(--gap-2) var(--gap-3);
   border-bottom: 1px solid var(--rule);
-  background: var(--panel-2);
+  background: var(--surface-sunken);
 }
 
 .sec__title {
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   font-weight: 650;
   color: var(--ink);
   letter-spacing: 0.02em;
 }
 
 .sec__stat {
-  font-size: 0.7rem;
+  font-size: var(--fs-kicker);
   color: var(--mist);
 }
 
@@ -349,13 +352,13 @@ async function saveCatalog(): Promise<void> {
 
 .default-select {
   flex: 1 1 14rem;
-  min-width: 12rem;
+  min-width: 0;
 }
 
 .notice {
   margin: 0 0 0.6rem;
   color: var(--mist);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
 
 .catalog-scroll {
@@ -367,16 +370,9 @@ async function saveCatalog(): Promise<void> {
   min-width: 960px;
 }
 
-.catalog-table :deep(.el-table__cell) {
-  padding: 6px 0;
-}
-
-.catalog-table :deep(.cell) {
-  white-space: nowrap;
-}
-
+/* 行高/配色走全局表皮肤；默认行用主色浅底描边（与全站选中行同值，不用 !important） */
 .catalog-table :deep(tr.is-default > td.el-table__cell) {
-  background: color-mix(in srgb, var(--seal-soft) 70%, var(--sheet)) !important;
+  background: var(--seal-soft);
 }
 
 .id-cell {
@@ -392,7 +388,7 @@ async function saveCatalog(): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   font-weight: 600;
 }
 
@@ -410,7 +406,7 @@ async function saveCatalog(): Promise<void> {
 .ctx-hint {
   flex: 0 0 1.75rem;
   color: var(--mist);
-  font-size: 0.72rem;
+  font-size: var(--fs-kicker);
   text-align: right;
 }
 
@@ -428,7 +424,7 @@ async function saveCatalog(): Promise<void> {
   display: inline-block;
   min-width: 2rem;
   color: var(--mist);
-  font-size: 0.8rem;
+  font-size: var(--fs-aux);
   text-align: center;
 }
 
@@ -445,3 +441,4 @@ async function saveCatalog(): Promise<void> {
   }
 }
 </style>
+<style scoped src="./OpsDialogSurface.css"></style>

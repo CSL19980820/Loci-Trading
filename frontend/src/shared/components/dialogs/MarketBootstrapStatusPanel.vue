@@ -66,7 +66,7 @@ const statusLine = computed(() =>
 </script>
 
 <template>
-  <div class="boot-body">
+  <div class="boot-body flex min-w-0 flex-col gap-2">
     <dl class="boot-facts" aria-label="行情覆盖明细">
       <div v-for="fact in facts" :key="fact.key" class="boot-fact">
         <dt>{{ fact.label }}</dt>
@@ -96,12 +96,6 @@ const statusLine = computed(() =>
 </template>
 
 <style scoped>
-.boot-body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-}
-
 /* 事实格：一格一件要核对的事，列宽 140px 起，格数不足不留硬空格 */
 .boot-facts {
   display: grid;

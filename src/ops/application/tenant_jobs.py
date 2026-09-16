@@ -63,6 +63,7 @@ _USER_SCAN_LIMIT = 5000
 SYSTEM_JOB_KINDS: frozenset[str] = frozenset(
     {
         "sync",  # 行情同步：写 market.db + 打上游
+        "exchange_calendar",  # 公共日历只更新一份
         "hot_rebuild",  # 热库重建：从 market.db 派生 market_hot.db
         "data_quality",  # 行情库体检：全量扫 market.db
         "prune",  # 运维清理：见下方「prune 的例外」

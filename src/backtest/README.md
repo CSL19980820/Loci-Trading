@@ -47,7 +47,7 @@
 
 #### 组合账本的权益口径（`analyze_portfolio` / `research_portfolio`）
 
-**未实现盈亏不盯市。** 输入只有逐笔 `Trade`（入场价、退出价、净收益、MAE/MFE），
+**默认 `account_model="cost_until_exit"` 不对未实现盈亏盯市。** 输入只有逐笔 `Trade`（入场价、退出价、净收益、MAE/MFE），
 没有逐日收盘价，所以 `equity = cash + Σ 入场名义额`：持仓期内曲线是平的，全部盈亏在
 退出日一次性落地。因此 `max_drawdown_pct` 量的是**已实现盈亏回撤**，不是账户回撤——
 一只票持仓中途跌 30% 又涨回来，这条曲线上一个点都看不到。
@@ -61,7 +61,23 @@
 不变式 I1（现金守恒）由 `assert_cash_conservation` 在收口处强制：期末权益必须等于
 初始资金 + 全部已实现盈亏，破了直接抛 `PortfolioInvariantError`。
 
-默认成本（可经 `BacktestConfig` / `POST /api/backtest` 的 `commission_bps`·`stamp_duty_bps`·`slippage_bps` 改）：佣金单边 3bps、卖出印花税 10bps、滑点单边 5bps → 一趟约 0.26%。
+历史兼容的实验成本默认值为单边佣金3bps、卖出税费10bps、单边滑点5bps，总计约0.26%，可经 `BacktestConfig` 或API调整。这些是模型参数，不是现行税率或用户实际佣金的断言。
+
+#### 逐日账户与历史14:50输入
+
+`PortfolioResearchConfig(account_model="daily_close")` 显式开启逐日收盘估值。`analyze_portfolio` 同时接收 `closing_prices`、`adjustment_factors` 和观察日历；无真实成交量的停牌占位价先设为空，持仓期间仅沿用上次完整经济标记，开仓当日缺收盘价会失败。按上一观察日权益/仓位数配置整手仓位，开仓先扣往返成本的一半，平仓再扣另一半；当日卖款不供当日新仓使用。
+
+`data_end` 或超出观察截止的交易保持开放状态，不扣未来平仓费用、不强制结清。`allocations` 只含闭合交易，`open_allocations` 保留未平仓；现金守恒包含未实现盈亏。资金/现金百分比使用每日收盘市值或现金除以当日权益，`capital_days` 仍是名义入场金额占用天数。
+
+新执行选项默认关闭，旧模式保持：`strict_limit_prices=True` 拒绝涨停开盘买入、跌停收盘卖出延期；`economic_returns=True` 保持原始成交价，使用有效正数 `__adjust_factor` 计算经济收益及MAE/MFE。runner经行情公开接口加载因子，不能用复权价格冒充成交价。`valuation_end` 限定估值末日；`hold_days=9` 表示含买入日10个市场交易日。
+
+`signal_dataset` 是租户私有时点数据ID。支持的战法通过 `compute_asof` 只替换每个信号日当根OHLCV，历史仍用已完成日K。缺少必要快照、参数/区间不匹配或hash错误时拒绝运行，不回退为最终日线。显式导入命令为 `python -m cli.backtest_dataset <数据集.json> --tenant __primary__`，只写当前租户 `backtest_datasets/`，同ID同内容幂等、不同内容拒绝覆盖，不写行情或交易账本。
+
+时点数据集回测读取来源快照时使用 `include_source_details=False`：全部实际报价关联的 receipt 和 attempt 仍保留，额外历史失败/skip 范围只作 SQL 汇总，避免大量失败记录耗尽研究进程内存。股票池、价格、日期、覆盖率和异常 OHLC 统计不缩减。`receipt_details_omitted=true` 明示证据不完整，严格 PIT 仍拒绝；普通回测维持原有完整详情默认值。
+
+容器内导入应使用服务账户，例如 `docker exec --user loci -w /app qianlong-loci python -m cli.backtest_dataset /tmp/数据集.json`。文件保持导入用户私有权限，不用管理员创建的0600文件冒充Web服务可读的数据；文件归属须与服务运行身份一致。
+
+带时点模板的战法可经 `resolve_backtest_config` 获取默认执行配置，显式参数优先。未显式指定估值末日时跟随本次请求end；旧战法默认不变。普通API的 `performance` 仍是单笔顺序复利诊断，真实多仓净值看研究任务 `analysis.portfolio` 和资金账户摘要。
 
 ### Horizon 口径
 - 信号窗最长 186 自然日（约 6 个月）

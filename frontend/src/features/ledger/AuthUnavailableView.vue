@@ -33,7 +33,9 @@ function retry(): void {
 
 <style scoped>
 .auth-unavailable {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
   display: grid;
   place-items: center;
   padding: var(--gap-4);
@@ -41,11 +43,12 @@ function retry(): void {
 }
 .auth-unavailable__content {
   width: min(100%, 26rem);
+  box-sizing: border-box;
   padding: var(--gap-3);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   /* 原为 border-left: 2px solid var(--seal)：左竖条改为 hairline 外框 + 极淡印章底色 */
-  background: color-mix(in srgb, var(--seal) 6%, var(--sheet));
+  background: var(--surface);
 }
 .auth-unavailable__eyebrow {
   margin: 0 0 var(--gap-1);

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import UiButton from '@/shared/components/ui/UiButton.vue'
 import { signedPct, strategyShortLabel } from '@/shared/lib/format'
 import { sampleBadgeLabel, sampleConfidence, winRateDisplayTone, winRateText } from '@/shared/lib/winrate'
 import type { WinRateTrendPoint } from '@/shared/types/quant'
@@ -74,40 +74,6 @@ const chronologicalSinglePoints = computed(() => {
   return [...rows.value].reverse()
 })
 
-/** 周期统计洞察 */
-const periodInsights = computed(() => {
-  const list = rows.value
-  if (!list.length) return null
-  let maxWinRate = -1
-  let bestRatePeriod = ''
-  let maxAvgReturn = -Infinity
-  let bestReturnPeriod = ''
-  let winPeriods = 0
-
-  for (const r of list) {
-    const rate = Number(r.win_rate) || 0
-    const avg = Number(r.avg_return) || 0
-    if (rate > maxWinRate) {
-      maxWinRate = rate
-      bestRatePeriod = String(r.period)
-    }
-    if (avg > maxAvgReturn) {
-      maxAvgReturn = avg
-      bestReturnPeriod = String(r.period)
-    }
-    if (avg > 0) winPeriods++
-  }
-
-  return {
-    total: list.length,
-    bestRatePeriod,
-    maxWinRate,
-    bestReturnPeriod,
-    maxAvgReturn: maxAvgReturn === -Infinity ? null : maxAvgReturn,
-    winRateRatio: Math.round((winPeriods / list.length) * 100),
-  }
-})
-
 /** 趋势图柱状高度与零轴映射 */
 const chartScale = computed(() => {
   const pts = chronologicalSinglePoints.value
@@ -125,7 +91,7 @@ const columns = computed<BasicTableColumn[]>(() => {
     return [
       { prop: 'period', label: periodLabel.value, width: 140, slotName: 'period' },
       { prop: 'win_rate', label: '胜率表现', minWidth: 180, slotName: 'singleRate' },
-      { prop: 'distribution', label: '战绩分布 (盈/亏)', minWidth: 180, slotName: 'distribution' },
+      { prop: 'distribution', label: '盈利 / 亏损', minWidth: 180, slotName: 'distribution' },
       { prop: 'total', label: '盈利 / 样本', width: 120, align: 'right', headerAlign: 'right', slotName: 'total' },
       { prop: 'avg_return', label: '周期均收益', width: 130, align: 'right', headerAlign: 'right', slotName: 'avg' },
       { prop: 'action', label: '样本联动', width: 110, align: 'center', headerAlign: 'center', slotName: 'action' },
@@ -185,54 +151,33 @@ function singleRowClass(data: { row: Record<string, unknown> }): string {
 
 <template>
   <div class="period-container">
-    <!-- 单战法模式：上层趋势演进工坊 + 下层 100% 满宽现代明细表 -->
-    <template v-if="mode === 'single' && rows.length">
+    <!-- 周期图与明细共用同一组过滤后的数据。 -->
+    <template v-if="mode === 'single'">
       <!-- 周期收益与胜率趋势工坊 (Period Studio) -->
-      <section class="period-studio" aria-label="周期趋势概览">
+      <section v-if="rows.length" class="period-studio" aria-label="周期趋势概览">
         <div class="period-studio__header">
           <div class="period-studio__title-row">
-                  <span class="period-studio__title">{{ periodLabel }}走势演进</span>
-            <span class="period-studio__sub dim">各周期均收益阴阳柱与胜率走势（点击柱子可联动过滤样本）</span>
+                  <span class="period-studio__title">{{ periodLabel }}均收益</span>
+            <span class="period-studio__sub dim">点击柱形筛选样本</span>
           </div>
           <div class="period-studio__legend">
             <span class="legend-item"><span class="legend-dot legend-dot--up" />正收益</span>
             <span class="legend-item"><span class="legend-dot legend-dot--down" />负收益</span>
-            <span class="legend-item"><span class="legend-line" />胜率胶囊</span>
-          </div>
-        </div>
-
-        <!-- 顶部周期速览指标 Bento -->
-        <div v-if="periodInsights" class="period-studio__kpi-bar">
-          <div class="period-kpi-item">
-            <span class="period-kpi-k">覆盖{{ periodLabel }}数</span>
-            <span class="period-kpi-v mono">{{ periodInsights.total }} 个{{ periodLabel }}</span>
-          </div>
-          <div class="period-kpi-item">
-            <span class="period-kpi-k">最高胜率{{ periodLabel }}</span>
-            <span class="period-kpi-v mono">
-              {{ periodInsights.bestRatePeriod }} ({{ winRateText(periodInsights.maxWinRate) }})
-            </span>
-          </div>
-          <div class="period-kpi-item">
-            <span class="period-kpi-k">最佳均收益{{ periodLabel }}</span>
-            <span class="period-kpi-v mono" :class="toneOf(periodInsights.maxAvgReturn)">
-              {{ periodInsights.bestReturnPeriod }} ({{ signedPct(periodInsights.maxAvgReturn) }})
-            </span>
-          </div>
-          <div class="period-kpi-item">
-            <span class="period-kpi-k">盈利{{ periodLabel }}占比</span>
-            <span class="period-kpi-v mono">{{ periodInsights.winRateRatio }}%</span>
+            <span class="legend-item"><span class="legend-line" />胜率</span>
           </div>
         </div>
 
         <div class="period-chart-wrap">
           <div class="period-chart">
-            <div
+            <el-button
+              text
               v-for="point in chronologicalSinglePoints"
               :key="String(point.period)"
               class="chart-col"
               :class="{ 'is-active': point.period === selectedPeriod }"
               :title="`点击筛选 ${point.period} 样本`"
+              :aria-label="`${point.period}，均收益${signedPct(point.avg_return as number | null)}，胜率${winRateText(point.win_rate as number | null)}`"
+              :aria-pressed="point.period === selectedPeriod"
               @click="onSelectPeriod(point.period)"
             >
               <!-- 顶部胜率胶囊 -->
@@ -249,30 +194,31 @@ function singleRowClass(data: { row: Record<string, unknown> }): string {
               <div class="chart-col__body">
                 <div class="chart-zero-line" />
                 <div
-                  v-if="(Number(point.avg_return) || 0) >= 0"
+                  v-if="typeof point.avg_return === 'number' && Number.isFinite(point.avg_return) && point.avg_return >= 0"
                   class="chart-bar chart-bar--up"
                   :style="{
-                    height: `${Math.min(100, Math.max(8, ((Number(point.avg_return) || 0) / chartScale.maxAbs) * 100))}%`,
+                    height: `${Math.min(50, Math.max(0, (Number(point.avg_return) / chartScale.maxAbs) * 50))}%`,
                   }"
                 >
                   <span class="chart-bar-val mono tone-up">{{ signedPct(point.avg_return as number) }}</span>
                 </div>
                 <div
-                  v-else
+                  v-else-if="typeof point.avg_return === 'number' && Number.isFinite(point.avg_return)"
                   class="chart-bar chart-bar--down"
                   :style="{
-                    height: `${Math.min(100, Math.max(8, (Math.abs(Number(point.avg_return) || 0) / chartScale.maxAbs) * 100))}%`,
+                    height: `${Math.min(50, Math.max(0, (Math.abs(Number(point.avg_return)) / chartScale.maxAbs) * 50))}%`,
                   }"
                 >
                   <span class="chart-bar-val mono tone-down">{{ signedPct(point.avg_return as number) }}</span>
                 </div>
+                <span v-else class="chart-missing dim">—</span>
               </div>
 
               <!-- 底部周期标签 -->
               <div class="chart-col__label mono">
                 {{ point.period }}
               </div>
-            </div>
+            </el-button>
           </div>
         </div>
       </section>
@@ -284,7 +230,10 @@ function singleRowClass(data: { row: Record<string, unknown> }): string {
           :data-source="rows"
           :pagination="false"
           :row-class-name="singleRowClass"
+          height="100%"
           row-key="period"
+          empty-text="还没有分周期样本"
+          empty-reason="精选候选走完 T+5 后按选出日自动聚合"
           @row-click="(row: Record<string, unknown>) => onSelectPeriod(row.period)"
         >
           <template #period="{ row }">
@@ -299,12 +248,6 @@ function singleRowClass(data: { row: Record<string, unknown> }): string {
               <strong class="mono row-rate-val" :class="winRateDisplayTone(Number(row.win_rate), Number(row.total))">
                 {{ winRateText(row.win_rate as number | null) }}
               </strong>
-              <div class="row-rate-meter">
-                <div
-                  class="row-rate-fill"
-                  :style="{ width: `${Math.max(0, Math.min(100, Number(row.win_rate) || 0))}%` }"
-                />
-              </div>
               <span v-if="sampleBadgeLabel(Number(row.total))" class="sample-badge" :class="badgeClass(row.total)">
                 {{ sampleBadgeLabel(Number(row.total)) }}
               </span>
@@ -314,16 +257,6 @@ function singleRowClass(data: { row: Record<string, unknown> }): string {
           <!-- 战绩分布（盈/亏比例条） -->
           <template #distribution="{ row }">
             <div class="row-dist-cell">
-              <div class="row-dist-bar">
-                <div
-                  class="row-dist-fill--win"
-                  :style="{ width: `${Number(row.total) ? (Number(row.wins) / Number(row.total)) * 100 : 0}%` }"
-                />
-                <div
-                  class="row-dist-fill--loss"
-                  :style="{ width: `${Number(row.total) ? (Number(row.losses) / Number(row.total)) * 100 : 0}%` }"
-                />
-              </div>
               <span class="mono row-dist-text">
                 <span class="tone-up">{{ row.wins }}盈</span> / <span class="tone-down">{{ row.losses }}亏</span>
               </span>
@@ -341,26 +274,28 @@ function singleRowClass(data: { row: Record<string, unknown> }): string {
           </template>
 
           <template #action="{ row }">
-            <button
-              type="button"
-              class="row-action-btn"
-              :class="{ 'is-active': row.period === selectedPeriod }"
+            <UiButton
+              size="sm"
+              :variant="row.period === selectedPeriod ? 'default' : 'outline'"
+              :aria-pressed="row.period === selectedPeriod"
               @click.stop="onSelectPeriod(row.period)"
             >
               {{ row.period === selectedPeriod ? '已聚焦' : '筛选样本' }}
-            </button>
+            </UiButton>
           </template>
         </BasicTable>
       </section>
     </template>
 
-    <!-- 综合对比矩阵模式（100% 全宽展开） -->
-    <template v-else-if="rows.length">
+    <template v-else>
       <BasicTable
         :columns="columns"
         :data-source="rows"
         :pagination="false"
+        height="100%"
         row-key="period"
+        empty-text="还没有分周期样本"
+        empty-reason="精选候选走完 T+5 后按选出日自动聚合"
       >
         <template #period="{ row }">
           <strong class="mono row-period-badge">{{ row.period }}</strong>
@@ -390,13 +325,6 @@ function singleRowClass(data: { row: Record<string, unknown> }): string {
         </template>
       </BasicTable>
     </template>
-
-    <EmptyState
-      v-else
-      description="还没有分周期样本"
-      reason="精选候选走完 T+5 后按选出日自动聚合"
-      :image-size="64"
-    />
   </div>
 </template>
 

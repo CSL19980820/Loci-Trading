@@ -23,7 +23,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from src.backtest import BacktestConfig, TrainOOSSplit
+from src.backtest import TrainOOSSplit
 from src.market import MarketStore
 from src.research.api.backtest_models import (
     ResearchBacktestPublicationRequest,
@@ -97,9 +97,21 @@ def build_research_backtest_router(
 
     _jobs().recover_interrupted()
 
-    def _execute_backtest(request: ResearchBacktestRequest) -> dict[str, Any]:
+    def _execute_backtest(request: ResearchBacktestRequest) -> str:
         split = TrainOOSSplit(**request.split.model_dump()) if request.split else None
-        config = BacktestConfig(**request.backtest_config.model_dump())
+        from src.backtest import resolve_backtest_config
+        from src.strategy import StrategyError, get as get_strategy
+
+        try:
+            engine = get_strategy(request.strategy)
+            template = getattr(engine, "backtest_config", None) or {}
+            config = resolve_backtest_config(engine, request.backtest_config.model_dump(
+                include=request.backtest_config.model_fields_set,
+            ))
+        except (StrategyError, ValueError) as exc:
+            raise ResearchBacktestError(str(exc)) from exc
+        positions = request.max_positions if "max_positions" in request.model_fields_set else template.get("max_positions", request.max_positions)
+        account_model = request.account_model if "account_model" in request.model_fields_set else template.get("account_model", request.account_model)
         if request.hypothesis_id is not None:
             hypothesis = _hypotheses().get(request.hypothesis_id)
             if hypothesis is None:
@@ -112,15 +124,17 @@ def build_research_backtest_router(
                 params=request.params, backtest_config=config, universe=request.universe,
                 split=split, hypothesis_id=request.hypothesis_id,
                 hypothesis_revision=request.hypothesis_revision,
-                initial_capital=request.initial_capital, max_positions=request.max_positions,
-                lot_size=request.lot_size, seed=request.seed, random_repeats=request.random_repeats,
+                initial_capital=request.initial_capital, max_positions=positions,
+                lot_size=request.lot_size, account_model=account_model,
+                seed=request.seed, random_repeats=request.random_repeats,
                 bootstrap_iterations=request.bootstrap_iterations,
                 monte_carlo_iterations=request.monte_carlo_iterations,
                  historical_universe_id=request.historical_universe_id, strict_pit=request.strict_pit,
                  membership_store=_memberships(),
                  run_card_store=_cards(), workflow_store=_workflows(),
             )
-        return outcome.to_dict()
+        # 后台完成只需要ID，不复制run card里的全量冻结来源详情。
+        return str(outcome.run_card.run_id)
 
     def _submit_backtest_job(request: ResearchBacktestRequest) -> dict[str, Any]:
         job_store = _jobs()
@@ -129,11 +143,11 @@ def build_research_backtest_router(
         def execute_job() -> None:
             try:
                 job_store.update(job["id"], status="running")
-                outcome = _execute_backtest(request)
+                run_id = _execute_backtest(request)
                 job_store.update(
                     job["id"],
                     status="completed",
-                    run_id=str(outcome["run_card"]["run_id"]),
+                    run_id=run_id,
                 )
             except Exception as exc:
                 job_store.update(
@@ -271,17 +285,21 @@ def build_research_backtest_router(
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @router.post("/api/research/backtest-runs/{run_id}/replay", tags=["research"])
-    def replay_backtest_run(run_id: str, _write: None = write_guard) -> dict[str, Any]:
+    def replay_backtest_run(run_id: str, _write: None = write_guard) -> Response:
         try:
             with _market() as store:
-                replay = replay_research_backtest(store, run_id, run_card_store=_cards())
+                replay = replay_research_backtest(store, run_id, run_card_store=_cards(),
+                                                  include_execution_details=False)
+            receipt = replay["receipt"]
+            del replay
             card = _cards().require(run_id)
             workflow = _workflows().load(run_id)
-            return {
-                "run_card": _card_response(card),
-                "workflow": workflow.to_dict() if workflow else {},
-                **replay,
-            }
+            from src.research.api.replay_response import replay_json_response
+
+            return replay_json_response(
+                root=_cards().root, run_id=run_id, run_card=_card_response(card),
+                workflow=workflow.to_dict() if workflow else {}, receipt=receipt,
+            )
         except ResearchReplayError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except (RunCardError, ValueError) as exc:

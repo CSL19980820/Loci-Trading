@@ -2,6 +2,7 @@
 /**
  * 报价带：本页字号最大的东西，且必须是数字。
  * 指数报价 26px 等宽 + tabular-nums；涨跌带符号并只在这里用红绿。
+ * 槽位固定五个，缺报价只把数值换成「—」并降透明度，绝不塌成空带。
  */
 import { computed } from 'vue'
 
@@ -20,6 +21,15 @@ const props = defineProps<{
   breadthNote?: string
 }>()
 
+/** 与大屏 IndexBar 同一组主指数；位置恒定才能形成肌肉记忆 */
+const SLOTS: ReadonlyArray<{ key: string; name: string; codes: readonly string[] }> = [
+  { key: 'sh', name: '上证指数', codes: ['000001', 'sh000001'] },
+  { key: 'sz', name: '深证成指', codes: ['399001', 'sz399001'] },
+  { key: 'cyb', name: '创业板指', codes: ['399006', 'sz399006'] },
+  { key: 'kc50', name: '科创50', codes: ['000688', 'sh000688'] },
+  { key: 'hs300', name: '沪深300', codes: ['000300', 'sh000300'] },
+]
+
 function tone(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(Number(value))) return 'pulse-flat'
   if (Number(value) > 0) return 'pulse-up'
@@ -32,24 +42,39 @@ function count(value: number | null | undefined): string {
   return String(Math.round(Number(value)))
 }
 
+function matchIndex(item: LiveTapeItem, codes: readonly string[]): boolean {
+  return codes.includes(item.code) || Boolean(item.symbol && codes.includes(item.symbol))
+}
+
 const cells = computed(() =>
-  props.indices.map((item) => ({
-    key: item.code || item.label,
-    name: item.name || item.label,
-    price: fmtPrice(item.price),
-    pct: signedPct(item.pct),
-    tone: tone(item.pct),
-  })),
+  SLOTS.map((slot) => {
+    const item = props.indices.find((row) => matchIndex(row, slot.codes)) ?? null
+    return {
+      key: slot.key,
+      name: item?.name || item?.label || slot.name,
+      price: item ? fmtPrice(item.price) : '—',
+      pct: item ? signedPct(item.pct) : '—',
+      tone: item ? tone(item.pct) : 'pulse-flat',
+      void: !item,
+    }
+  }),
 )
 
+const allVoid = computed(() => cells.value.every((cell) => cell.void))
+
 const breadthTip = computed(
-  () => props.breadthNote || '涨停/跌停来自情报缓存（GET /intel/brief），只读不现算',
+  () => props.breadthNote || '涨停 / 跌停为最近一次情报快照',
 )
 </script>
 
 <template>
-  <div class="tape" aria-label="指数报价与盘面广度">
-    <div v-for="cell in cells" :key="cell.key" class="tape__cell">
+  <div class="tape" :class="{ 'tape--void': allVoid }" aria-label="指数报价与盘面广度" tabindex="0">
+    <div
+      v-for="cell in cells"
+      :key="cell.key"
+      class="tape__cell"
+      :class="{ 'tape__cell--void': cell.void }"
+    >
       <span class="tape__k">{{ cell.name }}</span>
       <span class="tape__row">
         <strong class="tape__price" :class="cell.tone">{{ cell.price }}</strong>
@@ -95,6 +120,15 @@ const breadthTip = computed(
   overflow-y: hidden;
   scrollbar-width: thin;
 }
+.tape--void {
+  background: var(--sheet-alt);
+}
+
+.tape__cell--void .tape__price,
+.tape__cell--void .tape__pct {
+  color: var(--mist);
+}
+
 
 .tape__cell {
   flex: 1 1 0;
@@ -179,6 +213,27 @@ const breadthTip = computed(
   }
   .tape__cell {
     padding: var(--gap-2) var(--gap-3);
+  }
+}
+
+/* 480 级窄屏：五位数报价 + 涨跌幅一行摆不下（13647.49 + -0.55% ≈ 150px），改上下叠放；
+   格改不收缩（flex:0 0 auto），宽度不足走横滑，不再把格内字压叠 */
+@media (max-width: 640px) {
+  .tape {
+    --tape-cell-w: 128px;
+    --tape-cell-w-aux: 108px;
+  }
+  .tape__cell {
+    flex: 0 0 auto;
+    padding: var(--gap-1) var(--gap-2);
+  }
+  .tape__price {
+    font-size: var(--fs-hero);
+  }
+  .tape__row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
   }
 }
 </style>

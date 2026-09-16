@@ -5,6 +5,8 @@ baostock>=0.8.8
 tdxpy>=0.2.5
 pandas>=2.0.0
 numpy>=1.24.0
+# Streaming JSON for large auditable backtest artifacts.
+ijson==3.5.1
 # market 只读分析旁路（可关；不替代 palace/market SQLite 权威）
 duckdb>=1.0.0
 # 可选 Polars 只读面板 POC（LOCI_MARKET_POLARS=1）；未安装时自动回退

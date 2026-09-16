@@ -11,6 +11,7 @@
  * 会显示由涨幅/成交额/换手榜「换个标签」造出来的条目，已整块删除：榜单就在
  * 左边，没必要把同一份数据伪装成策略再说一遍。
  */
+import { Bell } from '@element-plus/icons-vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import LiveEmptyState from './LiveEmptyState.vue'
 import { price, signedPct } from '@/shared/lib/format'
@@ -41,7 +42,7 @@ function directionLabel(dir: SignalItem['direction']): string {
   <section class="signals live-block" aria-label="实时策略信号">
     <header class="live-block__head">
       <span class="live-block__title">
-        <i class="signals__mark" aria-hidden="true" />
+        <el-icon class="signals__mark" aria-hidden="true"><Bell /></el-icon>
         实时策略信号
       </span>
       <span class="signals__count live-num">{{ signals.length }}/{{ SIGNAL_MAX_ITEMS }}</span>
@@ -60,12 +61,14 @@ function directionLabel(dir: SignalItem['direction']): string {
             {{ directionLabel(item.direction) }}
           </span>
           <StockLink :code="item.code" :name="item.name" :show-code="false" class="sig__name" />
-          <span class="sig__strat">{{ item.strategyName || item.strategy }}</span>
-          <span class="sig__title" :title="item.detail">{{ item.title }}</span>
+          <el-tooltip :content="item.strategyName || item.strategy" placement="top" :show-after="300">
+            <span class="sig__strat" tabindex="0">{{ item.strategyName || item.strategy }}</span>
+          </el-tooltip>
+          <span class="sig__title" :title="item.detail || item.title" tabindex="0">{{ item.title }}</span>
           <span class="sig__px live-num">{{ price(item.price) }}</span>
           <span
             class="sig__pct live-num"
-            :class="item.pct >= 0 ? 'live-tone-up' : 'live-tone-down'"
+            :class="item.pct > 0 ? 'live-tone-up' : item.pct < 0 ? 'live-tone-down' : 'live-tone-flat'"
           >
             {{ signedPct(item.pct) }}
           </span>
@@ -83,11 +86,7 @@ function directionLabel(dir: SignalItem['direction']): string {
 }
 
 .signals__mark {
-  display: inline-block;
-  width: 2px;
-  height: 12px;
-  margin-right: var(--gap-1);
-  background-color: var(--live-accent);
+  color: var(--seal-ink);
 }
 
 .signals__count {
@@ -102,11 +101,11 @@ function directionLabel(dir: SignalItem['direction']): string {
 
 .sig {
   display: grid;
-  grid-template-columns: auto auto minmax(4rem, auto) auto minmax(0, 1fr) auto auto;
+  grid-template-columns: 3rem 2.6rem minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: var(--gap-2);
-  min-height: var(--live-signal-row-h);
-  padding: 0 var(--gap-2);
+  gap: var(--gap-1) var(--gap-2);
+  min-height: calc(var(--live-signal-row-h) * 2);
+  padding: var(--gap-1) var(--gap-2);
   border-bottom: 1px solid var(--live-rule-soft);
   font-size: var(--fs-aux);
   transition: background-color 1.2s ease-out;
@@ -129,15 +128,15 @@ function directionLabel(dir: SignalItem['direction']): string {
   border-radius: var(--radius);
 }
 
-/* 方向标签是价格语义（做多/离场），红绿合法 */
+/* 交易意图与实际涨跌分开；红绿只留给报价。 */
 .sig__dir--long {
-  color: var(--live-up);
-  background-color: var(--live-up-soft);
+  color: var(--info-ink);
+  background-color: var(--live-info-soft);
 }
 
 .sig__dir--exit {
-  color: var(--live-down);
-  background-color: var(--live-down-soft);
+  color: var(--warn-ink);
+  background-color: var(--live-warn-soft);
 }
 
 .sig__dir--watch {
@@ -146,6 +145,9 @@ function directionLabel(dir: SignalItem['direction']): string {
 }
 
 :deep(.sig__name) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--live-text);
   font-weight: 600;
   text-decoration: none;
@@ -157,12 +159,19 @@ function directionLabel(dir: SignalItem['direction']): string {
 }
 
 .sig__strat {
+  grid-column: 1 / 3;
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: var(--fs-kicker);
-  color: var(--live-accent);
+  color: var(--seal-ink);
   white-space: nowrap;
 }
 
 .sig__title {
+  grid-column: 3 / -1;
+  grid-row: 2;
   min-width: 0;
   color: var(--live-muted);
   white-space: nowrap;
@@ -171,12 +180,16 @@ function directionLabel(dir: SignalItem['direction']): string {
 }
 
 .sig__px {
+  grid-column: 4;
+  grid-row: 1;
   color: var(--live-text);
   font-weight: 600;
   text-align: right;
 }
 
 .sig__pct {
+  grid-column: 5;
+  grid-row: 1;
   min-width: 3.75rem;
   font-weight: 700;
   text-align: right;
@@ -196,12 +209,6 @@ function directionLabel(dir: SignalItem['direction']): string {
 
 .signal-fade-leave-to {
   opacity: 0;
-}
-
-@media (max-width: 1400px) {
-  .sig__strat {
-    display: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

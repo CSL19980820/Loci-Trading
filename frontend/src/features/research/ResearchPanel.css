@@ -1,0 +1,156 @@
+.research-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  color: var(--ink);
+}
+.research-content { flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; }
+.research-section { display: flex; flex-direction: column; gap: var(--gap-2); min-width: 0; padding-bottom: var(--gap-2); }
+.research-section > * { flex-shrink: 0; }
+
+.research-summary {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--sheet);
+}
+
+/* 行内：kicker 以前是 display:block，硬把标签和它标注的那排 tag 拆成两行 */
+.research-kicker {
+  color: var(--mist);
+  font-size: var(--fs-kicker);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* 页头这条功能行：控件挤在一起，靠 PageToolbar 的左槽吃宽度 */
+.research-query {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.research-code {
+  width: 12rem;
+}
+
+.research-query :deep(.el-radio-group) {
+  display: flex;
+}
+
+.research-alert {
+  margin: 0;
+}
+
+.telemetry-tag {
+  margin: 0 var(--gap-1) var(--gap-1) 0;
+}
+
+.research-summary {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1.8fr) repeat(4, minmax(6.5rem, 1fr));
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.subject-lockup,
+.summary-metric {
+  min-width: 0;
+  padding: var(--gap-2) var(--gap-3);
+}
+
+.subject-lockup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-1) var(--gap-2);
+  background: var(--sheet-alt);
+  border-inline-end: 1px solid var(--rule);
+}
+
+
+.subject-lockup strong {
+  font-size: var(--fs-title);
+}
+
+.subject-lockup span:last-child {
+  color: var(--mist);
+  font-size: var(--fs-aux);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+  overflow-wrap: anywhere;
+}
+
+.summary-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  border-inline-end: 1px solid var(--rule);
+}
+
+.summary-metric:last-child {
+  border-inline-end: 0;
+}
+
+.summary-metric > span {
+  color: var(--mist);
+  font-size: var(--fs-kicker);
+}
+
+.summary-metric strong {
+  font: 700 var(--fs-title)/1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-metric strong.is-warning {
+  color: var(--warn);
+}
+
+.research-layout {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.72fr) minmax(0, 1.7fr);
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.catalog-blank {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.source-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.75rem 0.9rem;
+  border-block: 1px solid var(--rule);
+}
+
+.source-receipts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.1rem;
+}
+
+.source-receipts .research-kicker {
+  margin-inline-end: 0.25rem;
+}
+
+.source-band .research-kicker {
+  margin-inline-end: 0.25rem;
+}

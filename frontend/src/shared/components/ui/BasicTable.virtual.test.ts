@@ -22,10 +22,10 @@ type TableProbeProps = {
 const TableV2Probe = defineComponent({
   props: {
     columns: { type: Array as PropType<TableProbeProps['columns']>, required: true },
-    data: { type: Array as PropType<BasicRow[]>, required: true },
+    data: { type: Array as PropType<TableProbeProps['data']>, required: true },
     rowProps: { type: Function as PropType<RowProps>, required: false },
   },
-  setup(props: TableProbeProps) {
+  setup(props: TableProbeProps, { slots }) {
     return () => {
       const firstRow = props.data[0]
       const attrs = firstRow && props.rowProps
@@ -46,7 +46,9 @@ const TableV2Probe = defineComponent({
           Boolean(selection?.cellRenderer && selection.headerCellRenderer),
         ),
       }, [
-        h('div', { ...attrs, 'data-testid': 'virtual-row-0' }, 'first row'),
+        firstRow
+          ? h('div', { ...attrs, 'data-testid': 'virtual-row-0' }, 'first row')
+          : slots.empty?.(),
       ])
     }
   },
@@ -173,5 +175,37 @@ describe('BasicTable virtualized mode', () => {
 
     expect(wrapper.find('[data-testid="classic-table"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="table-v2"]').exists()).toBe(false)
+  })
+
+  it('keeps the virtual table mounted when empty and forwards the empty slot', async () => {
+    const wrapper = mount(BasicTable, {
+      props: {
+        columns: columns(),
+        dataSource: [],
+        pagination: false,
+        rowKey: 'id',
+        virtualized: true,
+        emptyText: '暂无候选',
+        emptyReason: '当前筛选下没有记录',
+      },
+      slots: {
+        empty: () => h('button', { 'data-testid': 'empty-action' }, '记一条候选'),
+      },
+      global: {
+        stubs: {
+          'el-auto-resizer': AutoResizerProbe,
+          'el-table-v2': TableV2Probe,
+          'el-table': ClassicTableProbe,
+        },
+        directives: {
+          loading: () => undefined,
+        },
+      },
+    })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="table-v2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="classic-table"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="empty-action"]').text()).toBe('记一条候选')
   })
 })

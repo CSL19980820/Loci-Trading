@@ -26,6 +26,8 @@ def _strong_market_call_tool() -> object:
             )
         if name == "broken_limit_up":
             return _payload([{"code": "600003", "name": "弱转强", "pctChg": 2.5}])
+        if name == "auction_opening_snapshot":
+            return _payload({"rows": []})
         raise AssertionError(name)
 
     return call_tool

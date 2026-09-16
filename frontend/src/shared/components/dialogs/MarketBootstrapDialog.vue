@@ -407,6 +407,7 @@ onUnmounted(() => {
   color: var(--mist);
   font-size: var(--fs-aux);
 }
+/* shadcn 化后 footer 行内元素走工具类；is-leading 左置破坏性/次要动作（base 层保留语义） */
 </style>
 
 <style>

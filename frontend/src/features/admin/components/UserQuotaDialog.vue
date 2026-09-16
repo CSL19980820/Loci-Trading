@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { setUserQuota } from '@/shared/api/admin'
@@ -52,7 +52,7 @@ const QUOTA_FIELDS: ReadonlyArray<{
   { label: '目录 MB', hint: '私有目录软上限；超限只加速清理临时数据，不拒写入', unlimited: 'storage_unlimited', value: 'storage_value', step: 512 },
 ]
 
-const submitting = computed(() => false)
+const submitting = ref(false)
 
 watch(
   () => props.user,
@@ -91,7 +91,7 @@ function onClose(): void {
 }
 
 async function onSubmit(): Promise<void> {
-  if (!props.user) return
+  if (!props.user || submitting.value) return
   const payload: SetQuotaPayload = {
     llm_monthly_tokens: uiValueToQuota(form.llm_tokens_unlimited, form.llm_tokens_value),
     llm_daily_calls: uiValueToQuota(form.llm_calls_unlimited, form.llm_calls_value),
@@ -101,6 +101,7 @@ async function onSubmit(): Promise<void> {
     storage_mb: uiValueToQuota(form.storage_unlimited, form.storage_value),
   }
 
+  submitting.value = true
   try {
     await setUserQuota(props.user.id, payload)
     ElMessage.success('配额已更新')
@@ -108,22 +109,26 @@ async function onSubmit(): Promise<void> {
     onClose()
   } catch (caught: unknown) {
     ElMessage.error(toErrorMessage(caught, '更新配额失败'))
+  } finally {
+    submitting.value = false
   }
 }
 </script>
 
 <template>
   <el-dialog
+    class="admin-form-dialog dialog-body--scroll"
     :model-value="visible"
     :title="`调整配额 - ${user?.display_name || user?.username}`"
-    width="480px"
+    width="min(92vw, 560px)"
     @close="onClose"
   >
     <el-form
-      label-position="right"
-      label-width="6.5em"
+      label-position="top"
+      label-width="auto"
       size="small"
       class="quota-form"
+      :aria-busy="submitting"
     >
       <el-form-item v-for="field in QUOTA_FIELDS" :key="field.value">
         <template #label>
@@ -144,21 +149,16 @@ async function onSubmit(): Promise<void> {
     </el-form>
 
     <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="onClose">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="onSubmit">保存配额</el-button>
-      </div>
+      <el-button @click="onClose">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="onSubmit">保存配额</el-button>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
-.quota-form {
-  padding-top: var(--gap-1);
-}
-
-/* 数值框与「不限」同一行；--form-label-w 之后剩余宽度放得下 7.5rem 的输入 */
-.quota-num {
-  width: 7.5rem;
-}
+.quota-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: var(--gap-2) var(--gap-3); }
+.quota-form :deep(.el-form-item__content) { display: flex; flex-wrap: wrap; gap: var(--gap-2); }
+.quota-num { flex: 1 1 8rem; min-width: 0; width: auto; font-family: var(--mono); }
 </style>
+
+<style scoped src="./AdminDialog.css" />

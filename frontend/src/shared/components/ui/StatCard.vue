@@ -30,65 +30,16 @@ const toneClass = computed(() => {
 </script>
 
 <template>
-  <div class="stat-card" :class="layout === 'row' ? 'stat-card--row' : ''">
-    <span class="stat-k">{{ label }}</span>
-    <span class="stat-v" :class="toneClass"><slot>{{ value }}</slot></span>
-    <span v-if="hint" class="stat-x">{{ hint }}</span>
+  <!-- row=左右一行（标签左、数值右）；默认 stack=上下。D2：数值是卡上最大的字，等宽 -->
+  <div
+    class="stat-card border-line bg-surface min-w-0 rounded-md border shadow-none"
+    :class="layout === 'row' ? 'flex flex-wrap items-baseline justify-between gap-x-2 gap-y-px px-2 py-1' : 'grid gap-px px-3 py-2'"
+  >
+    <span class="stat-card__label text-aux text-mist font-medium">{{ label }}</span>
+    <span
+      class="stat-card__value min-w-0 font-mono font-bold tabular-nums"
+      :class="[toneClass, layout === 'row' ? 'text-hero inline-flex flex-wrap items-baseline gap-1 leading-snug' : 'text-tape inline-flex flex-wrap items-baseline gap-1 leading-tight']"
+    ><slot>{{ value }}</slot></span>
+    <span v-if="hint" class="stat-card__hint text-aux text-mist font-mono tabular-nums" :class="layout === 'row' ? 'basis-full' : ''">{{ hint }}</span>
   </div>
 </template>
-
-<style scoped>
-.stat-card {
-  display: grid;
-  gap: 1px;
-  padding: var(--gap-2) var(--gap-3);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
-  box-shadow: none;
-}
-
-.stat-card--row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1px var(--gap-2);
-  padding: var(--gap-1) var(--gap-2);
-}
-
-.stat-k {
-  color: var(--mist);
-  font-size: var(--fs-kicker);
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-/* 数值：全站最大的字只给数字（D2），字号走 --fs-tape(26px) */
-.stat-v {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--gap-1);
-  font: 700 var(--fs-tape) / 1.05 var(--mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-
-.stat-card--row .stat-v {
-  font-size: var(--fs-hero);
-  line-height: 1.2;
-}
-
-.stat-x {
-  color: var(--mist);
-  font-family: var(--mono);
-  font-size: var(--fs-aux);
-  font-variant-numeric: tabular-nums;
-}
-
-.stat-card--row .stat-x {
-  flex-basis: 100%;
-}
-</style>

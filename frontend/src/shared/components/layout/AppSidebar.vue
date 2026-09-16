@@ -51,9 +51,9 @@ const { prefetchRoute } = useRoutePrefetch()
 </script>
 
 <template>
-  <aside class="app-sidebar" :class="{ collapsed }">
+  <aside class="app-sidebar flex h-full min-h-0 flex-col overflow-hidden" :class="{ collapsed }" aria-label="工作台导航">
     <!-- 顶部 Brand：Logo与名称居左，折叠按钮移至最右顶边 -->
-    <div class="brand-row">
+    <div class="brand-row flex shrink-0 items-center justify-between">
       <RouterLink class="brand" to="/" aria-label="首页">
         <span class="brand-mark" aria-hidden="true">{{ brandMark }}</span>
         <strong v-if="!collapsed" class="brand-name">{{ brandName }}</strong>
@@ -66,6 +66,7 @@ const { prefetchRoute } = useRoutePrefetch()
         <el-button
           link
           class="icon-btn brand-toggle"
+          :aria-expanded="!collapsed"
           :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
           @click="collapsed = !collapsed"
         >
@@ -75,7 +76,7 @@ const { prefetchRoute } = useRoutePrefetch()
     </div>
 
     <!-- 中间菜单区：独立滚动，一级与二级支持折叠展开，一级带icon，展开收起完全对齐 -->
-    <div class="side-menu-wrap">
+    <div class="side-menu-wrap min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
       <el-menu
         :default-active="active"
         :default-openeds="defaultOpeneds"
@@ -124,10 +125,10 @@ const { prefetchRoute } = useRoutePrefetch()
     </div>
 
     <!--
-      底部固定区：①同款菜单项（消息 / 主题 / 设置 / 管理后台）②发丝分隔 ③用户行。
+      底部固定区：同款菜单项（消息 / 主题 / 设置 / 管理后台）+ 用户行。
       整块 flex-shrink:0，上方菜单再长也压不到它，两边各自滚各自的。
     -->
-    <div class="sidebar-foot">
+    <div class="sidebar-foot shrink-0">
       <el-menu
         :default-active="footActive"
         :collapse="collapsed"
@@ -152,11 +153,8 @@ const { prefetchRoute } = useRoutePrefetch()
           <template #title>{{ item.label }}</template>
         </el-menu-item>
       </el-menu>
-
-      <div class="foot-hairline" aria-hidden="true" />
-
       <!-- 用户行：左头像菜单，右边只留「帮助」一颗图标 -->
-      <div class="foot-user" :class="{ 'foot-user--collapsed': collapsed }">
+      <div class="foot-user flex min-w-0 items-center gap-2" :class="{ 'foot-user--collapsed': collapsed }">
         <UserAvatarMenu :collapsed="collapsed" />
 
         <div class="foot-actions">

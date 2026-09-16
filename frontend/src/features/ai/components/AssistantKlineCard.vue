@@ -29,8 +29,8 @@ const visibleBars = computed(() => Math.max(ASSISTANT_KLINE_MIN_VISIBLE, Math.mi
 </script>
 
 <template>
-  <section class="assistant-kline-card assistant-card" :aria-label="artifactShellTitle(artifact)">
-    <div class="assistant-card__heading">
+  <section class="assistant-kline-card assistant-card flex w-full min-w-0 flex-col" :aria-label="artifactShellTitle(artifact)">
+    <div class="assistant-card__heading flex min-w-0 items-center justify-between gap-2">
       <h3>{{ artifactShellTitle(artifact) }}</h3>
       <el-tag v-if="code" size="small" type="info">{{ name ? `${name} ${code}` : code }}</el-tag>
     </div>
@@ -41,7 +41,7 @@ const visibleBars = computed(() => Math.max(ASSISTANT_KLINE_MIN_VISIBLE, Math.mi
       show-icon
       :title="`数据不足 ${bars.length}/${ASSISTANT_KLINE_MIN_VISIBLE} 根`"
     />
-    <div v-else-if="bars.length" class="assistant-kline-card__chart">
+    <div v-else-if="bars.length" class="assistant-kline-card__chart w-full">
       <KlineChart
         :bars="bars"
         :ma-periods="[...ASSISTANT_KLINE_MA]"

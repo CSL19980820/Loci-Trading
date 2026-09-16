@@ -1,0 +1,39 @@
+schema_version: 2
+runtime: python
+dialect: python
+entrypoint: strategy.py:compute
+entry_timing: open
+min_bars: 1
+params:
+  N: {type: int, default: 16, min: 1, max: 1000, label: 芝麻量回看周期}
+  R: {type: float, default: 1.0, min: 0.000001, max: 1000, label: 地量倍数上限}
+  JQ: {type: int, default: 3, min: 1, max: 1000, label: KDJ金叉回看周期}
+  DL_LOOKBACK: {type: int, default: 5, min: 1, max: 1000, label: 涨停前地量观察天数}
+  DL_COUNT: {type: int, default: 1, min: 1, max: 1000, label: 最少地量次数}
+  VOL_MA: {type: int, default: 60, min: 1, max: 1000, label: 放量均线周期}
+  KDJ_N: {type: int, default: 9, min: 1, max: 1000, label: KDJ高低价周期}
+  K_SMOOTH: {type: int, default: 3, min: 1, max: 1000, label: K平滑周期}
+  D_SMOOTH: {type: int, default: 3, min: 1, max: 1000, label: D平滑周期}
+  MACD_FAST: {type: int, default: 12, min: 1, max: 1000, label: MACD快线周期}
+  MACD_SLOW: {type: int, default: 26, min: 1, max: 1000, label: MACD慢线周期}
+  MACD_SIGNAL: {type: int, default: 9, min: 1, max: 1000, label: MACD信号周期}
+  DIF_MIN: {type: float, default: 0.0, min: -1000000, max: 1000000, label: DIF下限}
+  DEA_MIN: {type: float, default: 0.0, min: -1000000, max: 1000000, label: DEA下限}
+  MIN_BARS: {type: int, default: 65, min: 1, max: 1000, label: 最少历史K线根数}
+  LIMIT_RATIO: {type: float, default: 0.10, min: 0.000001, max: 1, label: 涨停参考比例}
+  OPEN_MIN: {type: float, default: -5.0, min: -99.999, max: 10000, label: 开盘涨幅下限(%)}
+  OPEN_MAX: {type: float, default: 0.5, min: -99.999, max: 10000, label: 开盘涨幅上限(%)}
+output: {signal: XG}
+factors: [SB, ZM, DL_COUNT, VL60, K, D, KJ, DIF, DEA, TJ, BARSCOUNT, KP]
+logic: []
+references: []
+data:
+  fields: [open, high, low, close, volume]
+  adjust: none
+  universe:
+    preset: main_only
+    boards: [main]
+    exclude_st: false
+    exclude_delisting: false
+    exclude_suspended: false
+    min_list_days: 0

@@ -304,16 +304,16 @@ function archiveDate(row: BacktestTrade): string {
 .tr-dist,
 .tr-month {
   border: 1px solid var(--rule);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   padding: 0.55rem 0.7rem 0.35rem;
-  background: var(--paper, var(--sheet));
+  background: var(--paper);
   min-width: 0;
 }
 .tr-chart header,
 .tr-dist header,
 .tr-month header {
   margin: 0 0 0.35rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 .tr-month__bars {
@@ -348,10 +348,10 @@ function archiveDate(row: BacktestTrade): string {
   border-radius: 2px 2px 0 0;
 }
 .tr-month__bar.is-up {
-  background: color-mix(in srgb, var(--up) 70%, transparent);
+  background: color-mix(in oklab, var(--up) 70%, transparent);
 }
 .tr-month__bar.is-down {
-  background: color-mix(in srgb, var(--down) 70%, transparent);
+  background: color-mix(in oklab, var(--down) 70%, transparent);
 }
 .tr-month__lab {
   font: 0.65rem/1 var(--mono);
@@ -360,7 +360,7 @@ function archiveDate(row: BacktestTrade): string {
 .tr-cost,
 .tr-note {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   color: var(--mist);
   line-height: 1.4;
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RefreshRight } from '@element-plus/icons-vue'
 /**
  * 全站公告。列表页骨架（筛选 + BasicTable + RowActions），不再自绘卡片流。
  *
@@ -214,7 +215,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="admin-pane">
+  <div class="admin-pane admin-list">
     <PageContainer>
       <template #search>
         <div class="admin-pane__filters">
@@ -227,7 +228,7 @@ onMounted(() => {
           />
         </div>
         <div class="admin-pane__filter-actions">
-          <el-button @click="onReset">重置</el-button>
+          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
         </div>
       </template>
 
@@ -238,6 +239,7 @@ onMounted(() => {
           :pagination="pager"
           :loading="loading"
           :toolbar-config="{ refresh: true }"
+          height="100%"
           row-key="id"
           stripe
           empty-text="还没有全站公告"
@@ -269,7 +271,7 @@ onMounted(() => {
       v-model="previewVisible"
       :title="previewItem?.title || '公告正文'"
       width="min(92vw, 560px)"
-      class="announcement-preview"
+      class="announcement-preview dialog-body--scroll"
     >
       <div v-if="previewHtml" class="announcement-preview__body" v-html="previewHtml" />
       <p v-else class="announcement-preview__empty">这条公告没有正文</p>
@@ -291,35 +293,6 @@ onMounted(() => {
 }
 </style>
 
-<!-- 非 scoped：el-dialog teleport 到 body，作用域属性到不了正文节点 -->
-<style>
-.announcement-preview .el-dialog__body {
-  max-height: min(62vh, 30rem);
-  overflow: auto;
-}
+<style scoped src="./AnnouncementPreview.css" />
 
-.announcement-preview__body {
-  font-size: var(--fs-body);
-  line-height: 1.6;
-  color: var(--ink);
-  word-break: break-word;
-}
-
-.announcement-preview__body > :first-child {
-  margin-top: 0;
-}
-
-.announcement-preview__body > :last-child {
-  margin-bottom: 0;
-}
-
-.announcement-preview__body pre {
-  padding: var(--gap-2);
-  overflow-x: auto;
-  background: var(--sheet-alt);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  font-family: var(--mono);
-  font-size: var(--fs-aux);
-}
-</style>
+<style scoped src="./AdminList.css" />

@@ -139,7 +139,7 @@ def build_strategy_router(
             from src.strategy.domain.base import signal_history_bars
 
             try:
-                warmup_bars = signal_history_bars(engine)
+                warmup_bars = signal_history_bars(engine, params=payload.params)
             except StrategyError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -434,6 +434,8 @@ def build_strategy_router(
                     )
                 else:
                     job_id = existing["id"]
+                    # 详情表单未承载快照门禁/参数覆盖等配置，保存时须保留。
+                    config = {**(existing.get("config") or {}), **config}
                     store.update_job(
                         job_id, cron=cron, config=config, enabled=enabled,
                     )

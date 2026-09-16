@@ -72,6 +72,7 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
       <h3 class="settings-rail__group-title">{{ group.title }}</h3>
       <div
         role="tablist"
+        aria-orientation="vertical"
         :aria-label="group.title"
         class="settings-rail__list"
       >
@@ -82,6 +83,8 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
             class="settings-rail__item"
             :class="{ 'is-active': modelValue === item.name }"
             :aria-selected="modelValue === item.name"
+            :tabindex="modelValue === item.name ? 0 : -1"
+            :title="[item.label, item.tail].filter(Boolean).join(' · ')"
             :data-name="item.name"
             :data-settings-rail="item.name"
             @click="pick(item.name)"
@@ -145,8 +148,11 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: var(--gap-2) 0;
-  background: color-mix(in srgb, var(--paper) 70%, var(--sheet));
+  min-width: 0;
+  padding: var(--gap-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .settings-rail__group {
@@ -155,25 +161,25 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 
 .settings-rail__group-title {
   margin: 0;
-  padding: 1px var(--gap-3) var(--gap-1);
+  padding: var(--gap-2) var(--gap-1);
   font-size: var(--fs-kicker);
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.05em;
   color: var(--mist);
 }
 
 .settings-rail__list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--gap-1);
 }
 
 .settings-rail__item {
   width: 100%;
   margin: 0;
-  padding: var(--gap-1) var(--gap-3);
-  border: 0;
-  border-radius: 0;
+  padding: var(--gap-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--ink);
   font-size: var(--fs-body);
@@ -186,18 +192,21 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 .settings-rail__item.el-button {
   height: auto;
   margin: 0;
-  border-radius: 0;
+  min-height: var(--ctl-h);
+  border-radius: var(--radius);
   justify-content: flex-start;
   --el-button-text-color: var(--ink);
   --el-button-hover-text-color: var(--ink);
 }
 
 .settings-rail__item:hover {
-  background: color-mix(in srgb, var(--sheet-alt) 80%, transparent);
+  background: var(--surface-hover);
 }
 
 .settings-rail__item.is-active {
-  background: var(--seal-soft);
+  border-color: var(--seal-border);
+  background: var(--surface-active);
+  color: var(--seal-ink);
   font-weight: 700;
 }
 
@@ -214,7 +223,7 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 .settings-rail__anchors {
   display: flex;
   flex-direction: column;
-  margin: 1px 0 var(--gap-1) 1.45rem;
+  margin: 0 0 var(--gap-1) var(--gap-4);
   padding-left: var(--gap-2);
 }
 
@@ -222,7 +231,8 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
   width: 100%;
   height: auto;
   margin: 0;
-  padding: 2px var(--gap-1);
+  min-height: var(--row-h-sm);
+  padding: var(--gap-1) var(--gap-2);
   border-radius: var(--radius);
   justify-content: flex-start;
   font-size: var(--fs-aux);
@@ -235,11 +245,11 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 }
 
 .settings-rail__anchor.el-button:hover {
-  background: color-mix(in srgb, var(--sheet-alt) 80%, transparent);
+  background: var(--surface-hover);
 }
 
 .settings-rail__anchor.el-button.is-active {
-  color: var(--ink);
+  color: var(--seal-ink);
   font-weight: 700;
 }
 
@@ -248,21 +258,19 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
   height: 0.45rem;
   flex-shrink: 0;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--seal) 45%, var(--rule));
+  border: 1px solid color-mix(in oklab, var(--seal) 45%, var(--rule));
   background: transparent;
 }
 
-/* 正常态是安静的绿实点：此前 ok 用印章红且常驻闪烁，一进设置就像在报警 */
+/* 状态由实际摘要驱动，不用动效吸引注意。 */
 .settings-rail__mark--ok {
   border: none;
-  background: var(--success);
+  background: var(--ok);
 }
 
-/* 只有异常才闪 */
 .settings-rail__mark--bad {
   border: none;
-  background: var(--loss);
-  animation: settings-rail-mark-blink 1s ease-in-out infinite;
+  background: var(--warn);
 }
 
 .settings-rail__mark--idle {
@@ -287,24 +295,12 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
 }
 
 .settings-rail__tail.is-bad {
-  color: var(--loss);
+  color: var(--warn);
 }
 
-@keyframes settings-rail-mark-blink {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--loss) 40%, transparent);
-  }
-  50% {
-    opacity: 0.4;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--loss) 0%, transparent);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .settings-rail__mark--bad {
-    animation: none;
-  }
+.settings-rail__item:focus-visible,
+.settings-rail__anchor:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: -2px;
 }
 </style>

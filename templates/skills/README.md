@@ -2,11 +2,12 @@
 
 仓库内置技能包，经「从模板同步」安装到 `data/skills/`。
 
-## 两类模板
+## 模板类型
 
 | 类型 | 识别 | 例子 | 运行方式 |
 |---|---|---|---|
 | **专属战法** | `strategy_skill: true` / `signal_engine` / `signals` | `market-leader-map`、`limit-up-momentum` | 工坊战法配置 → 盘后选股 + 盘中监测双 Job。`dragon-return` 纸面舱已退役，模板同步会跳过 |
+| **可编辑选股指标** | `capability: screen` + `screen.yaml` | `yixian-auction` | 指标参数表 + 普通 `screen` 任务；默认参数修改后下次运行生效 |
 | **Agent 技能** | 普通 SKILL（无上述战法键） | 暂无内置模板 | 对话 Skill Run，或运维里建 `kind=skill` 任务 |
 
 ## 约定：Skill 不写调度

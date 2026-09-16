@@ -348,4 +348,6 @@ async function save(): Promise<void> {
 
 <style scoped>
 .detail-tabs :deep(.el-tabs__header) { margin-bottom: 0.75rem; }
+/* shadcn 化：页签内容区走工具类间距，EP 头部保留穿透 */
+.detail-tabs :deep(.el-tab-pane) { padding-top: 0.25rem; }
 </style>

@@ -1,0 +1,48 @@
+.admin-forbidden { display: flex; flex: 1 1 auto; min-height: 0; align-items: center; justify-content: center; }
+.admin-layout {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.admin-rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-sunken);
+  border-right: 1px solid var(--rule);
+}
+.rail-header { display: flex; align-items: center; min-height: var(--head-h); padding: var(--gap-2) var(--gap-3); }
+.rail-title { color: var(--muted); white-space: nowrap; }
+.rail-nav {
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--muted);
+  --el-menu-hover-bg-color: var(--surface);
+  --el-menu-hover-text-color: var(--ink);
+  --el-menu-active-color: var(--seal-ink);
+  --el-menu-item-height: calc(var(--row-h) + var(--gap-2));
+  --el-menu-base-level-padding: var(--gap-3);
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--gap-1);
+  border-right: 0;
+}
+.rail-nav :deep(.el-menu-item) { margin-bottom: var(--gap-1); border: 1px solid transparent; border-radius: var(--radius); font-size: var(--fs-body); }
+.rail-nav :deep(.el-menu-item .el-icon) { margin-right: var(--gap-2); color: var(--mist); }
+.rail-nav :deep(.el-menu-item.is-active) { border-color: var(--rule); background: var(--surface); color: var(--seal-ink); font-weight: 600; }
+.rail-nav :deep(.el-menu-item.is-active .el-icon) { color: var(--seal-ink); }
+.rail-nav :deep(.el-menu-item:focus-visible) { outline: 2px solid var(--seal); outline-offset: -2px; }
+.admin-content { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--paper); }
+@media (max-width: 980px) {
+  .admin-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .admin-rail { flex-direction: row; align-items: stretch; border-right: 0; border-bottom: 1px solid var(--rule); }
+  .rail-header { flex: 0 0 auto; }
+  .rail-nav { display: flex; flex-direction: row; overflow-x: auto; }
+  .rail-nav :deep(.el-menu-item) { flex: 0 0 auto; margin-bottom: 0; }
+}
+@media (max-width: 640px) { .rail-header { display: none; } }

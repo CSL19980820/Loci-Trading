@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 import pandas as pd
@@ -251,13 +251,16 @@ def screen(
         )
 
     _progress("panel", 48, f"加载面板 {len(resolved.codes)} 只…")
+    pre_candidate_method = getattr(engine, "live_candidate_codes", None) if live_overlay else None
+    live_prefilter = callable(pre_candidate_method)
+    load_min_bars = max(1, engine.min_bars() - 1) if live_prefilter else engine.min_bars()
     panels = store.load_panel(
         fields=engine.required_fields(),
         codes=resolved.codes,
         start=start,
         end=end,
         adjust=effective_adjust,
-        min_bars=engine.min_bars(),
+        min_bars=load_min_bars,
     )
     attach_raw_limit_close(
         store,
@@ -267,7 +270,7 @@ def screen(
         codes=resolved.codes,
         start=start,
         end=end,
-        min_bars=engine.min_bars(),
+        min_bars=load_min_bars,
     )
     if getattr(engine, "requires_instrument_names", False):
         panels["__instrument_names__"] = {
@@ -276,24 +279,63 @@ def screen(
     if live_overlay:
         from src.market import ScreenLiveError, fetch_live_spot_bars, overlay_live_day
 
+        live_codes = list(resolved.codes)
+        if live_prefilter:
+            live_codes = pre_candidate_method(panels, today, resolved_params)
+            result_snapshot["pre_candidate_count"] = len(live_codes)
+            # 未请求股票也必须抹去旧今日K，否则会被完整compute误当实时数据。
+            for field in ("open", "high", "low", "close", "volume", "__raw_close"):
+                panel = panels.get(field)
+                if isinstance(panel, pd.DataFrame):
+                    panels[field] = panel.reindex(panel.index.union([today])).copy()
+                    panels[field].loc[today, :] = float("nan")
+        result_snapshot["live_requested_codes"] = len(live_codes)
         types = {
             code: str((resolved.meta.get(code) or {}).get("instrument_type") or "STOCK")
-            for code in resolved.codes
+            for code in live_codes
         }
-        _progress("live", 52, f"拉取实时行情 {len(resolved.codes)} 只…")
+        _progress("live", 52, f"拉取实时行情 {len(live_codes)} 只…")
+        strict_live = bool(getattr(engine, "strict_live_ohlcv", False))
+        fetch_started_at = datetime.now(timezone.utc).isoformat() if live_codes else None
         try:
-            live_bars = fetch_live_spot_bars(
-                resolved.codes, instrument_types=types
-            )
+            if not live_codes:
+                live_bars = {}
+            elif strict_live:
+                live_bars = fetch_live_spot_bars(
+                    live_codes, instrument_types=types, strict=True
+                )
+            else:
+                live_bars = fetch_live_spot_bars(
+                    live_codes, instrument_types=types
+                )
         except ScreenLiveError as exc:
             raise StrategyError(str(exc)) from exc
-        if not live_bars:
+        result_snapshot.update(
+            live_fetch_started_at=fetch_started_at,
+            live_fetch_finished_at=datetime.now(timezone.utc).isoformat() if live_codes else None,
+            strict_live_ohlcv=strict_live,
+            live_fetch_atomic=False,
+        )
+        if strict_live and live_prefilter:
+            # 留下全部预候选的当时输入，后续可复盘真实尾盘信号，而非拿收盘K代替。
+            result_snapshot["live_ohlcv"] = {
+                code: dict(bar) for code, bar in live_bars.items()
+            }
+        if not live_bars and live_codes:
             raise StrategyError(
                 "盘中选股拉不到实时行情，已中止（不回退昨日本地日 K）"
             )
-        panels = overlay_live_day(panels, live_bars, today)
-        result_snapshot["live_overlay_codes"] = len(live_bars)
-        _progress("live", 56, f"已叠实时日 K {len(live_bars)} 只")
+        overlay_bars = live_bars
+        if strict_live and live_prefilter:
+            # 原式要求V>昨日V，明确零量不可能命中，且停牌不得虚构新日K。
+            result_snapshot["zero_volume_codes"] = sorted(
+                code for code, bar in live_bars.items() if bar["volume"] == 0
+            )
+            if engine.entry_timing != "open":
+                overlay_bars = {code: bar for code, bar in live_bars.items() if bar["volume"] != 0}
+        panels = overlay_live_day(panels, overlay_bars, today)
+        result_snapshot["live_overlay_codes"] = len(overlay_bars)
+        _progress("live", 56, f"已叠实时日 K {len(overlay_bars)} 只")
     reference = _reference_panel(panels, engine.required_fields())
     if reference is None:
         funnel = resolved.funnel.to_dict()

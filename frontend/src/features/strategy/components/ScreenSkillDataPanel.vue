@@ -208,7 +208,7 @@ const boardTags = computed(() =>
   padding: 0.8rem;
   border: 1px solid var(--rule);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 90%, var(--paper));
+  background: color-mix(in oklab, var(--panel) 90%, var(--paper));
 }
 
 .stats-panel > div {
@@ -230,7 +230,7 @@ const boardTags = computed(() =>
 }
 .dim {
   color: var(--mist);
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
 }
 
 @media (max-width: 640px) {

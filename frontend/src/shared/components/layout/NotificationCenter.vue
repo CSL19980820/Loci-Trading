@@ -104,11 +104,11 @@ async function follow(item: NotificationItem): Promise<void> {
     v-model="open"
     title="消息"
     direction="rtl"
-    size="380px"
+    size="min(420px, 100vw)"
     class="notify-drawer"
     append-to-body
   >
-    <el-radio-group v-model="tab" size="small" class="notify-tabs">
+    <el-radio-group v-model="tab" size="small" class="notify-tabs" aria-label="消息分类">
       <el-radio-button value="inbox">
         我的通知<span v-if="notifications.length"> · {{ notifications.length }}</span>
       </el-radio-button>
@@ -117,12 +117,12 @@ async function follow(item: NotificationItem): Promise<void> {
       </el-radio-button>
     </el-radio-group>
 
-    <div v-loading="loading" class="notify-body">
+    <div v-loading="loading" class="notify-body" :aria-busy="loading">
       <template v-if="tab === 'inbox'">
         <EmptyState
           v-if="!notifications.length"
           description="还没有通知"
-          reason="选股 / 盘中监测跑出结果，或定时任务与管理员有话要说时，消息会出现在这里。"
+          reason="任务结果将在这里汇总"
         />
         <template v-else>
           <el-button
@@ -149,7 +149,7 @@ async function follow(item: NotificationItem): Promise<void> {
         <EmptyState
           v-if="!announcements.length"
           description="暂无公告"
-          reason="管理员发布全站公告后会显示在这里。"
+          reason="发布后会显示在这里"
         />
         <article v-for="item in announcements" v-else :key="item.id" class="notify-item">
           <div class="notify-head">
@@ -196,7 +196,7 @@ async function follow(item: NotificationItem): Promise<void> {
 }
 
 .notify-chip__icon {
-  font-size: 15px;
+  font-size: var(--fs-body);
 }
 
 .notify-chip :deep(.el-badge) {
@@ -205,13 +205,13 @@ async function follow(item: NotificationItem): Promise<void> {
   line-height: 1;
 }
 
-/* 未读角标用印章红：它是提醒，不是涨跌，也不是品牌色（D1） */
+/* 与侧栏未读角标使用同一主色。 */
 .notify-chip :deep(.el-badge__content.is-dot) {
   width: 6px;
   height: 6px;
   padding: 0;
   border: 0;
-  background: var(--stamp);
+  background: var(--seal);
 }
 
 .notify-chip__num {
@@ -264,6 +264,12 @@ async function follow(item: NotificationItem): Promise<void> {
   margin-left: 0;
 }
 
+.notify-item.el-button > :deep(span) {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
 .notify-item.el-button:hover,
 .notify-item.el-button:focus-visible {
   background: var(--sheet);
@@ -284,9 +290,10 @@ async function follow(item: NotificationItem): Promise<void> {
   border-color: var(--seal);
 }
 
-/* 未读靠左侧色条标示，而不是整块染色——整块染色在 10 条以上时非常吵 */
+/* 未读靠淡底 + 加粗标题标示，不用整块染色（10 条以上时非常吵），也不用竖条 */
 .notify-item--unread {
-  box-shadow: inset 2px 0 0 var(--stamp);
+  background: var(--seal-soft);
+  border-color: var(--seal-border);
 }
 
 .notify-head {
@@ -309,7 +316,7 @@ async function follow(item: NotificationItem): Promise<void> {
   flex-shrink: 0;
   color: var(--mist);
   font-family: var(--mono);
-  font-size: var(--fs-kicker);
+  font-size: var(--fs-aux);
 }
 
 .notify-text {

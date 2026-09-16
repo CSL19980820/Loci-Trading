@@ -53,6 +53,7 @@ defineExpose({ load })
               class="swatch"
               :class="{ 'swatch--on': theme.appearanceId === item.id }"
               :style="{ '--sw': item.swatch }"
+              :aria-pressed="theme.appearanceId === item.id"
               @click="setAppearance(item.id)"
             >
               <span class="swatch__chip" />
@@ -70,6 +71,7 @@ defineExpose({ load })
               class="swatch"
               :class="{ 'swatch--on': theme.primaryId === item.id }"
               :style="{ '--sw': item.color }"
+              :aria-pressed="theme.primaryId === item.id"
               @click="setPrimary(item.id)"
             >
               <span class="swatch__chip" />
@@ -84,6 +86,7 @@ defineExpose({ load })
             <span>最小化到托盘</span>
             <el-switch
               :model-value="minimizeToTray"
+              aria-label="最小化到托盘"
               :disabled="busy"
               @change="onMinimizeToTrayChange"
             />
@@ -108,18 +111,21 @@ defineExpose({ load })
   --el-button-bg-color: transparent;
   --el-button-border-color: var(--rule);
   --el-button-text-color: var(--ink);
-  --el-button-hover-bg-color: transparent;
+  --el-button-hover-bg-color: var(--surface-hover);
   --el-button-hover-border-color: var(--seal);
   --el-button-hover-text-color: var(--ink);
   --el-button-active-bg-color: transparent;
   --el-button-active-border-color: var(--seal);
-  height: auto;
+  height: var(--ctl-h);
+  margin-left: 0;
   padding: var(--gap-1) var(--gap-2);
   font-size: var(--fs-aux);
   font-weight: 500;
 }
 
 .swatch--on.el-button {
+  --el-button-bg-color: var(--surface-active);
+  --el-button-text-color: var(--seal-ink);
   --el-button-border-color: var(--seal);
   --el-button-hover-border-color: var(--seal);
 }
@@ -130,7 +136,7 @@ defineExpose({ load })
   margin-right: var(--gap-1);
   border-radius: var(--radius);
   background: var(--sw);
-  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ink) 12%, transparent);
 }
 
 .pref-row {
@@ -157,4 +163,5 @@ defineExpose({ load })
 .sys-form :deep(.el-form-item) {
   margin-bottom: var(--gap-2);
 }
+.swatch:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
 </style>

@@ -11,6 +11,7 @@
   /*
    * 210px 太宽（用户原话「左侧菜单太宽了」）。176px 仍装得下「管理后台 / 策稿台」
    * 这一档四字短名，再窄就要开始截断了。收缩态维持 54px。
+   * 和主区的分层只靠 --surface-sunken，不画右边线。
    */
   --sidebar-w: 176px;
   --sidebar-w-collapsed: 54px;
@@ -20,12 +21,12 @@
   width: var(--sidebar-w);
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--rule);
-  background: var(--sheet-alt);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
   overflow: hidden;
   transition: width 180ms cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  z-index: 100;
+  z-index: var(--z-sidebar);
 }
 
 .app-sidebar.collapsed {
@@ -38,16 +39,16 @@
   }
 }
 
-/* 顶部 Brand 栏：42px，Logo与名称居左，折叠按钮在最右顶边 */
+/* 品牌与折叠操作共用一条紧凑顶栏，菜单区维持独立滚动。 */
 .brand-row {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 42px;
-  padding: 0 6px 0 10px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet);
+  height: calc(var(--ctl-h) + var(--gap-4));
+  padding: 0 var(--gap-2) 0 var(--gap-3);
+  border-bottom: 1px solid var(--rule-soft);
+  background: transparent;
 }
 
 .app-sidebar.collapsed .brand-row {
@@ -55,10 +56,13 @@
   padding: 0 4px;
 }
 
+/* 54px 图标栏只放展开按钮，避免 Logo 与按钮互相挤出容器。 */
+.app-sidebar.collapsed .brand { display: none; }
+
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--gap-1, 4px);
+  gap: var(--gap-2);
   min-width: 0;
   color: inherit;
   text-decoration: none;
@@ -68,23 +72,23 @@
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius, 6px);
-  background: var(--seal);
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, var(--seal), var(--seal-active));
   /* 实心主色上的文字色只能由 --on-primary 决定：写死白字在 amber 主色下只有 2.5:1 */
   color: var(--on-primary);
   font-family: var(--mono);
-  font-size: var(--fs-kicker, 11px);
+  font-size: var(--fs-aux);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
 
 .brand-name {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--fs-title);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.02em;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -98,7 +102,7 @@
   width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: var(--radius, 6px);
+  border-radius: var(--radius);
   color: var(--mist);
   transition: all 180ms ease;
 }
@@ -117,14 +121,20 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  padding: 6px 5px;
+  padding: var(--gap-2) var(--gap-1);
 }
 
 .side-menu {
+  --el-menu-text-color: var(--text-secondary);
+  --el-menu-active-color: var(--seal-ink);
+  --el-menu-hover-bg-color: var(--surface-hover);
   width: 100%;
   border-right: 0 !important;
   background: transparent !important;
 }
+
+.side-menu :deep(.el-menu--inline) { background: transparent; }
+.side-menu :deep(.nav-sub-menu + .nav-sub-menu) { margin-top: var(--gap-2); }
 
 /* 一级折叠标题与图标 */
 .side-menu :deep(.el-sub-menu__title) {
@@ -134,22 +144,22 @@
   line-height: 34px;
   padding: 0 8px !important;
   margin: 3px 0;
-  border-radius: var(--radius, 6px);
+  border-radius: var(--radius);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-aux);
   font-weight: 600;
   transition: all 180ms ease;
 }
 
 .side-menu :deep(.el-sub-menu__title:hover) {
-  background: var(--sheet) !important;
+  background: var(--surface-hover) !important;
   color: var(--ink);
 }
 
 .side-menu :deep(.el-sub-menu__title .sub-menu-icon),
 .side-menu :deep(.el-sub-menu__title .el-icon) {
   width: 16px;
-  font-size: 15px;
+  font-size: var(--fs-body);
   margin-right: 8px;
   color: var(--mist);
   transition: color 180ms ease;
@@ -161,7 +171,7 @@
 
 .side-menu :deep(.el-sub-menu__title .el-sub-menu__icon-arrow) {
   margin-right: 0 !important;
-  font-size: 12px;
+  font-size: var(--fs-aux);
   color: var(--mist);
 }
 
@@ -173,33 +183,35 @@
 .side-menu :deep(.el-menu-item) {
   display: flex !important;
   align-items: center;
-  height: 32px;
-  line-height: 32px;
+  height: var(--ctl-h);
+  line-height: var(--ctl-h);
   padding: 0 10px 0 26px !important;
   margin: 2px 0;
-  border-radius: var(--radius, 6px);
-  border-left: 0 !important;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
   color: var(--muted);
-  font-size: 13px;
-  transition: all 180ms ease;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
 .side-menu :deep(.el-menu-item .el-icon) {
   width: 15px;
   margin-right: 8px;
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--mist);
-  transition: color 180ms ease;
+  transition: color 160ms ease;
 }
 
 .side-menu :deep(.el-menu-item:hover) {
-  background: var(--sheet) !important;
+  background: var(--surface-hover) !important;
   color: var(--ink);
 }
 
 .side-menu :deep(.el-menu-item.is-active) {
   background: var(--seal-soft) !important;
-  color: var(--seal) !important;
+  border-color: var(--seal-border);
+  color: var(--seal-ink) !important;
   font-weight: 600;
 }
 
@@ -224,19 +236,20 @@
 
 .app-sidebar.collapsed .side-menu :deep(.el-menu-item .el-icon) {
   margin: 0 !important;
-  font-size: 16px;
+  font-size: var(--fs-title);
 }
 
 .collapsed-divider {
-  height: 1px;
-  background: var(--rule);
-  margin: 6px 4px;
+  height: 8px;
+  background: transparent;
+  margin: 0;
 }
 
 /*
  * —— 底部固定区 ——
  * flex-shrink:0 + 不参与上方滚动容器：上面的菜单再长也不会把它顶走，
  * 它也不会跟着上面一起滚（用户原话：「两者互不影响」）。
+ * 底色抬到 --surface，和中间菜单的 sunken 分层，不画顶线。
  */
 .sidebar-foot {
   flex-shrink: 0;
@@ -244,8 +257,8 @@
   flex-direction: column;
   gap: 4px;
   padding: 4px 5px 6px;
-  border-top: 1px solid var(--rule);
-  background: var(--sheet);
+  border-top: 1px solid var(--rule-soft);
+  background: transparent;
 }
 
 .app-sidebar.collapsed .sidebar-foot {
@@ -268,6 +281,7 @@
  */
 .foot-menu :deep(.el-menu-item.foot-menu-item--notify.is-active),
 .foot-menu :deep(.el-menu-item.foot-menu-item--theme.is-active) {
+  border-color: transparent;
   background: transparent !important;
   color: var(--muted) !important;
   font-weight: 400;
@@ -280,7 +294,7 @@
 
 .foot-menu :deep(.el-menu-item.foot-menu-item--notify.is-active:hover),
 .foot-menu :deep(.el-menu-item.foot-menu-item--theme.is-active:hover) {
-  background: var(--sheet) !important;
+  background: var(--surface-hover) !important;
   color: var(--ink) !important;
 }
 
@@ -296,13 +310,7 @@
   height: 6px;
   padding: 0;
   border: 0;
-  background: var(--stamp);
-}
-
-.foot-hairline {
-  height: 1px;
-  margin: 2px 4px;
-  background: var(--rule);
+  background: var(--seal);
 }
 
 .foot-user {
@@ -334,7 +342,7 @@
 .foot-user :deep(.user-profile-btn) {
   height: 32px;
   padding: 0 4px;
-  border-radius: var(--radius, 6px);
+  border-radius: var(--radius);
 }
 
 .foot-user--collapsed :deep(.user-profile-btn) {
@@ -345,7 +353,7 @@
 }
 
 .foot-user :deep(.user-name) {
-  font-size: 13px;
+  font-size: var(--fs-aux);
   font-weight: 600;
 }
 
@@ -370,7 +378,7 @@
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: var(--radius, 6px);
+  border-radius: var(--radius);
   background: transparent;
   color: var(--mist);
   text-decoration: none;
@@ -382,7 +390,7 @@
 }
 
 .icon-btn .el-icon {
-  font-size: 15px;
+  font-size: var(--fs-body);
 }
 
 .icon-btn.el-button:hover {
@@ -394,4 +402,8 @@
   .app-sidebar {
     display: none;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sidebar :deep(*) { transition: none; }
 }

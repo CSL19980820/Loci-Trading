@@ -22,12 +22,13 @@ const nextRun = () => {
     <el-row :gutter="12">
       <el-col :xs="24" :xl="12">
         <el-form-item label="盘中增量">
-          <div class="inline-row">
-            <el-switch v-model="sync.enabled_intraday" />
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <el-switch v-model="sync.enabled_intraday" aria-label="启用盘中增量同步" />
             <!-- 「工作日 9–14 点」是规则不是读数：常驻文字删掉，挂到它约束的那个下拉上 -->
             <el-tooltip placement="top-start" content="只在工作日 9–14 点之间按这个间隔跑">
               <el-select
                 v-model="sync.interval_minutes"
+                aria-label="盘中同步间隔"
                 class="interval"
                 :disabled="!sync.enabled_intraday"
               >
@@ -42,10 +43,11 @@ const nextRun = () => {
       </el-col>
       <el-col :xs="24" :xl="12">
         <el-form-item label="日终重刷">
-          <div class="inline-row">
-            <el-switch v-model="sync.enabled_eod" />
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <el-switch v-model="sync.enabled_eod" aria-label="启用日终重刷" />
             <el-input-number
               v-model="sync.eod_hour"
+              aria-label="日终重刷小时"
               :min="12"
               :max="23"
               :disabled="!sync.enabled_eod"
@@ -54,6 +56,7 @@ const nextRun = () => {
             <span class="time-sep">:</span>
             <el-input-number
               v-model="sync.eod_minute"
+              aria-label="日终重刷分钟"
               :min="0"
               :max="59"
               :step="5"
@@ -67,7 +70,7 @@ const nextRun = () => {
       </el-col>
       <el-col :xs="24" :sm="12" :md="10">
         <el-form-item label="并发">
-          <div class="inline-row">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <el-input-number
               v-model="sync.workers"
               :min="1"
@@ -83,12 +86,7 @@ const nextRun = () => {
 </template>
 
 <style scoped>
-.inline-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1) var(--gap-2);
-}
+/* 行内控件组：自动换行，横向 12px、纵向 4px。 */
 
 .interval {
   width: 8.25rem;

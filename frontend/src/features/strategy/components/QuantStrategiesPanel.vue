@@ -7,7 +7,6 @@ import PageContainer from '@/shared/components/layout/PageContainer.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
 import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import RowActions from '@/shared/components/ui/RowActions.vue'
 import { strategyLabel } from '@/shared/lib/format'
 import type { StrategyInfo } from '@/shared/types/quant'
@@ -90,7 +89,6 @@ const filterSchemas: BasicFormSchema[] = [
     field: 'name',
     label: '名称',
     component: 'input',
-    colSpan: 8,
     componentProps: {
       clearable: true,
       placeholder: '模糊查询战法名',
@@ -201,7 +199,7 @@ function onRowClick(row: Record<string, unknown>): void {
 </script>
 
 <template>
-  <div class="strategies-panel">
+  <div class="strategies-panel strategy-surface">
     <PageContainer>
       <template #search>
         <div class="strategies-search-form">
@@ -209,13 +207,13 @@ function onRowClick(row: Record<string, unknown>): void {
             ref="basicFormRef"
             v-model="filterModel"
             :schemas="filterSchemas"
-            :col-props="{ span: 8 }"
+            :columns="3"
             :input-debounce-ms="0"
             label-width="6.5em"
           />
         </div>
         <div class="strategies-search-actions">
-          <el-button type="primary" :icon="Search" @click="handleSubmit">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSubmit">筛选</el-button>
           <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
           <el-dropdown trigger="click" @command="openCreate">
             <!-- 主操作跟随印章红主色；此前是 EP 默认绿，与同页空态里的同一动作撞了两种主色 -->
@@ -237,20 +235,25 @@ function onRowClick(row: Record<string, unknown>): void {
       </template>
       <template #main>
         <BasicTable
-          v-if="filteredRows.length || loading"
           v-model:columns="columns"
           :data-source="filteredRows"
           :pagination="false"
           :loading="loading"
+          height="100%"
           stripe
           row-key="slug"
-          empty-text="无匹配战法"
+          :empty-text="nameQuery.trim() ? '当前筛选下无结果，可点重置' : '还没有量化选股战法'"
+          :empty-reason="
+            nameQuery.trim()
+              ? ''
+              : '新建战法或导入克隆包'
+          "
           @row-click="onRowClick"
         >
           <template #name="{ row }">
             <div class="name-cell">
               <div class="name-line">
-                <strong>{{ displayName(row.name, row.slug) }}</strong>
+                <el-button link class="catalog-name" :aria-label="`配置${displayName(row.name, row.slug)}`" @click.stop="onRowClick(row)">{{ displayName(row.name, row.slug) }}</el-button>
                 <el-tag v-if="row.editable" size="small" type="primary" effect="plain"
                   >可编辑</el-tag
                 >
@@ -261,7 +264,7 @@ function onRowClick(row: Record<string, unknown>): void {
           <template #source="{ row }">
             <el-tag
               size="small"
-              :type="row.source_kind === 'builtin' ? 'info' : 'danger'"
+              type="info"
               effect="plain"
             >
               {{ sourceKindLabel(String(row.source_kind)) }}
@@ -301,28 +304,6 @@ function onRowClick(row: Record<string, unknown>): void {
             />
           </template>
         </BasicTable>
-        <EmptyState
-          v-else
-          description="还没有量化选股战法"
-          reason="自定义战法在策稿台维护，builtin 战法由产品内置。"
-          eta="可直接新建、生成草稿，或去市场安装。"
-        >
-          <el-dropdown trigger="click" @command="openCreate">
-            <el-button type="primary" :icon="Plus">
-              新建
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="blank">空白新建</el-dropdown-item>
-                <el-dropdown-item command="description">AI 草稿</el-dropdown-item>
-                <el-dropdown-item command="tdx">TDX 草稿</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <!-- 克隆包的落地口：别人导出的战法 JSON 在这里粘贴导入 -->
-          <el-button :icon="Upload" @click="emit('importBundle')">从克隆包导入</el-button>
-        </EmptyState>
       </template>
     </PageContainer>
 
@@ -368,3 +349,4 @@ function onRowClick(row: Record<string, unknown>): void {
   font-size: 0.76rem;
 }
 </style>
+<style scoped src="./StrategySurfaces.css"></style>

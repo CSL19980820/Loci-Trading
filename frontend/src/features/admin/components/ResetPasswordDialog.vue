@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { resetUserPassword } from '@/shared/api/admin'
@@ -55,9 +55,10 @@ async function onSubmit(): Promise<void> {
 
 <template>
   <el-dialog
+    class="admin-form-dialog dialog-body--scroll"
     :model-value="visible"
     :title="`重置用户密码 - ${user?.display_name || user?.username}`"
-    width="460px"
+    width="min(92vw, 480px)"
     @close="onClose"
   >
     <el-form label-position="right" label-width="6.5em" size="small">
@@ -67,18 +68,19 @@ async function onSubmit(): Promise<void> {
           type="password"
           show-password
           placeholder="请输入至少 8 位新密码"
+          autocomplete="new-password"
         />
       </el-form-item>
     </el-form>
 
     <template #footer>
-      <div class="dialog-footer">
-        <el-button @click="onClose">取消</el-button>
-        <el-tooltip content="重置后该用户全部会话立即注销，下次登录须改密" placement="top">
-          <el-button type="danger" :loading="loading" @click="onSubmit">确认重置</el-button>
-        </el-tooltip>
-      </div>
+      <el-button @click="onClose">取消</el-button>
+      <el-tooltip content="重置后该用户全部会话立即注销，下次登录须改密" placement="top">
+        <el-button type="danger" :loading="loading" @click="onSubmit">确认重置</el-button>
+      </el-tooltip>
     </template>
   </el-dialog>
 </template>
 
+
+<style scoped src="./AdminDialog.css" />

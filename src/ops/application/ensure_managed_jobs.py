@@ -27,6 +27,8 @@ from src.ops.application.ensure_intraday_capture_job import (
     ensure_managed_intraday_capture_job,
 )
 from src.ops.application.ensure_prune_tenant_job import ensure_prune_tenant_job
+from src.ops.application.ensure_guardian_review_jobs import ensure_guardian_review_jobs, ensure_exchange_calendar_job
+from src.ops.application.jobs.guardian_delivery import ensure_guardian_delivery_job
 from src.ops.application.retire_dragon_pool import retire_dragon_pool
 from src.ops.application.retire_dragon_return import retire_dragon_return
 from src.ops.application.retire_second_wave import retire_second_wave
@@ -48,6 +50,7 @@ def ensure_system_jobs(store: Any) -> None:
     每一步各自 try/except：一条确保失败（库锁、目录加载炸了）不能把后面的带走。
     """
     for label, ensure in (
+        ("交易所休市日历", lambda: ensure_exchange_calendar_job(store)),
         ("托管行情同步", store.ensure_managed_market_sync_jobs),
         ("托管行情热库重建", store.ensure_managed_hot_rebuild_job),
         ("托管行情库体检", store.ensure_managed_market_quality_job),
@@ -76,6 +79,8 @@ def ensure_tenant_jobs(store: Any) -> None:
         # 价格提醒扫描：用户已经建了启用中的规则才挂，避免给没用这个功能的
         # 安装每天塞 48 条空 run（见 ensure_alert_scan_job 模块注释）。
         ("托管价格提醒扫描", lambda: ensure_managed_alert_scan_job(store)),
+        ("自主交易员复盘与计划", lambda: ensure_guardian_review_jobs(store)),
+        ("自主交易员通知补发", lambda: ensure_guardian_delivery_job(store)),
     # 租户库清理。系统级 prune 在 SYSTEM_JOB_KINDS 里，子租户一条都不装载，
         # 于是子租户的 ops.db 从建库那天起没人清过（job_runs 粗算 580 MB/年/人，
     # 外加从不清理的八张 ai_* 表）。这一步就是 tenant_jobs.py 模块头点名的

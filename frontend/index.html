@@ -14,8 +14,9 @@
     -->
     <title>Loci</title>
     <style>
+@font-face{font-family:"Loci CJK";src:local("Microsoft YaHei UI"),local("Microsoft YaHei"),local("PingFang SC"),local("Hiragino Sans GB"),local("Noto Sans SC");unicode-range:U+4E00-9FFF,U+3400-4DBF,U+F900-FAFF,U+3000-303F,U+FF00-FFEF;font-style:normal;font-weight:1 1000;font-display:swap}
 html,body{margin:0;height:100%;background:#e7ebf0;color:#0e1a29;
-font-family:"Microsoft YaHei UI","PingFang SC","Noto Sans SC","Segoe UI",system-ui,sans-serif}
+font-family:"Loci CJK",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-synthesis:none}
 #boot-splash,.loci-boot-root{position:fixed;inset:0;z-index:9999;overflow:hidden;
 background:#e7ebf0;transition:opacity .32s ease}
 #boot-splash.is-hide,.loci-boot-root.is-hide{opacity:0;pointer-events:none}
@@ -214,14 +215,9 @@ background:linear-gradient(90deg,transparent,#b6c0cd 18%,#b6c0cd 82%,transparent
     var series = buildSeries();
     root.style.setProperty("--loci-zero-pct", ((series.zeroY / VH) * 100).toFixed(2) + "%");
 
-    // 开账：从 0 缓爬；complete 时约 1s 从当前位拉到 100%，再淡出（不回撤）
-    var FINISH_MS = 1000;
+    // 开账：从 0 缓爬到 88% 等应用就绪；complete 直接拉满淡出（不回撤、不跑收尾动画）
     var IDLE_CEILING = 88;
     var pct = 0;
-    var finishing = false;
-    var finishFrom = 0;
-    var finishStart = 0;
-    var finishDone = null;
     var raf = 0;
     var lastTs = 0;
     var tipIdx = Math.floor(Math.random() * TIPS.length);
@@ -254,17 +250,7 @@ background:linear-gradient(90deg,transparent,#b6c0cd 18%,#b6c0cd 82%,transparent
       if (!lastTs) lastTs = ts;
       var dt = Math.min(48, ts - lastTs);
       lastTs = ts;
-      if (finishing) {
-        var t = Math.min(1, (ts - finishStart) / FINISH_MS);
-        var e = 1 - Math.pow(1 - t, 3);
-        pct = finishFrom + (100 - finishFrom) * e;
-        paint();
-        if (t >= 1) {
-          raf = 0;
-          fadeOut(finishDone);
-          return;
-        }
-      } else if (pct < IDLE_CEILING) {
+      if (pct < IDLE_CEILING) {
         pct = Math.min(IDLE_CEILING, pct + idleRate(pct) * dt);
         paint();
       }
@@ -289,31 +275,13 @@ background:linear-gradient(90deg,transparent,#b6c0cd 18%,#b6c0cd 82%,transparent
         var msgEl = root.querySelector(".loci-boot-msg");
         if (msgEl) msgEl.textContent = text;
       },
+      /* 应用就绪即拉满淡出，不跑收尾动画：闪屏的使命是“别白屏”，应用好了就该立刻让位。
+         收尾动画在 rAF 被节流时（headless/后台 tab）跑不完，会盖住页面不走。 */
       complete: function (done) {
         stopTips();
-        if (preferReduced || finishing) {
-          if (!finishing) {
-            pct = 100;
-            paint();
-            fadeOut(done);
-          } else if (typeof done === "function") {
-            finishDone = done;
-          }
-          return;
-        }
-        finishing = true;
-        finishFrom = pct;
-        finishDone = done;
-        if (finishFrom >= 99.5) {
-          pct = 100;
-          paint();
-          fadeOut(done);
-          return;
-        }
-        finishStart = (typeof performance !== "undefined" && performance.now)
-          ? performance.now() : Date.now();
-        lastTs = 0;
-        if (!raf) raf = requestAnimationFrame(frame);
+        pct = 100;
+        paint();
+        fadeOut(done);
       }
     };
   }

@@ -141,10 +141,13 @@ def _stream_openai(
     _apply_openai_thinking(body, thinking)
 
     text_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    reasoning_seen = False
     tool_acc: dict[int, dict[str, str]] = {}
     model = config.model
     input_tokens = output_tokens = 0
     raw_chunks: list[dict[str, Any]] = []
+    finish_reason = ""
 
     with _client(config) as client:
         try:
@@ -181,9 +184,15 @@ def _stream_openai(
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
+                    if choices[0].get("finish_reason"):
+                        finish_reason = str(choices[0]["finish_reason"])
                     delta = choices[0].get("delta") or {}
                     if not isinstance(delta, dict):
                         continue
+                    reasoning = delta.get("reasoning_content")
+                    if isinstance(reasoning, str):
+                        reasoning_seen = True
+                        reasoning_parts.append(reasoning)
                     reason = _openai_reasoning_delta(delta)
                     if reason:
                         _emit(on_delta, "think", reason)
@@ -225,7 +234,9 @@ def _stream_openai(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         tool_calls=calls,
-        raw={"stream_chunks": len(raw_chunks), "protocol": "openai_compatible"},
+        raw={"stream_chunks": len(raw_chunks), "protocol": "openai_compatible",
+             "finish_reason": finish_reason},
+        reasoning_content="".join(reasoning_parts) if reasoning_seen else None,
     )
 
 
@@ -258,6 +269,7 @@ def _stream_anthropic(
     model = config.model
     input_tokens = output_tokens = 0
     event_count = 0
+    finish_reason = ""
 
     with _client(config) as client:
         try:
@@ -312,6 +324,8 @@ def _stream_anthropic(
                         elif dtype == "input_json_delta" and index in tool_blocks:
                             tool_blocks[index]["arguments"] += str(delta.get("partial_json") or "")
                     elif kind == "message_delta":
+                        if (event.get("delta") or {}).get("stop_reason"):
+                            finish_reason = str(event["delta"]["stop_reason"])
                         usage = event.get("usage") or {}
                         if usage.get("output_tokens") is not None:
                             output_tokens = int(usage.get("output_tokens") or 0)
@@ -342,5 +356,6 @@ def _stream_anthropic(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         tool_calls=calls,
-        raw={"stream_events": event_count, "protocol": "anthropic"},
+        raw={"stream_events": event_count, "protocol": "anthropic",
+             "finish_reason": finish_reason},
     )

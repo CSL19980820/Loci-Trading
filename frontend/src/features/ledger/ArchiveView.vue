@@ -18,8 +18,6 @@ import type { StrategySignalMark } from '@/shared/lib/klineStrategyMarks'
 import type { IndicatorKind } from '@/shared/lib/klineConfig'
 import type { KPeriod } from '@/shared/lib/indicators'
 
-import './ArchiveView.css'
-
 const route = useRoute()
 const router = useRouter()
 const batch = useBatchBrowseStore()
@@ -329,7 +327,6 @@ onUnmounted(() => {
             <el-button size="small" @click="retryQuotes">重试</el-button>
           </el-alert>
           <DataQueryDetailPanel
-            v-else
             embedded
             :detail-code="code"
             :detail-name="stockName"
@@ -351,3 +348,5 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped src="./ArchiveView.css"></style>

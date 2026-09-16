@@ -85,7 +85,7 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
         payload: BacktestRequest, _write: None = write_guard
     ) -> dict[str, Any]:
         try:
-            from src.backtest import BacktestConfig, backtest_strategy, backtest_strategy_horizon
+            from src.backtest import BacktestConfig, backtest_strategy, backtest_strategy_horizon, resolve_backtest_config
             from src.strategy import describe_all, get as get_strategy
             from src.strategy.domain.base import StrategyError
         except ImportError as exc:
@@ -112,15 +112,10 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
                     start=payload.start,
                     end=payload.end,
                     params=payload.params,
-                    config=BacktestConfig(
-                        hold_days=payload.hold_days,
-                        stop_loss_pct=payload.stop_loss_pct,
-                        take_profit_pct=payload.take_profit_pct,
-                        commission_bps=payload.commission_bps,
-                        stamp_duty_bps=payload.stamp_duty_bps,
-                        slippage_bps=payload.slippage_bps,
-                        benchmark=payload.benchmark,
-                    ),
+                    config=resolve_backtest_config(payload.strategy, {
+                        key: getattr(payload, key) for key in payload.model_fields_set
+                        if key in BacktestConfig.__dataclass_fields__
+                    }),
                     codes=payload.codes,
                     universe=universe,
                 )
@@ -136,7 +131,11 @@ def build_strategy_version_router(*, write_dependency, market_db: str | None, op
             "skipped": trade.skipped,
         }
         if payload.include_trades:
-            body["trades"] = [{**row.__dict__, "alpha_pct": row.alpha_pct} for row in trade.trades]
+            body["trades"] = [
+                {**row.to_dict(include_factors=bool(trade.config.get("economic_returns"))),
+                 "alpha_pct": row.alpha_pct}
+                for row in trade.trades
+            ]
 
         engine = get_strategy(trade.strategy_slug)
         if str(getattr(engine, "source_kind", "builtin")) == "builtin":

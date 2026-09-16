@@ -111,6 +111,7 @@ class MarketStore(
         codes: Sequence[str] | None = None,
         start: str | None = None,
         end: str | None = None,
+        include_source_details: bool = True,
     ) -> dict[str, object]:
         """返回研究可复现的行情仓摘要，不暴露本地缓存路径。"""
         quotes = self._time_series_snapshot("quotes_daily", timestamp_column="fetched_at")
@@ -126,7 +127,10 @@ class MarketStore(
             "quotes": quotes,
             "adjust_factors": adjust_factors,
             "instruments": self._instrument_snapshot(),
-            "source_evidence": self.source_evidence(codes=codes, start=start, end=end),
+            "source_evidence": self.source_evidence(
+                codes=codes, start=start, end=end,
+                **({"include_details": False} if not include_source_details else {}),
+            ),
         }
         return {**payload, "market_revision": self._revision_digest("market_revision")}
 

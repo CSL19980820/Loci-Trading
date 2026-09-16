@@ -2,11 +2,11 @@
 import { computed } from 'vue'
 
 /**
- * 空态 —— 一行主文案 + 最多一个主操作，整块不超过 96px。
+ * 空态 —— 一行主文案 + 最多一个主操作，铺满父级剩余高度并居中。
  *
- * 旧版是「大插图 + 三行解释 + 96px 图」，在密表页里一块空态比它要解释的表还高。
- * 规范（docs/ui-spec.md 空态规范）：主文案 ≤14 字讲「为什么空」，`reason` 一行讲
- * 「下一步」，两者合计 ≤24 字；插图一律不要——空不是异常，不需要一张图来渲染情绪。
+ * 旧版锁 `max-h-24`（96px）：文案自己是小岛，主区剩一大片白。
+ * 规范：主文案 ≤14 字讲「为什么空」，`reason` 一行讲「下一步」，
+ * 两者合计 ≤24 字；插图一律不要。高度吃满父级，内容居中。
  */
 const props = withDefaults(
   defineProps<{
@@ -32,55 +32,19 @@ const hint = computed(() => {
 </script>
 
 <template>
-  <div class="empty-state">
-    <p class="empty-state__main">{{ description }}</p>
-    <p v-if="hint" class="empty-state__hint" :title="hint">{{ hint }}</p>
-    <div v-if="$slots.default" class="empty-state__act">
+  <div class="empty-state flex h-full min-h-0 min-w-0 w-full flex-1 flex-col items-center justify-center gap-2 overflow-hidden px-3 py-6 text-center">
+    <p class="empty-state__title text-body text-ink m-0 max-w-full leading-snug font-medium break-words">{{ description }}</p>
+    <el-tooltip
+      v-if="hint"
+      :content="hint"
+      placement="top"
+      :show-after="200"
+      trigger="hover"
+    >
+      <p class="empty-state__hint text-aux text-mist m-0 max-w-[52ch] leading-snug [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden">{{ hint }}</p>
+    </el-tooltip>
+    <div v-if="$slots.default" class="mt-px flex items-center gap-2">
       <slot />
     </div>
   </div>
 </template>
-
-<style scoped>
-/*
- * 不用 el-empty：它自带插图槽与 40px 上下留白，收到 96px 以内要逐条对抗它的默认值，
- * 收完也只剩三个纯文本节点——那就直接三个节点。交互仍由调用方传 el-button。
- */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gap-1);
-  max-height: 96px;
-  padding: var(--gap-3) var(--gap-2);
-  overflow: hidden;
-  text-align: center;
-}
-
-.empty-state__main {
-  margin: 0;
-  font-size: var(--fs-body);
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--muted);
-}
-
-.empty-state__hint {
-  margin: 0;
-  max-width: 48ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--fs-aux);
-  line-height: 1.4;
-  color: var(--mist);
-}
-
-.empty-state__act {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-  margin-top: 1px;
-}
-</style>

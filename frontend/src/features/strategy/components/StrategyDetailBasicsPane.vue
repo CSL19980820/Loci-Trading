@@ -136,17 +136,17 @@ function activeVersion(row: StrategyVersion): boolean {
 .detail-desc :deep(.el-descriptions__content) { min-width: 0; word-break: normal; overflow-wrap: break-word; }
 /* 长文本块紧贴上一张表：两张表各带 1px 边框，-1px 才收成一条线 */
 .detail-desc--prose { margin-top: -1px; }
-.desc-text { line-height: 1.5; font-size: 0.82rem; white-space: pre-wrap; overflow-wrap: break-word; }
-.mono-text { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.76rem; color: var(--ink); }
+.desc-text { line-height: 1.5; font-size: var(--fs-aux); white-space: pre-wrap; overflow-wrap: break-word; }
+.mono-text { font-family: var(--mono); font-size: 0.76rem; color: var(--ink); }
 .field-tags, .version-row__meta, .version-row__actions { display: flex; flex-wrap: wrap; align-items: center; }
 .field-tags { gap: 0.35rem; }
-.field-key { margin-left: 0.35rem; color: var(--mist); font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 0.72rem; }
+.field-key { margin-left: 0.35rem; color: var(--mist); font-family: var(--mono); font-size: var(--fs-kicker); }
 .version-list { display: flex; flex-direction: column; gap: 0.15rem; }
-.mono { font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .version-history { margin-top: 1rem; }
 .version-history__title { margin-bottom: 0.35rem; font-size: 0.86rem; font-weight: 600; }
-.version-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--line, var(--el-border-color-lighter)); }
+.version-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--rule); }
 .version-row__meta { gap: 0.35rem; min-width: 0; }
 .version-row__actions { gap: 0.15rem; flex-shrink: 0; }
-.dim { color: var(--mist); font-size: 0.82rem; }
+.dim { color: var(--mist); font-size: var(--fs-aux); }
 </style>

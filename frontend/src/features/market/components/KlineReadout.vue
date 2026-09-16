@@ -102,7 +102,7 @@ const lockLimitTone = computed(() => {
 </script>
 
 <template>
-  <aside class="k-readout" aria-live="polite">
+  <aside class="k-readout" aria-label="K 线读数">
     <header class="k-readout__head">
       <div>
         <strong>{{ locked.bar.trade_date.replaceAll('-', '/') }}</strong>
@@ -169,6 +169,7 @@ const lockLimitTone = computed(() => {
 </template>
 
 <style scoped>
+/* 图内浮层（压图表不压弹层），组件内部层叠，不进全局 --z-* 序列 */
 .k-readout {
   position: absolute;
   top: 0.45rem;
@@ -179,14 +180,14 @@ const lockLimitTone = computed(() => {
   display: flex;
   flex-direction: column;
   overflow: auto;
-  border: 1px solid color-mix(in srgb, var(--rule) 70%, var(--seal) 18%);
+  border: 1px solid color-mix(in oklab, var(--rule) 70%, var(--seal) 18%);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--paper) 78%, transparent);
+  background: color-mix(in oklab, var(--sheet) 95%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   /* D3：卡片无阴影，靠 hairline 与半透明底分层 */
   pointer-events: auto;
-  user-select: none;
+  user-select: text;
 }
 .k-readout__head {
   display: flex;
@@ -194,10 +195,10 @@ const lockLimitTone = computed(() => {
   justify-content: space-between;
   gap: 0.35rem;
   padding: 0.4rem 0.45rem 0.3rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--rule) 65%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--rule) 65%, transparent);
   position: sticky;
   top: 0;
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  background: color-mix(in oklab, var(--paper) 88%, transparent);
   backdrop-filter: blur(8px);
 }
 .k-readout__head strong {
@@ -214,11 +215,11 @@ const lockLimitTone = computed(() => {
 .k-readout__close.el-button {
   --el-button-text-color: var(--mist);
   --el-button-hover-text-color: var(--ink);
-  --el-button-hover-bg-color: color-mix(in srgb, var(--sheet) 72%, transparent);
+  --el-button-hover-bg-color: color-mix(in oklab, var(--sheet) 72%, transparent);
   --el-button-active-text-color: var(--ink);
   flex: 0 0 auto;
-  width: 1.35rem;
-  height: 1.35rem;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
   margin: -0.18rem -0.15rem 0 0;
   padding: 0;
 }
@@ -234,7 +235,7 @@ const lockLimitTone = computed(() => {
   padding: 0.12rem 0;
   font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
-  border-bottom: 1px dashed color-mix(in srgb, var(--rule) 55%, transparent);
+  border-bottom: 1px dashed color-mix(in oklab, var(--rule) 55%, transparent);
 }
 .k-readout__row:last-child {
   border-bottom: 0;

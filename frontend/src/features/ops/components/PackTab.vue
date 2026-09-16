@@ -231,7 +231,7 @@ defineExpose({ load })
       <EmptyState
         v-else-if="!busy"
         description="还没有打包状态"
-        reason="点右上角「刷新」重新读取；若仍为空，说明本机尚未生成过分享包。"
+        reason="刷新后重新读取状态"
       />
     </div>
   </SettingsPanel>
@@ -241,6 +241,7 @@ defineExpose({ load })
 .pack-desk {
   padding: 0;
   min-height: 0;
+  min-width: 0;
 }
 
 .pack-alert,
@@ -249,8 +250,10 @@ defineExpose({ load })
 }
 
 .pack-manifest {
-  border: 0;
-  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
   position: relative;
 }
 
@@ -264,7 +267,8 @@ defineExpose({ load })
   padding: var(--gap-2) var(--gap-4);
   font-size: var(--fs-aux);
   color: var(--mist);
-  border-bottom: 1px dashed var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface-sunken);
 }
 
 .pack-lead__k {
@@ -288,21 +292,21 @@ defineExpose({ load })
   gap: 1px;
   padding: var(--gap-1) 0;
   background: var(--rule);
-  border-bottom: 1px dashed var(--rule);
+  border-bottom: 1px solid var(--rule);
 }
 
 .pack-opt {
   display: grid;
-  grid-template-columns: minmax(7rem, 10rem) 1fr auto;
+  grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr) auto;
   gap: var(--gap-2) var(--gap-3);
   align-items: center;
-  padding: var(--gap-2) var(--gap-4);
-  background: var(--sheet);
+  padding: var(--gap-3);
+  background: var(--surface);
   cursor: pointer;
 }
 
 .pack-opt.is-on {
-  background: color-mix(in srgb, var(--seal-soft) 70%, var(--sheet));
+  background: var(--surface-active);
 }
 
 .pack-opt.is-off {
@@ -310,10 +314,10 @@ defineExpose({ load })
   cursor: not-allowed;
 }
 
-/* 会带走个人数据的勾选项要一眼看出来 */
+/* 会带走个人数据的勾选项要一眼看出来：警告底 + 1px 描边（私密不是价格，不用涨红竖条） */
 .pack-opt.is-private {
-  background: color-mix(in srgb, var(--loss) 12%, var(--sheet));
-  box-shadow: inset 3px 0 0 var(--loss);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in oklab, var(--warn) 35%, var(--rule));
 }
 
 .pack-opt__label {
@@ -321,6 +325,7 @@ defineExpose({ load })
 }
 
 .pack-opt__desc {
+  overflow-wrap: anywhere;
   font-size: var(--fs-aux);
   color: var(--mist);
   line-height: 1.35;
@@ -344,6 +349,7 @@ defineExpose({ load })
 
 .pack-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-3);
@@ -351,6 +357,8 @@ defineExpose({ load })
 }
 
 .pack-estimate {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
   font-size: var(--fs-aux);
   color: var(--mist);
 }

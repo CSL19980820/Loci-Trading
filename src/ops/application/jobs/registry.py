@@ -41,6 +41,10 @@ from src.ops.application.jobs.prune import execute_prune
 from src.ops.application.jobs.prune_tenant import execute_prune_tenant
 from src.ops.application.jobs.screen import execute_screen
 from src.ops.application.jobs.skill import execute_skill
+from src.ops.application.jobs.guardian import execute_guardian
+from src.ops.application.jobs.guardian_review import execute_guardian_review
+from src.ops.application.jobs.guardian_delivery import execute_guardian_delivery
+from src.ops.application.jobs.exchange_calendar import execute_exchange_calendar
 from src.ops.application.jobs.skill_watch import execute_skill_watch
 from src.ops.application.jobs.sync import execute_sync
 from src.ops.infrastructure.store import OpsError, OpsStore
@@ -68,6 +72,10 @@ logger = logging.getLogger(__name__)
 #   notify / backtest / compare / optimize → 手动触发或用户在运维页自建 cron：
 #     都要 config 里点名 template / strategy / 区间，没有能托管的默认值
 EXECUTORS: dict[str, Executor] = {
+    "guardian": execute_guardian,
+    "guardian_review": execute_guardian_review,
+    "guardian_delivery": execute_guardian_delivery,
+    "exchange_calendar": execute_exchange_calendar,
     "sync": execute_sync,
     "screen": execute_screen,
     "backtest": execute_backtest,
@@ -344,7 +352,8 @@ def run_job(
             # 泵已停（stop 会 join 心跳线程），最后一拍补在这里：不让心跳线程和紧
             # 接着的 finish_run 抢同一条 run 的写锁。
             ctx.heartbeat()
-            ctx.check_cancelled()
+            if not (kind == "guardian" and isinstance(result, dict) and result.get("ledger_committed")):
+                ctx.check_cancelled()
     except JobSkipped as exc:
         # 同批写入已有人在做（行情闸门），不是故障：不刷红运维页、不推企微。
         logger.info("任务 %s 本轮跳过：%s", job.get("name"), exc)
@@ -425,6 +434,8 @@ def run_job(
 
     # 先定最终 status，再推企微 / 种子预案，避免库内红、企微绿
     status = "success"
+    if kind in {"guardian", "guardian_delivery"} and isinstance(result, dict) and result.get("status") == "failed":
+        status = "failed"
     if (
         isinstance(result, dict)
         and result.get("skipped")

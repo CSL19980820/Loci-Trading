@@ -1,5 +1,13 @@
 # AI（ai）
 
+手动「测试模型」发送一条短对话，使用 1024 输出 token 预算及供应商对话超时；
+避免 `max_tokens=1` 被 B.AI 等兼容接口拒绝，空正文也不会显示测试成功。
+保存供应商仍为离线操作，不自动测试或拉取模型目录。
+
+LLM 请求遇到发送前的连接失败（含 TLS 握手中断）或连接超时时，等待 1 秒、2 秒各重试一次。
+仅重试当前请求，保留 Agent 的工具结果；读写/流中断、HTTP 余额或参数错误不在该重试范围内，持续连接失败仍如实报错。
+回归：`tests/ai/test_connection_retry.py`。
+
 ## 职责
 通用 LLM 供应商、对话、Agent / toolbus。不发明数字。
 
@@ -87,6 +95,10 @@ submit_with_tenant(self._pool, self._run, run_id)    # 取代 self._pool.submit(
 - 回归：`tests/ai/test_tenant_threads.py`（含一条 AST 源码守卫，直接拦 revert）、
   `tests/ops/test_skill_run_tenant_threads.py`、`tests/strategy/test_analysis_tenant_threads.py`、
   `tests/research/test_research_tenant_threads.py`。
+
+### 上游结束原因
+
+流式适配器保留OpenAI `finish_reason`和Anthropic `stop_reason`，AgentResult.finish_reason及to_dict原样带给调用方；stopped_reason仍表示本地工具循环结束原因。结构化报告须区分正常结束与length/max_tokens截断，不能仅凭循环completed保存成功。
 
 ### 额度与计费
 
@@ -193,7 +205,7 @@ submit_with_tenant(self._pool, self._run, run_id)    # 取代 self._pool.submit(
 
 ## 如何扩展
 新工具挂 toolbus；新协议扩展 infrastructure/client。
-`resolve_config` / `get_model_entry` 会带上目录里的 `context_window` / `max_output_tokens`（本批不改 chat 请求公式）。
+`resolve_config` / `get_model_entry` 带上目录里的 `context_window` / `max_output_tokens`；Agent 每次模型请求由 `agent_budget.py` 按已知容量和剩余时间计算预算。
 
 ## 给 Agent 的用法
 - 对话：`from src.ai import chat, chat_stream, chat_text_with_thinking_fallback, ChatMessage, ToolCall, resolve_config`
@@ -208,3 +220,38 @@ submit_with_tenant(self._pool, self._run, run_id)    # 取代 self._pool.submit(
 
 ## 相关测试
 `tests/ai/`（含 `test_chat_thinking_fallback.py`、`test_assistant_evidence_agents.py`、`test_system_toolbus_contract.py`、`test_system_toolbus_web_ssrf.py`、`test_toolbus_observability.py`、`test_assistant_rich_state.py`、`test_context_compact.py`、`test_quota.py`、`test_tenant_isolation.py`、`test_tenant_threads.py`、`test_task_side_billing.py`、`test_share_pack_ai_tables.py`） · `tests/ops/test_model_catalog.py` · `tests/app/test_quant_api.py`（providers）
+## Agent 执行、容量与交易员证据
+
+`run_agent` 的 `max_tool_result_chars` 默认12000，`None` 保留完整工具正文。交易员使用完整正文；超长材料由自身的 `ResearchContext` 保存原文、SHA-256和分页入口，容量不足不能解释为查无数据。成功和异常终止均由 `evidence_snapshot` 在档案锁内深拷贝回执/文档，取消后的迟到工具不能修改已收口快照。完整执行边界见[交易员执行契约](../../docs/guardian-execution.md)。
+
+`agent_execution.py` 只并发调用方通过 `parallel_tool_names` 明确允许的独立只读工具，且受 `max_parallel_tools` 限制；默认不自动推断工具安全性。连续白名单请求可成组并行，白名单外请求形成顺序屏障，最终结果按模型原请求顺序回填。`ask_user` 不并发；暂停后的工具请求仍保留未执行回执。
+每次提交通过 `submit_with_tenant` 复制当前ContextVar；并发上限同时限制在途提交数。超过 `max_calls_per_round` 的每个请求ID都得到 `TOOL_NOT_EXECUTED`、`executed=false` 回执，不丢弃协议里的工具请求。MCP调用方还须保证可变客户端会话不跨线程/租户共享，不能只复制租户而共享session和request ID。
+
+`deadline` 是单调时钟绝对截止时刻。`agent_budget.request_config` 为每次请求及流式降级复制配置，将超时压到剩余预算；不修改共享供应商配置。取消、运维超时和协作式终止沿异常原因链传播，不能被包装成普通工具错误继续研究。未派发调用停止提交，已开始的同步只读调用不能由Python强杀，其迟到结果不得用于成交。
+
+`agent_budget.output_budget` 仅用明确配置的上下文窗口与输出上限。文本估算包含system、历史消息、工具schema、参数、调用ID和原始 `reasoning_content`；输出预算不超过已知窗口扣除估算输入后的余量。输入已超限或思考档位所需预算不足时明确报错，不静默删除消息、工具证据或推理。未知窗口不猜默认容量；图像token由上游编码决定，不按data URL的base64长度估算，文本预检不保证多模态请求一定可容纳。
+
+`agent_usage.py` 用ContextVar隔离每次Agent调用的已知用量；模型响应返回后即计入本次累计，随后取消也不漏记。异常携带本次调用增量，交易员 `run_accounted_agent` 分别记录研究、完整性修复和预检修正的增量，再累加到整轮诊断，不能重复记整轮累计。上游未返回的在途用量不猜测。
+
+`stopped_reason` 是本地循环状态，`finish_reason` / `stop_reason` 是上游结束状态。交易员成功须同时满足本地completed、上游stop/end_turn和完整schema，缺失结束原因不能直接放行；不完整正文最多一次无工具修复，仍须通过同一契约。`thinking_requested` 只记录请求的档位或 `provider_default`，不证明上游实际启用该档位或采用何种内部推理。返回的原始推理字段仍按下文规则回传。
+
+相关回归入口：`tests/ai/test_agent_execution.py`、`test_agent_budget.py`、`test_agent_usage.py`，以及 `tests/ops/test_guardian_agent_repair.py`、`test_guardian_usage.py`；测试结果以实际运行记录为准。
+
+## 保存模型配置
+
+供应商保存默认不校验 Key、不请求模型列表，前端“保存”直接落库。连通测试与模型目录刷新
+由用户单独触发；显式调用 `save_provider(validate=True)` 仍可用于主动验证。上下文容量是用户配置值。
+
+### DeepSeek 多轮推理回传
+
+OpenAI兼容接口的 `reasoning_content` 由流式/非流式响应原样保留到 ChatResponse，工具轮写入 ChatMessage，后续请求与 Agent 消息快照继续携带；HITL 暂停和恢复不丢字段。None 表示上游未提供，空字符串表示提供了空字段，不互相替换；不会给其他供应商凭空注入推理字段。
+
+序列化集中在 `application/agent_messages.py`，原 `agent.messages_to_json/messages_from_json` 入口保留。推理不混入工具结果或最终正文，也不按工具展示长度截断。
+
+回归：`tests/ai/test_reasoning_content.py` 覆盖6轮12次工具调用、长推理分片、空值与HITL续跑。
+
+携带工具定义时，DeepSeek要求非工具回合也回传推理：推理空回复恢复与最终回复的推理都进入消息快照，后续续问仍保留。依据 https://api-docs.deepseek.com/guides/thinking_mode/ 。
+
+### 自适应研究容量（2026-09-15）
+
+run_agent支持max_rounds=None（必须提供真实deadline）与max_calls_per_round=None。交易员研判/咨询/报告使用该模式，不再在16/8/5轮或12/6次调用处人为停止；其他调用方显式上限保持原契约。并发仍控制同时在途工作量，所有请求ID与已返回证据保留。agent_mcp.py承接MCP路由及轨迹格式化，agent.py继续兼容导出。交易员三个研究入口使用实际选定的thinking，并按run_accounted_agent记录成功和异常的用量增量；报告/咨询修复不伪造成功正文。

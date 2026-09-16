@@ -94,6 +94,7 @@ from src.market.application.screen_live import (
 from src.market.application.screen_spot import (
     ScreenSpotError,
     ensure_today_quotes_for_screen,
+    resolve_screen_trade_date,
     measure_day_coverage,
 )
 from src.market.infrastructure.write_lock import MarketWriteBusy, market_write_lock
@@ -208,7 +209,11 @@ from src.market.application.watchlist import (
     resolve_preset,
 )
 
+from src.market.infrastructure.exchange_calendar import scheduled_trading_days, calendar_trading_day, refresh_exchange_calendar
+
 __all__ = [
+    "scheduled_trading_days",
+    "calendar_trading_day", "refresh_exchange_calendar",
     "QualityThresholds",
     "inspect_market_data",
     "ALL_PRESETS",
@@ -285,6 +290,7 @@ __all__ = [
     "ScreenSpotError",
     "apply_today_spot",
     "ensure_today_quotes_for_screen",
+    "resolve_screen_trade_date",
     "fetch_live_spot_bars",
     "in_live_screen_clock",
     "overlay_live_day",

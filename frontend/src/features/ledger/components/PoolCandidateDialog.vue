@@ -7,6 +7,8 @@
  * 筛选与分页那一套。删除与看档案都往外抛——批次会话与列表刷新归页面管。
  */
 import { computed } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+import { Delete, Document } from '@element-plus/icons-vue'
 
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { decisionLabel, timingLabel } from '@/shared/lib/format'
@@ -27,6 +29,7 @@ const props = defineProps<{
 const emit = defineEmits<{ delete: [row: Candidate]; archive: [] }>()
 
 const open = defineModel<boolean>({ required: true })
+const narrow = useMediaQuery('(max-width: 640px)')
 
 const title = computed(() =>
   props.candidate ? `${props.candidate.name} · ${props.candidate.date}` : '候选详情',
@@ -40,16 +43,16 @@ const evidenceText = computed(() => {
 </script>
 
 <template>
-  <el-dialog v-model="open" :title="title" width="52rem" destroy-on-close>
+  <el-dialog v-model="open" :title="title" width="min(52rem, calc(100vw - 32px))" top="6vh" destroy-on-close>
     <template v-if="candidate">
       <el-descriptions
         class="pool-detail-desc"
-        :column="2"
+        :column="narrow ? 1 : 2"
         border
         size="small"
         label-width="var(--form-label-w)"
       >
-        <el-descriptions-item label="日期">{{ candidate.date }}</el-descriptions-item>
+        <el-descriptions-item label="日期"><span class="mono">{{ candidate.date }}</span></el-descriptions-item>
         <el-descriptions-item label="标的">
           <StockLink
             :code="candidate.code"
@@ -61,22 +64,28 @@ const evidenceText = computed(() => {
         <el-descriptions-item label="战法">{{ strategyText }}</el-descriptions-item>
         <el-descriptions-item label="裁决">{{ decisionLabel(candidate.decision) }}</el-descriptions-item>
         <el-descriptions-item label="时点">{{ timingLabel(candidate.timing) }}</el-descriptions-item>
-        <el-descriptions-item label="评分">{{ candidate.score ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="评分"><strong class="mono">{{ candidate.score ?? '—' }}</strong></el-descriptions-item>
         <el-descriptions-item label="池">{{ poolText }}</el-descriptions-item>
         <el-descriptions-item label="来源">{{ sourceText }}</el-descriptions-item>
-        <el-descriptions-item label="理由" :span="2">{{ candidate.reason }}</el-descriptions-item>
+        <el-descriptions-item label="理由" :span="narrow ? 1 : 2">{{ candidate.reason || '—' }}</el-descriptions-item>
       </el-descriptions>
-      <pre v-if="evidenceText" class="evidence">{{ evidenceText }}</pre>
+      <el-collapse v-if="evidenceText" class="evidence-panel">
+        <el-collapse-item title="证据数据" name="evidence">
+          <pre class="evidence">{{ evidenceText }}</pre>
+        </el-collapse-item>
+      </el-collapse>
     </template>
     <template #footer>
       <el-button @click="open = false">关闭</el-button>
-      <el-button v-if="candidate" type="danger" plain @click="emit('delete', candidate)">删除</el-button>
-      <el-button v-if="candidate" type="primary" @click="emit('archive')">看档案</el-button>
+      <el-button v-if="candidate" type="danger" plain :icon="Delete" @click="emit('delete', candidate)">删除</el-button>
+      <el-button v-if="candidate" type="primary" :icon="Document" @click="emit('archive')">看档案</el-button>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
+.evidence-panel { margin-top: var(--gap-2); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .evidence {
   margin: var(--gap-2) 0 0;
   padding: var(--gap-2);

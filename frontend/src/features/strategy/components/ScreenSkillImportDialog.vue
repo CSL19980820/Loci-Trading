@@ -47,7 +47,7 @@ watch(visible, (open) => {
     width="min(50rem, 94vw)"
     destroy-on-close
   >
-    <div class="import-toolbar">
+    <div class="mb-3 flex items-center justify-between gap-3">
       <el-segmented v-model="kind" :options="kindOptions" />
     </div>
     <CodeEditor v-model="source" :language="language" height="26rem" />
@@ -59,11 +59,5 @@ watch(visible, (open) => {
 </template>
 
 <style scoped>
-.import-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
+/* 工具条版式已上移到模板工具类 */
 </style>

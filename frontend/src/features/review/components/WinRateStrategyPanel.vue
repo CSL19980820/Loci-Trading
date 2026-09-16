@@ -3,8 +3,9 @@ import { computed, ref } from 'vue'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import UiButton from '@/shared/components/ui/UiButton.vue'
 import { price, signedPct } from '@/shared/lib/format'
 import {
   sampleBadgeLabel,
@@ -179,7 +180,7 @@ function badgeClass(total: unknown): string {
 </script>
 
 <template>
-  <div class="wr-panel">
+  <div class="wr-panel" v-loading="busy" :aria-busy="busy">
     <!-- 结论行：主数字 + 口径注脚 + 推导公式。四项注脚原来各带一圈边框占掉
          一整行，把下面两张表挤出视口——它们是胜率的注脚，不是四个 KPI。 -->
     <section class="wr-summary" aria-label="战法战绩总览">
@@ -243,7 +244,7 @@ function badgeClass(total: unknown): string {
             />
           </div>
           <div class="wr-card__metric">
-            <span class="wr-card__num mono tone-up">{{ signedPct(bestSample.return_pct) }}</span>
+            <span class="wr-card__num mono" :class="tone(bestSample.return_pct)">{{ signedPct(bestSample.return_pct) }}</span>
             <span v-if="bestSample.max_favorable_pct != null" class="wr-card__sub mono dim">
               最高冲幅 {{ signedPct(bestSample.max_favorable_pct) }}
             </span>
@@ -269,10 +270,8 @@ function badgeClass(total: unknown): string {
             />
           </div>
           <div class="wr-card__metric">
-            <span class="wr-card__num mono tone-down">{{ signedPct(worstSample.return_pct) }}</span>
-            <span v-if="worstSample.max_favorable_pct != null" class="wr-card__sub mono dim">
-              回撤底 {{ signedPct(worstSample.return_pct) }}
-            </span>
+            <span class="wr-card__num mono" :class="tone(worstSample.return_pct)">{{ signedPct(worstSample.return_pct) }}</span>
+
           </div>
         </div>
         <div v-else class="wr-card__empty dim">尚无走完窗口的样本</div>
@@ -289,7 +288,7 @@ function badgeClass(total: unknown): string {
         <div v-if="bestHorizon" class="wr-card__body">
           <div class="wr-card__target">
             <span class="wr-horizon-pill mono">T+{{ bestHorizon.horizon }}</span>
-            <span class="wr-horizon-tip dim">胜率收益兼优推荐</span>
+            <span class="wr-horizon-tip dim">历史样本比较</span>
           </div>
           <div class="wr-card__metric">
             <span class="wr-card__num mono" :class="winRateDisplayTone(bestHorizon.win_rate, bestHorizon.n)">
@@ -315,19 +314,20 @@ function badgeClass(total: unknown): string {
           </div>
         </div>
         <BasicTable
-          v-if="horizonRows.length"
           :columns="horizonColumns"
           :data-source="horizonRows"
           :pagination="false"
           :row-class-name="horizonRowClass"
           row-key="key"
+          empty-text="还没有可比的持有期"
+          empty-reason="精选候选要先走完 T+1 才有第一档"
           @row-click="(row: Record<string, unknown>) => toggleHorizon(row.horizon)"
         >
           <template #horizon="{ row }">
-            <span class="wr-horizon-badge">
+            <el-button text size="small" class="wr-horizon-badge" :aria-pressed="activeHorizon === row.horizon" :aria-label="`高亮 T+${row.horizon} 收益`" @click.stop="toggleHorizon(row.horizon)">
               <strong class="mono">T+{{ row.horizon }}</strong>
               <span v-if="row.key === bestHorizonKey" class="wr-best-badge">最佳</span>
-            </span>
+            </el-button>
           </template>
           <template #winRate="{ row }">
             <span class="mono" :class="winRateDisplayTone(Number(row.win_rate), Number(row.n))">
@@ -344,12 +344,6 @@ function badgeClass(total: unknown): string {
             <span class="mono" :class="tone(row.worst as number)">{{ signedPct(row.worst as number) }}</span>
           </template>
         </BasicTable>
-        <EmptyState
-          v-else
-          description="还没有可比的持有期"
-          reason="精选候选要先走完 T+1 才有第一档"
-          :image-size="64"
-        />
       </section>
 
       <!-- 样本明细（支持快捷过滤与个股穿透） -->
@@ -363,72 +357,45 @@ function badgeClass(total: unknown): string {
             <span v-if="detail?.truncated" class="wr-block__tip dim">仅显示最近 {{ sampleRows.length }} 条</span>
           </div>
 
-          <div class="wr-block__actions">
-            <!-- 周期筛选激活指示胶囊 -->
-            <button
-              v-if="selectedPeriod"
-              type="button"
-              class="period-filter-chip"
-              title="点击清除周期过滤"
-              @click="emit('clearPeriod')"
-            >
-              周期: {{ selectedPeriod }} ✕
-            </button>
-
-            <!-- 标的搜索框 -->
+          <div class="flex min-w-0 flex-wrap items-center gap-2">
+            <UiBadge v-if="selectedPeriod" variant="default">
+              周期: {{ selectedPeriod }}
+              <UiButton size="sm" variant="ghost" aria-label="清除周期筛选" @click="emit('clearPeriod')">✕</UiButton>
+            </UiBadge>
             <el-input
               v-model="searchQuery"
               size="small"
               placeholder="搜代码/名称"
+              aria-label="筛选样本代码或名称"
               clearable
-              class="sample-search-input"
+              class="w-30 shrink-0"
             />
-
-            <!-- 便捷筛选分段胶囊 -->
-            <div class="sample-filter-group" role="tablist" aria-label="样本筛选">
-              <button
-                type="button"
-                class="filter-pill"
-                :class="{ 'is-active': filterTab === 'all' }"
-                @click="filterTab = 'all'"
-              >
+            <div class="bg-sunken border-line inline-flex items-center gap-0.5 rounded-md border p-0.5" role="group" aria-label="样本筛选">
+              <UiButton size="sm" :variant="filterTab === 'all' ? 'secondary' : 'ghost'" :aria-pressed="filterTab === 'all'" @click="filterTab = 'all'">
                 全部 ({{ sampleRows.length }})
-              </button>
-              <button
-                type="button"
-                class="filter-pill filter-pill--win"
-                :class="{ 'is-active': filterTab === 'win' }"
-                @click="filterTab = 'win'"
-              >
+              </UiButton>
+              <UiButton size="sm" :variant="filterTab === 'win' ? 'secondary' : 'ghost'" :aria-pressed="filterTab === 'win'" @click="filterTab = 'win'">
                 盈利 ({{ winSamplesCount }})
-              </button>
-              <button
-                type="button"
-                class="filter-pill filter-pill--loss"
-                :class="{ 'is-active': filterTab === 'loss' }"
-                @click="filterTab = 'loss'"
-              >
+              </UiButton>
+              <UiButton size="sm" :variant="filterTab === 'loss' ? 'secondary' : 'ghost'" :aria-pressed="filterTab === 'loss'" @click="filterTab = 'loss'">
                 亏损 ({{ lossSamplesCount }})
-              </button>
-              <button
-                type="button"
-                class="filter-pill filter-pill--pending"
-                :class="{ 'is-active': filterTab === 'pending' }"
-                @click="filterTab = 'pending'"
-              >
+              </UiButton>
+              <UiButton size="sm" :variant="filterTab === 'pending' ? 'secondary' : 'ghost'" :aria-pressed="filterTab === 'pending'" @click="filterTab = 'pending'">
                 观察中 ({{ pendingSamplesCount }})
-              </button>
+              </UiButton>
             </div>
           </div>
         </div>
 
         <BasicTable
-          v-if="filteredSamples.length"
           :columns="sampleColumns"
           :data-source="filteredSamples"
           :pagination="false"
           max-height="380"
+          :loading="busy"
           row-key="candidate_id"
+          empty-text="这个战法还没有精选样本"
+          empty-reason="只有裁决为「精选」的候选才进胜率"
         >
           <template #baseDate="{ row }">
             <span class="mono dim">{{ row.base_date }}</span>
@@ -472,25 +439,29 @@ function badgeClass(total: unknown): string {
           </template>
           <template #win="{ row }">
             <span class="wr-outcome-tag" :class="outcomeTone(row.win)">
-              <span class="wr-outcome-dot" />
               {{ outcomeLabel(row.win) }}
             </span>
           </template>
+          <template #empty>
+            <EmptyState
+              v-if="busy"
+              description="加载样本…"
+              :image-size="64"
+            />
+            <EmptyState
+              v-else-if="!sampleRows.length"
+              description="这个战法还没有精选样本"
+              reason="只有裁决为「精选」的候选才进胜率"
+              :image-size="64"
+            />
+            <EmptyState
+              v-else
+              description="当前筛选下无匹配样本"
+              reason="请切换筛选标签查看全部"
+              :image-size="64"
+            />
+          </template>
         </BasicTable>
-
-        <PageBusy v-else-if="busy" label="加载样本…" />
-        <EmptyState
-          v-else-if="!sampleRows.length"
-          description="这个战法还没有精选样本"
-          reason="只有裁决为「精选」的候选才进胜率"
-          :image-size="64"
-        />
-        <EmptyState
-          v-else
-          description="当前筛选下无匹配样本"
-          reason="请切换筛选标签查看全部"
-          :image-size="64"
-        />
       </section>
     </div>
   </div>

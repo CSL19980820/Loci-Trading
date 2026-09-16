@@ -10,6 +10,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { artifactShellTitle, parseEchartsOption } from '../assistantArtifacts'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
 import './assistant-card.css'
@@ -54,7 +55,7 @@ onBeforeUnmount(() => {
       <h3>{{ artifactShellTitle(artifact) }}</h3>
     </div>
     <div v-if="option" ref="root" class="assistant-echarts-card__canvas" role="img" />
-    <el-empty v-else :image-size="48" description="统计图 option 无效或未通过校验" />
+    <EmptyState v-else description="统计图生成失败" reason="换个问法重问" />
   </section>
 </template>
 

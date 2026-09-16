@@ -77,6 +77,9 @@ class TdxPoolResilienceTests(unittest.TestCase):
             def connect(self, _host, _port, time_out=None):
                 return True
 
+            def get_security_bars(self, *_args):
+                return [{"close": 10.0}]
+
         tdx_daily._mark_pool_down()
         tdx_daily._clear_pool_down()
         with patch.object(tdx_daily, "_api_class", return_value=_LiveApi):

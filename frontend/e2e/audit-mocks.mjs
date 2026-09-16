@@ -297,6 +297,17 @@ db_bytes: 0,
   '/ops/market-sync': { running: false, percent: 0, message: '' },
   '/market/bootstrap': { needed: false, kind: 'none' },
   '/screen/run': { runs: {}, running: false },
+  // GuardianStatus：这里是空账户界面夹具，不触发研判或交易。
+  '/ops/guardian': {
+    config: { enabled: false, provider: '', model: '', prompt: '', strategies: [], notify: false },
+    default_prompt: '仅供界面验收', job_id: null,
+    state: { account_version: 1, initial_capital_cents: 0, cash_cents: 0, equity_cents: 0,
+      market_value_cents: 0, realized_pnl_cents: 0, unrealized_pnl_cents: 0, total_pnl_cents: 0,
+      fees_cents: 0, positions: [], stale_codes: [] },
+    trades: { items: [], total: 0 }, performance: [], runs: [], reports: [], watchlist: [], active_strategies: [],
+  },
+  '/ops/guardian/trades': { items: [], total: 0 },
+  '/ops/guardian/consultations': { conversations: [] },
 }
 
 /** 契约是数组的端点。命中即覆盖 pulse-mocks 的 `{}` 兜底。 */
@@ -304,6 +315,7 @@ const ARRAY_ENDPOINTS = [
   // Candidate[] / ReviewRecord[] / UniversePreset[] / StrategyInfo[] / TimelineEvent[]
   '/candidates/list',
   '/reviews',
+  '/review/plans',
   '/universe/presets',
   '/screen-skills',
   '/timeline/',

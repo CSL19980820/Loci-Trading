@@ -264,7 +264,7 @@ async function copyJson(): Promise<void> {
 .hint {
   margin: 0 0 0.6rem;
   color: var(--mist);
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
   line-height: 1.6;
 }
 
@@ -276,7 +276,7 @@ async function copyJson(): Promise<void> {
 .spec {
   display: grid;
   gap: 0.3rem;
-  font-size: 0.85rem;
+  font-size: var(--fs-body);
 }
 
 .spec__row {
@@ -295,7 +295,7 @@ async function copyJson(): Promise<void> {
   padding-left: 1.1rem;
   display: grid;
   gap: 0.35rem;
-  font-size: 0.82rem;
+  font-size: var(--fs-aux);
   line-height: 1.6;
 }
 
@@ -307,7 +307,7 @@ async function copyJson(): Promise<void> {
   background: var(--sheet-alt);
   border: 1px solid var(--rule);
   border-radius: 4px;
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
   line-height: 1.5;
   white-space: pre;
 }

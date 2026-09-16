@@ -9,7 +9,6 @@ import PageContainer from '@/shared/components/layout/PageContainer.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
 import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import RowActions from '@/shared/components/ui/RowActions.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import { zipFolderFiles } from '@/shared/lib/zipStore'
@@ -72,7 +71,6 @@ const filterSchemas: BasicFormSchema[] = [
     field: 'name',
     label: '名称',
     component: 'input',
-    colSpan: 8,
     componentProps: {
       clearable: true,
       placeholder: '模糊查询技能名',
@@ -244,7 +242,7 @@ async function onFolderSelected(event: Event): Promise<void> {
 </script>
 
 <template>
-  <div class="skills-panel">
+  <div class="skills-panel strategy-surface">
     <!-- 原生 file：选 zip / 选文件夹（webkitdirectory）；由「上传技能」触发 -->
     <input
       ref="zipInput"
@@ -268,27 +266,32 @@ async function onFolderSelected(event: Event): Promise<void> {
             ref="basicFormRef"
             v-model="filterModel"
             :schemas="filterSchemas"
-            :col-props="{ span: 8 }"
+            :columns="3"
             :input-debounce-ms="0"
             label-width="6.5em"
           />
         </div>
         <div class="skills-search-actions">
-          <el-button type="primary" :icon="Search" @click="handleSubmit">查询</el-button>
+          <el-button type="primary" :icon="Search" @click="handleSubmit">筛选</el-button>
           <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
         </div>
       </template>
       <template #main>
         <BasicTable
-          v-if="filteredRows.length || loading"
           v-model:columns="columns"
           :data-source="filteredRows"
           :pagination="false"
           :loading="loading || installing"
           :toolbar-config="{ refresh: true }"
+          height="100%"
           stripe
           row-key="slug"
-          empty-text="无匹配技能"
+          :empty-text="nameQuery.trim() ? '当前筛选下无结果，可点重置' : '还没有技能'"
+          :empty-reason="
+            nameQuery.trim()
+              ? ''
+              : '上传技能或从模板同步'
+          "
           @row-click="onRowClick"
           @refresh="emit('refresh')"
         >
@@ -297,6 +300,7 @@ async function onFolderSelected(event: Event): Promise<void> {
               size="small"
               :disabled="installing"
               @click="syncFromTemplates"
+              :icon="RefreshRight"
             >
               从模板同步战法
             </el-button>
@@ -318,12 +322,12 @@ async function onFolderSelected(event: Event): Promise<void> {
             </el-dropdown>
           </template>
           <template #name="{ row }">
-            <strong>{{ displayName(row.name, row.slug) }}</strong>
+            <el-button link class="catalog-name" :aria-label="`查看${displayName(row.name, row.slug)}详情`" @click.stop="onRowClick(row)">{{ displayName(row.name, row.slug) }}</el-button>
           </template>
           <template #enabled="{ row }">
             <el-tag
               size="small"
-              :type="row.enabled === false ? 'info' : 'success'"
+              :type="row.enabled === false ? 'info' : 'primary'"
               effect="plain"
             >
               {{ row.enabled === false ? '停用' : '启用' }}
@@ -363,36 +367,6 @@ async function onFolderSelected(event: Event): Promise<void> {
             />
           </template>
         </BasicTable>
-        <EmptyState
-          v-else
-          description="还没有技能"
-          reason="本机安装技能包后会出现在这里"
-          eta="点「从模板同步战法」或「上传技能」"
-        >
-          <el-button
-            type="primary"
-            plain
-            :disabled="installing"
-            @click="syncFromTemplates"
-          >
-            从模板同步战法
-          </el-button>
-          <el-dropdown
-            split-button
-            type="primary"
-            :disabled="installing"
-            @click="pickZip"
-            @command="onUploadCommand"
-          >
-            上传技能
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="zip">选择 zip</el-dropdown-item>
-                <el-dropdown-item command="folder">选择文件夹</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </EmptyState>
       </template>
     </PageContainer>
 
@@ -434,10 +408,11 @@ async function onFolderSelected(event: Event): Promise<void> {
 .more,
 .dim {
   color: var(--mist);
-  font-size: 0.78rem;
+  font-size: var(--fs-aux);
 }
 
 :deep(.el-dropdown) {
   vertical-align: middle;
 }
 </style>
+<style scoped src="./StrategySurfaces.css"></style>

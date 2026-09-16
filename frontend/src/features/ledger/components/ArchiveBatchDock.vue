@@ -70,7 +70,7 @@ function onSelect(code: string): void {
     :model-value="drawerOpen"
     :title="`${drawerTitle} · ${items.length}`"
     direction="ltr"
-    size="78%"
+    size="min(22rem, 88vw)"
     append-to-body
     @update:model-value="emit('update:drawerOpen', $event)"
   >
@@ -98,7 +98,7 @@ function onSelect(code: string): void {
 .batch-dock {
   display: flex;
   flex-direction: column;
-  width: 12.25rem;
+  width: 14rem;
   flex-shrink: 0;
   min-height: 0;
   border-right: 1px solid var(--rule);
@@ -182,11 +182,23 @@ function onSelect(code: string): void {
   --el-button-text-color: var(--ink);
   --el-button-hover-text-color: var(--ink);
   --el-button-bg-color: transparent;
-  --el-button-hover-bg-color: color-mix(in srgb, var(--seal) 8%, transparent);
+  --el-button-hover-bg-color: color-mix(in oklab, var(--seal) 8%, transparent);
   --el-button-border-color: transparent;
   --el-button-hover-border-color: transparent;
 }
 
+.batch-dock__row > :deep(span) {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--gap-2);
+  width: 100%;
+  min-width: 0;
+}
+.batch-dock__row:focus-visible {
+  outline: 2px solid var(--seal);
+  outline-offset: -2px;
+}
 .batch-dock__row.is-active {
   background: var(--seal-soft);
   font-weight: 600;

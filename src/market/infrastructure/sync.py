@@ -82,6 +82,7 @@ def _fetch_daily_for_sync(
     sources: Sequence[QuoteSource] | None,
     receipt: list[dict[str, Any]] | None = None,
     recent_bars: int | None = None,
+    authoritative_only: bool = False,
 ) -> tuple[pd.DataFrame, str]:
     """显式 source 走串行降级链（不支持近窗），默认走适配器粘性竞速。"""
     if sources is not None:
@@ -94,6 +95,7 @@ def _fetch_daily_for_sync(
             instrument_type=instrument_type,
             receipt=receipt,
             recent_bars=recent_bars,
+            **({"adapter_ids": ["tdx"], "cross_check": False} if authoritative_only else {}),
         )
     except AdapterError as exc:
         raise SourceError(str(exc)) from exc
@@ -307,6 +309,8 @@ def _watermark_is_fresh(mark: Any, fresh_threshold: str) -> bool:
         return False
     if _is_spot_watermark(mark):
         return False
+    if str(mark["source"] or "") in {"tencent", "sina", "eastmoney", "baostock", "wudao"}:
+        return False  # 回退成功不代表权威源已恢复，同日仍需重试。
     return str(mark["last_synced_at"] or "")[:10] >= fresh_threshold
 
 
@@ -324,12 +328,15 @@ def sync_quotes(
     with_today_spot: bool = True,
     progress: Callable[[int, int, str], None] | None = None,
     chunk_size: int | None = None,
+    authoritative_only: bool = False,
 ) -> SyncReport:
     """同步一批证券历史日 K；每个终态均保留逐代码来源回执。
 
     结构见 ``sync_engine`` 的模块注释：预热一次、取数并发扇出、落库单写批量。
     取数线程完全不碰 SQLite，因此全程只用主线程这一条连接。
     """
+    if authoritative_only and sources is not None:
+        raise ValueError("authoritative_only 不允许自定义回退 sources")
     types = dict(instrument_types or ())
     worker_count = max(1, int(workers))
     limiter = _RateLimiter(min_interval, slots=worker_count)
@@ -375,7 +382,7 @@ def sync_quotes(
                     raise
                 instrument_type = types.get(code, "STOCK")
                 mark = prefetch.watermark(code)
-                list_date = "" if force else listing_day_without_history(
+                list_date = "" if force or authoritative_only else listing_day_without_history(
                     prefetch, code, today=today_iso
                 )
                 if list_date:
@@ -395,7 +402,7 @@ def sync_quotes(
                     if factor_stale
                     else None
                 )
-                if not force and _watermark_is_fresh(mark, fresh_threshold):
+                if not force and not authoritative_only and _watermark_is_fresh(mark, fresh_threshold):
                     return sync_engine.Outcome(
                         code=code,
                         kind="skip",
@@ -420,6 +427,7 @@ def sync_quotes(
                     sources=sources,
                     receipt=attempts,
                     recent_bars=recent_bars,
+                    **({"authoritative_only": True} if authoritative_only else {}),
                 )
                 if frame is None or frame.empty:
                     raise SourceError("日线源返回空数据")

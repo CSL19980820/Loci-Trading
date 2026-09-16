@@ -340,7 +340,7 @@ async function submit(): Promise<void> {
     />
     <el-alert
       v-if="submitError"
-      class="record-dialog__error"
+      class="record-dialog__error mt-2"
       :title="submitError"
       type="error"
       show-icon
@@ -354,12 +354,6 @@ async function submit(): Promise<void> {
     </template>
   </el-dialog>
 </template>
-
-<style scoped>
-.record-dialog__error {
-  margin-top: var(--gap-2);
-}
-</style>
 
 <style>
 /*

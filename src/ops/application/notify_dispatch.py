@@ -197,6 +197,10 @@ def dispatch_text(
     ``skipped="rate_limited"``——与 ``quiet_hours`` 同构，调用方能区分「刻意没发」
     和「发失败」，别把降噪记成故障。
     """
+    from src.ops.application.notify_calendar import notification_silence_reason
+    silence = notification_silence_reason()
+    if silence:
+        return {"success": False, "skipped": silence, "sent": [], "suppressed": []}
     policy = load_notify_policy(store)
     if not bypass_quiet and policy.is_quiet_now():
         return {"success": False, "skipped": "quiet_hours", "sent": [], "suppressed": []}

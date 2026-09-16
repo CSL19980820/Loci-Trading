@@ -1,6 +1,7 @@
 /** 策略：选股 / 回测 / 分析 / 转换 / 档案 / 审计 / 洞察。 */
 import { abortableSleep, quantRequest, query, toAbortError } from '@/shared/api/quant_client'
 import { getJobRuns } from '@/shared/api/quant_ops'
+import type { BacktestExecutionConfig } from '@/shared/types/backtest-config'
 import type {
   AnalysisStarted,
   BacktestResult,
@@ -177,19 +178,12 @@ export function cancelScreenRun(strategy?: string): Promise<{
  * 全市场回测是几十秒级的同步请求；`signal` 让调用方能在用户点「停止」时
  * 断掉等待（`palace.ts` 的 request 已把调用方 signal 桥到自己的超时 controller）。
  */
-export function runBacktest(payload: {
+export function runBacktest(payload: BacktestExecutionConfig & {
   strategy: string
   start?: string
   end?: string
   mode?: 'trade' | 'horizon'
   horizons?: number[]
-  hold_days?: number
-  stop_loss_pct?: number | null
-  take_profit_pct?: number | null
-  commission_bps?: number
-  stamp_duty_bps?: number
-  slippage_bps?: number
-  benchmark?: string | null
   codes?: string[]
   params?: Record<string, unknown>
   universe?: UniverseSpec

@@ -180,6 +180,10 @@ def mask_wecom_webhook(url: str) -> str:
 
 def send_wecom_text(webhook_url: str, content: str) -> dict[str, Any]:
     """企微唯一出站通道：text。经出站队列串行，失败最多 3 次。"""
+    from src.ops.application.notify_calendar import notification_silence_reason
+    silence = notification_silence_reason()
+    if silence:
+        return {"success": False, "skipped": silence}
     url = validate_wecom_webhook(webhook_url)
     body = json.dumps(
         {"msgtype": "text", "text": {"content": _clip(content, MAX_TEXT_CHARS)}},

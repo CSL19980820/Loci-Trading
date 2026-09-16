@@ -70,7 +70,7 @@ const chips = computed(() => {
 
 const line = computed(() => {
   if (props.briefLoading) return '情报读取中…'
-  if (props.briefError) return '情报暂不可用（不影响盘面）'
+  if (props.briefError) return '情报暂不可用'
   if (!chips.value.length) return ''
   const day = props.brief?.trade_date || ''
   return [day, ...chips.value].filter(Boolean).join(' · ')
@@ -97,7 +97,7 @@ const tip = computed(() => {
   if (unlock) {
     extra.push(`最大解禁 ${unlock.code} ${unlock.float_date.slice(4)} ${(unlock.float_ratio ?? 0).toFixed(1)}%`)
   }
-  const head = `${cached}只读 intel_snapshots，不现场调 MCP`
+  const head = `${cached}最近一次情报快照`
   return extra.length ? `${head}\n${extra.join('\n')}` : head
 })
 
@@ -106,7 +106,7 @@ const visible = computed(() => Boolean(line.value))
 
 <template>
   <el-tooltip v-if="visible" :content="tip" placement="bottom" :show-after="200">
-    <div class="intel-tape" aria-label="短线情报">
+    <div class="intel-tape flex min-w-0 flex-none items-baseline gap-2" aria-label="短线情报" tabindex="0">
       <span class="intel-tape__k">情报</span>
       <span class="intel-tape__line">{{ line }}</span>
     </div>
@@ -115,11 +115,6 @@ const visible = computed(() => Boolean(line.value))
 
 <style scoped>
 .intel-tape {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: baseline;
-  gap: var(--gap-2);
-  min-width: 0;
   padding: 1px var(--gap-2) 2px;
   border: 1px solid var(--rule);
   border-radius: var(--radius);
