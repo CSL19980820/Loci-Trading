@@ -104,7 +104,7 @@ def build_quant_router(
         )
     )
     router.include_router(
-        build_review_router(market_db=market_db, palace_db=palace_db)
+        build_review_router(market_db=market_db, palace_db=palace_db, ops_db=None)
     )
     router.include_router(
         build_research_api_router(

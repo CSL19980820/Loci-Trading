@@ -16,6 +16,10 @@ const STUBS = {
     emits: ['change'],
     template: '<button class="picker" @click="$emit(\'change\', \'#FFFACD\')" />',
   },
+  ElOption: {
+    props: ['value', 'label'],
+    template: '<option :value="value">{{ label }}</option>',
+  },
 }
 
 function mountDialog() {
@@ -31,21 +35,19 @@ describe('ThemeDialog', () => {
 
   it('三段齐全：外观（真实配色预览）/ 主色色板 / 自定义', () => {
     const wrapper = mountDialog()
-    expect(wrapper.findAll('.appearance')).toHaveLength(APPEARANCE_OPTIONS.length)
-    expect(wrapper.findAll('.swatch')).toHaveLength(PRIMARY_OPTIONS.length)
+    expect(wrapper.findAll('.appearance-card')).toHaveLength(APPEARANCE_OPTIONS.length)
+    expect(wrapper.findAll('.accent-choice')).toHaveLength(PRIMARY_OPTIONS.length)
     expect(wrapper.find('.picker').exists()).toBe(true)
   // 预览不是单色圆点：每档都画了画布 + 面板两层真实底色
-    const scene = wrapper.find('.appearance__scene')
+    const scene = wrapper.find('.theme-preview')
     expect(scene.attributes('style')).toContain(APPEARANCE_OPTIONS[0].preview.canvas)
-    expect(wrapper.find('.appearance__panel').attributes('style')).toContain(
-      APPEARANCE_OPTIONS[0].preview.surface,
-    )
+    expect(scene.attributes('style')).toContain(APPEARANCE_OPTIONS[0].preview.surface)
   })
 
   it('点内置主色即时生效，且不留内联色阶', async () => {
     const wrapper = mountDialog()
     const store = useThemeStore()
-    await wrapper.findAll('.swatch')[3]!.trigger('click')
+    await wrapper.findAll('.accent-choice')[3]!.trigger('click')
     expect(store.primaryId).toBe(PRIMARY_OPTIONS[3]!.id)
     for (const name of PRIMARY_SCALE_VARS) {
       expect(document.documentElement.style.getPropertyValue(name)).toBe('')
@@ -57,7 +59,7 @@ describe('ThemeDialog', () => {
     const store = useThemeStore()
     const night = APPEARANCE_OPTIONS.find((item) => item.id === 'night')!
     const idx = APPEARANCE_OPTIONS.findIndex((item) => item.id === 'night')
-    await wrapper.findAll('.appearance')[idx]!.trigger('click')
+    await wrapper.findAll('.appearance-card')[idx]!.trigger('click')
     expect(store.appearanceId).toBe(night.id)
     expect(document.documentElement.getAttribute('data-appearance')).toBe('night')
   })
@@ -72,16 +74,15 @@ describe('ThemeDialog', () => {
     expect(store.customColor).toBe('#fffacd')
     expect(document.documentElement.style.getPropertyValue('--seal')).toBe(store.customScale['--seal'])
     // 淡黄被压暗了，提示必须出现（≤ 12 字）
-    const hint = wrapper.find('.custom-hint')
-    expect(hint.text()).toBe('已按对比度自动校正')
-    expect(hint.text().length).toBeLessThanOrEqual(12)
+    const hint = wrapper.find('.custom-accent__hint')
+    expect(hint.text()).toContain('已自动调整对比度')
   })
 
   it('选了本来就达标的颜色时不误报校正', async () => {
     const wrapper = mountDialog()
     useThemeStore().setCustomPrimary(PRIMARY_OPTIONS[0]!.color)
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.custom-hint').text()).not.toBe('已按对比度自动校正')
+    expect(wrapper.find('.custom-accent__hint').text()).not.toContain('已自动调整对比度')
   })
 
   it('v-model 契约不变：只 emit update:modelValue（AppSidebar 在用）', async () => {

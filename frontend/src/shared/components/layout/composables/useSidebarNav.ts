@@ -13,19 +13,16 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   Bell,
   Brush,
-  DataAnalysis,
+  Cpu,
   DataBoard,
   Folder,
   Histogram,
   MagicStick,
   Management,
-  Monitor,
   Odometer,
   Opportunity,
   Search,
   Setting,
-  Stamp,
-  Tickets,
   TrendCharts,
 } from '@element-plus/icons-vue'
 
@@ -42,7 +39,6 @@ const navGroups: NavGroup[] = [
     icon: Odometer,
     items: [
       navMenuItem('pulse', Odometer),
-      navMenuItem('live', Monitor),
       navMenuItem('data-query', DataBoard),
     ],
   },
@@ -55,10 +51,8 @@ const navGroups: NavGroup[] = [
       navMenuItem('screen-history', Search),
       navMenuItem('quant', Histogram),
       navMenuItem('strategy-converter', MagicStick),
-      navMenuItem('reviews', Stamp),
-      navMenuItem('review-records', Tickets),
+      navMenuItem('agents', Cpu),
       navMenuItem('winrate', TrendCharts),
-      navMenuItem('insights', DataAnalysis),
     ],
   },
 ]
@@ -87,6 +81,7 @@ export function useSidebarNav() {
   const defaultOpeneds = ref(['market', 'mine'])
 
   const active = computed(() => {
+    if (route.path.startsWith('/agents')) return '/agents'
     if (route.path.startsWith('/archive')) return route.path
     if (route.path === '/reviews/records') return '/reviews/records'
     if (route.path.startsWith('/reviews')) return '/reviews'

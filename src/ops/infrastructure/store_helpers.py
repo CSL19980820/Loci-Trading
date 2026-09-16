@@ -12,6 +12,8 @@ DEFAULT_DB = _default_ops_db()
 
 #: 任务类型。每种对应 application/jobs 里的一个执行器。
 JOB_KINDS = (
+    "stock_agent",
+    "stock_agent_maintenance",
     "guardian",
     "guardian_review",
     "guardian_delivery",

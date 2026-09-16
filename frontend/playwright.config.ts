@@ -12,6 +12,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   use: {
     baseURL: 'http://127.0.0.1:4174',
+    // 本机可复用已安装浏览器；CI未设置时仍使用Playwright Chromium。
+    channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
     trace: 'on-first-retry',
   },
   webServer: {

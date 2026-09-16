@@ -67,6 +67,9 @@ def test_rollback_keeps_preflight_evidence_but_not_fake_fills(runtime, monkeypat
     assert saved["ledger_committed"] is False
     assert saved["fills"] == [] and saved["risk_events"] == []
     assert len(saved["preflight_fills"]) == 1
+    assert saved["notification_facts"]["buy_count"] == 0
+    assert saved["notification_facts"]["fees_cents"] == 0
+    assert "本轮无已落账成交" in saved["body"]
     assert saved["preflight_fills"][0]["code"] == "600001"
     assert saved["blocked"][0]["reject_code"] == "execution_failed"
     assert saved["original_decision"] == proposed.model_dump(mode="json")

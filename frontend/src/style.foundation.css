@@ -3,7 +3,8 @@
    显式 :top 会写内联 --el-dialog-margin-top 覆盖；align-center 用 margin:auto 不受影响。 */
 .el-dialog {
  --el-dialog-margin-top:5vh;
- width: min(92vw,64rem);
+ --el-dialog-width: min(92vw,64rem);
+ width: var(--el-dialog-width);
  max-width: calc(100vw - 2rem);
  max-height: calc(100dvh - 2rem);
  overflow: hidden;

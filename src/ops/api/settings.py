@@ -10,6 +10,7 @@ from src.ops.api.market_sync import build_market_sync_settings_router
 from src.ops.api.notifications import build_notification_settings_router
 from src.ops.api.paper_quant import build_paper_quant_router
 from src.ops.api.guardian import build_guardian_router
+from src.ops.api.stock_agents import build_stock_agents_router
 from src.ops.api.share_pack import build_share_pack_router
 from src.ops.api.system_settings import build_system_settings_router
 
@@ -25,6 +26,7 @@ def build_ops_settings_router(
     """聚合运维设置子路由，保持既有 URL 与依赖注入入口。"""
     router = APIRouter()
     router.include_router(build_guardian_router(write_dependency=write_dependency, scheduler_getter=scheduler_getter))
+    router.include_router(build_stock_agents_router(write_dependency=write_dependency, scheduler_getter=scheduler_getter))
     router.include_router(build_data_sources_router(write_dependency=write_dependency))
     router.include_router(
         build_system_settings_router(

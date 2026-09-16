@@ -215,23 +215,22 @@ def render_positions(state: dict[str, Any]) -> str:
 
 
 def render_digest(summary: str, fills: list[dict], rejects: list[dict], state: dict[str, Any]) -> str:
+    """Account overview plus this cycle's executions only; full analysis stays in the run."""
+    from src.ops.application.guardian_notification import render_account_overview, notice_reason
     money = lambda value: f"{value / 100:,.2f}"
-    lines = [f"账户 · 总资产 {money(state['equity_cents'])} 元 · 现金 {money(state['cash_cents'])} 元",
-             f"累计盈亏 {money(state['total_pnl_cents'])} 元（已实现 {money(state['realized_pnl_cents'])} / 浮动 {money(state['unrealized_pnl_cents'])}）"]
-    lines.append(render_positions(state))
+    lines = [render_account_overview(state)]
+    if fills:
+        lines.append(f"本轮变动 · 成交 {len(fills)} 笔")
     for fill in fills:
         label = ACTION_LABELS.get(fill.get("action"), "卖出" if fill["side"] == "sell" else "买入")
         lines.append(f"{label} · {fill['name']} {fill['code']} · {fill['quantity']} 股 × {money(fill['price_cents'])} 元\n"
-                     f"成交额 {money(fill['gross_cents'])} · 费用 {money(fill['fees_cents'])} · 持仓 {fill['after_quantity']} 股"
-                     + (f" · 本笔盈亏 {money(fill['realized_pnl_cents'])}" if fill["side"] == "sell" else ""))
+                     f"剩余 {fill['after_quantity']} 股 · 费用 {money(fill['fees_cents'])} 元"
+                     + (f" · 本笔盈亏 {fill['realized_pnl_cents'] / 100:+,.2f} 元" if fill["side"] == "sell" else ""))
     for item in rejects:
-        lines.append(f"暂未执行 · {item['code']} {item['quantity']} 股：{item['reason']}")
+        label = ACTION_LABELS.get(item.get("action"), "操作")
+        stock = " ".join(str(item.get(k) or "") for k in ("name", "code")).strip() or "组合"
+        quantity = f" {item['quantity']} 股" if item.get("quantity") else ""
+        lines.append(f"暂未执行 · {label} · {stock}{quantity}：{notice_reason(item.get('reason'))}")
     if not fills and not rejects:
         lines.append("本轮无成交")
-    if state.get("stale_codes"):
-        lines.append("估值含旧报价：" + "、".join(state["stale_codes"]))
-    if state.get("watchlist"):
-        lines.append("自主观察 · " + "；".join(f"{w['name']} {w['code']}：{w.get('entry_condition') or w['reason']}" for w in state["watchlist"]))
-    if summary and summary != "无动作":
-        lines.append(f"研判 · {summary}")
     return "\n\n".join(lines)

@@ -44,19 +44,23 @@ const detailBusy = ref(false)
 const error = ref('')
 let active = true
 let requestVersion = 0
+let trendVersion = 0
 let detailVersion = 0
 
 /** 切回看过的战法不再等一次请求；「刷新」会连它一起清掉 */
 const detailCache = new Map<string, WinRateSampleDetail>()
 
 const allTags = computed(() => summary.value.map((row) => row.strategy_tag))
+const strategyNames = computed(() => new Map(summary.value.map((row) =>
+  [row.strategy_tag, row.strategy_name || '未命名战法'],
+)))
 const isOverview = computed(() => view.value === OVERVIEW)
 
 const tabItems = computed<PageTabItem[]>(() => [
   { name: OVERVIEW, label: '综合对比' },
   ...summary.value.map((row) => ({
     name: row.strategy_tag,
-    label: strategyShortLabel(row.strategy_tag),
+    label: strategyShortLabel(row.strategy_tag, strategyNames.value),
     badge: Number(row.total) || undefined,
   })),
 ])
@@ -108,13 +112,13 @@ const overallAvgTone = computed(() => {
  * 用 summary 那条 requestVersion 会让「切战法」把整页的加载态一起翻掉。
  */
 async function loadDetail(tag: string): Promise<void> {
+  const version = ++detailVersion
   const cached = detailCache.get(tag)
   if (cached) {
     detail.value = cached
     detailBusy.value = false
     return
   }
-  const version = ++detailVersion
   detail.value = null
   detailBusy.value = true
   try {
@@ -133,22 +137,26 @@ async function loadDetail(tag: string): Promise<void> {
 const selectedPeriod = ref<string | null>(null)
 
 function openStrategy(tag: string): void {
-  if (!tag) return
-  view.value = tag
-  selectedPeriod.value = null
-  void loadDetail(tag)
+  if (allTags.value.includes(tag)) onViewChange(tag)
 }
 
 function onViewChange(next: string): void {
+  if (next !== OVERVIEW && !allTags.value.includes(next)) return
   view.value = next
   selectedPeriod.value = null
   if (next !== OVERVIEW) void loadDetail(next)
+  else {
+    ++detailVersion
+    detail.value = null
+    detailBusy.value = false
+  }
 }
 
-async function loadTrend(version: number): Promise<void> {
+async function loadTrend(): Promise<void> {
+  const version = ++trendVersion
   const tags = allTags.value
   if (!tags.length) {
-    if (active && version === requestVersion) chartData.value = []
+    if (active && version === trendVersion) chartData.value = []
     return
   }
   const requestedGranularity = granularity.value
@@ -157,17 +165,16 @@ async function loadTrend(version: number): Promise<void> {
       granularity: requestedGranularity,
       tags: tags.join(','),
     })
-    if (!active || version !== requestVersion) return
+    if (!active || version !== trendVersion) return
     chartData.value = rows
   } catch (e: unknown) {
-    if (!active || version !== requestVersion) return
+    if (!active || version !== trendVersion) return
     error.value = e instanceof Error ? e.message : '加载明细失败'
   }
 }
 
 function refreshTrend(): void {
-  const version = ++requestVersion
-  void loadTrend(version)
+  void loadTrend()
 }
 
 async function reload(): Promise<void> {
@@ -175,18 +182,19 @@ async function reload(): Promise<void> {
   busy.value = true
   error.value = ''
   detailCache.clear()
+  ++detailVersion
+  ++trendVersion
   try {
-    const rows = await getWinRateSummary()
+    const rows = await getWinRateSummary({ current_only: true })
     if (!active || version !== requestVersion) return
     summary.value = rows
     // 刷新后当前战法可能已经不在表里（改判/换战法），回到综合层而不是空页
     if (!isOverview.value && !rows.some((row) => row.strategy_tag === view.value)) {
-      view.value = OVERVIEW
-    detail.value = null
+      onViewChange(OVERVIEW)
     } else if (!isOverview.value) {
-      await loadDetail(view.value)
+      void loadDetail(view.value)
     }
-    await loadTrend(version)
+    void loadTrend()
   } catch (e: unknown) {
     if (!active || version !== requestVersion) return
     error.value =
@@ -249,15 +257,15 @@ onUnmounted(() => {
             <el-icon tabindex="0" aria-label="点击战法行查看样本证据" class="text-mist"><InfoFilled /></el-icon>
           </el-tooltip>
         </template>
-        <WinRateCompareTable :rows="summary" :busy="busy" @select="openStrategy" />
+        <WinRateCompareTable :rows="summary" :names="strategyNames" :busy="busy" @select="openStrategy" />
       </Sheet>
       <Sheet fill :title="periodTitle" class="winrate-period">
-        <WinRatePeriodTable :points="chartData" :granularity="granularity" :tags="allTags" mode="matrix" />
+        <WinRatePeriodTable :points="chartData" :names="strategyNames" :granularity="granularity" :tags="allTags" mode="matrix" />
       </Sheet>
     </template>
 
     <template v-else>
-      <Sheet fill :title="`${strategyShortLabel(view)} · 胜率与证据`" class="winrate-primary">
+      <Sheet fill :title="`${strategyShortLabel(view, strategyNames)} · 胜率与证据`" class="winrate-primary">
         <WinRateStrategyPanel
           :tag="view"
           :summary="activeSummary"
@@ -270,6 +278,7 @@ onUnmounted(() => {
       <Sheet fill :title="periodTitle" class="winrate-period">
         <WinRatePeriodTable
           :points="chartData"
+          :names="strategyNames"
           :granularity="granularity"
           :tags="[view]"
           :selected-period="selectedPeriod"

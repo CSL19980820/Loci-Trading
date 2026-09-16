@@ -14,16 +14,16 @@ class NoticeLeaseLost(RuntimeError):
 
 def notice_parts(title: str, body: str) -> list[tuple[str, str]]:
     """Reserve title/sequence bytes without dropping any content-bearing fragment."""
-    if len(f"【{title}】\n{body}".encode("utf-8")) <= 2048:
+    if len(f"【{title}】\n{body}".encode("utf-8")) <= 2000:
         return [(title, body)]
     digits = len(str(max(1, len(body))))
     overhead = len(f"【{title}（{'9' * digits}/{'9' * digits}）】\n".encode("utf-8"))
-    budget = min(1700, 2048 - overhead)
+    budget = min(1700, 2000 - overhead)
     if budget < 64:
         raise ValueError("通知标题过长，无法在通道字节限制内完整分段")
     chunks = split_text_for_wecom(body, limit_bytes=budget, max_chunks=max(1, len(body)))
     parts = [(f"{title}（{i}/{len(chunks)}）", chunk) for i, chunk in enumerate(chunks, 1)]
-    if any(len(f"【{part_title}】\n{chunk}".encode("utf-8")) > 2048 for part_title, chunk in parts):
+    if any(len(f"【{part_title}】\n{chunk}".encode("utf-8")) > 2000 for part_title, chunk in parts):
         raise ValueError("通知分段超过通道字节限制，未截断发送")
     return parts
 

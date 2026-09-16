@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from hashlib import sha256
 from pathlib import Path
 import sqlite3
 
@@ -102,18 +103,37 @@ class OpsStore(
             self.conn.execute("PRAGMA busy_timeout=30000")
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA foreign_keys=ON")
-            key = str(self.db_path.resolve())
-            if key not in _SCHEMA_READY:
+            if not self._schema_is_current():
                 # 旧库：CREATE TABLE IF NOT EXISTS 不会补列，但 _SCHEMA 里依赖新列的
                 # INDEX 会先于 ADD COLUMN 失败。先尽量建表 → 迁移补列 → 再补索引。
                 self._apply_schema_compat()
-                _SCHEMA_READY.add(key)
-            else:
-                # 迁移始终执行：CREATE TABLE IF NOT EXISTS / ALTER ADD COLUMN 幂等。
-                self._run_migrations()
+                with self.conn:
+                    self.conn.execute(
+                        "INSERT INTO meta(key,value,updated_at) VALUES('schema_fingerprint',?,?) "
+                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+                        (self._schema_fingerprint(), _now()),
+                    )
+            # 仅兼容旧测试/诊断；是否迁移以当前连接中的持久化指纹为准，不信任路径缓存。
+            _SCHEMA_READY.add(str(self.db_path.resolve()))
         except Exception:
             self.conn.close()
             raise
+
+    def _schema_fingerprint(self) -> str:
+        # DDL 内容也入指纹，防止新增迁移时漏改 SCHEMA_VERSION。SQLite 的 schema cookie
+        # 检出删表/删索引；普通业务写入不改它，因此读取不会排队等业务写锁。
+        digest = sha256((str(SCHEMA_VERSION) + _SCHEMA + "\n".join(_MIGRATIONS)).encode()).hexdigest()
+        cookie = self.conn.execute("PRAGMA schema_version").fetchone()[0]
+        return f"{digest}:{cookie}"
+
+    def _schema_is_current(self) -> bool:
+        try:
+            row = self.conn.execute("SELECT value FROM meta WHERE key='schema_fingerprint'").fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table: meta" not in str(exc).lower():
+                raise
+            return False
+        return bool(row and row[0] == self._schema_fingerprint())
 
     def _apply_schema_compat(self) -> None:
         """兼容已有 ops.db：允许首轮 schema 因缺列失败，迁移后再补齐。"""
@@ -237,7 +257,7 @@ class OpsStore(
             manifest.write_text(f"---\n{dumped}\n---\n\n{body}\n", encoding="utf-8")
 
     def _run_migrations(self) -> None:
-        """增量迁移：对已有 ops.db 补加新表和新列。幂等，每次连接都执行。"""
+        """指纹不匹配时补加表和列；全部成功后才记录指纹，失败可安全重试。"""
         # 先把旧 skills / mcp_servers 迁出，再 DROP
         self._export_legacy_mcp_to_json()
         self._export_legacy_skills_to_disk()

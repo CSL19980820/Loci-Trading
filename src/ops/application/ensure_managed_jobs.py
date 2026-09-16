@@ -29,6 +29,7 @@ from src.ops.application.ensure_intraday_capture_job import (
 from src.ops.application.ensure_prune_tenant_job import ensure_prune_tenant_job
 from src.ops.application.ensure_guardian_review_jobs import ensure_guardian_review_jobs, ensure_exchange_calendar_job
 from src.ops.application.jobs.guardian_delivery import ensure_guardian_delivery_job
+from src.ops.application.stock_agent_service import ensure_stock_agent_jobs
 from src.ops.application.retire_dragon_pool import retire_dragon_pool
 from src.ops.application.retire_dragon_return import retire_dragon_return
 from src.ops.application.retire_second_wave import retire_second_wave
@@ -81,6 +82,7 @@ def ensure_tenant_jobs(store: Any) -> None:
         ("托管价格提醒扫描", lambda: ensure_managed_alert_scan_job(store)),
         ("自主交易员复盘与计划", lambda: ensure_guardian_review_jobs(store)),
         ("自主交易员通知补发", lambda: ensure_guardian_delivery_job(store)),
+        ("股票智能体日程", lambda: ensure_stock_agent_jobs(store)),
     # 租户库清理。系统级 prune 在 SYSTEM_JOB_KINDS 里，子租户一条都不装载，
         # 于是子租户的 ops.db 从建库那天起没人清过（job_runs 粗算 580 MB/年/人，
     # 外加从不清理的八张 ai_* 表）。这一步就是 tenant_jobs.py 模块头点名的

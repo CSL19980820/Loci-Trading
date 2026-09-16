@@ -35,7 +35,7 @@ def test_watch_outside_strategy_pool_persists_without_trade_and_can_be_removed(t
         assert store.trades()["total"] == 0
         rows = observe(SimpleNamespace(candidates_payload=lambda _: []), [], state, [])
         assert rows[0]["code"] == "603920" and rows[0]["watch"]["entry_condition"] == "放量突破"
-        assert "自主观察" in render_digest("主动观察", [], [], state)
+        assert "自主观察" not in render_digest("主动观察", [], [], state)
         state, _, _ = simulate(state, decision("watch", entry_condition="回踩确认"), [], {}, NOW)
         assert len(state["watchlist"]) == 1 and state["watchlist"][0]["entry_condition"] == "回踩确认"
         state, fills, rejects = simulate(state, decision("unwatch"), [], {}, NOW)

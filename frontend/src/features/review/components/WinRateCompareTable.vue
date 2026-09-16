@@ -14,6 +14,7 @@ import type { WinRateSummary } from '@/shared/types/quant'
  */
 const props = defineProps<{
   rows: WinRateSummary[]
+  names?: Map<string, string>
   activeTag?: string
   busy?: boolean
 }>()
@@ -85,9 +86,9 @@ function toneOf(value: unknown): string {
         @row-click="(row: Record<string, unknown>) => emit('select', String(row.strategy_tag ?? ''))"
       >
         <template #tag="{ row }">
-          <el-tooltip placement="top" :content="`${strategyLabel(String(row.strategy_tag ?? ''))} · ${row.strategy_tag}`">
+          <el-tooltip placement="top" :content="strategyLabel(String(row.strategy_tag ?? ''), names)">
             <div class="cmp-tag-cell">
-              <strong class="cmp-tag-title">{{ strategyShortLabel(String(row.strategy_tag ?? '')) }}</strong>
+              <strong class="cmp-tag-title">{{ strategyShortLabel(String(row.strategy_tag ?? ''), names) }}</strong>
             </div>
           </el-tooltip>
         </template>

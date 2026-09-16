@@ -15,12 +15,15 @@ from src.ops.application.guardian_risk import evaluate_risk_plans
 from src.ops.application.guardian_risk_execution import risk_decision, risk_rejections, finish_risk_execution
 from src.ops.application.guardian_config import get_config
 from src.ops.application.guardian_context import active_strategies, observe, premarket_plan_context
-from src.ops.application.guardian_decision import TRADE_ACTIONS, closing_decision, render_digest, render_positions, simulate, bind_execution_references
+from src.ops.application.guardian_decision import TRADE_ACTIONS, closing_decision, render_digest, simulate, bind_execution_references
 from src.ops.application.jobs.context import JobContext, JobError, JobSkipped, JobCancelled, JobTimedOut
 from src.ops.application.guardian_quotes import validated_quotes, quote_error
 from src.ops.application.guardian_contract import ExecutionTerms, execution_error
 from src.ops.application.guardian_order_repair import repair_preflight
 from src.ops.application.guardian_delivery import deliver_pending
+from src.ops.application.guardian_notification import (
+    load_notification_day, with_notification_facts, render_failure_notice,
+)
 from src.ops.application.guardian_outcome import execution_window, missed_orders, withdrawn_orders
 from src.ops.application.notify_dispatch import dispatch_text
 from src.ops.application.session_clock import session_clock
@@ -163,7 +166,10 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             rejects.extend(risk_rejections(saved_risk_events))
             meta = {key: value for key, value in meta.items() if not key.startswith("_")}
             blocked = rejects + withdrawn + missed_orders(deferred, now)
-            body = render_digest(decision.summary, fills, blocked, updated)
+            day_facts = load_notification_day(ledger, finished,
+                market_factory=None if risk_only or closing_rebalance else context.market)
+            notice_state = with_notification_facts(updated, day_facts, fills, slot=slot)
+            body = render_digest(decision.summary, fills, blocked, notice_state)
             result = {"status": "success", "body": body, "analysis": decision.summary,
                       "decisions": [item.model_dump() for item in decision.orders], "fills": fills, "rejects": rejects,
                       "deferred": deferred, "analysis_only": not can_execute,
@@ -171,7 +177,7 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
                       "outcome": ("partial_execution" if fills else "rejected") if blocked else ("traded" if fills else "no_action"),
                       "original_decision": original_decision, "timings": timings,
                       "risk_events": saved_risk_events, "risk_only": risk_only,
-                      "ledger_committed": True,
+                      "ledger_committed": True, "notification_facts": notice_state["notification_day"],
                       "observed": len(codes), "candidates": candidates, "trading_days": days,
                       "model": cfg["model"], "usage": meta, "as_of": finished.isoformat(),
                       "account_version": 2, "account": {k: v for k, v in updated.items() if k != "positions"}}
@@ -215,8 +221,16 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
         except Exception as exc:
             if committed:
                 raise
-            saved_state = mark_guardian_account(ledger.state(), {}, datetime.now(ZoneInfo("Asia/Shanghai")))
-            error_body = render_positions(saved_state) + "\n\n本轮交易研判未完成，请在设置中查看运行记录。"
+            failed_at = datetime.now(ZoneInfo("Asia/Shanghai"))
+            saved_state = ledger.state()
+            try:
+                saved_state = mark_guardian_account(saved_state, {}, failed_at)
+            except (ValueError, KeyError, TypeError) as valuation_exc:
+                saved_state = {**saved_state, "valuation_error": str(valuation_exc)}
+            # Failed preflight fills were rolled back and must never enter daily totals.
+            notice_state = with_notification_facts(saved_state,
+                load_notification_day(ledger, failed_at), [], slot=slot)
+            error_body = render_failure_notice(notice_state, exc, failure_stage)
             cancelled = isinstance(exc, JobCancelled)
             orders = decision.model_dump(mode="json")["orders"] if decision is not None else []
             blocked = [{**order, "reject_code": "cancelled" if cancelled else "execution_failed",
@@ -224,6 +238,7 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             # fills 只表示已落账事实；回滚后的模拟结果只能作为独立的预检证据。
             result = {"status": "cancelled" if cancelled else "failed", "body": error_body, "error": str(exc),
                       "failure_stage": failure_stage, "ledger_committed": False, "fills": [],
+                      "notification_facts": notice_state["notification_day"],
                       "preflight_fills": fills, "decisions": orders, "original_decision": original_decision,
                       "analysis": decision.summary if decision is not None else "",
                       "initial_rejects": initial_rejects, "rejects": rejects,
@@ -237,7 +252,14 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             except RuntimeError:
                 pass  # A superseded owner must not overwrite the terminal cycle.
             if cfg["notify"]:
-                deliver_pending(ledger, store, dispatch_text)
+                try:
+                    deliver_pending(ledger, store, dispatch_text)
+                except Exception as delivery_exc:
+                    result["delivery_error"] = str(delivery_exc)
+                    try:
+                        ledger.annotate(slot, {"delivery_error": str(delivery_exc)})
+                    except Exception:
+                        pass  # Preserve the original failure even if diagnostics cannot be saved.
             if isinstance(exc, (JobCancelled, JobTimedOut)):
                 raise
             raise JobError(str(exc)) from exc

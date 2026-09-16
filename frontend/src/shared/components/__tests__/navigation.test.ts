@@ -205,7 +205,7 @@ describe('Navigation wiring and App layout', () => {
     // 检查市场组项：盘面 / live / data
     const items = wrapper.findAll('.el-menu-item-stub').map((el) => el.attributes('data-index'))
     expect(items).toContain('/')
-    expect(items).toContain('/live')
+    expect(items).not.toContain('/live')
     expect(items).toContain('/data')
 
     // 检查我的组项：候选池 / 选股 / 工坊 / 策稿 / 复盘 / 胜率 / 体检
@@ -213,9 +213,10 @@ describe('Navigation wiring and App layout', () => {
     expect(items).toContain('/screen-history')
     expect(items).toContain('/quant')
     expect(items).toContain('/strategy-converter')
-    expect(items).toContain('/reviews')
+    expect(items).not.toContain('/reviews')
+    expect(items).toContain('/agents')
     expect(items).toContain('/winrate')
-    expect(items).toContain('/insights')
+    expect(items).not.toContain('/insights')
 
     // 社区整体下线：这几条路由与菜单项都不该再存在
     expect(items).not.toContain('/square')

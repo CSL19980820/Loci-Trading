@@ -74,6 +74,7 @@ def build_review_router(
     *,
     market_db: str | None = None,
     palace_db: str | None = None,
+    ops_db: str | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -101,7 +102,8 @@ def build_review_router(
 
         返回的是缓存里的同一个对象，调用方（FastAPI 的 JSON 编码）只读不改。
         """
-        key = (scope, palace_db, market_db, params,
+        # 默认路径参数都是 None；缓存必须绑定实际连接的租户库，而不是这些参数。
+        key = (scope, str(palace.db_path.resolve()), str(market.db_path.resolve()), params,
             palace.review_read_fingerprint(), market.market_revision())
         hit = _cache_get(key)
         if hit is not _MISS:
@@ -189,7 +191,9 @@ def build_review_router(
         return _cached("plans", (), lambda palace, market: evaluate_plans(palace, market))
 
     @router.get("/api/winrate/summary", tags=["review"])
-    def winrate_summary() -> list[dict[str, Any]]:
+    def winrate_summary(
+        current_only: bool = Query(default=False, description="仅当前工坊战法；保留无样本战法并返回目录名称"),
+    ) -> list[dict[str, Any]]:
         """各战法胜率：精选候选 T+5 优先，手工复盘兜底。"""
         try:
             from src.review import build_winrate_summary
@@ -202,7 +206,17 @@ def build_review_router(
                 palace.strategy_winrates(),
             )
 
-        return _cached("winrate_summary", (), compute)
+        rows = _cached("winrate_summary", (), compute)
+        if not current_only:
+            return rows
+        from src.strategy import describe_all
+        from src.ops import OpsStore
+        from src.review.application.workshop import enabled_workshop_catalog, workshop_winrates
+
+        # 目录不进统计缓存：工坊改名/删除后，下次读取立刻反映，历史样本不删除。
+        with OpsStore(ops_db) as store:
+            catalog = enabled_workshop_catalog(describe_all(), store.list_jobs(enabled_only=True))
+        return workshop_winrates(rows, catalog)
 
     @router.get("/api/winrate/trend", tags=["review"])
     def winrate_trend(

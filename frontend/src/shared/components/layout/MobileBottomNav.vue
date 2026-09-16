@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import {
-  DataAnalysis,
+  Cpu,
   DataBoard,
   Grid,
   Histogram,
   MagicStick,
   Management,
-  Monitor,
   Odometer,
   Opportunity,
   Search,
   Setting,
-  Stamp,
   SwitchButton,
-  Tickets,
   TrendCharts,
   User,
 } from '@element-plus/icons-vue'
@@ -38,7 +35,7 @@ const primaryTabs: NavMenuItem[] = [
   navMenuItem('pulse', Odometer),
   navMenuItem('pool', Opportunity),
   navMenuItem('screen-history', Search),
-  navMenuItem('reviews', Stamp),
+  navMenuItem('agents', Cpu),
 ]
 
 /**
@@ -46,13 +43,10 @@ const primaryTabs: NavMenuItem[] = [
  * 手机上就**没有任何办法**打开账号页、管理后台，也无法退出登录。
  */
 const moreItems: NavMenuItem[] = [
-  navMenuItem('live', Monitor),
-  navMenuItem('insights', DataAnalysis),
   navMenuItem('winrate', TrendCharts),
   navMenuItem('quant', Histogram),
   navMenuItem('data-query', DataBoard),
   navMenuItem('strategy-converter', MagicStick),
-  navMenuItem('review-records', Tickets),
   navMenuItem('account', User),
   navMenuItem('ops', Setting),
 ]

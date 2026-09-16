@@ -21,6 +21,7 @@ function deferred<T>() {
 
 const SUMMARY_ROW = {
   strategy_tag: 'sanyuan-tail-v1',
+  strategy_name: '三源尾盘共振',
   source: 'candidates',
   total: 12,
   wins: 5,
@@ -111,7 +112,10 @@ const STUBS = {
     template:
  '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value); $emit(\'change\', $event.target.value)"><slot /></select>',
   },
-  'el-option': true,
+  'el-option': {
+    props: ['value', 'label'],
+    template: '<option :value="value">{{ label }}</option>',
+  },
   'el-tooltip': { template: '<span><slot /></span>' },
   'el-button': { template: '<button><slot /></button>' },
   'el-alert': true,
@@ -191,6 +195,62 @@ describe('WinRateView 两层结构', () => {
     await flushPromises()
 
     expect(vi.mocked(getWinRateSamples).mock.calls.length).toBe(1)
+    wrapper.unmount()
+  })
+})
+
+describe('工坊目录与异步隔离', () => {
+  it('uses the current workshop name throughout tabs, tables and evidence', async () => {
+    const custom = { ...SUMMARY_ROW, strategy_tag: 'yixian-auction', strategy_name: '一线定乾坤·首板次日' }
+    vi.mocked(getWinRateSummary).mockResolvedValue([custom] as never)
+    vi.mocked(getWinRateTrend).mockResolvedValue([{ period: '2026-09', strategy_tag: custom.strategy_tag, total: 2, wins: 1, win_rate: 50 }] as never)
+    vi.mocked(getWinRateSamples).mockResolvedValue(SAMPLE_DETAIL as never)
+    const wrapper = mountView()
+    await flushPromises()
+    expect(getWinRateSummary).toHaveBeenCalledWith({ current_only: true })
+    expect(wrapper.get('[data-tab="yixian-auction"]').text()).toBe(custom.strategy_name)
+    expect(wrapper.text()).not.toContain(custom.strategy_tag)
+    expect(wrapper.text().split(custom.strategy_name).length).toBeGreaterThan(3)
+    await wrapper.get('[data-tab="yixian-auction"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain(`${custom.strategy_name} · 胜率与证据`)
+    expect(wrapper.text()).not.toContain(custom.strategy_tag)
+    vi.mocked(getWinRateSummary).mockResolvedValue([])
+    await wrapper.findAll('button').find(button => button.text() === '刷新')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-tab="yixian-auction"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('胜率与证据')
+    wrapper.unmount()
+  })
+
+  it('does not discard the initial summary when granularity changes while it loads', async () => {
+    const pending = deferred<never>()
+    vi.mocked(getWinRateSummary).mockReturnValue(pending.promise)
+    vi.mocked(getWinRateTrend).mockResolvedValue([])
+    const wrapper = mountView()
+    await wrapper.get('select').setValue('week')
+    pending.resolve([SUMMARY_ROW] as never)
+    await flushPromises()
+    expect(wrapper.find('[data-tab="sanyuan-tail-v1"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'WinRateCompareTable' }).props('busy')).toBe(false)
+    expect(getWinRateTrend).toHaveBeenLastCalledWith({ granularity: 'week', tags: 'sanyuan-tail-v1' })
+    wrapper.unmount()
+  })
+
+  it('keeps cached A when a slower B response finishes after switching back', async () => {
+    const slow = deferred<never>()
+    vi.mocked(getWinRateSummary).mockResolvedValue([SUMMARY_ROW, { ...SUMMARY_ROW, strategy_tag: 'B' }] as never)
+    vi.mocked(getWinRateTrend).mockResolvedValue([])
+    vi.mocked(getWinRateSamples).mockImplementation(({ tag }) => tag === 'B' ? slow.promise : Promise.resolve(SAMPLE_DETAIL as never))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-tab="sanyuan-tail-v1"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-tab="B"]').trigger('click')
+    await wrapper.get('[data-tab="sanyuan-tail-v1"]').trigger('click')
+    slow.resolve({ ...SAMPLE_DETAIL, strategy_tag: 'B' } as never)
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'WinRateStrategyPanel' }).props('detail').strategy_tag).toBe('sanyuan-tail-v1')
     wrapper.unmount()
   })
 })

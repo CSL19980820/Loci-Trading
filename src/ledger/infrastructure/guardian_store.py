@@ -10,12 +10,13 @@ from collections.abc import Callable
 
 from src.shared.paths import palace_db
 from src.ledger.domain.guardian_account import new_guardian_account, check_guardian_account
+from src.ledger.infrastructure.guardian_queries import GuardianQueriesMixin
 from src.ledger.infrastructure.guardian_reports import GuardianReportsMixin, REPORT_SCHEMA
 from src.ledger.infrastructure.guardian_consults import GuardianConsultMixin, CONSULT_SCHEMA
 from src.ledger.infrastructure.guardian_notices import GuardianNoticesMixin, NOTICE_SCHEMA
 
 
-class GuardianStore(GuardianReportsMixin, GuardianConsultMixin, GuardianNoticesMixin):
+class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultMixin, GuardianNoticesMixin):
     def __init__(self, db_path: str | Path | None = None) -> None:
         path = Path(db_path or palace_db())
         self.db_path = path
@@ -43,6 +44,11 @@ class GuardianStore(GuardianReportsMixin, GuardianConsultMixin, GuardianNoticesM
             CREATE INDEX IF NOT EXISTS ix_guardian_trades_time ON guardian_trades(occurred_at DESC, id DESC);
             CREATE INDEX IF NOT EXISTS ix_guardian_cycles_started ON guardian_cycles(started DESC);
         """)
+        # Existing accounts are a read path: do not queue behind a trading writer.
+        row = self.conn.execute("SELECT state_json FROM guardian_portfolio WHERE id=1").fetchone()
+        if row and json.loads(row[0]).get("account_version") == 2:
+            return
+        # Recheck under the lock: two first-time requests must not reset each other's account.
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
             row = self.conn.execute("SELECT state_json FROM guardian_portfolio WHERE id=1").fetchone()

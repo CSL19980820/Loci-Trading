@@ -37,8 +37,10 @@ export function getPlanOutcomes() {
   return quantRequest<PlanOutcome[]>('/review/plans')
 }
 
-export function getWinRateSummary(): Promise<WinRateSummary[]> {
-  return quantRequest('/winrate/summary')
+export function getWinRateSummary(options: { current_only?: boolean } = {}): Promise<WinRateSummary[]> {
+  return quantRequest(`/winrate/summary${query({
+    current_only: options.current_only === undefined ? undefined : Number(options.current_only),
+  })}`)
 }
 
 export function getWinRateTrend(options: {

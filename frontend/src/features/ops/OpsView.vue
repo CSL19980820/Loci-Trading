@@ -8,10 +8,8 @@ import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import LlmTab from './components/LlmTab.vue'
-import GuardianTab from './components/GuardianTab.vue'
 import McpTab from './components/McpTab.vue'
 import PackTab from './components/PackTab.vue'
-import SignalRulesTab from './components/SignalRulesTab.vue'
 import SettingsRail, {
   type SettingsRailGroup,
 } from './components/SettingsRail.vue'
@@ -19,7 +17,6 @@ import SystemTab from './components/SystemTab.vue'
 import { provideOpsFeedback } from './composables/useOpsFeedback'
 import {
   type OpsTab,
-  type RailSummary,
   useSettingsSummaries,
 } from './composables/useSettingsSummaries'
 
@@ -29,7 +26,7 @@ type SystemTabExpose = TabLoadable & {
   isDirty: () => boolean
 }
 
-const TAB_NAMES = new Set<string>(['mcp', 'llm', 'guardian', 'system', 'signals', 'pack'])
+const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'pack'])
 
 const SYSTEM_LEGACY: Record<string, string> = {
   'data-dir': 'sys-location',
@@ -52,6 +49,8 @@ const router = useRouter()
 
 /** 旧 Tab 迁走：技能→市场；线路/AkShare→数据源；定时/执行历史→工坊定时；四联→系统 */
 const LEGACY_TAB_TARGETS: Record<string, { path: string; query: Record<string, string>; hash?: string }> = {
+  guardian: { path: '/agents/guardian', query: {} },
+  signals: { path: '/ops', query: { tab: 'system' } },
   skills: { path: '/quant', query: { tab: 'market', shelf: 'installed', kind: 'skill' } },
   lanes: { path: '/quant', query: { tab: 'sources' } },
   akshare: { path: '/quant', query: { tab: 'sources', view: 'interfaces' } },
@@ -76,8 +75,6 @@ const activeTab = ref<OpsTab>(normalizeTab(route.query.tab))
 const visited = reactive<Record<OpsTab, boolean>>({
   mcp: false,
   llm: false,
-  guardian: false,
-  signals: false,
   system: false,
   pack: false,
 })
@@ -103,9 +100,6 @@ const railGroups = computed((): SettingsRailGroup[] => [
       // 缩写降为副标：主标说人话，MCP / LLM 仍留着，老用户才认得出是同一处
       { name: 'mcp', label: '工具连接', ...summaries.mcp, tail: `MCP · ${summaries.mcp.tail}` },
       { name: 'llm', label: 'AI 模型', ...summaries.llm, tail: `LLM · ${summaries.llm.tail}` },
-      { name: 'guardian', label: '自主交易员', ...summaries.guardian },
-      // 信号规则：大屏那条信号流按什么口径报，得能在系统里改，不能只活在后端代码里
-      { name: 'signals', label: '信号规则', ...summaries.signals },
     ],
   },
   {
@@ -137,22 +131,13 @@ const mobileTabs = computed(() =>
 
 const mcpTab = ref<TabLoadable | null>(null)
 const llmTab = ref<TabLoadable | null>(null)
-const guardianTab = ref<(TabLoadable & { isDirty: () => boolean }) | null>(null)
-const signalsTab = ref<TabLoadable | null>(null)
 const systemTab = ref<SystemTabExpose | null>(null)
 const packTab = ref<TabLoadable | null>(null)
-
-/** 规则面板自己知道「几条启用」，直接回填 rail，不走全局 summary 拉取。 */
-function applySignalSummary(next: RailSummary): void {
-  Object.assign(summaries.signals, next)
-}
 
 function tabLoader(tab: OpsTab): TabLoadable | null {
   const map: Record<OpsTab, { value: TabLoadable | null }> = {
     mcp: mcpTab,
     llm: llmTab,
-    guardian: guardianTab,
-    signals: signalsTab,
     system: systemTab,
     pack: packTab,
   }
@@ -164,10 +149,9 @@ function systemIsDirty(): boolean {
 }
 
 async function confirmLeaveDirty(): Promise<boolean> {
-  const guardianDirty = visited.guardian && Boolean(guardianTab.value?.isDirty())
-  if ((!visited.system || !systemIsDirty()) && !guardianDirty) return true
+  if (!visited.system || !systemIsDirty()) return true
   try {
-    await ElMessageBox.confirm(guardianDirty ? '交易员设置有未保存改动，离开将丢失。' : '系统页有未保存改动，离开将丢失。', '未保存', {
+    await ElMessageBox.confirm('系统页有未保存改动，离开将丢失。', '未保存', {
       confirmButtonText: '离开',
       cancelButtonText: '留下',
       type: 'warning',
@@ -189,9 +173,7 @@ async function loadActiveTab(): Promise<void> {
 }
 
 async function reload(): Promise<void> {
-  // 遮罩只盖当前分区自己的加载。rail 上那行摘要小字要打 7 个接口，其中
-  // /ops/data-location 冷读曾实测 30 s（全量库行数统计）——它在后台刷，
-  // 不能让「最慢的摘要」决定整页何时揭开（用户看到卡片都渲染完了还蒙着）。
+  // 首次/手动刷新才更新轻量侧栏摘要，切换分区只读取对应内容。
   void refreshSummaries().catch(() => undefined)
   await guard(loadActiveTab)
 }
@@ -201,13 +183,13 @@ function onAppearanceChanged(): void {
 }
 
 watch(activeTab, async (tab, prev) => {
-  if ((prev === 'system' || prev === 'guardian') && tab !== prev && !(await confirmLeaveDirty())) {
-    activeTab.value = 'system'
+  if (prev === 'system' && tab !== prev && !(await confirmLeaveDirty())) {
+    activeTab.value = prev
     return
   }
   const next = { ...route.query, tab: tab === 'mcp' ? undefined : tab }
   void router.replace({ query: next, hash: tab === 'system' ? route.hash : '' })
-  void reload()
+  void guard(loadActiveTab)
 })
 
 watch(
@@ -231,7 +213,7 @@ onMounted(() => {
 
 <template>
   <div class="page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-    <PageToolbar v-if="activeTab !== 'guardian'">
+    <PageToolbar>
       <template #actions>
         <HeaderActions :actions="[{ key: 'reload', label: '刷新', disabled: busy, onClick: reload }]" />
       </template>
@@ -285,12 +267,6 @@ onMounted(() => {
         </div>
         <div v-if="visited.llm" v-show="activeTab === 'llm'" class="ops-pane">
           <LlmTab ref="llmTab" @changed="refreshSummaries" />
-        </div>
-        <div v-if="visited.guardian" v-show="activeTab === 'guardian'" class="ops-pane">
-          <GuardianTab ref="guardianTab" @summary="Object.assign(summaries.guardian, $event)" />
-        </div>
-        <div v-if="visited.signals" v-show="activeTab === 'signals'" class="ops-pane">
-          <SignalRulesTab ref="signalsTab" @summary="applySignalSummary" />
         </div>
         <div v-if="visited.system" v-show="activeTab === 'system'" class="ops-pane">
           <SystemTab

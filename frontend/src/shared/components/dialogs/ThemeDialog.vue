@@ -1,274 +1,124 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Check } from '@element-plus/icons-vue'
 
 import { useThemeStore } from '@/shared/stores/theme'
-import { contrastRatio } from '@/shared/lib/theme'
+import { contrastRatio, type AppearanceOption } from '@/shared/lib/theme'
 
 defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [boolean] }>()
 const store = useThemeStore()
+const appearanceName = computed(() => store.appearances.find((item) => item.id === store.appearanceId)?.label)
+const primaryName = computed(() => store.isCustom ? '自定义' : store.primaries.find((item) => item.id === store.primaryId)?.label)
+const appearanceHints: Record<string, string> = {
+  day: '明亮清晰', paper: '柔和暖色', night: '深蓝低光', ink: '纯黑高对比',
+}
+const corrected = computed(() => contrastRatio(store.customColor, store.customScale['--seal']) > 1.35)
 
-/**
- * 取色器给的色和实际落地的色差多远。差得明显就提示「已按对比度自动校正」——
- * 用户选了淡黄却看到深黄不是 bug，是系统把亮度压到白字能读的位置（见 lib/theme.ts）。
- */
-const corrected = computed((): boolean => {
-  const picked = store.customColor
-  const solid = store.customScale['--seal']
-  return contrastRatio(picked, solid) > 1.35
-})
+function previewStyle(item: AppearanceOption): Record<string, string> {
+  return {
+    '--preview-canvas': item.preview.canvas, '--preview-surface': item.preview.surface,
+    '--preview-border': item.preview.border, '--preview-text': item.preview.text,
+  }
+}
 
-function close(): void {
-  emit('update:modelValue', false)
+function updateCustom(value: string | null): void {
+  if (value) store.setCustomPrimary(value)
 }
 </script>
 
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="主题"
-    width="min(92vw, 460px)"
+    title="主题与外观"
+    width="min(720px, calc(100vw - 32px))"
     class="theme-dialog"
+    align-center
     destroy-on-close
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <section class="theme-block">
-      <h3 class="theme-block__kicker">外观</h3>
-      <div class="grid grid-cols-4 gap-2">
-        <button
-          v-for="item in store.appearances"
-          :key="item.id"
-          type="button"
-          class="appearance flex min-w-0 cursor-pointer flex-col items-stretch gap-1 border-0 bg-transparent p-0 text-left"
-          :class="{ 'appearance--on': store.appearanceId === item.id }"
-          :aria-pressed="store.appearanceId === item.id"
-          @click="store.setAppearance(item.id)"
-        >
-          <!-- 真实配色预览：画布上摆一块面板 + 一条分隔线 + 两行字，四档并排能一眼分出来 -->
-          <span
-            class="appearance__scene"
-            :style="{ background: item.preview.canvas, borderColor: item.preview.border }"
-            aria-hidden="true"
+    <div class="theme-settings">
+      <section class="theme-section" aria-labelledby="theme-appearance-heading">
+        <div class="theme-section__heading">
+          <h3 id="theme-appearance-heading">界面外观</h3>
+          <span>选择适合当前光线的工作台</span>
+        </div>
+        <div class="appearance-grid" role="group" aria-label="界面外观">
+          <el-button
+            v-for="item in store.appearances"
+            :key="item.id"
+            class="appearance-card"
+            :class="{ 'is-selected': store.appearanceId === item.id }"
+            :aria-label="item.label"
+            :aria-pressed="store.appearanceId === item.id"
+            @click="store.setAppearance(item.id)"
           >
-            <span
-              class="appearance__panel"
-              :style="{ background: item.preview.surface, borderColor: item.preview.border }"
-            >
-              <span class="appearance__line" :style="{ background: item.preview.text }" />
-              <span
-                class="appearance__line appearance__line--short"
-                :style="{ background: item.preview.border }"
-              />
+            <span class="theme-preview" :style="previewStyle(item)" aria-hidden="true">
+              <span class="theme-preview__nav"><i /><i /><i /><i /></span>
+              <span class="theme-preview__content">
+                <span class="theme-preview__toolbar"><i /><i /></span>
+                <span class="theme-preview__metrics"><i /><i /></span>
+                <span class="theme-preview__table"><i /><i /><i /></span>
+              </span>
             </span>
+            <span class="appearance-card__caption">
+              <span><strong>{{ item.label }}</strong><small>{{ appearanceHints[item.id] || item.hint }}</small></span>
+              <el-icon v-if="store.appearanceId === item.id" class="selection-check"><Check /></el-icon>
+            </span>
+          </el-button>
+        </div>
+      </section>
+
+      <section class="theme-section" aria-labelledby="theme-accent-heading">
+        <div class="theme-section__heading">
+          <h3 id="theme-accent-heading">强调色</h3>
+          <span>用于操作与选中状态，涨跌颜色保持不变</span>
+        </div>
+        <div class="accent-grid" role="group" aria-label="强调色">
+          <el-button
+            v-for="item in store.primaries"
+            :key="item.id"
+            class="accent-choice"
+            :class="{ 'is-selected': store.primaryId === item.id }"
+            :aria-label="item.label"
+            :aria-pressed="store.primaryId === item.id"
+            @click="store.setPrimary(item.id)"
+          >
+            <span class="accent-choice__color" :style="{ background: item.color }" aria-hidden="true" />
+            <span>{{ item.label }}</span>
+            <span class="accent-choice__indicator" aria-hidden="true"><el-icon v-if="store.primaryId === item.id"><Check /></el-icon></span>
+          </el-button>
+        </div>
+        <div class="custom-accent">
+          <span class="custom-accent__label">自定义颜色</span>
+          <el-color-picker
+            :model-value="store.customColor"
+            :predefine="store.presets"
+            aria-label="自定义强调色"
+            @change="updateCustom"
+          />
+          <span class="custom-accent__value">{{ store.customColor.toUpperCase() }}</span>
+          <span class="custom-accent__hint" :class="{ 'is-corrected': store.isCustom && corrected }">
+            {{ store.isCustom && corrected ? '已自动调整对比度，确保文字清晰' : '选择后立即应用' }}
           </span>
-          <span class="appearance__label">{{ item.label }}</span>
-          <span class="appearance__hint">{{ item.hint }}</span>
-        </button>
-      </div>
-    </section>
+        </div>
+      </section>
 
-    <section class="theme-block">
-      <h3 class="theme-block__kicker">主色</h3>
-      <div class="flex flex-wrap gap-1">
-        <button
-          v-for="item in store.primaries"
-          :key="item.id"
-          type="button"
-          class="swatch inline-flex h-[var(--ctl-h)] items-center border px-2"
-          :class="{ 'swatch--on': store.primaryId === item.id }"
-          :style="{ '--sw': item.color }"
-          :aria-pressed="store.primaryId === item.id"
-          :title="item.label"
-          @click="store.setPrimary(item.id)"
-        >
-          <span class="swatch__chip" aria-hidden="true" />
-          {{ item.label }}
-        </button>
-      </div>
-    </section>
-
-    <section class="theme-block">
-      <h3 class="theme-block__kicker">自定义</h3>
-      <div class="custom-row">
-        <el-color-picker
-          :model-value="store.customColor"
-          :predefine="store.presets"
-          size="small"
-          @change="store.setCustomPrimary($event ?? store.customColor)"
-        />
-        <span class="custom-hint" :class="{ 'custom-hint--on': store.isCustom && corrected }">
-          {{ store.isCustom && corrected ? '已按对比度自动校正' : '任选一色，即时生效' }}
-        </span>
-      </div>
-      <!-- 实时预览用真控件：主按钮/次按钮/链接/选中标签，一眼看出对比度是否可用 -->
-      <div class="preview-row">
-        <el-button type="primary" size="small">主按钮</el-button>
-        <el-button size="small">次按钮</el-button>
-        <a class="preview-link" href="#" @click.prevent>链接文字</a>
-        <el-tag size="small" effect="light">选中标签</el-tag>
-      </div>
-    </section>
-
+      <section class="control-preview" aria-label="控件效果预览">
+        <div class="control-preview__caption"><strong>效果预览</strong><span>{{ appearanceName }} · {{ primaryName }}</span></div>
+        <div class="control-preview__items">
+          <el-button type="primary" size="small">主要操作</el-button>
+          <el-button size="small">次要操作</el-button>
+          <el-button link type="primary" size="small">文字链接</el-button>
+          <el-tag effect="light" size="small">已选中</el-tag>
+        </div>
+      </section>
+    </div>
     <template #footer>
-      <el-button type="primary" @click="close">用这套</el-button>
+      <span class="theme-save-status is-leading" role="status"><el-icon><Check /></el-icon>更改即时生效，已自动保存</span>
+      <el-button type="primary" @click="emit('update:modelValue', false)">完成</el-button>
     </template>
   </el-dialog>
 </template>
 
-<style scoped>
-/* 选一下就即时生效，所以没有「取消」：footer 只留一个收工按钮 */
-.theme-block + .theme-block {
-  margin-top: var(--gap-3);
-}
-
-.theme-block__kicker {
-  margin: 0 0 var(--gap-2);
-  color: var(--text-tertiary);
-  font-size: var(--fs-kicker);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-
-.appearance-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--gap-2);
-}
-
-.appearance {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 3px;
-  padding: 0;
-  border: 0;
-  background: none;
-  text-align: left;
-}
-
-.appearance__scene {
-  display: flex;
-  align-items: flex-end;
-  height: 44px;
-  padding: 6px 6px 0;
-  border: 1px solid;
-  border-radius: var(--radius);
-}
-
-.appearance--on .appearance__scene {
-  outline: 2px solid var(--seal);
-  outline-offset: 1px;
-}
-
-.appearance__panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 3px;
-  height: 100%;
-  padding: 0 5px;
-  border: 1px solid;
-  border-bottom: 0;
-  border-radius: var(--radius) var(--radius) 0 0;
-}
-
-.appearance__line {
-  height: 3px;
-  width: 100%;
-  border-radius: 2px;
-  opacity: 0.85;
-}
-
-.appearance__line--short {
-  width: 62%;
-}
-
-.appearance__label {
-  color: var(--text-primary);
-  font-size: var(--fs-aux);
-  font-weight: 600;
-}
-
-.appearance--on .appearance__label {
-  color: var(--seal-ink);
-}
-
-.appearance__hint {
-  color: var(--text-tertiary);
-  font-size: var(--fs-kicker);
-}
-
-.swatch-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-1);
-}
-
-.swatch {
-  display: inline-flex;
-  align-items: center;
-  height: var(--ctl-h);
-  padding: 0 var(--gap-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text-primary);
-  font-size: var(--fs-body);
-  font-weight: 500;
-}
-
-.swatch:hover {
-  border-color: var(--seal-border);
-}
-
-/* 选中态用品牌描边 + 极淡品牌底，不用阴影（D3） */
-.swatch--on {
-  border-color: var(--seal);
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-}
-
-.swatch__chip {
-  width: 10px;
-  height: 10px;
-  margin-right: var(--gap-1);
-  border: 1px solid color-mix(in oklab, var(--n-12) 12%, transparent);
-  border-radius: 999px;
-  background: var(--sw);
-}
-
-.custom-row {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-}
-
-.custom-hint {
-  color: var(--text-tertiary);
-  font-size: var(--fs-aux);
-}
-
-.custom-hint--on {
-  color: var(--warn);
-}
-
-.preview-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-2);
-  margin-top: var(--gap-2);
-  padding: var(--gap-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  background: var(--surface-sunken);
-}
-
-.preview-link {
-  color: var(--seal-ink);
-  font-size: var(--fs-body);
-  font-weight: 600;
-  text-decoration: none;
-}
-</style>
+<style scoped src="./ThemeDialog.css" />

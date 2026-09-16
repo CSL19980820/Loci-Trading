@@ -17,6 +17,7 @@ const props = defineProps<{
   points: WinRateTrendPoint[]
   granularity: 'month' | 'week'
   tags: string[]
+  names?: Map<string, string>
   mode: 'matrix' | 'single'
   selectedPeriod?: string | null
 }>()
@@ -103,7 +104,7 @@ const columns = computed<BasicTableColumn[]>(() => {
   for (const tag of props.tags) {
     cols.push({
       prop: tag,
-      label: strategyShortLabel(tag),
+      label: strategyShortLabel(tag, props.names),
       align: 'right',
       headerAlign: 'right',
       minWidth: 160,

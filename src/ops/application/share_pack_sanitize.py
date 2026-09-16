@@ -45,6 +45,12 @@ _SECRET_HINTS = (
 
 #: ops.db 里**整表清空**的个人记录。
 PERSONAL_TABLES = (
+    "stock_agent_trades",
+    "stock_agent_funding",
+    "stock_agent_equity",
+    "stock_agent_runs",
+    "stock_agent_profiles",
+    "guardian_diary_preferences",
     "job_runs",
     "paper_cabins",
     "paper_positions",
@@ -78,7 +84,7 @@ PERSONAL_TABLES = (
 #: 个人表的**命名约定**。新表只要落在这些前缀里就必须进 PERSONAL_TABLES；
 #: 回归测试对着真实建出来的 ops.db 卡这条（tests/ai/test_share_pack_ai_tables.py）。
 #: 靠人记得改清单是靠不住的——上面那八张 AI 表就是这么漏掉的。
-PERSONAL_TABLE_PREFIXES = ("ai_", "paper_mem")
+PERSONAL_TABLE_PREFIXES = ("ai_", "paper_mem", "stock_agent_")
 
 #: ops.db `meta` 只放行这些键（`*` 结尾为前缀匹配）。其余一律不外发。
 META_ALLOWLIST = (

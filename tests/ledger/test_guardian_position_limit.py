@@ -104,10 +104,14 @@ def test_close_choice_does_not_survive_to_another_day():
         closing_decision(eight_positions(), NOW.replace(day=16, hour=14, minute=50))
 
 
-def test_all_four_costs_survive_long_digest_truncation():
+def test_intraday_digest_omits_all_four_costs_but_full_renderer_keeps_them():
+    from src.ops.application.guardian_decision import render_positions
     state = four_positions()
     body = render_digest('很长的研究判断' * 1000, [], [], state)
     sent = split_text_for_wecom(body, max_chunks=1)[0]
+    assert '持仓 4 只' in sent and '很长的研究判断' not in sent
+    assert '截断' not in sent and '持仓成本' not in sent
+    full = render_positions(state)
     for code in OLD:
-        assert code in sent
-    assert sent.count('成本 10.0026元/股') == 4
+        assert code not in sent and code in full
+    assert full.count('成本 10.0026元/股') == 4

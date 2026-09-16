@@ -105,7 +105,7 @@ describe('router failure boundaries', () => {
 
     // 三次导航、一次请求：后两次全走 ensureLoaded() 的内存缓存
     expect(getAuthSession).toHaveBeenCalledTimes(1)
-    expect(router.currentRoute.value.name).toBe('insights')
+    expect(router.currentRoute.value.name).toBe('winrate')
   })
 
   it('缓存过期后在后台补一次，但导航不等它', { timeout: ROUTE_LOAD_TIMEOUT }, async () => {

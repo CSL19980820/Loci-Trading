@@ -1,6 +1,7 @@
 # Frontend (Loci UI)
 
-Vue3 + Pinia + Element Plus。按限界上下文分 features，共享壳在 shared。
+Vue3 + Pinia + Tailwind 4 + **shadcn-vue**（新代码的 UI 底座）。按限界上下文分 features，共享壳在 shared。
+Element Plus 是**存量**：存量 `<el-*>` 冻结不再新增、按模块增量迁移，接线与清理时机见 `AGENTS.md` §1.1 / §1.2。
 
 开发: `bun install && bun run dev`
 构建: `bun run build`

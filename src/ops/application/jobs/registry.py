@@ -42,6 +42,8 @@ from src.ops.application.jobs.prune_tenant import execute_prune_tenant
 from src.ops.application.jobs.screen import execute_screen
 from src.ops.application.jobs.skill import execute_skill
 from src.ops.application.jobs.guardian import execute_guardian
+from src.ops.application.jobs.stock_agent import execute_stock_agent
+from src.ops.application.jobs.stock_agent_maintenance import execute_stock_agent_maintenance
 from src.ops.application.jobs.guardian_review import execute_guardian_review
 from src.ops.application.jobs.guardian_delivery import execute_guardian_delivery
 from src.ops.application.jobs.exchange_calendar import execute_exchange_calendar
@@ -72,6 +74,8 @@ logger = logging.getLogger(__name__)
 #   notify / backtest / compare / optimize → 手动触发或用户在运维页自建 cron：
 #     都要 config 里点名 template / strategy / 区间，没有能托管的默认值
 EXECUTORS: dict[str, Executor] = {
+    "stock_agent": execute_stock_agent,
+    "stock_agent_maintenance": execute_stock_agent_maintenance,
     "guardian": execute_guardian,
     "guardian_review": execute_guardian_review,
     "guardian_delivery": execute_guardian_delivery,
@@ -352,7 +356,7 @@ def run_job(
             # 泵已停（stop 会 join 心跳线程），最后一拍补在这里：不让心跳线程和紧
             # 接着的 finish_run 抢同一条 run 的写锁。
             ctx.heartbeat()
-            if not (kind == "guardian" and isinstance(result, dict) and result.get("ledger_committed")):
+            if not (kind in {"guardian", "stock_agent"} and isinstance(result, dict) and result.get("ledger_committed")):
                 ctx.check_cancelled()
     except JobSkipped as exc:
         # 同批写入已有人在做（行情闸门），不是故障：不刷红运维页、不推企微。

@@ -308,7 +308,7 @@ def test_failed_model_keeps_portfolio_and_reports_failure(runtime):
     assert "未完成" in notify.call_args.kwargs["body"]
 
 
-def test_failure_notification_still_displays_position_cost(runtime):
+def test_failure_notification_displays_overview_not_position_cost(runtime):
     context, decide, notify = runtime
     state, fills, _ = simulate(EMPTY, decision(), CANDIDATES, quotes(10), NOW)
     with GuardianStore(context.palace_db) as ledger:
@@ -318,8 +318,9 @@ def test_failure_notification_still_displays_position_cost(runtime):
     with pytest.raises(JobError):
         guardian.execute_guardian({}, context)
     body = notify.call_args.kwargs["body"]
-    assert "600001" in body and "100股" in body
-    assert "成本 10.0026元/股" in body and "成本总额 1,000.26元" in body
+    assert "持仓 1 只" in body and "总资产" in body
+    assert "600001" not in body and "持仓成本" not in body
+    assert "交易研判" in body and "模型调用失败" in body and "本轮无已落账成交" in body
 
 
 def test_config_change_during_analysis_cancels_orders(runtime):

@@ -53,7 +53,12 @@ export interface GuardianWatch {
   position?: GuardianPosition
 }
 
+export interface GuardianHistoryQuery { start: string; end: string; limit: number; offset: number }
+export interface GuardianPage<T> { items: T[]; total: number; start?: string; end?: string; limit?: number; offset?: number }
+export type GuardianResearch = Pick<GuardianStatus, 'active_strategies' | 'watchlist' | 'watchlist_as_of' | 'watchlist_note'>
+
 export interface GuardianRun {
+  started?: number
   slot: string
   status: string
   result: {
@@ -85,8 +90,9 @@ export interface GuardianStatus {
   default_prompt: string
   job_id: string | null
   state: GuardianAccount
-  trades: { items: GuardianTrade[]; total: number }
-  performance: GuardianPerformance[]
+  observation_count?: number
+  trades?: { items: GuardianTrade[]; total: number }
+  performance?: GuardianPerformance[]
   runs: GuardianRun[]
 }
 
@@ -113,6 +119,7 @@ export interface GuardianAccount {
 
 export type GuardianReviewPeriod = 'premarket' | 'daily' | 'weekly'
 export interface GuardianReviewSummary {
+  started?: number
   report_key: string
   period: GuardianReviewPeriod
   trade_date: string

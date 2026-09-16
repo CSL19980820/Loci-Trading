@@ -1,8 +1,0 @@
-.insights-body { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; gap: var(--gap-2); padding: var(--gap-2); overflow-y: auto; overscroll-behavior: contain; }
-.insights-body--table { overflow: hidden; }
-.health-hero { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--gap-3) var(--gap-4); padding: var(--gap-3); }
-.text-ok { color: var(--info-ink); }
-.text-warn { color: var(--warn-ink); }
-:deep(.row-critical > td.el-table__cell) { background: color-mix(in oklab, var(--warn) 12%, var(--surface)); }
-:deep(.row-warning > td.el-table__cell) { background: color-mix(in oklab, var(--warn) 6%, var(--surface)); }
-@media (max-width: 640px) { .health-hero { grid-template-columns: minmax(0, 1fr); } }

@@ -14,6 +14,8 @@ export const NAV_LABELS = {
   pulse: { path: '/', title: '盘面', short: '盘面' },
   live: { path: '/live', title: '实时大屏', short: '大屏' },
   pool: { path: '/pool', title: '候选池', short: '候选池' },
+  agents: { path: '/agents', title: '股票智能体', short: '智能体' },
+  'agent-detail': { path: '/agents/:id', title: '智能体工作室' },
   reviews: { path: '/reviews', title: '复盘中心', short: '复盘' },
   'review-records': { path: '/reviews/records', title: '复盘记录', short: '记录' },
   winrate: { path: '/winrate', title: '胜率统计', short: '胜率' },

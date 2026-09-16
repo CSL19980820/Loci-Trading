@@ -404,6 +404,8 @@ export interface WinRateExtremeSample {
 
 export interface WinRateSummary {
   strategy_tag: string
+  /** 当前租户工坊目录中的名称，不从历史编号猜测。 */
+  strategy_name?: string
   total: number
   wins: number
   win_rate: number | null
