@@ -2,14 +2,10 @@
 
 
 def current_references(facts):
-    start = facts.get('baseline_date') if facts['period'] == 'premarket' else facts.get('start_date', facts['trade_date'])
-    end = facts.get('baseline_date') if facts['period'] == 'premarket' else facts['trade_date']
-    rows = []
-    for row in facts.get('strategy_reference_pool', []):
-        signals = [s for s in row.get('signals', []) if start <= str(s.get('date') or '') <= end]
-        if signals:
-            rows.append({**row, 'signals': signals})
-    return rows
+    days = set(facts.get('reference_trading_days', []))
+    return [{**row, 'signals': [s for s in row.get('signals', []) if not days or s.get('date') in days]}
+            for row in facts.get('strategy_reference_pool', [])
+            if any(not days or s.get('date') in days for s in row.get('signals', []))]
 
 
 def reference_summary(facts):

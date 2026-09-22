@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { CopyDocument, RefreshRight } from '@element-plus/icons-vue'
+import { Copy, RefreshCw } from '@lucide/vue'
+
+import { Button } from '@/shared/components/ui/button'
 
 defineProps<{
   /** 用户：重跑；助手：重新生成 */
@@ -16,32 +18,33 @@ const emit = defineEmits<{
 
 <template>
   <div class="assistant-msg-actions mt-1 flex flex-wrap items-center gap-1" data-testid="assistant-msg-actions">
-    <el-button
+    <Button
+      variant="ghost"
+      size="sm"
       class="assistant-msg-actions__btn"
-      text
-      size="small"
-      :icon="CopyDocument"
       data-testid="assistant-msg-copy"
       @click="emit('copy')"
     >
+      <Copy aria-hidden="true" />
       复制
-    </el-button>
-    <el-button
+    </Button>
+    <Button
       v-if="showRerun"
+      variant="ghost"
+      size="sm"
       class="assistant-msg-actions__btn"
-      text
-      size="small"
-      :icon="RefreshRight"
       :disabled="disabled"
       data-testid="assistant-msg-rerun"
       @click="emit('rerun')"
     >
+      <RefreshCw aria-hidden="true" />
       {{ rerunLabel }}
-    </el-button>
+    </Button>
   </div>
 </template>
 
 <style scoped>
-.assistant-msg-actions__btn { --el-button-text-color: var(--mist); --el-button-hover-text-color: var(--ink); --el-button-hover-bg-color: var(--surface-hover); height: var(--ctl-h); margin: 0; padding-inline: var(--gap-2); font-size: var(--ai-fs-body); }
+.assistant-msg-actions__btn { color: var(--mist); font-size: var(--ai-fs-body); }
+.assistant-msg-actions__btn:hover { color: var(--ink); background: var(--surface-hover); }
 .assistant-msg-actions__btn:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
 </style>

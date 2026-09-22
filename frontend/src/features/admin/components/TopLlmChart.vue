@@ -33,11 +33,12 @@ function buildOption(): echarts.EChartsCoreOption {
   return {
     tooltip: {
       trigger: 'axis',
+      renderMode: 'richText',
       axisPointer: { type: 'shadow' },
       formatter: (params: any) => {
         const item = Array.isArray(params) ? params[0] : params
         if (!item) return ''
-        return `<strong>${item.name}</strong><br/>${formatTokens(Number(item.value))} tokens（词元）`
+        return `${item.name}\n${formatTokens(Number(item.value))} tokens（词元）`
       },
     },
     grid: {
@@ -108,7 +109,7 @@ function renderChart(): void {
 
 watch([() => props.items, tokens], () => {
   renderChart()
-}, { deep: true })
+}, { deep: true, flush: 'post' })
 
 onMounted(() => {
   renderChart()
@@ -123,8 +124,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="top-llm-chart">
-    <div v-if="items.length > 0" ref="chartEl" class="chart-canvas" role="img" aria-label="当月大模型用量排行图" />
-    <EmptyState v-else description="本月暂无大模型用量" reason="有调用后自动统计" />
+    <div v-show="items.length > 0" ref="chartEl" class="chart-canvas" role="img" aria-label="当月大模型用量排行图" />
+    <EmptyState v-if="!items.length" description="本月暂无大模型用量" reason="有调用后自动统计" />
   </div>
 </template>
 
@@ -132,7 +133,8 @@ onBeforeUnmount(() => {
 .top-llm-chart {
   width: 100%;
   flex: 1 1 auto;
-  min-height: calc(var(--row-h) * 8);
+  min-height: 0;
+  height: 100%;
   display: flex;
   align-items: stretch;
   justify-content: stretch;

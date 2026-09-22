@@ -1,4 +1,5 @@
 """盘前计划、日复盘与周复盘；不调用任何交易撮合函数。"""
+from copy import deepcopy
 from datetime import datetime
 from hashlib import sha256
 from typing import Any
@@ -8,17 +9,19 @@ from src.ledger import GuardianStore, PalaceStore
 from src.market import calendar_trading_day
 from src.shared.paths import palace_db
 from src.ops.application.guardian_config import get_config
-from src.ops.application.guardian_context import active_strategies, observe
+from src.ops.application.guardian_context import reference_days, strategy_sources, quant_reference_candidates, observe
 from src.ops.application.guardian_decision import render_positions
 from src.ops.application.guardian_review_agent import generate_review
 from src.ops.application.guardian_review_data import build_review_facts, report_window, PERIOD_LABELS
 from src.ops.application.guardian_review_format import report_body
+from src.ops.application.guardian_review_digest import DIGEST_MAX_BYTES, notification_digest
 from src.ops.application.jobs.context import JobContext, JobError, JobSkipped
 from src.ops.application.notify import split_text_for_wecom
-from src.ops.application.notify_dispatch import dispatch_text
+from src.ops.application.notify_dispatch import dispatch_text, ordered_delivery
 from src.ops.application.notify_registry import get_channel_config
 
 
+@ordered_delivery
 def _notify(ledger: Any, store: Any, cfg: dict, period: str, day: str, result: dict) -> None:
     if not cfg["notify"]:
         if "notify" not in result:
@@ -28,19 +31,28 @@ def _notify(ledger: Any, store: Any, cfg: dict, period: str, day: str, result: d
         return
     suffix = " · 更正" if result.get("revision", 1) > 1 else ""
     title = f"自主交易员 · {PERIOD_LABELS[period]}{suffix} · {day}"
-    body = result['body']
-    # 上界按字符数给足，取消摘要和固定分片数截断；为标题、序号预留字节。
-    chunks = split_text_for_wecom(body, limit_bytes=1700, max_chunks=max(1, len(body)))
+    from src.ops.application.guardian_report_share import publish_report_share
+    share_error = ""
+    try:
+        share_url = publish_report_share(ledger, period, day, result)
+    except Exception as exc:
+        share_url, share_error = "", str(exc)
+    # Always rebuild the presentation from complete stored analysis, including old
+    # revisions. The legacy body/notification_body may both contain long reports.
+    budget = min(DIGEST_MAX_BYTES, 2048 - len(f'【{title}】\n'.encode('utf-8')))
+    body = notification_digest(result['facts'], result['analysis'], share_url=share_url, limit_bytes=budget)
+    chunks = [body]
     digest = sha256(body.encode('utf-8')).hexdigest()
     previous = (ledger.report(period, day) or {}).get('result', {}).get('notify', {})
     parts = dict(previous.get('parts', {})) if previous.get('body_sha256') == digest else {}
-    progress = {'success': False, 'body_sha256': digest, 'total_parts': len(chunks), 'parts': parts}
+    progress = {'success': False, 'body_sha256': digest, 'total_parts': len(chunks), 'parts': parts,
+                'share_url': share_url, 'share_error': share_error, 'format': 'digest_v2', 'body': body}
     webhook = str(get_channel_config(store, 'wecom').get('url') or '')
     for index, chunk in enumerate(chunks, 1):
         key = str(index)
         if parts.get(key, {}).get('success'):
             continue
-        part_title = f"{title}（{index}/{len(chunks)}）"
+        part_title = title
         wire_bytes = len(f'【{part_title}】\n{chunk}'.encode('utf-8'))
         if wire_bytes > 2048:
             raise JobError('报告分片含标题后超出企微字节上限，拒绝截断发送')
@@ -87,6 +99,10 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
                 ledger.apply_close_valuation(existing["result"]["facts"]["account"], day)
             _notify(ledger, store, cfg, period, day, existing["result"])
             return {"report_key": existing["report_key"], "reused": True, "status": "success"}
+        if period == 'weekly':
+            daily = ledger.report('daily', day)
+            if not daily or daily['status'] != 'success':
+                raise JobSkipped('等待本周最后一个交易日的日复盘完成，再归集整周经验')
         token = ledger.claim_report(period, day)
         if token is None:
             raise JobSkipped("同一报告正在生成")
@@ -94,19 +110,19 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
             with context.market() as market:
                 facts = build_review_facts(ledger, market, period, day, now)
                 facts["correction_reason"] = (existing or {}).get("result", {}).get("correction_reason", "")
-                facts["trading_preferences"] = cfg["prompt"]
                 if day == now.date().isoformat():
                     with PalaceStore(context.palace_db or palace_db()) as palace:
-                        reference = observe(palace, market.trading_days(end=day)[-5:], ledger.state(), [])
+                        reference = quant_reference_candidates(observe(palace, reference_days(facts["planning_trade_date"]), ledger.state(), []))
                     facts["strategy_reference_pool"] = [{"code": r["code"], "name": r["name"], "strategies": r["strategies"],
-                        "signals": [{k: signal.get(k) for k in ("date", "timing", "reason", "created_at", "source", "strategy_slug", "rule_version")} for signal in r["signals"]]} for r in reference]
-                    facts["active_strategies"] = active_strategies(store)
+                        "signals": deepcopy(r["signals"])} for r in reference if r['signals']]
+                    facts["reference_trading_days"] = reference_days(facts["planning_trade_date"])
+                    facts["active_strategies"] = strategy_sources(store)
                     facts["reference_pool_as_of"] = now.isoformat()
                     facts["reference_pool_usage"] = "本次读取的参考池供后续计划，不用于重建日内时点信号；日内操作以cycles和trades为准。"
                     facts["evidence_ids"].extend(f"reference:{r['code']}" for r in reference)
             context.check_cancelled()
             analysis, usage, sources = generate_review(store, cfg, facts, check_cancelled=context.check_cancelled, palace_path=context.palace_db)
-            codes = [p['code'] for p in analysis.get('plans', [])]
+            codes = list(dict.fromkeys(p['code'] for p in [*analysis.get('plans', []), *analysis.get('stock_reviews', []), *analysis.get('watchlist_updates', [])]))
             if codes:
                 with context.market() as market:
                     facts['stock_names'] = {code: row['name'] for code, row in market.instruments_meta(codes).items()}
@@ -119,7 +135,7 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
             result = {"status": "success", "facts": facts, "analysis": analysis, "usage": usage,
                       "revision": (existing or {}).get("result", {}).get("next_revision", 1),
                       "tool_evidence": sources, "created_at": finished.isoformat(),
-                      "body": report_body(facts, analysis), "notification_body": report_body(facts, analysis, compact=True)}
+                      "body": report_body(facts, analysis), "notification_body": notification_digest(facts, analysis)}
             ledger.finish_report(period, day, token, result)
         except Exception as exc:
             failure = {"status": "failed", "error": str(exc), "created_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),

@@ -33,6 +33,7 @@ from src.ops.application.stock_agent_service import ensure_stock_agent_jobs
 from src.ops.application.retire_dragon_pool import retire_dragon_pool
 from src.ops.application.retire_dragon_return import retire_dragon_return
 from src.ops.application.retire_second_wave import retire_second_wave
+from src.ops.application.retire_yixian_auction import retire_yixian_auction
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,23 @@ def _retire_removed_playbooks(store: Any) -> None:
             logger.info("二波监测已退役：%s", wave_plan)
     except Exception as exc:  # noqa: BLE001 — 清理失败不阻断应用启动
         logger.warning("二波监测退役清理失败：%s", exc)
+
+    try:
+        yixian_plan = retire_yixian_auction(store)
+        if any(
+            yixian_plan.get(key)
+            for key in (
+                "removed_jobs",
+                "removed_job_runs",
+                "removed_skill",
+                "removed_skill_history",
+                "removed_cabin",
+                "removed_candidates",
+            )
+        ):
+            logger.info("一线定乾坤已退役：%s", yixian_plan)
+    except Exception as exc:  # noqa: BLE001 — 清理失败不阻断应用启动
+        logger.warning("一线定乾坤退役清理失败：%s", exc)
 
 
 def ensure_all_managed_jobs(store: Any) -> None:

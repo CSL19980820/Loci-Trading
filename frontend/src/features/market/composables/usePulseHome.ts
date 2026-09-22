@@ -1,11 +1,10 @@
 /**
- * 首页盘面数据：指数/仓摘要、近选跟踪（T～T+4）、市场榜、今日选股。
+ * 首页盘面数据：指数、近选跟踪（T～T+4）、市场榜。
+ * 智能体研判在 `usePulseAgentFeed.ts`，两份数据互不依赖。
  * 数字以后端与 live 叠价为准；无数据诚实空态，不掺演示票。
  */
 import { computed, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
-
-import { getTodayAlerts } from '@/shared/api/palace'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import {
   getCandidateOutcomes,
@@ -21,30 +20,20 @@ import {
 import { useLivePolling } from '@/shared/composables/useLivePolling'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { MarketSession } from '@/shared/lib/marketSession'
-import type { BoardRow, ScreenCandidate, StrategyInfo } from '@/shared/types/quant'
+import type { BoardRow, StrategyInfo } from '@/shared/types/quant'
 
 import {
   boardRowsToSpotMap,
   changeFromEntry,
-  collectPicksForDate,
   dedupeTrackRowsByDayCode,
-  effectivePct,
   excludeTodayFromTrack,
   horizonReturn,
   localIsoDate,
-  rankBoardRows,
-  rankSectorRows,
   screenSessionDay,
-  splitScreenDates,
   strategyDisplayName,
   swingFromLowHigh,
   trackAsOfDate,
-  type PulseBoardTab,
-  type PulsePickRow,
-  type SectorBoardRow,
 } from './pulseHomeLogic'
-
-export type { PulseBoardTab, PulsePickRow, SectorBoardRow }
 
 /** 近选跟踪行：选入价/最新/累计涨跌 + 后端 T+1/T+3。 */
 export type PulseTrackRow = {
@@ -64,19 +53,7 @@ export type PulseTrackRow = {
 
 export type PickPctMode = 'live' | 'local' | 'none'
 
-export { effectivePct }
-
 const TRACK_WINDOW_DAYS = 5
-
-function sessionLabel(session: MarketSession | null): string {
-  if (!session) return '—'
-  if (!session.is_trading_day) return '休市'
-  const reason = session.live_reason
-  if (reason === 'live_window' || session.in_live_clock) return '交易中'
-  if (reason === 'before_open') return '开盘前'
-  if (typeof reason === 'string' && reason.startsWith('after_close')) return '已收盘'
-  return session.live_allowed ? '交易中' : '休市'
-}
 
 function boardLatestPrice(row: BoardRow | undefined): number | null {
   if (!row) return null
@@ -95,22 +72,15 @@ export function usePulseHome() {
   const tape = ref<LiveTape | null>(null)
   const strategies = ref<StrategyInfo[]>([])
   const trackRows = ref<PulseTrackRow[]>([])
-  const todayRows = ref<PulsePickRow[]>([])
   const trackNote = ref('')
   const todayDate = ref('')
   // null = 尚未加载/加载失败；0 才是「一次都没跑过」的真·新用户
   const screenHistoryTotal = ref<number | null>(null)
-  const boardTab = ref<PulseBoardTab>('gain')
   const boardRows = ref<BoardRow[]>([])
-  const sectorRows = ref<SectorBoardRow[]>([])
-  const boardNote = ref('')
   const boardAsOf = ref('')
   const pickPctMode = ref<PickPctMode>('none')
-  const alertCount = ref(0)
-  const clock = ref('')
   const tapeError = ref('')
   const historyError = ref('')
-  const alertsError = ref('')
   let dataGeneration = 0
   let boardRequestSeq = 0
   let livePollTick = 0
@@ -124,13 +94,6 @@ export function usePulseHome() {
   }
 
   const indices = computed(() => tape.value?.indices ?? [])
-  const sessionText = computed(() => sessionLabel(session.value))
-  const asOfText = computed(() => {
-    const raw = tape.value?.as_of || session.value?.now || ''
-    if (!raw) return clock.value
-    const part = raw.includes(' ') ? raw.split(' ')[1] : raw
-    return part ? String(part).slice(0, 8) : raw
-  })
 
   async function refreshTape(generation = dataGeneration): Promise<void> {
     try {
@@ -138,18 +101,19 @@ export function usePulseHome() {
       if (!isCurrent(generation)) return
       tape.value = next
       tapeError.value = ''
-      if (next.as_of) clock.value = next.as_of
     } catch (caught: unknown) {
       if (!isCurrent(generation)) return
       tapeError.value = toErrorMessage(caught, '指数行情更新失败')
     }
   }
 
+  /**
+   * 市场榜取数。样本榜面板已下线，这里只为两件事保留：
+   * 1. 选股叠价时复用榜内行（减少 codes spot 请求）；
+   * 2. 页头「库内 HH:mm:ss」快照时间，以及「同步现价」要落的代码集。
+   */
   async function loadBoard(generation = dataGeneration): Promise<void> {
     const requestSeq = ++boardRequestSeq
-    const tab = boardTab.value
-    const sort =
-      tab === 'turnover' ? 'turnover_desc' : 'pct_desc'
     const liveAllowed = liveRequestAllowed()
     try {
       const board = await getMarketBoard({
@@ -157,36 +121,20 @@ export function usePulseHome() {
         // 轮询只读 live；persist 需写鉴权，绑 live 会在 production 整请求 401
         persist: false,
         page: 1,
-        // 板块聚合需要更宽样本；涨幅/换手仍取前页即可
-        page_size: tab === 'sector' ? 100 : 40,
-        sort,
+        page_size: 40,
+        sort: 'pct_desc',
         instrument_type: 'STOCK',
         status: 'normal',
       })
       if (!isCurrent(generation) || requestSeq !== boardRequestSeq) return
-      if (tab === 'sector') {
-        // 股票行仍缓存，供选股叠价复用；展示走行业聚合
-        boardRows.value = rankBoardRows(board.items, 'gain')
-        sectorRows.value = rankSectorRows(board.items)
-      } else {
-        boardRows.value = rankBoardRows(board.items, tab)
-        sectorRows.value = []
-      }
+      boardRows.value = board.items
       boardAsOf.value = board.as_of || ''
-      const liveHint = board.live_error ? `实时降级：${board.live_error}` : ''
-      const sectorHint =
-        tab === 'sector'
-          ? liveAllowed
-            ? '库内行业·成交额加权（叠实时价）'
-            : '库内行业·成交额加权（本地日线）'
-          : ''
-      boardNote.value = [sectorHint, liveHint].filter(Boolean).join(' · ')
-    } catch (caught: unknown) {
+    } catch {
       if (!isCurrent(generation) || requestSeq !== boardRequestSeq) return
+      // 榜行现在只是「叠价复用」的加速器：失败就让 resolveSpotMap 退回按 code 逐只取，
+      // 数据仍然正确，只是多几个请求——所以这里不另开一条错误通道。
       boardRows.value = []
-      sectorRows.value = []
       boardAsOf.value = ''
-      boardNote.value = toErrorMessage(caught, '市场榜加载失败')
     }
   }
 
@@ -264,25 +212,6 @@ export function usePulseHome() {
     if (trackChanged) {
       trackRows.value = nextTrack
     }
-
-    const nextToday = todayRows.value.map((r) => {
-      const spot = spotMap.get(r.code)
-      return {
-        ...r,
-        pct: spot ? effectivePct(spot) : r.pct,
-        name: spot?.name || r.name,
-      }
-    })
-
-    const todayChanged = nextToday.some((nr, i) => {
-      const prev = todayRows.value[i]
-      if (!prev) return true
-      return nr.code !== prev.code || nr.pct !== prev.pct
-    }) || nextToday.length !== todayRows.value.length
-
-    if (todayChanged) {
-      todayRows.value = nextToday
-    }
   }
 
   async function loadScreenTables(generation = dataGeneration): Promise<void> {
@@ -309,7 +238,7 @@ export function usePulseHome() {
         Boolean(session.value?.is_trading_day),
       )
 
-      const [trackResult, historyBatch] = await Promise.all([
+      const [trackResult, historyCount] = await Promise.all([
         getCandidateOutcomes(400, {
           window_days: TRACK_WINDOW_DAYS,
           selected_only: true,
@@ -317,67 +246,52 @@ export function usePulseHome() {
         })
           .then((payload) => ({ outcomes: payload.outcomes, failed: false }))
           .catch(() => ({ outcomes: [], failed: true })),
+        // 只为了「这个用户到底跑没跑过选股」，好让近选跟踪的空态不说谎。
         list.length
           ? getScreenHistoryBatch({
               strategies: list.map((s) => s.slug),
               limit: 80,
               live_only: true,
             })
-              .then((payload) => ({ histories: payload.histories, failed: false }))
-              .catch(() => ({
-                histories: list.map((s) => ({
-                  strategy: s.slug,
-                  total: 0,
-                  dates: [] as string[],
-                  by_date: {} as Record<string, ScreenCandidate[]>,
-                })),
-                failed: true,
+              .then((payload) => ({
+                total: payload.histories.reduce((sum, h) => sum + h.dates.length, 0),
+                failed: false,
               }))
-          : Promise.resolve({ histories: [], failed: false }),
+              .catch(() => ({ total: null, failed: true }))
+          : Promise.resolve({ total: 0, failed: false }),
       ])
       if (!isCurrent(generation)) return
 
       const parts: string[] = []
       if (trackResult.failed) parts.push('近选跟踪')
-      if (historyBatch.failed) parts.push('选股历史')
+      if (historyCount.failed) parts.push('选股历史')
       historyError.value = parts.length ? `部分数据加载失败：${parts.join('；')}` : ''
+      screenHistoryTotal.value = historyCount.total
 
-      const histories = historyBatch.histories
-      screenHistoryTotal.value = historyBatch.failed
-        ? null
-        : histories.reduce((sum, h) => sum + h.dates.length, 0)
-      const dateSet = new Set<string>()
-      for (const h of histories) {
-        for (const d of h.dates) dateSet.add(d)
-      }
-      const dates = [...dateSet].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
-      const { todayHit } = splitScreenDates(dates, calendarToday, sessionDay)
-      todayDate.value = todayHit
-
-      let today = collectPicksForDate(histories, todayHit, nameBySlug)
-      const trackDrafts = trackResult.outcomes.map((o) => ({
-        rank: 0,
-        code: o.code,
-        name: o.name || o.code,
-        date: o.base_date,
-        strategy: o.strategy_slug || o.rule_version || '',
-        // 中文名兜底一处收口：接口名 → 词表/拼音词根 → 「自定义战法」，绝不漏 slug
-        strategyName: strategyDisplayName(o.strategy_slug || o.rule_version, nameBySlug),
-        entryPrice: o.base_close,
-        latestPrice: null as number | null,
-        changePct: null as number | null,
-        swingPct: o.swing_pct ?? null,
-        t1: horizonReturn(o.returns, 1),
-        t3: horizonReturn(o.returns, 3),
-        score: o.score ?? null,
-      }))
       let track: PulseTrackRow[] = excludeTodayFromTrack(
-        dedupeTrackRowsByDayCode(trackDrafts).map(({ score: _score, ...row }) => row),
+        dedupeTrackRowsByDayCode(
+          trackResult.outcomes.map((o) => ({
+            rank: 0,
+            code: o.code,
+            name: o.name || o.code,
+            date: o.base_date,
+            strategy: o.strategy_slug || o.rule_version || '',
+            // 中文名兜底一处收口：接口名 → 词表/拼音词根 → 「自定义战法」，绝不漏 slug
+            strategyName: strategyDisplayName(o.strategy_slug || o.rule_version, nameBySlug),
+            entryPrice: o.base_close,
+            latestPrice: null as number | null,
+            changePct: null as number | null,
+            swingPct: o.swing_pct ?? null,
+            t1: horizonReturn(o.returns, 1),
+            t3: horizonReturn(o.returns, 3),
+            score: o.score ?? null,
+          })),
+        ).map(({ score: _score, ...row }) => row),
         calendarToday,
       )
 
       pickPctMode.value = 'none'
-      const codes = [...new Set([...track, ...today].map((r) => r.code))].slice(0, 80)
+      const codes = [...new Set(track.map((r) => r.code))].slice(0, 80)
       if (codes.length) {
         try {
           const spotMap = await resolveSpotMap(codes, generation, true)
@@ -385,25 +299,14 @@ export function usePulseHome() {
           track = track.map((r) => {
             const spot = spotMap.get(r.code)
             const latest = boardLatestPrice(spot)
-            const name = spot?.name || r.name
             const liveSwing =
-              r.swingPct == null && spot
-                ? swingFromLowHigh(spot.low, spot.high)
-                : null
+              r.swingPct == null && spot ? swingFromLowHigh(spot.low, spot.high) : null
             return {
               ...r,
-              name,
+              name: spot?.name || r.name,
               latestPrice: latest,
               changePct: changeFromEntry(r.entryPrice, latest),
               swingPct: r.swingPct ?? liveSwing,
-            }
-          })
-          today = today.map((r) => {
-            const spot = spotMap.get(r.code)
-            return {
-              ...r,
-              pct: spot ? effectivePct(spot) : r.pct,
-              name: spot?.name || r.name,
             }
           })
         } catch {
@@ -415,13 +318,8 @@ export function usePulseHome() {
         if (a.date !== b.date) return a.date < b.date ? 1 : -1
         return (b.changePct ?? -999) - (a.changePct ?? -999)
       })
-      today.sort((a, b) => {
-        if (a.score != null && b.score != null && b.score !== a.score) return b.score - a.score
-        return (b.pct ?? -999) - (a.pct ?? -999)
-      })
       if (!isCurrent(generation)) return
       trackRows.value = track.slice(0, 40).map((r, i) => ({ ...r, rank: i + 1 }))
-      todayRows.value = today.slice(0, 20).map((r, i) => ({ ...r, rank: i + 1 }))
       const datesInTrack = [...new Set(trackRows.value.map((r) => r.date))].sort()
       trackNote.value = datesInTrack.length
         ? `${datesInTrack[0]}～${datesInTrack[datesInTrack.length - 1]} · ${TRACK_WINDOW_DAYS} 个交易日`
@@ -430,8 +328,6 @@ export function usePulseHome() {
       if (!isCurrent(generation)) return
       historyError.value = ''
       trackRows.value = []
-      todayRows.value = []
-      todayDate.value = ''
       trackNote.value = ''
       screenHistoryTotal.value = null
       error.value = toErrorMessage(caught, '选股记录加载失败')
@@ -445,20 +341,10 @@ export function usePulseHome() {
     error.value = ''
     tapeError.value = ''
     historyError.value = ''
-    alertsError.value = ''
     try {
-      const [sess, alerts] = await Promise.all([
-        getMarketSession().catch(() => null),
-        // 触价提醒失败不能吞成空列表：那样「接口挂了」和「今天没触价」在
-        // 界面上完全一样，止损提醒会无声消失。
-        getTodayAlerts().catch((caught: unknown) => {
-          alertsError.value = toErrorMessage(caught, '触价提醒加载失败')
-          return null
-        }),
-      ])
+      const sess = await getMarketSession().catch(() => null)
       if (!isCurrent(generation)) return
       session.value = sess
-      alertCount.value = alerts?.length ?? 0
       // 指数/榜先出，整页遮罩随即撤掉；选股表较慢，不挡已渲染内容。
       await Promise.all([refreshTape(generation), loadBoard(generation)])
       if (!isCurrent(generation)) return
@@ -472,22 +358,21 @@ export function usePulseHome() {
     }
   }
 
-  async function setBoardTab(tab: PulseBoardTab): Promise<void> {
-    boardTab.value = tab
-    await loadBoard(dataGeneration)
-  }
-
-  /** 显式落盘盘中 spot（与轮询 persist:false 解耦；需写鉴权）。 */
-  async function persistSpot(): Promise<void> {
-    if (spotPersistBusy.value) return
+  /**
+   * 显式落盘盘中 spot（与轮询 persist:false 解耦；需写鉴权）。
+   * 返回落盘只数；失败自行 toast 并返回 null，调用方的读流程照常继续。
+   */
+  async function persistSpot(): Promise<number | null> {
+    if (spotPersistBusy.value) return null
     spotPersistBusy.value = true
     try {
       const codes = boardRows.value.map((r) => r.code).filter(Boolean).slice(0, 80)
       const result = await persistMarketBoardSpot(codes.length ? { codes } : {})
-      ElMessage.success(`现价已落盘 ${result.written} 只`)
       await loadBoard(dataGeneration)
+      return result.written
     } catch (caught: unknown) {
-      ElMessage.error(toErrorMessage(caught, '现价落盘失败'))
+      toast.error(toErrorMessage(caught, '现价落盘失败'))
+      return null
     } finally {
       spotPersistBusy.value = false
     }
@@ -509,10 +394,8 @@ export function usePulseHome() {
         if (!isCurrent(generation)) return
       }
 
-      if (!(trackRows.value.length || todayRows.value.length)) return
-      const codes = [
-        ...new Set([...trackRows.value, ...todayRows.value].map((r) => r.code)),
-      ].slice(0, 80)
+      if (!trackRows.value.length) return
+      const codes = [...new Set(trackRows.value.map((r) => r.code))].slice(0, 80)
       if (!codes.length) return
       try {
         const spotMap = await resolveSpotMap(codes, generation, true)
@@ -543,26 +426,15 @@ export function usePulseHome() {
     error,
     session,
     indices,
-    alertCount,
-    sessionText,
-    asOfText,
     tapeError,
     historyError,
-    alertsError,
     trackRows,
-    todayRows,
     trackNote,
-    todayDate,
     screenHistoryTotal,
-    boardTab,
     boardRows,
-    sectorRows,
-    boardNote,
     boardAsOf,
     pickPctMode,
     reload,
     persistSpot,
-    setBoardTab,
-    effectivePct,
   }
 }

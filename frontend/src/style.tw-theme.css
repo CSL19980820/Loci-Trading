@@ -1,4 +1,4 @@
-/* Tailwind v4 + shadcn语义桥。色彩真相来自 style.base.css / style.theme.css。 */
+/* Tailwind v4 + shadcn 语义桥。色彩真相来自 style.base.css / style.theme.css。 */
 @theme inline {
  --color-surface: var(--surface);
  --color-raised: var(--surface-raised);
@@ -10,6 +10,7 @@
  --color-line-default: var(--border-default);
  --color-line-strong: var(--border-strong);
  --color-ink: var(--text-primary);
+ --color-ink-2: var(--text-secondary);
  --color-mist: var(--text-tertiary);
  --color-disabled: var(--text-disabled);
  --color-seal: var(--seal);
@@ -19,6 +20,7 @@
  --color-seal-soft: var(--seal-soft);
  --color-seal-border: var(--seal-border);
  --color-stamp: var(--stamp);
+ --color-stamp-soft: var(--stamp-soft);
  --color-up: var(--up);
  --color-up-soft: var(--up-soft);
  --color-up-ink: var(--up-ink);
@@ -26,14 +28,21 @@
  --color-down-soft: var(--down-soft);
  --color-down-ink: var(--down-ink);
  --color-flat: var(--flat);
+ --color-gain: var(--up);
+ --color-loss: var(--down);
+ --color-rule: var(--rule);
+ --color-rule-soft: var(--rule-soft);
  --color-warn: var(--warn);
  --color-warn-soft: var(--warn-soft);
+ --color-warn-border: var(--warn-border);
  --color-warn-ink: var(--warn-ink);
  --color-info: var(--info);
  --color-info-soft: var(--info-soft);
+ --color-info-border: var(--info-border);
  --color-info-ink: var(--info-ink);
  --color-ok: var(--ok);
  --color-ok-soft: var(--ok-soft);
+ --color-ok-border: var(--ok-border);
  /* shadcn semantic aliases */
  --color-background: var(--surface-canvas);
  --color-foreground: var(--text-primary);
@@ -53,17 +62,28 @@
  --color-border: var(--border-subtle);
  --color-input: var(--border-default);
  --color-ring: var(--seal);
+ --color-sidebar: var(--sidebar);
+ --color-sidebar-hover: var(--sidebar-hover);
+ --color-sidebar-active: var(--sidebar-active);
  --text-micro: var(--fs-micro);
  --text-kicker: var(--fs-kicker);
  --text-aux: var(--fs-aux);
+ --text-ui: var(--fs-ui);
  --text-body: var(--fs-body);
  --text-title: var(--fs-title);
  --text-hero: var(--fs-hero);
  --text-tape: var(--fs-tape);
- --radius-sm: calc(var(--radius) - 2px);
+ --text-display: var(--fs-display);
+ --radius-xs: var(--radius-xs);
+ --radius-sm: var(--radius-sm);
  --radius-md: var(--radius);
  --radius-lg: var(--radius-lg);
  --radius-xl: var(--radius-xl);
+ --shadow-xs: var(--shadow-xs);
+ --shadow-sm: var(--shadow-sm);
+ --shadow-md: var(--shadow-md);
+ --shadow-lg: var(--shadow-lg);
  --font-sans: var(--font);
  --font-mono: var(--mono);
+ --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
 }

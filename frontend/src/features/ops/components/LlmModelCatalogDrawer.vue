@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import { default as SidePanel } from '@/shared/components/ui/app/SidePanel.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as DataGrid } from '@/shared/components/ui/app/DataGrid.vue'
+import { default as DataColumn } from '@/shared/components/ui/app/DataColumn.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+
 /**
  * 模型目录侧拉：64rem 通栏；表体单行 blotter（开 / id·徽标 / 展示名 / 上下文·hint / 输出 / 操作）。
  */
@@ -64,7 +75,7 @@ function ctxLabel(tokens: number | null | undefined): string {
   return formatContextWindow(tokens) || '—'
 }
 
-function rowClassName({ row }: { row: LlmModel }): string {
+function rowClassName({ row }: { row: Record<string, unknown> }): string {
   return row.id === defaultModel.value ? 'is-default' : ''
 }
 
@@ -136,7 +147,7 @@ async function saveCatalog(): Promise<void> {
 </script>
 
 <template>
-  <el-drawer
+  <SidePanel
     v-model="visible"
     :title="title"
     size="min(64rem, 92vw)"
@@ -152,8 +163,8 @@ async function saveCatalog(): Promise<void> {
         </header>
         <div class="sec__body">
           <div class="toolbar">
-            <el-button :loading="busy" @click="pullModels">拉取</el-button>
-            <el-select
+            <ActionButton :busy="busy" @click="pullModels">拉取</ActionButton>
+            <ChoiceField
               v-model="defaultModel"
               filterable
               clearable
@@ -162,20 +173,20 @@ async function saveCatalog(): Promise<void> {
               class="default-select"
               :disabled="busy"
             >
-              <el-option
+              <ChoiceOption
                 v-for="item in enabledModels"
                 :key="item.id"
                 :label="item.id"
                 :value="item.id"
               />
-            </el-select>
-            <el-button type="primary" :loading="busy" @click="saveCatalog">保存目录</el-button>
+            </ChoiceField>
+            <ActionButton tone="primary" :busy="busy" @click="saveCatalog">保存目录</ActionButton>
           </div>
 
           <p v-if="notice" class="notice mono">{{ notice }}</p>
 
           <div class="catalog-scroll">
-            <el-table
+            <DataGrid
               :data="draft"
               size="small"
               row-key="id"
@@ -183,40 +194,40 @@ async function saveCatalog(): Promise<void> {
               class="catalog-table"
               :row-class-name="rowClassName"
             >
-              <el-table-column label="开" width="48" align="center">
+              <DataColumn label="开" width="48" align="center">
                 <template #default="{ row }">
-                  <el-switch
+                  <ToggleSwitch
                     v-model="row.enabled"
                     :aria-label="`启用模型 ${row.id}`"
                     size="small"
                     :disabled="busy || row.id === defaultModel"
                   />
                 </template>
-              </el-table-column>
+              </DataColumn>
 
-              <el-table-column label="模型 id" min-width="220">
+              <DataColumn label="模型 id" min-width="220">
                 <template #default="{ row }">
                   <div class="id-cell">
                     <strong class="mono id-cell__text" :title="row.id">{{ row.id }}</strong>
-                    <el-tag
+                    <StatusBadge
                       v-if="row.id === defaultModel"
                       size="small"
-                      type="primary"
+                      tone="primary"
                       effect="plain"
                       class="id-cell__tag"
                     >
                       默认
-                    </el-tag>
-                    <el-tag size="small" type="info" effect="plain" class="id-cell__tag">
+                    </StatusBadge>
+                    <StatusBadge size="small" tone="info" effect="plain" class="id-cell__tag">
                       {{ row.source === 'manual' ? '手动' : '发现' }}
-                    </el-tag>
+                    </StatusBadge>
                   </div>
                 </template>
-              </el-table-column>
+              </DataColumn>
 
-              <el-table-column label="展示名" min-width="168">
+              <DataColumn label="展示名" min-width="168">
                 <template #default="{ row }">
-                  <el-input
+                  <TextField
                     v-model.trim="row.name"
                     size="small"
                     placeholder="展示名"
@@ -224,12 +235,12 @@ async function saveCatalog(): Promise<void> {
                     :disabled="busy"
                   />
                 </template>
-              </el-table-column>
+              </DataColumn>
 
-              <el-table-column label="上下文" width="152">
+              <DataColumn label="上下文" width="152">
                 <template #default="{ row }">
                   <div class="ctx-cell">
-                    <el-input-number
+                    <NumberInput
                       v-model="row.context_window"
                       :min="1"
                       :controls="false"
@@ -241,11 +252,11 @@ async function saveCatalog(): Promise<void> {
                     <span class="ctx-hint mono">{{ ctxLabel(row.context_window) }}</span>
                   </div>
                 </template>
-              </el-table-column>
+              </DataColumn>
 
-              <el-table-column label="输出" width="112">
+              <DataColumn label="输出" width="112">
                 <template #default="{ row }">
-                  <el-input-number
+                  <NumberInput
                     v-model="row.max_output_tokens"
                     :min="1"
                     :controls="false"
@@ -255,31 +266,31 @@ async function saveCatalog(): Promise<void> {
                     :disabled="busy"
                   />
                 </template>
-              </el-table-column>
+              </DataColumn>
 
-              <el-table-column label="操作" width="100" align="center" header-align="center" fixed="right">
+              <DataColumn label="操作" width="100" align="center" header-align="center" fixed="right">
                 <template #default="{ row }">
-                  <el-button
+                  <ActionButton
                     v-if="row.id !== defaultModel"
-                    link
+                    variant="link"
                     :disabled="busy"
                     @click="setAsDefault(row.id)"
                   >
                     默认
-                  </el-button>
+                  </ActionButton>
                   <span v-else class="op-placeholder">—</span>
-                  <el-button
+                  <ActionButton
                     v-if="row.source === 'manual'"
-                    link
-                    type="danger"
+                    variant="link"
+                    tone="danger"
                     :disabled="busy"
                     @click="removeModel(row.id)"
                   >
                     删
-                  </el-button>
+                  </ActionButton>
                 </template>
-              </el-table-column>
-            </el-table>
+              </DataColumn>
+            </DataGrid>
           </div>
         </div>
       </section>
@@ -290,21 +301,21 @@ async function saveCatalog(): Promise<void> {
         </header>
         <div class="sec__body">
           <div class="add-row">
-            <el-input v-model.trim="addForm.id" placeholder="模型 id" :disabled="busy" />
-            <el-input v-model.trim="addForm.name" placeholder="展示名（可选）" :disabled="busy" />
-            <el-input-number
+            <TextField v-model.trim="addForm.id" placeholder="模型 id" :disabled="busy" />
+            <TextField v-model.trim="addForm.name" placeholder="展示名（可选）" :disabled="busy" />
+            <NumberInput
               v-model="addForm.context_window"
               :min="1"
               :controls="false"
               placeholder="上下文"
               :disabled="busy"
             />
-            <el-button :disabled="busy" @click="addManualModel">添加</el-button>
+            <ActionButton :disabled="busy" @click="addManualModel">添加</ActionButton>
           </div>
         </div>
       </section>
     </template>
-  </el-drawer>
+  </SidePanel>
 </template>
 
 <style scoped>
@@ -371,7 +382,7 @@ async function saveCatalog(): Promise<void> {
 }
 
 /* 行高/配色走全局表皮肤；默认行用主色浅底描边（与全站选中行同值，不用 !important） */
-.catalog-table :deep(tr.is-default > td.el-table__cell) {
+.catalog-table :deep(tr.is-default > td[data-slot='table-cell']) {
   background: var(--seal-soft);
 }
 
@@ -415,8 +426,8 @@ async function saveCatalog(): Promise<void> {
   min-width: 0;
 }
 
-.cell-input :deep(.el-input__wrapper),
-.cell-input :deep(.el-input-number) {
+.cell-input :deep(.text-field__body),
+.cell-input :deep(.number-input) {
   width: 100%;
 }
 

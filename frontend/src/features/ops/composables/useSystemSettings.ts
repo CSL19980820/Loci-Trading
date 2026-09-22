@@ -1,14 +1,11 @@
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
 import {
-  getDataLocation,
   getMarketSyncSettings,
   getWecomSettings,
-  saveDataLocation,
   saveMarketSyncSettings,
   saveWecomSettings,
   testWecomSettings,
-  type DataLocationInfo,
 } from '@/shared/api/quant'
 import type { MarketSyncSettings, WecomSettings } from '@/shared/types/quant'
 
@@ -19,7 +16,7 @@ import {
   type WecomScreenTemplate,
 } from './wecomScreenTemplate'
 
-export type SectionKey = 'location' | 'sync' | 'notify' | 'appearance'
+export type SectionKey = 'sync' | 'notify'
 
 export type SectionStamp =
   | { kind: 'clean' }
@@ -78,11 +75,9 @@ function sameSyncCore(a: SyncDraft, b: SyncDraft): boolean {
 }
 
 export function useSystemSettings() {
-  const dataLoc = ref<DataLocationInfo | null>(null)
   const wecom = ref<WecomSettings>({ configured: false, url_masked: '' })
   const syncMeta = ref<Pick<MarketSyncSettings, 'intraday_job' | 'eod_job'> | null>(null)
 
-  const locationDir = ref('')
   const sync = reactive<SyncDraft>({ ...EMPTY_SYNC })
   const wecomUrl = ref('')
   const wecomClearPending = ref(false)
@@ -93,12 +88,10 @@ export function useSystemSettings() {
     normalizeWecomScreenTemplate(DEFAULT_WECOM_SCREEN_TEMPLATE),
   )
 
-  const baselineDir = ref('')
   const baselineSync = reactive<SyncDraft>({ ...EMPTY_SYNC })
 
   const savedAt = reactive<Partial<Record<SectionKey, string>>>({})
   const sectionError = reactive<Partial<Record<SectionKey, string>>>({})
-  const pendingRestart = ref(false)
   const footNotice = ref('')
   let loadVersion = 0
 
@@ -106,9 +99,6 @@ export function useSystemSettings() {
     loadVersion += 1
   })
 
-  const locationDirty = computed(
-    () => locationDir.value.trim() !== '' && locationDir.value.trim() !== baselineDir.value,
-  )
   const syncDirty = computed(() => !sameSyncCore(sync, baselineSync))
   const templateDirty = computed(
     () => !sameWecomScreenTemplate(screenTemplate.value, baselineScreenTemplate.value),
@@ -121,22 +111,16 @@ export function useSystemSettings() {
       templateDirty.value,
   )
   const dirty = computed(
-    () => locationDirty.value || syncDirty.value || notifyDirty.value,
+    () => syncDirty.value || notifyDirty.value,
   )
   const dirtyLabels = computed(() => {
     const labels: string[] = []
-    if (locationDirty.value) labels.push('数据目录')
     if (syncDirty.value) labels.push('行情同步')
     if (notifyDirty.value) labels.push('推送')
     return labels
   })
 
   function stampFor(key: SectionKey): SectionStamp {
-    if (key === 'appearance') return { kind: 'instant' }
-    if (key === 'location' && pendingRestart.value && !locationDirty.value) {
-      return { kind: 'pending' }
-    }
-    if (key === 'location' && locationDirty.value) return { kind: 'dirty' }
     if (key === 'sync' && syncDirty.value) return { kind: 'dirty' }
     if (key === 'notify' && notifyDirty.value) return { kind: 'dirty' }
     const at = savedAt[key]
@@ -145,25 +129,17 @@ export function useSystemSettings() {
   }
 
   const stamps = computed(() => ({
-    location: stampFor('location'),
     sync: stampFor('sync'),
     notify: stampFor('notify'),
-    appearance: stampFor('appearance') as SectionStamp,
   }))
 
   async function load(): Promise<void> {
     const version = ++loadVersion
-    const [dl, ms, wc] = await Promise.all([
-      getDataLocation(),
+    const [ms, wc] = await Promise.all([
       getMarketSyncSettings(),
       getWecomSettings(),
     ])
     if (version !== loadVersion) return
-    dataLoc.value = dl
-    locationDir.value = dl.pending_data_dir || dl.data_dir
-    baselineDir.value = dl.data_dir
-    pendingRestart.value = Boolean(dl.restart_required)
-
     Object.assign(sync, syncFrom(ms))
     Object.assign(baselineSync, syncFrom(ms))
     syncMeta.value = { intraday_job: ms.intraday_job, eod_job: ms.eod_job }
@@ -175,19 +151,16 @@ export function useSystemSettings() {
     screenTemplate.value = tpl
     baselineScreenTemplate.value = normalizeWecomScreenTemplate(tpl)
     footNotice.value = ''
-    sectionError.location = undefined
     sectionError.sync = undefined
     sectionError.notify = undefined
   }
 
   function revertAll(): void {
-    locationDir.value = baselineDir.value
     Object.assign(sync, { ...baselineSync })
     wecomUrl.value = ''
     wecomClearPending.value = false
     screenTemplate.value = normalizeWecomScreenTemplate(baselineScreenTemplate.value)
     footNotice.value = ''
-    sectionError.location = undefined
     sectionError.sync = undefined
     sectionError.notify = undefined
   }
@@ -215,18 +188,16 @@ export function useSystemSettings() {
   }
 
   async function saveAll(): Promise<{ ok: boolean; message: string }> {
-    const locWas = locationDirty.value
     const syncWas = syncDirty.value
     const pushWas = sync.push_wecom_on_fail !== baselineSync.push_wecom_on_fail
     const wecomUrlWas = wecomUrl.value.trim() !== '' || wecomClearPending.value
     const tplWas = templateDirty.value
     const wecomWas = wecomUrlWas || tplWas
-    if (!locWas && !syncWas && !pushWas && !wecomWas) {
+    if (!syncWas && !pushWas && !wecomWas) {
       return { ok: true, message: '无未保存改动' }
     }
 
     footNotice.value = ''
-    sectionError.location = undefined
     sectionError.sync = undefined
     sectionError.notify = undefined
 
@@ -234,29 +205,6 @@ export function useSystemSettings() {
     let failed = 0
     const failBits: string[] = []
     const now = stampNow()
-
-    if (locWas) {
-      try {
-        const result = await saveDataLocation({
-          data_dir: locationDir.value.trim(),
-          setup_done: true,
-        })
-        dataLoc.value = result
-        locationDir.value = result.pending_data_dir || result.data_dir
-        baselineDir.value = result.data_dir
-        pendingRestart.value = Boolean(result.restart_required)
-        savedAt.location = now
-        saved += 1
-        sessionStorage.removeItem('loci.bootstrap.skip')
-        if (result.needed_bootstrap && !result.restart_required) {
-          window.dispatchEvent(new CustomEvent('loci:setup-complete', { detail: result }))
-        }
-      } catch (caught: unknown) {
-        failed += 1
-        sectionError.location = caught instanceof Error ? caught.message : '保存失败'
-        failBits.push(`数据目录：${sectionError.location}`)
-      }
-    }
 
     if (syncWas || pushWas) {
       try {
@@ -310,31 +258,24 @@ export function useSystemSettings() {
     }
 
     if (failed === 0) {
-      const message =
-        pendingRestart.value && saved > 0
-          ? `${saved} 联已存 · 数据目录待重启生效`
-          : `${saved} 联已存`
+      const message = `${saved} 项已保存`
       footNotice.value = message
       return { ok: true, message }
     }
-    const message = `${saved} 联已存 · ${failed} 联失败（${failBits.join('；')}）`
+    const message = `${saved} 项已保存 · ${failed} 项失败（${failBits.join('；')}）`
     footNotice.value = message
     return { ok: false, message }
   }
 
   return {
-    dataLoc,
     wecom,
     syncMeta,
-    locationDir,
     sync,
     wecomUrl,
     wecomClearPending,
     screenTemplate,
-    pendingRestart,
     footNotice,
     sectionError,
-    locationDirty,
     syncDirty,
     notifyDirty,
     dirty,

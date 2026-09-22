@@ -1,186 +1,69 @@
 <script setup lang="ts">
-/**
- * 壳的左栏。三段式，互不干扰：
- *
- *   brand-row（定高，不滚）
- *   .side-menu-wrap（flex:1，**独立内滚**）
- *   .sidebar-foot（钉底，永不滚）
- *
- * 底部那组「消息 / 主题 / 设置 / 管理后台」不是图标按钮条，而是与上方**同一套皮肤**
- * 的 el-menu-item（同一个 .side-menu 类，hover / is-active / 尺寸全部复用同一批规则）。
- * 用户要的就是「和市场 / 我的那种菜单一样，只是钉在左下角」，所以这里刻意不另起样式：
- * 任何时候改上面的菜单皮肤，下面自动跟着变。
- *
- * 底部菜单不开 el-menu 的 `router` 模式——「消息」「主题」是开弹层不是跳路由，
- * router 模式会把它们的 index 当路径 push 出去。所以统一走 onFootClick 分流，
- * 选中态由 `footActive` 显式给。
- *
- * 本文件只剩版型编排。菜单数据与选中态在 composables/useSidebarNav.ts，
- * 悬停预取在 composables/useRoutePrefetch.ts，帮助菜单三条命令在 sidebarHelp.ts，
- * 皮肤在同目录 AppSidebar.css（`<style scoped src>`，仍是 scoped）。
- */
-import { ref } from 'vue'
-import { Expand, Fold, QuestionFilled } from '@element-plus/icons-vue'
-
+import { Kbd } from '@/shared/components/ui/kbd'
+import { ChevronRight, Search } from '@lucide/vue'
+import { computed } from 'vue'
 import ThemeDialog from '@/shared/components/dialogs/ThemeDialog.vue'
-import NotificationCenter from '@/shared/components/layout/NotificationCenter.vue'
-import { BRAND_MARK, BRAND_NAME } from '@/shared/lib/brand'
-import UserAvatarMenu from '@/features/auth/UserAvatarMenu.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '@/shared/components/ui/sidebar'
+import { BRAND_NAME, BRAND_TAGLINE } from '@/shared/lib/brand'
+import { openCommandPalette, paletteHotkeyLabel } from '@/shared/lib/commandPalette'
+import UserAvatarMenu from './UserAvatarMenu.vue'
 import { useRoutePrefetch } from './composables/useRoutePrefetch'
 import { useSidebarNav } from './composables/useSidebarNav'
-import { runHelpCommand } from './sidebarHelp'
 
-const brandName = BRAND_NAME
-const brandMark = BRAND_MARK
-
-const collapsed = ref(false)
-
-const {
-  navGroups,
-  defaultOpeneds,
-  active,
-  footItems,
-  footActive,
-  unread,
-  themeOpen,
-  notifyOpen,
-  onFootClick,
-} = useSidebarNav()
-
-const { prefetchRoute } = useRoutePrefetch()
+const { state, isMobile, setOpenMobile } = useSidebar()
+const collapsed = computed(() => state.value === 'collapsed' && !isMobile.value)
+const { navGroups, defaultOpeneds, active, themeOpen } = useSidebarNav()
+const { prefetchRoute: prefetch } = useRoutePrefetch()
+function setGroupOpen(id: string, open: boolean): void {
+  if (collapsed.value) return
+  defaultOpeneds.value = open ? [...new Set([...defaultOpeneds.value, id])] : defaultOpeneds.value.filter(value => value !== id)
+}
+defineExpose({ themeOpen })
 </script>
 
 <template>
-  <aside class="app-sidebar flex h-full min-h-0 flex-col overflow-hidden" :class="{ collapsed }" aria-label="工作台导航">
-    <!-- 顶部 Brand：Logo与名称居左，折叠按钮移至最右顶边 -->
-    <div class="brand-row flex shrink-0 items-center justify-between">
-      <RouterLink class="brand" to="/" aria-label="首页">
-        <span class="brand-mark" aria-hidden="true">{{ brandMark }}</span>
-        <strong v-if="!collapsed" class="brand-name">{{ brandName }}</strong>
+  <Sidebar collapsible="icon" class="app-sidebar" :class="{ 'is-collapsed': collapsed }" aria-label="侧边导航">
+    <SidebarHeader class="sidebar-heading">
+      <RouterLink to="/" class="brand" :aria-label="`${BRAND_NAME} ${BRAND_TAGLINE}`">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17.5 9.5 9l4 6 2.5-3.5L20 17.5" /></svg></span>
+        <span v-if="!collapsed" class="brand-text"><strong>{{ BRAND_NAME }}</strong><span>{{ BRAND_TAGLINE }}</span></span>
       </RouterLink>
-      <el-tooltip
-        :content="collapsed ? '展开侧栏' : '收起侧栏'"
-        placement="right"
-        :show-after="300"
-      >
-        <el-button
-          link
-          class="icon-btn brand-toggle"
-          :aria-expanded="!collapsed"
-          :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
-          @click="collapsed = !collapsed"
-        >
-          <el-icon><Fold v-if="!collapsed" /><Expand v-else /></el-icon>
-        </el-button>
-      </el-tooltip>
-    </div>
-
-    <!-- 中间菜单区：独立滚动，一级与二级支持折叠展开，一级带icon，展开收起完全对齐 -->
-    <div class="side-menu-wrap min-h-0 w-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-      <el-menu
-        :default-active="active"
-        :default-openeds="defaultOpeneds"
-        :collapse="collapsed"
-        :collapse-transition="false"
-        router
-        class="side-menu"
-      >
-        <template v-for="(group, gIdx) in navGroups" :key="group.id">
-          <!-- 展开态：可折叠展开的一级/二级子菜单 -->
-          <el-sub-menu v-if="!collapsed" :index="group.id" class="nav-sub-menu">
-            <template #title>
-              <el-icon class="sub-menu-icon"><component :is="group.icon" /></el-icon>
-              <span class="nav-group-title">{{ group.label }}</span>
-            </template>
-            <el-menu-item
-              v-for="item in group.items"
-              :key="item.path"
-              :index="item.path"
-              class="sub-menu-item"
-              @mouseenter="prefetchRoute(item.path)"
-              @focusin="prefetchRoute(item.path)"
-            >
-              <el-icon><component :is="item.icon" /></el-icon>
-              <template #title>{{ item.label }}</template>
-            </el-menu-item>
-          </el-sub-menu>
-
-          <!-- 收缩态：直接平铺展示icon项，并带精确Tooltip与统一居中对齐 -->
-          <template v-else>
-            <div v-if="gIdx > 0" class="nav-group-divider collapsed-divider" aria-hidden="true" />
-            <el-menu-item
-              v-for="item in group.items"
-              :key="item.path"
-              :index="item.path"
-              class="collapsed-menu-item"
-              @mouseenter="prefetchRoute(item.path)"
-              @focusin="prefetchRoute(item.path)"
-            >
-              <el-icon><component :is="item.icon" /></el-icon>
-              <template #title>{{ item.label }}</template>
-            </el-menu-item>
-          </template>
-        </template>
-      </el-menu>
-    </div>
-
-    <!--
-      底部固定区：同款菜单项（消息 / 主题 / 设置 / 管理后台）+ 用户行。
-      整块 flex-shrink:0，上方菜单再长也压不到它，两边各自滚各自的。
-    -->
-    <div class="sidebar-foot shrink-0">
-      <el-menu
-        :default-active="footActive"
-        :collapse="collapsed"
-        :collapse-transition="false"
-        class="side-menu foot-menu"
-      >
-        <el-menu-item
-          v-for="item in footItems"
-          :key="item.id"
-          :index="item.path || item.id"
-          class="foot-menu-item"
-          :class="`foot-menu-item--${item.id}`"
-          :aria-label="item.label"
-          @click="onFootClick(item)"
-          @mouseenter="prefetchRoute(item.path)"
-          @focusin="prefetchRoute(item.path)"
-        >
-          <el-badge v-if="item.badge" is-dot :hidden="unread <= 0" class="foot-badge">
-            <el-icon><component :is="item.icon" /></el-icon>
-          </el-badge>
-          <el-icon v-else><component :is="item.icon" /></el-icon>
-          <template #title>{{ item.label }}</template>
-        </el-menu-item>
-      </el-menu>
-      <!-- 用户行：左头像菜单，右边只留「帮助」一颗图标 -->
-      <div class="foot-user flex min-w-0 items-center gap-2" :class="{ 'foot-user--collapsed': collapsed }">
-        <UserAvatarMenu :collapsed="collapsed" />
-
-        <div class="foot-actions">
-          <el-dropdown
-            trigger="click"
-            :placement="collapsed ? 'right-end' : 'top-end'"
-            @command="runHelpCommand"
-          >
-            <el-button link class="icon-btn" title="帮助" aria-label="帮助">
-              <el-icon><QuestionFilled /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="shortcut">创建桌面快捷方式</el-dropdown-item>
-                <el-dropdown-item command="data">打开数据目录</el-dropdown-item>
-                <el-dropdown-item divided command="readme">使用说明</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </div>
-    </div>
-  </aside>
-
+      <Button access="read" variant="outline" class="search-trigger" :class="{ 'search-trigger--collapsed': collapsed }" aria-label="搜索或跳转" @click="openCommandPalette()">
+        <Search aria-hidden="true" /><template v-if="!collapsed"><span>搜索或跳转…</span><Kbd>{{ paletteHotkeyLabel() }}</Kbd></template>
+      </Button>
+    </SidebarHeader>
+    <SidebarContent class="sidebar-navigation">
+      <nav aria-label="功能导航">
+        <Collapsible v-for="group in navGroups" :key="group.id" :open="collapsed || defaultOpeneds.includes(group.id)" @update:open="setGroupOpen(group.id, $event)">
+          <SidebarGroup class="nav-group">
+            <CollapsibleTrigger v-if="!collapsed" class="nav-group-trigger" :aria-label="group.label">
+              <component :is="group.icon" aria-hidden="true" /><span>{{ group.label }}</span><ChevronRight class="nav-caret" aria-hidden="true" />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem v-for="item in group.items" :key="item.path">
+                    <SidebarMenuButton as-child :is-active="active === item.path" :tooltip="item.label" class="nav-item">
+                      <RouterLink :to="item.path" :aria-label="item.label" :aria-current="active === item.path ? 'page' : undefined" @pointerenter="prefetch(item.path)" @focus="prefetch(item.path)" @click="setOpenMobile(false)">
+                        <component :is="item.icon" aria-hidden="true" /><span>{{ item.label }}</span>
+                      </RouterLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </CollapsibleContent>
+          </SidebarGroup>
+        </Collapsible>
+      </nav>
+    </SidebarContent>
+    <SidebarFooter class="sidebar-foot">
+      <UserAvatarMenu :collapsed="collapsed" @theme="themeOpen = true" />
+      <SidebarTrigger access="read" class="sidebar-toggle" :aria-label="collapsed ? '展开侧栏' : '收起侧栏'" :aria-expanded="!collapsed" />
+    </SidebarFooter>
+  </Sidebar>
   <ThemeDialog v-model="themeOpen" />
-  <NotificationCenter v-model="notifyOpen" />
 </template>
 
 <style scoped src="./AppSidebar.css"></style>

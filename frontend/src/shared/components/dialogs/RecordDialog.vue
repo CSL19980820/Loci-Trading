@@ -1,9 +1,13 @@
 <script setup lang="ts">
+import { LoaderCircle, TriangleAlert } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import { createCandidate, createPlan, createReview } from '@/shared/api/palace'
 import BasicForm from '@/shared/components/ui/BasicForm.vue'
 import type { BasicFormSchema } from '@/shared/components/ui/basicFormTypes'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
 import { BUILTIN_STRATEGY_OPTIONS, localToday } from '@/shared/lib/format'
 
 export type RecordKind = 'candidate' | 'plan' | 'review'
@@ -299,6 +303,13 @@ watch(
 
 function close(): void {
   model.value = false
+  submitError.value = ''
+}
+
+/** 关闭路径统一（X、Esc、遮罩、父级 v-model）：关了就清掉上一次的写入失败 */
+function onOpenChange(next: boolean): void {
+  model.value = next
+  if (!next) submitError.value = ''
 }
 
 async function submit(): Promise<void> {
@@ -320,48 +331,51 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog
-    v-model="model"
-    :title="schema.title"
-    width="min(92vw, 560px)"
-    class="record-dialog"
-    destroy-on-close
-    @closed="submitError = ''"
-  >
-    <BasicForm
-      ref="formRef"
-      :key="kind"
-      v-model="form"
-      :schemas="schema.fields"
-      :hint="schema.hint"
-      :columns="2"
-      :input-debounce-ms="0"
-      @submit.prevent="submit"
-    />
-    <el-alert
-      v-if="submitError"
-      class="record-dialog__error mt-2"
-      :title="submitError"
-      type="error"
-      show-icon
-      :closable="false"
-    />
-    <template #footer>
-      <el-button @click="close">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit">
-        {{ schema.submitLabel }}
-      </el-button>
-    </template>
-  </el-dialog>
+  <Dialog :open="model" @update:open="onOpenChange">
+    <DialogContent class="record-dialog gap-4 sm:max-w-[600px]">
+      <DialogHeader class="gap-1 text-left">
+        <DialogTitle>{{ schema.title }}</DialogTitle>
+      </DialogHeader>
+
+      <!-- 长表单（复盘有 10 个字段）在弹层正文内滚，不许把滚动条顶到文档级 -->
+      <div class="record-dialog__body">
+        <BasicForm
+          ref="formRef"
+          :key="kind"
+          v-model="form"
+          :schemas="schema.fields"
+          :hint="schema.hint"
+          :columns="2"
+          :input-debounce-ms="0"
+          @submit.prevent="submit"
+        />
+        <Alert v-if="submitError" variant="destructive" class="mt-2">
+          <TriangleAlert aria-hidden="true" />
+          <AlertTitle class="line-clamp-none">{{ submitError }}</AlertTitle>
+        </Alert>
+      </div>
+
+      <DialogFooter class="record-dialog__footer">
+        <Button access="read" type="button" variant="outline" @click="close">取消</Button>
+        <Button type="button" :disabled="submitting" @click="submit">
+          <LoaderCircle v-if="submitting" class="size-4 animate-spin" aria-hidden="true" />
+          {{ schema.submitLabel }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
-<style>
-/*
- * 非 scoped：el-dialog teleport 到 body，scoped 选择器进不去。
- * 长表单（复盘有 10 个字段）在 body 内滚，不许把滚动条顶到文档级。
- */
-.record-dialog .el-dialog__body {
+<style scoped>
+.record-dialog__body {
+  min-width: 0;
   max-height: min(62vh, 30rem);
   overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.record-dialog__footer {
+  justify-content: flex-end;
+  gap: var(--gap-2);
 }
 </style>

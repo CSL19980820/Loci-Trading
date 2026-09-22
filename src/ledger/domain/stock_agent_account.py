@@ -2,6 +2,12 @@
 from __future__ import annotations
 
 
+def pending_watchlist(state: dict) -> list[dict]:
+    """观察池只保留尚未持仓的对象；持仓按真实正股数判断。"""
+    held = {p["code"] for p in state.get("positions", []) if p.get("quantity", 0) > 0}
+    return [w for w in state.get("watchlist", []) if w["code"] not in held]
+
+
 def validate_stock_agent_transition(previous: dict, state: dict, fills: list[dict]) -> None:
     """拒绝有账无单、有单无账、凭空加钱和持仓数量错配。"""
     cash_delta = realized_delta = fees_delta = 0

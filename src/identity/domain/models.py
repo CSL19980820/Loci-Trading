@@ -16,10 +16,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 import re
 
-#: 角色。刻意只有两级：平台管理员与普通成员。
+#: 角色。刻意只有两级：可操作的管理员与只读访客。
 #: 「专业版/付费档」是配额问题，不是角色问题，走 user_quotas。
-Role = Literal["admin", "member"]
-ROLES: tuple[Role, ...] = ("admin", "member")
+Role = Literal["admin", "visitor"]
+ROLES: tuple[Role, ...] = ("admin", "visitor")
 
 #: 账号状态。pending = 邮箱未验证（可登录，但拿不到敏感能力）。
 UserStatus = Literal["active", "pending", "disabled", "deleted"]
@@ -146,7 +146,7 @@ class User:
     username: str
     email: str
     display_name: str
-    role: Role = "member"
+    role: Role = "visitor"
     status: UserStatus = "active"
     avatar_url: str = ""
     bio: str = ""
@@ -156,6 +156,7 @@ class User:
     updated_at: str = ""
     last_login_at: str | None = None
     must_change_password: bool = False
+    view_tenant_id: str = ""
 
     @property
     def is_admin(self) -> bool:
@@ -190,6 +191,8 @@ class User:
                 "email_verified": self.email_verified,
                 "status": self.status,
                 "tenant_id": self.tenant_id,
+                "view_tenant_id": self.view_tenant_id if not self.is_admin else "",
+                "read_only": not self.is_admin,
                 "last_login_at": self.last_login_at,
                 "must_change_password": self.must_change_password,
                 "has_password": bool(self.password_algo),
@@ -262,7 +265,11 @@ class AuthContext:
 
     @property
     def tenant_id(self) -> str | None:
-        return self.user.tenant_id if self.user else None
+        if not self.user:
+            return None
+        if not self.user.is_admin:
+            return self.user.view_tenant_id or self.user.tenant_id
+        return self.user.tenant_id
 
     def require_user(self) -> User:
         if self.user is None:

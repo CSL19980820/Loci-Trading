@@ -17,7 +17,7 @@ echarts.use([LineChart, GridComponent, MarkLineComponent, TooltipComponent, Data
 
 const props = defineProps<{
   dates: string[]
-  values: number[]
+  values: Array<number | null>
   color?: string
   height?: number
   /** money=金额；index=净值指数（如 1.0 起） */
@@ -56,7 +56,8 @@ function buildOption(): echarts.EChartsCoreOption {
   // 兜底走 A 股涨色，而不是欧美绿涨口径
   const t = tokens.value
   const color = resolveChartColor(props.color, t.up)
-  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
+  const valid = values.filter((value): value is number => value != null && Number.isFinite(value))
+  const avg = valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0
   const showAllLabels = values.length > 0 && values.length <= 40
 
   return {
@@ -98,6 +99,7 @@ function buildOption(): echarts.EChartsCoreOption {
         type: 'line',
         name: props.formatMode === 'index' ? '诊断净值' : '总资产',
         data: values,
+        connectNulls: false,
         smooth: 0.15,
         showSymbol: true,
         symbolSize: values.length <= 20 ? 8 : 5,
@@ -110,7 +112,7 @@ function buildOption(): echarts.EChartsCoreOption {
           position: 'top',
           fontSize: 10,
           color: t.muted,
-          formatter: (p: { value?: number | string }) => fmtValue(Number(p.value)),
+          formatter: (p: { value?: number | string | null }) => p.value == null ? '' : fmtValue(Number(p.value)),
         },
         labelLayout: { hideOverlap: true },
         markLine: {

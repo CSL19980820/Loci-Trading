@@ -6,6 +6,7 @@ import type {
   AiToolReceipt,
 } from '@/shared/types/ai_assistant'
 import { lastAssistantMessage } from './assistantRunState'
+import { normalizeArtifacts } from './assistantArtifactState'
 import { toolLabel } from './toolLabel'
 
 export interface TaskPlanStep {
@@ -43,7 +44,7 @@ export function buildTaskModel(options: {
 }): AssistantTaskModel {
   const assistant = lastAssistantMessage(options.messages)
   const tools = assistant?.tool_receipts ?? []
-  const artifacts = assistant?.artifacts ?? []
+  const artifacts = normalizeArtifacts(assistant?.artifacts ?? [], assistant?.status === 'streaming')
   const agents = options.agents.length
     ? options.agents
     : (assistant?.agents ?? [])

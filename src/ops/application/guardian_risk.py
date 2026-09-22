@@ -230,3 +230,45 @@ def consume_risk_plans(
             event.update(receipt)
             used.add(index)
             break
+
+
+def resize_remaining_stops(state: dict[str, Any], fills: list[dict[str, Any]], now: datetime) -> list[dict]:
+    """仅按本轮已证实的同批次纯减仓收缩止损授权，不扩大股数、价格或期限。"""
+    events = []
+    for position in state.get("positions", []):
+        trades = [f for f in fills if f.get("code") == position["code"]]
+        if not trades or any(f.get("side") != "sell" for f in trades):
+            continue
+        before = trades[0]["before_quantity"]
+        balance = before
+        for fill in trades:
+            if fill["before_quantity"] != balance or fill["after_quantity"] != balance - fill["quantity"]:
+                break
+            balance = fill["after_quantity"]
+        else:
+            if balance != position["quantity"] or not 0 < balance < before:
+                continue
+            rows = position.get("risk_plans", [])
+            for row in rows:
+                if (row.get("status") != "active" or row.get("basis_quantity") != before
+                        or row.get("basis_opened_at") != _opened_at(position)):
+                    continue
+                try:
+                    plan = RiskPlan.model_validate(row["contract"])
+                    if (plan.action != "stop_loss" or now >= datetime.fromisoformat(plan.execution.valid_until)
+                            or row["plan_id"] != _plan_id(position["code"], plan.model_dump(mode="json"), _opened_at(position))):
+                        continue
+                    contract = plan.model_copy(update={"quantity": min(plan.quantity, balance)}).model_dump(mode="json")
+                    if guardian_quantity_error(position["code"], contract["quantity"], True, balance):
+                        continue
+                    new_id = _plan_id(position["code"], contract, _opened_at(position))
+                    if any(other is not row and other.get("plan_id") == new_id for other in rows):
+                        continue  # 不能以缩量重新激活已消费或撤销的授权。
+                except (ValueError, KeyError, TypeError):
+                    continue
+                prior = {k: copy.deepcopy(row[k]) for k in ("plan_id", "contract", "basis_quantity")}
+                row.update(plan_id=new_id, contract=contract, basis_quantity=balance)
+                row.setdefault("adjustments", []).append({"at": now.isoformat(), "previous": prior})
+                events.append(_event(position, row, "adjusted", now, previous=prior,
+                    reason=f"本轮减仓后止损保护收缩至{contract['quantity']}股，触发价、价格边界和有效期不变"))
+    return events

@@ -21,6 +21,57 @@ def _next_day(day: str) -> str:
 
 
 class GuardianQueriesMixin:
+    def activity_feed(self, limit: int = 16) -> dict[str, Any]:
+        """Latest research across all stages, ordered by generation time, not report date.
+
+        Select the bounded metadata first; never deserialize decision contexts or
+        return report lease/share tokens to the home page.
+        """
+        if not 1 <= limit <= 50:
+            raise ValueError("研判条数须在1至50之间")
+        rows = self.conn.execute("""
+            WITH latest AS (
+                SELECT * FROM (
+                    SELECT 'run' AS kind, slot AS item_key, started FROM guardian_cycles
+                    UNION ALL
+                    SELECT 'report', report_key, started FROM guardian_reports
+                ) ORDER BY started DESC, kind, item_key DESC LIMIT ?
+            ), selected AS (
+                SELECT f.*, COALESCE(c.status,r.status) AS status, r.period,r.trade_date,
+                    CASE WHEN f.kind='run' THEN c.result_json ELSE r.result_json END AS payload
+                FROM latest f
+                LEFT JOIN guardian_cycles c ON f.kind='run' AND c.slot=f.item_key
+                LEFT JOIN guardian_reports r ON f.kind='report' AND r.report_key=f.item_key
+            ), safe AS (
+                SELECT *, CASE WHEN json_valid(payload) THEN payload ELSE '{}' END AS doc
+                FROM selected
+            )
+            SELECT kind,item_key,started,status,period,trade_date,
+                substr(COALESCE(
+                    NULLIF(json_extract(doc,'$.analysis.summary'),''),
+                    CASE WHEN json_type(doc,'$.analysis')='text'
+                         THEN NULLIF(json_extract(doc,'$.analysis'),'') END,
+                    NULLIF(json_extract(doc,'$.summary'),''),
+                    json_extract(doc,'$.body'),''),1,12000) AS summary,
+                substr(json_extract(doc,'$.error'),1,2000) AS error,
+                json_extract(doc,'$.created_at') AS created_at,
+                json_extract(doc,'$.as_of') AS as_of
+            FROM safe ORDER BY started DESC,kind,item_key DESC
+        """, (limit,)).fetchall()
+        runs, reports = [], []
+        for row in rows:
+            if row['kind'] == 'run':
+                runs.append({'slot': row['item_key'], 'started': row['started'],
+                             'status': row['status'], 'result': {
+                                 'analysis': row['summary'], 'error': row['error'],
+                                 'as_of': row['as_of']}})
+            else:
+                reports.append({'report_key': row['item_key'], 'started': row['started'],
+                                'period': row['period'], 'trade_date': row['trade_date'],
+                                'status': row['status'], 'summary': row['summary'],
+                                'error': row['error'], 'created_at': row['created_at']})
+        return {'runs': runs, 'reports': reports, 'limit': limit}
+
     def latest_cycle_summary(self) -> list[dict[str, Any]]:
         row = self.conn.execute(
             "SELECT slot,status FROM guardian_cycles ORDER BY started DESC LIMIT 1"
@@ -56,6 +107,13 @@ class GuardianQueriesMixin:
             return None
         original = json.loads(row["result_json"])
         result = {key: original[key] for key in _RUN_FIELDS if key in original}
+        before = (original.get('decision_context') or {}).get('account_before') or {}
+        result['stock_names'] = {
+            item['code']: item['name']
+            for item in [*(original.get('candidates') or []), *(original.get('fills') or []),
+                         *(before.get('watchlist') or []), *(before.get('positions') or [])]
+            if item.get('code') and item.get('name') and item['name'] != item['code']
+        }
         if "notify" in original:
             result["notify"] = _receipt(original["notify"])
         return {"slot": row["slot"], "status": row["status"], "result": result}
@@ -83,15 +141,21 @@ class GuardianQueriesMixin:
         ).fetchone()[0]
         return {"items": items, "total": total}
 
-    def trade_page(self, *, start: str, end: str, limit: int, offset: int) -> dict[str, Any]:
-        bounds = (start, _next_day(end))
-        rows = self.conn.execute("""
+    def trade_page(self, *, start: str, end: str, limit: int, offset: int, keyword: str = "") -> dict[str, Any]:
+        # Count and page share a literal substring filter; user input is never SQL.
+        where = "occurred_at>=? AND occurred_at<?"
+        params: list[Any] = [start, _next_day(end)]
+        term = keyword.strip()
+        if term:
+            where += " AND (instr(lower(code),lower(?))>0 OR instr(lower(coalesce(json_extract(detail_json,'$.name'),'')),lower(?))>0)"
+            params.extend((term, term))
+        rows = self.conn.execute(f"""
             SELECT id,slot,detail_json FROM guardian_trades
-            WHERE occurred_at>=? AND occurred_at<?
+            WHERE {where}
             ORDER BY occurred_at DESC,id DESC LIMIT ? OFFSET ?
-        """, (*bounds, limit, offset)).fetchall()
+        """, (*params, limit, offset)).fetchall()
         total = self.conn.execute(
-            "SELECT count(*) FROM guardian_trades WHERE occurred_at>=? AND occurred_at<?", bounds
+            f"SELECT count(*) FROM guardian_trades WHERE {where}", params
         ).fetchone()[0]
         return {"items": [{**json.loads(r["detail_json"]), "id": r["id"], "slot": r["slot"]} for r in rows],
                 "total": total}

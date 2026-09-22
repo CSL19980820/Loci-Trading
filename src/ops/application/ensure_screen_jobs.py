@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.ops.application.job_stagger import staggered_minute
+from src.ops.application.retired_slugs import is_retired_strategy_slug
 from src.ops.application.trading_schedule import compose_trading_cron
 from src.ops.infrastructure.scheduler import normalize_cron_weekdays
 #: 盘后选股默认点（收盘后、日终同步前）。分钟是**基准值**，实际时点还要叠加
@@ -24,6 +25,7 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
     幂等：已有绑定只合并关键配置（保留 universe / 推送等用户自定义字段），
     不强制改 enabled；战法声明固定时点时同步其 cron，避免旧任务继续在错误时刻执行。
     ``screen_managed_job=False`` 的战法不建托管任务；残留 ``screen:{slug}`` 会按活动目录收缩删除。
+    用户明确关闭的战法会记录按租户的 opt-out，启动时不再被默认任务重建。
     """
     from src.strategy import all_strategies
 
@@ -47,14 +49,23 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
     created = 0
     updated = 0
     slugs: list[str] = []
+    disabled_slugs: list[str] = []
     job_crons: dict[str, str] = {}
     for engine in all_strategies():
         slug = str(engine.slug)
+        if is_retired_strategy_slug(slug):
+            continue
         if not _manages_screen_job(engine):
+            continue
+        job_name = f"screen:{slug}"
+        if store.is_screen_job_opted_out(slug):
+            disabled_slugs.append(slug)
+            existing = store.get_job_by_name(job_name)
+            if existing is not None and existing.get("enabled"):
+                store.update_job(existing["id"], enabled=False)
             continue
         slugs.append(slug)
         engine_schedule = _schedule_for_engine(engine, default_schedule)
-        job_name = f"screen:{slug}"
         existing = store.get_job_by_name(job_name)
         prev_cfg = (
             existing.get("config")
@@ -166,6 +177,7 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
         "updated": updated,
         "removed": len(removed_slugs),
         "removed_slugs": removed_slugs,
+        "disabled_slugs": disabled_slugs,
         "total": len(slugs),
     }
 

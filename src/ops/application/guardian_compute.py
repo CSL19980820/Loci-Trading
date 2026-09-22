@@ -10,6 +10,19 @@ _BINARY = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
            ast.Div: operator.truediv, ast.Mod: operator.mod}
 
 
+CALCULATE_TOOL = "guardian_calculate"
+
+
+def calculation_schema(protocol: str) -> dict[str, Any]:
+    """Shared deterministic tool, independent of live data/provider discovery."""
+    from src.ai.application.tool_schema import tool_schema
+
+    return tool_schema(protocol, CALCULATE_TOOL,
+        "50位精度的十进制算术，支持加减乘除、括号、余数和整数幂；不执行Python程序。",
+        {"type": "object", "properties": {"expression": {"type": "string", "minLength": 1, "maxLength": 8192}},
+         "required": ["expression"], "additionalProperties": False})
+
+
 def calculate(expression: str) -> dict[str, Any]:
     if not isinstance(expression, str) or not expression.strip() or len(expression) > 8192:
         raise ValueError("请提供1至8192字符的算式，可用括号、加减乘除、余数和整数幂")

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, Close, Loading, RefreshRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Check, LoaderCircle, RefreshCw, X } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 
 import {
   claimQrSession,
@@ -10,6 +10,8 @@ import {
   pollQrState,
   startQrLogin,
 } from '@/shared/api/auth'
+import { Button } from '@/shared/components/ui/button'
+import { Separator } from '@/shared/components/ui/separator'
 import { generateQrMatrix, qrMatrixToSvg } from '@/shared/lib/qrcode'
 import type { LoginMode, ProviderOption, QrPollResult, QrStatus, UserProfile } from '@/shared/types/auth'
 
@@ -147,9 +149,9 @@ async function onMockScan(): Promise<void> {
   try {
     await markQrScanned(state.value)
     qrStatus.value = 'scanned'
-    ElMessage.success('已模拟手机扫码')
+    toast.success('已模拟手机扫码')
   } catch (err: unknown) {
-    ElMessage.error(err instanceof Error ? err.message : '模拟扫码失败')
+    toast.error(err instanceof Error ? err.message : '模拟扫码失败')
   }
 }
 
@@ -158,10 +160,10 @@ async function onMockConfirm(): Promise<void> {
   try {
     await confirmMockQr({ state: state.value, handle: 'demo_user' })
     qrStatus.value = 'confirmed'
-    ElMessage.success('已模拟手机确认')
+    toast.success('已模拟手机确认')
     await claim()
   } catch (err: unknown) {
-    ElMessage.error(err instanceof Error ? err.message : '模拟确认失败')
+    toast.error(err instanceof Error ? err.message : '模拟确认失败')
   } finally {
     confirmingMock.value = false
   }
@@ -188,12 +190,10 @@ watch(() => props.provider.name, () => {
 
 <template>
   <div class="qr-panel" :aria-busy="starting || claiming">
-    <h3 class="qr-title">{{ provider.label }} 登录</h3>
-
     <div class="qr-box-wrap">
-      <div v-if="starting" class="qr-loading">
-        <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-        <span class="qr-tip">生成中...</span>
+      <div v-if="starting" class="qr-loading" role="status">
+        <LoaderCircle class="size-7 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        <span class="qr-tip">生成二维码…</span>
       </div>
 
       <div v-else class="qr-box">
@@ -204,66 +204,60 @@ watch(() => props.provider.name, () => {
         </div>
 
         <!-- 状态覆盖遮罩 -->
-        <div v-if="qrStatus === 'scanned'" class="qr-mask mask-scanned">
-          <div class="mask-icon-circle">
-            <el-icon :size="24"><Check /></el-icon>
-          </div>
-          <p class="mask-text" role="status">扫描成功</p>
-          <p class="mask-sub">请在手机上点击确认登录</p>
+        <div v-if="qrStatus === 'scanned'" class="qr-mask">
+          <span class="qr-mask__icon is-ok"><Check aria-hidden="true" /></span>
+          <p class="qr-mask__text" role="status">扫描成功</p>
+          <p class="qr-mask__sub">请在手机上点击确认登录</p>
         </div>
 
-        <div v-else-if="qrStatus === 'expired'" class="qr-mask mask-expired">
-          <el-icon :size="28"><RefreshRight /></el-icon>
-          <p class="mask-text" role="status">二维码已过期</p>
-          <el-button type="primary" size="small" @click="initFlow">刷新二维码</el-button>
+        <div v-else-if="qrStatus === 'expired'" class="qr-mask">
+          <span class="qr-mask__icon is-warn"><RefreshCw aria-hidden="true" /></span>
+          <p class="qr-mask__text" role="status">二维码已过期</p>
+          <Button size="sm" @click="initFlow">刷新二维码</Button>
         </div>
 
-        <div v-else-if="qrStatus === 'failed'" class="qr-mask mask-failed">
-          <el-icon :size="28"><Close /></el-icon>
-          <p class="mask-text" role="status">{{ errorMessage || '登录失败' }}</p>
-          <el-button type="primary" size="small" @click="initFlow">重试</el-button>
+        <div v-else-if="qrStatus === 'failed'" class="qr-mask">
+          <span class="qr-mask__icon is-warn"><X aria-hidden="true" /></span>
+          <p class="qr-mask__text" role="status">{{ errorMessage || '登录失败' }}</p>
+          <Button size="sm" @click="initFlow">重试</Button>
         </div>
 
-        <div v-else-if="qrStatus === 'confirmed' || qrStatus === 'consumed'" class="qr-mask mask-success">
-          <div class="mask-icon-circle success">
-            <el-icon :size="28"><Check /></el-icon>
-          </div>
-          <p class="mask-text" role="status">登录成功</p>
-          <p class="mask-sub">正在跳转...</p>
+        <div v-else-if="qrStatus === 'confirmed' || qrStatus === 'consumed'" class="qr-mask">
+          <span class="qr-mask__icon is-ok"><Check aria-hidden="true" /></span>
+          <p class="qr-mask__text" role="status">登录成功</p>
+          <p class="qr-mask__sub">正在跳转…</p>
         </div>
       </div>
     </div>
+
+    <p class="qr-caption">
+      <span class="qr-title">{{ provider.label }} 登录</span>
+      <span v-if="qrStatus === 'pending' && expiresIn > 0" class="qr-expire-text">
+        有效 {{ Math.floor(expiresIn / 60) }}:{{ (expiresIn % 60).toString().padStart(2, '0') }}
+      </span>
+    </p>
 
     <div v-if="isMock && qrStatus !== 'consumed'" class="mock-actions">
-      <el-divider content-position="center">开发演示通道</el-divider>
+      <div class="auth-divider">
+        <Separator class="min-w-0 flex-1" />
+        <span class="auth-divider__text">开发演示通道</span>
+        <Separator class="min-w-0 flex-1" />
+      </div>
       <div class="mock-btn-group">
-        <el-button
-          size="small"
-          :disabled="qrStatus !== 'pending'"
-          @click="onMockScan"
-        >
-          1. 模拟扫码
-        </el-button>
-        <el-button
-          type="primary"
-          size="small"
-          :loading="confirmingMock"
-          :disabled="qrStatus !== 'scanned' && qrStatus !== 'pending'"
+        <Button size="sm" variant="outline" :disabled="qrStatus !== 'pending'" @click="onMockScan">1. 模拟扫码</Button>
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="confirmingMock || (qrStatus !== 'scanned' && qrStatus !== 'pending')"
           @click="onMockConfirm"
         >
+          <LoaderCircle v-if="confirmingMock" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           2. 模拟手机确认
-        </el-button>
+        </Button>
       </div>
     </div>
 
-    <div class="qr-footer">
-      <span v-if="qrStatus === 'pending' && expiresIn > 0" class="qr-expire-text">
-        二维码有效时间：{{ Math.floor(expiresIn / 60) }}:{{ (expiresIn % 60).toString().padStart(2, '0') }}
-      </span>
-      <el-button text class="qr-back-btn" @click="emit('cancel')">
-        返回其他登录方式
-      </el-button>
-    </div>
+    <Button variant="ghost" class="qr-back-btn" @click="emit('cancel')">返回账号密码登录</Button>
   </div>
 </template>
 

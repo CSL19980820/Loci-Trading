@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Connection, Cpu, SetUp } from '@element-plus/icons-vue'
+import { Cable, Cpu, SlidersHorizontal } from '@lucide/vue'
 
+import { Badge } from '@/shared/components/ui/badge'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Button } from '@/shared/components/ui/button'
 import RowActions, { type RowAction } from '@/shared/components/ui/RowActions.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
 
 import {
   KIND_LABEL,
@@ -32,16 +33,16 @@ const tableRows = computed(() => props.rows as unknown as Record<string, unknown
 const columns = computed<BasicTableColumn[]>(() => {
   const cols: BasicTableColumn[] = [
     { prop: 'kind', label: '品类', width: 100, align: 'center', headerAlign: 'center', slotName: 'kind' },
-    { prop: 'name', label: '名称', minWidth: 180, align: 'left', headerAlign: 'left', slotName: 'name' },
+    { prop: 'name', label: '名称', minWidth: 180, align: 'center', headerAlign: 'center', slotName: 'name' },
     { prop: 'trust', label: '信任', width: 88, align: 'center', headerAlign: 'center', slotName: 'trust' },
     { prop: 'badges', label: '契约', minWidth: 160, align: 'center', headerAlign: 'center', slotName: 'badges' },
-    { prop: 'description', label: '说明', minWidth: 220, align: 'left', headerAlign: 'left', showOverflowTooltip: true, slotName: 'description' },
+    { prop: 'description', label: '说明', minWidth: 220, align: 'center', headerAlign: 'center', showOverflowTooltip: true, slotName: 'description' },
     { prop: 'actions', label: '操作', width: props.showRemove ? 128 : 92, align: 'center', headerAlign: 'center', fixed: 'right', slotName: 'actions' },
   ]
   return cols
 })
 
-const kindIcons = { source: Connection, strategy: SetUp, skill: Cpu }
+const kindIcons = { source: Cable, strategy: SlidersHorizontal, skill: Cpu }
 
 function openLabel(item: MarketPackage): string {
   if (item.kind === 'source') return '数据源'
@@ -51,7 +52,7 @@ function openLabel(item: MarketPackage): string {
 function rowActions(row: Record<string, unknown>): RowAction[] {
   const item = row as unknown as MarketPackage
   const actions: RowAction[] = [
-    { key: 'open', label: openLabel(item), onClick: () => emit('open', item) },
+    { key: 'open', access: 'read', label: openLabel(item), onClick: () => emit('open', item) },
   ]
   if (props.showRemove && item.removable) {
     actions.push({ key: 'remove', label: '卸载', type: 'danger', onClick: () => emit('remove', item) })
@@ -78,35 +79,44 @@ function onRowClick(row: Record<string, unknown>): void {
     @row-click="onRowClick"
   >
     <template #kind="{ row }">
-      <UiBadge variant="secondary">
-        <el-icon aria-hidden="true"><component :is="kindIcons[row.kind as MarketKind]" /></el-icon>
+      <Badge variant="secondary">
+        <component :is="kindIcons[row.kind as MarketKind]" aria-hidden="true" />
         {{ KIND_LABEL[row.kind as MarketKind] }}
-      </UiBadge>
+      </Badge>
     </template>
     <template #name="{ row }">
       <div class="name-cell">
-        <el-button link class="package-name" :aria-label="`查看${row.name}详情`" @click.stop="onRowClick(row)">{{ row.name }}</el-button>
+        <Button access="read"
+          variant="link"
+          size="sm"
+          class="package-name"
+          :aria-label="`查看${row.name}详情`"
+          @click.stop="onRowClick(row)"
+        >
+          {{ row.name }}
+        </Button>
         <span v-if="row.version" class="version">版本 {{ row.version }}</span>
       </div>
     </template>
     <template #trust="{ row }">
-      <UiBadge :variant="row.trust === 'official' ? 'info' : 'secondary'">
-        {{ row.trust === 'official' ? '官方' : '本机' }}
-      </UiBadge>
-      <el-tag v-if="row.enabled === false" size="small" type="info" effect="plain" class="ml">
-        停用
-      </el-tag>
+      <Badge
+        v-if="row.trust === 'official'"
+        class="border-transparent bg-info-soft text-info-ink"
+      >
+        官方
+      </Badge>
+      <Badge v-else variant="secondary">本机</Badge>
+      <Badge v-if="row.enabled === false" variant="outline" class="ml">停用</Badge>
     </template>
     <template #badges="{ row }">
-      <el-tag
+      <Badge
         v-for="badge in (row.badges as string[]) || []"
         :key="badge"
-        size="small"
-        effect="plain"
+        variant="outline"
         class="badge"
       >
         {{ badge }}
-      </el-tag>
+      </Badge>
       <span v-if="!(row.badges as string[])?.length" class="dim">—</span>
     </template>
     <template #description="{ row }">
@@ -141,10 +151,6 @@ function onRowClick(row: Record<string, unknown>): void {
 .dim {
   color: var(--mist);
   font-size: var(--fs-aux);
-}
-/* 选中行用主色浅底（全局 --el-table-current-row-bg-color 同值）；前缀限本表 */
-.market-shelf :deep(.el-table__row.is-selected) {
-  --el-table-tr-bg-color: var(--seal-soft);
 }
 .package-name { justify-content: flex-start; font-weight: 600; white-space: normal; text-align: left; }
 .package-name:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }

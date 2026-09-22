@@ -1,6 +1,6 @@
 /** 工作台右侧：Agent 技能后台跑 + 事件流 / HITL */
 import { computed, onActivated, onDeactivated, onUnmounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import {
   getSkillRun,
@@ -200,7 +200,7 @@ export function useWorkbenchSkillRun() {
         if (generation !== lifecycleGeneration) return false
         beginPoll(started.run.id, generation)
       }
-      ElMessage.info(`已在后台跑技能：${opts.name}`)
+      toast.info(`已在后台跑技能：${opts.name}`)
       return true
     } catch (e: unknown) {
       if (generation !== lifecycleGeneration) return false

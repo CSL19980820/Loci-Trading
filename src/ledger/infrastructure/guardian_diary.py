@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from src.ledger.infrastructure.guardian_store import GuardianStore
+from src.ledger.domain.guardian_curve import curve_snapshot
 from src.ledger.infrastructure.stock_agent_history import agent_now
 
 
@@ -81,7 +82,12 @@ class GuardianDiaryStore:
             return {"removed": 0, "eligible": 0, "disabled": True}
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
-            rows = self.conn.execute("""SELECT slot FROM guardian_cycles WHERE status<>'running' AND slot<?
+            rows = self.conn.execute("""SELECT slot,
+                COALESCE(json_extract(result_json,'$.curve_snapshot'),
+                         json_extract(result_json,'$.decision_context.account_before')) AS curve_snapshot,
+                COALESCE(json_extract(result_json,'$.curve_account'),
+                         json_extract(result_json,'$.account')) AS curve_account
+                FROM guardian_cycles WHERE status<>'running' AND slot<?
                 AND slot NOT IN (SELECT slot FROM guardian_cycles ORDER BY started DESC LIMIT 40)
                 AND slot NOT IN (SELECT slot FROM guardian_diary_compactions) AND (""" + " OR ".join(terms)
                 + ") ORDER BY started LIMIT 200", [current.date().isoformat(), *values]).fetchall()
@@ -94,7 +100,11 @@ class GuardianDiaryStore:
                         'outcome',json_extract(result_json,'$.outcome'),
                         'error',substr(COALESCE(json_extract(result_json,'$.error'),''),1,500),
                         'notify',json_extract(result_json,'$.notify'),
-                        'compacted_at',?) WHERE slot=? AND status<>'running'""", (current.isoformat(), row[0]))
+                        'curve_snapshot',json(?),'curve_account',json(?),
+                        'compacted_at',?) WHERE slot=? AND status<>'running'""", (
+                            json.dumps(curve_snapshot(json.loads(row['curve_snapshot']))) if row['curve_snapshot'] else 'null',
+                            json.dumps(curve_snapshot(json.loads(row['curve_account']))) if row['curve_account'] else 'null',
+                            current.isoformat(), row[0]))
                     self.conn.execute("INSERT OR IGNORE INTO guardian_diary_compactions VALUES(?,?)", (row[0], current.isoformat()))
                 self.conn.execute("""INSERT INTO guardian_diary_preferences VALUES(1,?,?)
                     ON CONFLICT(id) DO UPDATE SET checked_at=excluded.checked_at""",

@@ -1,4 +1,14 @@
 <script setup lang="ts">
+import { Label } from '@/shared/components/ui/label'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
+import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Switch } from '@/shared/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+
 import { computed } from 'vue'
 
 import type { WecomSettings } from '@/shared/types/quant'
@@ -12,6 +22,10 @@ import {
   type WecomScreenTemplate,
 } from '../composables/wecomScreenTemplate'
 
+/**
+ * 推送一节：企微 Webhook → 失败自动推 → 选股样式 → 低吸观察 → （自定义模板）→ 标签与条数 → 预览。
+ * 每条是一行设置行；模板 token 按钮与两张预览纸放在整行（stack）里。
+ */
 const wecomUrl = defineModel<string>('wecomUrl', { required: true })
 const screenTemplate = defineModel<WecomScreenTemplate>('screenTemplate', { required: true })
 
@@ -21,12 +35,7 @@ defineProps<{
   clearPending: boolean
   /** 真的点不动的情况：正在忙、或压根没有可测的地址 */
   testDisabled: boolean
-  /**
-   * 有未保存的推送改动。
-   *
-   * 以前这种情况下「测试」是**灰的**，用户得自己悟出「先滚到底保存、再滚回来测」
-   * 这条三段式。现在按钮不灰，改成「保存并测试」，一次点击把两步做完。
-   */
+  /** 有未保存的推送改动：按钮改成「保存并测试」，一次点击把两步做完 */
   testWillSave: boolean
 }>()
 
@@ -42,6 +51,25 @@ const presetHint = computed(
   () => WECOM_PRESET_OPTIONS.find((o) => o.value === screenTemplate.value.preset)?.hint ?? '',
 )
 
+type TokenField = 'header' | 'intro' | 'pick' | 'skill_pick'
+
+const CUSTOM_FIELDS: Array<{
+  key: keyof WecomScreenTemplate & string
+  label: string
+  placeholder: string
+  tokens?: string[]
+  tokenField?: TokenField
+  tokenHint?: string
+}> = [
+  { key: 'header', label: '标题行', placeholder: '【{title}】{kind}', tokens: ['{title}', '{kind}', '{date}'], tokenField: 'header' },
+  { key: 'intro', label: '导语', placeholder: '留空则直接展示标的列表', tokens: ['{date}'], tokenField: 'intro' },
+  { key: 'pick', label: '每只股票', placeholder: '{name} {code} {pct}', tokens: ['{name}', '{code}', '{pct}'], tokenField: 'pick' },
+  { key: 'pick_no_pct', label: '无涨跌幅时', placeholder: '{name} {code}' },
+  { key: 'skill_pick', label: '技能 · 每只（含说明）', placeholder: '{name} {code} {pct} + {note}', tokens: ['{note}'], tokenField: 'skill_pick', tokenHint: '{note} 取技能给出的说明，超过 40 字会被截断' },
+  { key: 'skill_pick_no_pct', label: '技能 · 无涨跌幅时', placeholder: '{name} {code} + {note}' },
+  { key: 'empty', label: '空结果', placeholder: '' },
+]
+
 function onPresetChange(value: WecomScreenPreset | string | number | boolean): void {
   const preset = String(value) as WecomScreenPreset
   screenTemplate.value = applyWecomPreset(screenTemplate.value, preset)
@@ -53,10 +81,7 @@ function markCustom(): void {
   }
 }
 
-function insertToken(
-  field: 'header' | 'intro' | 'pick' | 'skill_pick',
-  token: string,
-): void {
+function insertToken(field: TokenField, token: string): void {
   markCustom()
   screenTemplate.value = {
     ...screenTemplate.value,
@@ -72,17 +97,35 @@ function onCustomFieldEdit(): void {
 function resetTemplate(): void {
   screenTemplate.value = normalizeWecomScreenTemplate({ preset: 'default' })
 }
+
+function fieldValue(key: string): string {
+  return String((screenTemplate.value as unknown as Record<string, unknown>)[key] ?? '')
+}
+
+function setField(key: string, value: string): void {
+  screenTemplate.value = { ...screenTemplate.value, [key]: value }
+}
 </script>
 
 <template>
-  <el-form class="sys-form" label-position="right" label-width="6.5em" size="small" @submit.prevent>
-    <el-form-item label="企微机器人">
-      <div class="wecom-row">
-        <el-input
+  <form class="sys-rows" @submit.prevent>
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <span class="settings-row__label">
+          企微机器人
+          <UiBadge v-if="wecom.configured && !clearPending" variant="ok" dot>已配置</UiBadge>
+          <UiBadge v-else-if="clearPending" variant="warn" dot>待清除</UiBadge>
+          <UiBadge v-else variant="secondary" dot>未配置</UiBadge>
+        </span>
+        
+      </div>
+      <div class="settings-row__control">
+        <TextField
           v-model.trim="wecomUrl"
           type="password"
           show-password
           class="wecom-input"
+          aria-label="企微机器人 Webhook"
           :placeholder="
             clearPending
               ? '保存后将清除'
@@ -91,217 +134,230 @@ function resetTemplate(): void {
                 : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…'
           "
         />
-        <el-tag v-if="wecom.configured && !clearPending" size="small" type="success" effect="plain">
-          已配
-        </el-tag>
-        <el-tag v-else-if="clearPending" size="small" type="warning" effect="plain">待清除</el-tag>
-        <el-tag v-else size="small" type="info" effect="plain">未配</el-tag>
-        <span class="fail-label">失败自动推</span>
-        <el-switch v-model="sync.push_wecom_on_fail" aria-label="任务失败自动推送" />
       </div>
-    </el-form-item>
+    </div>
 
-    <el-form-item label="选股样式">
-      <div class="preset-wrap">
-        <!-- 各档样式的说明原本常驻在旁边一行，改挂到这组单选上（内容随选中档位变） -->
-        <el-tooltip placement="top-start" :content="presetHint" :disabled="!presetHint">
-          <el-radio-group
-            :model-value="screenTemplate.preset"
-            aria-label="选股推送样式"
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <Label class="settings-row__label" for="sys-notify-fail">任务失败自动推送</Label>
+        
+      </div>
+      <div class="settings-row__control">
+        <Switch id="sys-notify-fail" v-model="sync.push_wecom_on_fail" aria-label="任务失败自动推送" />
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <span class="settings-row__label">选股推送样式</span>
+        <p class="settings-row__desc">{{ presetHint || '决定一条选股消息长什么样。' }}</p>
+      </div>
+      <div class="settings-row__control preset-wrap">
+        <RadioChoices
+          :model-value="screenTemplate.preset"
+          aria-label="选股推送样式"
+          size="small"
+          @change="onPresetChange"
+        >
+          <RadioButton v-for="opt in WECOM_PRESET_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </RadioButton>
+        </RadioChoices>
+      </div>
+    </div>
+
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <Label class="settings-row__label" for="sys-notify-watch">推送低吸观察票</Label>
+        <p class="settings-row__desc">关闭后不显示观察票（不计正式胜率的那批）；正式结果为空时直接写「暂无符合条件的标的」。</p>
+      </div>
+      <div class="settings-row__control">
+        <Switch id="sys-notify-watch" v-model="screenTemplate.show_watch_picks" aria-label="推送低吸观察" />
+      </div>
+    </div>
+
+    <div v-if="isCustom" class="settings-row settings-row--stack">
+      <div class="settings-row__lead">
+        <span class="settings-row__label">自定义模板</span>
+        
+      </div>
+      <div class="custom-grid">
+        <div v-for="f in CUSTOM_FIELDS" :key="f.key" class="custom-field">
+          <Label class="custom-field__label" :for="`sys-notify-${f.key}`">{{ f.label }}</Label>
+          <TextField
+            :id="`sys-notify-${f.key}`"
+            :model-value="fieldValue(f.key)"
+            :placeholder="f.placeholder"
             size="small"
-            @change="onPresetChange"
-          >
-            <el-radio-button
-              v-for="opt in WECOM_PRESET_OPTIONS"
-              :key="opt.value"
-              :value="opt.value"
-            >
-              {{ opt.label }}
-            </el-radio-button>
-          </el-radio-group>
-        </el-tooltip>
-      </div>
-    </el-form-item>
-
-    <el-form-item label="低吸观察">
-      <div class="preset-wrap">
-        <el-switch v-model="screenTemplate.show_watch_picks" aria-label="推送低吸观察" />
-        <span class="switch-hint">
-          关＝推送不显示观察票（不计正式胜率的那批），正式空时直接显示「暂无符合条件的标的」
-        </span>
-      </div>
-    </el-form-item>
-
-    <template v-if="isCustom">
-      <el-row :gutter="12">
-        <el-col :xs="24" :md="12">
-          <el-form-item label="标题行">
-            <el-input
-              v-model="screenTemplate.header"
-              placeholder="【{title}】{kind}"
-              @change="onCustomFieldEdit"
-            />
-            <div class="token-row">
-              <el-button size="small" @click="insertToken('header', '{title}')">{title}</el-button>
-              <el-button size="small" @click="insertToken('header', '{kind}')">{kind}</el-button>
-              <el-button size="small" @click="insertToken('header', '{date}')">{date}</el-button>
-            </div>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :md="12">
-          <el-form-item label="导语">
-            <el-input
-              v-model="screenTemplate.intro"
-              placeholder="留空则直接展示标的列表"
-              @change="onCustomFieldEdit"
-            />
-            <div class="token-row">
-              <el-button size="small" @click="insertToken('intro', '{date}')">{date}</el-button>
-            </div>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :md="12">
-          <el-form-item label="每只股票">
-            <el-input
-              v-model="screenTemplate.pick"
-              placeholder="{name} {code} {pct}"
-              @change="onCustomFieldEdit"
-            />
-            <div class="token-row">
-              <el-button size="small" @click="insertToken('pick', '{name}')">{name}</el-button>
-              <el-button size="small" @click="insertToken('pick', '{code}')">{code}</el-button>
-              <el-button size="small" @click="insertToken('pick', '{pct}')">{pct}</el-button>
-            </div>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="无涨跌幅">
-            <el-input v-model="screenTemplate.pick_no_pct" placeholder="{name} {code}" />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :md="12">
-          <el-form-item label="技能·每只（含说明）">
-            <el-input
-              v-model="screenTemplate.skill_pick"
-              placeholder="{name} {code} {pct} + {note}"
-              @change="onCustomFieldEdit"
-            />
-            <div class="token-row">
-              <!-- 「说明 ≤40 字」是规则：不留常驻文字，挂到插入 {note} 的那颗按钮上 -->
-              <el-tooltip placement="top" content="{note} 取技能给出的说明，超过 40 字会被截断">
-                <el-button size="small" @click="insertToken('skill_pick', '{note}')">{note}</el-button>
-              </el-tooltip>
-            </div>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="技能·无涨跌幅">
-            <el-input
-              v-model="screenTemplate.skill_pick_no_pct"
-              placeholder="{name} {code} + {note}"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="空结果">
-            <el-input v-model="screenTemplate.empty" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-    </template>
-
-    <el-row :gutter="12">
-      <el-col :xs="12" :sm="8" :md="5">
-        <el-form-item label="量化标记">
-          <el-input v-model="screenTemplate.quant_tag" maxlength="16" />
-        </el-form-item>
-      </el-col>
-      <el-col :xs="12" :sm="8" :md="5">
-        <el-form-item label="skills">
-          <el-input v-model="screenTemplate.skills_tag" maxlength="16" />
-        </el-form-item>
-      </el-col>
-      <el-col :xs="24" :sm="16" :md="14">
-        <el-form-item label="最多推送">
-          <div class="inline-actions">
-            <el-input-number v-model="screenTemplate.max_picks" :min="1" :max="50" />
-            <el-button link @click="resetTemplate">恢复默认</el-button>
-            <el-button
-              link
-              type="danger"
-              :disabled="!wecom.configured && !clearPending"
-              @click="emit('clear')"
-            >
-              清除
-            </el-button>
-            <el-button
-              size="small"
-              :type="testWillSave ? 'primary' : 'default'"
-              :disabled="testDisabled"
-              data-testid="wecom-test"
-              @click="emit('test')"
-            >
-              {{ testWillSave ? '保存并测试' : '测试' }}
-            </el-button>
+            @update:model-value="(v: string) => setField(f.key, v)"
+            @change="f.tokenField ? onCustomFieldEdit() : undefined"
+          />
+          <div v-if="f.tokens?.length" class="token-row">
+            <template v-for="token in f.tokens" :key="token">
+              <Tooltip v-if="f.tokenHint">
+                <TooltipTrigger as-child>
+                  <Button variant="secondary" size="xs" class="token" @click="insertToken(f.tokenField!, token)">{{ token }}</Button>
+                </TooltipTrigger>
+                <TooltipContent>{{ f.tokenHint }}</TooltipContent>
+              </Tooltip>
+              <Button v-else variant="secondary" size="xs" class="token" @click="insertToken(f.tokenField!, token)">{{ token }}</Button>
+            </template>
           </div>
-        </el-form-item>
-      </el-col>
-    </el-row>
+        </div>
+      </div>
+    </div>
 
-    <el-form-item label="预览">
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <span class="settings-row__label">标记与条数</span>
+        
+      </div>
+      <div class="settings-row__control tags-row">
+        <Label class="tag-field">
+          <span>量化</span>
+          <TextField v-model="screenTemplate.quant_tag" maxlength="16" size="small" aria-label="量化标记" />
+        </Label>
+        <Label class="tag-field">
+          <span>技能</span>
+          <TextField v-model="screenTemplate.skills_tag" maxlength="16" size="small" aria-label="技能标记" />
+        </Label>
+        <Label class="tag-field">
+          <span>最多</span>
+          <NumberInput v-model="screenTemplate.max_picks" :min="1" :max="50" size="small" class="max-picks" aria-label="最多推送条数" />
+        </Label>
+      </div>
+    </div>
+
+    <div class="settings-row settings-row--stack">
+      <div class="settings-row__lead settings-row__lead--inline">
+        <span class="settings-row__label">预览</span>
+        <div class="preview-actions">
+          <Button variant="ghost" size="sm" @click="resetTemplate">恢复默认</Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="text-stamp hover:text-stamp"
+            :disabled="!wecom.configured && !clearPending"
+            @click="emit('clear')"
+          >
+            清除地址
+          </Button>
+          <Button
+            size="sm"
+            :variant="testWillSave ? 'default' : 'outline'"
+            :disabled="testDisabled"
+            data-testid="wecom-test"
+            @click="emit('test')"
+          >
+            {{ testWillSave ? '保存并测试' : '发送测试' }}
+          </Button>
+        </div>
+      </div>
       <div class="preview-grid" aria-label="选股推送预览">
         <figure class="preview-tape">
           <figcaption class="preview-label">量化</figcaption>
           <pre class="preview-body">{{ previewText }}</pre>
         </figure>
         <figure class="preview-tape">
-          <figcaption class="preview-label">skills</figcaption>
+          <figcaption class="preview-label">技能</figcaption>
           <pre class="preview-body">{{ previewSkills }}</pre>
         </figure>
       </div>
-    </el-form-item>
-  </el-form>
+    </div>
+  </form>
 </template>
 
 <style scoped>
-.wecom-row {
+.sys-rows {
   display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.settings-row__label {
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--gap-1) var(--gap-2);
-  width: 100%;
+  gap: var(--gap-2);
 }
 
 .wecom-input {
-  flex: 1 1 14rem;
+  width: 100%;
   min-width: 0;
 }
 
-.fail-label,
-.switch-hint {
-  margin-left: 1px;
+.wecom-input :deep(input) {
+  font-family: var(--mono);
   font-size: var(--fs-aux);
-  color: var(--mist);
-  white-space: normal;
 }
 
-.preset-wrap {
-  display: flex;
-  min-width: 0;
+.preset-wrap :deep(.radio-choices) {
   max-width: 100%;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1) var(--gap-2);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: none;
+}
+
+.custom-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-3) var(--gap-4);
+  width: 100%;
+}
+
+.custom-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.custom-field__label {
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 500;
 }
 
 .token-row {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-1);
-  margin-top: var(--gap-1);
 }
 
-.inline-actions {
+.token {
+  font-family: var(--mono);
+}
+
+.tags-row {
+  gap: var(--gap-2) var(--gap-3);
+}
+
+.tag-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+.tag-field :deep(.text-field) {
+  width: 6.5rem;
+}
+
+.max-picks {
+  width: 6rem;
+}
+
+.settings-row__lead--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+}
+
+.preview-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -310,51 +366,43 @@ function resetTemplate(): void {
 
 .preview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: var(--gap-2) var(--gap-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-3);
   width: 100%;
 }
 
 .preview-tape {
   margin: 0;
-  /* 原为 border-left: 2px solid color-mix(--seal/--rule)：左竖条改为 1px hairline 外框 + 极淡印章底色 */
+  min-width: 0;
   padding: var(--gap-3);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   background: var(--surface-sunken);
-  min-width: 0;
 }
 
 .preview-label {
   margin: 0 0 var(--gap-1);
+  color: var(--text-tertiary);
   font-family: var(--mono);
   font-size: var(--fs-kicker);
   letter-spacing: 0.06em;
-  color: var(--mist);
   text-transform: uppercase;
 }
 
 .preview-body {
   margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
+  color: var(--text-primary);
   font-family: var(--mono);
   font-size: var(--fs-aux);
-  line-height: 1.45;
-  color: var(--ink);
-}
-
-.sys-form :deep(.el-form-item) {
-  margin-bottom: var(--gap-2);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 @media (max-width: 720px) {
+  .custom-grid,
   .preview-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
-</style>
-<style scoped>
-.preset-wrap :deep(.el-radio-group) { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; }
-.token-row :deep(.el-button + .el-button), .inline-actions :deep(.el-button + .el-button) { margin-left: 0; }
 </style>

@@ -5,6 +5,8 @@ import type {
   ScreenSkillRuntime,
 } from '@/shared/types/quant'
 
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
+
 import ScreenWorkbenchCatalog from './ScreenWorkbenchCatalog.vue'
 
 const visible = defineModel<boolean>({ default: false })
@@ -32,51 +34,31 @@ function onSnippet(snippet: ScreenSkillCatalogSnippet): void {
 </script>
 
 <template>
-  <el-dialog
-    v-model="visible"
-    title="函数词典"
-    width="min(920px, 92vw)"
-    top="6vh"
-    append-to-body
-    destroy-on-close
-    align-center
-    class="catalog-dialog"
-    modal-class="catalog-dialog-modal"
-  >
-    <div class="catalog-dialog__frame">
-      <ScreenWorkbenchCatalog
-        :catalog="catalog"
-        :runtime="runtime"
-        :loading="loading"
-        layout="dialog"
-        @insert-text="onInsert"
-        @apply-snippet="onSnippet"
-      />
-    </div>
-  </el-dialog>
+  <Dialog v-model:open="visible">
+    <DialogContent
+      class="catalog-dialog w-[min(920px,92vw)] max-w-none gap-3 overflow-hidden p-4 sm:max-w-none"
+    >
+      <DialogHeader class="gap-1 text-left">
+        <DialogTitle>函数词典</DialogTitle>
+      </DialogHeader>
+      <div class="catalog-dialog__frame">
+        <ScreenWorkbenchCatalog
+          :catalog="catalog"
+          :runtime="runtime"
+          :loading="loading"
+          layout="dialog"
+          @insert-text="onInsert"
+          @apply-snippet="onSnippet"
+        />
+      </div>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
 .catalog-dialog__frame {
   height: min(560px, 72vh);
   min-height: 0;
-  overflow: hidden;
-}
-</style>
-
-<style>
-/* el-dialog teleports to body；需非 scoped 才能锁死外层滚动 */
-.catalog-dialog.el-dialog {
-  margin-bottom: 0;
-  overflow: hidden;
-}
-
-.catalog-dialog .el-dialog__body {
-  padding: 0.35rem 1rem 1rem;
-  overflow: hidden;
-}
-
-.catalog-dialog-modal {
   overflow: hidden;
 }
 </style>

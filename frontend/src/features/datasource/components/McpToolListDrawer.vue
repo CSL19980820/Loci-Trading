@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { default as SidePanel } from '@/shared/components/ui/app/SidePanel.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { Notice, SkeletonBlock } from '@/shared/components/ui/app/presentation'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, onUnmounted, ref, watch } from 'vue'
 
 import { getMcpServers } from '@/shared/api/quant'
@@ -74,19 +80,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <el-drawer v-model="open" class="source-mcp-drawer" size="min(520px, 100vw)" direction="rtl" append-to-body>
+  <SidePanel v-model="open" class="source-mcp-drawer" size="min(520px, 100vw)" direction="rtl" append-to-body>
     <template #header="{ titleId, titleClass }">
       <div class="mcp-head">
         <h4 :id="titleId" :class="titleClass">MCP 工具清单</h4>
-        <el-tooltip :content="scopeTip" placement="bottom-start">
+        <HintTooltip :content="scopeTip" placement="bottom-start">
           <code>{{ BUILTIN_NAME }}</code>
-        </el-tooltip>
+        </HintTooltip>
       </div>
     </template>
 
-    <el-alert v-if="error" :title="error" type="warning" show-icon :closable="false" class="mcp-alert" />
+    <Notice v-if="error" :title="error" tone="warning" show-icon :closable="false" class="mcp-alert" />
 
-    <el-skeleton v-if="loading && !tools.length" :rows="4" animated />
+    <SkeletonBlock v-if="loading && !tools.length" :rows="4" animated />
     <template v-else>
       <!-- 两块并列清单要区分，标题保留；但压成一行：标题 + 计数 + 本块筛选控件同行 -->
       <section class="mcp-group">
@@ -97,7 +103,7 @@ onUnmounted(() => {
               / {{ laneTools.length }}
             </span>
           </h5>
-          <el-input
+          <TextField
             v-model="laneQuery"
             class="mcp-group__filter"
             size="small"
@@ -127,7 +133,7 @@ onUnmounted(() => {
               / {{ akshareTools.length }}
             </span>
           </h5>
-          <el-input
+          <TextField
             v-model="akQuery"
             class="mcp-group__filter"
             size="small"
@@ -151,10 +157,10 @@ onUnmounted(() => {
     </template>
 
     <template #footer>
-      <el-button :loading="loading" @click="load()">重新读取</el-button>
-      <el-button type="primary" @click="open = false">关闭</el-button>
+      <ActionButton access="read" :busy="loading" @click="load()">重新读取</ActionButton>
+      <ActionButton access="read" tone="primary" @click="open = false">关闭</ActionButton>
     </template>
-  </el-drawer>
+  </SidePanel>
 </template>
 
 <style scoped>
@@ -252,6 +258,6 @@ onUnmounted(() => {
 </style>
 <style scoped>
 .mcp-head { flex-wrap: wrap; gap: var(--gap-2); }
-.source-mcp-drawer :deep(.el-drawer__header) { border-bottom: 1px solid var(--rule); padding-bottom: var(--gap-3); }
-.source-mcp-drawer :deep(.el-drawer__footer) { border-top: 1px solid var(--rule); background: var(--surface-sunken); }
+.source-mcp-drawer :deep(.side-panel__header) { border-bottom: 1px solid var(--rule); padding-bottom: var(--gap-3); }
+.source-mcp-drawer :deep(.side-panel__footer) { border-top: 1px solid var(--rule); background: var(--surface-sunken); }
 </style>

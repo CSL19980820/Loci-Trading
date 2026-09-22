@@ -1,7 +1,7 @@
 # 公式（formula）
 
 ## 职责
-通达信向量化函数、筹码、板块涨跌停、潜龙指标，以及 Screen Skill 的 P0 公式编译/求值内核。
+通达信向量化函数、筹码、板块涨跌停，以及 Screen Skill 的 P0 公式编译/求值内核。
 
 ## 边界
 纯计算，无 IO、无包发现、无数据库、无 LLM。
@@ -9,7 +9,7 @@
 `COUNT` 的原生布尔正整数窗口使用精确整数前缀计数；数值、缺失及特殊周期保留原路径。`MA`/`HHV`/`LLV` 的普通 float64 正整数窗口合并逐列准备，仍调用 pandas 原来的 `roll_mean`/`roll_max`/`roll_min` 内核，保持舍入与缺失值口径；私有接口不可用或签名变化时回退公开 rolling API。回归使用逐位等价检查，不能用浮点近似掩盖阈值漂移。
 
 ## 关键入口
-`MA`/`REF`/…；`compile_screen_formula()` / `evaluate_screen_formula()`；`src.formula.domain.qianlong`
+`MA`/`REF`/…；`compile_screen_formula()` / `evaluate_screen_formula()`
 
 ## 如何扩展
 新函数保持面板/Series 同构；Screen Formula 只扩显式注册表；补 `tests/formula/`。
@@ -20,7 +20,6 @@
 - `from src.formula import compile_screen_formula, evaluate_screen_formula`
 - 涨停价一律走 `limit_up_price(prev_close, ratio)`（标量/ndarray）或面板侧 `ZTPRICE`；**禁止**在别处手写 `floor(prev*(1+r)*100+0.5)/100`——漏掉抵消二进制误差的极小量会让约 0.2% 的价位差一分钱，收在涨停价上的票被判成没涨停
 - `ScreenFormulaManifest` / `ScreenFormulaParam` 描述 `screen.yaml` 语义字段
-- 潜龙指标：`from src.formula.domain.qianlong import ...`
 - 面板 DataFrame 与单票 Series 同构实现
 - Screen Formula P0 字段：`OPEN/HIGH/LOW/CLOSE/VOL/AMOUNT/HSL`，其中 `HSL` 运行时映射 `turnover * 100`
 - Screen Formula 公开目录：`screen_skill_catalog()`；编辑器只能展示该目录内的函数和日线字段
@@ -37,4 +36,6 @@
 新增公式函数、改 P0 注册表或改通达信语义对齐时必须更新本文。
 
 ## 相关测试
-`tests/formula/`；其中 `test_vectorized_parity.py` 把改写前的 `WMA`/`AVEDEV`/`_extreme_bars` 逐字留成参考实现，对含停牌缺口、平台期并列极值的合成面板逐元素比对（`equal_nan=True`），并用 `tracemalloc` 钉住 `HHVBARS` 的峰值内存不随股票数增长。
+`tests/formula/`；其中 `test_vectorized_semantics.py` 保留向量化改写抓到过真实分叉的语义断言
+（权重方向、并列取最近、分块边界、空值形状）并用 `tracemalloc` 钉住 `HHVBARS` 的峰值内存
+不随股票数增长。改写当时的逐字旧实现 oracle 已随落地删除，口径以 `test_formula.py` 的通达信语义为准。

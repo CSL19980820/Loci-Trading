@@ -91,6 +91,7 @@ async function requestOnce<T>(path: string, options?: ApiRequestInit): Promise<T
     window.clearTimeout(timeout)
   }
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('loci:session-expired'))
     const body: unknown = await response.json().catch(() => null)
     const rawDetail =
       typeof body === 'object' && body !== null && 'detail' in body
@@ -136,6 +137,7 @@ export function getTodayAlerts(): Promise<TodayAlert[]> {
 async function downloadExport(path: string, filename: string): Promise<void> {
   const response = await fetch(`${API_ROOT}${path}`, { credentials: 'same-origin' })
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('loci:session-expired'))
     const body: unknown = await response.json().catch(() => null)
     const detail =
       typeof body === 'object' && body !== null && 'detail' in body

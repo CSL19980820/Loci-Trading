@@ -1,4 +1,4 @@
-export type Role = 'admin' | 'member'
+export type Role = 'admin' | 'visitor'
 export type UserStatus = 'active' | 'pending' | 'disabled' | 'deleted'
 export type ProviderFamily = 'local' | 'wechat' | 'qq' | 'mock'
 export type LoginMode = 'redirect' | 'qrcode'
@@ -16,6 +16,8 @@ export interface UserProfile {
   email_verified?: boolean
   status?: UserStatus
   tenant_id?: string
+  view_tenant_id?: string
+  read_only?: boolean
   last_login_at?: string | null
   must_change_password?: boolean
   has_password?: boolean
@@ -79,17 +81,6 @@ export interface AuthMeResponse {
   unread: number
 }
 
-export interface ApiKeyItem {
-  id: string
-  name: string
-  prefix: string
-  scopes: string
-  created_at: string
-  last_used_at: string | null
-  expires_at: string | null
-  revoked_at: string | null
-}
-
 export interface QrStartResult {
   state: string
   mode: LoginMode
@@ -103,29 +94,4 @@ export interface QrPollResult {
   status: QrStatus
   redirect_to?: string
   error?: string
-}
-
-export interface NotificationItem {
-  id: string
-  user_id: string
-  title: string
-  body: string
-  link?: string
-  read_at?: string | null
-  created_at: string
-}
-
-export interface AnnouncementItem {
-  id: string
-  title: string
-  body: string
-  level?: string
-  published_at?: string | null
-  expires_at?: string | null
-}
-
-export interface NotificationsResponse {
-  items: NotificationItem[]
-  unread: number
-  announcements: AnnouncementItem[]
 }

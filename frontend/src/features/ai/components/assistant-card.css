@@ -1,27 +1,29 @@
 /*
- * 助手产物卡片的共享外壳。此前 CodeCard / DataTable / DecisionChart / EchartsCard /
- * EquityCard / KlineCard / SourceStrip 七个组件各抄一份同样的外壳 + heading + h3，
- * 改一次卡片间距要动七个文件，漏一个就是一档错位。
- *
- * 尺寸全部走助手域契约令牌（--ai-*，定义在 AssistantPanel.vue 末尾的 unscoped 块），
- * 不再用全站 --radius：卡片圆角在本域的名字是 --ai-r-card（今天同值，改的时候不分叉）。
- * 必须是全局样式：七个卡片各自 scoped，共享壳只能落在不带 scope 属性的规则上。
+ * 助手产物卡的公共骨架（CodeCard / DataTable / DecisionChart / EchartsCard /
+ * EquityCard / KlineCard / SourceStrip 共用）：hairline + 12px 圆角 + 极淡投影，
+ * heading 一行（标题 + 右侧徽标）。尺寸全部走令牌，不在各卡里各写一套。
  */
 .assistant-card {
-  margin-top: var(--ai-gap-xs);
-  padding: var(--ai-gap-md);
-  border: 1px solid var(--rule);
-  border-radius: var(--ai-r-card);
-  background: var(--surface);
+  gap:0;
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  padding: var(--gap-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
 }
 
-/* 只有一行标签的条状卡（来源条）纵向再收一档 */
+/* 自带头条的卡（代码块）：去掉内边距，由卡自己排 */
+.assistant-card--flush {
+  padding: 0;
+}
+
+/* 只有一行标签的窄条（来源条）用更薄的一层 */
 .assistant-card--tight {
-  padding: var(--ai-block-pad);
+  padding: var(--gap-2) var(--gap-3);
 }
 
 .assistant-card__heading {
@@ -29,17 +31,22 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--ai-gap-sm);
-  margin-bottom: var(--ai-gap-sm);
-  padding-bottom: var(--ai-gap-sm);
-  border-bottom: 1px solid var(--rule-soft);
+  gap: var(--gap-2);
   min-width: 0;
+  margin-bottom: var(--gap-2);
+  padding-bottom: var(--gap-2);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .assistant-card h3 {
   margin: 0;
-  font-size: var(--ai-fs-body);
-  font-weight: 650;
-  color: var(--ink);
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  letter-spacing: -0.005em;
   overflow-wrap: anywhere;
 }
+
+.assistant-card__content { padding:0; min-width:0; }
+.assistant-card__heading { padding-inline:0; padding-top:0; }
+.assistant-card__heading [data-slot="card-title"] { font-size:14px; line-height:1.5; font-weight:600; }

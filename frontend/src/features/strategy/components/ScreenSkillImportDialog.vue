@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as SegmentedControl } from '@/shared/components/ui/app/SegmentedControl.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, ref, watch } from 'vue'
 
 import CodeEditor from '@/features/ops/components/CodeEditor.vue'
@@ -41,21 +45,21 @@ watch(visible, (open) => {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="visible"
     title="导入执行源"
     width="min(50rem, 94vw)"
     destroy-on-close
   >
     <div class="mb-3 flex items-center justify-between gap-3">
-      <el-segmented v-model="kind" :options="kindOptions" />
+      <SegmentedControl v-model="kind" :options="kindOptions" />
     </div>
     <CodeEditor v-model="source" :language="language" height="26rem" />
     <template #footer>
-      <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" :disabled="!source.trim()" @click="applyImport">应用到当前草稿</el-button>
+      <ActionButton access="read" @click="visible = false">取消</ActionButton>
+      <ActionButton tone="primary" :disabled="!source.trim()" @click="applyImport">应用到当前草稿</ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>

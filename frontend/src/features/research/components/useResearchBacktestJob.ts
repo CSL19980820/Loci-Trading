@@ -1,3 +1,5 @@
+
+import { toast } from 'vue-sonner'
 /**
  * 研究回测的提交与轮询状态机。
  *
@@ -9,7 +11,7 @@
  * 面板那边留下的是展示：指标分组、战法下拉文案、证据与 artifact 的摆法。
  */
 import { computed, onActivated, onDeactivated, onUnmounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 
 import { getStrategies } from '@/shared/api/quant'
 import {
@@ -197,7 +199,7 @@ export function useResearchBacktestJob() {
       })
       if (sequence !== pollSequence) return
       activeJob.value = result.job
-      ElMessage.success('研究回测任务已提交')
+      toast.success('研究回测任务已提交')
       void pollJob(result.job.id, sequence)
     } catch (caught: unknown) {
       if (sequence === pollSequence) {
@@ -249,8 +251,8 @@ export function useResearchBacktestJob() {
       await selectRun(result.run_card.run_id)
       replayResult.value = result
       const summary = summarizeReplayComparison(result.comparison)
-      if (summary.matches) ElMessage.success(summary.message)
-      else ElMessage.warning(summary.message)
+      if (summary.matches) toast.success(summary.message)
+      else toast.warning(summary.message)
     } catch (caught: unknown) {
       error.value = caught instanceof Error ? caught.message : '回放失败'
     } finally {

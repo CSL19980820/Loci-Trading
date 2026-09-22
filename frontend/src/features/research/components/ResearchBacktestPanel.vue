@@ -1,4 +1,17 @@
 <script setup lang="ts">
+import { ChartLine as DataLine, Download, RefreshCw as RefreshRight, Play as VideoPlay } from '@lucide/vue'
+import { IconBox, Notice, StatusBadge, DetailList, DetailItem, ActionLink } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+
 /**
  * 可审计研究回测面板。
  *
@@ -7,7 +20,7 @@
  * 与 KeepAlive 停表）在 useResearchBacktestJob，状态词表在 researchBacktestStatus。
  */
 import { computed, ref } from 'vue'
-import { DataLine, Download, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import { researchArtifactUrl } from '@/shared/api/quant_research'
@@ -163,13 +176,13 @@ defineExpose({ load, setHistoricalUniverse })
   <section class="backtest-panel research-surface" aria-label="可审计研究回测">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <header class="section-head">
-      <h3><el-icon aria-hidden="true"><DataLine /></el-icon>研究回测</h3>
-      <el-button size="small" :icon="RefreshRight" :loading="loading" @click="load">刷新</el-button>
+      <h3><IconBox aria-hidden="true"><DataLine /></IconBox>研究回测</h3>
+      <ActionButton access="read" size="small" :icon="RefreshRight" :busy="loading" @click="load">刷新</ActionButton>
     </header>
 
-    <el-form class="backtest-form" label-position="right" label-width="6.5em" size="small">
-      <el-form-item label="战法" required>
-        <el-select
+    <FormLayout class="backtest-form" label-position="right" label-width="6.5em" size="small">
+      <FormField label="战法" required>
+        <ChoiceField
           v-model="form.strategy"
           class="full"
           filterable
@@ -177,25 +190,25 @@ defineExpose({ load, setHistoricalUniverse })
           default-first-option
           placeholder="选择战法"
         >
-          <el-option
+          <ChoiceOption
             v-for="s in strategyOptions"
             :key="s.slug"
             :label="s.label"
             :value="s.slug"
           />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="持有日">
-        <el-input-number v-model="form.holdDays" :min="1" :max="60" controls-position="right" />
-      </el-form-item>
-      <el-form-item label="初始资金">
-        <el-input-number v-model="form.initialCapital" :min="1" :max="100000000" :step="10000" controls-position="right" />
-      </el-form-item>
-      <el-form-item label="最大持仓">
-        <el-input-number v-model="form.maxPositions" :min="1" :max="100" controls-position="right" />
-      </el-form-item>
-      <el-form-item label="回测区间" required class="form-wide">
-        <el-date-picker
+        </ChoiceField>
+      </FormField>
+      <FormField label="持有日">
+        <NumberInput v-model="form.holdDays" :min="1" :max="60" controls-position="right" />
+      </FormField>
+      <FormField label="初始资金">
+        <NumberInput v-model="form.initialCapital" :min="1" :max="100000000" :step="10000" controls-position="right" />
+      </FormField>
+      <FormField label="最大持仓">
+        <NumberInput v-model="form.maxPositions" :min="1" :max="100" controls-position="right" />
+      </FormField>
+      <FormField label="回测区间" required class="form-wide">
+        <DateField
           v-model="range"
           type="daterange"
           value-format="YYYY-MM-DD"
@@ -203,43 +216,43 @@ defineExpose({ load, setHistoricalUniverse })
           end-placeholder="结束日"
           unlink-panels
         />
-      </el-form-item>
-      <el-form-item label="训练区间" required class="form-wide">
-        <el-date-picker v-model="trainRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="训练开始" end-placeholder="训练结束" unlink-panels />
-      </el-form-item>
-      <el-form-item label="OOS 区间" required class="form-wide">
-        <el-date-picker v-model="oosRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="OOS 开始" end-placeholder="OOS 结束" unlink-panels />
-      </el-form-item>
-      <el-form-item label="历史股票池" class="form-wide">
-        <el-input v-model="form.historicalUniverseId" placeholder="historical_universe_id" />
-      </el-form-item>
-      <el-form-item label="严格 PIT">
-        <el-tooltip :content="STRICT_PIT_HINT" placement="top">
-          <el-switch v-model="form.strictPit" aria-label="严格 PIT 模式" />
-        </el-tooltip>
-      </el-form-item>
-      <el-form-item class="form-action" label-width="0">
-        <el-button type="primary" native-type="button" :icon="VideoPlay" :loading="submitting" @click="submit">提交回测</el-button>
-      </el-form-item>
-    </el-form>
-    <el-alert
+      </FormField>
+      <FormField label="训练区间" required class="form-wide">
+        <DateField v-model="trainRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="训练开始" end-placeholder="训练结束" unlink-panels />
+      </FormField>
+      <FormField label="OOS 区间" required class="form-wide">
+        <DateField v-model="oosRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="OOS 开始" end-placeholder="OOS 结束" unlink-panels />
+      </FormField>
+      <FormField label="历史股票池" class="form-wide">
+        <TextField v-model="form.historicalUniverseId" placeholder="historical_universe_id" />
+      </FormField>
+      <FormField label="严格 PIT">
+        <HintTooltip :content="STRICT_PIT_HINT" placement="top">
+          <ToggleSwitch v-model="form.strictPit" aria-label="严格 PIT 模式" />
+        </HintTooltip>
+      </FormField>
+      <FormField class="form-action" label-width="0">
+        <ActionButton tone="primary" type="button" :icon="VideoPlay" :busy="submitting" @click="submit">提交回测</ActionButton>
+      </FormField>
+    </FormLayout>
+    <Notice
       v-if="!form.strictPit"
       title="非严格 PIT：结果仅供探索"
-      type="warning"
+      tone="warning"
       show-icon
       :closable="false"
       class="panel-alert"
     />
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="panel-alert" />
+    <Notice v-if="error" :title="error" tone="error" show-icon :closable="false" class="panel-alert" />
     <section v-if="activeJob" class="job-state" aria-label="研究回测任务状态">
       <div class="job-head">
         <span>任务</span>
         <code>{{ activeJob.id }}</code>
-        <el-tag size="small" effect="plain" :type="statusType(activeJob.status)">{{ statusLabel(activeJob.status) }}</el-tag>
+        <StatusBadge size="small" effect="plain" :tone="statusType(activeJob.status)">{{ statusLabel(activeJob.status) }}</StatusBadge>
       </div>
       <div class="job-meta"><span>run id</span><code>{{ activeJob.run_id || '等待后端生成' }}</code></div>
       <div v-if="pollingFailed" class="job-retry">
-        <el-button type="warning" plain size="small" :icon="RefreshRight" @click="retryPolling">重试读取任务状态</el-button>
+        <ActionButton access="read" tone="warning" plain size="small" :icon="RefreshRight" @click="retryPolling">重试读取任务状态</ActionButton>
       </div>
     </section>
 
@@ -254,10 +267,10 @@ defineExpose({ load, setHistoricalUniverse })
       empty-reason="填好区间后点「提交回测」"
     >
       <template #status="{ row }">
-        <el-tag size="small" effect="plain" :type="statusType(String(row.status))">{{ statusLabel(String(row.status)) }}</el-tag>
+        <StatusBadge size="small" effect="plain" :tone="statusType(String(row.status))">{{ statusLabel(String(row.status)) }}</StatusBadge>
       </template>
       <template #actions="{ row }">
-        <el-button text size="small" @click="selectRun(String(row.run_id))">查看该轮</el-button>
+        <ActionButton access="read" variant="ghost" size="small" @click="selectRun(String(row.run_id))">查看该轮</ActionButton>
       </template>
     </BasicTable>
 
@@ -265,68 +278,68 @@ defineExpose({ load, setHistoricalUniverse })
       <div class="run-detail-head">
         <div><span>当前 run</span><code>{{ selectedRun.run_id }}</code></div>
         <div class="run-actions">
-          <el-button
+          <ActionButton
             v-if="selectedRun.status === 'awaiting_human_review'"
-            type="primary"
+            tone="primary"
             plain
             size="small"
             @click="publishOpen = true"
-          >人工签署发布</el-button>
-          <el-button
+          >人工签署发布</ActionButton>
+          <ActionButton
             v-if="selectedRun.status === 'awaiting_human_review'"
-            type="danger"
+            tone="danger"
             plain
             size="small"
             @click="rejectionOpen = true"
-          >人工否决</el-button>
-          <el-button text size="small" :icon="RefreshRight" :loading="replaying" @click="replay">重放并刷新</el-button>
+          >人工否决</ActionButton>
+          <ActionButton variant="ghost" size="small" :icon="RefreshRight" :busy="replaying" @click="replay">重放并刷新</ActionButton>
         </div>
       </div>
-      <el-alert
+      <Notice
         v-if="selectedRun.error"
         :title="selectedRun.error"
-        type="error"
+        tone="error"
         show-icon
         :closable="false"
         class="panel-alert"
       />
-      <el-tooltip v-if="isExploratoryRun" :content="runEvidenceDescription" placement="top">
-        <el-alert
+      <HintTooltip v-if="isExploratoryRun" :content="runEvidenceDescription" placement="top">
+        <Notice
           :title="runEvidenceTitle"
-          type="warning"
+          tone="warning"
           show-icon
           :closable="false"
           class="panel-alert"
         />
-      </el-tooltip>
+      </HintTooltip>
       <div class="workflow-strip" aria-label="研究工作流">
-        <el-tag v-if="workflow" size="small" effect="plain" :type="statusType(workflow.status)">工作流 · {{ statusLabel(workflow.status) }}</el-tag>
-        <el-tag v-for="(stage, name) in workflow?.stages || {}" :key="name" size="small" effect="plain" :type="stageType(stage.status)" :title="stage.error || stage.failure_code">
+        <StatusBadge v-if="workflow" size="small" effect="plain" :tone="statusType(workflow.status)">工作流 · {{ statusLabel(workflow.status) }}</StatusBadge>
+        <StatusBadge v-for="(stage, name) in workflow?.stages || {}" :key="name" size="small" effect="plain" :tone="stageType(stage.status)" :title="stage.error || stage.failure_code">
           {{ name }} · {{ stage.status }} · {{ stage.attempts }} 次
-        </el-tag>
+        </StatusBadge>
         <span v-if="!workflow" class="missing">工作流未提供</span>
       </div>
-      <el-alert
+      <Notice
         v-if="selectedRun.status === 'awaiting_human_review' || workflow?.status === 'awaiting_human_review'"
         title="待人工签署，不能作为证据"
-        type="warning"
+        tone="warning"
         show-icon
         :closable="false"
         class="panel-alert"
       />
-      <el-alert
+      <Notice
         v-if="workflowProblems.length"
         :title="`工作流阻断：${workflowProblems.join('；')}`"
-        type="error"
+        tone="error"
         show-icon
         :closable="false"
         class="panel-alert"
       />
       <section v-if="replayResult" class="replay-section" aria-label="回放比对回执">
         <h4>回放比对</h4>
-        <el-tag size="small" effect="plain" :type="replaySummary?.matches ? 'success' : 'danger'">
+        <StatusBadge size="small" effect="plain" :tone="replaySummary?.matches ? 'success' : 'danger'">
           {{ replaySummary?.label || '回放结果未确认' }}
-        </el-tag>
+        </StatusBadge>
         <span v-if="replaySummary && !replaySummary.matches">不一致项：{{ replaySummary.mismatches.join('、') || '后端未提供细项' }}</span>
         <span>源冻结输入 <code :title="replayResult.comparison.source_manifest_sha256">{{ replayResult.comparison.source_manifest_sha256 || '未提供' }}</code></span>
         <span>回执 <code :title="replayResult.receipt.sha256">{{ replayResult.receipt.path || '未提供' }} · {{ replayResult.receipt.sha256 || '未提供' }}</code></span>
@@ -334,30 +347,30 @@ defineExpose({ load, setHistoricalUniverse })
       <div class="detail-grid">
         <section v-for="group in detailGroups" :key="group.title" class="fact-group">
           <h4>{{ group.title }}</h4>
-          <el-descriptions v-if="group.items.length" :column="1" border size="small">
-            <el-descriptions-item v-for="item in group.items" :key="item.key" :label="item.key">{{ item.value }}</el-descriptions-item>
-          </el-descriptions>
+          <DetailList v-if="group.items.length" :column="1" border size="small">
+            <DetailItem v-for="item in group.items" :key="item.key" :label="item.key">{{ item.value }}</DetailItem>
+          </DetailList>
           <span v-else class="missing">后端未提供</span>
         </section>
       </div>
       <section class="provenance-section">
         <div class="artifact-head"><h4>冻结输入与来源证据</h4></div>
-        <el-descriptions v-if="provenanceEntries.length" :column="1" border size="small">
-          <el-descriptions-item v-for="entry in provenanceEntries" :key="entry.key" :label="entry.key"><code>{{ entry.value }}</code></el-descriptions-item>
-        </el-descriptions>
-        <el-alert
+        <DetailList v-if="provenanceEntries.length" :column="1" border size="small">
+          <DetailItem v-for="entry in provenanceEntries" :key="entry.key" :label="entry.key"><code>{{ entry.value }}</code></DetailItem>
+        </DetailList>
+        <Notice
           v-if="!Object.keys(temporalMembership).length"
           title="缺 temporal_membership 冻结快照"
-          type="warning"
+          tone="warning"
           show-icon
           :closable="false"
           class="evidence-alert"
         />
-        <el-alert
+        <Notice
           v-for="issue in sourceEvidenceIssues"
           :key="issue"
           :title="issue"
-          type="error"
+          tone="error"
           show-icon
           :closable="false"
           class="evidence-alert"
@@ -370,7 +383,7 @@ defineExpose({ load, setHistoricalUniverse })
           empty-text="暂无来源证据"
         >
           <template #url="{ row }">
-            <el-link v-if="row.sourceUrl" :href="String(row.sourceUrl)" target="_blank" rel="noopener noreferrer">{{ row.sourceUrl }}</el-link>
+            <ActionLink v-if="row.sourceUrl" :href="String(row.sourceUrl)" target="_blank" rel="noopener noreferrer">{{ row.sourceUrl }}</ActionLink>
             <span v-else class="missing">后端未提供链接</span>
           </template>
         </BasicTable>
@@ -388,7 +401,7 @@ defineExpose({ load, setHistoricalUniverse })
             <code :title="String(row.sha256 || '')">{{ String(row.sha256 || '').slice(0, 16) }}...</code>
           </template>
           <template #download="{ row }">
-            <el-link :href="researchArtifactUrl(selectedRun!.run_id, String(row.path))" :icon="Download" aria-label="下载 artifact" />
+            <ActionLink :href="researchArtifactUrl(selectedRun!.run_id, String(row.path))" :icon="Download" aria-label="下载 artifact" />
           </template>
         </BasicTable>
       </section>
@@ -410,14 +423,13 @@ defineExpose({ load, setHistoricalUniverse })
 .backtest-panel { overflow: hidden; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
 .section-head, .run-detail-head, .job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gap-3); padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); }
 .section-head h3, h4 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: .03em; }
-/* 表单栅格挂在 el-form 自身：不插裸 div，label 宽仍由 EP 的 label-width 算 */
 .backtest-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--gap-1) var(--gap-3); align-items: start; padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); }
-.backtest-form :deep(.el-form-item) { margin-bottom: 0; min-width: 0; }
-.backtest-form :deep(.el-date-editor) { width: 100%; }
+.backtest-form :deep(.form-field) { margin-bottom: 0; min-width: 0; }
+.backtest-form :deep(.date-field) { width: 100%; }
 .form-action { justify-content: flex-end; }
 /* 日期区间控件压到 200px 会折行：整行占满，控件本身再收到可读宽度 */
 .form-wide { grid-column: 1 / -1; }
-.form-wide :deep(.el-form-item__content) { max-width: 28rem; }
+.form-wide :deep(.form-field__content) { max-width: 28rem; }
 .panel-alert { margin: var(--gap-2) var(--pad-sheet-x); }
 .job-state { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
 .job-head { align-items: center; justify-content: flex-start; }
@@ -431,8 +443,8 @@ code { color: var(--ink); font-family: var(--mono); font-size: var(--fs-aux); fo
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--gap-2); padding: var(--pad-sheet); }
 .fact-group { min-width: 0; }
 .fact-group h4, .artifact-section h4, .provenance-section h4 { margin: 0 0 var(--gap-1); font-size: var(--fs-body); }
-.fact-group :deep(.el-descriptions__label) { width: 40%; font-size: var(--fs-aux); overflow-wrap: anywhere; }
-.fact-group :deep(.el-descriptions__content) { font: var(--fs-aux)/1.35 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.fact-group :deep(.detail-item__label) { width: 40%; font-size: var(--fs-aux); overflow-wrap: anywhere; }
+.fact-group :deep(.detail-item__content) { font: var(--fs-aux)/1.35 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .artifact-section, .provenance-section { padding: var(--pad-sheet); border-top: 1px solid var(--rule); }
 .evidence-alert { margin: var(--gap-2) 0; }
 .artifact-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--gap-1) var(--gap-3); margin-bottom: var(--gap-1); }
@@ -443,7 +455,7 @@ code { color: var(--ink); font-family: var(--mono); font-size: var(--fs-aux); fo
 .missing { color: var(--mist); font-size: var(--fs-aux); }
 @media (max-width: 700px) {
   .section-head, .run-detail-head { flex-direction: column; }
-  .form-wide :deep(.el-form-item__content) { max-width: none; }
+  .form-wide :deep(.form-field__content) { max-width: none; }
 }
 </style>
 <style scoped src="./ResearchSurfaces.css"></style>

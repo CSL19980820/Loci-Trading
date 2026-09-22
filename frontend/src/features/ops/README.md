@@ -6,7 +6,6 @@
 
 - 壳：`OpsView.vue` — **左脊索引**（`SettingsRail`）+ 右面板；`?tab=` 路由；按当前 tab 按需 `load`；窄屏折成单条 `PageTabs`
 - 面板壳：`SettingsPanel.vue`（标题 + 回执读数 + 主操作；可用宽度不足时换行，回执可省略；≤900px rail 隐藏，且 `/quant` 的 `JobsTab` 复用同一个壳；`fill` 让 body 吃满剩余高度，MCP / LLM / 定时任务名册用，表单页不要传）；联内壳 `SettingsSection.vue`（左槽联名 + 可读保存状态，窄屏收窄左槽）
-- **`SignalRulesTab`**（rail「模型与工具」分区，`?tab=signals`）：大屏实时信号的规则维护。**一条两行**：第一行只放控件（`el-switch` + 中文名 + `code` + 可调参数 `el-input-number` + 文字按钮「恢复默认」），第二行整宽给口径说明（单行截断 + `el-tooltip` 全文，ui-spec §8）。参数轨吃弹性并**右对齐收口**，所以 1~3 个参数的行右缘一致——旧版把弹性留给口径之外的空隙，参数块会随参数个数左右横跳，六行右缘全是锯齿；壳也别再传 `fill`（那会把 body padding 置 0，内容贴边）。**改完即时 PUT**，失败整条回滚并 `ElMessage.error` 报后端原话。参数口径优先用后端 `param_specs`（键 / 中文名 / 上下限 / 单位 / 整数），缺席才退到 `composables/signalRuleMeta.ts` 的静态表。接口：`GET /api/market/signals/rules`、`PUT /api/market/signals/rules/{rule_id}`（早期契约 `/market/signal-rules` 作 404 回退）。rail 尾注「N/M 启用」由面板 `@summary` 回传，不进 `useSettingsSummaries` 的全局批量拉取
 - Tab：`McpTab` · `LlmTab`（供应商**卡片名册** + 分区编辑 `LlmProviderDialog` + `LlmModelCatalogDrawer`）· **`SystemTab`**（四联纵向；标题回执含版本号；页脚「保存全部」）· **`PackTab`**（一键打包 → 加密 zip）
 - `PackTab` **默认出脱敏包**：运维库与 MCP 只带骨架，API Key / Webhook / 纸面交易记录都不进包。勾了「账本」或「包含我的密钥与个人记录」会变红条警告并高亮该行；打包完成的提示会说明是脱敏包还是含个人数据（读响应头 `X-Loci-Sanitized`）
 - `LlmModelCatalogDrawer`：宽 `min(64rem, 92vw)`；表体单行（开 / id·徽标 / 展示名 / 上下文·hint / 输出 / 操作）；默认行印泥浅底；表 min-width 960px 可横滚

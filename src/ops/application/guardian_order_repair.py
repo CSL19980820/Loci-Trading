@@ -9,6 +9,7 @@ from typing import Any
 from src.ops.application.guardian_contract import completion_error
 from src.ops.application.guardian_completion import run_accounted_agent
 from src.ops.application.guardian_decision import GuardianDecision, TRADE_ACTIONS, parse_decision
+from src.ops.application.guardian_research_context import evidence_snapshot
 
 
 def validate_correction(original: GuardianDecision, corrected: GuardianDecision) -> None:
@@ -69,9 +70,13 @@ def repair_preflight(store: Any, cfg: dict, decision: GuardianDecision, meta: di
             messages.append(ChatMessage(role="assistant", content=text))
         request = {"preflight_only": True, "portfolio": state, "quotes": quotes, "rejections": rejects,
                    "original_decision": decision.model_dump(mode="json"),
-                   "instruction": "尚未发生任何成交。本次只允许根据拒单原因降低股数、撤回不可执行意图、修正收盘留仓名单；不得新增股票、重复或改变买卖方向，不得扩大股数、放宽价格边界或延长有效期。以合法手数替代非法半手，不能由程序随意取整。保留所有其他约束，输出完整决策JSON，不调用工具。"}
+                   "instruction": "尚未发生任何成交。本次根据拒单原因自主降低股数或撤回不可执行意图；不得新增股票、重复或改变买卖方向，不得扩大股数、放宽价格边界或延长有效期。以自主选择的合法手数替代非法半手，不能由程序随意取整。输出完整决策JSON；本轮工具仍可用于补查、核算与预演，不必重复已完成研究。"}
         messages.append(ChatMessage(role="user", content=json.dumps(request, ensure_ascii=False)))
-        result = run_accounted_agent(provider, store, meta, system=continuation["system"], messages=messages, max_rounds=1, max_calls_per_round=0,
+        result = run_accounted_agent(provider, store, meta, system=continuation["system"], messages=messages,
+                           tool_schemas=continuation.get("tool_schemas"), tool_executor=continuation.get("tool_executor"),
+                           max_rounds=None, max_calls_per_round=None, max_tool_result_chars=None,
+                           max_parallel_tools=int(cfg.get("parallel_tools", 4)),
+                           parallel_tool_names=continuation.get("parallel_tool_names", set()),
                            max_tokens=provider.max_output_tokens or 328000, temperature=0, thinking=cfg.get("thinking", ""),
                            deadline=deadline, check_cancelled=check_cancelled, allow_hitl=False)
         diagnostic = {"status": "failed", "finish_reason": result.finish_reason, "original_rejects": rejects}
@@ -94,3 +99,7 @@ def repair_preflight(store: Any, cfg: dict, decision: GuardianDecision, meta: di
     except BaseException as exc:
         exc.usage = meta
         raise
+    finally:
+        if continuation.get("archive") is not None:
+            meta.update(**evidence_snapshot(continuation["archive"]))
+            meta["tool_calls"] = len(meta["tools"])

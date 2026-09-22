@@ -21,13 +21,11 @@
 
 ## 关键入口
 
-### 一线定乾坤·首板次日（2026-09-12）
+### 一线定乾坤·首板次日（已退役）
 
-`yixian-auction` 是可编辑 Python Screen Skill，包在 `templates/skills/yixian-auction/`。
-昨日首板 + 地量 + 放量 + KDJ/MACD 条件，今日仅按开盘涨幅选股。默认只选主板，
-关闭 ST/退市/停牌过滤及额外上市自然日限制；无行业、市值、价格、宽度和 Top-N 限制。
-18 个参数均在指标参数表编辑，定时任务不固定复制参数，下一次运行读取保存后的默认值。
-详见 [指标说明与参数](../../templates/skills/yixian-auction/SKILL.md)。
+`yixian-auction` 已从活动策略目录、托管选股任务和自主交易员研究入口移除；生产中的
+候选历史、任务回执、技能包版本历史与纸面舱也已按 slug 清理。模板源码保留在
+`templates/skills/yixian-auction/`，仅供历史研究，系统禁止重新安装或启用。
 
 Python 包的入口函数可带 `history_bars(params)`、`live_candidate_codes(panels,date,params)`
 和 `strict_live_ohlcv=True` 属性。未声明者沿用原逻辑；声明者按有效参数计算预热长度，

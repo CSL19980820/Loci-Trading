@@ -44,6 +44,7 @@
 ### 其它
 
 - `build-loci.ps1` — 打 / 增量更新 Loci 便携版
+- `dev-ui.ps1` — 本地 Vite 联调：prod 经 SSH 隧道连线上 54324，local 直连本机后端；退出即关隧道
 - `sync_boot_splash_index.py` — 把 `src.shared.boot_splash` 同步进 `frontend/index.html`（改启动页后必跑）
 - `upsert_agent_readme_sections.py` — 给模块 README 补 Agent 段落
 - `migrate_imports.py` / `rewrite_frontend_imports.py` / `write_module_readmes.py` — 历史迁移辅助
@@ -77,6 +78,17 @@
 ```
 
 增量模式要求目标已有安装，且 `app` / `SrcOnly` 需要 `_internal/src`（松散业务代码）。旧安装先跑一次 `full`。`-SrcOnly` 仅能与 `-Mode app` 联用，不覆盖 `loci.py` 入口变更。
+
+### dev-ui.ps1 联调
+
+```powershell
+pwsh .\scripts\dev-ui.ps1                                   # prod：隧道连线上调样式
+pwsh .\scripts\dev-ui.ps1 -Mode local                       # 本机已有后端时用
+pwsh .\scripts\dev-ui.ps1 -LocalPort 18787 -SkipFrontendInstall
+```
+
+prod 先探活线上 `127.0.0.1:54324`，再建本机回环隧道并把 `LOCI_API_TARGET` 指过去；
+Ctrl+C 退出即杀掉隧道。连的是生产数据，只调样式，不要提交、改账或触发任务。
 
 ## 如何扩展
 临时脚本用完可删；长期脚本在本 README 登记。

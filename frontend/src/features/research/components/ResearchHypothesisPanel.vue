@@ -1,7 +1,22 @@
 <script setup lang="ts">
+import { Check, Library as Collection, Plus, RefreshCw as RefreshRight } from '@lucide/vue'
+import { toast } from 'vue-sonner'
+import { IconBox, Notice, StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
+import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
+import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
+
 import { computed, ref } from 'vue'
-import { Check, Collection, Plus, RefreshRight } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
+
 
 import {
   createResearchHypothesis,
@@ -135,7 +150,7 @@ async function create(): Promise<void> {
       actor: form.actor.trim(),
     })
     update(result.hypothesis)
-    ElMessage.success('假设已创建')
+    toast.success('假设已创建')
   } catch (caught: unknown) {
     error.value = caught instanceof Error ? caught.message : '创建假设失败'
   } finally {
@@ -187,7 +202,7 @@ async function review(): Promise<void> {
     })
     update(result.hypothesis)
     reviewOpen.value = false
-    ElMessage.success('人工审核已记录')
+    toast.success('人工审核已记录')
   } catch (caught: unknown) {
     error.value = caught instanceof Error ? caught.message : '人工审核失败，请刷新假设后重试'
   } finally {
@@ -202,48 +217,48 @@ defineExpose({ load })
   <section class="hypothesis-panel research-surface" aria-label="研究假设与人工审核">
     <header class="section-head">
       <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
-      <h3><el-icon aria-hidden="true"><Collection /></el-icon>假设与人工审核</h3>
-      <el-button size="small" :icon="RefreshRight" :loading="loading" @click="load">刷新</el-button>
+      <h3><IconBox aria-hidden="true"><Collection /></IconBox>假设与人工审核</h3>
+      <ActionButton access="read" size="small" :icon="RefreshRight" :busy="loading" @click="load">刷新</ActionButton>
     </header>
-    <el-form
+    <FormLayout
       class="hypothesis-form"
       label-position="right"
       label-width="6.5em"
       size="small"
       @submit.prevent="create"
     >
-      <el-form-item label="假设 ID" required>
-        <el-input v-model="createForm.hypothesisId" placeholder="仅英文、数字、- 或 _" />
-      </el-form-item>
-      <el-form-item label="标题" required>
-        <el-input v-model="createForm.title" />
-      </el-form-item>
-      <el-form-item label="策略版本" required>
-        <el-input v-model="createForm.strategyRevision" />
-      </el-form-item>
-      <el-form-item label="指标名" required>
-        <el-input v-model="createForm.metricName" placeholder="后端实际指标名" />
-      </el-form-item>
-      <el-form-item label="阈值" required class="metric-threshold">
-        <el-select v-model="createForm.metricOperator" class="metric-threshold__op" aria-label="比较符">
-          <el-option v-for="operator in ['>=', '>', '<=', '<', '==']" :key="operator" :value="operator" />
-        </el-select>
-        <el-input-number v-model="createForm.metricThreshold" controls-position="right" class="metric-threshold__value" />
-      </el-form-item>
-      <el-form-item label="操作者" required>
-        <el-input v-model="createForm.actor" />
-      </el-form-item>
-      <el-form-item label="论断" required class="form-wide">
-        <el-input v-model="createForm.thesis" type="textarea" :rows="2" />
-      </el-form-item>
-      <el-form-item label="失败条件" required class="form-wide">
-        <el-input v-model="createForm.failureConditions" type="textarea" :rows="2" placeholder="每行一项" />
-      </el-form-item>
-      <el-form-item class="form-action" label-width="0">
-        <el-button type="primary" native-type="submit" :icon="Plus" :loading="creating">创建假设</el-button>
-      </el-form-item>
-    </el-form>
-    <el-alert v-if="error" :title="error" type="error" show-icon :closable="false" class="panel-alert" />
+      <FormField label="假设 ID" required>
+        <TextField v-model="createForm.hypothesisId" placeholder="仅英文、数字、- 或 _" />
+      </FormField>
+      <FormField label="标题" required>
+        <TextField v-model="createForm.title" />
+      </FormField>
+      <FormField label="策略版本" required>
+        <TextField v-model="createForm.strategyRevision" />
+      </FormField>
+      <FormField label="指标名" required>
+        <TextField v-model="createForm.metricName" placeholder="后端实际指标名" />
+      </FormField>
+      <FormField label="阈值" required class="metric-threshold">
+        <ChoiceField v-model="createForm.metricOperator" class="metric-threshold__op" aria-label="比较符">
+          <ChoiceOption v-for="operator in ['>=', '>', '<=', '<', '==']" :key="operator" :value="operator" />
+        </ChoiceField>
+        <NumberInput v-model="createForm.metricThreshold" controls-position="right" class="metric-threshold__value" />
+      </FormField>
+      <FormField label="操作者" required>
+        <TextField v-model="createForm.actor" />
+      </FormField>
+      <FormField label="论断" required class="form-wide">
+        <TextField v-model="createForm.thesis" type="textarea" :rows="2" />
+      </FormField>
+      <FormField label="失败条件" required class="form-wide">
+        <TextField v-model="createForm.failureConditions" type="textarea" :rows="2" placeholder="每行一项" />
+      </FormField>
+      <FormField class="form-action" label-width="0">
+        <ActionButton tone="primary" type="submit" :icon="Plus" :busy="creating">创建假设</ActionButton>
+      </FormField>
+    </FormLayout>
+    <Notice v-if="error" :title="error" tone="error" show-icon :closable="false" class="panel-alert" />
     <BasicTable
       :columns="hypothesisColumns"
       :data-source="hypothesisRows"
@@ -256,31 +271,31 @@ defineExpose({ load })
       @row-click="(row) => { selectedId = String(row.hypothesis_id) }"
     >
       <template #status="{ row }">
-        <el-tag size="small" effect="plain" :type="statusType(row.status as ResearchHypothesisStatus)">{{ row.status }}</el-tag>
+        <StatusBadge size="small" effect="plain" :tone="statusType(row.status as ResearchHypothesisStatus)">{{ row.status }}</StatusBadge>
       </template>
       <template #review="{ row }">
-        <el-button text size="small" @click.stop="selectedId = String(row.hypothesis_id); reviewOpen = true">审核</el-button>
+        <ActionButton variant="ghost" size="small" @click.stop="selectedId = String(row.hypothesis_id); reviewOpen = true">审核</ActionButton>
       </template>
     </BasicTable>
     <section v-if="selected" class="hypothesis-detail">
       <div class="detail-head">
         <div><strong>{{ selected.title }}</strong><code>{{ selected.hypothesis_id }} · r{{ selected.revision }}</code></div>
         <div>
-          <el-button v-if="canStartTesting" text size="small" :loading="transitioning" @click="transition('testing')">开始测试</el-button>
-          <el-button v-if="canMonitor" text size="small" :loading="transitioning" @click="transition('monitoring')">进入监控</el-button>
-          <el-button text size="small" :icon="Check" @click="reviewOpen = true">人工审核</el-button>
+          <ActionButton v-if="canStartTesting" variant="ghost" size="small" :busy="transitioning" @click="transition('testing')">开始测试</ActionButton>
+          <ActionButton v-if="canMonitor" variant="ghost" size="small" :busy="transitioning" @click="transition('monitoring')">进入监控</ActionButton>
+          <ActionButton variant="ghost" size="small" :icon="Check" @click="reviewOpen = true">人工审核</ActionButton>
         </div>
       </div>
       <p class="thesis">{{ selected.thesis }}</p>
       <div class="detail-grid">
         <div>
           <span>预注册指标</span>
-          <el-tag v-for="metric in selected.metrics" :key="metric.name" size="small" effect="plain">{{ metric.name }} {{ metric.operator }} {{ metric.threshold }}</el-tag>
+          <StatusBadge v-for="metric in selected.metrics" :key="metric.name" size="small" effect="plain">{{ metric.name }} {{ metric.operator }} {{ metric.threshold }}</StatusBadge>
           <span v-if="!selected.metrics.length" class="missing">未提供</span>
         </div>
         <div>
           <span>失败条件</span>
-          <el-tag v-for="item in selected.failure_conditions" :key="item" size="small" effect="plain" type="warning">{{ item }}</el-tag>
+          <StatusBadge v-for="item in selected.failure_conditions" :key="item" size="small" effect="plain" tone="warning">{{ item }}</StatusBadge>
           <span v-if="!selected.failure_conditions.length" class="missing">未提供</span>
         </div>
       </div>
@@ -300,10 +315,10 @@ defineExpose({ load })
         </BasicTable>
       </div>
     </section>
-    <el-dialog v-model="reviewOpen" class="research-modal" append-to-body title="人工审核" width="min(92vw, 640px)" :close-on-click-modal="false">
-      <el-alert
+    <DialogPanel v-model="reviewOpen" class="research-modal" append-to-body title="人工审核" width="min(92vw, 640px)" :close-on-click-modal="false">
+      <Notice
         v-if="reviewDecision === 'validated'"
-        type="info"
+        tone="info"
         :closable="false"
         title="通过需附证据指纹与真实观测值"
         show-icon
@@ -311,38 +326,38 @@ defineExpose({ load })
       />
       <div class="review-fields">
         <UiField label="决定">
-          <el-radio-group v-model="reviewDecision" aria-label="审核决定">
-            <el-radio-button value="validated">通过</el-radio-button>
-            <el-radio-button value="rejected">否决</el-radio-button>
-          </el-radio-group>
+          <RadioChoices v-model="reviewDecision" aria-label="审核决定">
+            <RadioButton value="validated">通过</RadioButton>
+            <RadioButton value="rejected">否决</RadioButton>
+          </RadioChoices>
         </UiField>
         <UiField label="操作者" required>
-          <el-input v-model="reviewForm.actor" />
+          <TextField v-model="reviewForm.actor" />
         </UiField>
         <UiField label="审核理由" required>
-          <el-input v-model="reviewForm.reason" type="textarea" :rows="2" />
+          <TextField v-model="reviewForm.reason" type="textarea" :rows="2" />
         </UiField>
         <UiField label="证据批次">
-          <el-input v-model="reviewForm.runId" />
+          <TextField v-model="reviewForm.runId" />
         </UiField>
         <UiField label="证据指纹">
-          <el-input v-model="reviewForm.artifactSha" />
+          <TextField v-model="reviewForm.artifactSha" />
         </UiField>
         <UiField label="证据摘要">
-          <el-input v-model="reviewForm.summary" type="textarea" :rows="2" />
+          <TextField v-model="reviewForm.summary" type="textarea" :rows="2" />
         </UiField>
         <UiField label="观测指标" description="数值 JSON 对象；缺项留空，不要估算">
-          <el-input v-model="reviewForm.metricsJson" type="textarea" :rows="2" placeholder='{"profit_factor": 1.2}' />
+          <TextField v-model="reviewForm.metricsJson" type="textarea" :rows="2" placeholder='{"profit_factor": 1.2}' />
         </UiField>
         <UiField label="截止日">
-          <el-date-picker v-model="reviewForm.asOf" value-format="YYYY-MM-DD" />
+          <DateField v-model="reviewForm.asOf" value-format="YYYY-MM-DD" />
         </UiField>
       </div>
       <template #footer>
-        <el-button @click="reviewOpen = false">取消</el-button>
-        <el-button type="primary" :loading="transitioning" @click="review">记录审核</el-button>
+        <ActionButton access="read" @click="reviewOpen = false">取消</ActionButton>
+        <ActionButton tone="primary" :busy="transitioning" @click="review">记录审核</ActionButton>
       </template>
-    </el-dialog>
+    </DialogPanel>
   </section>
 </template>
 
@@ -350,8 +365,6 @@ defineExpose({ load })
 .hypothesis-panel { overflow: hidden; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
 .section-head, .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--gap-3); padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); }
 .section-head h3 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: .03em; }
-
-/* 表单栅格挂在 el-form 自身：不插裸 div，label 宽仍由 EP 的 label-width 算 */
 .hypothesis-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -360,10 +373,10 @@ defineExpose({ load })
   padding: var(--pad-sheet);
   border-bottom: 1px solid var(--rule);
 }
-.hypothesis-form :deep(.el-form-item) { margin-bottom: 0; min-width: 0; }
+.hypothesis-form :deep(.form-field) { margin-bottom: 0; min-width: 0; }
 .form-wide { grid-column: 1 / -1; }
 .form-action { justify-content: flex-end; }
-.metric-threshold :deep(.el-form-item__content) { flex-wrap: nowrap; gap: var(--gap-1); }
+.metric-threshold :deep(.form-field__content) { flex-wrap: nowrap; gap: var(--gap-1); }
 .metric-threshold__op { width: 4.6rem; flex: 0 0 auto; }
 .metric-threshold__value { min-width: 0; flex: 1 1 auto; }
 .panel-alert { margin: var(--gap-2) var(--pad-sheet-x); }
@@ -385,10 +398,11 @@ defineExpose({ load })
 .detail-grid > div, .evidence-list { display: flex; flex-wrap: wrap; gap: var(--gap-1); align-content: flex-start; }
 .detail-grid > div > span:first-child, .evidence-list > span:first-child { flex-basis: 100%; color: var(--mist); font-size: var(--fs-aux); }
 .evidence-list { padding: var(--pad-sheet); border-top: 1px solid var(--rule); }
-.evidence-list :deep(.el-table), .evidence-list :deep(.empty-state) { width: 100%; }
+.evidence-list :deep(.data-grid),
+.evidence-list :deep(.empty-state) { width: 100%; }
 .missing { color: var(--mist); font-size: var(--fs-aux); }
 .review-form { margin-top: var(--gap-2); }
-.review-form :deep(.el-date-editor) { width: 100%; }
+.review-form :deep(.date-field) { width: 100%; }
 @media (max-width: 600px) {
   .section-head, .detail-head { flex-direction: column; }
 }

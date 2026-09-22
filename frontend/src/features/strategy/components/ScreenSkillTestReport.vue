@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { StatusBadge, Notice } from '@/shared/components/ui/app/presentation'
+
 import { computed } from 'vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
@@ -59,9 +61,9 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
         <span class="report__eyebrow">编译与试跑</span>
         <strong>中文策略脉络</strong>
       </div>
-      <el-tag v-if="preview" size="small" :type="preview.ok ? 'success' : 'danger'" effect="plain">
+      <StatusBadge v-if="preview" size="small" :tone="preview.ok ? 'success' : 'danger'" effect="plain">
         {{ preview.ok ? '已通过' : '待修正' }}
-      </el-tag>
+      </StatusBadge>
     </div>
 
     <EmptyState v-if="!preview" description="还没有策略解释与诊断" reason="编译后在这里查看" />
@@ -78,8 +80,8 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
             <code>{{ step.expression }}</code>
             <p>{{ step.plain_text }}</p>
             <div class="report__tokens">
-              <el-tag v-for="field in step.fields" :key="`field-${step.id}-${field}`" size="small" effect="plain">{{ field }}</el-tag>
-              <el-tag v-for="fn in step.functions" :key="`function-${step.id}-${fn}`" size="small" type="info" effect="plain">{{ fn }}</el-tag>
+              <StatusBadge v-for="field in step.fields" :key="`field-${step.id}-${field}`" size="small" effect="plain">{{ field }}</StatusBadge>
+              <StatusBadge v-for="fn in step.functions" :key="`function-${step.id}-${fn}`" size="small" tone="info" effect="plain">{{ fn }}</StatusBadge>
             </div>
           </li>
         </ol>
@@ -92,7 +94,7 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
           <span>时点：{{ preview.explanation.timing.plain_text }}</span>
         </div>
       </div>
-      <el-alert v-else title="本次预览未返回中文策略解释。" type="info" :closable="false" show-icon />
+      <Notice v-else title="本次预览未返回中文策略解释。" tone="info" :closable="false" show-icon />
 
       <section v-if="logicSources.length" class="report__sources" aria-label="逻辑资料来源">
         <div class="report__sources-head">
@@ -114,13 +116,13 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
               <blockquote v-if="citation.reference?.quote">{{ citation.reference.quote }}</blockquote>
             </div>
           </div>
-          <el-alert v-else title="这条逻辑尚未关联资料来源。" type="warning" :closable="false" show-icon />
+          <Notice v-else title="这条逻辑尚未关联资料来源。" tone="warning" :closable="false" show-icon />
         </article>
       </section>
 
       <div v-if="preview.diagnostics.length" class="report__diagnostics" aria-label="编译诊断">
         <div v-for="diag in preview.diagnostics" :key="`${diag.code}-${diag.line}-${diag.column}-${diag.message}`" class="report__diagnostic">
-          <el-tag size="small" :type="diagnosticType(diag.severity)" effect="plain">{{ diag.code }}</el-tag>
+          <StatusBadge size="small" :tone="diagnosticType(diag.severity)" effect="plain">{{ diag.code }}</StatusBadge>
           <span>{{ diag.message }}</span>
           <small v-if="diag.line != null">L{{ diag.line }}:C{{ diag.column ?? 0 }}</small>
         </div>

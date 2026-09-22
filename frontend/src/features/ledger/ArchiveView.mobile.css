@@ -1,0 +1,10 @@
+@media(max-width:767px) {
+  .stock-workbench { overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; }
+  .sw-split { flex:none; padding:0 0 12px; overflow:visible; display:block; }
+  .sw-body { flex:none; overflow:visible; gap:0; }
+  .sw-grid { display:block; min-height:0; flex:none; }
+  .sw-chart { width:100%; height:clamp(470px,70svh,640px); flex:none; border:0; border-radius:0; }
+  .sw-chart :deep(.tdx-desk) { height:100%; min-height:0; border:0; border-radius:0; box-shadow:none; }
+  .sw-chart :deep(.tdx-chart-wrap) { flex:1 1 0; min-height:330px; }
+  .sw-chart :deep(.tdx-chart) { height:100%; min-height:0; }
+}

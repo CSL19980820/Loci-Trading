@@ -8,8 +8,8 @@
 
 ## 边界
 只读 ledger 的候选池 / 预案 / 复盘三类表（`candidate_reviews` / `plans` / `reviews`）+ market。
-触价（`GET /api/alerts/today`，ledger 路由经 `open_market_hot`）与容量
-（`check_capacity`，调用方应注入热库）读 `market_hot.db` 近窗，不扫全量写库。
+触价（`GET /api/alerts/today`，ledger 路由经 `open_market_hot`）读 `market_hot.db` 近窗，
+不扫全量写库。
 候选 T+N / 预案兑现 / 胜率（`/api/review/candidates|plans`、`/api/winrate/*`）仍读**全量**
 `market.db`——长历史可能超出热库 700 交易日。见 [ADR-007](../../docs/adr/ADR-007-market-hot-readonly-window.md)。
 可写 market 侧缓存表。AI 不得替代本模块出数。
@@ -50,7 +50,7 @@ winrate_samples，外加一个内部 scope `candidate_outcomes`——winrate 三
   `build_winrate_summary` + `winrate_periods` + `winrate_samples`，三者共用一次 `evaluate_candidates`）
 - 输入只能是候选池 / 预案 / 手工复盘 + 真实行情；产出是**纸上收益**，不是实盘盈亏
 - 候选裁决按 ledger 的公开 `normalize_decision` 归一；不导入 `ledger.infrastructure`
-- **Store 直捅债**（收拢中）：`evaluate_plans` → `plans_payload`；触价 → `active_plans_with_stops` + `market.latest_bars`；`evaluate_candidates` → `candidate_outcome_rows`；`check_decay` → `review_returns_for_tag` / `review_strategy_tags_with_returns`；`check_capacity` → `market.recent_amounts`。仍直捅：`overlap`——新代码勿再增加 `.conn`
+- **Store 直捅债**（收拢中）：`evaluate_plans` → `plans_payload`；触价 → `active_plans_with_stops` + `market.latest_bars`；`evaluate_candidates` → `candidate_outcome_rows`；`check_decay` → `review_returns_for_tag` / `review_strategy_tags_with_returns`。仍直捅：`overlap`——新代码勿再增加 `.conn`
 - 禁忌：用 LLM 结果冒充复盘数字
 
 ## 2026-08 实盘项下线（已删）
@@ -69,6 +69,15 @@ winrate_samples，外加一个内部 scope `candidate_outcomes`——winrate 三
 `track_candidate_outcomes` **保留**，签名不变；只摘掉了它尾部那段把精选候选镜像写入
 `position_tracking` 的只写不读旁路，返回值里的 `tracking` 键随之消失。T+N 数字一个都没变——
 它们从来只由 `candidate_reviews` + 行情推导。
+
+## 2026-09 清理（零调用方遗留，已删）
+以下能力在生产侧没有任何调用方（HTTP 路由、Job、AI 工具都不引用），只剩测试在守，
+已连同测试一起删除。它们都是实盘仓位口径的产物，与现在的「纸上收益」复盘无关：
+
+| 已删 | 原本算什么 |
+|---|---|
+| `application/capacity.py`（`check_capacity`） | 按假设的 `position_size_yuan` 估冲击成本，给候选打 `capacity=ok/limited` |
+| `application/portfolio_guard.py`（`check_portfolio_limits`） | 总仓位 / 单战法 / 行业集中度的组合约束（只警告不丢弃） |
 
 ## README 维护
 改指标口径、缓存表、公开函数签名、T+N 窗口或胜率数据源时必须更新本文。

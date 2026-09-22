@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { Notice, SurfaceCard } from '@/shared/components/ui/app/presentation'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+
 import Sheet from '@/shared/components/layout/Sheet.vue'
 
 import {
@@ -38,22 +46,22 @@ function rowRequired(row: ScreenSkillDraftModel['references'][number]): boolean 
   <Sheet padded margin>
     <div class="section-head">
       <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
-      <el-tooltip placement="bottom-start" content="资料选填；填了就要补齐编号、标题与来源（链接 / 路径 / 章节 / 引文之一），逻辑里的引用编号要能对上这里。AI 生成草稿时必填">
+      <HintTooltip placement="bottom-start" content="资料选填；填了就要补齐编号、标题与来源（链接 / 路径 / 章节 / 引文之一），逻辑里的引用编号要能对上这里。AI 生成草稿时必填">
         <strong class="section-head__title">引用台账</strong>
-      </el-tooltip>
-      <el-button size="small" @click="emit('addReference')">新增资料</el-button>
+      </HintTooltip>
+      <ActionButton size="small" @click="emit('addReference')">新增资料</ActionButton>
     </div>
-    <el-alert
+    <Notice
       v-if="fieldErrors.references"
       :title="fieldErrors.references"
-      type="error"
+      tone="error"
       show-icon
       :closable="false"
       class="mb"
     />
 
     <div class="reference-list">
-      <el-card
+      <SurfaceCard
         v-for="(row, index) in props.draft.references"
         :key="row.id"
         shadow="never"
@@ -70,46 +78,46 @@ function rowRequired(row: ScreenSkillDraftModel['references'][number]): boolean 
         <template #header>
           <div class="reference-card__head">
             <span>{{ row.id || `资料 ${index + 1}` }}</span>
-            <el-button text type="danger" size="small" @click="emit('removeReference', index)">删除</el-button>
+            <ActionButton variant="ghost" tone="danger" size="small" @click="emit('removeReference', index)">删除</ActionButton>
           </div>
         </template>
 
         <div class="meta-grid">
-          <el-form-item label="资料编号" :required="rowRequired(row)" :error="refErr(index, row.id, 'id')">
-            <el-input v-model.trim="row.id" maxlength="48" placeholder="例如 ref-ma-handbook" />
-          </el-form-item>
-          <el-form-item label="标题" :required="rowRequired(row)" :error="refErr(index, row.id, 'title')">
-            <el-input v-model.trim="row.title" maxlength="80" placeholder="均线手册 / 研报 / 笔记标题" />
-          </el-form-item>
-          <el-form-item label="类型" :required="rowRequired(row)" :error="refErr(index, row.id, 'kind')">
-            <el-select v-model="row.kind" allow-create filterable default-first-option class="full">
-              <el-option label="研报" value="report" />
-              <el-option label="文档" value="doc" />
-              <el-option label="论文" value="paper" />
-              <el-option label="笔记" value="note" />
-              <el-option label="代码" value="code" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="链接" :error="refErr(index, row.id, 'locator')">
-            <el-input v-model.trim="row.url" placeholder="网页地址，选填" />
-          </el-form-item>
-          <el-form-item label="本地路径">
-            <el-input v-model.trim="row.path" placeholder="本机或仓库内文件路径，选填" />
-          </el-form-item>
-          <el-form-item label="章节 / 页码">
-            <el-input v-model.trim="row.section" placeholder="例如 第 2 节 / 第 8-10 页" />
-          </el-form-item>
+          <FormField label="资料编号" :required="rowRequired(row)" :error="refErr(index, row.id, 'id')">
+            <TextField v-model.trim="row.id" maxlength="48" placeholder="例如 ref-ma-handbook" />
+          </FormField>
+          <FormField label="标题" :required="rowRequired(row)" :error="refErr(index, row.id, 'title')">
+            <TextField v-model.trim="row.title" maxlength="80" placeholder="均线手册 / 研报 / 笔记标题" />
+          </FormField>
+          <FormField label="类型" :required="rowRequired(row)" :error="refErr(index, row.id, 'kind')">
+            <ChoiceField v-model="row.kind" allow-create filterable default-first-option class="full">
+              <ChoiceOption label="研报" value="report" />
+              <ChoiceOption label="文档" value="doc" />
+              <ChoiceOption label="论文" value="paper" />
+              <ChoiceOption label="笔记" value="note" />
+              <ChoiceOption label="代码" value="code" />
+            </ChoiceField>
+          </FormField>
+          <FormField label="链接" :error="refErr(index, row.id, 'locator')">
+            <TextField v-model.trim="row.url" placeholder="网页地址，选填" />
+          </FormField>
+          <FormField label="本地路径">
+            <TextField v-model.trim="row.path" placeholder="本机或仓库内文件路径，选填" />
+          </FormField>
+          <FormField label="章节 / 页码">
+            <TextField v-model.trim="row.section" placeholder="例如 第 2 节 / 第 8-10 页" />
+          </FormField>
         </div>
 
-        <el-form-item label="关键引文">
-          <el-input
+        <FormField label="关键引文">
+          <TextField
             v-model.trim="row.quote"
             type="textarea"
             :rows="3"
             placeholder="摘录关键信息，便于复核 AI 与逻辑是否对齐。"
           />
-        </el-form-item>
-      </el-card>
+        </FormField>
+      </SurfaceCard>
     </div>
   </Sheet>
 </template>
@@ -144,7 +152,7 @@ function rowRequired(row: ScreenSkillDraftModel['references'][number]): boolean 
 }
 
 .reference-card--error {
-  border-color: var(--el-color-danger);
+  border-color: var(--stamp);
 }
 
 .mb {

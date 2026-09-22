@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
@@ -137,7 +148,7 @@ function submit(): void {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="visible"
     :title="title"
     :width="dialogWidth"
@@ -148,13 +159,13 @@ function submit(): void {
   >
     <p v-if="isEdit" class="dialog-sub mono">名称即线路 id，已有引用不会断</p>
 
-    <el-form label-position="top" class="dlg-form" @submit.prevent="submit">
+    <FormLayout label-position="top" class="dlg-form" @submit.prevent="submit">
       <div class="dlg-layout">
         <div class="dlg-main">
           <section class="sec">
             <header class="sec__head">
               <span class="sec__title">身份</span>
-              <el-switch
+              <ToggleSwitch
                 v-model="form.is_default"
                 aria-label="设为默认供应商"
                 :disabled="busy"
@@ -165,61 +176,61 @@ function submit(): void {
               />
             </header>
             <div class="sec__body form-grid">
-              <el-form-item label="显示名称" required>
-                <el-input
+              <FormField label="显示名称" required>
+                <TextField
                   v-model.trim="form.name"
                   placeholder="openrouter"
                   :disabled="isEdit || busy"
                 />
-              </el-form-item>
-              <el-form-item label="备注">
-                <el-input
+              </FormField>
+              <FormField label="备注">
+                <TextField
                   v-model.trim="form.note"
                   placeholder="例如：选股 / 复盘主线"
                   :disabled="busy"
                 />
-              </el-form-item>
+              </FormField>
             </div>
           </section>
 
           <section class="sec">
             <header class="sec__head">
               <span class="sec__title">接入</span>
-              <el-tag
+              <StatusBadge
                 v-if="isEdit"
                 size="small"
-                :type="keyConfigured ? 'success' : 'info'"
+                :tone="keyConfigured ? 'success' : 'info'"
                 effect="plain"
               >
                 {{ keyConfigured ? '密钥已配置' : '密钥未设' }}
-              </el-tag>
+              </StatusBadge>
             </header>
             <div class="sec__body form-grid">
-              <el-form-item label="协议">
-                <el-select v-model="form.protocol" class="full" :disabled="busy">
-                  <el-option label="OpenAI 兼容" value="openai_compatible" />
-                  <el-option label="Anthropic" value="anthropic" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="默认模型">
-                <el-input
+              <FormField label="协议">
+                <ChoiceField v-model="form.protocol" class="full" :disabled="busy">
+                  <ChoiceOption label="OpenAI 兼容" value="openai_compatible" />
+                  <ChoiceOption label="Anthropic" value="anthropic" />
+                </ChoiceField>
+              </FormField>
+              <FormField label="默认模型">
+                <TextField
                   v-model.trim="form.model"
                   placeholder="模型 ID，可稍后配置"
                   :disabled="busy"
                 />
-              </el-form-item>
-              <el-form-item label="Base URL" required>
+              </FormField>
+              <FormField label="Base URL" required>
                 <!-- 「填服务端点，不是官网首页」原来是块尾一行常驻说明，挪到这个输入框上 -->
-                <el-tooltip placement="top-start" content="填服务端点（.../v1），不是官网首页">
-                  <el-input
+                <HintTooltip placement="top-start" content="填服务端点（.../v1），不是官网首页">
+                  <TextField
                     v-model.trim="form.base_url"
                     placeholder="https://openrouter.ai/api/v1"
                     :disabled="busy"
                   />
-                </el-tooltip>
-              </el-form-item>
-              <el-form-item :label="isEdit ? 'API Key（留空保持）' : 'API Key'">
-                <el-input
+                </HintTooltip>
+              </FormField>
+              <FormField :label="isEdit ? 'API Key（留空保持）' : 'API Key'">
+                <TextField
                   v-model.trim="form.api_key"
                   type="password"
                   autocomplete="off"
@@ -227,16 +238,16 @@ function submit(): void {
                   :placeholder="isEdit ? '留空则不改' : 'sk-…'"
                   :disabled="busy"
                 />
-              </el-form-item>
-              <el-form-item v-if="advancedOpen || form.proxy_url" label="专用代理" class="full-span">
-                <el-input
+              </FormField>
+              <FormField v-if="advancedOpen || form.proxy_url" label="专用代理" class="full-span">
+                <TextField
                   v-model.trim="form.proxy_url"
                   placeholder="http://127.0.0.1:7890"
                   :disabled="busy"
                 />
-              </el-form-item>
+              </FormField>
               <div v-else class="adv full-span">
-                <el-button link type="info" @click="advancedOpen = true">+ 专用代理</el-button>
+                <ActionButton variant="link" tone="info" @click="advancedOpen = true">+ 专用代理</ActionButton>
               </div>
             </div>
           </section>
@@ -264,13 +275,13 @@ function submit(): void {
                 </div>
               </div>
               <EmptyState v-else description="目录为空" reason="点下方「打开完整目录」拉一次" />
-              <el-button
+              <ActionButton
                 class="side-cta"
                 :disabled="busy"
                 @click="emit('catalog')"
               >
                 打开完整目录
-              </el-button>
+              </ActionButton>
             </template>
             <EmptyState
               v-else
@@ -280,23 +291,23 @@ function submit(): void {
           </div>
         </aside>
       </div>
-    </el-form>
+    </FormLayout>
 
     <template #footer>
-      <el-button :disabled="busy" @click="visible = false">取消</el-button>
-      <el-button v-if="isEdit" :loading="busy" @click="emit('test')">测试连接</el-button>
+      <ActionButton access="read" :disabled="busy" @click="visible = false">取消</ActionButton>
+      <ActionButton v-if="isEdit" :busy="busy" @click="emit('test')">测试连接</ActionButton>
       <!-- 「改动何时生效」原是表单末尾的常驻说明段，挪到它描述的那颗保存按钮上 -->
-      <el-tooltip
+      <HintTooltip
         placement="top-end"
         content="改动对新请求立即生效；进行中的选股 / Agent 会话需重连后换线"
         :disabled="!isEdit"
       >
-        <el-button type="primary" :loading="busy" @click="submit">
+        <ActionButton tone="primary" :busy="busy" @click="submit">
           保存
-        </el-button>
-      </el-tooltip>
+        </ActionButton>
+      </HintTooltip>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>
@@ -440,11 +451,11 @@ function submit(): void {
 }
 
 /* 前缀限本弹窗：裸 deep 会污染全站 dialog */
-:deep(.llm-provider-dialog .el-form-item) {
+:deep(.llm-provider-dialog .form-field) {
   margin-bottom: var(--gap-2);
 }
 
-:deep(.llm-provider-dialog .el-form-item__label) {
+:deep(.llm-provider-dialog .form-field__label) {
   margin-bottom: var(--gap-1);
 }
 

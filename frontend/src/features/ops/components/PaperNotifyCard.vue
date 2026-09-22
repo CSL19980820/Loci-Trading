@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+
 /**
  * 通知策略卡：安静时段与 Bark 推送。
  *
@@ -20,24 +26,24 @@ onMounted(() => {
 <template>
   <SettingsPanel title="通知策略">
     <template #action>
-      <el-button type="primary" size="small" @click="saveNotify">保存</el-button>
-      <el-button size="small" @click="testNotify">测试推送</el-button>
+      <ActionButton tone="primary" size="small" @click="saveNotify">保存</ActionButton>
+      <ActionButton size="small" @click="testNotify">测试推送</ActionButton>
     </template>
-    <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
-      <el-form-item label="安静时段">
-        <el-input v-model="quietHours" placeholder="23:00-07:00，空为关闭" />
-      </el-form-item>
-      <el-form-item label="Bark" class="mb-0">
+    <FormLayout label-position="right" label-width="6.5em" size="small" @submit.prevent>
+      <FormField label="安静时段">
+        <TextField v-model="quietHours" placeholder="23:00-07:00，空为关闭" />
+      </FormField>
+      <FormField label="Bark" class="mb-0">
         <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <el-switch v-model="barkEnabled" aria-label="启用 Bark 推送" />
-          <el-input
+          <ToggleSwitch v-model="barkEnabled" aria-label="启用 Bark 推送" />
+          <TextField
             v-model="barkKey"
             class="notify-field"
             aria-label="Bark 设备密钥"
             placeholder="设备密钥"
             :disabled="!barkEnabled"
           />
-          <el-input
+          <TextField
             v-model="barkServer"
             class="notify-field"
             aria-label="Bark 服务地址"
@@ -45,8 +51,8 @@ onMounted(() => {
             :disabled="!barkEnabled"
           />
         </div>
-      </el-form-item>
-    </el-form>
+      </FormField>
+    </FormLayout>
   </SettingsPanel>
 </template>
 

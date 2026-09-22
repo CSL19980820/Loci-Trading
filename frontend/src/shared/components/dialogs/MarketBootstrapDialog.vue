@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { LoaderCircle } from '@lucide/vue'
 
 import {
-  getDataLocation,
   getMarketBootstrap,
   startMarketBootstrap,
   type MarketBootstrapStatus,
 } from '@/shared/api/quant'
+import { Button } from '@/shared/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
 import { useMarketSyncGate } from '@/shared/composables/useMarketSyncGate'
 
 import MarketBootstrapStatusPanel from './MarketBootstrapStatusPanel.vue'
@@ -33,7 +41,7 @@ const coverageFirst = ref('')
 const backfillFrom = ref('')
 const backfillTo = ref('')
 const expectedLast = ref('')
-const dataDirLabel = ref('data/market.db')
+const dataDirLabel = ref('服务器共享行情库')
 const reportSummary = ref('')
 
 const isCatchup = computed(() => backfillKind.value === 'catchup')
@@ -329,18 +337,7 @@ onMounted(() => {
   mounted = true
   window.addEventListener(SETUP_EVENT, onSetupComplete)
   window.addEventListener(OPEN_EVENT, openFromExternal)
-  void (async () => {
-    try {
-      const loc = await getDataLocation()
-      if (!mounted) return
-      dataDirLabel.value = loc.market_db || `${loc.data_dir}/market.db`
-      if (!loc.needs_setup) {
-        await probe()
-      }
-    } catch {
-      await probe()
-    }
-  })()
+  void probe()
 })
 
 onUnmounted(() => {
@@ -356,50 +353,54 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <el-dialog
-    v-model="visible"
-    :title="dialogTitle"
-    width="min(92vw, 520px)"
-    align-center
-    destroy-on-close
-    class="boot-dialog"
-  >
-    <MarketBootstrapStatusPanel
-      :is-catchup="isCatchup"
-      :coverage-last="coverageLast"
-      :expected-last="expectedLast"
-      :range-label="rangeLabel"
-      :lag-label="lagLabel"
-      :running="running"
-      :is-done="isDone"
-      :is-error="isError"
-      :lead-text="leadText"
-      :data-dir-label="dataDirLabel"
-      :error="error"
-      :percent="percent"
-      :detail="detail"
-      :report-summary="reportSummary"
-    />
+  <Dialog v-model:open="visible">
+    <DialogContent class="boot-dialog max-w-[min(92vw,520px)] sm:max-w-[min(92vw,520px)]">
+      <DialogHeader>
+        <DialogTitle>{{ dialogTitle }}</DialogTitle>
+      </DialogHeader>
 
-    <template #footer>
-      <template v-if="!running && !isDone">
-        <el-button v-if="!isCatchup" class="is-leading" @click="dismiss">稍后再说</el-button>
-        <el-button type="primary" :loading="starting" @click="start">
-          {{ isCatchup ? (error ? '重新补齐' : '开始补齐') : '开始初始化' }}
-        </el-button>
-      </template>
-      <template v-else-if="isDone || isError">
-        <el-button v-if="isError" class="is-leading" :disabled="starting" @click="start">
-          重新补齐
-        </el-button>
-        <el-button type="primary" @click="close">{{ isDone ? '完成' : '关闭' }}</el-button>
-      </template>
-      <template v-else>
-        <span class="boot-foot-note is-leading">关闭后顶栏继续显示进度</span>
-        <el-button type="primary" @click="close">后台继续</el-button>
-      </template>
-    </template>
-  </el-dialog>
+      <div class="boot-dialog__body">
+        <MarketBootstrapStatusPanel
+          :is-catchup="isCatchup"
+          :coverage-last="coverageLast"
+          :expected-last="expectedLast"
+          :range-label="rangeLabel"
+          :lag-label="lagLabel"
+          :running="running"
+          :is-done="isDone"
+          :is-error="isError"
+          :lead-text="leadText"
+          :data-dir-label="dataDirLabel"
+          :error="error"
+          :percent="percent"
+          :detail="detail"
+          :report-summary="reportSummary"
+        />
+      </div>
+
+      <DialogFooter>
+        <template v-if="!running && !isDone">
+          <Button v-if="!isCatchup" variant="outline" class="mr-auto" @click="dismiss">
+            稍后再说
+          </Button>
+          <Button :disabled="starting" @click="start">
+            <LoaderCircle v-if="starting" class="animate-spin" aria-hidden="true" />
+            {{ isCatchup ? (error ? '重新补齐' : '开始补齐') : '开始初始化' }}
+          </Button>
+        </template>
+        <template v-else-if="isDone || isError">
+          <Button v-if="isError" variant="outline" class="mr-auto" :disabled="starting" @click="start">
+            重新补齐
+          </Button>
+          <Button access="read" @click="close">{{ isDone ? '完成' : '关闭' }}</Button>
+        </template>
+        <template v-else>
+          <span class="boot-foot-note mr-auto">关闭后顶栏继续显示进度</span>
+          <Button access="read" @click="close">后台继续</Button>
+        </template>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -407,16 +408,10 @@ onUnmounted(() => {
   color: var(--mist);
   font-size: var(--fs-aux);
 }
-/* shadcn 化后 footer 行内元素走工具类；is-leading 左置破坏性/次要动作（base 层保留语义） */
-</style>
 
-<style>
-/*
- * 非 scoped：el-dialog teleport 到 body，scoped 选择器进不去。
- * 弹窗 chrome（标题字号 / 页眉页脚分隔线 / footer 布局）全在 style.base.css 统一管，
- * 这里只补一条：正文超长时在 dialog body 内滚，不许把滚动条顶到文档级。
- */
-.boot-dialog .el-dialog__body {
+/* 正文超长时在弹窗体内部滚，不许把滚动条顶到文档级（原 el-dialog__body 的等价物） */
+.boot-dialog__body {
+  min-width: 0;
   max-height: min(56vh, 26rem);
   overflow: auto;
 }

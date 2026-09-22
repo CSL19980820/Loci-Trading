@@ -26,10 +26,7 @@ function isFlexColumn(column: BasicTableColumn): boolean {
   return Boolean(column.minWidth && !column.width && !column.fixed && column.type !== 'selection')
 }
 
-/**
- * el-table-v2 在表级 fixed=true（有左右固定列）时会忽略 flexGrow，
- * 必须把剩余容器宽度显式加到可伸缩列上，否则右侧会出现空白死区。
- */
+
 export function distributeVirtualColumnWidths(
   columns: BasicTableColumn[],
   containerWidth: number,

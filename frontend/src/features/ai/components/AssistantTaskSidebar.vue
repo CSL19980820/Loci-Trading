@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Sidebar, SidebarHeader } from '@/shared/components/ui/sidebar'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/components/ui/tabs'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import type {
@@ -11,6 +13,8 @@ import { agentRunning } from '../assistantAgentUi'
 import type { AssistantTaskModel, TaskPlanStep } from '../assistantTaskModel'
 import AssistantAgentCard from './AssistantAgentCard.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
 type InspectorTab = 'plan' | 'agents' | 'sources' | 'artifacts' | 'cabin'
 
@@ -22,6 +26,8 @@ const props = defineProps<{
   /** 由 Host 统一加载下发。侧栏自己再拉一份会在改完设置后显示旧值。 */
   profile?: AiAssistantProfile | null
   memories?: AiMemoryItem[]
+  /** 抽屉模式：父级贴右 / 窄屏时传 true，样式换成浮层底 */
+  drawer?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -72,41 +78,44 @@ function planLabel(status: TaskPlanStep['status']): string {
 }
 
 function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
-  if (status === 'loading') return '渲染中'
+  if (status === 'loading') return '读取中'
   if (status === 'error') return '失败'
   return '就绪'
 }
 </script>
 
 <template>
-  <aside
+  <Sidebar side="right" collapsible="none" role="complementary"
     class="assistant-task-sidebar"
-    :class="{ 'is-collapsed': !visible }"
+    :class="{ 'is-collapsed': !visible, 'is-drawer': drawer }"
     data-testid="assistant-task-sidebar"
     aria-label="任务侧栏"
   >
     <div v-if="!visible" class="assistant-task-sidebar__rail">
-      <el-tooltip content="展开侧栏" placement="left">
-        <el-button
-          class="assistant-task-sidebar__toggle"
-          text
-          circle
-          aria-label="展开任务侧栏"
-          data-testid="task-sidebar-expand"
-          @click="visible = true"
-        >
-          <span class="assistant-panel-toggle-icon is-right" aria-hidden="true" />
-        </el-button>
-      </el-tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            class="assistant-task-sidebar__toggle"
+            access="read" aria-label="展开任务侧栏"
+            data-testid="task-sidebar-expand"
+            @click="visible = true"
+          >
+            <span class="assistant-panel-toggle-icon is-right" aria-hidden="true" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">展开侧栏</TooltipContent>
+      </Tooltip>
       <span v-if="liveAgents" class="assistant-task-sidebar__live-dot" :title="`${liveAgents} 路运行中`" />
     </div>
 
     <template v-else>
-      <header class="assistant-task-sidebar__head">
+      <SidebarHeader class="assistant-task-sidebar__head flex-row p-0">
         <span class="assistant-task-sidebar__title">本轮</span>
-        <el-button
-          text
-          circle
+        <Button access="read"
+          variant="ghost"
+          size="icon-sm"
           class="assistant-task-sidebar__toggle"
           aria-label="收起任务侧栏"
           data-testid="task-sidebar-collapse"
@@ -114,26 +123,25 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
           @click="visible = false"
         >
           <span class="assistant-panel-toggle-icon is-right is-open" aria-hidden="true" />
-        </el-button>
-      </header>
+        </Button>
+      </SidebarHeader>
 
-      <nav class="assistant-task-sidebar__tabs" aria-label="任务分区">
-        <el-button
+      <Tabs v-model="activeTab" class="min-h-0 flex-1 flex-col"><TabsList class="assistant-task-sidebar__tabs h-auto" aria-label="任务分区">
+        <TabsTrigger :value="tab.value"
           v-for="tab in tabs"
           :key="tab.value"
+          variant="ghost"
+          size="sm"
           class="assistant-task-sidebar__tab"
           :class="{ 'is-active': activeTab === tab.value }"
-          :aria-pressed="activeTab === tab.value"
-          size="small"
-          text
-          @click="activeTab = tab.value"
+
         >
           {{ tab.label }}
           <em v-if="tab.count">{{ tab.count }}</em>
-        </el-button>
-      </nav>
+        </TabsTrigger>
+      </TabsList>
 
-      <div class="assistant-task-sidebar__pane" data-testid="task-sidebar-pane">
+      <TabsContent :value="activeTab" class="assistant-task-sidebar__pane" data-testid="task-sidebar-pane">
         <section v-if="activeTab === 'plan'" class="assistant-task-sidebar__section">
           <EmptyState v-if="!model.plan.length" description="暂无计划步骤" />
           <ol v-else class="assistant-task-sidebar__plan">
@@ -221,17 +229,18 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
                 · 子进程 {{ model.agents.length || '无' }}
               </p>
             </div>
-            <el-button size="small" plain @click="emit('settings')">助手设置</el-button>
+            <Button variant="outline" size="sm" @click="emit('settings')">助手设置</Button>
           </div>
         </section>
-      </div>
+      </TabsContent></Tabs>
     </template>
-  </aside>
+  </Sidebar>
 </template>
 
 <style scoped>
 /* 300/44px 与 Panel 的展开、折叠契约一致。 */
-.assistant-task-sidebar { display: flex; flex-direction: column; gap: var(--gap-2); flex: 0 1 300px; min-width: 240px; min-height: 0; overflow: hidden; border-left: 1px solid var(--rule); background: var(--surface-sunken); padding: var(--gap-2); }
+.assistant-task-sidebar { display: flex; flex-direction: column; gap: var(--gap-2); flex: 0 1 300px; min-width: 240px; min-height: 0; overflow: hidden; border-left: 1px solid var(--border-subtle); background: var(--surface-canvas); padding: var(--gap-3); }
+.assistant-task-sidebar.is-drawer { background: var(--surface); min-width: 0; }
 .assistant-task-sidebar.is-collapsed { flex: 0 0 44px; min-width: 0; width: 44px; padding: var(--gap-2) 0; align-items: center; }
 .assistant-task-sidebar__rail { display: flex; flex: 1; flex-direction: column; align-items: center; gap: var(--gap-2); }
 .assistant-task-sidebar__live-dot { width: var(--gap-1); height: var(--gap-1); border-radius: var(--ai-r-pill); background: var(--seal); }
@@ -242,13 +251,14 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
 .assistant-panel-toggle-icon { display: block; width: 1em; height: .9em; border: 1.5px solid currentColor; border-radius: var(--ai-r-chip); }
 .assistant-panel-toggle-icon.is-right { box-shadow: inset -4px 0 0 currentColor; }
 .assistant-task-sidebar__tabs { display: flex; flex-wrap: wrap; gap: var(--gap-1); width: 100%; min-width: 0; }
-.assistant-task-sidebar__tab { flex: 1 1 auto; margin: 0; height: var(--ctl-h); padding: 0 var(--gap-2); border: 1px solid transparent; border-radius: var(--ai-r-chip); color: var(--mist); font-size: var(--ai-fs-body); }
+.assistant-task-sidebar__tabs { padding: 3px; border-radius: var(--radius); background: var(--surface-sunken); gap: 2px; }
+.assistant-task-sidebar__tab { flex: 1 1 auto; margin: 0; height: 28px; padding: 0 var(--gap-2); border: 0; border-radius: var(--radius-sm); color: var(--text-tertiary); font-size: var(--fs-aux); font-weight: 500; }
 .assistant-task-sidebar__tab em { margin-left: var(--gap-1); font: var(--ai-fs-meta) var(--mono); color: var(--mist); }
-.assistant-task-sidebar__tab.is-active { background: var(--seal-soft); color: var(--seal-ink); border-color: var(--seal-border); }
+.assistant-task-sidebar__tab.is-active { background: var(--surface); color: var(--text-primary); font-weight: 600; box-shadow: var(--shadow-xs); }
 .assistant-task-sidebar__pane { min-height: 0; min-width: 0; flex: 1; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .assistant-task-sidebar__section, .assistant-task-sidebar__agents, .assistant-task-sidebar__cabin { display: flex; flex-direction: column; gap: var(--gap-2); min-height: 0; min-width: 0; }
 .assistant-task-sidebar__plan, .assistant-task-sidebar__list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--gap-1); }
-.assistant-task-sidebar__plan-step { display: grid; grid-template-columns: var(--row-h-sm) minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-chip); background: var(--surface); }
+.assistant-task-sidebar__plan-step { display: grid; grid-template-columns: var(--row-h-sm) minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-2); border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-xs); }
 .assistant-task-sidebar__plan-step.is-running { background: var(--seal-soft); border-color: var(--seal-border); }
 .assistant-task-sidebar__plan-index { display: grid; place-items: center; width: var(--row-h-sm); height: var(--row-h-sm); color: var(--mist); font: var(--ai-fs-meta) var(--mono); }
 .assistant-task-sidebar__plan-step.is-running .assistant-task-sidebar__plan-index, .assistant-task-sidebar__plan-step.is-done .assistant-task-sidebar__plan-index { color: var(--info-ink); }
@@ -256,12 +266,12 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
 .assistant-task-sidebar__plan-body { display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; }
 .assistant-task-sidebar__plan-body strong { font-size: var(--ai-fs-body); font-weight: 600; overflow-wrap: anywhere; }
 .assistant-task-sidebar__plan-body span { color: var(--mist); font-size: var(--ai-fs-meta); }
-.assistant-task-sidebar__list li { display: flex; gap: var(--gap-2); align-items: flex-start; padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-chip); background: var(--surface); min-height: var(--ai-row-min); }
+.assistant-task-sidebar__list li { display: flex; gap: var(--gap-2); align-items: flex-start; padding: var(--gap-2); border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface); min-height: var(--ai-row-min); box-shadow: var(--shadow-xs); }
 .assistant-task-sidebar__list li > div { min-width: 0; flex: 1; }
 .assistant-task-sidebar__chip { flex: 0 0 auto; padding: var(--gap-1); border-radius: var(--ai-r-chip); background: var(--surface-sunken); color: var(--mist); font-size: var(--ai-fs-meta); }
 .assistant-task-sidebar__list strong { display: block; font-size: var(--ai-fs-body); line-height: 1.5; overflow-wrap: anywhere; }
 .assistant-task-sidebar__list p { margin: var(--gap-1) 0 0; color: var(--mist); font-size: var(--ai-fs-aux); line-height: 1.5; overflow-wrap: anywhere; }
-.assistant-task-sidebar__cabin-card { padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface); }
+.assistant-task-sidebar__cabin-card { padding: var(--gap-2) var(--gap-3); border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-xs); }
 .assistant-task-sidebar__cabin-card span { display: block; margin-bottom: var(--gap-1); color: var(--mist); font-size: var(--ai-fs-meta); }
 .assistant-task-sidebar__cabin-card p { margin: 0; color: var(--ink); font-size: var(--ai-fs-body); line-height: 1.5; overflow-wrap: anywhere; }
 </style>

@@ -1,4 +1,14 @@
 <script setup lang="ts">
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { SurfaceCard } from '@/shared/components/ui/app/presentation'
+
 import Sheet from '@/shared/components/layout/Sheet.vue'
 
 import type { ScreenSkillDraftModel } from '../composables/screenSkillDraft'
@@ -34,70 +44,70 @@ function logicErr(index: number, id: string, part: string): string {
   -->
   <Sheet padded margin>
     <div class="meta-grid">
-      <el-form-item label="标识" required :error="err('slug')">
-        <el-input
+      <FormField label="标识" required :error="err('slug')">
+        <TextField
           v-model.trim="props.draft.slug"
           maxlength="64"
           placeholder="小写英文与连字符，例如 breakout-ma"
         />
-      </el-form-item>
-      <el-form-item label="名称" required :error="err('name')">
-        <el-input v-model.trim="props.draft.name" maxlength="64" placeholder="我的突破战法" />
-      </el-form-item>
-      <el-form-item label="版本">
-        <el-input v-model.trim="props.draft.version" maxlength="32" placeholder="0.1.0" />
-      </el-form-item>
-      <el-form-item label="启用">
-        <el-switch v-model="props.draft.enabled" inline-prompt active-text="开" inactive-text="关" />
-      </el-form-item>
-      <el-form-item label="入场时点">
-        <el-select v-model="props.draft.entryTiming" class="full">
-          <el-option label="当日开盘" value="open" />
-          <el-option label="当日收盘" value="close" />
-          <el-option label="次日开盘" value="next_open" />
-          <el-option label="次日低吸" value="next_dip" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="最少 K 线" :error="err('minBars')">
-        <el-input-number v-model="props.draft.minBars" :min="1" :max="1000" :controls="false" class="full" />
-      </el-form-item>
-      <el-form-item label="主信号名" required :error="err('signal')">
-        <el-input v-model.trim="props.draft.signal" maxlength="32" placeholder="例如 入选" />
-      </el-form-item>
-      <el-form-item label="运行时">
-        <el-input :model-value="props.draft.runtime === 'python' ? '脚本' : '公式'" readonly />
-      </el-form-item>
+      </FormField>
+      <FormField label="名称" required :error="err('name')">
+        <TextField v-model.trim="props.draft.name" maxlength="64" placeholder="我的突破战法" />
+      </FormField>
+      <FormField label="版本">
+        <TextField v-model.trim="props.draft.version" maxlength="32" placeholder="0.1.0" />
+      </FormField>
+      <FormField label="启用">
+        <ToggleSwitch v-model="props.draft.enabled" inline-prompt active-text="开" inactive-text="关" />
+      </FormField>
+      <FormField label="入场时点">
+        <ChoiceField v-model="props.draft.entryTiming" class="full">
+          <ChoiceOption label="当日开盘" value="open" />
+          <ChoiceOption label="当日收盘" value="close" />
+          <ChoiceOption label="次日开盘" value="next_open" />
+          <ChoiceOption label="次日低吸" value="next_dip" />
+        </ChoiceField>
+      </FormField>
+      <FormField label="最少 K 线" :error="err('minBars')">
+        <NumberInput v-model="props.draft.minBars" :min="1" :max="1000" :controls="false" class="full" />
+      </FormField>
+      <FormField label="主信号名" required :error="err('signal')">
+        <TextField v-model.trim="props.draft.signal" maxlength="32" placeholder="例如 入选" />
+      </FormField>
+      <FormField label="运行时">
+        <TextField :model-value="props.draft.runtime === 'python' ? '脚本' : '公式'" readonly />
+      </FormField>
     </div>
 
-    <el-form-item label="说明" required :error="err('description')">
-      <el-input
+    <FormField label="说明" required :error="err('description')">
+      <TextField
         v-model.trim="props.draft.description"
         type="textarea"
         :rows="3"
         maxlength="240"
         placeholder="说明入选逻辑、适用阶段、风险与禁用场景。"
       />
-    </el-form-item>
+    </FormField>
 
-    <el-form-item label="因子清单" required :error="err('factorsText')">
-      <el-input
+    <FormField label="因子清单" required :error="err('factorsText')">
+      <TextField
         v-model="props.draft.factorsText"
         type="textarea"
         :rows="2"
         placeholder="用逗号或换行分隔，例如 均线、量比、突破"
       />
-    </el-form-item>
+    </FormField>
 
     <div class="section-head">
       <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
-      <el-tooltip placement="bottom-start" content="每条逻辑单独记录表达式、解释与引用编号">
+      <HintTooltip placement="bottom-start" content="每条逻辑单独记录表达式、解释与引用编号">
         <strong class="section-head__title">逻辑卡片</strong>
-      </el-tooltip>
-      <el-button size="small" @click="emit('addLogic')">新增逻辑</el-button>
+      </HintTooltip>
+      <ActionButton size="small" @click="emit('addLogic')">新增逻辑</ActionButton>
     </div>
 
     <div class="logic-list">
-      <el-card
+      <SurfaceCard
         v-for="(row, index) in props.draft.logic"
         :key="row.id"
         shadow="never"
@@ -107,42 +117,42 @@ function logicErr(index: number, id: string, part: string): string {
         <template #header>
           <div class="logic-card__head">
             <span>{{ row.id || `逻辑 ${index + 1}` }}</span>
-            <el-button text type="danger" size="small" @click="emit('removeLogic', index)">删除</el-button>
+            <ActionButton variant="ghost" tone="danger" size="small" @click="emit('removeLogic', index)">删除</ActionButton>
           </div>
         </template>
         <div class="meta-grid">
-          <el-form-item label="逻辑编号" required :error="logicErr(index, row.id, 'id')">
-            <el-input v-model.trim="row.id" maxlength="40" placeholder="例如 logic-breakout" />
-          </el-form-item>
-          <el-form-item label="标题" required :error="logicErr(index, row.id, 'title')">
-            <el-input v-model.trim="row.title" maxlength="64" placeholder="站上均线" />
-          </el-form-item>
+          <FormField label="逻辑编号" required :error="logicErr(index, row.id, 'id')">
+            <TextField v-model.trim="row.id" maxlength="40" placeholder="例如 logic-breakout" />
+          </FormField>
+          <FormField label="标题" required :error="logicErr(index, row.id, 'title')">
+            <TextField v-model.trim="row.title" maxlength="64" placeholder="站上均线" />
+          </FormField>
         </div>
-        <el-form-item label="表达式" required :error="logicErr(index, row.id, 'expression')">
-          <el-input
+        <FormField label="表达式" required :error="logicErr(index, row.id, 'expression')">
+          <TextField
             v-model.trim="row.expression"
             type="textarea"
             :rows="2"
             placeholder="例如 CLOSE > MA(CLOSE, N)"
           />
-        </el-form-item>
-        <el-form-item label="解释" required :error="logicErr(index, row.id, 'explanation')">
-          <el-input
+        </FormField>
+        <FormField label="解释" required :error="logicErr(index, row.id, 'explanation')">
+          <TextField
             v-model.trim="row.explanation"
             type="textarea"
             :rows="3"
             placeholder="说明该逻辑为何存在、适用什么行情。"
           />
-        </el-form-item>
-        <el-form-item label="引用编号" :error="logicErr(index, row.id, 'citationsText')">
-          <el-input
+        </FormField>
+        <FormField label="引用编号" :error="logicErr(index, row.id, 'citationsText')">
+          <TextField
             v-model="row.citationsText"
             type="textarea"
             :rows="2"
             placeholder="逗号或换行分隔，填资料页里的编号"
           />
-        </el-form-item>
-      </el-card>
+        </FormField>
+      </SurfaceCard>
     </div>
   </Sheet>
 </template>
@@ -177,7 +187,7 @@ function logicErr(index: number, id: string, part: string): string {
 }
 
 .logic-card--error {
-  border-color: var(--el-color-danger);
+  border-color: var(--stamp);
 }
 
 /* 小节标题压成一行：标题与它的操作按钮同高同行，不再是标题一行、介绍一行 */

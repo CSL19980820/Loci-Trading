@@ -1,8 +1,20 @@
 <script setup lang="ts">
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { TriangleAlert } from '@lucide/vue'
+
 import type { SectionStamp } from '../composables/useSystemSettings'
 
+/**
+ * 系统页里的一节（数据目录 / 行情同步 / 推送 / 外观）。
+ *
+ * 一节 = 一张卡：头部是小节标题 + 保存状态戳，正文是一组 **设置行**
+ * （`.settings-row`：左侧标签 + 一句说明，右侧控件，行间 hairline），
+ * 底部可选一行次要操作。`.settings-row` 的样式在这里用 `:deep` 定义一次，
+ * 各 Sys* 分节只管排内容，不再各写一套 6.5em 标签槽。
+ */
 defineProps<{
   title: string
+  description?: string
   stamp: SectionStamp
   anchor: string
   error?: string
@@ -10,142 +22,228 @@ defineProps<{
 </script>
 
 <template>
-  <!--
-    标题保留：同屏并列四小节（数据目录 / 行情同步 / 推送 / 外观），遮住标题就分不清
-    哪块表单是哪联。压成一行的做法是左槽定宽——标题与该小节第一条控件永远同高，
-    窄屏也只收窄槽宽，绝不让标题独占一行（见下方 media query）。
-  -->
-  <section :id="anchor" class="sys-section" :aria-label="title">
-    <aside class="sys-section__gutter">
-      <h3 class="sys-section__title">{{ title }}</h3>
+  <section :id="anchor" class="sys-card" :aria-label="title">
+    <header class="sys-card__head">
+      <div class="sys-card__lead">
+        <h3 class="sys-card__title">{{ title }}</h3>
+      </div>
       <p
-        class="sys-section__stamp"
-        role="status"
-        :class="`sys-section__stamp--${stamp.kind}`"
+        class="sys-card__stamp"
+        role="status" v-if="stamp.kind !== 'clean'"
+        :class="`sys-card__stamp--${stamp.kind}`"
       >
-        <span
-          v-if="stamp.kind === 'dirty' || stamp.kind === 'pending'"
-          class="sys-section__mark"
-          aria-hidden="true"
-        />
-        <template v-if="stamp.kind === 'dirty'">未存</template>
+        <span class="sys-card__stamp-dot" aria-hidden="true" />
+        <template v-if="stamp.kind === 'dirty'">未保存</template>
         <template v-else-if="stamp.kind === 'saved'">已存 {{ stamp.at }}</template>
-        <template v-else-if="stamp.kind === 'instant'">即时</template>
+        <template v-else-if="stamp.kind === 'instant'">即时生效</template>
         <template v-else-if="stamp.kind === 'pending'">待生效</template>
       </p>
-    </aside>
-    <div class="sys-section__body">
+    </header>
+    <div class="sys-card__body">
       <slot />
-      <el-alert
-        v-if="error"
-        :title="error"
-        type="error"
-        show-icon
-        :closable="false"
-        class="sys-section__err"
-      />
-      <div v-if="$slots.actions" class="sys-section__actions">
-        <slot name="actions" />
-      </div>
     </div>
+    <Alert v-if="error" variant="destructive" class="sys-card__err">
+      <TriangleAlert />
+      <AlertTitle class="line-clamp-none">{{ error }}</AlertTitle>
+    </Alert>
+    <footer v-if="$slots.actions" class="sys-card__foot">
+      <slot name="actions" />
+    </footer>
   </section>
 </template>
 
 <style scoped>
-.sys-section {
-  display: grid;
-  grid-template-columns: 5.75rem minmax(0, 1fr);
-  gap: 0.35rem 1.1rem;
-  padding: 0.7rem 0;
-  border-top: 1px solid var(--rule);
-  width: 100%;
-  scroll-margin-top: 0.35rem;
-}
-
-.sys-section:first-of-type {
-  border-top: 0;
-  padding-top: 0.15rem;
-}
-
-.sys-section__gutter {
-  min-width: 0;
-  padding-top: 0.2rem;
-  border-right: 1px solid color-mix(in oklab, var(--rule) 70%, transparent);
-  padding-right: 0.75rem;
-}
-
-.sys-section__title {
-  margin: 0;
-  font-size: 0.84rem;
-  font-weight: 650;
-  color: var(--ink);
-  line-height: 1.25;
-  letter-spacing: 0.01em;
-}
-
-.sys-section__stamp {
+.sys-card {
   display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin: 0.25rem 0 0;
-  min-height: 0.9rem;
-  font-family: var(--mono);
-  font-size: 0.64rem;
-  letter-spacing: 0.05em;
-  color: var(--mist);
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  scroll-margin-top: var(--gap-3);
+  overflow: hidden;
 }
 
-.sys-section__stamp--dirty {
+.sys-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-3);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sys-card__lead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sys-card__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.sys-card__desc {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+  line-height: 1.5;
+}
+
+.sys-card__stamp {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sys-card__stamp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.sys-card__stamp--dirty {
+  background: var(--seal-soft);
   color: var(--seal-ink);
 }
 
-.sys-section__stamp--pending {
-  color: var(--muted);
-}
-
-.sys-section__mark {
-  width: 0.35rem;
-  height: 0.35rem;
-  flex-shrink: 0;
+.sys-card__stamp--dirty .sys-card__stamp-dot {
   background: var(--seal);
 }
 
-.sys-section__stamp--pending .sys-section__mark {
-  background: var(--mist);
+.sys-card__stamp--saved .sys-card__stamp-dot {
+  background: var(--ok);
 }
 
-.sys-section__body {
+.sys-card__stamp--pending {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+
+.sys-card__stamp--pending .sys-card__stamp-dot {
+  background: var(--warn);
+}
+
+.sys-card__body {
   min-width: 0;
-  width: 100%;
 }
 
-.sys-section__err {
-  margin-top: 0.4rem;
+.sys-card__err {
+  margin: var(--gap-3) var(--gap-4) 0;
 }
 
-.sys-section__actions {
+.sys-card__foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.25rem;
+  justify-content: flex-end;
+  gap: var(--gap-2);
+  padding: var(--gap-3) var(--gap-4);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
 }
 
-/*
- * 窄屏只收窄左槽，**不塌成单列**：塌了标题就自己占一行、表单退到下一行，
- * 正是要避免的「两行干一行的事」。
- */
-@media (max-width: 900px) {
-  .sys-section {
-    grid-template-columns: 4.5rem minmax(0, 1fr);
-    gap: 0.25rem 0.55rem;
+/* ─── 设置行：各 Sys* 分节共用 ─── */
+.sys-card__body :deep(.settings-row) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.6fr);
+  align-items: center;
+  gap: var(--gap-2) var(--gap-4);
+  min-height: 48px;
+  padding: var(--gap-3) var(--gap-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sys-card__body :deep(.settings-row:first-child) {
+  border-top: 0;
+}
+
+.sys-card__body :deep(.settings-row--stack) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sys-card__body :deep(.settings-row__lead) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sys-card__body :deep(.settings-row__label) {
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.sys-card__body :deep(.settings-row__desc) {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+  line-height: 1.5;
+}
+
+.sys-card__body :deep(.settings-row__control) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-2) var(--gap-3);
+  min-width: 0;
+}
+
+.sys-card__body :deep(.settings-row--stack .settings-row__control) {
+  justify-content: flex-start;
+}
+
+.sys-card__body :deep(.settings-row__note) {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+@media (max-width: 640px) {
+  .sys-card__head {
+    padding: var(--gap-3);
   }
 
-  .sys-section__gutter {
-    padding-right: 0.4rem;
+  .sys-card__foot {
+    padding: var(--gap-3);
   }
 
-  .sys-section__title {
-    font-size: var(--fs-aux);
+  .sys-card__err {
+    margin: var(--gap-3) var(--gap-3) 0;
   }
+
+  .sys-card__body :deep(.settings-row) {
+    grid-template-columns: minmax(90px, .8fr) minmax(0, 1.2fr);
+    padding: var(--gap-3);
+  }
+
+  .sys-card__body :deep(.settings-row__control) {
+    justify-content: flex-end;
+  }
+  .sys-card__body :deep(.settings-row--stack) { grid-template-columns: minmax(0, 1fr); }
+  .sys-card__body :deep(.settings-row--stack .settings-row__control) { justify-content: flex-start; }
 }
 </style>

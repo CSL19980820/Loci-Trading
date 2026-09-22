@@ -244,6 +244,7 @@ def resolve_config(
     *,
     model: str = "",
     timeout: float | None = None,
+    use_grpc: bool = True,
 ) -> ProviderConfig:
     """取出可直接发起调用的配置。明文密钥只存在于返回值里，用完即弃。
 
@@ -279,6 +280,9 @@ def resolve_config(
     )
     if timeout is not None:
         config.timeout = timeout
+    if use_grpc:
+        from src.ai.infrastructure.grpc_routing import configure_grpc_route
+        configure_grpc_route(config)
     return config
 
 

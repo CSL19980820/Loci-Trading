@@ -11,8 +11,43 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 
-import CodeEditor from './CodeEditor.vue'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/shared/components/ui/accordion'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from '@/shared/components/ui/number-field'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select'
+import { Switch } from '@/shared/components/ui/switch'
+import { Textarea } from '@/shared/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 import type { Job, JobKind, JobQuota, LlmProvider, Skill, StrategyInfo } from '@/shared/types/quant'
+
+import CodeEditor from './CodeEditor.vue'
 import { isReservedStrategyJobName } from '../composables/jobOwnership'
 import { cnStrategyName } from '../composables/opsLabels'
 import {
@@ -276,211 +311,244 @@ function onSubmit(): void {
 </script>
 
 <template>
-  <el-dialog v-model="open" class="ops-dialog" :title="title" width="min(40rem, 96vw)" destroy-on-close>
-    <!-- 唯一的错误位：校验与后端 4xx 都落这儿 -->
-    <el-alert
-      v-if="shownError"
-      :title="shownError"
-      type="error"
-      show-icon
-      :closable="false"
-      class="form-alert"
-      data-testid="job-form-error"
-    />
-    <p v-if="!isEdit && quota && !quota.unlimited" class="form-quota">
-      自建额度 {{ quota.used }} / {{ quota.limit }}
-      <span class="form-quota__dim">（系统托管任务 {{ quota.managed }} 条，不占额度）</span>
-    </p>
-    <el-form
-      class="job-editor-form"
-      label-position="right"
-      label-width="6.5em"
-      size="small"
-      @submit.prevent="onSubmit"
-    >
-      <el-form-item label="名称" required>
-        <el-input v-model.trim="form.name" :disabled="isEdit" placeholder="例如：日终同步" />
-      </el-form-item>
-      <el-form-item label="类型">
-        <el-select v-model="form.kind" class="full" :disabled="isEdit">
-          <el-option label="同步行情" value="sync" />
-          <el-option label="选股" value="screen" />
-          <el-option label="候选T+N" value="outcome" />
-          <el-option label="回测" value="backtest" />
-          <el-option label="技能模式" value="skill" />
-          <el-option label="企微推送" value="notify" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="调度预设" class="full-span">
-        <el-select v-model="form.cronPreset" class="full" @change="applyCronPreset">
-          <el-option label="盘后 15:30（推荐）" value="post1530" />
-          <el-option label="工作日 15:35" value="post1535" />
-          <el-option label="工作日 16:00" value="eod1600" />
-          <el-option label="盘中每 5 分钟" value="intraday5" />
-          <el-option label="自定义 cron" value="custom" />
-          <el-option label="仅手动（永不自动触发）" value="manual" />
-        </el-select>
-      </el-form-item>
-      <el-form-item v-if="form.cronPreset === 'custom'" label="cron" class="full-span">
-        <el-input
-          v-model.trim="form.cron"
-          type="textarea"
-          :rows="2"
-          placeholder="可单行，也可多行/分号填多个时间点，例：&#10;50 14 * * mon-fri&#10;30 15 * * mon-fri"
-        />
-      </el-form-item>
-      <el-form-item label="接下来 3 次" class="full-span">
-        <div class="cron-preview">
-          <template v-if="form.cronPreset === 'manual'">
-            <el-tooltip content="不会自动触发，只能在任务列表里点「立即执行」" placement="top">
-              <span class="cron-preview__muted">仅手动</span>
-            </el-tooltip>
+  <Dialog v-model:open="open">
+    <DialogContent class="w-[min(40rem,96vw)] max-w-none gap-[var(--gap-3)] rounded-[var(--radius)] p-[var(--gap-3)] sm:max-w-none">
+      <DialogHeader class="gap-1 border-b border-line pb-[var(--gap-3)] text-left">
+        <DialogTitle>{{ title }}</DialogTitle>
+      </DialogHeader>
+
+      <div class="min-w-0 max-h-[calc(100dvh-var(--ctl-h)*5)] overflow-auto overscroll-contain">
+        <!-- 唯一的错误位：校验与后端 4xx 都落这儿 -->
+        <Alert v-if="shownError" variant="destructive" class="form-alert" data-testid="job-form-error">
+          <AlertTitle class="line-clamp-none">{{ shownError }}</AlertTitle>
+        </Alert>
+        <p v-if="!isEdit && quota && !quota.unlimited" class="form-quota">
+          自建额度 {{ quota.used }} / {{ quota.limit }}
+          <span class="form-quota__dim">（系统托管任务 {{ quota.managed }} 条，不占额度）</span>
+        </p>
+        <form class="job-editor-form" @submit.prevent="onSubmit">
+          <div class="job-field">
+            <Label for="job-name" class="job-field__label">名称</Label>
+            <Input id="job-name" v-model.trim="form.name" :disabled="isEdit" placeholder="例如：日终同步" />
+          </div>
+          <div class="job-field">
+            <Label for="job-kind" class="job-field__label">类型</Label>
+            <Select v-model="form.kind" :disabled="isEdit">
+              <SelectTrigger id="job-kind" class="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sync">同步行情</SelectItem>
+                <SelectItem value="screen">选股</SelectItem>
+                <SelectItem value="outcome">候选T+N</SelectItem>
+                <SelectItem value="backtest">回测</SelectItem>
+                <SelectItem value="skill">技能模式</SelectItem>
+                <SelectItem value="notify">企微推送</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="job-field full-span">
+            <Label for="job-cron-preset" class="job-field__label">调度预设</Label>
+            <Select v-model="form.cronPreset" @update:model-value="applyCronPreset">
+              <SelectTrigger id="job-cron-preset" class="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="post1530">盘后 15:30（推荐）</SelectItem>
+                <SelectItem value="post1535">工作日 15:35</SelectItem>
+                <SelectItem value="eod1600">工作日 16:00</SelectItem>
+                <SelectItem value="intraday5">盘中每 5 分钟</SelectItem>
+                <SelectItem value="custom">自定义 cron</SelectItem>
+                <SelectItem value="manual">仅手动（永不自动触发）</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div v-if="form.cronPreset === 'custom'" class="job-field full-span">
+            <Label for="job-cron" class="job-field__label">cron</Label>
+            <Textarea
+              id="job-cron"
+              v-model.trim="form.cron"
+              :rows="2"
+              placeholder="可单行，也可多行/分号填多个时间点，例：&#10;50 14 * * mon-fri&#10;30 15 * * mon-fri"
+            />
+          </div>
+          <div class="job-field full-span">
+            <span class="job-field__label">接下来 3 次</span>
+            <div class="cron-preview">
+              <template v-if="form.cronPreset === 'manual'">
+                <Tooltip>
+                  <TooltipTrigger as-child>
+                    <span class="cron-preview__muted cursor-default">仅手动</span>
+                  </TooltipTrigger>
+                  <TooltipContent>不会自动触发，只能在任务列表里点「立即执行」</TooltipContent>
+                </Tooltip>
+              </template>
+              <template v-else-if="upcoming && upcoming.length">
+                <span v-for="run in upcoming" :key="run" class="cron-preview__slot mono">{{ run }}</span>
+              </template>
+              <Tooltip v-else>
+                <TooltipTrigger as-child>
+                  <span class="cron-preview__bad cursor-default">无法预览这条 cron</span>
+                </TooltipTrigger>
+                <TooltipContent>本机只解析 5 段常规写法；保存时后端会再校验一次</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+          <Alert v-if="tooFrequent" variant="destructive" class="full-span">
+            <AlertTitle class="line-clamp-none">{{ cronTooFrequentTitle(intervalSeconds) }}</AlertTitle>
+          </Alert>
+
+          <template v-if="form.kind === 'sync'">
+            <div class="job-field">
+              <Label for="job-sync-mode" class="job-field__label">模式</Label>
+              <Select v-model="form.syncMode">
+                <SelectTrigger id="job-sync-mode" class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">增量 + 当日补数</SelectItem>
+                  <SelectItem value="today_refresh">仅重刷当日</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="job-field">
+              <Label for="job-workers" class="job-field__label">并发数</Label>
+              <NumberField v-model="form.workers" :min="1" :max="16">
+                <NumberFieldContent>
+                  <NumberFieldInput id="job-workers" />
+                  <NumberFieldIncrement />
+                  <NumberFieldDecrement />
+                </NumberFieldContent>
+              </NumberField>
+            </div>
+            <div class="job-field">
+              <Label for="job-force" class="job-field__label">强制重拉</Label>
+              <Switch id="job-force" v-model="form.force" />
+            </div>
           </template>
-          <template v-else-if="upcoming && upcoming.length">
-            <span v-for="run in upcoming" :key="run" class="cron-preview__slot mono">{{ run }}</span>
+
+          <template v-if="form.kind === 'screen'">
+            <div class="job-field full-span">
+              <Label for="job-strategy" class="job-field__label">战法</Label>
+              <Select v-model="form.strategy">
+                <SelectTrigger id="job-strategy" class="w-full" aria-label="选择战法">
+                  <SelectValue placeholder="选择战法" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="s in strategyOptions" :key="s.slug" :value="s.slug">
+                    {{ s.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="job-field">
+              <Label for="job-top-n" class="job-field__label">选取数量</Label>
+              <NumberField v-model="form.topN" :min="0" :max="200">
+                <NumberFieldContent>
+                  <NumberFieldInput id="job-top-n" />
+                  <NumberFieldIncrement />
+                  <NumberFieldDecrement />
+                </NumberFieldContent>
+              </NumberField>
+            </div>
+            <div class="job-field">
+              <Label for="job-record-candidates" class="job-field__label">写入候选池</Label>
+              <Switch id="job-record-candidates" v-model="form.recordCandidates" />
+            </div>
+            <div class="job-field">
+              <Label for="job-use-ai-pick" class="job-field__label">AI 精选</Label>
+              <Switch id="job-use-ai-pick" v-model="form.useAiPick" />
+            </div>
+            <div v-if="form.useAiPick" class="job-field full-span">
+              <Label for="job-provider-screen" class="job-field__label">LLM 供应商</Label>
+              <Select v-model="form.provider">
+                <SelectTrigger id="job-provider-screen" class="w-full" aria-label="LLM 供应商">
+                  <SelectValue placeholder="默认供应商可留空" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="p in providers" :key="p.id" :value="p.id">
+                    {{ p.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </template>
-          <el-tooltip
-            v-else
-            content="本机只解析 5 段常规写法；保存时后端会再校验一次"
-            placement="top"
-          >
-            <span class="cron-preview__bad">无法预览这条 cron</span>
-          </el-tooltip>
-        </div>
-      </el-form-item>
-      <el-form-item v-if="tooFrequent" class="full-span">
-        <el-alert
-          type="warning"
-          show-icon
-          :closable="false"
-          :title="cronTooFrequentTitle(intervalSeconds)"
-        />
-      </el-form-item>
 
-      <template v-if="form.kind === 'sync'">
-        <el-form-item label="模式">
-          <el-select v-model="form.syncMode" class="full">
-            <el-option label="增量 + 当日补数" value="full" />
-            <el-option label="仅重刷当日" value="today_refresh" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="并发数">
-          <el-input-number v-model="form.workers" :min="1" :max="16" />
-        </el-form-item>
-        <el-form-item label="强制重拉">
-          <el-switch v-model="form.force" />
-        </el-form-item>
-      </template>
+          <template v-if="form.kind === 'skill'">
+            <div class="job-field full-span">
+              <Label for="job-skill" class="job-field__label">技能</Label>
+              <Select v-model="form.skill">
+                <SelectTrigger id="job-skill" class="w-full" aria-label="选择技能">
+                  <SelectValue placeholder="选择技能" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="s in skillOptions" :key="s.slug" :value="s.slug">
+                    {{ s.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="job-field full-span">
+              <Label for="job-provider-skill" class="job-field__label">LLM 供应商</Label>
+              <Select v-model="form.provider">
+                <SelectTrigger id="job-provider-skill" class="w-full" aria-label="选择供应商">
+                  <SelectValue placeholder="选择供应商" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="p in providers" :key="p.id" :value="p.id">
+                    {{ p.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </template>
 
-      <template v-if="form.kind === 'screen'">
-        <el-form-item label="战法" class="full-span" required>
-          <el-select
-            v-model="form.strategy"
-            class="full"
-            filterable
-            clearable
-            placeholder="选择战法"
-          >
-            <el-option
-              v-for="s in strategyOptions"
-              :key="s.slug"
-              :label="s.label"
-              :value="s.slug"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="选取数量">
-          <el-input-number v-model="form.topN" :min="0" :max="200" />
-        </el-form-item>
-        <el-form-item label="写入候选池">
-          <el-switch v-model="form.recordCandidates" />
-        </el-form-item>
-        <el-form-item label="AI 精选">
-          <el-switch v-model="form.useAiPick" />
-        </el-form-item>
-        <el-form-item v-if="form.useAiPick" label="LLM 供应商" class="full-span">
-          <el-select
-            v-model="form.provider"
-            class="full"
-            filterable
-            clearable
-            placeholder="默认供应商可留空"
-          >
-            <el-option
-              v-for="p in providers"
-              :key="p.id"
-              :label="p.name"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-      </template>
+          <template v-if="form.kind === 'notify'">
+            <div class="job-field full-span">
+              <Label for="job-notify-template" class="job-field__label">推送模板</Label>
+              <Select v-model="form.notifyTemplate">
+                <SelectTrigger id="job-notify-template" class="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="alerts">触价提醒</SelectItem>
+                  <SelectItem value="digest">日终简报</SelectItem>
+                  <SelectItem value="screen_last">最近选股结果</SelectItem>
+                  <SelectItem value="sync_fail">同步失败告警</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </template>
 
-      <template v-if="form.kind === 'skill'">
-        <el-form-item label="技能" class="full-span" required>
-          <el-select
-            v-model="form.skill"
-            class="full"
-            filterable
-            clearable
-            placeholder="选择技能"
-          >
-            <el-option
-              v-for="s in skillOptions"
-              :key="s.slug"
-              :label="s.label"
-              :value="s.slug"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="LLM 供应商" class="full-span">
-          <el-select
-            v-model="form.provider"
-            class="full"
-            filterable
-            clearable
-            placeholder="选择供应商"
-          >
-            <el-option
-              v-for="p in providers"
-              :key="p.id"
-              :label="p.name"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-      </template>
+          <div v-if="form.kind !== 'notify'" class="job-field full-span">
+            <Label for="job-push-wecom" class="job-field__label">完成后推企微</Label>
+            <Switch id="job-push-wecom" v-model="form.pushWecom" />
+          </div>
 
-      <template v-if="form.kind === 'notify'">
-        <el-form-item label="推送模板" class="full-span">
-          <el-select v-model="form.notifyTemplate" class="full">
-            <el-option label="触价提醒" value="alerts" />
-            <el-option label="日终简报" value="digest" />
-            <el-option label="最近选股结果" value="screen_last" />
-            <el-option label="同步失败告警" value="sync_fail" />
-          </el-select>
-        </el-form-item>
-      </template>
+          <div class="job-field full-span">
+            <span class="job-field__label">高级 · 原始 JSON</span>
+            <Accordion type="single" collapsible class="w-full">
+              <AccordionItem value="raw" class="border-b-0">
+                <AccordionTrigger class="py-1 text-mist hover:no-underline">
+                  覆盖/追加配置（可选）
+                </AccordionTrigger>
+                <AccordionContent class="pb-0">
+                  <CodeEditor v-model="form.configText" language="json" height="10rem" />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        </form>
+      </div>
 
-      <el-form-item v-if="form.kind !== 'notify'" label="完成后推企微" class="full-span">
-        <el-switch v-model="form.pushWecom" />
-      </el-form-item>
-
-      <el-form-item label="高级 · 原始 JSON" class="full-span">
-        <el-collapse>
-          <el-collapse-item title="覆盖/追加配置（可选）" name="raw">
-            <CodeEditor v-model="form.configText" language="json" height="10rem" />
-          </el-collapse-item>
-        </el-collapse>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :disabled="busy" @click="onSubmit">
-        {{ isEdit ? '保存' : '创建' }}
-      </el-button>
-    </template>
-  </el-dialog>
+      <DialogFooter class="border-t border-line pt-[var(--gap-3)] sm:justify-end">
+        <Button access="read" variant="outline" @click="open = false">取消</Button>
+        <Button :disabled="busy" @click="onSubmit">
+          {{ isEdit ? '保存' : '创建' }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -523,6 +591,20 @@ function onSubmit(): void {
 }
 .job-editor-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); column-gap: var(--gap-3); }
 .job-editor-form .full-span { grid-column: 1 / -1; }
-.job-editor-form :deep(.el-form-item__content) { min-width: 0; }
+/* 一行一项：左 6.5em 右标签槽 + 控件列，和旧 el-form label-position="right" 同尺寸 */
+.job-field {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--gap-2);
+  min-width: 0;
+  padding-bottom: var(--gap-2);
+}
+.job-field__label {
+  justify-content: flex-end;
+  text-align: right;
+  color: var(--mist);
+  font-size: var(--fs-aux);
+  font-weight: 400;
+}
 </style>
-<style scoped src="./OpsDialogSurface.css"></style>

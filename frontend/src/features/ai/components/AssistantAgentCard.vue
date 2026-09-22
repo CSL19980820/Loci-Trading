@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from '@/shared/components/ui/button'
 import {
   agentDisplayName,
   agentRunning,
@@ -39,8 +40,8 @@ function open(): void {
 </script>
 
 <template>
-  <el-button
-    text
+  <Button
+    variant="ghost"
     class="agent-card"
     :class="[`is-${variant}`, `is-${tone()}`, { 'is-live': live() }]"
     data-testid="assistant-agent-card"
@@ -58,12 +59,11 @@ function open(): void {
       v-if="agent.progress != null && live()"
       class="agent-card__pct"
     >{{ agent.progress }}%</span>
-  </el-button>
+  </Button>
 </template>
 
 <style scoped>
-.agent-card { --agent-tone: var(--mist); width: 100%; height: auto; min-height: var(--ai-row-min); margin: 0; padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface); color: var(--ink); white-space: normal; text-align: left; }
-.agent-card :deep(> span) { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1) var(--gap-2); width: 100%; min-width: 0; }
+.agent-card { --agent-tone: var(--mist); display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: var(--gap-1) var(--gap-2); width: 100%; height: auto; min-height: var(--ai-row-min); margin: 0; padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface); color: var(--ink); white-space: normal; text-align: left; font-weight: 400; }
 .agent-card:hover { border-color: var(--seal-border); background: var(--surface-hover); }
 .agent-card:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
 .agent-card.is-live { --agent-tone: var(--info-ink); border-color: var(--seal-border); }

@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { TriangleAlert } from '@lucide/vue'
 
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import BasicTable from '@/shared/components/ui/BasicTable.vue'
+import type { BasicTableColumn } from '@/shared/components/ui/basicTableTypes'
 import StatCard from '@/shared/components/ui/StatCard.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import type { HorizonStats } from '@/shared/types/quant'
@@ -34,6 +38,36 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
   if (v == null || !Number.isFinite(v)) return '—'
   return `${v.toFixed(digits)}${suffix}`
 }
+
+const monthColumns: BasicTableColumn[] = [
+  { prop: 'period', label: '月份', width: 90 },
+  { prop: 'n', label: '样本', width: 64 },
+  {
+    label: '胜率',
+    width: 80,
+    render: (_h, { row }) => `${Number(row.win_rate).toFixed(1)}%`,
+  },
+  {
+    label: '均值',
+    render: (h, { row }) =>
+      h('span', { class: pnlTone(Number(row.avg)) }, signed(Number(row.avg))),
+  },
+]
+
+/**
+ * 逐月行先摊平成 `Record<string, unknown>[]` 再交给 BasicTable。
+ * `HorizonPeriodRow` 是 interface（没有隐式索引签名），直接传会被表格的
+ * `dataSource?: Record<string, unknown>[]` 拒收；这里按本地列定义列字段，
+ * 既满足表格约束，也让列与字段的对应关系留在同一屏内。
+ */
+const monthRows = computed<Record<string, unknown>[]>(() =>
+  (props.stats?.by_month ?? []).map((row) => ({
+    period: row.period,
+    n: row.n,
+    win_rate: row.win_rate,
+    avg: row.avg,
+  })),
+)
 </script>
 
 <template>
@@ -67,14 +101,10 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
     />
 
     <template v-else>
-      <el-alert
-        v-if="stats.caution"
-        :title="stats.caution"
-        type="warning"
-        :closable="false"
-        show-icon
-        class="hz-caution"
-      />
+      <Alert v-if="stats.caution" class="hz-caution text-warn">
+        <TriangleAlert />
+        <AlertTitle class="line-clamp-none min-w-0">{{ stats.caution }}</AlertTitle>
+      </Alert>
 
       <div class="hz-grid">
         <StatCard label="中位数" :value="fmtPct(stats.median)" :tone="pnlTone(stats.median ?? 0)" layout="row" />
@@ -106,25 +136,15 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
         <QuantBacktestExtremeTape kind="worst" :event="stats.worst_event" />
       </div>
 
-      <el-table
-        v-if="stats.by_month?.length"
-        :data="stats.by_month"
+      <BasicTable
+        v-if="monthRows.length"
+        :columns="monthColumns"
+        :data-source="monthRows"
+        :pagination="false"
         size="small"
-        stripe
         class="hz-month"
         max-height="180"
-      >
-        <el-table-column prop="period" label="月份" width="90" />
-        <el-table-column prop="n" label="样本" width="64" />
-        <el-table-column label="胜率" width="80">
-          <template #default="{ row }">{{ Number(row.win_rate).toFixed(1) }}%</template>
-        </el-table-column>
-        <el-table-column label="均值">
-          <template #default="{ row }">
-            <span :class="pnlTone(row.avg)">{{ signed(row.avg) }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
+      />
 
       <p v-if="stats.mark_basis_note" class="hz-note">{{ stats.mark_basis_note }}</p>
     </template>
@@ -135,11 +155,12 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 .hz-card {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--paper);
+  gap: var(--gap-3);
+  padding: var(--gap-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
   min-width: 0;
   container-type: inline-size;
 }
@@ -148,7 +169,7 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
   flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 0.65rem 1rem;
+  gap: var(--gap-2) var(--gap-4);
 }
 /* 标题 + 样本读数同一行 */
 .hz-card__id {
@@ -160,28 +181,30 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 }
 .hz-card__head h3 {
   margin: 0;
-  font-size: var(--fs-hero);
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: var(--fs-title);
   font-weight: 700;
-  letter-spacing: .03em;
-  color: var(--ink);
+  letter-spacing: 0.02em;
 }
 .hz-card__n {
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
-  color: var(--mist);
 }
 .hz-hero {
   display: flex;
-  gap: 1.1rem;
+  gap: var(--gap-5);
 }
 .hz-hero__k {
   display: block;
+  color: var(--text-tertiary);
   font-size: var(--fs-kicker);
-  color: var(--mist);
 }
 .hz-hero__v {
-  font: 700 1.35rem/1.1 var(--mono);
+  color: var(--text-primary);
+  font: 600 var(--fs-tape) / 1.1 var(--mono);
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
 }
 .hz-hero__avg.up .hz-hero__v {
   color: var(--up);
@@ -195,34 +218,36 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 .hz-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem;
+  gap: var(--gap-2);
 }
 .hz-dist {
-  padding: 0.45rem 0.55rem 0.35rem;
-  border: 1px dashed var(--rule);
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
+  background: var(--surface-sunken);
 }
 .hz-dist__title {
+  margin-bottom: var(--gap-1);
+  color: var(--text-tertiary);
   font-size: var(--fs-kicker);
-  color: var(--mist);
-  margin-bottom: 0.25rem;
 }
 .hz-close {
-  padding: 0.55rem 0.7rem;
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  background: color-mix(in oklab, var(--sheet) 70%, var(--paper));
-  border: 1px dashed var(--rule);
+  background: var(--surface-sunken);
 }
 .hz-close__title {
-  font-size: 0.75rem;
-  color: var(--mist);
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--gap-1);
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
 }
 .hz-close__row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  font: 0.85rem/1.35 var(--mono);
+  gap: var(--gap-3);
+  color: var(--text-primary);
+  font: var(--fs-ui) / 1.35 var(--mono);
   font-variant-numeric: tabular-nums;
 }
 .hz-close__row .up {
@@ -237,21 +262,26 @@ function fmtNum(v: number | null | undefined, digits = 2, suffix = ''): string {
 }
 .hz-close__note,
 .hz-note {
-  margin: 0.35rem 0 0;
-  font-size: 0.75rem;
-  color: var(--mist);
+  margin: var(--gap-1) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
   line-height: 1.4;
 }
 .hz-extremes {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--gap-2);
 }
 .hz-month {
   width: 100%;
 }
 @container (max-width: 460px) {
-  .hz-grid { grid-template-columns: minmax(0, 1fr); }
-  .hz-hero { flex-wrap: wrap; gap: var(--gap-3); }
+  .hz-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hz-hero {
+    flex-wrap: wrap;
+    gap: var(--gap-3);
+  }
 }
 </style>

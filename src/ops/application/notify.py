@@ -190,7 +190,9 @@ def send_wecom_text(webhook_url: str, content: str) -> dict[str, Any]:
         ensure_ascii=False,
     ).encode("utf-8")
    #: rate_key 让出站队列按 webhook key 过 20 条/分钟的令牌桶（官方口径）。
-    return run_serialized(lambda: _post(url, body), rate_key=_webhook_key(url))
+    from src.ops.application.notify_dispatch import delivery_lock
+    with delivery_lock:
+        return run_serialized(lambda: _post(url, body), rate_key=_webhook_key(url))
 
 
 def send_wecom_markdown(webhook_url: str, content: str) -> dict[str, Any]:

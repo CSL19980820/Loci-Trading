@@ -1,7 +1,18 @@
 <script setup lang="ts">
+import { Clock, RefreshCw as RefreshRight, Upload } from '@lucide/vue'
+import { toast } from 'vue-sonner'
+import { IconBox, Notice, StatusBadge, ActionLink } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+
 import { computed, ref, watch } from 'vue'
-import { Clock, RefreshRight, Upload } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
+
 
 import {
   listResearchMembershipSnapshots,
@@ -181,12 +192,12 @@ async function loadFacts(): Promise<void> {
 
 function useUniverse(snapshot: ResearchMembershipSnapshot): void {
   if (!canUseMembership(snapshot)) {
-    ElMessage.warning(membershipUnavailableReason(snapshot))
+    toast.warning(membershipUnavailableReason(snapshot))
     return
   }
   const next = snapshot.universe_id.trim()
   emit('select-universe', next)
-  ElMessage.success(`已回填历史股票池标识：${next}`)
+  toast.success(`已回填历史股票池标识：${next}`)
 }
 
 function openImport(kind: ResearchTemporalImportKind): void {
@@ -230,29 +241,29 @@ defineExpose({ loadMemberships, loadFacts })
   <UiCard class="research-surface" aria-label="历史研究数据">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行 -->
     <UiCardHeader>
-      <UiCardTitle><el-icon aria-hidden="true"><Clock /></el-icon>历史数据</UiCardTitle>
+      <UiCardTitle><IconBox aria-hidden="true"><Clock /></IconBox>历史数据</UiCardTitle>
     </UiCardHeader>
     <UiCardContent :padded="true">
 
     <section class="temporal-section" aria-label="历史股票池快照">
       <div class="subhead">
         <div><h5>历史股票池快照</h5><span>{{ membershipLoaded ? `${membershipTotal} 条` : '尚未加载' }}</span></div>
-        <el-button size="small" :icon="Upload" @click="openImport('membership')">导入快照</el-button>
+        <ActionButton size="small" :icon="Upload" @click="openImport('membership')">导入快照</ActionButton>
       </div>
-      <el-form class="temporal-query" inline label-position="left" size="small" @submit.prevent="loadMemberships">
-        <el-form-item label="股票池标识">
-          <el-input v-model="membershipFilter.universeId" clearable maxlength="128" placeholder="例如 CSI300" />
-        </el-form-item>
-        <el-form-item label="截至日期">
-          <el-date-picker v-model="membershipFilter.asOf" value-format="YYYY-MM-DD" type="date" placeholder="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item label-width="0">
-          <el-button native-type="submit" :icon="RefreshRight" :loading="membershipLoading">读取快照</el-button>
-        </el-form-item>
-      </el-form>
-      <el-alert v-if="membershipError" class="section-alert" type="error" show-icon :closable="false" :title="membershipError" />
+      <FormLayout class="temporal-query" inline label-position="left" size="small" @submit.prevent="loadMemberships">
+        <FormField label="股票池标识">
+          <TextField v-model="membershipFilter.universeId" clearable maxlength="128" placeholder="例如 CSI300" />
+        </FormField>
+        <FormField label="截至日期">
+          <DateField v-model="membershipFilter.asOf" value-format="YYYY-MM-DD" type="date" placeholder="YYYY-MM-DD" />
+        </FormField>
+        <FormField label-width="0">
+          <ActionButton access="read" type="submit" :icon="RefreshRight" :busy="membershipLoading">读取快照</ActionButton>
+        </FormField>
+      </FormLayout>
+      <Notice v-if="membershipError" class="section-alert" tone="error" show-icon :closable="false" :title="membershipError" />
       <div v-if="resolvedMembership" class="resolved-row">
-        <el-tag size="small" effect="plain" :type="membershipType(resolvedMembership)">{{ membershipLabel(resolvedMembership) }}</el-tag>
+        <StatusBadge size="small" effect="plain" :tone="membershipType(resolvedMembership)">{{ membershipLabel(resolvedMembership) }}</StatusBadge>
         <span>解析结果</span><code>{{ resolvedMembershipLabel }}</code>
         <span v-if="membershipUnavailableReason(resolvedMembership)">{{ membershipUnavailableReason(resolvedMembership) }}</span>
       </div>
@@ -270,17 +281,17 @@ defineExpose({ loadMemberships, loadFacts })
           {{ Array.isArray(row.members) ? row.members.length : 0 }}
         </template>
         <template #status="{ row }">
-          <el-tag size="small" effect="plain" :type="membershipType(row as unknown as ResearchMembershipSnapshot)">{{ membershipLabel(row as unknown as ResearchMembershipSnapshot) }}</el-tag>
+          <StatusBadge size="small" effect="plain" :tone="membershipType(row as unknown as ResearchMembershipSnapshot)">{{ membershipLabel(row as unknown as ResearchMembershipSnapshot) }}</StatusBadge>
         </template>
         <template #source="{ row }">
-          <el-link v-if="safeSourceUrl(String(row.source_url || ''))" :href="safeSourceUrl(String(row.source_url || ''))" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(String(row.source_id || ''), String(row.snapshot_revision || '')) }}</el-link>
+          <ActionLink v-if="safeSourceUrl(String(row.source_url || ''))" :href="safeSourceUrl(String(row.source_url || ''))" target="_blank" rel="noopener noreferrer" tone="primary">{{ sourceText(String(row.source_id || ''), String(row.snapshot_revision || '')) }}</ActionLink>
           <span v-else>{{ sourceText(String(row.source_id || ''), String(row.snapshot_revision || '')) }}</span>
         </template>
         <template #provenance="{ row }">
           <code :title="provenanceText(row as unknown as ResearchMembershipSnapshot)">{{ provenanceText(row as unknown as ResearchMembershipSnapshot) }}</code>
         </template>
         <template #actions="{ row }">
-          <el-button text size="small" :disabled="!canUseMembership(row as unknown as ResearchMembershipSnapshot)" :title="membershipUnavailableReason(row as unknown as ResearchMembershipSnapshot)" @click="useUniverse(row as unknown as ResearchMembershipSnapshot)">用于严格 PIT</el-button>
+          <ActionButton variant="ghost" size="small" :disabled="!canUseMembership(row as unknown as ResearchMembershipSnapshot)" :title="membershipUnavailableReason(row as unknown as ResearchMembershipSnapshot)" @click="useUniverse(row as unknown as ResearchMembershipSnapshot)">用于严格 PIT</ActionButton>
         </template>
       </BasicTable>
     </section>
@@ -288,25 +299,25 @@ defineExpose({ loadMemberships, loadFacts })
     <section class="temporal-section" aria-label="PIT 事实">
       <div class="subhead">
         <div><h5>PIT 事实</h5><span>{{ factLoaded ? `${factTotal} 条` : '尚未加载' }}</span></div>
-        <el-button size="small" :icon="Upload" @click="openImport('fact')">导入事实</el-button>
+        <ActionButton size="small" :icon="Upload" @click="openImport('fact')">导入事实</ActionButton>
       </div>
-      <el-form class="temporal-query" inline label-position="left" size="small" @submit.prevent="loadFacts">
-        <el-form-item label="实体标识">
-          <el-input v-model="factFilter.entityId" clearable maxlength="64" placeholder="证券代码或实体 ID" />
-        </el-form-item>
-        <el-form-item label="事实类型">
-          <el-select v-model="factFilter.factType" clearable placeholder="全部" class="fact-type"><el-option label="财务" value="financial" /><el-option label="事件" value="event" /><el-option label="其他" value="other" /></el-select>
-        </el-form-item>
-        <el-form-item label="截至日期">
-          <el-date-picker v-model="factFilter.asOf" value-format="YYYY-MM-DD" type="date" placeholder="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item label-width="0">
-          <el-button native-type="submit" :icon="RefreshRight" :loading="factLoading">读取事实</el-button>
-        </el-form-item>
-      </el-form>
-      <el-alert v-if="factError" class="section-alert" type="error" show-icon :closable="false" :title="factError" />
+      <FormLayout class="temporal-query" inline label-position="left" size="small" @submit.prevent="loadFacts">
+        <FormField label="实体标识">
+          <TextField v-model="factFilter.entityId" clearable maxlength="64" placeholder="证券代码或实体 ID" />
+        </FormField>
+        <FormField label="事实类型">
+          <ChoiceField v-model="factFilter.factType" clearable placeholder="全部" class="fact-type"><ChoiceOption label="财务" value="financial" /><ChoiceOption label="事件" value="event" /><ChoiceOption label="其他" value="other" /></ChoiceField>
+        </FormField>
+        <FormField label="截至日期">
+          <DateField v-model="factFilter.asOf" value-format="YYYY-MM-DD" type="date" placeholder="YYYY-MM-DD" />
+        </FormField>
+        <FormField label-width="0">
+          <ActionButton access="read" type="submit" :icon="RefreshRight" :busy="factLoading">读取事实</ActionButton>
+        </FormField>
+      </FormLayout>
+      <Notice v-if="factError" class="section-alert" tone="error" show-icon :closable="false" :title="factError" />
       <div v-if="selectedFact" class="resolved-row">
-        <el-tag size="small" effect="plain" type="success">截至日可见</el-tag>
+        <StatusBadge size="small" effect="plain" tone="success">截至日可见</StatusBadge>
         <span>解析事实</span><code>{{ selectedFact.observation_id }} · {{ selectedFact.available_at }} · {{ selectedFact.revision }}</code>
       </div>
       <BasicTable
@@ -320,7 +331,7 @@ defineExpose({ loadMemberships, loadFacts })
         :empty-reason="factLoaded ? '换条件，或点「导入事实」' : '先填条件点「读取事实」'"
       >
         <template #source="{ row }">
-          <el-link v-if="safeSourceUrl(String(row.source_url || ''))" :href="safeSourceUrl(String(row.source_url || ''))" target="_blank" rel="noopener noreferrer" type="primary">{{ sourceText(String(row.source_id || ''), String(row.revision || '')) }}</el-link>
+          <ActionLink v-if="safeSourceUrl(String(row.source_url || ''))" :href="safeSourceUrl(String(row.source_url || ''))" target="_blank" rel="noopener noreferrer" tone="primary">{{ sourceText(String(row.source_id || ''), String(row.revision || '')) }}</ActionLink>
           <span v-else>{{ sourceText(String(row.source_id || ''), String(row.revision || '')) }}</span>
         </template>
         <template #provenance="{ row }">
@@ -347,17 +358,16 @@ defineExpose({ loadMemberships, loadFacts })
 .subhead { align-items: flex-end; }
 .subhead > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--gap-1); }
 .subhead span { color: var(--mist); font-size: var(--fs-aux); }
-/* 筛选条交给 EP inline 表单排版，不再用 grid 覆盖 el-form 布局 */
 .temporal-query { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--gap-1) var(--gap-2); padding: 0 var(--pad-sheet-x) var(--gap-2); }
-.temporal-query :deep(.el-form-item) { margin: 0; }
-.temporal-query :deep(.el-form-item__label) { padding-right: var(--gap-2); }
+.temporal-query :deep(.form-field) { margin: 0; }
+.temporal-query :deep(.form-field__label) { padding-right: var(--gap-2); }
 .fact-type { width: 8rem; }
 .section-alert { margin: 0 var(--pad-sheet-x) var(--gap-2); }
 .resolved-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-1) var(--gap-2); padding: var(--gap-2) var(--pad-sheet-x); border-top: 1px solid var(--rule); color: var(--mist); font-size: var(--fs-aux); }
 code { color: var(--ink); font: var(--fs-aux) var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 @media (max-width: 560px) {
   .temporal-head, .subhead { align-items: flex-start; flex-direction: column; }
-  .temporal-query :deep(.el-form-item) { width: 100%; }
+  .temporal-query :deep(.form-field) { width: 100%; }
 }
 </style>
 <style scoped src="./ResearchSurfaces.css"></style>

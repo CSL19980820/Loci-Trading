@@ -22,7 +22,7 @@ class GuardianConsultMixin:
 
     def consultation(self, conversation_id):
         with self.conn:
-            self.conn.execute("UPDATE guardian_consult_turns SET status='failed',result_json=? WHERE status IN ('queued','running') AND updated<?", (json.dumps({'error':'咨询后台中断或超时，请重新提问'},ensure_ascii=False), time.time()-600))
+            self.conn.execute("UPDATE guardian_consult_turns SET status='failed',result_json=json_set(result_json,'$.error',?) WHERE status IN ('queued','running') AND updated<?", ('咨询后台中断或超时，请重新提问', time.time()-600))
         row = self.conn.execute('SELECT id,title,notes,created,updated FROM guardian_consultations WHERE id=?',(conversation_id,)).fetchone()
         if not row:
             return None
@@ -32,6 +32,17 @@ class GuardianConsultMixin:
             turn['result'] = json.loads(turn.pop('result_json'))
             turns.append(turn)
         return {**dict(row), 'turns':turns}
+
+    def delete_consultation(self, conversation_id):
+        """删除一个已停止处理的话题及其消息、背景和回答。"""
+        with self.conn:
+            self.conn.execute('BEGIN IMMEDIATE')
+            busy = self.conn.execute("SELECT 1 FROM guardian_consult_turns WHERE conversation_id=? AND status IN ('queued','running')", (conversation_id,)).fetchone()
+            if busy:
+                raise ValueError('话题仍在处理中，请等待回答后删除')
+            self.conn.execute('DELETE FROM guardian_consult_turns WHERE conversation_id=?', (conversation_id,))
+            cursor = self.conn.execute('DELETE FROM guardian_consultations WHERE id=?', (conversation_id,))
+            return cursor.rowcount > 0
 
     def submit_consultation(self, conversation_id, request_id, question, notes):
         with self.conn:
@@ -61,6 +72,24 @@ class GuardianConsultMixin:
     def heartbeat_consultation(self, request_id):
         with self.conn:
             self.conn.execute("UPDATE guardian_consult_turns SET updated=? WHERE id=? AND status='running'",(time.time(),request_id))
+
+    def update_consultation_progress(self, request_id, result):
+        """持久化当前轮正文，断线重连可直接读取，终态禁止被迟到进度覆盖。"""
+        with self.conn:
+            self.conn.execute("UPDATE guardian_consult_turns SET updated=?,result_json=? WHERE id=? AND status='running'",
+                              (time.time(), json.dumps(result, ensure_ascii=False), request_id))
+
+    def consultation_turn(self, conversation_id, request_id):
+        row = self.conn.execute('SELECT * FROM guardian_consult_turns WHERE conversation_id=? AND id=?',
+                                (conversation_id, request_id)).fetchone()
+        if row is None:
+            return None
+        turn = dict(row)
+        turn['result'] = json.loads(turn.pop('result_json'))
+        if turn['status'] in {'queued', 'running'} and turn['updated'] < time.time() - 600:
+            turn['status'] = 'failed'
+            turn['result']['error'] = '咨询后台中断或超时，请重新提问'
+        return turn
 
     def finish_consultation(self, request_id, result, *, messages=None):
         with self.conn:

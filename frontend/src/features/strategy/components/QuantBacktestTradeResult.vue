@@ -1,13 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
+import { TriangleAlert } from '@lucide/vue'
 
 import EquityLineChart from '@/shared/components/charts/EquityLineChart.vue'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import BasicTable from '@/shared/components/ui/BasicTable.vue'
+import type { BasicTableColumn } from '@/shared/components/ui/basicTableTypes'
+import { Button } from '@/shared/components/ui/button'
+import SegmentSwitch from '@/shared/components/ui/SegmentSwitch.vue'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import StatCard from '@/shared/components/ui/StatCard.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import StockLink from '@/shared/components/ui/StockLink.vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 import { copyText } from '@/shared/lib/clipboard'
-import type { BacktestResult, BacktestTrade } from '@/shared/types/quant'
+import type { BacktestResult } from '@/shared/types/quant'
 
 import { buildTradeSummaryText } from '../composables/quantBacktestSummary'
 import { exitReasonLabel, pnlTone, signed } from '../composables/quantFormat'
@@ -19,12 +27,10 @@ const props = defineProps<{
   rangeLabel?: string
 }>()
 
-type TradeFilter = 'all' | 'win' | 'loss'
-
 const metrics = computed(() => props.result.metrics)
 const performance = computed(() => props.result.performance)
 const trades = computed(() => props.result.trades ?? [])
-const tradeFilter = ref<TradeFilter>('all')
+const tradeFilter = ref<string>('all')
 const reasonFilter = ref<string | 'all'>('all')
 
 const equityDates = computed(() => performance.value?.equity_curve?.map((p) => p.date) ?? [])
@@ -57,6 +63,12 @@ const reasonOptions = computed(() => {
   }))
 })
 
+const tradeFilterItems = computed(() => [
+  { name: 'all', label: `全部 ${trades.value.length}` },
+  { name: 'win', label: '盈利' },
+  { name: 'loss', label: '亏损' },
+])
+
 const filteredTrades = computed(() => {
   return trades.value.filter((row) => {
     if (tradeFilter.value === 'win' && !(row.net_return_pct > 0)) return false
@@ -65,6 +77,26 @@ const filteredTrades = computed(() => {
     return true
   })
 })
+
+/**
+ * 表格行先摊平成 `Record<string, unknown>[]` 再交给 BasicTable。
+ * `BacktestTrade` 是 interface（没有隐式索引签名），直接传会被表格的
+ * `dataSource?: Record<string, unknown>[]` 拒收；这里按本地列定义显式列出字段，
+ * 列与字段的对应关系就留在同一屏内。
+ */
+const tradeRows = computed<Record<string, unknown>[]>(() =>
+  filteredTrades.value.map((row) => ({
+    code: row.code,
+    signal_date: row.signal_date,
+    entry_date: row.entry_date,
+    exit_date: row.exit_date,
+    hold_days: row.hold_days,
+    net_return_pct: row.net_return_pct,
+    mfe_pct: row.mfe_pct,
+    mae_pct: row.mae_pct,
+    exit_reason: row.exit_reason,
+  })),
+)
 
 const monthBars = computed(() => {
   const rows = metrics.value.by_month || []
@@ -99,32 +131,41 @@ async function copySummary(): Promise<void> {
     metrics: metrics.value,
     performance: performance.value,
   })
-  if (await copyText(text)) ElMessage.success('已复制摘要')
-  else ElMessage.error('复制失败，请手动选中摘要文本复制')
+  if (await copyText(text)) toast.success('已复制摘要')
+  else toast.error('复制失败，请手动选中摘要文本复制')
 }
 
-function archiveDate(row: BacktestTrade): string {
-  return row.signal_date
-}
+const tradeColumns: BasicTableColumn[] = [
+  { slotName: 'code', label: '代码', width: 100 },
+  { prop: 'signal_date', label: '信号日', width: 108 },
+  { prop: 'entry_date', label: '入场', width: 108 },
+  { prop: 'exit_date', label: '出场', width: 108 },
+  { prop: 'hold_days', label: '持仓', width: 64 },
+  { prop: 'net_return_pct', label: '净收益', width: 96, sortable: true },
+  { prop: 'mfe_pct', label: 'MFE', width: 88 },
+  { prop: 'mae_pct', label: 'MAE', width: 88 },
+  { slotName: 'exit_reason', label: '原因', minWidth: 80 },
+]
 </script>
 
 <template>
   <div class="tr">
     <div class="tr-toolbar">
       <!-- 「便于粘贴到笔记 / 对话」是常驻说明，不占版面：进按钮 tooltip -->
-      <el-tooltip placement="bottom-start" content="复制成纯文本摘要，便于粘贴到笔记或对话">
-        <el-button size="small" @click="copySummary">复制摘要</el-button>
-      </el-tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button access="read" size="sm" @click="copySummary">复制摘要</Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="start">
+          复制成纯文本摘要，便于粘贴到笔记或对话
+        </TooltipContent>
+      </Tooltip>
     </div>
 
-    <el-alert
-      v-if="metrics.caution"
-      :title="metrics.caution"
-      type="warning"
-      :closable="false"
-      show-icon
-      class="tr-alert"
-    />
+    <Alert v-if="metrics.caution" class="tr-alert text-warn">
+      <TriangleAlert />
+      <AlertTitle class="line-clamp-none min-w-0">{{ metrics.caution }}</AlertTitle>
+    </Alert>
 
     <div class="tr-hero">
       <StatCard label="成交笔数" :value="String(metrics.trades ?? 0)" layout="row" />
@@ -166,9 +207,14 @@ function archiveDate(row: BacktestTrade): string {
       -->
       <div class="tr-charts">
         <div class="tr-chart">
-          <el-tooltip placement="top-start" :content="performance.assumption?.description || '顺序复利诊断曲线，非真实多仓账户净值'">
-            <header>诊断资金曲线</header>
-          </el-tooltip>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <header tabindex="0">诊断资金曲线</header>
+            </TooltipTrigger>
+            <TooltipContent side="top" align="start">
+              {{ performance.assumption?.description || '顺序复利诊断曲线，非真实多仓账户净值' }}
+            </TooltipContent>
+          </Tooltip>
           <EquityLineChart
             :dates="equityDates"
             :values="equityValues"
@@ -214,15 +260,18 @@ function archiveDate(row: BacktestTrade): string {
     </p>
 
     <div class="tr-filters">
-      <el-radio-group v-model="tradeFilter" size="small">
-        <el-radio-button value="all">全部 {{ trades.length }}</el-radio-button>
-        <el-radio-button value="win">盈利</el-radio-button>
-        <el-radio-button value="loss">亏损</el-radio-button>
-      </el-radio-group>
-      <el-select v-model="reasonFilter" size="small" style="width: 160px" placeholder="退出原因">
-        <el-option label="全部原因" value="all" />
-        <el-option v-for="opt in reasonOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-      </el-select>
+      <SegmentSwitch v-model="tradeFilter" :items="tradeFilterItems" aria-label="成交筛选" />
+      <Select v-model="reasonFilter">
+        <SelectTrigger size="sm" class="tr-filters__reason" aria-label="退出原因">
+          <SelectValue placeholder="退出原因" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全部原因</SelectItem>
+          <SelectItem v-for="opt in reasonOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
       <span class="tr-filters__n">显示 {{ filteredTrades.length }} 笔</span>
     </div>
 
@@ -234,44 +283,32 @@ function archiveDate(row: BacktestTrade): string {
       v-else-if="!filteredTrades.length"
       description="当前筛选下没有成交"
     />
-    <el-table
+    <BasicTable
       v-else
-      :data="filteredTrades"
+      :columns="tradeColumns"
+      :data-source="tradeRows"
+      :pagination="false"
       size="small"
       stripe
       max-height="320"
       class="tr-table"
     >
-      <el-table-column label="代码" width="100">
-        <template #default="{ row }">
-          <StockLink :code="row.code" :date="archiveDate(row)" stop />
-        </template>
-      </el-table-column>
-      <el-table-column prop="signal_date" label="信号日" width="108" />
-      <el-table-column prop="entry_date" label="入场" width="108" />
-      <el-table-column prop="exit_date" label="出场" width="108" />
-      <el-table-column label="持仓" width="64">
-        <template #default="{ row }">{{ row.hold_days }}</template>
-      </el-table-column>
-      <el-table-column label="净收益" width="96" sortable :sort-method="(a: BacktestTrade, b: BacktestTrade) => a.net_return_pct - b.net_return_pct">
-        <template #default="{ row }">
-          <span :class="pnlTone(row.net_return_pct)">{{ signed(row.net_return_pct) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="MFE" width="88">
-        <template #default="{ row }">
-          <span :class="pnlTone(row.mfe_pct)">{{ signed(row.mfe_pct) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="MAE" width="88">
-        <template #default="{ row }">
-          <span :class="pnlTone(row.mae_pct)">{{ signed(row.mae_pct) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="原因" min-width="80">
-        <template #default="{ row }">{{ exitReasonLabel(row.exit_reason) }}</template>
-      </el-table-column>
-    </el-table>
+      <template #code="{ row }">
+        <StockLink :code="String(row.code ?? '')" :date="String(row.signal_date ?? '')" stop />
+      </template>
+      <template #exit_reason="{ row }">
+        {{ exitReasonLabel(String(row.exit_reason ?? '')) }}
+      </template>
+      <template #net_return_pct="{ row }">
+        <span :class="pnlTone(Number(row.net_return_pct))">{{ signed(Number(row.net_return_pct)) }}</span>
+      </template>
+      <template #mfe_pct="{ row }">
+        <span :class="pnlTone(Number(row.mfe_pct))">{{ signed(Number(row.mfe_pct)) }}</span>
+      </template>
+      <template #mae_pct="{ row }">
+        <span :class="pnlTone(Number(row.mae_pct))">{{ signed(Number(row.mae_pct)) }}</span>
+      </template>
+    </BasicTable>
   </div>
 </template>
 
@@ -369,6 +406,9 @@ function archiveDate(row: BacktestTrade): string {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.55rem 0.75rem;
+}
+.tr-filters__reason {
+  width: 10rem;
 }
 .tr-filters__n {
   font-size: 0.75rem;

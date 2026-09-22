@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 import time
+from functools import wraps
+from threading import RLock
 from typing import Any
 
 from src.ops.application.notify_bark import BarkError, send_bark_text
@@ -23,6 +25,17 @@ from src.ops.application.notify_policy import load_notify_policy
 from src.ops.application.notify import NotifyError, send_wecom_text
 
 logger = logging.getLogger(__name__)
+
+# 分段任务持有同一把可重入锁，单条通知不能插入一份长文的中间。
+delivery_lock = RLock()
+
+
+def ordered_delivery(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with delivery_lock:
+            return fn(*args, **kwargs)
+    return wrapped
 
 #: 走注册表的通道。**不含企微**——企微仍由本模块的旧腿发，两边都发会重复出声
 #: （注册表的 WecomChannel 最终也是调 send_wecom_text）。
@@ -163,6 +176,7 @@ def _dispatch_registry_channels(
     return sent, errors, suppressed
 
 
+@ordered_delivery
 def dispatch_text(
     store: object,
     *,

@@ -1,7 +1,17 @@
 # ADR-006 · 助手富渲染时间线与真流式
 
-- **状态**：Accepted
+- **状态**：Accepted（决策 4 已由后续的 UI 底座拆除取代，见下方追记）
 - **日期**：2026-08-05
+
+> **2026-09 追记（取代决策 4）**：`element-plus`、`@element-plus/icons-vue`、
+> `vue-element-plus-x` 已从仓库整体移除，`main.ts` 不再全局安装 UI 库，组件按需显式 import。
+> 助手层现由 `src/shared/components/ui/app/` 的组件（`ActionButton`、`SidePanel`、
+> `Disclosure` 等）与 `@lucide/vue` 图标承载。
+>
+> 本 ADR 的其它决策**仍然有效**：TurnTimeline 的时序分层（1–3）、跨轮持久化与 HITL（5）、
+> 以及 Artifact 的取数边界（6）。只有「用哪个 UI 库」这一条变了，而且这一条本来就是实现细节。
+> 当前组件落点与令牌约定见
+> [`frontend/docs/ui-component-map.md`](../../frontend/docs/ui-component-map.md)。
 
 ## 背景
 

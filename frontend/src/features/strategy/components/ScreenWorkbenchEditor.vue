@@ -84,20 +84,21 @@ defineExpose({ focusLine, insertText })
   overflow: hidden;
   min-width: 0;
   min-height: 0;
-  background: var(--sheet);
+  background: var(--surface);
 }
 
 .editor-stage__status {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 0.75rem;
-  padding: 0 0.75rem;
-  border-top: 1px solid var(--rule);
-  background: var(--panel-2);
+  gap: var(--gap-3);
+  padding: 0 var(--gap-3);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
   overflow: hidden;
-  color: var(--mist);
-  font: 0.72rem var(--mono);
+  color: var(--text-tertiary);
+  font: var(--fs-kicker) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -124,7 +125,7 @@ defineExpose({ focusLine, insertText })
 }
 
 .editor-stage__status--error .editor-stage__status-left {
-  color: var(--warn);
+  color: var(--warn-ink);
 }
 
 @media (max-width: 640px) {

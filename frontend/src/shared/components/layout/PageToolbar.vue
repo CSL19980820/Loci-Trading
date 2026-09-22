@@ -1,81 +1,163 @@
 <script setup lang="ts">
-/**
- * PageToolbar —— 路由页顶部**唯一**的一条功能行，取代已下线的 PageHeader。
- *
- * 为什么没有标题：页面身份已经由侧栏高亮的菜单项交代完了。在正文顶上再印一遍
- * 「候选池」「复盘中心」，既不导航也不操作，纯占一整行版面——这正是要删掉的东西。
- * 页头存在的意义只剩三件：**筛选、读数、操作**，全部压进这一行。
- *
- * 槽位（从左到右）：
- *   default —— 筛选控件 / 分段切换 / 面包屑，左对齐
- *   stats  —— 行内读数（配 HeaderStat），自动推到右边
- *   actions —— 操作按钮，最右
- *
- * `note` 是口径提示：**不占版面**，只在最右渲染一枚 12px 的 ⓘ，全文进 tooltip。
- * 需要整段说明的一律进 docs，不要塞回界面（见 docs/ui-spec.md 文案规范）。
- *
- * 放在 .page-fill 内、.page-scroll 外，随页固定不滚。
- */
-import { InfoFilled } from '@element-plus/icons-vue'
+import { Info } from '@lucide/vue'
 
+import { Button } from '@/shared/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+
+/**
+ * PageToolbar —— 页头下方的一条功能行：筛选 / 读数 / 操作。
+ *
+ * 不再是满幅的灰底工具条，而是一排「浮在画布上的控件」：透明底、无边框，只靠控件本身分组。
+ * 筛选控件在左；读数（HeaderStat）与操作在右。`note` 只渲染一枚 ⓘ。
+ *
+ * 窄屏按内容自然换行，不为每组控件强占一整行。
+ */
 withDefaults(
   defineProps<{
     /** 一句口径说明；只渲染成一枚 ⓘ，全文在 tooltip 里 */
     note?: string
     /** 紧凑档：给 Tab 页或次级页用 */
     dense?: boolean
-    /** 去掉底部 hairline：下面紧跟 PageTabs / filter-bar 时避免双线 */
+    /** 兼容旧调用；现在工具条本来就没有底线 */
     seamless?: boolean
+    /** 把工具条装进一张面板（带边框与底色）；用在没有页头的页面上 */
+    framed?: boolean
   }>(),
-  { dense: false, seamless: false },
+  { dense: false, seamless: false, framed: false },
 )
 </script>
 
 <template>
-  <!-- 路由页顶部唯一功能行：筛选/读数/操作压进一行，随页固定不滚。note 只渲染一枚 ⓘ -->
   <div
-    class="page-toolbar border-line bg-surface flex min-w-0 min-h-[calc(var(--ctl-h)+var(--gap-2))] flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-[var(--pad-sheet-x)] py-2"
-    :class="{ 'page-toolbar--dense min-h-[var(--ctl-h)] !py-1': dense, 'page-toolbar--seamless border-b-0': seamless }"
+    class="page-toolbar"
+    :class="{ 'page-toolbar--dense': dense, 'page-toolbar--framed': framed }"
   >
-    <div v-if="$slots.default" class="page-toolbar__filters flex min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1">
+    <div v-if="$slots.default" class="page-toolbar__filters">
       <slot />
     </div>
 
-    <div v-if="$slots.stats" class="page-toolbar__stats ml-auto flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+    <div v-if="$slots.stats" class="page-toolbar__stats" :class="{ 'ml-auto': $slots.default }">
       <slot name="stats" />
     </div>
 
-    <div v-if="$slots.actions" class="page-toolbar__actions flex min-w-0 flex-wrap items-center gap-2" :class="{ 'ml-auto': !$slots.stats }">
+    <div
+      v-if="$slots.actions"
+      class="page-toolbar__actions"
+      :class="{ 'ml-auto': !$slots.stats }"
+    >
       <slot name="actions" />
     </div>
-    <el-tooltip
-      v-if="note"
-      :content="note"
-      placement="bottom-end"
-      :show-after="200"
-    >
-      <el-button text circle class="page-toolbar__note text-mist" :class="{ 'ml-auto': !$slots.default && !$slots.stats && !$slots.actions }" aria-label="口径说明">
-        <el-icon><InfoFilled /></el-icon>
-      </el-button>
-    </el-tooltip>
+    <Tooltip v-if="note">
+      <TooltipTrigger as-child>
+        <Button access="read"
+          variant="ghost"
+          size="icon-sm"
+          class="page-toolbar__note"
+          :class="{ 'ml-auto': !$slots.default && !$slots.stats && !$slots.actions }"
+          aria-label="口径说明"
+        >
+          <Info />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="end">{{ note }}</TooltipContent>
+    </Tooltip>
   </div>
 </template>
 
 <style scoped>
 .page-toolbar {
-  border-radius: var(--radius) var(--radius) 0 0;
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2) var(--gap-3);
+  min-width: 0;
+  min-height: var(--ctl-h);
+  padding: var(--gap-2) 0;
 }
+
+.page-toolbar--dense {
+  min-height: var(--ctl-h-sm);
+  padding: var(--gap-2) 0;
+}
+
+/* Wrapped schema filters keep actions alongside the final row of controls. */
+.page-toolbar:has(:deep(.basic-form)) {
+  align-items: flex-end;
+}
+
+.page-toolbar--framed {
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.page-toolbar__filters {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
 .page-toolbar__filters > :deep(*) {
   max-width: 100%;
 }
-.page-toolbar__note.el-button {
-  width: var(--ctl-h);
-  margin: 0;
+
+.page-toolbar__stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2) var(--gap-4);
+  min-width: 0;
 }
+
+.page-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.page-toolbar__note {
+  margin: 0;
+  color: var(--text-tertiary);
+}
+
 @media (max-width: 640px) {
-  .page-toolbar { padding-inline: var(--gap-2); }
-  .page-toolbar__filters { flex: 1 1 100%; }
-  .page-toolbar__stats { margin-inline-start: 0; }
-  .page-toolbar__actions { margin-inline-start: auto; }
+  .page-toolbar {
+    gap: var(--gap-2);
+    padding: var(--gap-2) 0;
+  }
+
+  .page-toolbar__filters {
+    flex: 1 1 auto;
+    gap: 6px;
+  }
+
+  .page-toolbar__stats {
+    flex: 0 1 auto;
+    gap: var(--gap-2) var(--gap-3);
+  }
+
+  .page-toolbar__actions {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .page-toolbar__actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .page-toolbar__actions > :deep(*) {
+    flex-shrink: 0;
+  }
 }
 </style>

@@ -1,4 +1,5 @@
 """基于当前交易员状态的多轮咨询：研究只读，用户实盘描述不写入模拟账户。"""
+from copy import deepcopy
 import json
 import time
 from datetime import datetime
@@ -36,10 +37,15 @@ def answer_consultation(store, ledger, turn):
         'decision_history': history,
         'current_position_policy': guardian_position_policy(ledger.state(), now),
         'current_policy_note': '当前规则仅供当前及未来使用，历史规则以当轮快照为准。',
-        'reviews':[{'date':r['trade_date'],'period':r['period'],'analysis':r['result'].get('analysis')} for r in ledger.reports(3) if r['status']=='success'],
+        'experience': ledger.experience(as_of=now.isoformat())['text'],
+        'reviews':[{'date':r['trade_date'],'period':r['period'],'analysis':{k:v for k,v in (r['result'].get('analysis') or {}).items() if k != 'experience'}} for r in ledger.reports(3) if r['status']=='success'],
         'user_reported_real_context':turn['notes'], 'question':turn['question'],
     }
     account_path = ledger.db_path
+    from src.ops.application.guardian_memory import MEMORY_NOTE
+    snapshot['reviews'] = deepcopy(snapshot['reviews'])
+    snapshot['simulated_account'] = deepcopy(snapshot['simulated_account'])
+    snapshot['historical_material_note'] = MEMORY_NOTE
     schemas, executor, source = compose_research_tools(provider.protocol, primary_loader=agent_tools,
         payload={"portfolio": snapshot["simulated_account"], "as_of": now.isoformat()},
         palace_path=account_path, deadline=deadline, read_only=True)
@@ -82,7 +88,7 @@ def answer_consultation(store, ledger, turn):
             messages.extend([ChatMessage(role='user',content=item['question']),ChatMessage(role='assistant',content=item['result']['answer'])])
         messages.append(ChatMessage(role='user',content=json.dumps(snapshot,ensure_ascii=False)))
         archived_history=True
-    system=cfg['prompt']+'''\n【当前任务：与用户讨论交易】
+    system=str(cfg.get('common_prompt') or '')+'''\n【当前任务：与用户讨论交易】
 你就是当前自主交易员的咨询入口。本次回答自然中文，不输出订单JSON、不执行交易。
 先回答用户担心的核心问题，再结合证据解释是否需要保持、调整或等待，以及判断失效的条件。
 用户可能实际跟单、买价偏差、少买多买或未执行。明确区分用户自述的实际情况与系统模拟账户；不能把模拟股数、成本、可卖数量当成用户实盘。用户没提供关键成本、股数、买入日期时直接说明缺项并追问，不猜测。
@@ -93,13 +99,24 @@ def answer_consultation(store, ledger, turn):
     system += '\n' + POSITION_RULES + '\n' + REPLY_STYLE
     system += '\n' + EVIDENCE_RULES
     last_heartbeat=0.0
+    last_snapshot=0.0
+    partial = {'answer': '', 'model': provider.model, 'as_of': now.isoformat()}
     def progress(event=None):
-        nonlocal last_heartbeat
+        nonlocal last_heartbeat, last_snapshot
         if time.monotonic()>=deadline:
             raise TimeoutError('本次咨询研究超时，请缩小问题或稍后重试')
         if time.monotonic()-last_heartbeat>5:
             ledger.heartbeat_consultation(turn['id'])
             last_heartbeat=time.monotonic()
+        kind = (event or {}).get('type')
+        if kind == 'round_start':
+            # 工具研究的中间文字不能拼到下一轮最终回答中。
+            partial['answer'] = ''
+        elif kind == 'token':
+            partial['answer'] += str(event.get('delta') or '')
+        if kind == 'round_start' or (kind == 'token' and time.monotonic() - last_snapshot >= 0.2):
+            ledger.update_consultation_progress(turn['id'], partial)
+            last_snapshot = time.monotonic()
     usage = {"model": provider.model, "input_tokens": 0, "output_tokens": 0, "rounds": 0, "tool_calls": 0,
              "thinking_requested": cfg.get("thinking") or "provider_default"}
     result=run_accounted_agent(provider,store,usage,system=system,messages=messages,tool_schemas=schemas,tool_executor=execute,
@@ -125,4 +142,7 @@ def run_consultation(tenant, request_id):
             result,messages=answer_consultation(store,ledger,turn)
             ledger.finish_consultation(request_id,result,messages=messages)
         except Exception as exc:
-            ledger.finish_consultation(request_id,{'error':str(exc), 'usage':getattr(exc,'usage',{})})
+            partial = ledger.consultation_turn(turn['conversation_id'], request_id)
+            result = dict((partial or {}).get('result') or {})
+            result.update(error=str(exc), usage=getattr(exc, 'usage', {}))
+            ledger.finish_consultation(request_id, result)

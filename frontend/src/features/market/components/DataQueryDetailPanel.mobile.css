@@ -1,0 +1,21 @@
+@media(max-width:767px) {
+  .tdx-head { flex:none; padding:6px 8px; }
+  .tdx-controls { display:flex; align-items:center; width:100%; flex-wrap:nowrap; gap:6px; }
+  .tdx-controls > .tdx-seg { flex:1; padding:2px; gap:0; }
+  .tdx-controls :deep(.tdx-seg__item) { flex:1; height:32px; min-width:0; font-size:12px; padding-inline:8px; white-space:nowrap; }
+  .tdx-mobile-adjust { height:36px; flex:none; width:91px; font-size:12px; padding-inline:9px; }
+  .tdx-ma-btn { height:36px; padding:0 9px; flex:none; font-size:12px; }
+  .tdx-ma-btn :deep(svg) { width:14px; height:14px; }
+  .tdx-ma-rail { flex:none; display:flex; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin; gap:12px; height:29px; min-height:29px; align-items:center; padding:2px 10px; font-size:11px; }
+  .tdx-ma-rail__item { flex:none; white-space:nowrap; }
+  .tdx-mobile-lock { flex:none; border-bottom:1px solid var(--border-subtle); background:var(--surface-sunken); }
+  .tdx-mobile-lock-toggle { display:flex; width:100%; align-items:center; justify-content:space-between; gap:10px; min-height:34px; padding:4px 10px; font-size:11px; border:0; color:var(--text-secondary); background:transparent; font-variant-numeric:tabular-nums; cursor:pointer; }
+  .tdx-mobile-lock-toggle b { color:var(--text-primary); font-family:var(--mono); margin-left:5px; }
+  .tdx-readout-label { display:flex; align-items:center; gap:4px; }
+  .tdx-readout-label svg.is-open { transform:rotate(180deg); }
+  .tdx-mobile-readout { position:static; width:100%; max-width:none; max-height:none; border:0; border-top:1px solid var(--border-subtle); border-radius:0; box-shadow:none; }
+  .tdx-mobile-readout :deep(.k-readout__head) { display:none; }
+  .tdx-mobile-readout :deep(.k-readout__body) { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px 12px; padding:8px 10px; }
+  .tdx-mobile-readout :deep(.k-readout__row) { font-size:11px; gap:5px; }
+  .tdx-pane { flex-wrap:nowrap; overflow-x:auto; white-space:nowrap; scrollbar-width:none; font-size:10px; gap:6px; padding-left:30px; }
+}

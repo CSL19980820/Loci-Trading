@@ -7,21 +7,22 @@
   min-width: 0;
   overflow: hidden;
   padding: 0;
-  color: var(--ink);
+  color: var(--text-primary);
 }
 .research-content { flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain; }
 .research-section { display: flex; flex-direction: column; gap: var(--gap-2); min-width: 0; padding-bottom: var(--gap-2); }
 .research-section > * { flex-shrink: 0; }
 
 .research-summary {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
 }
 
 /* 行内：kicker 以前是 display:block，硬把标签和它标注的那排 tag 拆成两行 */
 .research-kicker {
-  color: var(--mist);
+  color: var(--text-tertiary);
   font-size: var(--fs-kicker);
   letter-spacing: 0.06em;
   white-space: nowrap;
@@ -41,7 +42,7 @@
   width: 12rem;
 }
 
-.research-query :deep(.el-radio-group) {
+.research-query :deep(.radio-choices) {
   display: flex;
 }
 
@@ -71,8 +72,8 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--gap-1) var(--gap-2);
-  background: var(--sheet-alt);
-  border-inline-end: 1px solid var(--rule);
+  background: var(--surface-sunken);
+  border-inline-end: 1px solid var(--border-subtle);
 }
 
 
@@ -81,7 +82,7 @@
 }
 
 .subject-lockup span:last-child {
-  color: var(--mist);
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
 }
 
@@ -93,10 +94,11 @@ code {
 
 .summary-metric {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 0.25rem;
-  border-inline-end: 1px solid var(--rule);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  border-inline-end: 1px solid var(--border-subtle);
 }
 
 .summary-metric:last-child {
@@ -104,7 +106,7 @@ code {
 }
 
 .summary-metric > span {
-  color: var(--mist);
+  color: var(--text-tertiary);
   font-size: var(--fs-kicker);
 }
 
@@ -136,7 +138,7 @@ code {
   align-items: center;
   gap: 0.4rem;
   padding: 0.75rem 0.9rem;
-  border-block: 1px solid var(--rule);
+  border-block: 1px solid var(--border-subtle);
 }
 
 .source-receipts {

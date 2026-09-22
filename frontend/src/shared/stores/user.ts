@@ -4,25 +4,15 @@ import { defineStore } from 'pinia'
 import {
   getAuthMe,
   getAuthSession,
-  getNotifications,
   logout as apiLogout,
-  markNotificationsRead,
   patchProfile as apiPatchProfile,
 } from '@/shared/api/auth'
 import { toErrorMessage } from '@/shared/lib/errors'
-import type {
-  AnnouncementItem,
-  NotificationItem,
-  UserProfile,
-  UserQuota,
-} from '@/shared/types/auth'
+import type { UserProfile, UserQuota } from '@/shared/types/auth'
 
 export const useUserStore = defineStore('user', () => {
   const user = ref<UserProfile | null>(null)
   const quota = ref<UserQuota | null>(null)
-  const unread = ref<number>(0)
-  const notifications = ref<NotificationItem[]>([])
-  const announcements = ref<AnnouncementItem[]>([])
   const loading = ref<boolean>(false)
   const initialized = ref<boolean>(false)
   const lastError = ref<string>('')
@@ -36,6 +26,9 @@ export const useUserStore = defineStore('user', () => {
 
   const authenticated = computed<boolean>(() => user.value !== null)
   const isAdmin = computed<boolean>(() => user.value?.role === 'admin')
+  /** Unknown/legacy non-admin roles fail closed until the identity migration finishes. */
+  const isVisitor = computed<boolean>(() => authenticated.value && !isAdmin.value)
+  const canWrite = computed<boolean>(() => isAdmin.value)
   const mustChangePassword = computed<boolean>(() => Boolean(user.value?.must_change_password))
 
   /**
@@ -110,46 +103,11 @@ export const useUserStore = defineStore('user', () => {
       const me = await getAuthMe()
       user.value = me.user
       quota.value = me.quota
-      unread.value = me.unread
       available.value = true
     } catch (err: unknown) {
       lastError.value = toErrorMessage(err, '刷新用户信息失败')
     } finally {
       loading.value = false
-    }
-  }
-
-  /**
-   * 拉通知与全站公告。
-   *
-   * 这两条链路以前只建了 api 层没有消费方——管理员发的公告用户永远看不到，
-   * 头像角标恒为 0。壳层挂载后调一次，之后靠 `markRead` 手动同步。
-   */
-  async function loadNotifications(): Promise<void> {
-    if (!user.value) return
-    try {
-      const res = await getNotifications()
-      notifications.value = res.items
-      announcements.value = res.announcements
-      unread.value = res.unread
-    } catch (err: unknown) {
-      // 通知不是主流程，失败只记不弹——弹出来会盖住用户正在做的事。
-      lastError.value = toErrorMessage(err, '加载通知失败')
-    }
-  }
-
-  async function markRead(): Promise<void> {
-    if (!unread.value) return
-    const now = new Date().toISOString()
-    unread.value = 0
-    notifications.value = notifications.value.map((item) =>
-      item.read_at ? item : { ...item, read_at: now },
-    )
-    try {
-      await markNotificationsRead()
-    } catch (err: unknown) {
-      lastError.value = toErrorMessage(err, '标记已读失败')
-      await loadNotifications()
     }
   }
 
@@ -164,9 +122,6 @@ export const useUserStore = defineStore('user', () => {
     } finally {
       user.value = null
       quota.value = null
-      unread.value = 0
-      notifications.value = []
-      announcements.value = []
       loading.value = false
     }
   }
@@ -192,22 +147,19 @@ export const useUserStore = defineStore('user', () => {
   return {
     user,
     quota,
-    unread,
-    notifications,
-    announcements,
     loading,
     initialized,
     lastError,
     available,
     authenticated,
     isAdmin,
+    isVisitor,
+    canWrite,
     mustChangePassword,
     load,
     ensureLoaded,
     revalidateStale,
     refresh,
-    loadNotifications,
-    markRead,
     logout,
     patchProfile,
     setUser,

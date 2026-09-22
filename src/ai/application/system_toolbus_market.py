@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 
 def _json_value(value: Any) -> Any:
@@ -12,21 +13,28 @@ def market_kline(owner: Any, args: dict[str, Any]) -> dict[str, Any]:
     from src.ai.application.system_toolbus import _ok
     from src.market import MarketStore
 
-    title = f"{args['code']} 日 K"
-    owner._artifact("qianlong_kline", title, {"bars": []}, status="loading")
-    with MarketStore(owner.market_db) as store:
-        frame = store.history(
-            str(args["code"]),
-            start=args.get("start"),
-            end=args.get("end"),
-            adjust="qfq",
-        )
-    fields = ["trade_date", "open", "high", "low", "close", "volume", "amount", "turnover"]
-    rows = [
-        {key: _json_value(row.get(key)) for key in fields if key in row}
-        for row in frame.tail(int(args.get("limit", 120))).to_dict("records")
-    ]
-    owner._artifact("qianlong_kline", title, {"bars": rows}, status="ready")
+    code = str(args["code"])
+    artifact_id = f"kline-{uuid4().hex}"
+    title = f"{code} 日 K"
+    payload: dict[str, Any] = {
+        "code": code, "name": "", "period": "day", "adjust": "qfq",
+        "price_unit": "元", "bars": [],
+    }
+    owner._artifact("qianlong_kline", title, {**payload}, status="loading", artifact_id=artifact_id)
+    try:
+        with MarketStore(owner.market_db) as store:
+            payload["name"] = store.instruments_meta([code]).get(code, {}).get("name", "")
+            frame = store.history(code, start=args.get("start"), end=args.get("end"), adjust="qfq")
+        fields = ["trade_date", "open", "high", "low", "close", "volume", "amount", "turnover"]
+        rows = [
+            {key: _json_value(row.get(key)) for key in fields if key in row}
+            for row in frame.tail(int(args.get("limit", 120))).to_dict("records")
+        ]
+    except Exception:
+        owner._artifact("qianlong_kline", title, {**payload, "error": "K线数据读取失败"}, status="error", artifact_id=artifact_id)
+        raise
+    title = f"{payload['name']} {code} · 日 K".strip()
+    owner._artifact("qianlong_kline", title, {**payload, "bars": rows}, status="ready", artifact_id=artifact_id)
     return _ok(rows)
 
 

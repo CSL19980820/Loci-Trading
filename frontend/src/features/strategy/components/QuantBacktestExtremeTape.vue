@@ -70,7 +70,6 @@ function archiveTo(date: string) {
   background: color-mix(in oklab, var(--sheet) 88%, var(--paper));
   min-width: 0;
 }
-/* 原为 border-left: 3px solid --up/--down：涨跌语义收进 __tag（D1 价格红绿），整块只留 hairline 外框 */
 .extreme-tape--best .extreme-tape__tag {
   color: var(--up);
 }
@@ -135,7 +134,6 @@ function archiveTo(date: string) {
   color: var(--mist);
   font-size: var(--fs-body);
 }
-/* 卡片常在双栏回测中，必须按卡片而非整个浏览器的宽度切换。 */
 @container (max-width: 640px) {
   .extreme-tape {
     grid-template-columns: auto 1fr;

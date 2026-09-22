@@ -6,9 +6,23 @@
  * 不会出现「代码里能调、界面上看不到」。值域同样由后端钳边界。
  */
 import { computed, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { LoaderCircle, TriangleAlert } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 
 import { getWatchTuning, resetWatchTuning, saveWatchTuning } from '@/shared/api/quant_ops'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
+import { Label } from '@/shared/components/ui/label'
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from '@/shared/components/ui/number-field'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import { Switch } from '@/shared/components/ui/switch'
+import { confirmAction, confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type {
   WatchTuning,
@@ -55,7 +69,7 @@ async function load(): Promise<void> {
   try {
     apply(await getWatchTuning(props.slug))
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '读取调参失败'))
+    toast.error(toErrorMessage(caught, '读取调参失败'))
   } finally {
     loading.value = false
   }
@@ -66,49 +80,46 @@ async function save(): Promise<void> {
   saving.value = true
   try {
     apply(await saveWatchTuning(props.slug, tuning.value))
-    ElMessage.success('调参已保存')
+    toast.success('调参已保存')
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '保存调参失败'))
+    toast.error(toErrorMessage(caught, '保存调参失败'))
   } finally {
     saving.value = false
   }
 }
 
 async function reset(): Promise<void> {
-  try {
-    await ElMessageBox.confirm('恢复默认档会丢弃本战法的全部调参，继续？', '恢复默认', {
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
+  const ok = await confirmDangerous(
+    '恢复默认档会丢弃本战法的全部调参，继续？',
+    '恢复默认',
+    '恢复默认',
+  )
+  if (!ok) return
   saving.value = true
   try {
     apply(await resetWatchTuning(props.slug))
-    ElMessage.success('已恢复默认档')
+    toast.success('已恢复默认档')
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '恢复默认失败'))
+    toast.error(toErrorMessage(caught, '恢复默认失败'))
   } finally {
     saving.value = false
   }
 }
 
 async function applyPreset(preset: WatchTuningPreset): Promise<void> {
-  try {
-    await ElMessageBox.confirm(
-      `套用「${preset.label}」将覆盖当前全部调参阈值（段开关保留当前值）。\n${preset.summary}\n\n继续？`,
-      '套用调参预设',
-      { type: 'warning', confirmButtonText: '套用', cancelButtonText: '取消' },
-    )
-  } catch {
-    return
-  }
+  const ok = await confirmAction({
+    message: `套用「${preset.label}」将覆盖当前全部调参阈值（段开关保留当前值）。\n${preset.summary}\n\n继续？`,
+    title: '套用调参预设',
+    confirmText: '套用',
+    cancelText: '取消',
+  })
+  if (!ok) return
   saving.value = true
   try {
     apply(await saveWatchTuning(props.slug, { preset: preset.id }))
-    ElMessage.success(`已套用「${preset.label}」，可继续手工微调后保存`)
+    toast.success(`已套用「${preset.label}」，可继续手工微调后保存`)
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '套用预设失败'))
+    toast.error(toErrorMessage(caught, '套用预设失败'))
   } finally {
     saving.value = false
   }
@@ -120,64 +131,76 @@ defineExpose({ load })
 </script>
 
 <template>
-  <div v-loading="loading" class="flex min-w-0 flex-col gap-2">
-    <el-alert
-      v-if="disabledStages.length"
-      type="warning"
-      show-icon
-      :closable="false"
-      class="mb-2 shrink-0"
-      :title="`已关闭 ${disabledStages.map((s) => s.label).join('、')}，按降级口径运行`"
-    />
+  <div class="relative flex min-w-0 flex-col gap-2">
+    <PageBusy :busy="loading" overlay />
+    <Alert v-if="disabledStages.length" class="mb-2 shrink-0 text-warn">
+      <TriangleAlert />
+      <AlertTitle class="line-clamp-none min-w-0">已关闭 {{ disabledStages.map((s) => s.label).join('、') }}，按降级口径运行</AlertTitle>
+    </Alert>
 
     <template v-if="tuning">
       <p v-if="presetOptions.length" class="section dim">调参预设</p>
       <div v-if="presetOptions.length" class="preset-bar mb">
-        <el-button
+        <Button
           v-for="preset in presetOptions"
           :key="preset.id"
-          size="small"
+          variant="outline"
+          size="sm"
           :disabled="!available || saving"
           @click="applyPreset(preset)"
         >
           {{ preset.label }}
-        </el-button>
+        </Button>
         <span class="dim">一键套用后可继续手工微调</span>
       </div>
 
       <p class="section dim">流水线开关</p>
-      <el-form label-position="right" label-width="6.5em" size="small">
-        <el-form-item v-for="stage in stages" :key="stage.key" :label="stage.label">
-          <el-switch
-            v-model="tuning.stages[stage.key as keyof typeof tuning.stages]"
-            :disabled="!available"
-          />
-          <span class="dim hint">{{ stage.hint }}</span>
-        </el-form-item>
-      </el-form>
+      <div class="field-grid">
+        <div v-for="stage in stages" :key="stage.key" class="field">
+          <Label :for="`tuning-stage-${stage.key}`" class="field__label">{{ stage.label }}</Label>
+          <div class="field__control">
+            <Switch
+              :id="`tuning-stage-${stage.key}`"
+              v-model="tuning.stages[stage.key as keyof typeof tuning.stages]"
+              :disabled="!available"
+            />
+            <span class="dim hint">{{ stage.hint }}</span>
+          </div>
+        </div>
+      </div>
 
       <template v-for="group in sections" :key="group.name">
         <p class="section dim">{{ group.label }}</p>
-        <el-form label-position="right" label-width="6.5em" size="small">
-          <el-form-item v-for="field in group.fields" :key="field.key" :label="field.label">
-            <el-input-number
+        <div class="field-grid">
+          <div v-for="field in group.fields" :key="field.key" class="field">
+            <Label :for="`tuning-${group.name}-${field.key}`" class="field__label">{{ field.label }}</Label>
+            <NumberField
               v-model="sectionValues(group.name)[field.key]"
               :step="field.step"
               :min="field.min ?? undefined"
               :max="field.max ?? undefined"
               :disabled="!available"
-              controls-position="right"
               class="num"
-            />
-          </el-form-item>
-        </el-form>
+            >
+              <NumberFieldContent>
+                <NumberFieldInput :id="`tuning-${group.name}-${field.key}`" />
+                <NumberFieldIncrement />
+                <NumberFieldDecrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+        </div>
       </template>
 
       <div class="bar">
-        <el-button type="primary" :loading="saving" :disabled="!available" @click="save">
+        <Button :disabled="!available || saving" @click="save">
+          <LoaderCircle v-if="saving" class="size-4 animate-spin" aria-hidden="true" />
           保存调参
-        </el-button>
-        <el-button :loading="saving" :disabled="!available" @click="reset">恢复默认</el-button>
+        </Button>
+        <Button variant="outline" :disabled="!available || saving" @click="reset">
+          <LoaderCircle v-if="saving" class="size-4 animate-spin" aria-hidden="true" />
+          恢复默认
+        </Button>
         <span class="dim">越界值会被后端钳到合法区间</span>
       </div>
     </template>
@@ -213,5 +236,30 @@ defineExpose({ load })
   align-items: center;
   gap: var(--gap-2);
   flex-wrap: wrap;
+}
+/* 原 el-form 的 label 右对齐两列栅格：label 6.5em + 控件自适应 */
+.field-grid {
+  display: grid;
+  gap: var(--gap-1);
+}
+.field {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--gap-2);
+  min-width: 0;
+}
+.field__label {
+  justify-content: flex-end;
+  text-align: right;
+  color: var(--mist);
+  font-size: var(--fs-aux);
+  font-weight: 400;
+}
+.field__control {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--gap-2);
 }
 </style>

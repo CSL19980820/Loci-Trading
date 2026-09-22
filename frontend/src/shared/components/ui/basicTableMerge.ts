@@ -1,6 +1,6 @@
 import type { BasicTableColumn } from './basicTableTypes'
 
-/** Build el-table span-method from mergeField rules (comma = multi-field key). */
+
 export function createSpanMethod(
   mergeField: string[],
   rows: Record<string, unknown>[],

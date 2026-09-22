@@ -6,22 +6,26 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import closing
 from typing import Any, Callable
 
 from src.ai.infrastructure.client import (
     ChatMessage,
     ChatResponse,
     LLMError,
+    LLMNoReplayError,
+    LLMGenerationInterrupted,
     ProviderConfig,
     ToolCall,
     _anthropic_messages,
     _apply_anthropic_thinking,
     _apply_openai_thinking,
-    _client,
     _openai_messages,
     _redact,
     _safe_json,
 )
+
+from src.ai.infrastructure.stream_deadline import DeadlineStreamClient
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +43,12 @@ def chat_stream(
     tools: list[dict[str, Any]] | None = None,
     thinking: str = "",
     on_delta: StreamDeltaCallback | None = None,
+    first_response_timeout: float | None = None,
+    deadline: float | None = None,
 ) -> ChatResponse:
     """一次流式对话；``on_delta('think'|'token', delta)`` 接收增量。"""
+    transport = DeadlineStreamClient(config, first_response_timeout, deadline, on_delta)
+    on_delta = transport.delta
     if config.protocol == "anthropic":
         return _stream_anthropic(
             config,
@@ -51,6 +59,7 @@ def chat_stream(
             tools,
             thinking=thinking,
             on_delta=on_delta,
+            transport=transport,
         )
     return _stream_openai(
         config,
@@ -61,6 +70,7 @@ def chat_stream(
         tools,
         thinking=thinking,
         on_delta=on_delta,
+        transport=transport,
     )
 
 
@@ -71,15 +81,16 @@ def _emit(on_delta: StreamDeltaCallback | None, kind: str, delta: str) -> None:
 
 def _iter_sse_data_lines(response: Any) -> Any:
     """逐行读取 SSE；只产出 ``data:`` 负载（去掉前缀）。"""
-    for raw in response.iter_lines():
-        if raw is None:
-            continue
-        line = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
-        line = line.strip()
-        if not line or line.startswith(":"):
-            continue
-        if line.startswith("data:"):
-            yield line[5:].strip()
+    with closing(response.iter_lines()) as lines:
+        for raw in lines:
+            if raw is None:
+                continue
+            line = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+            line = line.strip()
+            if not line or line.startswith(":"):
+                continue
+            if line.startswith("data:"):
+                yield line[5:].strip()
 
 
 def _stream_error(response: Any, config: ProviderConfig) -> None:
@@ -99,7 +110,10 @@ def _stream_error(response: Any, config: ProviderConfig) -> None:
         hint = "（API Key 无效或已过期）"
     elif response.status_code == 429:
         hint = "（触发限流，稍后再试）"
-    raise LLMError(f"{config.name} 流式返回 {response.status_code}{hint}：{detail}")
+    error = LLMNoReplayError if getattr(response, "extensions", {}).get("loci_transport") == b"grpc" else LLMError
+    if response.status_code in {408, 429, 500, 502, 503, 504}:
+        error = LLMGenerationInterrupted
+    raise error(f"{config.name} 流式返回 {response.status_code}{hint}：{detail}")
 
 
 def _openai_reasoning_delta(delta: dict[str, Any]) -> str:
@@ -126,6 +140,7 @@ def _stream_openai(
     *,
     thinking: str,
     on_delta: StreamDeltaCallback | None,
+    transport: DeadlineStreamClient,
 ) -> ChatResponse:
     body: dict[str, Any] = {
         "model": config.model,
@@ -149,7 +164,7 @@ def _stream_openai(
     raw_chunks: list[dict[str, Any]] = []
     finish_reason = ""
 
-    with _client(config) as client:
+    with transport as client:
         try:
             with client.stream(
                 "POST",
@@ -160,9 +175,9 @@ def _stream_openai(
                     "Accept": "text/event-stream",
                 },
                 json=body,
-            ) as response:
+            ) as response, closing(_iter_sse_data_lines(response)) as payloads:
                 _stream_error(response, config)
-                for payload in _iter_sse_data_lines(response):
+                for payload in payloads:
                     if payload == "[DONE]":
                         break
                     try:
@@ -203,6 +218,8 @@ def _stream_openai(
                     for item in delta.get("tool_calls") or []:
                         if not isinstance(item, dict):
                             continue
+                        if transport.first_deadline is not None and (item.get("id") or item.get("function")):
+                            _emit(on_delta, "tool_delta", "received")
                         idx = int(item.get("index", 0) or 0)
                         slot = tool_acc.setdefault(idx, {"id": "", "name": "", "arguments": ""})
                         if item.get("id"):
@@ -220,6 +237,8 @@ def _stream_openai(
                 f"{_redact(str(exc), config.api_key)}"
             ) from exc
 
+    if transport.first_deadline is not None and not finish_reason:
+        raise LLMGenerationInterrupted("模型流在结束标记前中断，未采用不完整输出")
     calls = [
         ToolCall(
             id=slot["id"],
@@ -250,6 +269,7 @@ def _stream_anthropic(
     *,
     thinking: str,
     on_delta: StreamDeltaCallback | None,
+    transport: DeadlineStreamClient,
 ) -> ChatResponse:
     body: dict[str, Any] = {
         "model": config.model,
@@ -271,7 +291,7 @@ def _stream_anthropic(
     event_count = 0
     finish_reason = ""
 
-    with _client(config) as client:
+    with transport as client:
         try:
             with client.stream(
                 "POST",
@@ -283,9 +303,9 @@ def _stream_anthropic(
                     "Accept": "text/event-stream",
                 },
                 json=body,
-            ) as response:
+            ) as response, closing(_iter_sse_data_lines(response)) as payloads:
                 _stream_error(response, config)
-                for payload in _iter_sse_data_lines(response):
+                for payload in payloads:
                     try:
                         event = json.loads(payload)
                     except json.JSONDecodeError:
@@ -304,6 +324,8 @@ def _stream_anthropic(
                         index = int(event.get("index", 0) or 0)
                         block = event.get("content_block") or {}
                         if block.get("type") == "tool_use":
+                            if transport.first_deadline is not None:
+                                _emit(on_delta, "tool_delta", "received")
                             tool_blocks[index] = {
                                 "id": str(block.get("id") or ""),
                                 "name": str(block.get("name") or ""),
@@ -342,6 +364,8 @@ def _stream_anthropic(
                 f"{_redact(str(exc), config.api_key)}"
             ) from exc
 
+    if transport.first_deadline is not None and not finish_reason:
+        raise LLMGenerationInterrupted("模型流在结束标记前中断，未采用不完整输出")
     calls = [
         ToolCall(
             id=str(slot["id"]),

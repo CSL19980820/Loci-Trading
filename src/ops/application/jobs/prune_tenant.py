@@ -44,6 +44,8 @@ from src.ops.application.ensure_prune_tenant_job import DEFAULT_PRUNE_TENANT_CON
 from src.shared.paths import research_runs_dir, skill_runs_dir
 from src.shared.sqlite_retention import segment
 from src.shared.tenancy import current_tenant
+from src.ops.domain.retention_policy import RetentionPolicy
+from src.ops.application.retention_settings import saved_policy
 
 #: 当前租户 ops.db 里按**纯时间**截断的只追加表：``(表, 时间列, 是否纯日期列)``。
 #:
@@ -76,16 +78,24 @@ def _int(config: dict[str, Any], key: str) -> int:
 
 def _prune_tables(
     store: Any, *, keep_days: int, run_keep_min: int, run_keep_max: int,
-    session_keep: int, batch: int,
+    session_keep: int, batch: int, policy: RetentionPolicy | None = None,
 ) -> dict[str, Any]:
     """清 ops.db 里的全部只追加表。每张各自 try，单张失败不带走其余。"""
     out: dict[str, Any] = {}
+    if policy is not None:
+        run_keep_min, run_keep_max = policy.job_keep_min, policy.job_keep_max
+        session_keep = policy.ai_session_keep
+    ages = {} if policy is None else {
+        "monitor_runs": policy.monitor_days, "alert_hits": policy.alert_days,
+        "ai_decisions": policy.decision_days, "leader_role_snapshots": policy.leader_days,
+        "mcp_quota": policy.quota_days,
+    }
     out["job_runs"] = segment(
         "job_runs",
         lambda: store.prune_runs_windowed(
             keep_min=run_keep_min,
             keep_max=run_keep_max,
-            keep_days=keep_days,
+            keep_days=policy.job_days if policy else keep_days,
             batch=batch,
         ),
     )
@@ -93,7 +103,7 @@ def _prune_tables(
         out[table] = segment(
             table,
             lambda t=table, c=column, d=date_only: store.prune_by_age(
-                t, c, keep_days=keep_days, batch=batch, date_only=d
+                t, c, keep_days=ages.get(t, keep_days), batch=batch, date_only=d
             ),
         )
     # AI 助手八张表在同一个 ops.db 里，复用同一条连接（别再开一条去抢写锁）。
@@ -102,8 +112,8 @@ def _prune_tables(
     out.update(
         purge_ai_retention(
             store.conn,
-            event_days=keep_days,
-            grant_days=keep_days,
+            event_days=policy.ai_event_days if policy else keep_days,
+            grant_days=policy.ai_grant_days if policy else keep_days,
             session_keep=session_keep,
             batch=batch,
         )
@@ -111,19 +121,19 @@ def _prune_tables(
     return out
 
 
-def _prune_artifacts(*, keep_days: int, max_delete: int) -> dict[str, Any]:
+def _prune_artifacts(*, keep_days: int, max_delete: int, policy: RetentionPolicy | None = None) -> dict[str, Any]:
     """清落在磁盘上的 run 产物。删不掉是磁盘问题，不该让整轮红掉。"""
     return {
         "skill_runs": segment(
             "skill_runs",
             lambda: prune_skill_runs(
-                skill_runs_dir(), keep_days=keep_days, max_delete=max_delete
+                skill_runs_dir(), keep_days=policy.skill_days if policy else keep_days, max_delete=max_delete
             ),
         ),
         "research_runs": segment(
             "research_runs",
             lambda: prune_research_runs(
-                research_runs_dir(), keep_days=keep_days, max_delete=max_delete
+                research_runs_dir(), keep_days=policy.research_days if policy else keep_days, max_delete=max_delete
             ),
         ),
     }
@@ -173,6 +183,9 @@ def execute_prune_tenant(config: dict[str, Any], context: JobContext) -> dict[st
     store = context.ops_store
     if store is None:
         raise JobError("缺少运维库连接")
+    policy = saved_policy(store) if callable(getattr(store, "get_setting", None)) else None
+    if policy is not None and not policy.enabled:
+        return {"skipped": "保留策略已暂停", "tenant": current_tenant()}
     tenant = current_tenant()
     keep_days = max(0, _int(config, "keep_days"))
     batch = max(1, _int(config, "batch"))
@@ -186,9 +199,9 @@ def execute_prune_tenant(config: dict[str, Any], context: JobContext) -> dict[st
         run_keep_min=_int(config, "run_keep_min"),
         run_keep_max=_int(config, "run_keep_max"),
         session_keep=session_keep,
-        batch=batch,
+        batch=batch, policy=policy,
     )
-    artifacts = _prune_artifacts(keep_days=keep_days, max_delete=max_delete)
+    artifacts = _prune_artifacts(keep_days=keep_days, max_delete=max_delete, policy=policy)
     after = tenant_storage_usage(tenant)
 
     limit_mb, source = _resolve_storage_mb(config, tenant)
@@ -206,6 +219,11 @@ def execute_prune_tenant(config: dict[str, Any], context: JobContext) -> dict[st
         # 删行不会让文件变小；缩文件要显式 VACUUM，不在本任务里做。见模块头。
         "vacuum": "not_run",
     }
+    if policy is not None:
+        # Explicit user retention must never be silently shortened by quota mode.
+        payload["policy"] = policy.model_dump()
+        payload["over_quota"] = limit_mb > 0 and after["mb"] > limit_mb
+        return payload
     if limit_mb <= 0 or after["mb"] <= limit_mb:
         return payload
 

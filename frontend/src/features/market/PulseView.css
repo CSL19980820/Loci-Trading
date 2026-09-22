@@ -1,31 +1,65 @@
+.pulse-home__title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.pulse-home__session {
+  align-self: center;
+  font-size: var(--fs-aux);
+  padding: 2px 10px;
+  flex: 0 0 auto;
+}
+
+/* 盘面状态右侧：时段名在徽标里，倒计时紧跟其后；页头动作区左侧是库内快照时间 */
+.pulse-home__session-time,
+.pulse-home__clock {
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
 .pulse-home__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
+  gap: var(--gap-4);
 }
-.pulse-home__upper {
-  display: grid;
-  grid-template-columns: minmax(0, 1.68fr) minmax(0, 0.92fr);
-  gap: var(--gap-2);
-  flex: 1.35 1 0;
-  min-height: 13rem;
+
+/*
+ * .page-scroll 是 flex 列且自身可滚：子项默认 flex-shrink:1，内容一多就被压扁而不是溢出滚动。
+ * 所以固定块（状态条 / 报价带 / 情报）都 flex:0 0 auto，让它们保持本高。
+ */
+.pulse-home__body > * {
+  flex: 0 0 auto;
 }
-.pulse-home__today {
+
+/*
+ * 两张表平分剩余高度：页面本身不滚，各自在面板内部滚。
+ * min-height 是「窗口太矮」时的兜底——此时外层容器才允许出现滚动条。
+ * 只有窄屏（≤980）才回退成定高，避免窗口一窄就被内容撑开。
+ */
+.pulse-home__body > .pulse-home__track,
+.pulse-home__body > .pulse-home__agents {
   flex: 1 1 0;
-  min-height: 13rem;
+  min-height: 180px;
 }
+
 @media (max-width: 980px) {
-  .pulse-home__upper {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: repeat(2, minmax(14rem, 1fr));
+  .pulse-home__body > .pulse-home__track,
+  .pulse-home__body > .pulse-home__agents {
     flex: 0 0 auto;
-    min-height: calc(28rem + var(--gap-2));
+    height: 400px;
   }
-  .pulse-home__today {
-    flex: 0 0 14rem;
-    min-height: 14rem;
+}
+
+@media (max-width: 640px) {
+  .pulse-home__body {
+    gap: var(--gap-3);
+  }
+
+  .pulse-home__body > .pulse-home__track,
+  .pulse-home__body > .pulse-home__agents {
+    height: auto;
   }
 }

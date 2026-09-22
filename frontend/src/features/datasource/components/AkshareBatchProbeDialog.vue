@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { ProgressMeter, StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed } from 'vue'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
@@ -30,7 +34,7 @@ const columns: BasicTableColumn[] = [
   { prop: 'ok', label: '结果', width: 88, align: 'center', headerAlign: 'center', slotName: 'status' },
   { prop: 'elapsed_ms', label: '响应', width: 100, align: 'center', headerAlign: 'center', slotName: 'rtt' },
   { prop: 'rows', label: '行数', width: 72, align: 'center', headerAlign: 'center', formatter: (row) => (row.rows == null ? '—' : String(row.rows)) },
-  { prop: 'error', label: '说明', minWidth: 220, align: 'left', headerAlign: 'left', showOverflowTooltip: true, slotName: 'error' },
+  { prop: 'error', label: '说明', minWidth: 220, align: 'center', headerAlign: 'center', showOverflowTooltip: true, slotName: 'error' },
 ]
 
 function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger' | 'info'; text: string } {
@@ -41,7 +45,7 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="open"
     title="一键全测"
     class="batch-probe-dialog"
@@ -50,7 +54,7 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
     :close-on-click-modal="!busy"
   >
     <div class="batch-head flex min-w-0 flex-col gap-2">
-      <el-progress aria-label="批量探测进度" :percentage="percent" :status="busy ? undefined : percent >= 100 ? 'success' : undefined" />
+      <ProgressMeter aria-label="批量探测进度" :percentage="percent" :status="busy ? undefined : percent >= 100 ? 'success' : undefined" />
       <p class="batch-readout">
         进度 <b>{{ progress.done }}</b> / {{ progress.total || '—' }}
         <span class="sep">·</span>通 <b class="ok">{{ progress.ok }}</b>
@@ -71,7 +75,7 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
       class="batch-table"
     >
       <template #status="{ row }">
-        <el-tag size="small" :type="statusLabel(row).type">{{ statusLabel(row).text }}</el-tag>
+        <StatusBadge size="small" :tone="statusLabel(row).type">{{ statusLabel(row).text }}</StatusBadge>
       </template>
       <template #rtt="{ row }">
         <span class="mono">{{ row.elapsed_ms == null ? '—' : `${Math.round(Number(row.elapsed_ms))} ms` }}</span>
@@ -82,17 +86,16 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
     </BasicTable>
 
     <template #footer>
-      <el-button v-if="busy" type="danger" plain @click="emit('stop')">停止</el-button>
-      <el-button type="primary" @click="open = false">{{ busy ? '后台继续' : '关闭' }}</el-button>
+      <ActionButton v-if="busy" tone="danger" plain @click="emit('stop')">停止</ActionButton>
+      <ActionButton access="read" tone="primary" @click="open = false">{{ busy ? '后台继续' : '关闭' }}</ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>
 .batch-head { gap: var(--gap-2); margin-bottom: var(--gap-3); padding: var(--gap-3); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface-sunken); }
 .batch-readout { margin: 0; font-size: var(--fs-aux); color: var(--mist); }
 .batch-readout b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
-/* 通/败是探测结果，不是涨跌：走状态色，不借 --up / --down（D1） */
 .batch-readout .ok { color: var(--info); }
 .batch-readout .bad { color: var(--warn); }
 .sep { margin: 0 var(--gap-1); color: var(--rule); }
@@ -100,6 +103,6 @@ function statusLabel(row: Record<string, unknown>): { type: 'success' | 'danger'
 .is-fail { color: var(--warn); }
 /* 高度内容驱动：结果少时表就矮，不再用 min-height 撑出 360px 空表 */
 .batch-table { min-height: 0; }
-.batch-probe-dialog :deep(.el-dialog__body) { max-height: 70dvh; overflow: auto; overscroll-behavior: contain; }
-.batch-probe-dialog :deep(.el-dialog__footer) { border-top: 1px solid var(--rule); padding-top: var(--gap-3); }
+.batch-probe-dialog :deep(.dialog-panel__body) { max-height: 70dvh; overflow: auto; overscroll-behavior: contain; }
+.batch-probe-dialog :deep(.dialog-panel__footer) { border-top: 1px solid var(--rule); padding-top: var(--gap-3); }
 </style>

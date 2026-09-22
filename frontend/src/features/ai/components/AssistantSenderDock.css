@@ -1,42 +1,356 @@
+/* 输入区（ChatGPT / Claude composer 一路）：整块透明，真正的「框」是 __box */
 .assistant-sender {
-  display: flex; flex-direction: column; width: 100%; max-width: 100%; min-width: 0; margin: 0; overflow: hidden;
-  border: 1px solid var(--border-default); border-radius: var(--ai-r-card); background: var(--surface-raised);
-  transition: border-color var(--dur-fast);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
 }
-.assistant-sender:focus-within { border-color: var(--seal); outline: 1px solid var(--seal-border); }
-.assistant-sender.is-generating { border-color: var(--seal-border); }
-.assistant-sender__skill, .assistant-sender__previews { display: flex; flex-wrap: wrap; gap: var(--gap-2); padding: var(--gap-2) var(--gap-3) 0; }
-.assistant-sender__slash { display: flex; flex-direction: column; gap: var(--gap-1); max-height: min(26dvh, 12rem); overflow: auto; margin: var(--gap-2) var(--gap-2) 0; padding: var(--gap-1); border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface-sunken); scrollbar-width: thin; }
-.assistant-sender__slash-item { display: flex; justify-content: flex-start; width: 100%; height: auto; margin: 0; padding: var(--gap-2); border: 0; border-radius: var(--ai-r-chip); background: transparent; color: var(--ink); text-align: left; white-space: normal; }
-.assistant-sender__slash-item.is-active, .assistant-sender__slash-item:hover { background: var(--surface-active); }
-.assistant-sender__slash-copy { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap-1); min-width: 0; }
-.assistant-sender__slash-copy strong { font: 600 var(--ai-fs-body) var(--mono); }
-.assistant-sender__slash-copy span { font-size: var(--ai-fs-body); font-weight: 600; }
-.assistant-sender__slash-copy small { color: var(--mist); font-size: var(--ai-fs-aux); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.assistant-sender__preview { position: relative; width: calc(var(--ctl-h) + var(--gap-4)); height: calc(var(--ctl-h) + var(--gap-4)); overflow: hidden; border: 1px solid var(--rule); border-radius: var(--ai-r-card); background: var(--surface-sunken); }
-.assistant-sender__preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.assistant-sender__preview-remove { position: absolute; top: 0; right: 0; width: var(--row-h-sm) !important; height: var(--row-h-sm) !important; min-height: 0 !important; padding: 0 !important; font-size: var(--ai-fs-body); }
-/* 原生 file input 仅承接系统文件选择器，交互入口为上方 EP 上传按钮。 */
-.assistant-sender__file { display: none; }
-.assistant-sender__x { width: 100%; border: none !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; }
-.assistant-sender__x :deep(.elx-x-sender__content) { align-items: stretch !important; padding: var(--gap-2) var(--gap-3) !important; }
-.assistant-sender__x :deep(.elx-x-sender__chat .chat-rich-text), .assistant-sender__x :deep(.elx-x-sender__chat-room) {
-  /* 编辑器显示 1—6 行，其余内容在自身滚动区内。 */
-  min-height: var(--ctl-h); max-height: calc(var(--ctl-h) * 4); font-size: var(--ai-fs-prose); line-height: 1.55;
+
+/* ─── 圆角 16 的输入框：文本区 + 底部工具行 ─── */
+.assistant-sender__box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
 }
-.assistant-sender__x :deep(.elx-x-sender__action-list) { display: none !important; }
-.assistant-sender__bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--gap-2); min-width: 0; padding: var(--gap-2); border-top: 1px solid var(--rule-soft); background: var(--surface); }
-.assistant-sender__bar-left { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: var(--gap-2); }
-.assistant-sender__bar-left > .el-button { flex-shrink: 0; }
-.assistant-sender__bar-left :deep(.assistant-runtime) { flex: 1 1 auto; min-width: 0; }
-.assistant-sender__actions { display: flex; flex: 0 0 auto; align-items: center; gap: var(--gap-2); margin-left: auto; max-width: 100%; }
-.assistant-sender__hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--mist); font-size: var(--ai-fs-meta); white-space: nowrap; }
-.assistant-sender__hint:empty { display: none; }
-.assistant-sender :deep(button:focus-visible) { outline: 2px solid var(--seal); outline-offset: -2px; }
+
+.assistant-sender:focus-within .assistant-sender__box {
+  border-color: var(--focus-ring);
+  box-shadow:
+    0 0 0 3px var(--focus-halo),
+    var(--shadow-sm);
+}
+
+.assistant-sender.is-generating .assistant-sender__box {
+  border-color: var(--seal-border);
+}
+
+.assistant-sender.is-locked .assistant-sender__box {
+  background: var(--surface);
+}
+
+/* ─── 附件 / 技能 chip 行（在文本区上方） ─── */
+.assistant-sender__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3) 0;
+}
+
+.assistant-sender__skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--seal-border);
+  border-radius: var(--radius-pill);
+  background: var(--seal-soft);
+  color: var(--seal-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+}
+
+.assistant-sender__skill-chip > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.assistant-sender__skill-close {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.assistant-sender__skill-close:hover {
+  background: color-mix(in oklab, var(--seal) 18%, transparent);
+}
+
+.assistant-sender__skill-close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.assistant-sender__previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-2);
+}
+
+.assistant-sender__preview {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.assistant-sender__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.assistant-sender__preview-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--n-12) 70%, transparent);
+  color: #fff;
+  cursor: pointer;
+}
+
+.assistant-sender__preview-remove svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* 原生 file input 仅承接系统文件选择器，交互入口为上方上传按钮。 */
+.assistant-sender__file {
+  display: none;
+}
+
+/* ─── 文本区：1–6 行自增，超过内滚；边框与聚焦反馈由 __box 承担 ─── */
+.assistant-sender__input {
+  min-height: 44px;
+  max-height: calc(1.6em * 6 + 20px);
+  padding: 12px var(--gap-4) 4px;
+  border: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+  font-size: var(--ai-fs-prose);
+  line-height: 1.6;
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content;
+  scrollbar-width: thin;
+}
+
+.assistant-sender__input:focus-visible {
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.assistant-sender__input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ─── 底部工具行：左侧附件 + 模型 / 思考档，右侧用量环 + 发送 ─── */
+.assistant-sender__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  min-width: 0;
+  padding: 4px var(--gap-2) var(--gap-2) var(--gap-2);
+}
+
+.assistant-sender__bar-left {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assistant-sender__attach {
+  color: var(--text-tertiary);
+}
+
+.assistant-sender__bar-left :deep(.assistant-runtime) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.assistant-sender__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gap-2);
+  margin-left: auto;
+  max-width: 100%;
+}
+
+.assistant-sender__send {
+  border-radius: 50%;
+  transition:
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease),
+    opacity var(--dur-fast) var(--ease);
+}
+
+.assistant-sender__send:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.assistant-sender__send:disabled {
+  background: var(--surface-active);
+  color: var(--text-disabled);
+  box-shadow: none;
+  opacity: 1;
+}
+
+/* 中止不是破坏性操作：中性描边 + 实心小方块 */
+.assistant-sender__stop {
+  border-radius: 50%;
+  color: var(--text-primary);
+}
+
+.assistant-sender__stop:hover {
+  background: var(--surface-active);
+}
+
+.assistant-sender__hint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.assistant-sender__hint:empty {
+  display: none;
+}
+
+/* ─── 斜杠技能菜单：浮在输入框上方 ─── */
+.assistant-sender__slash {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: min(30dvh, 14rem);
+  padding: var(--gap-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-md);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.assistant-sender__slash-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-2);
+  width: 100%;
+  min-height: 36px;
+  margin: 0;
+  padding: 6px var(--gap-2);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistant-sender__slash-item.is-active,
+.assistant-sender__slash-item:hover {
+  background: var(--surface-hover);
+}
+
+.assistant-sender__slash-slug {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--seal-soft);
+  color: var(--seal-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+}
+
+.assistant-sender__slash-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.assistant-sender__slash-copy > span {
+  font-size: var(--fs-ui);
+  font-weight: 500;
+}
+
+.assistant-sender__slash-copy small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+  line-height: 1.4;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.assistant-sender :deep(button:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 @container (max-width: 520px) {
-  .assistant-sender__bar-left, .assistant-sender__actions { width: 100%; }
-  .assistant-sender__actions { justify-content: flex-end; }
-  .assistant-sender__actions :deep(.ctx-usage) { margin-right: auto; }
+  .assistant-sender__hint {
+    display: none;
+  }
 }
-@media (max-width: 639px) { .assistant-sender__bar-left, .assistant-sender__actions { width: 100%; } .assistant-sender__actions { justify-content: flex-end; } .assistant-sender__actions :deep(.ctx-usage) { margin-right: auto; } }
-@media (prefers-reduced-motion: reduce) { .assistant-sender { transition: none; } }
+
+@media (max-width: 767px) {
+  .assistant-sender__bar { flex-wrap:nowrap; gap:2px; padding:4px 6px 6px; }
+  .assistant-sender__bar-left { flex:1 1 0%; min-width:0; gap:1px; }
+  .assistant-sender__actions { flex:none; gap:2px; margin-left:0; }
+  .assistant-sender__attach,.assistant-sender__send,.assistant-sender__stop { flex:none; width:36px; min-width:36px; height:36px; padding:0; }
+  .assistant-sender__actions :deep(.ctx-usage__trigger) { width:28px; min-width:28px; height:36px !important; padding:0 !important; justify-content:center; }
+  .assistant-sender__actions :deep(.ctx-usage__pct) { display:none; }
+  .assistant-sender:focus-within .assistant-sender__box { box-shadow:0 0 0 1px var(--focus-halo); }
+  .assistant-sender__input {
+    padding: 12px var(--gap-3) 4px;
+    font-size: 16px; /* iOS 聚焦不放大 */
+    min-height:48px;
+    max-height:min(24dvh,144px);
+  }
+
+  .assistant-sender__hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-sender__box,
+  .assistant-sender__send {
+    transition: none;
+  }
+}

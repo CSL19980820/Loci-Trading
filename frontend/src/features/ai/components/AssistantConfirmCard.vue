@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 
 import {
@@ -119,15 +124,15 @@ onUnmounted(() => {
     :aria-label="ask?.prompt || '等待你的确认'"
   >
     <header class="assistant-ask__head">
-      <el-tooltip :content="interactionHint" placement="top">
+      <HintTooltip :content="interactionHint" placement="top">
         <span class="assistant-ask__mark" role="img" tabindex="0" :aria-label="interactionHint">?</span>
-      </el-tooltip>
+      </HintTooltip>
       <p class="assistant-ask__prompt">
         {{ ask?.prompt || (multi ? '请回答下列问题' : '等待你的确认') }}
       </p>
-      <el-tag v-if="ask?.risk" size="small" type="warning" effect="plain" class="assistant-ask__risk">
+      <StatusBadge v-if="ask?.risk" size="small" tone="warning" effect="plain" class="assistant-ask__risk">
         {{ ask.risk }}
-      </el-tag>
+      </StatusBadge>
     </header>
 
     <div v-if="multi" class="assistant-ask__questions" data-testid="assistant-confirm-questions">
@@ -143,20 +148,20 @@ onUnmounted(() => {
           {{ question.prompt }}
         </p>
         <div v-if="question.options?.length" class="assistant-ask__rail">
-          <el-button
+          <ActionButton
             v-for="(option, index) in question.options"
             :key="`${question.id}-${index}-${option}`"
             class="assistant-ask__chip"
             size="small"
-            :type="answers[question.id] === option ? 'primary' : 'default'"
+            :tone="answers[question.id] === option ? 'primary' : 'default'"
             :aria-pressed="answers[question.id] === option"
             @click="setAnswer(question.id, option)"
           >
             <span class="assistant-ask__chip-idx" aria-hidden="true">{{ index + 1 }}</span>
             {{ option }}
-          </el-button>
+          </ActionButton>
         </div>
-        <el-input
+        <TextField
           v-if="question.allow_free_text || !question.options?.length"
           v-model="answers[question.id]"
           :aria-label="question.prompt"
@@ -172,14 +177,14 @@ onUnmounted(() => {
         {{ submitError }}
       </p>
       <div class="assistant-ask__actions">
-        <el-button type="primary" data-testid="assistant-confirm-submit" @click="submitAll">
+        <ActionButton tone="primary" data-testid="assistant-confirm-submit" @click="submitAll">
           提交全部
-        </el-button>
+        </ActionButton>
       </div>
     </div>
 
     <div v-else-if="ask?.options?.length" class="assistant-ask__rail">
-      <el-button
+      <ActionButton
         v-for="(option, index) in ask.options"
         :key="`${index}-${option}`"
         class="assistant-ask__chip"
@@ -188,7 +193,7 @@ onUnmounted(() => {
       >
         <span class="assistant-ask__chip-idx" aria-hidden="true">{{ index + 1 }}</span>
         {{ option }}
-      </el-button>
+      </ActionButton>
     </div>
   </section>
 </template>
@@ -207,9 +212,8 @@ onUnmounted(() => {
 .assistant-ask__q-idx { display: inline-grid; place-items: center; min-width: var(--gap-4); margin-right: var(--gap-1); font: var(--ai-fs-meta) var(--mono); color: var(--mist); }
 .assistant-ask__rail { display: flex; flex-wrap: wrap; gap: var(--gap-2); margin-top: var(--gap-3); }
 .assistant-ask__question .assistant-ask__rail { margin-top: 0; }
-.assistant-ask__chip { --el-button-bg-color: var(--surface); --el-button-border-color: var(--border-default); --el-button-text-color: var(--ink); --el-button-hover-bg-color: var(--seal-soft); --el-button-hover-border-color: var(--seal-border); --el-button-hover-text-color: var(--ink); height: auto; min-height: var(--ctl-h); margin: 0; padding: var(--gap-2); max-width: 100%; white-space: normal; text-align: left; }
+.assistant-ask__chip { height: auto; min-height: var(--ctl-h); margin: 0; padding: var(--gap-2); max-width: 100%; white-space: normal; text-align: left; }
 .assistant-ask__chip :deep(> span) { line-height: 1.5; overflow-wrap: anywhere; }
-.assistant-ask__chip.el-button--primary { --el-button-bg-color: var(--seal-soft); --el-button-border-color: var(--seal); --el-button-text-color: var(--seal-ink); }
 .assistant-ask__chip-idx { flex-shrink: 0; display: inline-grid; place-items: center; min-width: var(--gap-4); margin-right: var(--gap-2); font: var(--ai-fs-meta) var(--mono); color: var(--mist); }
 .assistant-ask__free { margin-top: var(--gap-2); }
 .assistant-ask__error { margin: 0; color: var(--warn-ink); font-size: var(--ai-fs-body); }

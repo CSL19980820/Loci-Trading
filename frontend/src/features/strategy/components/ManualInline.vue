@@ -34,7 +34,7 @@ function safeHref(href: string): string {
 .md-inline-code {
   padding: 0.05em 0.3em;
   border-radius: 3px;
-  background: var(--el-fill-color-light);
+  background: var(--surface-sunken);
   font-family: var(--mono);
   font-size: 0.92em;
 }

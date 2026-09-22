@@ -1,9 +1,12 @@
 <script setup lang="ts">
 /**
- * 一行异常条：正常时父级不渲染它，出错也只占一行。
- * 全文进 popover——四条 el-alert 叠在页头把主内容顶下去的日子结束了。
+ * 异常条：正常时父级不渲染它，出错也只占一行——左侧琥珀色条 + 一句话 + 详情/重试。
  */
 import { computed } from 'vue'
+import { LoaderCircle, TriangleAlert } from '@lucide/vue'
+
+import { Button } from '@/shared/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/shared/components/ui/popover'
 
 export interface PulseIssue {
   key: string
@@ -32,20 +35,27 @@ const headline = computed(() => {
 
 <template>
   <div v-if="issues.length" class="pulse-issues" role="status">
-    <span class="pulse-issues__mark" aria-hidden="true">!</span>
+    <TriangleAlert class="pulse-issues__mark" aria-hidden="true" />
     <span class="pulse-issues__text">{{ headline }}</span>
-    <el-popover placement="bottom-start" width="min(380px, calc(100vw - 32px))" trigger="click">
-      <template #reference>
-        <el-button link type="primary" size="small">看报错详情</el-button>
-      </template>
-      <ul class="pulse-issues__list">
-        <li v-for="issue in issues" :key="issue.key">
-          <strong>{{ issue.label }}</strong>
-          <span>{{ issue.detail }}</span>
-        </li>
-      </ul>
-    </el-popover>
-    <el-button link size="small" :loading="busy" @click="emit('retry')">重试</el-button>
+    <span class="pulse-issues__actions">
+      <Popover>
+        <PopoverTrigger as-child>
+          <Button access="read" variant="ghost" size="xs" class="pulse-issues__action">详情</Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" class="w-[min(380px,calc(100vw-32px))]">
+          <ul class="pulse-issues__list">
+            <li v-for="issue in issues" :key="issue.key">
+              <strong>{{ issue.label }}</strong>
+              <span>{{ issue.detail }}</span>
+            </li>
+          </ul>
+        </PopoverContent>
+      </Popover>
+      <Button access="read" variant="outline" size="xs" class="pulse-issues__action" :disabled="busy" @click="emit('retry')">
+        <LoaderCircle v-if="busy" class="size-3 animate-spin" aria-hidden="true" />
+        重试
+      </Button>
+    </span>
   </div>
 </template>
 
@@ -55,52 +65,48 @@ const headline = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--gap-2);
-  padding: 2px var(--gap-2);
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet-alt);
-  font-size: var(--fs-aux);
-  color: var(--warn);
   min-width: 0;
+  min-height: 40px;
+  padding: 0 var(--gap-2) 0 var(--gap-3);
+  border: 1px solid color-mix(in oklab, var(--warn) 30%, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--warn) 6%, var(--surface));
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
 }
 
 .pulse-issues__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  flex: 0 0 auto;
   width: 15px;
   height: 15px;
-  border: 1px solid var(--warn);
-  border-radius: 50%;
-  font-family: var(--mono);
-  /* 圆圈里的感叹号：跟着最小字阶走，不写死 px */
-  font-size: var(--fs-kicker);
-  line-height: 1;
-  flex: 0 0 auto;
-}
-
-/* 两个 link 按钮压到 18px：异常条整体不超过 24px，出错也不许顶开主内容 */
-.pulse-issues :deep(.el-button) {
-  min-height: var(--ctl-h);
-  padding: 0 2px;
-  font-size: var(--fs-aux);
+  color: var(--warn);
 }
 
 .pulse-issues__text {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.pulse-issues__actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
 .pulse-issues__list {
-  max-height: 50vh;
-  overflow: auto;
-  margin: 0;
-  padding: 0;
-  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-2);
+  gap: var(--gap-3);
+  max-height: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
 }
 
 .pulse-issues__list li {
@@ -110,13 +116,13 @@ const headline = computed(() => {
 }
 
 .pulse-issues__list strong {
-  font-size: var(--fs-aux);
-  color: var(--ink);
+  font-size: var(--fs-ui);
+  color: var(--text-primary);
 }
 
 .pulse-issues__list span {
   font-size: var(--fs-aux);
-  color: var(--mist);
+  color: var(--text-tertiary);
   overflow-wrap: anywhere;
 }
 </style>

@@ -11,6 +11,7 @@ from typing import Any, Iterator
 
 import anyio
 import httpx2
+from src.shared.http_protocol import http_protocol_options
 from anyio.from_thread import start_blocking_portal
 
 _DEADLINE: ContextVar[float | None] = ContextVar("mcp_transport_deadline", default=None)
@@ -89,7 +90,8 @@ async def _request(client: Any, body: dict[str, Any], deadline: float, read_body
         # DNS can block in the system resolver; abandon only that read, never dispatch HTTP afterwards.
         trust_env = await anyio.to_thread.run_sync(_validated_proxy, client.url, abandon_on_cancel=True)
         timeout = min(client.timeout, remaining_seconds(deadline))
-        http = httpx2.AsyncClient(timeout=timeout, trust_env=trust_env, follow_redirects=False)
+        http = httpx2.AsyncClient(timeout=timeout, trust_env=trust_env, follow_redirects=False,
+                                 **http_protocol_options())
         upstream = None
         failure = None
         try:

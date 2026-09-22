@@ -4,10 +4,13 @@ slug: yixian-auction
 description: 昨日首板、近期地量、放量、KDJ 金叉与 MACD 零轴上方，次日 09:25 按开盘涨幅筛选主板。
 capability: screen
 version: 1.0.0
-enabled: true
+enabled: false
 ---
 
 # 一线定乾坤·首板次日
+
+本包已于 2026-09-17 退役，仅保留为历史研究源码。系统不会把它载入活动目录、创建
+托管选股任务或交给自主交易员，也不会通过模板同步重新启用。
 
 交易日 09:25 筛选。昨日必须同时满足：首板；涨停前 DL_LOOKBACK 根中至少
 DL_COUNT 次地量；涨停量超过 VOL_MA 均量；最近 JQ 根 KDJ 金叉且 K>D；

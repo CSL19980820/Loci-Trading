@@ -1,6 +1,14 @@
 <script setup lang="ts">
+import { useVisitorMode } from '@/shared/composables/useAccess'
+const visitor = useVisitorMode()
+import { toast } from 'vue-sonner'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as TabSet } from '@/shared/components/ui/app/TabSet.vue'
+import { default as TabPage } from '@/shared/components/ui/app/TabPage.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 import {
   deleteStrategyVersion,
   getStrategyJob,
@@ -163,7 +171,7 @@ async function refreshVersions(slug: string): Promise<void> {
     versionHistory.value = versions
   } catch (caught: unknown) {
     if (requestSeq === versionRequestSeq) {
-      ElMessage.error(toErrorMessage(caught, '读取版本历史失败'))
+      toast.error(toErrorMessage(caught, '读取版本历史失败'))
     }
   } finally {
     if (requestSeq === versionRequestSeq) loadingVersions.value = false
@@ -187,11 +195,11 @@ async function rollback(version: string): Promise<void> {
     const restored = await rollbackStrategyVersion(strategy.slug, version)
     if (!isVersionActionCurrent(actionSeq, strategy.slug)) return
     strategySnapshot.value = { ...strategy, version: restored.version }
-    ElMessage.success(`已回滚到 ${version}`)
+    toast.success(`已回滚到 ${version}`)
     await refreshVersions(strategy.slug)
   } catch (caught: unknown) {
     if (isVersionActionCurrent(actionSeq, strategy.slug)) {
-      ElMessage.error(toErrorMessage(caught, '回滚版本失败'))
+      toast.error(toErrorMessage(caught, '回滚版本失败'))
     }
   } finally {
     if (actionSeq === versionActionSeq) versionActing.value = ''
@@ -206,11 +214,11 @@ async function removeVersion(version: string): Promise<void> {
   try {
     await deleteStrategyVersion(strategy.slug, version)
     if (!isVersionActionCurrent(actionSeq, strategy.slug)) return
-    ElMessage.success(`已删除版本 ${version}`)
+    toast.success(`已删除版本 ${version}`)
     await refreshVersions(strategy.slug)
   } catch (caught: unknown) {
     if (isVersionActionCurrent(actionSeq, strategy.slug)) {
-      ElMessage.error(toErrorMessage(caught, '删除版本失败'))
+      toast.error(toErrorMessage(caught, '删除版本失败'))
     }
   } finally {
     if (actionSeq === versionActionSeq) versionActing.value = ''
@@ -295,11 +303,11 @@ async function save(): Promise<void> {
     seedingSchedule = true
     nextRuns.value = job.next_runs?.length ? job.next_runs : previewRuns.value
     seedingSchedule = false
-    ElMessage.success(mode === 'off' ? '已关闭定时并移除任务' : '已保存')
+    toast.success(mode === 'off' ? '已关闭定时并移除任务' : '已保存')
     emit('saved', job)
     open.value = false
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '保存失败'))
+    toast.error(toErrorMessage(caught, '保存失败'))
   } finally {
     saving.value = false
   }
@@ -307,7 +315,7 @@ async function save(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="open"
     :title="title"
     :width="dialogWidth()"
@@ -315,19 +323,20 @@ async function save(): Promise<void> {
     class="strategy-detail-dialog"
   >
     <template v-if="strategy">
-      <el-tabs v-model="tab" class="detail-tabs">
-        <el-tab-pane label="基础信息" name="basics">
+      <TabSet v-model="tab" class="detail-tabs">
+        <TabPage label="基础信息" name="basics">
           <StrategyDetailBasicsPane
             :strategy="displayedStrategy"
             :loading-versions="loadingVersions"
             :version-rows="versionHistory"
-            :can-manage-versions="canManageVersions"
+            :can-manage-versions="canManageVersions && !visitor"
             :version-acting="versionActing"
             @rollback="rollback"
             @remove-version="removeVersion"
           />
-        </el-tab-pane>
-        <el-tab-pane label="配置" name="config">
+        </TabPage>
+        <TabPage label="配置" name="config">
+          <fieldset :disabled="visitor" class="detail-read-config">
           <StrategyDetailConfigPane
             :config="configForm"
             :param-rows="paramRows"
@@ -335,19 +344,20 @@ async function save(): Promise<void> {
             :display-runs="displayRuns"
             @patch-config="patchConfig"
           />
-        </el-tab-pane>
-      </el-tabs>
+          </fieldset>
+        </TabPage>
+      </TabSet>
     </template>
     <template #footer>
-      <el-button type="primary" :loading="saving" :disabled="!strategy" @click="save">
+      <ActionButton tone="primary" :busy="saving" :disabled="!strategy" @click="save">
         保存
-      </el-button>
+      </ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>
-.detail-tabs :deep(.el-tabs__header) { margin-bottom: 0.75rem; }
-/* shadcn 化：页签内容区走工具类间距，EP 头部保留穿透 */
-.detail-tabs :deep(.el-tab-pane) { padding-top: 0.25rem; }
+.detail-tabs :deep(.tab-set__list) { margin-bottom: 0.75rem; }
+.detail-read-config { min-width: 0; padding: 0; margin: 0; border: 0; }
+.detail-tabs :deep(.tab-page) { padding-top: 0.25rem; }
 </style>

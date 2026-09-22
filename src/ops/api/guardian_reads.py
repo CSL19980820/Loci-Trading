@@ -39,6 +39,24 @@ Window = Annotated[HistoryWindow, Depends(history_window)]
 def build_guardian_reads_router() -> APIRouter:
     router = APIRouter()
 
+    @router.get("/activity")
+    def get_activity(limit: int = Query(default=16, ge=1, le=50)) -> dict:
+        with GuardianStore() as ledger:
+            return ledger.activity_feed(limit)
+
+    @router.get("/holding-curve")
+    def get_curve(
+        code: str = Query(default="", pattern=r"^(?:[0-9]{6})?$"),
+        days: int = Query(default=30, ge=1, le=366),
+    ) -> dict:
+        from src.ops.application.guardian_holding_curve import get_holding_curve
+        try:
+            return get_holding_curve(code=code, days=days)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @router.get("/reviews")
     def get_reviews(window: Window) -> dict:
         with GuardianStore() as ledger:
@@ -55,12 +73,14 @@ def build_guardian_reads_router() -> APIRouter:
             item = ledger.cycle_detail(slot)
             if item is None:
                 raise HTTPException(404, "尚无该轮研判")
-            return item
+            from src.ops.application.trading_report_content import trading_run_sections
+            result = item['result']
+            return {**item, "result": {**result, "sections": trading_run_sections(result, status=item.get('status', ''))}}
 
     @router.get("/trades")
-    def get_trades(window: Window) -> dict:
+    def get_trades(window: Window, keyword: str = Query(default="", max_length=80)) -> dict:
         with GuardianStore() as ledger:
-            return {**ledger.trade_page(**asdict(window)), **asdict(window)}
+            return {**ledger.trade_page(**asdict(window), keyword=keyword), **asdict(window), "keyword": keyword.strip()}
 
     @router.get("/performance")
     def get_performance(

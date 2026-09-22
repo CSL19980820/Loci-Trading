@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 import httpx2
+from src.shared.http_protocol import record_http_protocol
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,9 @@ class ConnectionRetryClient(httpx2.Client):
         # 重试单次模型请求，不重启 Agent，已执行的工具不会再次执行。
         for attempt in range(3):
             try:
-                return super().send(request, **kwargs)
+                response = super().send(request, **kwargs)
+                record_http_protocol(response)
+                return response
             except (httpx2.ConnectError, httpx2.ConnectTimeout):
                 if attempt == 2:
                     raise

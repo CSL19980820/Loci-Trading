@@ -3,12 +3,18 @@
  * 技能详情「定时」配置：定点/间隔 + 推送企微 + LLM 供应商。
  */
 import { computed, onScopeDispose, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import { getProviders } from '@/shared/api/quant'
 import { getSkillJob, upsertSkillJob } from '@/shared/api/quant_ops'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
+import { Switch } from '@/shared/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/shared/components/ui/toggle-group'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { LlmProvider, SkillJob } from '@/shared/types/quant'
+
+import StrategyField from './StrategyField.vue'
 
 type ScheduleMode = 'off' | 'once' | 'interval'
 
@@ -58,6 +64,14 @@ const previewRuns = computed(() => {
     windowEndMinute.value,
   )
 })
+
+
+const providerOptions = computed(() =>
+  providers.value.map((item) => ({
+    value: item.name,
+    label: item.is_default ? `${item.name}（默认）` : item.name,
+  })),
+)
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -126,7 +140,7 @@ async function load(): Promise<void> {
     hydrate(job)
   } catch (caught: unknown) {
     if (token !== loadToken) return
-    ElMessage.error(toErrorMessage(caught, '读取定时失败'))
+    toast.error(toErrorMessage(caught, '读取定时失败'))
   } finally {
     if (token === loadToken) loading.value = false
   }
@@ -135,7 +149,7 @@ async function load(): Promise<void> {
 async function save(): Promise<void> {
   const mode: ScheduleMode = scheduleEnabled.value ? scheduleMode.value : 'off'
   if (mode !== 'off' && !provider.value.trim()) {
-    ElMessage.warning('开启定时必须选择 LLM 供应商')
+    toast.warning('开启定时必须选择 LLM 供应商')
     return
   }
   saving.value = true
@@ -154,10 +168,10 @@ async function save(): Promise<void> {
       enabled: mode !== 'off',
     })
     nextRuns.value = job.next_runs?.length ? job.next_runs : previewRuns.value
-    ElMessage.success(mode === 'off' ? '已关闭定时并移除任务' : '已保存')
+    toast.success(mode === 'off' ? '已关闭定时并移除任务' : '已保存')
     emit('saved', job)
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '保存失败'))
+    toast.error(toErrorMessage(caught, '保存失败'))
   } finally {
     saving.value = false
   }
@@ -175,101 +189,148 @@ defineExpose({ save, saving, load })
 </script>
 
 <template>
-  <div v-loading="loading" class="skill-job-config">
-    <el-form label-position="right" label-width="6.5em" size="small">
-      <el-form-item label="定时运行">
-        <el-switch v-model="scheduleEnabled" />
-      </el-form-item>
+  <div class="skill-job-config relative">
+    <PageBusy :busy="loading" overlay />
+    <div class="cfg-form">
+      <StrategyField label="定时运行" inline>
+        <Switch v-model="scheduleEnabled" aria-label="定时运行" />
+      </StrategyField>
 
       <template v-if="scheduleEnabled">
-        <el-form-item label="推送企微">
-          <el-switch v-model="pushWecom" />
-          <span class="dim hint">开启后定时任务结束自动推送（有选股结果用选股模板）</span>
-        </el-form-item>
-
-        <el-form-item label="LLM">
-          <el-select v-model="provider" filterable placeholder="选择供应商" class="full">
-            <el-option
-              v-for="item in providers"
-              :key="item.name"
-              :label="item.is_default ? `${item.name}（默认）` : item.name"
-              :value="item.name"
-            />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="方式">
-          <el-radio-group v-model="scheduleMode">
-            <el-radio-button value="once">定点</el-radio-button>
-            <el-radio-button value="interval">间隔</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-
-        <el-form-item v-if="scheduleMode === 'once'" label="交易日">
-          <div class="time-row">
-            <el-select v-model="runHour" class="time-select">
-              <el-option v-for="h in HOUR_OPTS" :key="h" :label="pad(h)" :value="h" />
-            </el-select>
-            <span class="time-sep">:</span>
-            <el-select v-model="runMinute" class="time-select">
-              <el-option v-for="m in MINUTE_OPTS" :key="m" :label="pad(m)" :value="m" />
-            </el-select>
+        <StrategyField label="推送企微" inline>
+          <div class="field-row">
+            <Switch v-model="pushWecom" aria-label="推送企微" />
+            <span class="dim hint">开启后定时任务结束自动推送（有选股结果用选股模板）</span>
           </div>
-        </el-form-item>
+        </StrategyField>
+
+        <StrategyField label="LLM" inline>
+          <Select v-model="provider">
+            <SelectTrigger class="w-full" aria-label="选择供应商">
+              <SelectValue placeholder="选择供应商" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="item in providerOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </StrategyField>
+
+        <StrategyField label="方式" inline>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            :model-value="scheduleMode"
+            aria-label="定时方式"
+            @update:model-value="(value) => (scheduleMode = value as 'once' | 'interval')"
+          >
+            <ToggleGroupItem value="once">定点</ToggleGroupItem>
+            <ToggleGroupItem value="interval">间隔</ToggleGroupItem>
+          </ToggleGroup>
+        </StrategyField>
+
+        <StrategyField v-if="scheduleMode === 'once'" label="交易日" inline>
+          <div class="time-row">
+            <Select v-model="runHour">
+              <SelectTrigger size="sm" class="time-select" aria-label="小时">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="h in HOUR_OPTS" :key="h" :value="h">{{ pad(h) }}</SelectItem>
+              </SelectContent>
+            </Select>
+            <span class="time-sep">:</span>
+            <Select v-model="runMinute">
+              <SelectTrigger size="sm" class="time-select" aria-label="分钟">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="m in MINUTE_OPTS" :key="m" :value="m">{{ pad(m) }}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </StrategyField>
 
         <template v-else>
-          <el-form-item label="时段">
+          <StrategyField label="时段" inline>
             <div class="time-row">
-              <el-select v-model="windowStartHour" class="time-select">
-                <el-option v-for="h in HOUR_OPTS" :key="`s${h}`" :label="pad(h)" :value="h" />
-              </el-select>
+              <Select v-model="windowStartHour">
+                <SelectTrigger size="sm" class="time-select" aria-label="起始小时">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="h in HOUR_OPTS" :key="`s${h}`" :value="h">{{ pad(h) }}</SelectItem>
+                </SelectContent>
+              </Select>
               <span class="time-sep">:</span>
-              <el-select v-model="windowStartMinute" class="time-select">
-                <el-option v-for="m in MINUTE_OPTS" :key="`sm${m}`" :label="pad(m)" :value="m" />
-              </el-select>
+              <Select v-model="windowStartMinute">
+                <SelectTrigger size="sm" class="time-select" aria-label="起始分钟">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="m in MINUTE_OPTS" :key="`sm${m}`" :value="m">{{ pad(m) }}</SelectItem>
+                </SelectContent>
+              </Select>
               <span class="time-sep">–</span>
-              <el-select v-model="windowEndHour" class="time-select">
-                <el-option v-for="h in HOUR_OPTS" :key="`e${h}`" :label="pad(h)" :value="h" />
-              </el-select>
+              <Select v-model="windowEndHour">
+                <SelectTrigger size="sm" class="time-select" aria-label="结束小时">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="h in HOUR_OPTS" :key="`e${h}`" :value="h">{{ pad(h) }}</SelectItem>
+                </SelectContent>
+              </Select>
               <span class="time-sep">:</span>
-              <el-select v-model="windowEndMinute" class="time-select">
-                <el-option v-for="m in MINUTE_OPTS" :key="`em${m}`" :label="pad(m)" :value="m" />
-              </el-select>
+              <Select v-model="windowEndMinute">
+                <SelectTrigger size="sm" class="time-select" aria-label="结束分钟">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="m in MINUTE_OPTS" :key="`em${m}`" :value="m">{{ pad(m) }}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </el-form-item>
-          <el-form-item label="间隔">
-            <el-select v-model="intervalMinutes" class="time-select wide">
-              <el-option
-                v-for="m in INTERVAL_OPTS"
-                :key="m"
-                :label="`${m} 分钟`"
-                :value="m"
-              />
-            </el-select>
-          </el-form-item>
+          </StrategyField>
+          <StrategyField label="间隔" inline>
+            <Select v-model="intervalMinutes">
+              <SelectTrigger size="sm" class="time-select wide" aria-label="间隔分钟">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="m in INTERVAL_OPTS" :key="m" :value="m">{{ m }} 分钟</SelectItem>
+              </SelectContent>
+            </Select>
+          </StrategyField>
         </template>
 
-        <el-form-item label="预览">
+        <StrategyField label="预览" inline>
           <div class="preview">
             <span v-for="slot in nextRuns.length ? nextRuns : previewRuns" :key="slot" class="mono">
               {{ slot }}
             </span>
             <span v-if="!(nextRuns.length || previewRuns.length)" class="dim">—</span>
           </div>
-        </el-form-item>
+        </StrategyField>
       </template>
-    </el-form>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.full {
-  width: 100%;
-  max-width: 18rem;
+.cfg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 .dim {
   color: var(--mist);
   font-size: 0.76rem;
+}
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
 }
 .hint {
   margin-left: 0.5rem;

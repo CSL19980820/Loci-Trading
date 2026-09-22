@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+
 /**
  * 战法风格记忆卡：风格正文 / 该看哪些 / 记忆图探索 / 教训两栏。
  *
@@ -54,28 +61,28 @@ const lessonColumns: BasicTableColumn[] = [
 <template>
   <SettingsPanel title="战法风格记忆" :receipt="[{ key: 'rev', value: String(styleRevision) }]">
     <template #action>
-      <el-tooltip placement="top-start" content="记的是：评头论足 / 该怎么买 / 该看哪些 / 教训">
-        <el-button type="primary" size="small" @click="saveStyle">保存风格</el-button>
-      </el-tooltip>
-      <el-button size="small" @click="absorbStyle">吸入未消化教训</el-button>
-      <el-button size="small" @click="rebuildMemory">重建记忆图</el-button>
+      <HintTooltip placement="top-start" content="记的是：评头论足 / 该怎么买 / 该看哪些 / 教训">
+        <ActionButton tone="primary" size="small" @click="saveStyle">保存风格</ActionButton>
+      </HintTooltip>
+      <ActionButton size="small" @click="absorbStyle">吸入未消化教训</ActionButton>
+      <ActionButton size="small" @click="rebuildMemory">重建记忆图</ActionButton>
     </template>
 
-    <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
-      <el-form-item label="风格正文">
-        <el-input v-model="styleMd" type="textarea" :rows="10" />
-      </el-form-item>
-      <el-form-item label="该看哪些" class="mb-0">
-        <el-input
+    <FormLayout label-position="right" label-width="6.5em" size="small" @submit.prevent>
+      <FormField label="风格正文">
+        <TextField v-model="styleMd" type="textarea" :rows="10" />
+      </FormField>
+      <FormField label="该看哪些" class="mb-0">
+        <TextField
           v-model="watchHintsText"
           type="textarea"
           :rows="3"
           placeholder="每行一条观察点"
         />
-      </el-form-item>
-    </el-form>
+      </FormField>
+    </FormLayout>
 
-    <el-form
+    <FormLayout
       inline
       label-position="left"
       label-width="6.5em"
@@ -83,14 +90,14 @@ const lessonColumns: BasicTableColumn[] = [
       class="mt-2 flex flex-wrap items-center gap-x-3"
       @submit.prevent
     >
-      <el-form-item label="探索词">
-        <el-input v-model="memoryQuery" class="memory-query" placeholder="如：高开 教训" />
-      </el-form-item>
-      <el-form-item class="mb-0">
-        <el-button type="primary" plain size="small" @click="exploreMemory">探索子图</el-button>
+      <FormField label="探索词">
+        <TextField v-model="memoryQuery" class="memory-query" placeholder="如：高开 教训" />
+      </FormField>
+      <FormField class="mb-0">
+        <ActionButton tone="primary" plain size="small" @click="exploreMemory">探索子图</ActionButton>
         <span class="text-aux text-mist ml-2">{{ memoryStats }}</span>
-      </el-form-item>
-    </el-form>
+      </FormField>
+    </FormLayout>
 
     <pre v-if="memorySummary" class="memory-summary">{{ memorySummary }}</pre>
 
@@ -105,9 +112,9 @@ const lessonColumns: BasicTableColumn[] = [
       empty-reason="先点「重建记忆图」"
     />
 
-    <el-tooltip placement="top-start" content="边类型：has_rule / watches / learned_from / absorbed_into / about…">
+    <HintTooltip placement="top-start" content="边类型：has_rule / watches / learned_from / absorbed_into / about…">
       <span class="text-aux text-mist mt-2 inline-block">边 {{ memoryEdges.length }} 条</span>
-    </el-tooltip>
+    </HintTooltip>
 
     <p v-if="roleAlertLessons.length" class="text-aux text-mist mt-2 mb-1">角色告警教训</p>
     <BasicTable
@@ -122,7 +129,7 @@ const lessonColumns: BasicTableColumn[] = [
       empty-reason="盯盘跑过才会累积"
     >
       <template #kind>
-        <el-tag size="small" type="warning" effect="plain">角色告警</el-tag>
+        <StatusBadge size="small" tone="warning" effect="plain">角色告警</StatusBadge>
       </template>
     </BasicTable>
 

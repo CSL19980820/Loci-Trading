@@ -208,3 +208,20 @@ class CandidateMixin:
         with self._transaction() as cursor:
             cursor.execute(sql, params)
             return int(cursor.rowcount)
+
+    def delete_candidates_for_strategy(self, strategy_slug: str) -> int:
+        """删除某个策略的全部候选历史及其同策略选股池记录。"""
+        key = str(strategy_slug or "").strip()
+        if not key:
+            return 0
+        with self._transaction() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM candidate_reviews
+                WHERE strategy_slug = ?
+                   OR rule_version = ?
+                   OR pool_id LIKE ?
+                """,
+                (key, key, f"{key}@%"),
+            )
+            return int(cursor.rowcount)

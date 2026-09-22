@@ -4,6 +4,7 @@
  */
 import { watch, type Component as VueComponent } from 'vue'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
+import CachedRoutePage from './CachedRoutePage.vue'
 
 const props = defineProps<{
   component: VueComponent | null
@@ -27,8 +28,8 @@ watch(
 
 <template>
   <KeepAlive :max="12">
-    <component
-      :is="component"
+    <CachedRoutePage
+      :component="component!"
       v-if="component && route.name !== 'archive'"
       :key="String(route.name)"
     />

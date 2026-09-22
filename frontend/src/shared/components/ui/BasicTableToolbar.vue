@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { RefreshCw as RefreshRight, Settings as Setting } from '@lucide/vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as PopoverPanel } from '@/shared/components/ui/app/PopoverPanel.vue'
+import { default as CheckboxField } from '@/shared/components/ui/app/CheckboxField.vue'
+
 /**
  * BasicTable 的工具行：刷新 / 放大 / 列设置，外加左侧 `#buttons` 槽。
  *
@@ -10,10 +15,10 @@
  * ScreenHistoryPanel 三处页面用 `:deep(.basic-table__toolbar)` 调它的内外边距。
  *
  * 列设置直接改 `columns` 元素上的 `hidden`：数组是父层传下来的同一个响应式代理，
- * 就地写字段即可回流，不必再往上抛事件（与 BasicTableColumns 的口径一致）。
+ * 就地写字段即可回流，不必再往上抛事件（与 GridEngine 的口径一致）。
  */
 import { computed } from 'vue'
-import { RefreshRight, Setting } from '@element-plus/icons-vue'
+
 
 import type { BasicTableColumn, BasicTableToolbarConfig } from './basicTableTypes'
 
@@ -33,74 +38,65 @@ const customizableColumns = computed(() =>
 </script>
 
 <template>
-  <div class="basic-table__toolbar flex w-full shrink-0 items-center justify-start gap-2 border-b px-[var(--pad-sheet-x)] py-1">
-    <div class="basic-table__toolbar-left flex flex-wrap items-center gap-2">
+  <div class="basic-table__toolbar flex w-full shrink-0 items-center justify-start gap-2 border-b px-[var(--pad-sheet-x)] py-2">
+    <div class="basic-table__toolbar-left ml-auto flex flex-wrap items-center gap-2">
       <slot name="buttons" />
     </div>
-    <div class="basic-table__toolbar-right ml-auto flex flex-wrap items-center gap-2">
-      <el-button
+    <div class="basic-table__toolbar-right flex flex-wrap items-center gap-2">
+      <ActionButton access="read"
         v-if="config?.refresh"
         size="small"
         :icon="RefreshRight"
-        :loading="busy"
+        :busy="busy"
         @click="emit('refresh')"
       >
         刷新
-      </el-button>
-      <el-button
+      </ActionButton>
+      <ActionButton access="read"
         v-if="config?.zoom"
         size="small"
         @click="zoomed = !zoomed"
       >
         {{ zoomed ? '还原' : '放大' }}
-      </el-button>
-      <el-popover
+      </ActionButton>
+      <PopoverPanel
         v-if="config?.custom"
         placement="bottom-end"
         :width="200"
         trigger="click"
       >
         <template #reference>
-          <el-button size="small" :icon="Setting">列设置</el-button>
+          <ActionButton access="read" size="small" :icon="Setting">列设置</ActionButton>
         </template>
         <div class="basic-table__cols">
-          <el-checkbox
+          <CheckboxField
             v-for="(col, i) in customizableColumns"
             :key="col.prop ?? col.label ?? i"
             :model-value="!col.hidden"
             @change="(v: string | number | boolean) => { col.hidden = !v }"
           >
             {{ col.label || col.prop || `列${i + 1}` }}
-          </el-checkbox>
+          </CheckboxField>
         </div>
-      </el-popover>
+      </PopoverPanel>
     </div>
   </div>
 </template>
 
 <style scoped>
 .basic-table__toolbar {
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet-alt);
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
 }
 
-.basic-table__toolbar-left :deep(.el-button),
-.basic-table__toolbar-right :deep(.el-button) {
+.basic-table__toolbar-left :deep(.action-button),
+.basic-table__toolbar-right :deep(.action-button) {
   margin: 0;
 }
 
-.basic-table__toolbar-left :deep(.el-button + .el-button),
-.basic-table__toolbar-right :deep(.el-button + .el-button) {
+.basic-table__toolbar-left :deep(.action-button + .action-button),
+.basic-table__toolbar-right :deep(.action-button + .action-button) {
   margin-left: 0;
-}
-
-.basic-table__toolbar-right :deep(.el-button) {
-  --el-button-bg-color: var(--sheet);
-  --el-button-border-color: var(--rule-strong);
-  --el-button-text-color: var(--ink);
-  --el-button-hover-bg-color: var(--sheet-alt);
-  --el-button-hover-border-color: var(--rule-strong);
-  --el-button-hover-text-color: var(--ink);
 }
 
 .basic-table__cols {

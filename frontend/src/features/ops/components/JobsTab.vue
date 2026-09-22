@@ -8,10 +8,15 @@
  * 也不该跟着这屏的 UI 状态一起翻。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
+import { CircleAlert, CircleCheck, History, Plus, TriangleAlert, X } from '@lucide/vue'
 
 import { createJob, deleteJob, getJobQuota, runJob, updateJob } from '@/shared/api/quant'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/components/ui/sheet'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import type { Job, JobKind, ScheduleStatus } from '@/shared/types/quant'
 
@@ -70,6 +75,13 @@ const formSubmitError = ref('')
 const editingJob = ref<Job | null>(null)
 const runsOpen = ref(false)
 const detailRef = ref<InstanceType<typeof JobDetailPane> | null>(null)
+/** ≤800px 时左栏铺满，详情改在贴底 Sheet 里打开（点卡才开，自动选中不开） */
+const isNarrow = useMediaQuery('(max-width: 800px)')
+const detailOpen = ref(false)
+
+function onPickJob(): void {
+  if (isNarrow.value) detailOpen.value = true
+}
 
 watch(
   () => route.query.runs,
@@ -355,84 +367,119 @@ defineExpose({ load, schedule })
 </script>
 
 <template>
-  <SettingsPanel title="定时任务" fill :receipt="receipt">
+  <SettingsPanel
+    title="定时任务"
+    fill
+    :receipt="receipt"
+  >
     <template #action>
-      <el-button :disabled="busy" @click="runsOpen = true">全部历史</el-button>
-      <el-button
-        type="primary"
+      <Button variant="outline" size="sm" :disabled="busy" @click="runsOpen = true">
+        <History />
+        全部历史
+      </Button>
+      <Button
+        size="sm"
         :disabled="busy || quotaFull"
         :title="quotaFull ? '自建任务额度已满' : '新建定时任务'"
         @click="openCreate"
       >
+        <Plus />
         新建{{ quotaFull ? '（额度已满）' : '' }}
-      </el-button>
+      </Button>
     </template>
 
-    <el-alert
-      v-if="notice"
-      :title="notice"
-      type="success"
-      show-icon
-      closable
-      class="jobs-alert"
-      @close="notice = ''"
-    />
-    <el-alert
-      v-if="errorText"
-      :title="errorText"
-      type="error"
-      show-icon
-      closable
-      class="jobs-alert"
-      @close="errorText = ''"
-    />
+    <Alert v-if="notice" class="jobs-alert">
+      <CircleCheck />
+      <div class="flex w-full min-w-0 items-start justify-between gap-2">
+        <AlertTitle class="line-clamp-none min-w-0">{{ notice }}</AlertTitle>
+        <Button variant="ghost" size="icon-xs" aria-label="关闭提示" class="shrink-0" @click="notice = ''">
+          <X class="size-3.5" />
+        </Button>
+      </div>
+    </Alert>
+    <Alert v-if="errorText" variant="destructive" class="jobs-alert">
+      <CircleAlert />
+      <div class="flex w-full min-w-0 items-start justify-between gap-2">
+        <AlertTitle class="line-clamp-none min-w-0">{{ errorText }}</AlertTitle>
+        <Button access="read" variant="ghost" size="icon-xs" aria-label="关闭提示" class="shrink-0" @click="errorText = ''">
+          <X class="size-3.5" />
+        </Button>
+      </div>
+    </Alert>
 
-    <el-alert
-      v-if="jobsError && !jobsPending"
-      :title="jobsError"
-      type="error"
-      show-icon
-      :closable="false"
-      class="jobs-alert"
-    >
-      <el-button size="small" @click="load">重试</el-button>
-    </el-alert>
+    <Alert v-if="jobsError && !jobsPending" variant="destructive" class="jobs-alert">
+      <TriangleAlert />
+      <div class="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
+        <AlertTitle class="line-clamp-none min-w-0">{{ jobsError }}</AlertTitle>
+        <Button access="read" variant="outline" size="sm" @click="load">重试</Button>
+      </div>
+    </Alert>
 
-    <div v-else-if="jobs.length" class="jobs-layout">
+    <div v-else-if="jobs.length" class="jobs-layout" :class="{ 'is-narrow': isNarrow }">
       <JobsRail
         v-model:selected-id="selectedId"
         v-model:kind-filter="kindFilter"
         v-model:status-filter="statusFilter"
         :rows="railRows"
+        class="jobs-layout__rail"
+        @pick="onPickJob"
       />
 
-      <JobDetailPane
-        v-if="selected"
-        ref="detailRef"
-        :job="selected"
-        :busy="busy"
-        :title="displayName(selected)"
-        :cron-text="cronLabel(selected)"
-        :next-run-text="nextRunText(selected, schedule)"
-        :strategy-text="selected.kind === 'screen' ? selectedStrategyText(selected) : undefined"
-        :skill-text="selected.kind === 'skill' ? selectedSkillText(selected) : undefined"
-        @fire="fire(selected)"
-        @edit="openEdit(selected)"
-        @toggle="toggle(selected)"
-        @drop="confirmDrop(selected)"
-        @go-bound="goBoundDetail(selected)"
-        @save-schedule="(payload) => saveSchedule(selected!, payload)"
-      />
-      <EmptyState v-else description="选择左侧一条任务查看详情" />
+      <div v-if="!isNarrow" class="jobs-layout__detail">
+        <JobDetailPane
+          v-if="selected"
+          ref="detailRef"
+          :job="selected"
+          :busy="busy"
+          :title="displayName(selected)"
+          :cron-text="cronLabel(selected)"
+          :next-run-text="nextRunText(selected, schedule)"
+          :strategy-text="selected.kind === 'screen' ? selectedStrategyText(selected) : undefined"
+          :skill-text="selected.kind === 'skill' ? selectedSkillText(selected) : undefined"
+          @fire="fire(selected)"
+          @edit="openEdit(selected)"
+          @toggle="toggle(selected)"
+          @drop="confirmDrop(selected)"
+          @go-bound="goBoundDetail(selected)"
+          @save-schedule="(payload) => saveSchedule(selected!, payload)"
+        />
+        <EmptyState v-else description="选择左侧一条任务查看详情" />
+      </div>
+
+      <Sheet v-else :open="detailOpen && Boolean(selected)" @update:open="detailOpen = $event">
+        <SheetContent side="right" class="jobs-sheet">
+          <SheetHeader class="jobs-sheet__head">
+            <SheetTitle>{{ selected ? displayName(selected) : '任务详情' }}</SheetTitle>
+          </SheetHeader>
+          <JobDetailPane
+            v-if="selected"
+            ref="detailRef"
+            :job="selected"
+            :busy="busy"
+            :title="displayName(selected)"
+            :cron-text="cronLabel(selected)"
+            :next-run-text="nextRunText(selected, schedule)"
+            :strategy-text="selected.kind === 'screen' ? selectedStrategyText(selected) : undefined"
+            :skill-text="selected.kind === 'skill' ? selectedSkillText(selected) : undefined"
+            @fire="fire(selected)"
+            @edit="openEdit(selected)"
+            @toggle="toggle(selected)"
+            @drop="confirmDrop(selected)"
+            @go-bound="goBoundDetail(selected)"
+            @save-schedule="(payload) => saveSchedule(selected!, payload)"
+          />
+        </SheetContent>
+      </Sheet>
     </div>
 
     <EmptyState
       v-else-if="!jobsPending"
       description="还没有定时任务"
       reason="新建任务或配置推荐同步"
+      class="jobs-empty"
     >
-      <el-button type="primary" @click="emit('enable-recommended-sync')">配置推荐同步</el-button>
-      <el-button @click="openCreate">新建任务</el-button>
+      <Button @click="emit('enable-recommended-sync')">配置推荐同步</Button>
+      <Button variant="outline" @click="openCreate">新建任务</Button>
     </EmptyState>
   </SettingsPanel>
 
@@ -453,13 +500,55 @@ defineExpose({ load, schedule })
 
 <style scoped>
 .jobs-alert {
-  margin: var(--gap-2) var(--gap-3) 0;
   flex-shrink: 0;
+  margin-bottom: var(--gap-3);
 }
-div > :deep(.job-detail) {
+
+.jobs-layout {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: var(--gap-5);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.jobs-layout.is-narrow {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.jobs-layout__rail {
+  min-height: 0;
+}
+
+.jobs-layout__detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 2px;
 }
-.jobs-layout { display: grid; flex: 1; min-width: 0; min-height: 0; grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr); gap: var(--gap-2); padding: var(--gap-3); overflow: hidden; }
-@media (max-width: 800px) { .jobs-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 24dvh) minmax(0, 1fr); } }
+
+.jobs-empty {
+  min-height: 320px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.jobs-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding: var(--gap-4);
+}
+
+.jobs-sheet__head {
+  padding: 0;
+  padding-right: var(--gap-6);
+}
 </style>

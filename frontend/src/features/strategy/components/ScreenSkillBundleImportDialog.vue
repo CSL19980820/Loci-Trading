@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import { toast } from 'vue-sonner'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { Notice, StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 /**
  * 克隆包 → 本地战法的「确认导入」对话框。两处共用：
  *
@@ -12,7 +19,7 @@
  * 换算逻辑全在纯函数 `planBundleImport()` 里，这里只管取本地 slug、渲染、发请求。
  */
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 
 import { createScreenSkill, getScreenSkills } from '@/shared/api/quant_strategy'
 import { copyText } from '@/shared/lib/clipboard'
@@ -119,7 +126,7 @@ async function runImport(): Promise<void> {
   importError.value = ''
   try {
     const detail = await createScreenSkill(current.payload)
-    ElMessage.success(
+    toast.success(
       `已导入到工坊：${detail?.name || current.payload.name}（${detail?.slug || current.payload.slug}）`,
     )
     emit('imported', detail)
@@ -137,13 +144,13 @@ async function runImport(): Promise<void> {
 async function copyJson(): Promise<void> {
   if (!bundle.value) return
   const ok = await copyText(JSON.stringify(bundle.value, null, 2))
-  if (ok) ElMessage.success('已复制克隆包 JSON')
-  else ElMessage.warning('剪贴板不可用（非 HTTPS 环境常见），请手工选中下面的正文复制')
+  if (ok) toast.success('已复制克隆包 JSON')
+  else toast.warning('剪贴板不可用（非 HTTPS 环境常见），请手工选中下面的正文复制')
 }
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="visible"
     title="导入克隆包到我的工坊"
     :width="dialogWidth()"
@@ -152,40 +159,40 @@ async function copyJson(): Promise<void> {
   >
     <template v-if="paste && !props.bundle">
       <!-- 那段「贴什么进来」的介绍收进 tooltip：placeholder 已经把 JSON 形状摆出来了 -->
-      <el-tooltip
+      <HintTooltip
         placement="top-start"
         content="粘贴别人导出克隆包时复制给你的那一整段 JSON（一个 publish_id 对象），要粘全"
       >
-        <el-input
+        <TextField
           v-model="pasteText"
           type="textarea"
           :rows="6"
           placeholder='{ "publish_id": "...", "slug": "...", "source_text": "..." }'
           class="mb"
         />
-      </el-tooltip>
-      <el-alert
+      </HintTooltip>
+      <Notice
         v-if="parseError"
         :title="parseError"
-        type="error"
+        tone="error"
         show-icon
         :closable="false"
         class="mb"
       />
     </template>
 
-    <el-alert
+    <Notice
       v-if="slugsNote"
       :title="slugsNote"
-      type="warning"
+      tone="warning"
       show-icon
       :closable="false"
       class="mb"
     />
-    <el-alert
+    <Notice
       v-if="importError"
       :title="importError"
-      type="error"
+      tone="error"
       show-icon
       class="mb"
       @close="importError = ''"
@@ -198,8 +205,8 @@ async function copyJson(): Promise<void> {
           <span class="spec__k">slug</span>
           <span class="mono">
             {{ plan.payload.slug }}
-            <el-tag v-if="plan.slugRenamed" size="small" type="warning" effect="plain"
-              >已改名</el-tag
+            <StatusBadge v-if="plan.slugRenamed" size="small" tone="warning" effect="plain"
+              >已改名</StatusBadge
             >
           </span>
         </div>
@@ -240,20 +247,20 @@ async function copyJson(): Promise<void> {
     </template>
 
     <template #footer>
-      <el-button size="small" @click="visible = false">取消</el-button>
-      <el-button size="small" :disabled="!bundle" @click="copyJson">只复制 JSON</el-button>
-      <el-button
+      <ActionButton access="read" size="small" @click="visible = false">取消</ActionButton>
+      <ActionButton access="read" size="small" :disabled="!bundle" @click="copyJson">只复制 JSON</ActionButton>
+      <ActionButton
         size="small"
-        type="primary"
-        :loading="importing"
+        tone="primary"
+        :busy="importing"
         :disabled="Boolean(blocked) || slugsBusy"
         :title="blocked"
         @click="runImport"
       >
         {{ blocked || '导入到我的工坊' }}
-      </el-button>
+      </ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>

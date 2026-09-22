@@ -1,8 +1,24 @@
 <script setup lang="ts">
+import { Ellipsis, KeyRound } from '@lucide/vue'
 import { computed } from 'vue'
 
+import { Button } from '@/shared/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/shared/components/ui/dropdown-menu'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import type { LlmProvider } from '@/shared/types/quant'
 
+/**
+ * 供应商卡（Vercel Integrations 一路）：
+ * 左上一枚品牌方块（按协议着色的首字母），名称 + 协议，右上 `⋯` 菜单；
+ * 中段等宽的端点行与模型 chips；底部健康点 + 「n / m 启用」读数 + 主操作。
+ * 整卡可点进编辑；默认线路带主色描边。
+ */
 const props = defineProps<{
   provider: LlmProvider
   busy?: boolean
@@ -17,13 +33,8 @@ const emit = defineEmits<{
   remove: []
 }>()
 
-const protocolLabel = computed(() =>
-  props.provider.protocol === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容',
-)
-
-const protocolShort = computed(() =>
-  props.provider.protocol === 'anthropic' ? 'anthropic' : 'openai',
-)
+const isAnthropic = computed(() => props.provider.protocol === 'anthropic')
+const protocolLabel = computed(() => (isAnthropic.value ? 'Anthropic' : 'OpenAI 兼容'))
 
 const host = computed(() => {
   try {
@@ -34,7 +45,7 @@ const host = computed(() => {
 })
 
 const keyLabel = computed(() =>
-  props.provider.key_last4 ? `···${props.provider.key_last4}` : '未设',
+  props.provider.key_last4 ? `···${props.provider.key_last4}` : '未设密钥',
 )
 
 const catalogTotal = computed(
@@ -56,63 +67,57 @@ const extraCount = computed(() => Math.max(0, catalogTotal.value - chips.value.l
 
 const initial = computed(() => (props.provider.name.slice(0, 1) || '?').toUpperCase())
 
-function onMore(command: string): void {
-  if (command === 'catalog') emit('catalog')
-  else if (command === 'pull') emit('pull')
-  else if (command === 'test') emit('test')
-  else if (command === 'remove') emit('remove')
-}
+/** 健康点：有密钥且验证过 = ok；有密钥未验证 = info；无密钥 = warn */
+const health = computed((): { tone: 'ok' | 'info' | 'warn'; label: string } => {
+  if (!props.provider.has_key) return { tone: 'warn', label: '缺密钥' }
+  if (props.provider.validated_at) return { tone: 'ok', label: `已验证 ${props.provider.validated_at.slice(0, 10)}` }
+  return { tone: 'info', label: '未验证' }
+})
 </script>
 
 <template>
   <article
     class="prov-card"
-    :class="{ 'is-default': provider.is_default }"
+    :class="{ 'is-default': provider.is_default, 'is-anthropic': isAnthropic }"
     role="button"
     tabindex="0"
-    @click="emit('edit')"
     :aria-label="`编辑 ${provider.name}`"
+    @click="emit('edit')"
     @keydown.enter.self.prevent="emit('edit')"
     @keydown.space.self.prevent="emit('edit')"
   >
     <header class="prov-card__head">
-      <span class="prov-card__avatar" aria-hidden="true">{{ initial }}</span>
+      <span class="prov-card__mark" aria-hidden="true">{{ initial }}</span>
       <div class="prov-card__identity">
         <div class="prov-card__title-row">
           <strong class="prov-card__name">{{ provider.name }}</strong>
-          <el-tag v-if="provider.is_default" size="small" type="primary" effect="plain">默认</el-tag>
-          <el-tag v-if="!provider.has_key" size="small" type="info" effect="plain">缺密钥</el-tag>
+          <UiBadge v-if="provider.is_default" variant="default">默认</UiBadge>
         </div>
-        <p class="prov-card__meta">{{ protocolLabel }}</p>
+        <p class="prov-card__meta">{{ protocolLabel }}<template v-if="provider.note"> · {{ provider.note }}</template></p>
       </div>
-      <el-dropdown trigger="click" :disabled="busy" @command="onMore" @click.stop>
-        <el-button
-          text
-          circle
-          size="small"
-          :disabled="busy"
-          aria-label="更多操作"
-          @click.stop
-        >
-          ···
-        </el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="catalog">模型目录</el-dropdown-item>
-            <el-dropdown-item command="pull">拉取模型</el-dropdown-item>
-            <el-dropdown-item command="test">测试连接</el-dropdown-item>
-            <el-dropdown-item divided command="remove" class="danger-item">删除</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
+      <DropdownMenu>
+        <DropdownMenuTrigger as-child>
+          <Button variant="ghost" size="icon-sm" :disabled="busy" aria-label="更多操作" @click.stop>
+            <Ellipsis />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" @click.stop>
+          <DropdownMenuItem @select="emit('catalog')">模型目录</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('pull')">拉取模型</DropdownMenuItem>
+          <DropdownMenuItem @select="emit('test')">测试连接</DropdownMenuItem>
+          <DropdownMenuItem v-if="!provider.is_default" @select="emit('set-default')">设为默认</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" @select="emit('remove')">删除</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </header>
 
-    <div class="endpoint-strip" :title="provider.base_url">
-      <span class="endpoint-strip__proto">{{ protocolShort }}</span>
-      <span class="endpoint-strip__dot" aria-hidden="true">·</span>
-      <span class="endpoint-strip__host">{{ host }}</span>
-      <span class="endpoint-strip__dot" aria-hidden="true">·</span>
-      <span class="endpoint-strip__key" :class="{ ok: provider.has_key }">{{ keyLabel }}</span>
+    <div class="prov-card__endpoint" :title="provider.base_url">
+      <span class="prov-card__host">{{ host }}</span>
+      <span class="prov-card__key" :class="{ 'is-ok': provider.has_key }">
+        <KeyRound aria-hidden="true" />
+        {{ keyLabel }}
+      </span>
     </div>
 
     <div v-if="chips.length" class="prov-card__chips">
@@ -120,28 +125,24 @@ function onMore(command: string): void {
         v-for="(id, i) in chips"
         :key="id"
         class="model-chip"
-        :class="{ active: id === provider.default_model || (!provider.default_model && i === 0) }"
+        :class="{ 'is-active': id === provider.default_model || (!provider.default_model && i === 0) }"
       >
         {{ id }}
       </span>
-      <span v-if="extraCount > 0" class="prov-card__extra mono">+{{ extraCount }}</span>
+      <span v-if="extraCount > 0" class="model-chip model-chip--more">+{{ extraCount }}</span>
     </div>
-    <p v-else class="prov-card__empty">尚未拉取模型</p>
+    <p v-else class="prov-card__empty">尚未拉取模型，先在菜单里「拉取模型」</p>
 
     <footer class="prov-card__foot" @click.stop>
-      <span class="prov-card__count mono">{{ enabledCount }}/{{ catalogTotal }} 启用</span>
+      <span class="prov-card__health" :class="`is-${health.tone}`" :title="health.label">
+        <span class="prov-card__dot" aria-hidden="true" />
+        <span class="prov-card__count">{{ enabledCount }}<small>/{{ catalogTotal }} 模型启用</small></span>
+      </span>
       <div class="prov-card__actions">
-        <el-button
-          v-if="!provider.is_default"
-          link
-          class="set-default"
-          :disabled="busy"
-          @click="emit('set-default')"
-        >
+        <Button v-if="!provider.is_default" variant="ghost" size="sm" :disabled="busy" @click="emit('set-default')">
           设为默认
-        </el-button>
-        <span v-else class="prov-card__default-hint">当前默认</span>
-        <el-button link :disabled="busy" @click="emit('edit')">编辑</el-button>
+        </Button>
+        <Button variant="outline" size="sm" :disabled="busy" @click="emit('edit')">编辑</Button>
       </div>
     </footer>
   </article>
@@ -149,54 +150,70 @@ function onMore(command: string): void {
 
 <style scoped>
 .prov-card {
+  --prov-tint: var(--seal);
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-2);
+  gap: var(--gap-3);
   min-width: 0;
-  padding: var(--gap-3);
+  padding: var(--gap-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
-.prov-card:hover,
+.prov-card.is-anthropic {
+  --prov-tint: var(--peach);
+}
+
+.prov-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-sm);
+}
+
+.prov-card:active {
+  transform: translateY(1px);
+}
+
 .prov-card:focus-visible {
-  border-color: color-mix(in oklab, var(--ink) 28%, var(--rule));
-  background: var(--surface-hover);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .prov-card.is-default {
-  border-color: var(--seal);
-  background: color-mix(in oklab, var(--seal-soft) 35%, var(--sheet));
+  border-color: var(--seal-border);
+  box-shadow:
+    0 0 0 1px var(--seal-border),
+    var(--shadow-xs);
 }
 
 .prov-card__head {
   display: flex;
   align-items: flex-start;
-  gap: 0.55rem;
+  gap: var(--gap-3);
 }
 
-.prov-card__avatar {
-  flex: 0 0 auto;
-  width: 2.1rem;
-  height: 2.1rem;
+.prov-card__mark {
   display: grid;
+  flex: 0 0 auto;
   place-items: center;
+  width: 40px;
+  height: 40px;
   border-radius: var(--radius);
-  font-family: var(--font);
+  background:
+    linear-gradient(145deg, color-mix(in oklab, var(--prov-tint) 22%, transparent), color-mix(in oklab, var(--prov-tint) 8%, transparent)),
+    var(--surface-raised);
+  border: 1px solid color-mix(in oklab, var(--prov-tint) 30%, transparent);
+  color: color-mix(in oklab, var(--prov-tint) 85%, var(--text-primary));
+  font-family: var(--mono);
+  font-size: var(--fs-title);
   font-weight: 700;
-  font-size: var(--fs-body);
-  color: var(--ink);
-  background: var(--panel-2);
-  border: 1px solid var(--rule);
-}
-
-.prov-card.is-default .prov-card__avatar {
-  color: var(--seal-ink);
-  background: var(--seal-soft);
-  border-color: var(--seal);
 }
 
 .prov-card__identity {
@@ -208,143 +225,169 @@ function onMore(command: string): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--gap-2);
 }
 
 .prov-card__name {
+  color: var(--text-primary);
   font-size: var(--fs-title);
-  font-weight: 650;
-  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
 }
 
 .prov-card__meta {
-  margin: 0.1rem 0 0;
-  font-size: var(--fs-kicker);
-  color: var(--mist);
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.endpoint-strip {
+.prov-card__endpoint {
   display: flex;
   align-items: center;
-  gap: 0;
+  justify-content: space-between;
+  gap: var(--gap-3);
   min-width: 0;
-  padding: 0.28rem 0.45rem;
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  background: var(--panel-2);
+  padding: 6px var(--gap-3);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
   font-family: var(--mono);
-  font-size: var(--fs-kicker);
-  line-height: 1.35;
-  color: var(--mist);
-  overflow: hidden;
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
 }
 
-.endpoint-strip__proto {
-  color: var(--mist);
-  flex: 0 0 auto;
-}
-
-.endpoint-strip__dot {
-  margin: 0 0.35rem;
-  color: var(--rule);
-  flex: 0 0 auto;
-}
-
-.endpoint-strip__host {
-  color: var(--ink);
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.prov-card__host {
   min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.endpoint-strip__key {
-  color: var(--mist);
+.prov-card__key {
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--warn-ink);
 }
 
-.endpoint-strip__key.ok {
-  color: var(--ok);
+.prov-card__key.is-ok {
+  color: var(--text-tertiary);
+}
+
+.prov-card__key :deep(svg) {
+  width: 12px;
+  height: 12px;
 }
 
 .prov-card__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
   align-items: center;
+  gap: var(--gap-1);
 }
 
 .model-chip {
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-  border: 1px solid var(--rule);
-  background: var(--sheet);
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 0.66rem;
-  color: var(--mist);
+  font-size: var(--fs-kicker);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.model-chip.active {
-  border-color: var(--seal);
+.model-chip.is-active {
+  border-color: var(--seal-border);
   background: var(--seal-soft);
   color: var(--seal-ink);
+  font-weight: 600;
 }
 
-.prov-card__extra {
-  font-size: 0.66rem;
-  color: var(--mist);
+.model-chip--more {
+  border-style: dashed;
+  color: var(--text-tertiary);
 }
 
 .prov-card__empty {
   margin: 0;
-  font-size: var(--fs-kicker);
-  color: var(--mist);
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
 }
 
 .prov-card__foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: var(--gap-2);
   margin-top: auto;
-  padding-top: 0.4rem;
-  border-top: 1px solid var(--rule);
+  padding-top: var(--gap-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.prov-card__health {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.prov-card__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--border-strong) 25%, transparent);
+}
+
+.prov-card__health.is-ok .prov-card__dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+
+.prov-card__health.is-warn .prov-card__dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
+}
+
+.prov-card__health.is-info .prov-card__dot {
+  background: var(--info);
+  box-shadow: 0 0 0 3px var(--info-soft);
 }
 
 .prov-card__count {
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.prov-card__count small {
+  color: var(--text-tertiary);
+  font-family: var(--font);
   font-size: var(--fs-kicker);
-  color: var(--mist);
+  font-weight: 500;
 }
 
 .prov-card__actions {
   display: flex;
   align-items: center;
-  gap: 0.15rem;
+  gap: var(--gap-1);
 }
 
-.prov-card__default-hint {
-  font-size: var(--fs-aux);
-  color: var(--mist);
-  padding: 0 0.35rem;
+@media (prefers-reduced-motion: reduce) {
+  .prov-card {
+    transition: none;
+  }
 }
-
-.set-default {
-  color: var(--ok);
-}
-
-.set-default:hover {
-  color: var(--ok);
-}
-
-:deep(.danger-item) {
-  color: var(--el-color-danger);
-}
-.prov-card:focus-visible { outline:2px solid var(--seal); outline-offset:-2px; }
-.prov-card__foot, .prov-card__actions { flex-wrap:wrap; }
-@media(prefers-reduced-motion:reduce) { .prov-card { transition:none; } }
 </style>

@@ -37,16 +37,21 @@ class StockAgentConfig(BaseModel):
     description: str = Field(default="", max_length=240)
     provider: str = Field(default="", max_length=200)
     model: str = Field(default="", max_length=200)
-    prompt: str = Field(default="", max_length=16000)
+    prompt: str = Field(default="", max_length=100000)
+    common_prompt: str = Field(default="", max_length=100000)
+    premarket_prompt: str = Field(default="", max_length=100000)
+    review_prompt: str = Field(default="", max_length=100000)
     enabled: bool = False
     initial_capital_cents: int = Field(default=20_000_000, ge=10_000, le=100_000_000_000, strict=True)
-    strategies: list[str] = Field(default_factory=list, max_length=30)
-    daily_selection_limit: int = Field(default=3, ge=1, le=20, strict=True)
-    watch_limit: int = Field(default=3, ge=1, le=20, strict=True)
-    position_limit: int = Field(default=3, ge=1, le=4, strict=True)
-    temporary_position_limit: int = Field(default=5, ge=1, le=8, strict=True)
-    max_position_pct: int = Field(default=35, ge=1, le=100, strict=True)
-    timeout_seconds: int = Field(default=240, ge=60, le=300, strict=True)
+    strategies: list[str] = Field(default_factory=list, max_length=0)
+    daily_selection_limit: int = Field(default=0, ge=0, strict=True, description="0表示不设人工数量上限")
+    watch_limit: int = Field(default=0, ge=0, strict=True, description="0表示不设人工数量上限")
+    position_limit: int = Field(default=0, ge=0, strict=True, description="0表示不设人工数量上限")
+    temporary_position_limit: int = Field(default=0, ge=0, strict=True, description="0表示不设人工数量上限")
+    max_position_pct: int = Field(default=100, ge=1, le=100, strict=True)
+    timeout_seconds: int = Field(default=900, ge=60, le=7200, strict=True)
+    thinking: str = Field(default="", max_length=100)
+    parallel_tools: int = Field(default=4, ge=1, le=16, strict=True)
     schedule: AgentSchedule = Field(default_factory=AgentSchedule)
     retention: DiaryRetention = Field(default_factory=DiaryRetention)
 
@@ -61,11 +66,6 @@ class StockAgentConfig(BaseModel):
     def validate_policy(self) -> StockAgentConfig:
         if self.enabled and (not self.provider or not self.model):
             raise ValueError("启用前请选择可用的模型供应商和模型")
-        if self.temporary_position_limit < self.position_limit:
+        if self.temporary_position_limit and self.temporary_position_limit < self.position_limit:
             raise ValueError("临时持仓上限不能低于常态上限")
-        if self.kind == "leader" and (
-            self.daily_selection_limit > 3 or self.watch_limit > 3
-            or self.position_limit > 3 or self.temporary_position_limit > 5
-        ):
-            raise ValueError("龙头选手每日入选及观察最多3只，常态持仓最多3只，临时最多5只")
         return self

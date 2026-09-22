@@ -1,6 +1,6 @@
-import { ElMessage } from 'element-plus'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { toast } from 'vue-sonner'
 
 import {
   CapabilityUnavailableError,
@@ -68,7 +68,10 @@ import {
   switchScreenSkillRuntime,
 } from './screenSkillWorkbench'
 
+import { useVisitorMode } from '@/shared/composables/useAccess'
+
 export function useScreenSkillWorkbenchPage() {
+  const visitor = useVisitorMode()
   const route = useRoute()
   const router = useRouter()
   const screenRun = useScreenRunStore()
@@ -215,7 +218,7 @@ export function useScreenSkillWorkbenchPage() {
   }
 
   async function loadProviders(): Promise<void> {
-    providers.value = await getProviders().catch(() => [])
+    providers.value = visitor.value ? [] : await getProviders().catch(() => [])
     if (!generationForm.provider && providers.value.length) {
       generationForm.provider =
         providers.value.find((item) => item.is_default)?.name || providers.value[0]!.name
@@ -335,7 +338,7 @@ export function useScreenSkillWorkbenchPage() {
 
   async function handleTrial(): Promise<void> {
     if (!hasBody.value) {
-      ElMessage.warning('先写点公式')
+      toast.warning('先写点公式')
       return
     }
     const payload = builtPayload()
@@ -343,7 +346,7 @@ export function useScreenSkillWorkbenchPage() {
     const result = await guard(() => previewScreenSkill(payload), true)
     if (!result) return
     const ok = markTrialFromPreview(result)
-    ElMessage.success(ok ? '试跑通过' : '试跑未通过，请看诊断')
+    toast.success(ok ? '试跑通过' : '试跑未通过，请看诊断')
   }
 
   async function handleGenerate(): Promise<void> {
@@ -384,7 +387,7 @@ export function useScreenSkillWorkbenchPage() {
       strategy_revision: result.strategy_revision,
     }
     generationForm.source = ''
-    ElMessage.success('AI 建议已应用到当前草稿')
+    toast.success('AI 建议已应用到当前草稿')
   }
 
   async function handleSave(): Promise<string | null> {
@@ -401,7 +404,7 @@ export function useScreenSkillWorkbenchPage() {
         : await guard(() => createScreenSkill(payload))
     if (!result) return null
     applyDraft(draftFromScreenSkill(result))
-    ElMessage.success(isEditing.value ? '量化技能已更新' : '量化技能已保存')
+    toast.success(isEditing.value ? '量化技能已更新' : '量化技能已保存')
     await router.replace({ query: { slug: result.slug } })
     await loadStrategies()
     return result.slug
@@ -417,7 +420,7 @@ export function useScreenSkillWorkbenchPage() {
     if (!confirmed) return
     const removed = await guard(() => deleteScreenSkill(currentSlug.value, draft.packageRevision))
     if (!removed) return
-    ElMessage.success('量化技能已删除')
+    toast.success('量化技能已删除')
     await router.replace({ query: {} })
   }
 
@@ -429,7 +432,7 @@ export function useScreenSkillWorkbenchPage() {
     applyCatalogSnippet(draft, snippet)
     preview.value = null
     clearTrial()
-    ElMessage.success(`已应用片段：${snippet.title}`)
+    toast.success(`已应用片段：${snippet.title}`)
   }
 
   function applyPreset(presetId: string): void {
@@ -446,7 +449,7 @@ export function useScreenSkillWorkbenchPage() {
   function mergeRequiredFields(): void {
     const missing = [...requiredFields.value]
     draft.dataFields = [...new Set([...draft.dataFields, ...missing])]
-    if (missing.length) ElMessage.success('已补齐编译所需字段')
+    if (missing.length) toast.success('已补齐编译所需字段')
   }
 
   function openAssistant(): void {

@@ -3,3 +3,5 @@
 
 pytest>=8.0.0
 import-linter>=2.1
+grpcio-tools==1.84.0
+cryptography>=44

@@ -134,15 +134,21 @@ def list_users(store: IdentityStore, **filters: Any) -> list[dict[str, Any]]:
 
 
 def set_role(store: IdentityStore, *, operator: User, user_id: str, role: str) -> User:
-    if role not in ("admin", "member"):
-        raise ValidationError("角色只能是 admin 或 member")
+    if role not in ("admin", "visitor"):
+        raise ValidationError("角色只能是 admin 或 visitor")
     target = store.get_user(user_id)
     if target is None:
         raise ValidationError("用户不存在")
     if target.id == operator.id and role != "admin":
         # 自己把自己降级 = 可能把最后一个管理员降掉，直接锁死平台。
         raise AuthorizationError("不能取消自己的管理员身份")
-    updated = store.update_user(user_id, role=role)
+    if not operator.is_admin:
+        raise AuthorizationError("需要管理员权限")
+    updated = store.update_user(user_id, role=role,
+                                view_tenant_id=(target.view_tenant_id or target.tenant_id) if role == "visitor" else "",
+                                must_change_password=0 if role == "visitor" else target.must_change_password)
+    if target.role != role:
+        store.revoke_user_sessions(user_id)
     store.write_audit(
     action="admin.set_role",
     actor_id=operator.id,
@@ -207,7 +213,8 @@ def reset_user_password(
     store.set_password(
     user_id, password_hash=pw.hash_password(new_password), algo=pw.preferred_algo()
     )
-    store.update_user(user_id, must_change_password=1)
+    target = store.get_user(user_id)
+    store.update_user(user_id, must_change_password=bool(target and target.is_admin))
     store.revoke_user_sessions(user_id)
     store.write_audit(
     action="admin.reset_password",
@@ -230,7 +237,7 @@ def create_user(
     password: str,
     display_name: str = "",
     email: str = "",
-    role: str = "member",
+    role: str = "visitor",
     status: str = "active",
 ) -> User:
     """管理员在后台开号。
@@ -238,8 +245,10 @@ def create_user(
     本系统**不支持注册制**（``LOCI_ALLOW_SIGNUP`` 默认关闭），所以这里是账号的
     唯一正常来源，首启种子只负责第一个管理员。
     """
-    if role not in ("admin", "member"):
-        raise ValidationError("角色只能是 admin 或 member")
+    if not operator.is_admin:
+        raise AuthorizationError("需要管理员权限")
+    if role not in ("admin", "visitor"):
+        raise ValidationError("角色只能是 admin 或 visitor")
     if status not in ("active", "disabled"):
         raise ValidationError("状态只能是 active 或 disabled")
     login = normalize_username(username)
@@ -261,13 +270,12 @@ def create_user(
         display_name=display_name or login,
         role=role,
         status=status,
-        # ``tenant_id=None`` → store 拿 user_id 当租户。**绝不复用 PRIMARY_TENANT**：
-        # 主租户是存量单机数据（首启管理员的 data/ 目录），把新人塞进去等于让他
-        # 直接读写别人的账本。
+        # Identity remains private. Only visitors receive an explicit, read-only
+        # delegation to the creating administrator's workspace. Promotion to admin
+        # clears that delegation, so it can never become write access to this data.
         tenant_id=None,
-        # 管理员设的初始口令必须换：它走过「管理员知道明文」这条路径，在用户改掉
-        # 之前都不算只有本人知道的秘密。
-        must_change_password=True,
+        view_tenant_id=operator.tenant_id if role == "visitor" else "",
+        must_change_password=role == "admin",
     )
     if address:
         # 管理员代开的号视为**邮箱已验证**：这条路径上邮箱是管理员录入的事实，
@@ -282,7 +290,7 @@ def create_user(
         store.update_user(user.id, email_verified_at=iso(utc_now()))
     if role == "admin":
         store.set_quota(user.id, **ADMIN_QUOTAS)
-    # member 不显式写配额：走 DEFAULT_QUOTAS，将来调默认值存量用户一起生效。
+    # 访客不运行计算或写入作品，不需要资源配额。
     store.write_audit(
         action="admin.create_user",
         actor_id=operator.id,
@@ -301,5 +309,5 @@ def platform_overview(store: IdentityStore) -> dict[str, Any]:
     "admins": len([u for u in store.list_users(limit=500) if u.is_admin]),
     "top_llm_usage": store.top_usage(period=period, metric="llm_tokens", limit=10),
     "recent_audit": store.list_audit(limit=20),
-    "announcements": store.list_announcements(only_live=False),
+    "visitors": len([u for u in store.list_users(limit=500) if not u.is_admin]),
 }

@@ -15,13 +15,12 @@
 
 普通 `screen` 任务可显式配置 `snapshot_time="14:50"`、`snapshot_grace_minutes=2`、`trading_days_only=true`、`catch_up=false`。`jobs/screen_schedule_guard.py` 在入口、选股前、选股返回后及开始入库前检查上海时区窗口及市场交易日历，只有 [14:50:00,14:52:00) 和明确交易日才允许开始持久化；日历缺失/过期、休市、错过窗口或执行迟到均记录 skipped。不承诺 SQLite 事务完成瞬间仍在窗口内。`catch_up=false` 禁止盘后拿最终日 K 补跑。未设置这些字段的旧任务不改变行为。
 
-“一线定乾坤·首板次日”使用 `screen:yixian-auction`，交易日 09:25 触发，
-`snapshot_time="09:25"`、宽限 2 分钟、`catch_up=false`；`top_n=0` 保留全部命中，
-`use_ai_pick=false`、`push_wecom=false`、`paper_quant_enabled=false`，仅写目标租户候选与回执。
-任务不复制 `params`，指标编辑器保存后，运行时加载最新指标默认参数。
+“一线定乾坤·首板次日”（`yixian-auction`）已退役。启动自愈会删除其 `screen:` 任务、
+任务回执、技能包与版本历史、纸面舱和候选历史，并在安装/导入/活动目录及自主交易员
+研究入口拒绝再次启用；模板源码仅作历史研究保留。
 原 `impulse-pullback-tail-v1` 的普通及绑定选股任务均下线，历史回执保留。
 `snapshot_schedule.checked_at` 是门禁时间，真实抓取起止见 `data_snapshot`。
-测试：`tests/ops/test_screen_schedule_guard.py`、`tests/strategy/test_yixian_auction.py`。
+测试：`tests/ops/test_screen_schedule_guard.py`、`tests/ops/test_retire_yixian_auction.py`。
 
 Skill 清单解析在 `application/skill_manifest.py`；安装/解压/发现仍在 `application/skills.py`。
 HTTP：`api/skills.py`（目录/安装/生成）+ `api/skill_runs_api.py`（对话 Run）+ `api/skill_jobs_api.py`（战法配置/定时绑定）。
@@ -1065,6 +1064,10 @@ protect 契约拦着，而且方向也反了（community 是被依赖方）。
 `guardian_evidence.py` 提供 `guardian_decision_history` 只读工具：按日期、股票、时段和分页返回原始逐股理由、条件变化、其他买入意图、成交与拒单。咨询自动带入问题指定日期的首批轮次；不能把最近5轮之外的记录说成不存在。研判前账户优先使用当轮快照，旧记录只按该轮之前的成交流水重建现金和可卖股数，不拿收盘状态代替开盘。
 
 自动研判在调用模型前保存 `decision_context`（账户、实际 `position_policy`、候选输入和盘前计划），成功与失败提交均保留。未记录历史规则时明确缺失，禁止以当前提示词反推历史程序约束。模型理由、程序拒单、事后行情评价分开归因；未记录逐股决策的候选标记 `not_recorded`，不补写主动放弃。每轮优先复核待触发机会，修改等待条件需说明新增事实及其时点，保留自主选择权。
+
+自主交易员与独立智能体（含龙头选手）均支持 `common_prompt` 共用身份/风格偏好、`premarket_prompt` 盘前、`prompt` 盘中、`review_prompt` 盘后。每轮只加载共用部分与当前阶段；盘前/盘后留空时回退到盘中，不叠加两份阶段提示词。竞价与尾盘使用盘中，日/周复盘使用盘后。咨询只加载共用基调与独立咨询任务。内置自主交易员无固定战法偏好；龙头选手的龙头与起爆点定位放在共用基调中。逐字匹配旧内置提示词的未分阶段配置会按新模板读取，自定义文本及显式留空保留；保存设置后持久化，无需改写历史报告。
+
+达到常态4只不构成盘中禁买：在8只临时上限及资金/T+1约束内可先买新仓，再退出可卖旧仓，收盘最多4只。沿用14:50起收敛及14:55重试，不以提示词绕过收敛期限制。复盘按原始证据区分信号未满足、主动放弃、不可执行与仅因常态名额放弃，收益假设与规则误读分开处理。
 
 复盘分开统计 `failed_cycles` 和 `expired_cycles`，逐股回顾消费原始条件变化与规则证据。回归见 `tests/ops/test_guardian_evidence.py` 及交易员主流程/复盘测试。
 

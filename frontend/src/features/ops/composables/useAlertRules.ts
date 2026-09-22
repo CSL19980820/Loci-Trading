@@ -5,7 +5,7 @@
  * 那张小卡只要「列出 / 添一条 / 试扫」三件事，独立出来后它不必再从面板接数据。
  */
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import { listAlertRules, saveAlertRule, scanAlertRules } from '@/shared/api/quant_ops_paper'
 
@@ -20,7 +20,7 @@ export function useAlertRules() {
 
   async function addRule(): Promise<void> {
     if (!alertCode.value.trim() || alertPrice.value == null) {
-      ElMessage.warning('请填写代码与价格')
+      toast.warning('请填写代码与价格')
       return
     }
     await saveAlertRule({
@@ -34,12 +34,12 @@ export function useAlertRules() {
     alertCode.value = ''
     alertPrice.value = null
     await loadRules()
-    ElMessage.success('规则已保存')
+    toast.success('规则已保存')
   }
 
   async function scanRules(): Promise<void> {
     const result = await scanAlertRules(true)
-    ElMessage.info(`试扫命中 ${String(result.triggered ?? 0)} 条`)
+    toast.info(`试扫命中 ${String(result.triggered ?? 0)} 条`)
   }
 
   return { alertCode, alertPrice, rules, loadRules, addRule, scanRules }

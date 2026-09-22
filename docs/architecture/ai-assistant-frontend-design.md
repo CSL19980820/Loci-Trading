@@ -1,10 +1,16 @@
 # Loci AI 对话助手 · 前端设计细则
 
-> **状态**：设计稿（未开工）  
+> **状态**：历史设计稿（写作时的 UI 底座是 Element Plus / `vue-element-plus-x`，其后两者已整体拆除）  
+> **这份文档记录的是当时的取舍与信息架构，不是现在的施工依据。** 需要落代码时看
+> [`frontend/docs/ui-component-map.md`](../../frontend/docs/ui-component-map.md)（现有组件）、
+> [`frontend/docs/ui-spec.md`](../../frontend/docs/ui-spec.md)（密度与令牌）与
+> [`.cursor/skills/shadcn-vue/SKILL.md`](../../.cursor/skills/shadcn-vue/SKILL.md)。
+> 下文出现的 `el-*` / `vue-element-plus-x` 字样属于**当时的实现选择**，现已不存在。
+>
 > **读者**：前端 / 设计落地 Agent  
 > **配套后端**：[`ai-assistant-backend-plan.md`](./ai-assistant-backend-plan.md)  
 > **参考**：主流助手（ChatGPT / Claude / DeepSeek 侧栏会话）、`qiz-ai-gateway-ui`（GatewayChatPlayground + `packages/widget` 悬浮球）、**vue-element-plus-x / AI Elements** 流式对话范式  
-> **约束**：[`frontend/AGENTS.md`](../../frontend/AGENTS.md)（Element Plus、`page-fill` 无文档级滚动、单文件 ≤600 行）
+> **约束**：[`frontend/AGENTS.md`](../../frontend/AGENTS.md)（`page-fill` 无文档级滚动、单文件 ≤600 行）
 
 ---
 

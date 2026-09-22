@@ -1,12 +1,7 @@
 /**
- * 盘面页共用皮肤：卡片、密度表、数字/涨跌类（feature 局部；令牌只消费 var(--token)）。
- *
- * 选择器一律 `.pulse-*` 前缀开头：本文件由盘面各子组件 import，是全局注入的，
- * 前缀是它不污染别的页的唯一保证。
- *
- * 尺度全部走令牌，本文件不复述数值：行高 `--row-h`、表头 `--head-h`、圆角 `--radius-lg`、
- * 分隔一律 1px hairline、卡片无阴影（阴影只留给弹层）。令牌真值只在 style.base.css。
- * `var()` 不写 fallback：令牌都在 `:root` 恒定义，写了只是给改名时留一个必然过期的错值。
+ * 盘面页共用皮肤：面板壳、面板头、数字 / 涨跌类、手机端卡片列表。
+ * 选择器一律 `.pulse-*` 前缀：本文件由盘面各子组件 import，是全局注入的。
+ * 尺度全部走令牌。
  */
 
 .pulse-panel {
@@ -16,168 +11,154 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--sheet);
-  border: 1px solid var(--rule);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  transition: border-color 200ms ease;
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--dur-fast) var(--ease);
 }
 
 .pulse-panel:hover {
-  border-color: var(--rule-strong);
+  border-color: var(--border-default);
 }
 
-/* 与全局 .sheet-bar 同一档：min-height --head-h + padding --gap-1/--pad-sheet-x，
-   盘面不再自成一档卡片头高度 */
+/* 面板头：图标方块 + 标题行（标题与元信息同一行）；右侧操作 */
 .pulse-panel__head {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--gap-2);
-  min-height: var(--head-h);
-  padding: var(--gap-1) var(--pad-sheet-x);
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet-alt);
+  gap: var(--gap-3);
+  min-height: 48px;
+  padding: var(--gap-2) var(--gap-3) var(--gap-2) var(--gap-4);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .pulse-panel__lead {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.pulse-panel__icon-box {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  background: var(--seal-soft);
+  color: var(--seal);
+}
+
+.pulse-panel__icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: inherit;
+}
+
+/* 标题与元信息同一行：标题不换行，元信息跟在后面省略 */
+.pulse-panel__titles {
+  display: flex;
+  flex-direction: row;
   align-items: baseline;
   gap: var(--gap-2);
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .pulse-panel__title {
+  margin: 0;
   font-family: var(--font);
-  font-size: var(--fs-body);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--ink);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--text-primary);
   white-space: nowrap;
+  flex: 0 0 auto;
 }
-/* 元信息一律微标档次要色单行：解释性长句进 tooltip，不占版面 */
+
 .pulse-panel__meta {
   font-family: var(--mono);
   font-size: var(--fs-kicker);
-  color: var(--mist);
+  color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
-.pulse-panel__icon {
-  align-self: center;
-  color: var(--seal-ink);
-  font-size: var(--fs-title);
+.pulse-panel__count {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .pulse-panel__empty {
   flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gap-2);
-  padding: var(--gap-2);
-  font-size: var(--fs-aux);
-  color: var(--muted);
-  background-color: transparent;
+  min-height: 0;
+  height: 100%;
 }
 
-.pulse-tabs {
-  /*
-   * 卡片头里的 tab 是文本型切换，不是控件：全局 .el-button--small 被钉到 --ctl-h，
-   * 连 min-height 一起生效，直接用会把卡片头撑高一档，密表里每张卡片少一行。
-   * 密度令牌最矮的一档是 --row-h-sm，仍然偏高，所以就近钉一个只服务本组件的局部契约。
-   */
-  --pulse-tab-h: var(--ctl-h);
-  display: flex;
-  align-items: center;
-  gap: var(--gap-1);
+.pulse-panel__foot {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-4);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
 }
 
-.pulse-tabs .el-button {
-  height: var(--pulse-tab-h);
-  min-height: var(--pulse-tab-h);
-  padding: 0 var(--gap-1);
-  font-size: var(--fs-kicker);
-}
-
-.pulse-tabs .el-button + .el-button {
-  margin-left: 0;
-}
-
-.pulse-tabs .pulse-tab--on {
-  border-bottom: 1px solid var(--seal);
-}
-
-/* 表格皮肤真相在 style.components.css：这里只留布局类，不再另起 --el-table-* 变量（hover 全局是 surface-hover） */
+/* 表格密度由 BasicTable 负责；这里只留布局 */
 .pulse-table {
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
   width: 100%;
 }
 
-/* EP 的 `.el-table--small td.el-table__cell` 自带 padding，且比单纯 `.pulse-table
-   .el-table__cell` 更特异；这里必须带元素选择器压过去，否则行高会退回 EP 默认档 */
-.pulse-table td.el-table__cell,
-.pulse-table th.el-table__cell {
-  padding: 0;
-  border-bottom: 1px solid var(--rule);
+/*
+ * 空态撑满面板剩余高度。
+ * 本文件不是 <style scoped>：`:deep()` 这种 Vue 编译器伪类在这里是无效选择器，
+ * 浏览器解析阶段会整条丢弃，所以一律用普通后代选择器。
+ * 表体只剩一行空态时，把表体高度让给表格，空态再绝对定位铺满该单元格。
+ */
+.pulse-table .data-grid__viewport:has(.data-grid__empty) [data-slot='table-container'],
+.pulse-table .data-grid__viewport:has(.data-grid__empty) table {
+  height: 100%;
 }
 
-/* 行高含那条 hairline：内容盒取 row-h - 1，舒适不拥挤 */
-.pulse-table .el-table__row,
-.pulse-table td.el-table__cell {
-  height: calc(var(--row-h) - 1px);
+.pulse-table .data-grid__empty {
+  position: relative;
+  height: 100%;
+  padding: 0 !important;
 }
 
-.pulse-table th.el-table__cell {
-  height: calc(var(--head-h) - 1px);
+.pulse-table .data-grid__empty .empty-state {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  min-height: 0;
 }
 
-.pulse-table .cell {
-  padding: 0 var(--gap-2);
-  height: calc(var(--row-h) - 1px);
-  line-height: calc(var(--row-h) - 1px);
-  font-size: var(--fs-body);
-  white-space: nowrap;
-  word-break: keep-all;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: center;
-}
-
-.pulse-table th.el-table__cell .cell {
-  height: calc(var(--head-h) - 1px);
-  line-height: calc(var(--head-h) - 1px);
-  font-size: var(--fs-aux);
-  font-weight: 400;
-  letter-spacing: 0;
-  text-align: center;
-}
-
-.pulse-table td.is-left .cell,
-.pulse-table th.is-left .cell {
-  text-align: left;
-}
-
-.pulse-table td.is-right .cell,
-.pulse-table th.is-right .cell {
-  text-align: right;
-}
-
-.pulse-table .el-table__row--striped td.el-table__cell {
-  background: var(--sheet-alt);
-}
-
-.pulse-table .el-table__inner-wrapper::before {
-  background: var(--rule);
-}
-
-/* 数字列：等宽 + tabular-nums（对齐靠列或全局规则） */
+/* 数字列 */
 .pulse-num {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
@@ -196,11 +177,10 @@
 }
 
 .pulse-name {
-  color: var(--ink);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
-.pulse-name .el-link,
 .pulse-name .stock-link {
   color: inherit;
 }
@@ -208,11 +188,12 @@
 .pulse-code {
   font-family: var(--mono);
   font-size: var(--fs-kicker);
-  color: var(--mist);
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
 }
 
 .pulse-dim {
-  color: var(--mist);
+  color: var(--text-tertiary);
 }
 
 .pulse-clip {
@@ -222,4 +203,146 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
+}
+
+/* 名称一行：名称加粗 + 代码小字单行 */
+.pulse-cell-inline {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 涨跌 chip（表格内） */
+.pulse-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+
+.pulse-chip.pulse-up {
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.pulse-chip.pulse-down {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+/* ─── 手机端卡片列表 ─── */
+.pulse-cards {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pulse-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--gap-3);
+  padding: 12px var(--gap-4);
+  border-bottom: 1px solid var(--rule-soft);
+  text-decoration: none;
+  color: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pulse-card:last-child {
+  border-bottom: 0;
+}
+
+.pulse-card:active {
+  background: var(--surface-hover);
+}
+
+.pulse-card__name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-2);
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pulse-card__name .stock-link {
+  color: inherit;
+}
+
+.pulse-card__sub {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-1) var(--gap-2);
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+.pulse-card__sub .pulse-num {
+  color: var(--text-secondary);
+}
+
+.pulse-card__num {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+}
+
+.pulse-card__big {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pulse-card__small {
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pulse-card__rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+}
+
+.pulse-card__rank.is-top {
+  background: var(--seal-soft);
+  color: var(--seal-ink);
 }

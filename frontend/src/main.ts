@@ -4,18 +4,16 @@ import { createPinia } from 'pinia'
 
 import App from './App.vue'
 import router from './shared/router'
-import { setupElement } from './shared/plugins/element'
 import { initTheme } from './shared/lib/theme'
-// EP 深色变量：夜间/墨黑外观靠 html.dark 生效，否则表格边框、分页、下拉会漏浅色
-import 'element-plus/theme-chalk/dark/css-vars.css'
+import { installChunkRecovery } from './shared/lib/chunkRecovery'
 import './style.css'
 
 initTheme()
+installChunkRecovery()
 
 const isPeekWindow = location.pathname.startsWith('/peek')
 
 const app = createApp(App)
-setupElement(app)
 const pinia = createPinia()
 app.use(pinia)
 app.use(PiniaColada)

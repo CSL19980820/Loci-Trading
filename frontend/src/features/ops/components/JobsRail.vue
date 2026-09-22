@@ -1,18 +1,24 @@
 <script setup lang="ts">
 /**
- * 定时台左栏：两个筛选 + 任务名册。
+ * 定时台左栏：两个筛选 + 任务卡列表（Linear 式）。
  *
- * 拆出来的原因有两个，第一个才是主要的：
- * 1. 行上现在有**状态点 + 上次结果**。以前一行只写类型与启用态，`last_status`
- *  根本不露脸，找「哪条挂了」只能逐条点开看——这一屏是「看任务为什么失败」
- *    的第一跳，值得单独一个文件。
- * 2. JobsTab 本体已经装了 CRUD、配额、回执与跳转，再塞一屏名册就过 600 行了。
- *
- * 本组件**只负责显示与选中**：过滤后的数据、名字解析都在 JobsTab 里算好传进来。
+ * 每张卡：状态点 + 名称 + 来源徽标；第二行是人话调度（`工作日 15:05`）与上次结果。
+ * 本组件**只负责显示与选中**：过滤后的数据、名字解析、cron 换算都在 JobsTab 里算好传进来。
+ * 点卡除了改选中项还会 emit `pick`，父级在手机端用它打开详情 Sheet。
  */
+import { Clock3 } from '@lucide/vue'
+
 import type { JobHealth } from '../composables/opsLabels'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 
 export type JobRailRow = {
   id: string
@@ -24,72 +30,97 @@ export type JobRailRow = {
   enabled: boolean
   health: JobHealth
   healthText: string
+  /** 人话调度，如「工作日 15:05」「仅手动」 */
+  cronText?: string
+  /** 上次运行时间（原文，`YYYY-MM-DD HH:mm:ss`） */
+  lastRunAt?: string
 }
 
 defineProps<{
   rows: JobRailRow[]
 }>()
 
+const emit = defineEmits<{ pick: [id: string] }>()
+
 const selectedId = defineModel<string | null>('selectedId', { required: true })
 const kindFilter = defineModel<string>('kindFilter', { required: true })
 const statusFilter = defineModel<string>('statusFilter', { required: true })
+
+function pick(id: string): void {
+  selectedId.value = id
+  emit('pick', id)
+}
+
+function shortTime(raw?: string): string {
+  const text = String(raw || '').trim()
+  if (!text) return ''
+  return text.replace('T', ' ').slice(5, 16)
+}
 </script>
 
 <template>
   <aside class="jobs-rail">
     <div class="jobs-filters">
-      <el-select v-model="kindFilter" size="small" class="jobs-filter" aria-label="按类型筛选">
-        <el-option label="全部类型" value="all" />
-        <el-option label="同步行情" value="sync" />
-        <el-option label="选股" value="screen" />
-        <el-option label="技能" value="skill" />
-        <el-option label="企微推送" value="notify" />
-        <el-option label="其它" value="outcome" />
-      </el-select>
-      <el-select
-        v-model="statusFilter"
-        size="small"
-        class="jobs-filter"
-        aria-label="按上次结果筛选"
-      >
-        <el-option label="全部结果" value="all" />
-        <el-option label="只看失败" value="failed" />
-        <el-option label="上次成功" value="ok" />
-        <el-option label="上次跳过" value="skipped" />
-        <el-option label="从未跑过" value="never" />
-      </el-select>
+      <Select v-model="kindFilter">
+        <SelectTrigger size="sm" class="jobs-filter" aria-label="按类型筛选">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全部类型</SelectItem>
+          <SelectItem value="sync">同步行情</SelectItem>
+          <SelectItem value="screen">选股</SelectItem>
+          <SelectItem value="skill">技能</SelectItem>
+          <SelectItem value="notify">企微推送</SelectItem>
+          <SelectItem value="outcome">其它</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select v-model="statusFilter">
+        <SelectTrigger size="sm" class="jobs-filter" aria-label="按上次结果筛选">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全部结果</SelectItem>
+          <SelectItem value="failed">只看失败</SelectItem>
+          <SelectItem value="ok">上次成功</SelectItem>
+          <SelectItem value="skipped">上次跳过</SelectItem>
+          <SelectItem value="never">从未跑过</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
-    <el-scrollbar class="jobs-list-scroll">
-      <div
+    <div class="jobs-list" role="listbox" aria-label="任务列表">
+      <article
         v-for="row in rows"
         :key="row.id"
-        role="button"
+        role="option"
         tabindex="0"
-        class="job-row"
-        :class="{ active: row.id === selectedId }"
-        :aria-pressed="row.id === selectedId"
+        class="job-card"
+        :class="{ 'is-active': row.id === selectedId, 'is-off': !row.enabled, [`is-${row.health}`]: true }"
+        :aria-selected="row.id === selectedId"
         :aria-label="`${row.title} · ${row.healthText}`"
-        @click="selectedId = row.id"
-        @keydown.enter.prevent="selectedId = row.id"
-        @keydown.space.prevent="selectedId = row.id"
+        @click="pick(row.id)"
+        @keydown.enter.prevent="pick(row.id)"
+        @keydown.space.prevent="pick(row.id)"
       >
-        <div class="job-row-top">
-          <span class="job-dot" :class="`job-dot--${row.health}`" :title="row.healthText" />
-          <strong>{{ row.title }}</strong>
-          <el-tag size="small" effect="light" :type="row.bound ? 'info' : 'primary'">
-            {{ row.originText }}
-          </el-tag>
+        <span class="job-card__dot" :title="row.healthText" aria-hidden="true" />
+        <div class="job-card__body">
+          <div class="job-card__top">
+            <strong class="job-card__title">{{ row.title }}</strong>
+            <UiBadge :variant="row.bound ? 'info' : 'secondary'" class="job-card__origin">{{ row.originText }}</UiBadge>
+          </div>
+          <div class="job-card__meta">
+            <span class="job-card__sched">
+              <Clock3 aria-hidden="true" />
+              {{ row.cronText || row.kindText }}
+            </span>
+            <span v-if="!row.enabled" class="job-card__off">已停用</span>
+            <span v-else class="job-card__health" :class="`job-card__health--${row.health}`">
+              {{ row.healthText }}<template v-if="row.lastRunAt"> · {{ shortTime(row.lastRunAt) }}</template>
+            </span>
+          </div>
         </div>
-        <div class="job-row-meta">
-          <span>{{ row.kindText }}</span>
-          <span :class="row.enabled ? 'on' : 'off'">{{ row.enabled ? '启用' : '停用' }}</span>
-          <span class="job-row-health" :class="`job-row-health--${row.health}`">
-            {{ row.healthText }}
-          </span>
-        </div>
-      </div>
-      <EmptyState v-if="!rows.length" description="没有匹配的任务" reason="调整类型或结果筛选" />
-    </el-scrollbar>
+      </article>
+      <EmptyState v-if="!rows.length" compact description="没有匹配的任务" reason="调整类型或结果筛选" />
+    </div>
   </aside>
 </template>
 
@@ -100,146 +131,196 @@ const statusFilter = defineModel<string>('statusFilter', { required: true })
   gap: var(--gap-2);
   min-width: 0;
   min-height: 0;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: var(--gap-2);
-  background: var(--surface-sunken);
 }
 
 .jobs-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0.35rem;
   flex-shrink: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-2);
 }
 
 .jobs-filter {
   width: 100%;
   min-width: 0;
-  flex-shrink: 0;
 }
 
-.jobs-list-scroll {
+.jobs-list {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gap-2);
   min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 2px;
 }
 
-.job-row {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  color: inherit;
-  border-radius: var(--radius);
-  padding: var(--gap-2);
-  margin-bottom: var(--gap-1);
-  cursor: pointer;
-}
-
-.job-row:hover {
-  background: var(--surface-hover);
-}
-
-/* 全局焦点环只覆盖原生控件，自绘行要自己补，否则键盘用户看不见选到了哪一行 */
-.job-row:focus-visible {
-  outline: 2px solid var(--seal);
-  outline-offset: -2px;
-}
-
-.job-row.active {
-  border-color: var(--seal-border);
-  background: var(--surface-active);
-}
-
-.job-row-top {
+.job-card {
   display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.job-row-top strong {
-  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: var(--gap-2);
   min-width: 0;
-  font-size: var(--fs-body);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: var(--gap-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 
-.job-row-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.35rem;
-  margin-top: 0.25rem;
-  font-size: var(--fs-aux);
-  color: var(--muted);
+.job-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-sm);
 }
 
-.job-row-meta .on {
-  color: var(--ok);
+.job-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
-.job-row-meta .off {
-  color: var(--muted);
+.job-card.is-active {
+  border-color: var(--seal-border);
+  background: color-mix(in oklab, var(--seal-soft) 60%, var(--surface));
+  box-shadow: 0 0 0 1px var(--seal-border);
 }
 
-/*
- * 状态点。语义色一律取 EP 的 --el-color-*（全站的错误/成功都用这套），
- * **不借 --up / --down 涨跌色**：涨跌说的是价格方向，任务成败是另一回事，
- * 借过来会让「红」在两个页面里意思相反。
- */
-.job-dot {
+.job-card.is-off {
+  opacity: 0.72;
+}
+
+.job-card__dot {
   flex: 0 0 auto;
-  width: 0.5rem;
-  height: 0.5rem;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
   border-radius: 50%;
-  background: var(--rule);
+  background: var(--border-strong);
 }
 
-.job-dot--ok {
-  background: var(--el-color-success);
+.job-card.is-ok .job-card__dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
 }
 
-.job-dot--failed {
-  background: var(--el-color-danger);
+.job-card.is-failed .job-card__dot {
+  background: var(--stamp);
+  box-shadow: 0 0 0 3px var(--stamp-soft);
 }
 
-.job-dot--skipped {
-  background: var(--el-color-warning);
+.job-card.is-skipped .job-card__dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px var(--warn-soft);
 }
 
-.job-dot--running {
+.job-card.is-running .job-card__dot {
   background: var(--info);
+  box-shadow: 0 0 0 3px var(--info-soft);
+  animation: job-pulse 1.4s ease-in-out infinite;
 }
 
 /* 从未跑过是空心圈：它不是「好」，也不是「坏」，是「还没有过」。 */
-.job-dot--never {
+.job-card.is-never .job-card__dot {
   background: transparent;
-  border: 1px solid var(--line-2);
+  border: 1.5px solid var(--border-strong);
 }
 
-.job-row-health {
-flex: 0 0 auto;
+.job-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
-.job-row-health--failed {
-  color: var(--el-color-danger);
+.job-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.job-card__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.job-card__origin {
+  flex: 0 0 auto;
+}
+
+.job-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px var(--gap-2);
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+.job-card__sched {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.job-card__sched :deep(svg) {
+  width: 12px;
+  height: 12px;
+  color: var(--text-tertiary);
+}
+
+.job-card__health {
+  font-variant-numeric: tabular-nums;
+}
+
+.job-card__health--failed {
+  color: var(--stamp);
   font-weight: 600;
 }
 
-.job-row-health--skipped {
-  color: var(--el-color-warning);
+.job-card__health--skipped {
+  color: var(--warn-ink);
 }
 
-.job-row-health--never {
-  color: var(--mist);
+.job-card__health--ok {
+  color: var(--ok);
 }
 
-@media (max-width: 800px) {
-  .jobs-rail {
-    max-height: 100%;
+.job-card__off {
+  color: var(--text-tertiary);
+}
+
+@keyframes job-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--info-soft);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job-card.is-running .job-card__dot {
+    animation: none;
   }
 }
 </style>

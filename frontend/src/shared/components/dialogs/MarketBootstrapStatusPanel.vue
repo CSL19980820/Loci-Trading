@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { TriangleAlert } from '@lucide/vue'
 import { computed } from 'vue'
+
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
 
 /**
  * 行情初始化 / 补齐的状态面板。
@@ -85,13 +88,11 @@ const statusLine = computed(() =>
 
     <p v-if="statusLine" class="boot-meta">{{ statusLine }}</p>
 
-    <el-alert
-      v-if="error"
-      :title="error"
-      :type="isError ? 'error' : 'warning'"
-      show-icon
-      :closable="false"
-    />
+    <!-- 只报当前真实异常，标题是后端原文，不写额外的 description -->
+    <Alert v-if="error" :variant="isError ? 'destructive' : 'default'">
+      <TriangleAlert aria-hidden="true" />
+      <AlertTitle class="line-clamp-none">{{ error }}</AlertTitle>
+    </Alert>
   </div>
 </template>
 

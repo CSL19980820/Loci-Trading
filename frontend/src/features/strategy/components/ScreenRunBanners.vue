@@ -1,10 +1,18 @@
 <script setup lang="ts">
+import { Activity, Info, OctagonPause, X } from '@lucide/vue'
+
+import { Button } from '@/shared/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+
 /**
  * 跑道横幅：并行跑着的其它战法、并发到顶、放弃后的残影。
  *
  * 单独成组件是因为这几条都在讲同一件事——「这次选股停不停得掉、别的战法还能
  * 不能开」——文案必须一起改；散在 View 的模板里迟早有人只改其中一条，剩下的
  * 继续说谎。
+ *
+ * 呈现上收成一条条 32px 高的「状态条」：一枚图标 + 一句话 + 行内入口；解释一律
+ * 进 tooltip，悬停可读，不占版面（AGENTS.md 禁常驻说明条）。
  *
  * 历史包袱：这里曾挂着一句「引擎是后端全局单槽：它跑完之前，所有战法的选股都
  * 开不了」。后端进度槽改成「租户 × 战法」双层之后那句话是**假的**，已删除。
@@ -38,109 +46,136 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <!--
-    三条横幅都只留「出了什么事」这一句：原来每条底下还挂一段两三行的解释，
-    那是常驻说明条，AGENTS.md §3.9 明令禁止（el-alert 不写 description / 长说明）。
-    解释一律进 tooltip，悬停可读，不占版面。
-  -->
-  <el-tooltip
-    v-if="capacityNotice"
-    placement="bottom-start"
-    content="多个战法可以并行选股，但同时在跑的数量有上限：那是为了不把 CPU 摊薄成集体变慢，不是「引擎被独占」"
+  <div
+    v-if="capacityNotice || parallelRuns.length || abandonedPercent !== null || skillAbandoned"
+    class="run-banners"
   >
-    <el-alert type="warning" show-icon :closable="false" class="run-banner">
-      <template #title>{{ capacityNotice }}</template>
-    </el-alert>
-  </el-tooltip>
+    <Tooltip v-if="capacityNotice">
+      <TooltipTrigger as-child>
+        <div class="run-banner run-banner--warn" role="status" tabindex="0">
+          <OctagonPause aria-hidden="true" />
+          <span class="run-banner__text">{{ capacityNotice }}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start">
+        多个战法可以并行选股，但同时在跑的数量有上限：那是为了不把 CPU 摊薄成集体变慢，不是「引擎被独占」
+      </TooltipContent>
+    </Tooltip>
 
-  <el-alert
-    v-if="parallelRuns.length"
-    type="info"
-    show-icon
-    :closable="false"
-    class="run-banner"
-  >
-    <template #title>
-      <el-tooltip placement="bottom-start" content="它们各跑各的，不影响这一个战法开跑">
-        <span>另外 {{ parallelRuns.length }} 个战法正在并行选股</span>
-      </el-tooltip>
-    </template>
-    <div class="run-banner__row">
-      <span
-        v-for="run in parallelRuns"
-        :key="run.slug"
-        class="run-banner__run"
-        :title="run.detail"
-      >
-        <span class="run-banner__name">{{ run.label }}</span>
-        <span class="run-banner__pct">{{ run.percent }}%</span>
-        <el-button link size="small" @click="emit('focus-run', run.slug)">看进度</el-button>
-        <el-button link size="small" @click="emit('abandon-run', run.slug)">停止</el-button>
-      </span>
+    <div v-if="parallelRuns.length" class="run-banner run-banner--info" role="status">
+      <Activity aria-hidden="true" />
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <span class="run-banner__text" tabindex="0">另外 {{ parallelRuns.length }} 个战法正在并行选股</span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="start">它们各跑各的，不影响这一个战法开跑</TooltipContent>
+      </Tooltip>
+      <div class="run-banner__runs">
+        <span v-for="run in parallelRuns" :key="run.slug" class="run-banner__run" :title="run.detail">
+          <span class="run-banner__name">{{ run.label }}</span>
+          <span class="run-banner__pct">{{ run.percent }}%</span>
+          <Button access="read" variant="link" size="xs" class="h-auto px-1" @click="emit('focus-run', run.slug)">看进度</Button>
+          <Button variant="link" size="xs" class="h-auto px-1 text-warn-ink" @click="emit('abandon-run', run.slug)">停止</Button>
+        </span>
+      </div>
     </div>
-  </el-alert>
 
-  <el-alert
-    v-if="abandonedPercent !== null"
-    type="warning"
-    show-icon
-    class="run-banner"
-    @close="emit('dismiss-abandoned')"
-  >
-    <template #title>
-      <el-tooltip
-        placement="bottom-start"
-        :content="abandonedStopping
+    <div v-if="abandonedPercent !== null" class="run-banner run-banner--warn" role="status">
+      <Info aria-hidden="true" />
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <span class="run-banner__text" tabindex="0">
+            {{ abandonedStopping ? '已请求停止 · 当前交易日跑完后结束' : '已停止跟踪 · 该次选股仍在后台继续' }}
+            （放弃时 {{ abandonedPercent }}%）
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="start">
+          {{
+          abandonedStopping
           ? '正在跑的这一个交易日会先跑完并照常入库，之后不再继续；已入库的候选不会撤销'
           : '没能通知到后端，它会跑完并照常入库。别的战法不受影响，照样可以开'
-        "
-      >
-        <span>
-          {{ abandonedStopping ? '已请求停止 · 当前交易日跑完后结束' : '已停止跟踪 · 该次选股仍在后台继续' }}
-          （放弃时 {{ abandonedPercent }}%）
-        </span>
-      </el-tooltip>
-    </template>
-  </el-alert>
+          }}
+        </TooltipContent>
+      </Tooltip>
+      <Button access="read" variant="ghost" size="icon-xs" class="ml-auto" aria-label="关闭提示" @click="emit('dismiss-abandoned')">
+        <X aria-hidden="true" />
+      </Button>
+    </div>
 
-  <el-alert
-    v-if="skillAbandoned"
-    type="warning"
-    show-icon
-    :closable="false"
-    class="run-banner"
-    title="已停止跟踪 · 该次技能仍在后台继续"
-  />
+    <div v-if="skillAbandoned" class="run-banner run-banner--warn" role="status">
+      <Info aria-hidden="true" />
+      <span class="run-banner__text">已停止跟踪 · 该次技能仍在后台继续</span>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.run-banner {
-  flex: 0 0 auto;
-  margin-bottom: 0.4rem;
+.run-banners {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-3);
 }
 
-.run-banner__row {
+.run-banner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem 0.9rem;
+  gap: var(--gap-2) var(--gap-3);
+  min-height: 32px;
+  padding: 5px var(--gap-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+}
+
+.run-banner > svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.run-banner--warn {
+  border-color: color-mix(in oklab, var(--warn) 35%, var(--border-subtle));
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+
+.run-banner--info {
+  border-color: color-mix(in oklab, var(--info) 35%, var(--border-subtle));
+  background: var(--info-soft);
+  color: var(--info-ink);
+}
+
+.run-banner__text {
+  min-width: 0;
+  font-weight: 500;
+}
+
+.run-banner__runs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-1) var(--gap-3);
 }
 
 /* 一个并行战法一枚小条：名字 · 百分比 · 两个入口 */
 .run-banner__run {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: var(--fs-aux);
+  gap: 4px;
 }
 
 .run-banner__name {
-  color: var(--ink);
+  color: var(--text-primary);
 }
 
 .run-banner__pct {
+  color: var(--text-tertiary);
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  color: var(--mist);
 }
 </style>

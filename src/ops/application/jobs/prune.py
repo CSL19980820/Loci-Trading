@@ -48,13 +48,19 @@ def execute_prune(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     """
     if context.ops_store is None:
         raise JobError("缺少运维库连接")
+    from src.ops.application.retention_settings import saved_policy
+    policy = saved_policy(context.ops_store) if callable(getattr(context.ops_store, "get_setting", None)) else None
+    if policy is not None and not policy.enabled:
+        return {"skipped": "保留策略已暂停"}
     # 至少留 1 条：配成 0 会把每个任务的历史清空，连"最近一次跑没跑过"都查不到。
     keep = max(1, int(config.get("keep_per_job", 200)))
-    removed = context.ops_store.prune_runs(keep_per_job=keep)
+    removed = (context.ops_store.prune_runs_windowed(
+        keep_min=policy.job_keep_min, keep_max=policy.job_keep_max, keep_days=policy.job_days
+    )["deleted"] if policy is not None else context.ops_store.prune_runs(keep_per_job=keep))
 
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
 
-    keep_days = int(config.get("leader_role_keep_days", DEFAULT_LEADER_ROLE_KEEP_DAYS))
+    keep_days = policy.leader_days if policy else int(config.get("leader_role_keep_days", DEFAULT_LEADER_ROLE_KEEP_DAYS))
     roles_removed = 0
     if keep_days > 0:
         cutoff = today - timedelta(days=keep_days)
@@ -63,7 +69,7 @@ def execute_prune(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     # 盘中留存带的过期删除挂在这里，不新建任务类型（ADR-014）：它和 job_runs 清理
     # 是同一件事——「只追加的观测流必须有保留窗」。但它删的是**目录**而不是表行，
     # 所以失败只记进 payload 不抛：留存带删不掉是磁盘问题，不该让整条运维清理红掉。
-    intraday_days = int(config.get("intraday_keep_days", DEFAULT_INTRADAY_KEEP_DAYS))
+    intraday_days = policy.intraday_days if policy else int(config.get("intraday_keep_days", DEFAULT_INTRADAY_KEEP_DAYS))
     intraday: dict[str, Any] = {"retention_days": intraday_days, "skipped": "未启用"}
     if intraday_days > 0:
         from src.market import prune_intraday
@@ -90,10 +96,12 @@ def execute_prune(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     # 跨上下文只能从包根导入（``.importlinter`` 的 protect-identity-infra）。
     identity: dict[str, Any] = {"skipped": "未启用"}
     if config.get("identity_purge", True):
-        identity = _purge_identity()
+        identity = (_purge_identity(notify_read_days=policy.notification_days, usage_keep_days=policy.usage_days,
+                                    login_days=policy.login_days, audit_days=policy.audit_days)
+                    if policy is not None else _purge_identity())
 
     community: dict[str, Any] = {"skipped": "未启用"}
-    community_days = int(config.get("community_keep_days", DEFAULT_COMMUNITY_KEEP_DAYS))
+    community_days = policy.community_days if policy else int(config.get("community_keep_days", DEFAULT_COMMUNITY_KEEP_DAYS))
     if community_days > 0:
         community = _purge_community(community_days)
 
@@ -108,7 +116,7 @@ def execute_prune(config: dict[str, Any], context: JobContext) -> dict[str, Any]
     }
 
 
-def _purge_identity(*, notify_read_days: int = 15, usage_keep_days: int = 15) -> dict[str, Any]:
+def _purge_identity(*, notify_read_days: int = 15, usage_keep_days: int = 15, login_days: int = 0, audit_days: int = 0) -> dict[str, Any]:
     """清 identity.db 的过期会话、票据、站内通知与日用量计数。**不存在就不建**。
 
     桌面单机根本没有 identity.db；顺手把空库建出来会让「这台机器有没有启用
@@ -127,8 +135,9 @@ def _purge_identity(*, notify_read_days: int = 15, usage_keep_days: int = 15) ->
         with IdentityStore() as store:
             return {
                 "expired": int(store.purge_expired() or 0),
-                "notifications": int(store.purge_notifications(read_days=notify_read_days) or 0),
-                "usage_counters": int(store.purge_usage_counters(keep_days=usage_keep_days) or 0),
+                "notifications": int(store.purge_notifications(read_days=notify_read_days) or 0) if notify_read_days > 0 else 0,
+                "usage_counters": int(store.purge_usage_counters(keep_days=usage_keep_days) or 0) if usage_keep_days > 0 else 0,
+                "logs": store.purge_audit_logs(login_days=login_days, audit_days=audit_days),
             }
     except Exception as exc:  # noqa: BLE001 — 单段失败不带走整轮
         return {"error": f"{type(exc).__name__}: {exc}"[:300]}

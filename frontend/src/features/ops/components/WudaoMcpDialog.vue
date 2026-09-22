@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { default as CheckboxField } from '@/shared/components/ui/app/CheckboxField.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, reactive, ref, watch } from 'vue'
 
 import {
@@ -37,7 +48,7 @@ const form = reactive({
 
 /**
  * 今日剩余额度是**读数**，不是异常：原先用 el-alert(info) 常驻在弹窗顶上，
- * 现在改成「配额上限」那一行的行内读数（HeaderStat）。
+ * 现在改成「调用限额」那一行的行内读数（HeaderStat）。
  */
 const quotaRemain = computed(() => {
   if (!quota.value) return ''
@@ -95,7 +106,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="open"
     title="悟道 A 股 · 内置 MCP"
     class="ops-dialog"
@@ -107,75 +118,75 @@ async function submit(): Promise<void> {
       它解释的是 API Key，就挂到 API Key 输入框的 tooltip 上。
     -->
 
-    <el-form label-position="top">
-      <el-form-item label="MCP 地址">
-        <el-input v-model.trim="form.url" />
-      </el-form-item>
-      <el-form-item label="API Key">
-        <el-tooltip
+    <FormLayout label-position="top">
+      <FormField label="MCP 地址">
+        <TextField v-model.trim="form.url" />
+      </FormField>
+      <FormField label="API Key">
+        <HintTooltip
           placement="top-start"
           content="与 Cursor / Codex 同一份凭据，只存本机；未配 Key 时自动跳过，不影响其它数据源"
         >
-          <el-input
+          <TextField
             v-model.trim="form.token"
             type="password"
             show-password
             autocomplete="off"
             placeholder="留空则保留现有 Key"
           />
-        </el-tooltip>
-      </el-form-item>
-      <el-form-item label="套餐到期日">
-        <el-date-picker
+        </HintTooltip>
+      </FormField>
+      <FormField label="套餐到期日">
+        <DateField
           v-model="form.expires_at"
           type="date"
           value-format="YYYY-MM-DD"
           placeholder="过期后自动跳过"
           style="width: 100%"
         />
-      </el-form-item>
-      <el-form-item label="备注">
-        <el-input v-model.trim="form.note" />
-      </el-form-item>
-      <el-form-item>
-        <el-switch v-model="form.is_active" active-text="启用" inactive-text="停用" aria-label="启用悟道 MCP" />
-      </el-form-item>
-      <el-form-item>
-        <el-switch
+      </FormField>
+      <FormField label="备注">
+        <TextField v-model.trim="form.note" />
+      </FormField>
+      <FormField>
+        <ToggleSwitch v-model="form.is_active" active-text="启用" inactive-text="停用" aria-label="启用悟道 MCP" />
+      </FormField>
+      <FormField>
+        <ToggleSwitch
           v-model="form.hist_daily_primary"
           active-text="日 K 同步优先使用悟道（需 Key 有效）"
         />
-      </el-form-item>
+      </FormField>
 
-      <!-- 标题压成一行：配额上限 + 今日剩余读数 + 第一条控件（日总上限） -->
+      <!-- 标题压成一行：调用限额 + 今日剩余读数 + 第一条控件（日总上限） -->
       <div class="quota-head">
-        <h4 class="section">配额上限</h4>
+        <h4 class="section">调用限额</h4>
         <HeaderStat v-if="quotaRemain" label="今日剩余" :value="quotaRemain" />
-        <el-form-item label="日总上限" class="quota-head__item">
-          <el-input-number v-model="form.daily_total" :min="0" :max="50000" />
-        </el-form-item>
+        <FormField label="日总上限" class="quota-head__item">
+          <NumberInput v-model="form.daily_total" :min="0" :max="50000" />
+        </FormField>
       </div>
       <div class="quota-grid">
-        <el-form-item label="结构化采集">
-          <el-input-number v-model="form.daily_structured" :min="0" :max="50000" />
-        </el-form-item>
-        <el-form-item label="Skill / 助手">
-          <el-input-number v-model="form.daily_skill" :min="0" :max="50000" />
-        </el-form-item>
-        <el-form-item label="每分钟上限">
-          <el-input-number v-model="form.per_minute" :min="0" :max="500" />
-        </el-form-item>
+        <FormField label="结构化采集">
+          <NumberInput v-model="form.daily_structured" :min="0" :max="50000" />
+        </FormField>
+        <FormField label="Skill / 助手">
+          <NumberInput v-model="form.daily_skill" :min="0" :max="50000" />
+        </FormField>
+        <FormField label="每分钟上限">
+          <NumberInput v-model="form.per_minute" :min="0" :max="500" />
+        </FormField>
       </div>
-      <el-form-item>
-        <el-checkbox v-model="form.verify">保存时握手并刷新工具列表</el-checkbox>
-      </el-form-item>
-    </el-form>
+      <FormField>
+        <CheckboxField v-model="form.verify">保存时握手并刷新工具列表</CheckboxField>
+      </FormField>
+    </FormLayout>
 
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="busy" @click="submit">保存</el-button>
+      <ActionButton access="read" @click="open = false">取消</ActionButton>
+      <ActionButton tone="primary" :busy="busy" @click="submit">保存</ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>

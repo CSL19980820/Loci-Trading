@@ -1,4 +1,18 @@
 <script setup lang="ts">
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
+import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { default as CheckboxChoices } from '@/shared/components/ui/app/CheckboxChoices.vue'
+import { default as CheckboxField } from '@/shared/components/ui/app/CheckboxField.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+
 import { computed } from 'vue'
 
 import Sheet from '@/shared/components/layout/Sheet.vue'
@@ -48,16 +62,16 @@ const boardTags = computed(() =>
   <Sheet padded margin>
     <div class="section-head">
       <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
-      <el-tooltip placement="bottom-start" content="字段会直接写入 manifest.data.fields，不是只读展示">
+      <HintTooltip placement="bottom-start" content="字段会直接写入 manifest.data.fields，不是只读展示">
         <strong class="section-head__title">字段与复权</strong>
-      </el-tooltip>
-      <el-button v-if="requiredFields.length" size="small" @click="emit('mergeRequiredFields')">
+      </HintTooltip>
+      <ActionButton v-if="requiredFields.length" size="small" @click="emit('mergeRequiredFields')">
         补齐诊断字段
-      </el-button>
+      </ActionButton>
     </div>
 
-    <el-form-item label="数据字段" required :error="err('dataFields')">
-      <el-select
+    <FormField label="数据字段" required :error="err('dataFields')">
+      <ChoiceField
         v-model="props.draft.dataFields"
         multiple
         filterable
@@ -66,95 +80,95 @@ const boardTags = computed(() =>
         placeholder="选择或录入字段"
         class="full"
       >
-        <el-option v-for="item in fieldOptions" :key="item.value" :label="item.label" :value="item.value" />
-      </el-select>
-    </el-form-item>
+        <ChoiceOption v-for="item in fieldOptions" :key="item.value" :label="item.label" :value="item.value" />
+      </ChoiceField>
+    </FormField>
 
     <div v-if="requiredFields.length" class="hint-row">
       <span class="dim">诊断要求：</span>
-      <el-tag v-for="field in requiredFields" :key="field" size="small" effect="plain">{{ field }}</el-tag>
+      <StatusBadge v-for="field in requiredFields" :key="field" size="small" effect="plain">{{ field }}</StatusBadge>
     </div>
 
-    <el-form-item label="复权方式">
-      <el-radio-group v-model="props.draft.adjust">
-        <el-radio-button label="前复权" value="qfq" />
-        <el-radio-button label="后复权" value="hfq" />
-        <el-radio-button label="不复权" value="none" />
-      </el-radio-group>
-    </el-form-item>
+    <FormField label="复权方式">
+      <RadioChoices v-model="props.draft.adjust">
+        <RadioButton label="前复权" value="qfq" />
+        <RadioButton label="后复权" value="hfq" />
+        <RadioButton label="不复权" value="none" />
+      </RadioChoices>
+    </FormField>
 
     <div class="section-head">
       <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
-      <el-tooltip placement="bottom-start" content="预设、板块、ST、上市天数与代码 / 行业包含排除都会进 manifest">
+      <HintTooltip placement="bottom-start" content="预设、板块、ST、上市天数与代码 / 行业包含排除都会进 manifest">
         <strong class="section-head__title">股票池</strong>
-      </el-tooltip>
-      <el-button
+      </HintTooltip>
+      <ActionButton
         size="small"
         :disabled="!props.draft.universePreset"
         @click="emit('applyPreset', props.draft.universePreset)"
       >
         应用预设
-      </el-button>
+      </ActionButton>
     </div>
 
     <div class="meta-grid">
-      <el-form-item label="股票池预设">
-        <el-select v-model="props.draft.universePreset" clearable placeholder="不套预设" class="full">
-          <el-option v-for="item in presets" :key="item.id" :label="item.label" :value="item.id" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="上市天数下限" :error="err('minListDays')">
-        <el-input-number v-model="props.draft.minListDays" :min="0" :controls="false" class="full" />
-      </el-form-item>
+      <FormField label="股票池预设">
+        <ChoiceField v-model="props.draft.universePreset" clearable placeholder="不套预设" class="full">
+          <ChoiceOption v-for="item in presets" :key="item.id" :label="item.label" :value="item.id" />
+        </ChoiceField>
+      </FormField>
+      <FormField label="上市天数下限" :error="err('minListDays')">
+        <NumberInput v-model="props.draft.minListDays" :min="0" :controls="false" class="full" />
+      </FormField>
     </div>
 
-    <el-form-item label="板块范围">
-      <el-checkbox-group v-model="props.draft.boards" class="board-group">
-        <el-checkbox v-for="item in boardOptions" :key="item.value" :value="item.value">
+    <FormField label="板块范围">
+      <CheckboxChoices v-model="props.draft.boards" class="board-group">
+        <CheckboxField v-for="item in boardOptions" :key="item.value" :value="item.value">
           {{ item.label }}
-        </el-checkbox>
-      </el-checkbox-group>
-    </el-form-item>
+        </CheckboxField>
+      </CheckboxChoices>
+    </FormField>
 
     <div class="toggle-grid">
-      <el-switch v-model="props.draft.excludeSt" inline-prompt active-text="剔 ST" inactive-text="含 ST" />
-      <el-switch v-model="props.draft.excludeDelisting" inline-prompt active-text="剔退市整理" inactive-text="含退市整理" />
-      <el-switch v-model="props.draft.excludeSuspended" inline-prompt active-text="剔停牌" inactive-text="含停牌" />
+      <ToggleSwitch v-model="props.draft.excludeSt" inline-prompt active-text="剔 ST" inactive-text="含 ST" />
+      <ToggleSwitch v-model="props.draft.excludeDelisting" inline-prompt active-text="剔退市整理" inactive-text="含退市整理" />
+      <ToggleSwitch v-model="props.draft.excludeSuspended" inline-prompt active-text="剔停牌" inactive-text="含停牌" />
     </div>
 
     <div class="meta-grid">
-      <el-form-item label="代码包含">
-        <el-input
+      <FormField label="代码包含">
+        <TextField
           v-model="props.draft.codesIncludeText"
           type="textarea"
           :rows="3"
           placeholder="逗号/空格/换行分隔，例如 600519, 000001"
         />
-      </el-form-item>
-      <el-form-item label="代码排除">
-        <el-input
+      </FormField>
+      <FormField label="代码排除">
+        <TextField
           v-model="props.draft.codesExcludeText"
           type="textarea"
           :rows="3"
           placeholder="用于黑名单、临停票或风控排除"
         />
-      </el-form-item>
-      <el-form-item label="行业包含">
-        <el-input
+      </FormField>
+      <FormField label="行业包含">
+        <TextField
           v-model="props.draft.industriesIncludeText"
           type="textarea"
           :rows="3"
           placeholder="例如 半导体, 电力设备"
         />
-      </el-form-item>
-      <el-form-item label="行业排除">
-        <el-input
+      </FormField>
+      <FormField label="行业排除">
+        <TextField
           v-model="props.draft.industriesExcludeText"
           type="textarea"
           :rows="3"
           placeholder="例如 ST 概念, 退市整理"
         />
-      </el-form-item>
+      </FormField>
     </div>
 
     <div v-if="stats" class="stats-panel">
@@ -163,7 +177,7 @@ const boardTags = computed(() =>
       <div><span class="dim">默认可选</span><strong>{{ stats.selectable_default }}</strong></div>
       <div><span class="dim">ST 数量</span><strong>{{ stats.st_count }}</strong></div>
       <div class="stats-tags">
-        <el-tag v-for="tag in boardTags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+        <StatusBadge v-for="tag in boardTags" :key="tag" size="small" effect="plain">{{ tag }}</StatusBadge>
       </div>
     </div>
   </Sheet>

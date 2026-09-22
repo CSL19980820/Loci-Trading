@@ -1,0 +1,40 @@
+/* Phone foundation. Individual screens own their composition, not global overflow overrides. */
+@media (max-width:767px) {
+  :root {
+    --ctl-h:40px;
+    --ctl-h-sm:36px;
+    --ctl-h-lg:44px;
+    --fs-ui:14px;
+    --fs-body:15px;
+    --fs-aux:12px;
+    --fs-micro:11px;
+    --pad-page-x:12px;
+    --mobile-nav-h:58px;
+  }
+  html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  .app-shell {
+    position:fixed;
+    inset-inline:0;
+    top:var(--mobile-viewport-top,0px);
+    height:var(--mobile-viewport-height,100dvh);
+  }
+  .main-content { padding-inline:max(12px,env(safe-area-inset-left,0px)) max(12px,env(safe-area-inset-right,0px)); }
+  .archive-overlay { top:var(--mobile-viewport-top,0px); bottom:auto; height:var(--mobile-viewport-height,100dvh); }
+  html[data-mobile-keyboard] .app-shell--with-mobile-nav { padding-bottom:0; }
+  html [data-slot='dialog-content'],
+  html [data-slot='alert-dialog-content'],
+  html [data-slot='sheet-content'],
+  html [data-slot='drawer-content'] {
+    top:calc(var(--mobile-viewport-top,0px) + var(--mobile-viewport-height,100dvh) * .05);
+    max-height:calc(var(--mobile-viewport-height,100dvh) * .9);
+  }
+  [data-slot='dialog-header'],[data-slot='sheet-header'],[data-slot='drawer-header'] { text-align:left; }
+  [data-slot='dialog-title'],[data-slot='sheet-title'],[data-slot='drawer-title'] { padding-right:28px; }
+  [data-slot='dialog-close'] { min-width:36px; min-height:36px; }
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),textarea { font-size:16px; }
+  button,a,[role='button'] { -webkit-tap-highlight-color:transparent; }
+  button:enabled:active,[role='button']:active { transition-duration:0s; }
+  .page-header { min-width:0; }
+  [data-sonner-toaster] { --offset-right:12px; --offset-left:12px; --offset-bottom:calc(var(--mobile-nav-h) + env(safe-area-inset-bottom,0px) + 12px); }
+  html[data-mobile-keyboard] [data-sonner-toaster] { --offset-bottom:12px; }
+}

@@ -1,7 +1,14 @@
 <script setup lang="ts">
+import { Upload as UploadFilled } from '@lucide/vue'
+import { toast } from 'vue-sonner'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { Notice } from '@/shared/components/ui/app/presentation'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, ref, watch } from 'vue'
-import { UploadFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
+
 
 import {
   importResearchMembershipSnapshots,
@@ -167,13 +174,13 @@ async function submit(): Promise<void> {
       if (!snapshots) return
       const result = await importResearchMembershipSnapshots({ snapshots })
       emit('imported', 'membership', result.total)
-      ElMessage.success(`已导入 ${result.total} 条历史股票池快照`)
+      toast.success(`已导入 ${result.total} 条历史股票池快照`)
     } else {
       const facts = parseFactRows()
       if (!facts) return
       const result = await importResearchPointInTimeFacts({ facts })
       emit('imported', 'fact', result.total)
-      ElMessage.success(`已导入 ${result.total} 条 PIT 事实`)
+      toast.success(`已导入 ${result.total} 条 PIT 事实`)
     }
     emit('update:visible', false)
   } catch (caught: unknown) {
@@ -185,7 +192,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     :model-value="visible"
     :title="title"
     class="research-modal"
@@ -195,10 +202,10 @@ async function submit(): Promise<void> {
     @update:model-value="emit('update:visible', $event)"
     @closed="close"
   >
-    <el-alert v-if="error" class="mt-2 shrink-0" type="error" show-icon :closable="false" :title="error" />
+    <Notice v-if="error" class="mt-2 shrink-0" tone="error" show-icon :closable="false" :title="error" />
     <div class="mt-2">
       <UiField label="批量 JSON" required :description="hint">
-        <el-input
+        <TextField
           v-model="raw"
           class="import-json"
           aria-label="批量 JSON 内容"
@@ -210,10 +217,10 @@ async function submit(): Promise<void> {
       </UiField>
     </div>
     <template #footer>
-      <el-button :disabled="submitting" @click="close">取消</el-button>
-      <el-button type="primary" :icon="UploadFilled" :loading="submitting" @click="submit">导入并校验</el-button>
+      <ActionButton access="read" :disabled="submitting" @click="close">取消</ActionButton>
+      <ActionButton tone="primary" :icon="UploadFilled" :busy="submitting" @click="submit">导入并校验</ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>

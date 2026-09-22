@@ -18,9 +18,6 @@
 }
 
 /* 筛选条里的 form-item 不带底距：行高由 PageContainer 的 search 槽统一给 */
-.admin-pane__filters .el-form-item {
-  margin-bottom: 0;
-}
 
 .admin-pane__filter-actions {
   display: flex;
@@ -39,8 +36,6 @@
   gap: var(--gap-2);
   padding: var(--gap-2);
 }
-
-/* —— legacy 原子类：新代码用 EP + token，这些只维持存量页不塌 —— */
 .primary-button,
 .quiet-button,
 .icon-button {
@@ -136,8 +131,6 @@ a:hover {
 .is-flat {
   color: var(--flat);
 }
-
-/* 报价字号：页面上最大的字必须是数字（D2） */
 .tape-num {
   font: 700 var(--fs-tape) / 1.05 var(--mono);
   font-variant-numeric: tabular-nums;

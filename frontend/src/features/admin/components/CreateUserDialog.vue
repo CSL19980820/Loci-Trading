@@ -6,12 +6,14 @@
  * 初始口令由管理员当场设定并线下转交，新号一律带 `must_change_password`：
  * 管理员长期知道别人的常用口令，是安全事故的起点。
  */
-import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, watch } from 'vue'
+import { toast } from 'vue-sonner'
 
 import { createAdminUser } from '@/shared/api/admin'
 import BasicForm from '@/shared/components/ui/BasicForm.vue'
 import type { BasicFormSchema } from '@/shared/components/ui/basicFormTypes'
+import { Button } from '@/shared/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { CreateAdminUserPayload } from '@/shared/types/admin'
 import type { Role } from '@/shared/types/auth'
@@ -31,12 +33,13 @@ function blankForm(): Record<string, unknown> {
     password: '',
     display_name: '',
     email: '',
-    role: 'member',
+    role: 'visitor',
     status: 'active',
   }
 }
 
 const model = ref<Record<string, unknown>>(blankForm())
+watch(open, value => { if (!value) model.value = blankForm() })
 
 const schemas: BasicFormSchema[] = [
   {
@@ -85,7 +88,15 @@ function onClosed(): void {
   formRef.value?.resetForm()
 }
 
+/** 弹层关闭（含 Esc / 点遮罩）后清空：口令不留到下一次开窗 */
+function onOpenChange(next: boolean): void {
+  if (next) return
+  open.value = false
+  onClosed()
+}
+
 async function onSubmit(): Promise<void> {
+  if (submitting.value) return
   const values = await formRef.value?.submit()
   if (!values) return
 
@@ -94,18 +105,18 @@ async function onSubmit(): Promise<void> {
     password: String(values.password || ''),
     display_name: String(values.display_name || '').trim(),
     email: String(values.email || '').trim(),
-    role: String(values.role || 'member') as Role,
+    role: String(values.role || 'visitor') as Role,
     status: values.status === 'disabled' ? 'disabled' : 'active',
   }
 
   submitting.value = true
   try {
     await createAdminUser(payload)
-    ElMessage.success(`账号「${payload.username}」已建好，请线下转交初始口令`)
+    toast.success(`账号「${payload.username}」已建好，请线下转交初始口令`)
     emit('created')
     open.value = false
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '新增用户失败'))
+    toast.error(toErrorMessage(caught, '新增用户失败'))
   } finally {
     submitting.value = false
   }
@@ -113,27 +124,30 @@ async function onSubmit(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog
-    class="admin-form-dialog dialog-body--scroll"
-    v-model="open"
-    title="新增用户"
-    width="min(92vw, 560px)"
-    destroy-on-close
-    @closed="onClosed"
-  >
-    <BasicForm
-      ref="formRef"
-      v-model="model"
-      :schemas="schemas"
-      :columns="2"
-      :input-debounce-ms="0"
-    />
+  <Dialog :open="open" @update:open="onOpenChange">
+    <DialogContent
+      class="admin-form-dialog w-[min(92vw,760px)] max-w-none gap-3 rounded-[var(--radius)] p-4 sm:max-w-none"
+    >
+      <DialogHeader class="gap-1 text-left">
+        <DialogTitle class="admin-form-dialog__title">新增用户</DialogTitle>
+      </DialogHeader>
 
-    <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="onSubmit">建号</el-button>
-    </template>
-  </el-dialog>
+      <div class="admin-form-dialog__body">
+        <BasicForm
+          ref="formRef"
+          v-model="model"
+          :schemas="schemas"
+          :columns="2"
+          :input-debounce-ms="0"
+        />
+      </div>
+
+      <DialogFooter class="admin-form-dialog__footer">
+        <Button access="read" variant="outline" @click="open = false">取消</Button>
+        <Button :disabled="submitting" @click="onSubmit">建号</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped src="./AdminDialog.css" />

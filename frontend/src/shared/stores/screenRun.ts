@@ -11,7 +11,7 @@
  */
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import { cancelScreenRun, getScreenRunStatus, startScreenRun } from '@/shared/api/quant'
 import { strategyLabel } from '@/shared/lib/format'
@@ -229,7 +229,7 @@ export const useScreenRunStore = defineStore('screenRun', () => {
       const written =
         body?.recorded?.written_total ?? body?.recorded?.written ?? body?.range?.written_total
       const days = body?.range?.trading_days
-      ElMessage.success(
+      toast.success(
         written != null
           ? days && days > 1
             ? `区间选股完成 · ${days} 日 · 入库合计 ${written} 条 · ${label}`
@@ -239,7 +239,7 @@ export const useScreenRunStore = defineStore('screenRun', () => {
       return
     }
     if (slot.status === 'error') {
-      ElMessage.error(slot.error || slot.message || `选股失败 · ${label}`)
+      toast.error(slot.error || slot.message || `选股失败 · ${label}`)
     }
   }
 

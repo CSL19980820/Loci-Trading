@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { Search } from '@element-plus/icons-vue'
 import { computed, ref, watch } from 'vue'
+import { Search, X } from '@lucide/vue'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/components/ui/tabs'
 import type {
   ScreenSkillCatalog,
   ScreenSkillCatalogField,
@@ -146,6 +150,11 @@ const visibleEntries = computed(() => {
 })
 const selected = computed(() => visibleEntries.value.find((item) => item.key === selectedKey.value) ?? null)
 
+/** `Tabs` 的 v-model 走 reka-ui 的 `AcceptableValue`，这里收成目录自己的三档。 */
+function onTabChange(value: unknown): void {
+  activeTab.value = String(value) as CatalogTab
+}
+
 watch(activeTab, () => {
   category.value = ''
 })
@@ -180,51 +189,64 @@ function onRowDblClick(item: CatalogEntry): void {
     aria-label="公式目录与常用片段"
   >
     <div class="catalog__toolbar">
-      <el-tabs v-model="activeTab" class="catalog__tabs">
-        <el-tab-pane label="函数" name="functions" />
-        <el-tab-pane label="字段" name="fields" />
-        <el-tab-pane label="片段" name="snippets" />
-      </el-tabs>
-      <el-input
-        v-model="keyword"
-        clearable
-        placeholder="搜索中文名、符号或说明"
-        aria-label="搜索函数、字段或片段"
-        class="catalog__search"
-      >
-        <template #prefix><el-icon><Search /></el-icon></template>
-      </el-input>
+      <Tabs :model-value="activeTab" class="catalog__tabs" @update:model-value="onTabChange">
+        <TabsList>
+          <TabsTrigger value="functions">函数</TabsTrigger>
+          <TabsTrigger value="fields">字段</TabsTrigger>
+          <TabsTrigger value="snippets">片段</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div class="catalog__search">
+        <Search class="catalog__search-icon" aria-hidden="true" />
+        <Input
+          v-model="keyword"
+          class="catalog__search-input"
+          placeholder="搜索中文名、符号或说明"
+          aria-label="搜索函数、字段或片段"
+        />
+        <Button access="read"
+          v-if="keyword"
+          variant="ghost"
+          size="icon-xs"
+          class="catalog__search-clear"
+          aria-label="清空搜索"
+          @click="keyword = ''"
+        >
+          <X class="size-3.5" />
+        </Button>
+      </div>
     </div>
 
-    <div v-loading="loading" class="catalog__body">
+    <div class="catalog__body">
+      <PageBusy :busy="loading" overlay />
       <aside class="catalog__cats" aria-label="分类">
-        <el-button
-          text
+        <Button access="read"
+          variant="ghost"
           class="catalog__cat"
           :class="{ 'catalog__cat--active': !category }"
           @click="category = ''"
         >
           <span class="catalog__cat-name">全部</span>
           <span class="catalog__cat-count">{{ entries.length }}</span>
-        </el-button>
-        <el-button
+        </Button>
+        <Button access="read"
           v-for="item in categories"
           :key="item"
-          text
+          variant="ghost"
           class="catalog__cat"
           :class="{ 'catalog__cat--active': category === item }"
           @click="category = item"
         >
           <span class="catalog__cat-name">{{ item }}</span>
           <span class="catalog__cat-count">{{ categoryCounts.get(item) ?? 0 }}</span>
-        </el-button>
+        </Button>
       </aside>
 
       <div class="catalog__list" role="list" aria-label="目录条目">
-        <el-button
+        <Button
           v-for="item in visibleEntries"
           :key="item.key"
-          text
+          variant="ghost"
           class="catalog__row"
           :class="{ 'catalog__row--active': item.key === selectedKey }"
           @click="selectedKey = item.key"
@@ -235,7 +257,7 @@ function onRowDblClick(item: CatalogEntry): void {
             <span class="catalog__row-symbol">{{ item.symbol }}</span>
           </span>
           <span v-if="item.summary !== item.title" class="catalog__row-summary">{{ item.summary }}</span>
-        </el-button>
+        </Button>
         <EmptyState
           v-if="!loading && !visibleEntries.length"
           description="无匹配项"
@@ -262,9 +284,9 @@ function onRowDblClick(item: CatalogEntry): void {
         </p>
         <pre v-if="selected.snippet" class="catalog__code">{{ selected.detail }}</pre>
         <div v-if="selected.example" class="catalog__example">{{ selected.example }}</div>
-        <el-button type="primary" class="catalog__insert" @click="applySelected">
+        <Button class="catalog__insert" @click="applySelected">
           {{ selected.snippet ? '应用片段' : '插入到光标' }}
-        </el-button>
+        </Button>
       </article>
       <div v-else class="catalog__placeholder">选择一项查看用法</div>
     </div>
@@ -293,21 +315,38 @@ function onRowDblClick(item: CatalogEntry): void {
 .catalog__tabs {
   flex: 1 1 auto;
   min-width: 12rem;
-}
-
-.catalog__tabs :deep(.el-tabs__header) {
-  margin: 0;
-}
-
-.catalog__tabs :deep(.el-tabs__content) {
-  display: none;
+  gap: 0;
 }
 
 .catalog__search {
+  position: relative;
+  display: flex;
+  align-items: center;
   width: min(16rem, 100%);
+  min-width: 0;
+}
+
+.catalog__search-icon {
+  position: absolute;
+  left: 0.4rem;
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--mist);
+  pointer-events: none;
+}
+
+.catalog__search-input {
+  padding-left: 1.6rem;
+  padding-right: 1.6rem;
+}
+
+.catalog__search-clear {
+  position: absolute;
+  right: 0.2rem;
 }
 
 .catalog__body {
+  position: relative;
   display: grid;
   grid-template-columns: 7.8rem minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) minmax(7rem, 38%);
@@ -347,21 +386,16 @@ function onRowDblClick(item: CatalogEntry): void {
 }
 
 .catalog__cat {
-  width: 100%;
-  height: auto !important;
-  margin-left: 0 !important;
-  padding: 0.4rem 0.45rem !important;
-  border-radius: 2px;
-  color: var(--ink);
-  font-size: var(--fs-aux);
-}
-
-.catalog__cat :deep(.el-button__content) {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
   width: 100%;
+  height: auto;
+  padding: 0.4rem 0.45rem;
+  border-radius: 2px;
+  color: var(--ink);
+  font-size: var(--fs-aux);
 }
 
 .catalog__cat-name {
@@ -393,26 +427,17 @@ function onRowDblClick(item: CatalogEntry): void {
 }
 
 .catalog__row {
-  display: flex !important;
-  flex-direction: column;
-  align-items: stretch !important;
-  gap: 0.12rem;
-  width: 100%;
-  height: auto !important;
-  min-height: 2.4rem;
-  margin-left: 0 !important;
-  padding: 0.4rem 0.65rem !important;
-  text-align: left;
-  color: var(--ink);
-  border-radius: 0;
-}
-
-.catalog__row :deep(.el-button__content) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.12rem;
   width: 100%;
+  height: auto;
+  min-height: 2.4rem;
+  padding: 0.4rem 0.65rem;
+  text-align: left;
+  color: var(--ink);
+  border-radius: 0;
 }
 
 .catalog__row--active {

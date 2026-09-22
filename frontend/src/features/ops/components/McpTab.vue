@@ -1,4 +1,13 @@
 <script setup lang="ts">
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
+import { default as CheckboxField } from '@/shared/components/ui/app/CheckboxField.vue'
+import { Plug, Plus, Server } from '@lucide/vue'
+
 import { computed, onUnmounted, reactive, ref } from 'vue'
 
 import {
@@ -8,10 +17,15 @@ import {
   saveMcpServer,
   toggleMcpServer,
 } from '@/shared/api/quant'
-import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardAction, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import StatCard from '@/shared/components/ui/StatCard.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import { dialogWidth } from '@/shared/lib/format'
 import type { McpQuotaSnapshot, McpServer } from '@/shared/types/quant'
+import McpServerRow from './McpServerRow.vue'
 import McpToolsDialog from './McpToolsDialog.vue'
 import WudaoMcpDialog from './WudaoMcpDialog.vue'
 import type { ReceiptPair } from './SettingsPanel.vue'
@@ -45,6 +59,10 @@ function toolCount(server: McpServer): number {
   return server.tools.length
 }
 
+function isResident(server: McpServer): boolean {
+  return Boolean(server.resident || (server.builtin && (server.name === 'wudao' || server.name === 'wudao-a-stock')))
+}
+
 const builtinServers = computed(() => mcpServers.value.filter((s) => s.builtin))
 const externalServers = computed(() => mcpServers.value.filter((s) => !s.builtin))
 const wudaoServer = computed(
@@ -54,47 +72,30 @@ const wudaoServer = computed(
     ) ?? null,
 )
 
+const inactiveCount = computed(() => mcpServers.value.filter((s) => !s.is_active).length)
+const totalTools = computed(() => mcpServers.value.reduce((n, s) => n + toolCount(s), 0))
+
 const receipt = computed((): ReceiptPair[] => {
-  const inactive = mcpServers.value.filter((s) => !s.is_active).length
-  const tools = mcpServers.value.reduce((n, s) => n + toolCount(s), 0)
   const pairs: ReceiptPair[] = [
     { key: '在册', value: `${mcpServers.value.length} 台` },
-    { key: '停用', value: String(inactive) },
-    { key: '工具', value: String(tools) },
+    { key: '停用', value: String(inactiveCount.value) },
+    { key: '工具', value: String(totalTools.value) },
   ]
   if (quotaSnap.value) {
     pairs.push({
-      key: '配额',
+      key: '调用限额',
       value: `${quotaSnap.value.remaining.total}/${quotaSnap.value.limits.daily_total}`,
     })
   }
   return pairs
 })
 
-const builtinRows = computed(() => builtinServers.value as unknown as Record<string, unknown>[])
-const externalRows = computed(() => externalServers.value as unknown as Record<string, unknown>[])
-
-const builtinColumns: BasicTableColumn[] = [
-  { prop: 'name', label: '名称', minWidth: 120, slotName: 'name' },
-  { prop: 'note', label: '描述', minWidth: 120, slotName: 'note' },
-  { prop: 'url', label: '地址', minWidth: 140, slotName: 'url' },
-  { prop: 'token_last4', label: 'Token', width: 90, slotName: 'token' },
-  { prop: 'expires_at', label: '到期', width: 108, slotName: 'expires' },
-  { prop: 'tools', label: '工具数', width: 80, align: 'center', headerAlign: 'center', slotName: 'tools' },
-  { prop: 'is_active', label: '状态', minWidth: 96, align: 'center', headerAlign: 'center', slotName: 'status' },
-  { prop: 'id', label: '操作', width: 160, fixed: 'right', align: 'center', headerAlign: 'center', slotName: 'actions' },
-]
-
-const externalColumns: BasicTableColumn[] = [
-  { prop: 'name', label: '名称', minWidth: 120, slotName: 'name' },
-  { prop: 'url', label: '地址', minWidth: 140, slotName: 'url' },
-  { prop: 'tools', label: '工具数', width: 80, align: 'center', headerAlign: 'center', slotName: 'tools' },
-  { prop: 'id', label: '操作', width: 160, fixed: 'right', align: 'center', headerAlign: 'center', slotName: 'actions' },
-]
-
-function asServer(row: Record<string, unknown>): McpServer {
-  return row as unknown as McpServer
-}
+/** 今日配额用掉的比例（0–100），给读数卡的趟势 chip */
+const quotaUsedPct = computed(() => {
+  const q = quotaSnap.value
+  if (!q || !q.limits.daily_total) return null
+  return Math.round((q.used.total / q.limits.daily_total) * 100)
+})
 
 async function load(): Promise<void> {
   const version = ++loadVersion
@@ -129,18 +130,6 @@ async function refreshAfterExternalWrite(): Promise<boolean> {
   })
   if (!refreshed) markRefreshFailed()
   return Boolean(refreshed)
-}
-
-function serverStatus(row: McpServer): { label: string; type: 'success' | 'info' | 'warning' | 'danger' } {
-  if (row.resident || (row.builtin && (row.name === 'wudao' || row.name === 'wudao-a-stock'))) {
-    if (!row.is_active) return { label: '停用', type: 'info' }
-    if (row.is_usable === false) return { label: row.skip_reason || '未配置', type: 'warning' }
-    return { label: '已连接', type: 'success' }
-  }
-  if (row.builtin) return { label: '内置', type: 'info' }
-  if (!row.is_active) return { label: '停用', type: 'info' }
-  if (row.is_usable === false) return { label: row.skip_reason || '不可用', type: 'warning' }
-  return { label: '可用', type: 'success' }
 }
 
 function openWudaoConfig(): void {
@@ -210,216 +199,166 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <SettingsPanel title="MCP Server" :receipt="receipt" fill>
+  <SettingsPanel
+    title="工具连接"
+    :receipt="receipt"
+  >
     <template #action>
-      <el-button v-if="wudaoServer" :disabled="busy" @click="openWudaoConfig">配置悟道</el-button>
+      <Button v-if="wudaoServer" variant="outline" size="sm" :disabled="busy" @click="openWudaoConfig">
+        <Plug />
+        配置悟道
+      </Button>
+      <Button size="sm" :disabled="busy" @click="mcpFormOpen = true">
+        <Plus />
+        添加外部 MCP
+      </Button>
     </template>
 
-    <BasicTable
-      class="mb"
-      :columns="builtinColumns"
-      :data-source="builtinRows"
-      :pagination="false"
-      :loading="busy && !mcpServers.length"
-      row-key="id"
-      stripe
-      empty-text="尚未接入内置 MCP"
-      empty-reason="内置服务会在启动后出现在这里"
-    >
-      <template #name="{ row }">
-        <strong>{{ row.name }}</strong>
-        <el-tag v-if="row.builtin" size="small" type="info" effect="plain" class="name-tag">内置</el-tag>
-        <el-tag v-if="row.resident" size="small" type="warning" effect="plain" class="name-tag">常驻</el-tag>
-      </template>
-      <template #note="{ row }">
-        <el-tooltip :content="String(row.note || '—')" placement="top" :show-after="150" :disabled="!row.note">
-          <span class="desc desc-clip">{{ row.note || '—' }}</span>
-        </el-tooltip>
-      </template>
-      <template #url="{ row }">
-        <el-tooltip :content="String(row.url || (row.builtin ? '进程内' : '—'))" placement="top" :show-after="150">
-          <span class="mono dim desc-clip">{{ row.url || (row.builtin ? '进程内' : '—') }}</span>
-        </el-tooltip>
-      </template>
-      <template #token="{ row }">
-        <span class="mono">{{ row.resident ? row.token_last4 || '无' : row.builtin ? '—' : row.token_last4 || '无' }}</span>
-      </template>
-      <template #expires="{ row }">
-        <span class="mono dim">{{ row.resident ? row.expires_at || '不限' : row.builtin ? '—' : row.expires_at || '不限' }}</span>
-      </template>
-      <template #tools="{ row }">
-        <span class="mono">{{ toolCount(asServer(row)) }}</span>
-      </template>
-      <template #status="{ row }">
-        <el-tag :type="serverStatus(asServer(row)).type" size="small" effect="plain">
-          {{ serverStatus(asServer(row)).label }}
-        </el-tag>
-      </template>
-      <template #actions="{ row }">
-        <el-button link :disabled="busy" @click="openDetail(asServer(row))">服务详情</el-button>
-        <template v-if="row.resident">
-          <el-button link :disabled="busy" @click="openWudaoConfig">配置</el-button>
-        </template>
-        <template v-else-if="!row.builtin">
-          <el-button link :disabled="busy" @click="toggleMcp(asServer(row))">
-            {{ row.is_active ? '停用' : '启用' }}
-          </el-button>
-          <el-button link type="danger" :disabled="busy" @click="confirmDropMcp(String(row.name))">
-            删除
-          </el-button>
-        </template>
-      </template>
-    </BasicTable>
-
-    <div class="ext-head">
-      <h4 class="ext-title">外部 MCP</h4>
-      <el-tag size="small" type="info" effect="plain" class="ext-count">
-        {{ externalServers.length }}
-      </el-tag>
-      <el-button type="primary" :disabled="busy" @click="mcpFormOpen = true">
-        添加外部 MCP
-      </el-button>
+    <div class="stat-strip stat-strip--plain cols-3 mcp-stats">
+      <StatCard label="在册服务" :value="mcpServers.length" :hint="inactiveCount ? `${inactiveCount} 台停用` : '全部启用'">
+        <template #icon><Server /></template>
+      </StatCard>
+      <StatCard label="可调用工具" :value="totalTools" hint="含内置工具" />
+      <StatCard
+        label="今日调用剩余"
+        :value="quotaSnap ? quotaSnap.remaining.total : '—'"
+        :hint="quotaSnap ? `已用 ${quotaUsedPct ?? 0}%` : '未接常驻线路'"
+      />
     </div>
-    <BasicTable
-      :columns="externalColumns"
-      :data-source="externalRows"
-      :pagination="false"
-      row-key="id"
-      stripe
-      empty-text="还没有外部 MCP"
-      empty-reason="点「添加外部 MCP」接入一台"
-    >
-      <template #name="{ row }">
-        <strong>{{ row.name }}</strong>
-      </template>
-      <template #url="{ row }">
-        <el-tooltip :content="String(row.url || '')" placement="top" :show-after="150">
-          <span class="mono dim desc-clip">{{ row.url }}</span>
-        </el-tooltip>
-      </template>
-      <template #tools="{ row }">
-        <span class="mono">{{ toolCount(asServer(row)) }}</span>
-      </template>
-      <template #actions="{ row }">
-        <el-button link :disabled="busy" @click="openDetail(asServer(row))">工具详情</el-button>
-        <el-button link :disabled="busy" @click="toggleMcp(asServer(row))">
-          {{ row.is_active ? '停用' : '启用' }}
-        </el-button>
-        <el-button link type="danger" :disabled="busy" @click="confirmDropMcp(String(row.name))">
-          删除
-        </el-button>
-      </template>
-    </BasicTable>
+
+    <Card class="mcp-card">
+      <CardHeader class="mcp-card__head">
+        <CardTitle>内置服务</CardTitle>
+      </CardHeader>
+      <div v-if="builtinServers.length" class="mcp-list">
+        <McpServerRow
+          v-for="row in builtinServers"
+          :key="row.id || row.name"
+          :server="row"
+          :busy="busy"
+          :resident="isResident(row)"
+          @detail="openDetail(row)"
+          @configure="openWudaoConfig"
+          @toggle="toggleMcp(row)"
+          @remove="confirmDropMcp(row.name)"
+        />
+      </div>
+      <EmptyState
+        v-else
+        compact
+        description="尚未接入内置 MCP"
+        reason="内置服务会在启动后出现在这里"
+      />
+    </Card>
+
+    <Card class="mcp-card">
+      <CardHeader class="mcp-card__head">
+        <CardTitle class="inline-flex items-center gap-2">
+          外部 MCP
+          <UiBadge variant="secondary">{{ externalServers.length }}</UiBadge>
+        </CardTitle>
+        <CardAction>
+          <Button variant="outline" size="sm" :disabled="busy" @click="mcpFormOpen = true">
+            <Plus />
+            添加
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <div v-if="externalServers.length" class="mcp-list">
+        <McpServerRow
+          v-for="row in externalServers"
+          :key="row.id || row.name"
+          :server="row"
+          :busy="busy"
+          @detail="openDetail(row)"
+          @toggle="toggleMcp(row)"
+          @remove="confirmDropMcp(row.name)"
+        />
+      </div>
+      <EmptyState
+        v-else
+        description="还没有外部 MCP"
+        reason="接入一台远端服务，助手就能用上它的工具"
+        :icon="Plug"
+        class="mcp-empty"
+      >
+        <Button size="sm" :disabled="busy" @click="mcpFormOpen = true">添加外部 MCP</Button>
+      </EmptyState>
+    </Card>
   </SettingsPanel>
 
-  <el-dialog v-model="mcpFormOpen" class="ops-dialog" title="添加 MCP Server" :width="dialogWidth()" destroy-on-close>
-    <el-form
+  <DialogPanel v-model="mcpFormOpen" class="ops-dialog" title="添加 MCP Server" :width="dialogWidth()" destroy-on-close>
+    <FormLayout
       class="form-grid"
-      label-position="right"
-      label-width="6.5em"
+      label-position="top"
       size="small"
       @submit.prevent="submitMcp"
     >
-      <el-form-item label="名称" required>
-        <el-input v-model.trim="mcpForm.name" placeholder="my-data-source" />
-      </el-form-item>
-      <el-form-item label="地址" required class="full-span">
-        <el-input v-model.trim="mcpForm.url" placeholder="https://mcp.example.com" />
-      </el-form-item>
-      <el-form-item label="Token" required class="full-span">
-        <el-input
+      <FormField label="名称" required>
+        <TextField v-model.trim="mcpForm.name" placeholder="my-data-source" />
+      </FormField>
+      <FormField label="地址" required class="full-span">
+        <TextField v-model.trim="mcpForm.url" placeholder="https://mcp.example.com" />
+      </FormField>
+      <FormField label="Token" required class="full-span">
+        <TextField
           v-model.trim="mcpForm.token"
           type="password"
           autocomplete="off"
           placeholder="开发者页复制的 API Key（lb_ 开头）"
           show-password
         />
-      </el-form-item>
-      <el-form-item label="到期日（可选）" class="full-span">
-        <el-date-picker
+      </FormField>
+      <FormField label="到期日（可选）" class="full-span">
+        <DateField
           v-model="mcpForm.expires_at"
           type="date"
           value-format="YYYY-MM-DD"
           placeholder="套餐到期后自动跳过"
           style="width: 100%"
         />
-      </el-form-item>
-      <el-form-item label="备注" class="full-span">
-        <el-input v-model.trim="mcpForm.note" placeholder="用途说明" />
-      </el-form-item>
-      <el-form-item class="full-span">
-        <el-checkbox v-model="mcpForm.verify">保存时握手校验</el-checkbox>
-      </el-form-item>
-    </el-form>
+      </FormField>
+      <FormField label="备注" class="full-span">
+        <TextField v-model.trim="mcpForm.note" placeholder="用途说明" />
+      </FormField>
+      <FormField class="full-span">
+        <CheckboxField v-model="mcpForm.verify">保存时握手校验</CheckboxField>
+      </FormField>
+    </FormLayout>
     <template #footer>
-      <el-button @click="mcpFormOpen = false">取消</el-button>
-      <el-button type="primary" :disabled="busy" @click="submitMcp">保存并发现工具</el-button>
+      <ActionButton @click="mcpFormOpen = false">取消</ActionButton>
+      <ActionButton tone="primary" :disabled="busy" @click="submitMcp">保存并发现工具</ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 
   <McpToolsDialog v-model="detailOpen" :server="detailServer" @refreshed="onDetailRefreshed" />
   <WudaoMcpDialog v-model="wudaoOpen" :server="wudaoServer" @saved="() => writeAndRefresh(async () => true)" />
 </template>
 
 <style scoped>
-/* 加载态不再定高：EP 的 v-loading 遮罩自带 spinner，8rem 只是空白 */
-.mcp-loading {
-  padding: var(--gap-4) 0;
+.mcp-stats {
+  margin-bottom: 0;
 }
 
-.desc {
-  color: var(--mist);
-}
-
-.desc-clip {
-  display: inline-block;
-  max-width: 100%;
+.mcp-card {
+  gap: 0;
+  padding: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 
-.dim {
-  color: var(--mist);
+.mcp-card__head {
+  padding: var(--gap-4) var(--gap-4) var(--gap-3);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.name-tag {
-  margin-left: var(--gap-1);
-  vertical-align: middle;
-}
-
-/* 栅格与 .full-span 用全局 .form-grid（style.components.css），不在此另立一套 */
-
-.mb {
-  margin-bottom: var(--gap-4);
-}
-
-/* 标题 + 计数 chip + 主操作同一行 */
-.ext-head {
+.mcp-list {
   display: flex;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-  padding: var(--gap-2) var(--gap-3);
-  border-block: 1px solid var(--rule);
-  background: var(--surface-sunken);
-  align-items: center;
-  gap: var(--gap-2);
-  margin-bottom: var(--gap-2);
+  flex-direction: column;
+  min-width: 0;
 }
 
-.ext-title {
-  margin: 0;
-  font-size: var(--fs-body);
-  color: var(--ink);
-}
-
-.ext-count {
-  font-family: var(--mono);
-}
-
-.ext-head .el-button {
-  margin-left: auto;
+.mcp-empty {
+  padding: var(--gap-6) var(--gap-4);
 }
 </style>
 <style scoped src="./OpsDialogSurface.css"></style>

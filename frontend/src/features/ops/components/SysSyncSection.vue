@@ -1,9 +1,25 @@
 <script setup lang="ts">
-import HeaderStat from '@/shared/components/ui/HeaderStat.vue'
+import { Button } from '@/shared/components/ui/button'
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from '@/shared/components/ui/number-field'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select'
+import { Switch } from '@/shared/components/ui/switch'
 import type { MarketSyncSettings } from '@/shared/types/quant'
 import type { SyncDraft } from '../composables/useSystemSettings'
 import { formatNext } from '../composables/opsLabels'
 
+/** 行情同步一节：盘中增量 / 日终重刷 / 并发 三条设置行。 */
 const props = defineProps<{
   sync: SyncDraft
   syncMeta: Pick<MarketSyncSettings, 'intraday_job' | 'eod_job'> | null
@@ -18,86 +34,110 @@ const nextRun = () => {
 </script>
 
 <template>
-  <el-form class="sys-form" label-position="right" label-width="6.5em" size="small" @submit.prevent>
-    <el-row :gutter="12">
-      <el-col :xs="24" :xl="12">
-        <el-form-item label="盘中增量">
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <el-switch v-model="sync.enabled_intraday" aria-label="启用盘中增量同步" />
-            <!-- 「工作日 9–14 点」是规则不是读数：常驻文字删掉，挂到它约束的那个下拉上 -->
-            <el-tooltip placement="top-start" content="只在工作日 9–14 点之间按这个间隔跑">
-              <el-select
-                v-model="sync.interval_minutes"
-                aria-label="盘中同步间隔"
-                class="interval"
-                :disabled="!sync.enabled_intraday"
-              >
-                <el-option :value="1" label="每 1 分钟" />
-                <el-option :value="5" label="每 5 分钟" />
-                <el-option :value="15" label="每 15 分钟" />
-                <el-option :value="30" label="每 30 分钟" />
-              </el-select>
-            </el-tooltip>
-          </div>
-        </el-form-item>
-      </el-col>
-      <el-col :xs="24" :xl="12">
-        <el-form-item label="日终重刷">
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <el-switch v-model="sync.enabled_eod" aria-label="启用日终重刷" />
-            <el-input-number
-              v-model="sync.eod_hour"
-              aria-label="日终重刷小时"
-              :min="12"
-              :max="23"
-              :disabled="!sync.enabled_eod"
-              controls-position="right"
-            />
-            <span class="time-sep">:</span>
-            <el-input-number
-              v-model="sync.eod_minute"
-              aria-label="日终重刷分钟"
-              :min="0"
-              :max="59"
-              :step="5"
-              :disabled="!sync.enabled_eod"
-              controls-position="right"
-            />
-            <!-- 「下次 09:30」是数据不是介绍，保留；换成行内读数，与控件同排 -->
-            <HeaderStat v-if="nextRun()" label="下次" :value="nextRun()" />
-          </div>
-        </el-form-item>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="10">
-        <el-form-item label="并发">
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <el-input-number
-              v-model="sync.workers"
-              :min="1"
-              :max="16"
-              controls-position="right"
-            />
-            <el-button size="small" @click="emit('recommend')">推荐配置</el-button>
-          </div>
-        </el-form-item>
-      </el-col>
-    </el-row>
-  </el-form>
+  <form class="sys-rows" @submit.prevent>
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <span class="settings-row__label">盘中增量同步</span>
+        <p class="settings-row__desc">只在工作日 9–14 点之间按间隔拉取最新行情。</p>
+      </div>
+      <div class="settings-row__control">
+        <Select v-model="sync.interval_minutes" :disabled="!sync.enabled_intraday">
+          <SelectTrigger class="interval" aria-label="盘中同步间隔" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="1">每 1 分钟</SelectItem>
+            <SelectItem :value="5">每 5 分钟</SelectItem>
+            <SelectItem :value="15">每 15 分钟</SelectItem>
+            <SelectItem :value="30">每 30 分钟</SelectItem>
+          </SelectContent>
+        </Select>
+        <Switch v-model="sync.enabled_intraday" aria-label="启用盘中增量同步" />
+      </div>
+    </div>
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <span class="settings-row__label">日终重刷</span>
+        <p class="settings-row__desc">
+          收盘后整表刷一遍，修正盘中缺口。
+          <template v-if="nextRun()">下次 <strong class="next">{{ nextRun() }}</strong></template>
+        </p>
+      </div>
+      <div class="settings-row__control">
+        <span class="time-pair">
+          <NumberField v-model="sync.eod_hour" class="time-num" :min="12" :max="23" :disabled="!sync.enabled_eod">
+            <NumberFieldContent>
+              <NumberFieldInput aria-label="日终重刷小时" />
+              <NumberFieldIncrement />
+              <NumberFieldDecrement />
+            </NumberFieldContent>
+          </NumberField>
+          <span class="time-sep" aria-hidden="true">:</span>
+          <NumberField v-model="sync.eod_minute" class="time-num" :min="0" :max="59" :step="5" :disabled="!sync.enabled_eod">
+            <NumberFieldContent>
+              <NumberFieldInput aria-label="日终重刷分钟" />
+              <NumberFieldIncrement />
+              <NumberFieldDecrement />
+            </NumberFieldContent>
+          </NumberField>
+        </span>
+        <Switch v-model="sync.enabled_eod" aria-label="启用日终重刷" />
+      </div>
+    </div>
+    <div class="settings-row">
+      <div class="settings-row__lead">
+        <span class="settings-row__label">同步并发</span>
+        <p class="settings-row__desc">同时拉取的线程数；由服务器执行。</p>
+      </div>
+      <div class="settings-row__control">
+        <NumberField v-model="sync.workers" class="workers-num" :min="1" :max="16">
+          <NumberFieldContent>
+            <NumberFieldInput aria-label="同步并发数" />
+            <NumberFieldIncrement />
+            <NumberFieldDecrement />
+          </NumberFieldContent>
+        </NumberField>
+        <Button variant="outline" size="sm" @click="emit('recommend')">推荐配置</Button>
+      </div>
+    </div>
+  </form>
 </template>
 
 <style scoped>
-/* 行内控件组：自动换行，横向 12px、纵向 4px。 */
+.sys-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
 
 .interval {
   width: 8.25rem;
 }
 
+.time-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-1);
+}
+
+.time-num {
+  width: 5.5rem;
+}
+
+.workers-num {
+  width: 6.5rem;
+}
+
 .time-sep {
-  color: var(--mist);
+  color: var(--text-tertiary);
   font-family: var(--mono);
 }
 
-.sys-form :deep(.el-form-item) {
-  margin-bottom: var(--gap-2);
+.next {
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 </style>

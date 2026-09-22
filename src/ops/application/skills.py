@@ -443,10 +443,11 @@ def sync_skills_from_templates(
     dest_root = Path(skill_root or _skill_root_default())
     installed: list[str] = []
     skipped: list[str] = []
+    from src.ops.application.retired_slugs import is_retired_strategy_slug
     from src.ops.application.retire_dragon_return import is_retired_paper_cabin
 
     for slug, source_dir in candidates:
-        if is_retired_paper_cabin(slug):
+        if is_retired_paper_cabin(slug) or is_retired_strategy_slug(slug):
             skipped.append(slug)
             continue
         source_resolved = source_dir.resolve()
@@ -492,6 +493,10 @@ def install_skill_dir(
     if not instructions.strip():
         raise SkillError("SKILL.md 正文为空")
     slug = _normalise_slug(meta.get("slug") or source.name or meta["name"])
+    from src.ops.application.retired_slugs import is_retired_strategy_slug
+
+    if is_retired_strategy_slug(slug):
+        raise SkillError(f"技能已退役：{slug}")
     root = Path(skill_root or _skill_root_default())
     root.mkdir(parents=True, exist_ok=True)
     destination = root / slug

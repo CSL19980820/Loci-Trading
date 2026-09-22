@@ -36,8 +36,10 @@ import {
 } from './jobOwnership'
 import { cnStrategyName } from './opsLabels'
 import { useJobsQuery } from './useJobsQuery'
+import { useVisitorMode } from '@/shared/composables/useAccess'
 
 export function useJobsCatalog() {
+  const visitor = useVisitorMode()
   const {
     jobs,
     isPending: jobsPending,
@@ -71,8 +73,8 @@ export function useJobsCatalog() {
       getScheduleStatus(),
       getStrategies(),
       getSkills(),
-      getProviders(),
-      getJobQuota(),
+      visitor.value ? Promise.resolve([]) : getProviders(),
+      visitor.value ? Promise.resolve(null) : getJobQuota(),
     ])
     const failures = [
       [jobsResult, '定时任务加载失败'],

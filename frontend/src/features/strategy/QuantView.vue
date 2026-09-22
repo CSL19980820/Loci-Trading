@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ChevronDown, CircleAlert, Database, LoaderCircle, Plus, Upload, X } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
+import { toast } from 'vue-sonner'
 
 import {
   CapabilityUnavailableError,
@@ -12,8 +13,16 @@ import {
   removeSkill,
   syncMarket,
 } from '@/shared/api/quant'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/shared/components/ui/dropdown-menu'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
-import PageTabs from '@/shared/components/ui/PageTabs.vue'
+import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { MarketCoverage, Skill, StrategyInfo } from '@/shared/types/quant'
@@ -113,15 +122,18 @@ const needsBootstrap = computed(() =>
     unavailable.value,
   ),
 )
+const marketEmpty = computed(() => Boolean(coverage.value && coverage.value.codes === 0))
 
 watch(
   () => route.query.tab,
   (raw) => {
+    if (route.name !== 'quant') return
     activeTab.value = parseTab(raw)
   },
 )
 
 watch(activeTab, (tab) => {
+  if (route.name !== 'quant') return
   const revisit = mountedTabs.has(tab)
   mountedTabs.add(tab)
   const next = tab === 'engines' ? undefined : tab
@@ -176,6 +188,11 @@ function goRecommendedSync(): void {
   void router.push({ path: '/ops', query: { tab: 'system' }, hash: '#sys-sync' })
 }
 
+/** 新建入口从战法面板搬到页头：空白 / AI 草稿 / TDX 草稿都落到策稿台 */
+function openCreate(source: 'blank' | 'description' | 'tdx'): void {
+  void router.push({ path: '/strategy-converter', query: { source } })
+}
+
 async function uninstallSkill(skill: Skill): Promise<void> {
   if (
     !(await confirmDangerous(
@@ -188,10 +205,10 @@ async function uninstallSkill(skill: Skill): Promise<void> {
   }
   try {
     await removeSkill(skill.slug)
-    ElMessage.success(`已卸载 ${skill.name}`)
+    toast.success(`已卸载 ${skill.name}`)
     skills.value = skills.value.filter((row) => row.slug !== skill.slug)
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '卸载失败'))
+    toast.error(toErrorMessage(caught, '卸载失败'))
   }
 }
 
@@ -207,7 +224,7 @@ function onBundleImported(): void {
 async function bootstrapMarket(): Promise<void> {
   syncBusy.value = true
   unavailable.value = ''
-  ElMessage.info('同步可能需要一两分钟，请稍候')
+  toast.info('同步可能需要一两分钟，请稍候')
   try {
     const report = await syncMarket({
       refresh_instruments: true,
@@ -215,9 +232,9 @@ async function bootstrapMarket(): Promise<void> {
       workers: 6,
       interval: 0.1,
     })
-    ElMessage.success(
+    toast.success(
       `同步完成：成功 ${String(report.succeeded ?? 0)} / 跳过 ${String(report.skipped ?? 0)}`
-        + (report.spot_rows ? ` · 当日实时 ${String(report.spot_rows)} 行` : ''),
+ + (report.spot_rows ? ` · 当日实时 ${String(report.spot_rows)} 行` : ''),
     )
     coverage.value = await getMarketCoverage()
   } catch (caught: unknown) {
@@ -238,39 +255,77 @@ onMounted(() => {
       overlay
       :busy="activeTab !== 'research' && busy && !coverage && !strategies.length && !skills.length"
     />
-    <el-alert
-      v-if="unavailable"
-      :title="unavailable"
-      type="error"
-      show-icon
-      closable
-      class="mb-2 shrink-0"
-      @close="unavailable = ''"
+
+    <PageHeader
+      title="工坊"
+      :tabs="workshopTabs"
+      v-model:tab="activeTab"
     >
-      <!-- alert 里只留能点的东西：那句「先同步行情」按钮自己就说完了（AGENTS.md 禁常驻说明） -->
-      <template v-if="needsBootstrap" #default>
-        <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket"
-          >同步行情</el-button
+      <template #actions>
+        <Button
+          v-if="marketEmpty || needsBootstrap"
+          variant="outline"
+          size="sm"
+          :disabled="syncBusy"
+          @click="bootstrapMarket"
         >
+          <LoaderCircle v-if="syncBusy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Database v-else aria-hidden="true" />
+          同步行情
+        </Button>
+        <Button variant="outline" size="sm" @click="bundleImportOpen = true">
+          <Upload aria-hidden="true" />
+          导入克隆包
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button size="sm">
+              <Plus aria-hidden="true" />
+              新建战法
+              <ChevronDown aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem @select="openCreate('blank')">空白新建</DropdownMenuItem>
+            <DropdownMenuItem @select="openCreate('description')">AI 草稿</DropdownMenuItem>
+            <DropdownMenuItem @select="openCreate('tdx')">TDX 草稿</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </template>
-    </el-alert>
+    </PageHeader>
 
-    <el-alert
-      v-if="coverage && coverage.codes === 0 && !unavailable"
-      type="warning"
-      show-icon
-      :closable="false"
-      class="mb-2 shrink-0"
-      title="行情仓为空：选股会失败"
-    >
-      <el-button size="small" type="primary" :loading="syncBusy" @click="bootstrapMarket"
-        >同步行情</el-button
-      >
-    </el-alert>
-
-    <PageTabs v-model="activeTab" :items="workshopTabs" dense aria-label="工坊分区" />
+    <Alert v-if="unavailable" variant="destructive" class="workshop-alert">
+      <CircleAlert />
+      <div class="flex w-full min-w-0 items-start justify-between gap-2">
+        <div class="min-w-0 flex-1">
+          <AlertTitle class="line-clamp-none min-w-0">{{ unavailable }}</AlertTitle>
+          <!-- alert 里只留能点的东西：那句「先同步行情」按钮自己就说完了（AGENTS.md 禁常驻说明） -->
+          <Button
+            v-if="needsBootstrap"
+            variant="outline"
+            size="sm"
+            class="mt-1"
+            :disabled="syncBusy"
+            @click="bootstrapMarket"
+          >
+            <LoaderCircle v-if="syncBusy" class="size-4 animate-spin" aria-hidden="true" />
+            同步行情
+          </Button>
+        </div>
+        <Button access="read"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="关闭提示"
+          class="shrink-0"
+          @click="unavailable = ''"
+        >
+          <X class="size-3.5" />
+        </Button>
+      </div>
+    </Alert>
 
     <div class="workshop-body">
+
       <!-- v-if 只管「进过没」，v-show 才是当前 Tab：见 mountedTabs 的注释 -->
       <div
         v-if="mountedTabs.has('engines')"
@@ -355,46 +410,70 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.workshop-page, .workshop-body, .workshop-body > .page-pane { min-width: 0; }
-.research-pane, .market-pane { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
-.backtest-pane { overflow: auto; overscroll-behavior: contain; }
+.workshop-page,
+.workshop-body,
+.workshop-body > .page-pane {
+  min-width: 0;
+}
+
+.workshop-alert {
+  flex-shrink: 0;
+  margin: var(--gap-3) 0 0;
+}
+
 .workshop-body {
   display: flex;
-  min-height: 0;
-  height: 0;
   flex: 1 1 0%;
   flex-direction: column;
-  gap: var(--gap-2);
+  gap: var(--gap-4);
+  height: 0;
+  min-height: 0;
+  padding: var(--gap-4) 0 0;
   overflow: hidden;
-  padding: var(--gap-2);
 }
 
 .workshop-body > .page-pane {
-  min-height: 0;
-  height: 0;
   flex: 1 1 0%;
+  height: 0;
+  min-height: 0;
 }
 
-.market-pane,
-.sources-pane,
-.jobs-pane,
-.backtest-pane,
-.paper-pane {
+.research-pane,
+.market-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 0;
 }
+
+.backtest-pane {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-bottom: var(--gap-4);
+}
+
 .sources-pane {
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
 }
+
 .jobs-pane {
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
+
 .jobs-pane :deep(.settings-panel) {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+@media (max-width: 640px) {
+  .workshop-body {
+    gap: var(--gap-3);
+    padding-top: var(--gap-3);
+  }
 }
 </style>

@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, LoaderCircle } from '@lucide/vue'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+
+import { Button } from '@/shared/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/shared/components/ui/dropdown-menu'
 
 export type HeaderAction = {
   key: string
@@ -52,63 +60,58 @@ function run(action: HeaderAction): void {
   action.onClick?.()
 }
 
-function onMore(key: string): void {
-  const action = overflowActions.value.find((a) => a.key === key)
-  if (action) run(action)
-}
-
-function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
-  if (kind === 'primary') return 'primary'
-  if (kind === 'danger') return 'danger'
-  return ''
+/** 破坏性操作用印章红（--stamp），不用涨跌红：删除和「涨」不该是同一个红 */
+function variantOf(kind: HeaderAction['kind']): 'default' | 'outline' {
+  return kind === 'primary' ? 'default' : 'outline'
 }
 </script>
 
 <template>
   <div class="header-actions">
-    <el-button
+    <Button
       v-for="action in visibleSecondary"
       :key="action.key"
-      size="small"
-      :type="buttonType(action.kind)"
-      :plain="action.kind === 'danger'"
-      :loading="action.loading"
-      :disabled="action.disabled"
+      size="sm"
+      :variant="variantOf(action.kind)"
+      :class="action.kind === 'danger' ? 'header-actions__danger' : ''"
+      :disabled="action.disabled || action.loading"
       @click="run(action)"
     >
+      <LoaderCircle v-if="action.loading" class="animate-spin" aria-hidden="true" />
       {{ action.label }}
-    </el-button>
+    </Button>
 
-    <el-dropdown v-if="needsOverflow" trigger="click" @command="onMore">
-      <el-button size="small">
-        更多
-        <el-icon class="header-actions__caret" aria-hidden="true"><ArrowDown /></el-icon>
-      </el-button>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item
-            v-for="action in overflowActions"
-            :key="action.key"
-            :command="action.key"
-            :disabled="action.disabled || action.loading"
-          >
-            {{ action.label }}
-          </el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
+    <DropdownMenu v-if="needsOverflow">
+      <DropdownMenuTrigger as-child>
+        <Button size="sm" variant="outline">
+          更多
+          <ArrowDown class="header-actions__caret" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          v-for="action in overflowActions"
+          :key="action.key"
+          :disabled="action.disabled || action.loading"
+          :variant="action.kind === 'danger' ? 'destructive' : 'default'"
+          @select="run(action)"
+        >
+          {{ action.label }}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
 
-    <el-button
+    <Button
       v-for="action in primaryActions"
       :key="action.key"
-      size="small"
-      type="primary"
-      :loading="action.loading"
-      :disabled="action.disabled"
+      size="sm"
+      variant="default"
+      :disabled="action.disabled || action.loading"
       @click="run(action)"
     >
+      <LoaderCircle v-if="action.loading" class="animate-spin" aria-hidden="true" />
       {{ action.label }}
-    </el-button>
+    </Button>
   </div>
 </template>
 
@@ -121,34 +124,18 @@ function buttonType(kind: HeaderAction['kind']): '' | 'primary' | 'danger' {
   gap: var(--gap-2);
 }
 
-.header-actions :deep(.el-button) {
-  margin: 0;
-}
-
 /*
- * 主操作按钮的文字色必须跟 --on-primary（theme.ts 按主色 OKLCH 亮度定黑白）。
- * 写死 #fff 会在浅主色下失效：amber 档 #fff/#d79700 只有 2.53:1，远低于 AA 的 4.5:1。
+ * 主操作按钮的文字色由 Button 的 `text-primary-foreground` 给（= 本仓 `--on-primary`，
+ * theme.ts 按主色 OKLCH 亮度定黑白）。写死 #fff 会在浅主色下失效。
  */
-.header-actions :deep(.el-button--primary:not(.is-disabled)) {
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
-  color: var(--on-primary);
-}
-
-/* 破坏性操作用印章红（--stamp），不用涨跌红：删除和「涨」不该是同一个红 */
-.header-actions :deep(.el-button--danger.is-plain) {
-  background: transparent;
+.header-actions__danger {
   border-color: color-mix(in oklab, var(--stamp) 45%, var(--rule));
   color: var(--stamp);
 }
 
-.header-actions :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
 .header-actions__caret {
-  margin-left: var(--gap-1);
-  font-size: var(--fs-kicker);
+  width: var(--fs-kicker);
+  height: var(--fs-kicker);
   opacity: 0.75;
 }
 </style>

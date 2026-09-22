@@ -1,13 +1,14 @@
 <script setup lang="ts">
+import { CircleCheck, CircleX as CircleClose, FileCheck as DocumentChecked, RefreshCw as RefreshRight, Search, TriangleAlert as WarningFilled } from '@lucide/vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
+import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { Notice, StatusBadge, IconBox } from '@/shared/components/ui/app/presentation'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+
 import { computed, onMounted, ref, watch } from 'vue'
-import {
-  CircleCheck,
-  CircleClose,
-  DocumentChecked,
-  RefreshRight,
-  Search,
-  WarningFilled,
-} from '@element-plus/icons-vue'
+
 
 import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
@@ -243,7 +244,7 @@ onMounted(() => {
       note="事实、来源、缺口分开呈现；研究标签不直接生成生产信号"
     >
       <form class="research-query" @submit.prevent="submit">
-        <el-input
+        <TextField
           v-model="code"
           class="research-code"
           clearable
@@ -252,25 +253,25 @@ onMounted(() => {
           placeholder="输入证券代码"
         >
           <template #prepend>标的</template>
-        </el-input>
-        <el-radio-group v-model="budget" size="small" aria-label="研究预算">
-          <el-radio-button v-for="item in budgets" :key="item.id" :value="item.id">
+        </TextField>
+        <RadioChoices v-model="budget" size="small" aria-label="研究预算">
+          <RadioButton v-for="item in budgets" :key="item.id" :value="item.id">
             {{ item.label }}
-          </el-radio-button>
-        </el-radio-group>
-        <el-button type="primary" :icon="Search" :loading="loading" @click="submit">读取</el-button>
-        <el-button :icon="DocumentChecked" :loading="archiveLoading" :disabled="!profile || loading" @click="archive">归档</el-button>
-        <el-button text :icon="RefreshRight" :disabled="loading" aria-label="刷新研究剖面" @click="refresh" />
+          </RadioButton>
+        </RadioChoices>
+        <ActionButton access="read" tone="primary" :icon="Search" :busy="loading" @click="submit">读取</ActionButton>
+        <ActionButton :icon="DocumentChecked" :busy="archiveLoading" :disabled="!profile || loading" @click="archive">归档</ActionButton>
+        <ActionButton access="read" variant="ghost" :icon="RefreshRight" :disabled="loading" aria-label="刷新研究剖面" @click="refresh" />
       </form>
       <template #stats>
         <HeaderStat label="维度" :value="catalog ? dimensionsCount : '—'" />
       </template>
     </PageToolbar>
 
-    <el-alert
+    <Notice
       v-if="error"
       :title="error"
-      type="error"
+      tone="error"
       show-icon
       closable
       class="research-alert"
@@ -298,10 +299,10 @@ onMounted(() => {
         </div>
         <div class="summary-metric">
           <span>总体质量</span>
-          <el-tag :type="qualityType(quality?.overall)" effect="plain">
-            <el-icon aria-hidden="true"><component :is="statusIcon(quality?.overall)" /></el-icon>
+          <StatusBadge :tone="qualityType(quality?.overall)" effect="plain">
+            <IconBox aria-hidden="true"><component :is="statusIcon(quality?.overall)" /></IconBox>
             {{ qualityLabel }}
-          </el-tag>
+          </StatusBadge>
         </div>
         <div class="summary-metric">
           <span>完整度</span>
@@ -322,62 +323,62 @@ onMounted(() => {
       <section v-if="profile.source_attempts.length || profile.artifact_id" class="source-receipts" aria-label="来源回执">
         <!-- 英文 kicker 换成中文行内标签：这排 tag 没有别的东西说明它是什么，所以留，但不占整行 -->
         <span class="research-kicker">来源回执</span>
-        <el-tag
+        <StatusBadge
           v-if="profile.artifact_id"
-          :type="profile.artifact_status === 'stale' ? 'warning' : 'success'"
+          :tone="profile.artifact_status === 'stale' ? 'warning' : 'success'"
           size="small"
           effect="plain"
         >
           {{ profile.artifact_status === 'stale' ? '快照已过期' : '快照已归档' }} · {{ profile.artifact_id }}
-        </el-tag>
-        <el-tag
+        </StatusBadge>
+        <StatusBadge
           v-for="attempt in profile.source_attempts"
           :key="attempt.source_id"
-          :type="sourceStateType(attempt)"
+          :tone="sourceStateType(attempt)"
           size="small"
           effect="plain"
           :title="attempt.error || attempt.row_sources.join(', ')"
         >
           {{ attempt.source_id }} · {{ sourceStateText(attempt) }}
-        </el-tag>
+        </StatusBadge>
       </section>
 
       <!--
         不用 description（AGENTS.md §3.9 文案规范）：title 只报「出了什么事」，
         具体是哪几条降级用 el-tag 列出来 —— 那是结构化证据，不是说明文字。
       -->
-      <el-alert
+      <Notice
         v-if="sourceTelemetryWarnings.length"
         class="research-alert"
-        type="warning"
+        tone="warning"
         show-icon
         :closable="false"
         title="行情来源 telemetry 不完整或已降级"
       >
-        <el-tag
+        <StatusBadge
           v-for="warning in sourceTelemetryWarnings"
           :key="warning"
           size="small"
-          type="warning"
+          tone="warning"
           effect="plain"
           class="telemetry-tag"
-        >{{ warning }}</el-tag>
-      </el-alert>
+        >{{ warning }}</StatusBadge>
+      </Notice>
 
       <!-- 那句「可查看中间事实但别当结论」是口径解释，进 tooltip；alert 只报异常本身 -->
-      <el-tooltip
+      <HintTooltip
         v-if="quality?.blocked"
         placement="bottom-start"
         content="可查看中间事实；不要标记为完整研究，也不要直接用于生产信号"
       >
-        <el-alert
+        <Notice
           class="research-alert"
-          type="warning"
+          tone="warning"
           show-icon
           :closable="false"
           title="研究结果未通过核验门禁"
         />
-      </el-tooltip>
+      </HintTooltip>
 
       <ResearchEvidencePanel :profile="profile" :run="activeRun || archivedRun" />
 
@@ -398,9 +399,9 @@ onMounted(() => {
       />
       <div class="source-band">
         <span class="research-kicker">来源登记</span>
-        <el-tag v-for="source in catalog.sources" :key="source.id" size="small" effect="plain">
+        <StatusBadge v-for="source in catalog.sources" :key="source.id" size="small" effect="plain">
           {{ source.name_cn }} · {{ source.health }}
-        </el-tag>
+        </StatusBadge>
       </div>
     </section>
 

@@ -140,7 +140,7 @@ def register_with_email(
             password_hash=pw.hash_password(password),
             password_algo=pw.preferred_algo(),
             display_name=display_name or handle,
-            role="member",
+            role="visitor",
             status="pending",
         )
     except ConflictError:
@@ -153,7 +153,7 @@ def register_with_email(
             password_hash=pw.hash_password(password),
             password_algo=pw.preferred_algo(),
             display_name=display_name or handle,
-            role="member",
+            role="visitor",
             status="pending",
         )
     store.update_user(user.id, **{})
@@ -255,6 +255,7 @@ def login_with_password(
             actor_name=user.username,
             outcome="failed",
             ip=ip,
+            detail={"provider": "local", "user_agent": user_agent[:512], "reason": "invalid_credentials"},
         )
         raise AuthenticationError(GENERIC_LOGIN_ERROR)
     if pw.needs_rehash(stored):
@@ -263,7 +264,8 @@ def login_with_password(
     counter.reset(account=account, ip=ip)
     token = store.create_session(user_id=user.id, ip=ip, user_agent=user_agent)
     store.update_user(user.id, last_login_at=iso(utc_now()))
-    store.write_audit(action="account.login", actor_id=user.id, actor_name=user.username, ip=ip)
+    store.write_audit(action="account.login", actor_id=user.id, actor_name=user.username, ip=ip,
+                      detail={"provider": "local", "user_agent": user_agent[:512]})
     refreshed = store.get_user(user.id)
     return (refreshed or user), token
 
@@ -280,20 +282,6 @@ def resolve_session(store: IdentityStore, token: str) -> AuthContext:
         return AuthContext()
     store.touch_session(session.id)
     return AuthContext(user=user, session_id=session.id, via="session")
-
-
-def resolve_api_key(store: IdentityStore, plaintext: str) -> AuthContext:
-    """``Authorization: Bearer loci_xxx`` → AuthContext。"""
-    if not plaintext.startswith("loci_"):
-        return AuthContext()
-    record = store.resolve_api_key(plaintext)
-    if record is None:
-        return AuthContext()
-    user = store.get_user(record["user_id"])
-    if user is None or user.status in ("disabled", "deleted"):
-        return AuthContext()
-    scopes = frozenset(str(record.get("scopes") or "read").split(","))
-    return AuthContext(user=user, session_id=None, via="api_key", scopes=scopes)
 
 
 def logout(store: IdentityStore, token: str) -> None:

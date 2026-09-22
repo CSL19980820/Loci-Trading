@@ -52,6 +52,8 @@ export function railRowsOf(jobs: Job[], displayName: (job: Job) => string): JobR
       enabled: job.enabled,
       health,
       healthText: jobHealthLabel(health),
+      cronText: cronLabel(job),
+      lastRunAt: job.last_run_at || '',
     }
   })
 }

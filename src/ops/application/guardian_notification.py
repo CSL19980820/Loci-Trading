@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
@@ -109,12 +110,24 @@ def with_notification_facts(
     return {**state, "notification_day": daily, "notification_slot": slot}
 
 
+def format_notification_time(value: Any) -> str:
+    """通知显示北京时间，保留账本中的原始时区时间。"""
+    raw = str(value or "")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return raw
+    zone = ZoneInfo("Asia/Shanghai")
+    parsed = parsed.replace(tzinfo=zone) if parsed.tzinfo is None else parsed.astimezone(zone)
+    return parsed.strftime("%Y-%m-%d %H:%M:%S")
+
+
 def render_account_overview(state: dict[str, Any]) -> str:
     money = lambda value: f"{value / 100:,.2f}"
     positions = state.get("positions", [])
     lines = []
     if state.get("notification_slot"):
-        lines.append(f"轮次 · {state['notification_slot']}（北京时间）")
+        lines.append(f"轮次 · {format_notification_time(state['notification_slot'])}（北京时间）")
     valuation_error = state.get("valuation_error")
     equity = state.get("equity_cents")
     total = f"{money(equity)} 元" if type(equity) is int and not valuation_error else "暂不可用"

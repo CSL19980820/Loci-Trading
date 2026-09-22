@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import time
 from typing import Any, Callable
 
 from src.ops.application.guardian_delivery_channels import send_target
 from src.ops.application.notify import split_text_for_wecom
+from src.ops.application.notify_dispatch import ordered_delivery
 
 
 class NoticeLeaseLost(RuntimeError):
@@ -28,6 +30,7 @@ def notice_parts(title: str, body: str) -> list[tuple[str, str]]:
     return parts
 
 
+@ordered_delivery
 def send_notice_parts(
     store: Any, send: Any, target: dict[str, str] | None, *, title: str, body: str,
     previous: dict[str, Any], checkpoint: Callable[[dict[str, Any]], bool],
@@ -48,6 +51,8 @@ def send_notice_parts(
         result["sent_parts"] = sum(bool(r.get("success")) for r in receipts.values())
         if not checkpoint(result):
             raise NoticeLeaseLost("通知租约已失效，停止后续分段")
+        if index > 1:
+            time.sleep(1.5)
         try:
             receipt = (send_target(store, send, target, title=part_title, body=chunk)
                        if target else send(store, title=part_title, body=chunk))

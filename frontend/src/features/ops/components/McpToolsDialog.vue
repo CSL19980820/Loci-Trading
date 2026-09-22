@@ -1,6 +1,12 @@
 <script setup lang="ts">
+import { toast } from 'vue-sonner'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+
 
 import { getMcpServers, probeMcpServer, refreshMcpTools, type McpProbeResult } from '@/shared/api/quant'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
@@ -54,8 +60,8 @@ const akshareRows = computed(() => akshareTools.value as unknown as Record<strin
 const flatRows = computed(() => flatTools.value as unknown as Record<string, unknown>[])
 
 const toolColumns: BasicTableColumn[] = [
-  { prop: 'name', label: '工具', minWidth: 140, slotName: 'name' },
-  { prop: 'description', label: '说明', minWidth: 160, slotName: 'description' },
+  { prop: 'name', label: '工具', minWidth: 140, align: 'center', headerAlign: 'center', slotName: 'name' },
+  { prop: 'description', label: '说明', minWidth: 160, align: 'center', headerAlign: 'center', slotName: 'description' },
 ]
 
 function resetProbes(): void {
@@ -124,11 +130,11 @@ async function refreshToolsList(): Promise<void> {
     const rows = await getMcpServers()
     if (!isCurrent(version)) return
     live.value = rows.find((r) => r.name === name) ?? live.value
-    ElMessage.success(`已刷新 ${name} 工具列表`)
+    toast.success(`已刷新 ${name} 工具列表`)
     emit('refreshed')
   } catch (caught: unknown) {
     if (!isCurrent(version)) return
-    ElMessage.error(toErrorMessage(caught, '没刷出工具，确认这台服务还开着'))
+    toast.error(toErrorMessage(caught, '没刷出工具，确认这台服务还开着'))
   } finally {
     if (isCurrent(version)) refreshingTools.value = false
   }
@@ -145,19 +151,19 @@ async function probeServer(): Promise<void> {
     if (!isCurrent(version)) return
     serverProbe.value = cellFromResult(result)
     if (result.ok) {
-      ElMessage.success(`${name} 连通 · ${result.rtt_ms} ms · 工具 ${result.tool_count ?? 0}`)
+      toast.success(`${name} 连通 · ${result.rtt_ms} ms · 工具 ${result.tool_count ?? 0}`)
       const rows = await getMcpServers()
       if (!isCurrent(version)) return
       live.value = rows.find((r) => r.name === name) ?? live.value
       emit('refreshed')
     } else {
-      ElMessage.error(result.error || '没探通，确认地址与 Key 仍有效')
+      toast.error(result.error || '没探通，确认地址与 Key 仍有效')
     }
   } catch (caught: unknown) {
     if (!isCurrent(version)) return
     const msg = toErrorMessage(caught, '没探通，确认地址与 Key 仍有效')
     serverProbe.value = { tone: 'bad', label: '失败', detail: msg }
-    ElMessage.error(msg)
+    toast.error(msg)
   } finally {
     if (isCurrent(version)) probingServer.value = false
   }
@@ -170,7 +176,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="open"
     align-center
     destroy-on-close
@@ -184,34 +190,34 @@ onUnmounted(() => {
           {{ current ? `工具 · ${current.name}` : '工具详情' }}
         </h4>
         <div class="mcp-tools-head__actions">
-          <el-tag
+          <StatusBadge
             v-if="serverProbe"
             size="small"
             effect="light"
-            :type="tagType(serverProbe.tone)"
+            :tone="tagType(serverProbe.tone)"
             class="probe-tag"
             :title="serverProbe.detail"
           >
             {{ serverProbe.label }}
-          </el-tag>
-          <el-button
+          </StatusBadge>
+          <ActionButton
             size="small"
-            :loading="refreshingTools"
+            :busy="refreshingTools"
             :disabled="isBuiltin && !current?.resident"
             @click="refreshToolsList"
           >
             刷新工具
-          </el-button>
+          </ActionButton>
           <!-- 「只验握手、不执行工具」原来是正文里的一段常驻说明，挪到它解释的那颗按钮上 -->
-          <el-tooltip placement="bottom-end" content="只验握手与工具发现，不执行工具">
-            <el-button
+          <HintTooltip placement="bottom-end" content="只验握手与工具发现，不执行工具">
+            <ActionButton
               size="small"
-              :loading="probingServer"
+              :busy="probingServer"
               @click="probeServer"
             >
               测连通
-            </el-button>
-          </el-tooltip>
+            </ActionButton>
+          </HintTooltip>
         </div>
       </div>
     </template>
@@ -221,15 +227,15 @@ onUnmounted(() => {
         <section class="mcp-detail-group">
           <!-- 两组同屏并列，标题必须留；压成一行：标题 + 计数 chip，解释进 tooltip -->
           <header class="mcp-detail-group__head">
-            <el-tooltip
+            <HintTooltip
               placement="bottom-start"
               content="Loci 已支持的全部入口；无源的标「线路停用」"
             >
               <h4>线路工具</h4>
-            </el-tooltip>
-            <el-tag size="small" type="info" effect="plain" class="group-count">
+            </HintTooltip>
+            <StatusBadge size="small" tone="info" effect="plain" class="group-count">
               {{ laneTools.length }}
-            </el-tag>
+            </StatusBadge>
           </header>
           <BasicTable
             :columns="toolColumns"
@@ -242,31 +248,31 @@ onUnmounted(() => {
           >
             <template #name="{ row }">
               <span class="mono" :class="{ dim: row.available === false }">{{ row.name }}</span>
-              <el-tag
+              <StatusBadge
                 v-if="row.available === false"
                 size="small"
-                type="info"
+                tone="info"
                 effect="plain"
                 class="avail-tag"
               >
                 线路停用
-              </el-tag>
+              </StatusBadge>
             </template>
             <template #description="{ row }">
-              <el-tooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
+              <HintTooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
                 <span class="desc desc-clip">{{ row.description || '—' }}</span>
-              </el-tooltip>
+              </HintTooltip>
             </template>
           </BasicTable>
         </section>
         <section class="mcp-detail-group">
           <header class="mcp-detail-group__head">
-            <el-tooltip placement="bottom-start" content="数据源里已上桌的 AkShare 接口">
+            <HintTooltip placement="bottom-start" content="数据源里已上桌的 AkShare 接口">
               <h4>AkShare 接口</h4>
-            </el-tooltip>
-            <el-tag size="small" type="info" effect="plain" class="group-count">
+            </HintTooltip>
+            <StatusBadge size="small" tone="info" effect="plain" class="group-count">
               {{ akshareTools.length }}
-            </el-tag>
+            </StatusBadge>
           </header>
           <BasicTable
             :columns="toolColumns"
@@ -281,9 +287,9 @@ onUnmounted(() => {
               <span class="mono">{{ row.name }}</span>
             </template>
             <template #description="{ row }">
-              <el-tooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
+              <HintTooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
                 <span class="desc desc-clip">{{ row.description || '—' }}</span>
-              </el-tooltip>
+              </HintTooltip>
             </template>
           </BasicTable>
         </section>
@@ -303,14 +309,14 @@ onUnmounted(() => {
             <span class="mono">{{ row.name }}</span>
           </template>
           <template #description="{ row }">
-            <el-tooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
+            <HintTooltip :content="String(row.description || '—')" placement="top" :show-after="150" :disabled="!row.description">
               <span class="desc desc-clip">{{ row.description || '—' }}</span>
-            </el-tooltip>
+            </HintTooltip>
           </template>
         </BasicTable>
       </template>
     </div>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>
@@ -403,7 +409,7 @@ onUnmounted(() => {
 
 <style scoped>
 /* 高度受视口限制，滚动只在 body 内发生。 */
-.mcp-tools-dialog.el-dialog {
+.mcp-tools-dialog.dialog-panel {
   display: flex;
   flex-direction: column;
   max-height: min(85vh, 40rem);
@@ -412,13 +418,13 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.mcp-tools-dialog :deep(.el-dialog__header) {
+.mcp-tools-dialog :deep(.dialog-panel__header) {
   flex-shrink: 0;
   margin-right: 0;
   padding-bottom: 0.65rem;
 }
 
-.mcp-tools-dialog :deep(.el-dialog__body) {
+.mcp-tools-dialog :deep(.dialog-panel__body) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;

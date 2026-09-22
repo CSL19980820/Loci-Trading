@@ -517,6 +517,15 @@ def _parse_live_row(line: str) -> dict[str, Any] | None:
     if prev <= 0:
         prev = open_ if open_ > 0 else price
     stamp = str(fields[30]) if len(fields) > 30 else ""
+    # 腾讯盘口数量为手（含科创板），与其日K成交量的板块口径不同。
+    book = {}
+    for key, index, scale in (("bid_price", 9, 1), ("bid_quantity", 10, 100),
+                              ("ask_price", 19, 1), ("ask_quantity", 20, 100),
+                              ("limit_up", 47, 1), ("limit_down", 48, 1)):
+        try:
+            book[key] = float(fields[index]) * scale
+        except (ValueError, IndexError):
+            book[key] = None  # 缺字段不能伪装成零卖盘或无涨跌停限制。
     return {
         "symbol": symbol,
         "name": name,
@@ -532,6 +541,7 @@ def _parse_live_row(line: str) -> dict[str, Any] | None:
         "trade_date": stamp[:8] if len(stamp) >= 8 else stamp,
         "trade_time": stamp[8:] if len(stamp) > 8 else "",
         "source": "tencent",
+        **book,
     }
 
 

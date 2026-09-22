@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Lock } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
+import { Eye, EyeOff, LoaderCircle, Lock } from '@lucide/vue'
+
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
 
 const props = defineProps<{
   email?: string
@@ -26,69 +30,98 @@ const passwordStrength = computed(() => {
   if (p.length < 12) return { text: '适中', color: 'var(--info-ink)' }
   return { text: '很好', color: 'var(--seal-ink)' }
 })
+
+/** 默认密文，点开关才明文 */
+const revealedPassword = ref<boolean>(false)
+const revealedConfirm = ref<boolean>(false)
 </script>
 
 <template>
   <div class="reset-panel">
-    <div class="panel-head">
-      <h2 class="panel-title">重置密码</h2>
-    </div>
-
-    <el-form label-position="top" :aria-busy="submitting" @submit.prevent="emit('submit')">
-      <el-form-item v-if="!token" label="6 位验证码">
-        <el-input
+    <form class="auth-fields" :aria-busy="submitting" @submit.prevent="emit('submit')">
+      <div v-if="!token" class="field">
+        <Label for="reset-code" class="field-label">6 位验证码</Label>
+        <Input
+          id="reset-code"
           :model-value="code"
           maxlength="8"
-          placeholder="输入验证码"
+          placeholder="123456"
+          class="code-input"
           autocomplete="one-time-code"
           inputmode="numeric"
           autofocus
           @update:model-value="emit('update:code', String($event))"
         />
-      </el-form-item>
+      </div>
 
-      <el-form-item label="新密码">
-        <el-input
-          :model-value="newPassword"
-          type="password"
-          :prefix-icon="Lock"
-          show-password
-          placeholder="至少 8 位新密码"
-          autocomplete="new-password"
-          @update:model-value="emit('update:newPassword', String($event))"
-        />
+      <div class="field">
+        <Label for="reset-new-password" class="field-label">新密码</Label>
+        <div class="relative">
+          <Lock class="field-icon size-4" aria-hidden="true" />
+          <Input
+            id="reset-new-password"
+            :model-value="newPassword"
+            :type="revealedPassword ? 'text' : 'password'"
+            class="auth-input pl-10 pr-11"
+            placeholder="至少 8 位新密码"
+            autocomplete="new-password"
+            @update:model-value="emit('update:newPassword', String($event))"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            class="field-reveal"
+            :aria-label="revealedPassword ? '隐藏密码' : '显示密码'"
+            :aria-pressed="revealedPassword"
+            @click="revealedPassword = !revealedPassword"
+          >
+            <EyeOff v-if="revealedPassword" class="size-4" aria-hidden="true" />
+            <Eye v-else class="size-4" aria-hidden="true" />
+          </Button>
+        </div>
         <div v-if="newPassword" class="strength-tip" :style="{ color: passwordStrength.color }">
           密码强度：{{ passwordStrength.text }}
         </div>
-      </el-form-item>
-
-      <el-form-item label="确认新密码">
-        <el-input
-          :model-value="confirmPassword"
-          type="password"
-          :prefix-icon="Lock"
-          show-password
-          placeholder="再次输入新密码"
-          autocomplete="new-password"
-          @update:model-value="emit('update:confirmPassword', String($event))"
-        />
-      </el-form-item>
-
-      <el-button
-        type="primary"
-        native-type="submit"
-        :loading="submitting"
-        class="login-submit"
-      >
-        {{ submitting ? '重置中' : '确认重置密码' }}
-      </el-button>
-
-      <div class="form-bottom-link">
-        <el-button text class="sub-link" @click="emit('backSignin')">
-          返回登录
-        </el-button>
       </div>
-    </el-form>
+
+      <div class="field">
+        <Label for="reset-confirm" class="field-label">确认新密码</Label>
+        <div class="relative">
+          <Lock class="field-icon size-4" aria-hidden="true" />
+          <Input
+            id="reset-confirm"
+            :model-value="confirmPassword"
+            :type="revealedConfirm ? 'text' : 'password'"
+            class="auth-input pl-10 pr-11"
+            placeholder="再次输入新密码"
+            autocomplete="new-password"
+            @update:model-value="emit('update:confirmPassword', String($event))"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            class="field-reveal"
+            :aria-label="revealedConfirm ? '隐藏密码' : '显示密码'"
+            :aria-pressed="revealedConfirm"
+            @click="revealedConfirm = !revealedConfirm"
+          >
+            <EyeOff v-if="revealedConfirm" class="size-4" aria-hidden="true" />
+            <Eye v-else class="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
+      <Button type="submit" :disabled="submitting" class="login-submit">
+        <LoaderCircle v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        {{ submitting ? '重置中' : '确认重置密码' }}
+      </Button>
+    </form>
+
+    <p class="form-bottom-link">
+      <Button type="button" variant="link" size="sm" class="link-btn" @click="emit('backSignin')">返回登录</Button>
+    </p>
   </div>
 </template>
 

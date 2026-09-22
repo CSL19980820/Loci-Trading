@@ -1,39 +1,11 @@
-/*
- * 尾层：EP 卡片收敛、响应式断点、动效降级、链接下划线收口。
- * 只放「必须最后生效」的规则；配色令牌不在这里定义（见 style.base.css / style.theme.css）。
- */
-
 /* el-card 收成 Sheet 同一副皮：无阴影、1px hairline、圆角 3px */
-.el-card {
-  --el-card-border-color: var(--rule);
-  --el-card-bg-color: var(--sheet);
-  --el-card-padding: var(--pad-sheet);
-  border: 1px solid var(--rule) !important;
-  border-radius: var(--radius) !important;
-  box-shadow: none !important;
-}
-
-.el-card.is-never-shadow,
-.el-card.is-always-shadow,
-.el-card.is-hover-shadow:hover {
-  box-shadow: none !important;
-}
-
-.el-card__header {
-  min-height: var(--head-h);
-  padding: var(--gap-1) var(--pad-sheet-x);
-  border-bottom: 1px solid var(--rule);
-  font-size: var(--fs-title);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-}
 
 /*
- * 侧栏在 980px 以下隐藏，栅格随之收成单列单行。
+ * 侧栏在手机断点以下隐藏，栅格随之收成单列单行。
  * 曾经这里留了一个 `auto` 首行给「侧栏变顶栏」，但那个顶栏并不存在，
  * 于是 workspace 落进 auto 行按内容定高，在 100dvh + overflow:hidden 的壳里被裁。
  */
-@media (max-width: 980px) {
+@media (max-width: 767px) {
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr);
@@ -71,11 +43,6 @@
   .form-grid {
     grid-template-columns: 1fr;
   }
-
-  .el-form:not(.el-form--label-top):not(.el-form--inline) .el-form-item__label {
-    width: auto;
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 640px) {
@@ -101,7 +68,6 @@
 }
 
 a,
-.el-link,
 .stock-link,
 .text-link {
   text-decoration: none !important;

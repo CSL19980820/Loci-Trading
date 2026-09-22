@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
-import { Download, Upload, VideoPlay } from '@element-plus/icons-vue'
-import EmptyState from '@/shared/components/ui/EmptyState.vue'
-import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import { Download, LoaderCircle, Play, TriangleAlert, Upload } from '@lucide/vue'
 
 import { probeAkshareCatalog } from '@/shared/api/quant'
-import { dialogWidth } from '@/shared/lib/format'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Badge } from '@/shared/components/ui/badge'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Input } from '@/shared/components/ui/input'
+import PageBusy from '@/shared/components/ui/PageBusy.vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 import { toErrorMessage } from '@/shared/lib/errors'
+import { dialogWidth } from '@/shared/lib/format'
 import type { AkshareCatalogCapability, ColumnGloss } from '@/shared/types/quant'
 
 const props = defineProps<{
@@ -48,7 +55,20 @@ const paramRows = computed(() => {
   }))
 })
 
+const parameterRows = computed(() => paramRows.value as unknown as Record<string, unknown>[])
 const columnRows = computed(() => columns.value as unknown as Record<string, unknown>[])
+
+const paramColumns: BasicTableColumn[] = [
+  { prop: 'name', label: '参数', minWidth: 130, align: 'center', headerAlign: 'center', slotName: 'name' },
+  { prop: 'doc', label: '说明', minWidth: 150, align: 'center', headerAlign: 'center', slotName: 'doc' },
+  { prop: 'required', label: '必填', width: 70, align: 'center', headerAlign: 'center', slotName: 'required' },
+  { prop: 'value', label: '取值', minWidth: 140, align: 'center', headerAlign: 'center', slotName: 'value' },
+]
+
+const columnColumns: BasicTableColumn[] = [
+  { prop: 'cn', label: '中文名', minWidth: 140, align: 'center', headerAlign: 'center', slotName: 'cn' },
+  { prop: 'en', label: '英文名', minWidth: 140, align: 'center', headerAlign: 'center', slotName: 'en' },
+]
 
 function seed(): void {
   for (const key of Object.keys(values)) delete values[key]
@@ -119,88 +139,102 @@ watch(
 </script>
 
 <template>
-  <el-dialog
-    v-model="open"
-    :title="title"
-    :width="dialogWidth()"
-    append-to-body
-    destroy-on-close
-    class="dataset-dialog"
-  >
-    <div v-if="dataset" class="dataset-body">
-      <p class="purpose">{{ dataset.summary || '上游未写说明' }}</p>
+  <Dialog v-model:open="open">
+    <DialogContent
+      class="dataset-dialog max-w-none sm:max-w-none"
+      :style="{ width: dialogWidth() }"
+    >
+      <DialogHeader class="text-left">
+        <DialogTitle>{{ title }}</DialogTitle>
+      </DialogHeader>
+      <div v-if="dataset" class="dataset-body">
+        <p class="purpose">{{ dataset.summary || '上游未写说明' }}</p>
 
-      <div class="block">
-        <!-- 入参 / 出参是弹窗里并列的两块，标题必须留着区分；但不让它空占一行：
-             和出参那行一样，条数读数压到同一行上 -->
-        <div class="block-head">
-          <span class="block-title"><el-icon aria-hidden="true"><Upload /></el-icon>入参</span>
-          <span class="block-count">{{ paramRows.length }} 项</span>
+        <div class="block">
+          <!-- 入参 / 出参是弹窗里并列的两块，标题必须留着区分；但不让它空占一行：
+               和出参那行一样，条数读数压到同一行上 -->
+          <div class="block-head">
+            <span class="block-title"><Upload aria-hidden="true" />入参</span>
+            <span class="block-count">{{ paramRows.length }} 项</span>
+          </div>
+          <BasicTable
+            :columns="paramColumns"
+            :data-source="parameterRows"
+            :pagination="false"
+            row-key="name"
+            empty-text="该接口不需要入参"
+          >
+            <template #name="{ row }"><span class="mono">{{ row.name }}</span></template>
+            <template #doc="{ row }">
+              <Tooltip :delay-duration="150" :disabled="!row.doc">
+                <TooltipTrigger as-child>
+                  <span class="doc-clip">{{ row.doc || '—' }}</span>
+                </TooltipTrigger>
+                <TooltipContent>{{ row.doc || '—' }}</TooltipContent>
+              </Tooltip>
+            </template>
+            <template #required="{ row }">
+              <Badge
+                v-if="row.required"
+                variant="outline"
+                class="border-transparent bg-warn-soft text-warn-ink"
+              >
+                是
+              </Badge>
+              <Badge v-else variant="outline" class="border-line bg-sunken text-mist">否</Badge>
+            </template>
+            <template #value="{ row }">
+              <Input
+                :model-value="values[String(row.name)]"
+                :placeholder="String(row.annotation || '')"
+                :aria-label="`${row.name} 取值`"
+                @update:model-value="(next: string | number) => { values[String(row.name)] = String(next) }"
+              />
+            </template>
+          </BasicTable>
         </div>
-        <el-table :data="paramRows" size="small" row-key="name" empty-text="该接口不需要入参">
-          <el-table-column prop="name" label="参数" min-width="130">
-            <template #default="{ row }"><span class="mono">{{ row.name }}</span></template>
-          </el-table-column>
-          <el-table-column label="说明" min-width="150">
-            <template #default="{ row }">
-              <el-tooltip :content="row.doc || '—'" placement="top" :show-after="150" :disabled="!row.doc">
-                <span class="doc-clip">{{ row.doc || '—' }}</span>
-              </el-tooltip>
-            </template>
-          </el-table-column>
-          <el-table-column label="必填" width="70">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.required ? 'warning' : 'info'" effect="plain">
-                {{ row.required ? '是' : '否' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="取值" min-width="140">
-            <template #default="{ row }">
-              <el-input v-model="values[row.name]" size="small" :placeholder="row.annotation" :aria-label="`${row.name} 取值`" />
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
 
-      <div class="block">
-        <div class="block-head">
-          <span class="block-title"><el-icon aria-hidden="true"><Download /></el-icon>出参</span>
-          <el-button type="primary" plain size="small" :icon="VideoPlay" :loading="probing" @click="runProbe">取出参</el-button>
-        </div>
-        <p v-if="dataset.returns" class="dim declared">上游声明：{{ dataset.returns }}</p>
-        <el-alert
-          v-if="probeError"
-          :title="probeError"
-          type="warning"
-          :closable="false"
-          show-icon
-          class="mb"
-        />
-        <el-table
-          v-else-if="columns.length"
-          v-loading="probing"
-          :data="columnRows"
-          size="small"
-          height="14rem"
-          row-key="raw"
-        >
-          <el-table-column prop="cn" label="中文名" min-width="140">
-            <template #default="{ row }">{{ row.cn || '—' }}</template>
-          </el-table-column>
-          <el-table-column prop="en" label="英文名" min-width="140">
-            <template #default="{ row }">
+        <div class="block">
+          <div class="block-head">
+            <span class="block-title"><Download aria-hidden="true" />出参</span>
+            <Button variant="outline" size="sm" :disabled="probing" @click="runProbe">
+              <LoaderCircle
+                v-if="probing"
+                class="animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              <Play v-else aria-hidden="true" />
+              取出参
+            </Button>
+          </div>
+          <p v-if="dataset.returns" class="dim declared">上游声明：{{ dataset.returns }}</p>
+          <Alert v-if="probeError" class="mb border-warn bg-warn-soft text-warn-ink">
+            <TriangleAlert aria-hidden="true" />
+            <AlertTitle class="line-clamp-none">{{ probeError }}</AlertTitle>
+          </Alert>
+          <BasicTable
+            v-else-if="columns.length"
+            :columns="columnColumns"
+            :data-source="columnRows"
+            :loading="probing"
+            :pagination="false"
+            height="14rem"
+            row-key="raw"
+            empty-text="此次未返回字段"
+          >
+            <template #cn="{ row }">{{ row.cn || '—' }}</template>
+            <template #en="{ row }">
               <span v-if="row.en" class="mono">{{ row.en }}</span>
               <span v-else class="dim">本仓未归一</span>
             </template>
-          </el-table-column>
-        </el-table>
-        <PageBusy v-else-if="probing" label="正在读取出参…" />
-        <EmptyState v-else :description="probed ? '此次未返回字段' : '尚未读取出参'" :reason="probed ? '' : '点击取出参运行接口'" />
+          </BasicTable>
+          <PageBusy v-else-if="probing" label="正在读取出参…" />
+          <EmptyState v-else :description="probed ? '此次未返回字段' : '尚未读取出参'" :reason="probed ? '' : '点击取出参运行接口'" />
+        </div>
       </div>
-    </div>
-    <EmptyState v-else description="未选择接口" />
-  </el-dialog>
+      <EmptyState v-else description="未选择接口" />
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>

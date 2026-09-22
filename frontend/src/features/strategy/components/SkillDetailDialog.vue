@@ -1,4 +1,13 @@
 <script setup lang="ts">
+import { vBusy } from '@/shared/directives/busy'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as TabSet } from '@/shared/components/ui/app/TabSet.vue'
+import { default as TabPage } from '@/shared/components/ui/app/TabPage.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as DataGrid } from '@/shared/components/ui/app/DataGrid.vue'
+import { default as DataColumn } from '@/shared/components/ui/app/DataColumn.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
 import { getSkill } from '@/shared/api/quant'
@@ -127,7 +136,7 @@ function toolKindLabel(kind: string): string {
   return TOOL_KIND_LABEL[kind] || kind
 }
 
-/** el-table 要对象行，markdown 表格解析出来的是字符串数组。 */
+
 function tableBody(rows: string[][]): Record<string, string>[] {
   return rows.slice(1).map((cells) => Object.fromEntries(cells.map((c, i) => [`c${i}`, c])))
 }
@@ -168,7 +177,7 @@ async function saveJob(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="open"
     :title="title"
     :width="dialogSize"
@@ -176,8 +185,8 @@ async function saveJob(): Promise<void> {
     class="skill-detail-dialog"
   >
     <template v-if="skill">
-      <el-tabs v-model="tab" class="detail-tabs">
-        <el-tab-pane label="配置" name="config">
+      <TabSet v-model="tab" class="detail-tabs">
+        <TabPage label="配置" name="config">
           <SkillStrategyConfigPanel
             v-if="skill && isStrategySkill"
             ref="strategyPanel"
@@ -190,9 +199,9 @@ async function saveJob(): Promise<void> {
             :slug="skill.slug"
             @saved="(job) => emit('saved', job)"
           />
-        </el-tab-pane>
+        </TabPage>
 
-        <el-tab-pane label="基础信息" name="basics">
+        <TabPage label="基础信息" name="basics">
           <div class="meta-grid">
             <div v-for="row in metaRows" :key="row.label" class="meta-cell">
               <span class="dim">{{ row.label }}</span>
@@ -206,15 +215,15 @@ async function saveJob(): Promise<void> {
           <div v-if="mcpServers.length" class="meta-desc">
             <span class="dim">MCP 服务</span>
             <div class="chip-row">
-              <el-tag v-for="name in mcpServers" :key="name" size="small" effect="plain">
+              <StatusBadge v-for="name in mcpServers" :key="name" size="small" effect="plain">
                 {{ name }}
-              </el-tag>
+              </StatusBadge>
             </div>
           </div>
-        </el-tab-pane>
+        </TabPage>
 
-        <el-tab-pane label="说明书" name="manual">
-          <div v-loading="loadingBody" class="manual">
+        <TabPage label="说明书" name="manual">
+          <div v-busy="loadingBody" class="manual">
             <article v-if="manualBlocks.length" class="manual-body">
               <template v-for="(block, index) in manualBlocks" :key="index">
                 <p v-if="block.type === 'heading'" class="md-heading" :data-level="block.level">
@@ -234,14 +243,14 @@ async function saveJob(): Promise<void> {
                 <p v-else-if="block.type === 'quote'" class="md-quote">
                   <ManualInline :text="block.text" />
                 </p>
-                <el-table
+                <DataGrid
                   v-else-if="block.type === 'table'"
                   :data="tableBody(block.rows)"
                   size="small"
                   border
                   class="md-table"
                 >
-                  <el-table-column
+                  <DataColumn
                     v-for="(head, col) in block.rows[0]"
                     :key="col"
                     :label="head"
@@ -251,8 +260,8 @@ async function saveJob(): Promise<void> {
                     <template #default="{ row }">
                       <ManualInline :text="String(row[`c${col}`] ?? '')" />
                     </template>
-                  </el-table-column>
-                </el-table>
+                  </DataColumn>
+                </DataGrid>
                 <p v-else class="md-para">
                   <ManualInline :text="block.text" />
                 </p>
@@ -264,68 +273,68 @@ async function saveJob(): Promise<void> {
               :reason="bodyError ? '确认技能目录仍在本机' : '没有正文可展示'"
             />
           </div>
-        </el-tab-pane>
+        </TabPage>
 
-        <el-tab-pane v-if="hasTools" label="工具" name="tools">
+        <TabPage v-if="hasTools" label="工具" name="tools">
           <ul v-if="toolSpecs.length" class="tool-list">
             <li v-for="tool in toolSpecs" :key="tool.name" class="tool-item">
               <div class="tool-head">
                 <strong class="mono">{{ tool.name }}</strong>
-                <el-tag size="small" effect="plain">{{ toolKindLabel(tool.kind) }}</el-tag>
+                <StatusBadge size="small" effect="plain">{{ toolKindLabel(tool.kind) }}</StatusBadge>
               </div>
               <p class="tool-desc">{{ tool.description || '未写说明' }}</p>
               <div v-if="tool.params.length" class="chip-row">
                 <span class="dim">入参</span>
-                <el-tag v-for="key in tool.params" :key="key" size="small" effect="plain">
+                <StatusBadge v-for="key in tool.params" :key="key" size="small" effect="plain">
                   {{ key }}
-                </el-tag>
+                </StatusBadge>
               </div>
             </li>
           </ul>
           <template v-else>
             <p class="dim">该技能只声明了工具名，没有写逐项说明。</p>
             <div class="chip-row">
-              <el-tag v-for="name in bareTools" :key="name" size="small" effect="plain">
+              <StatusBadge v-for="name in bareTools" :key="name" size="small" effect="plain">
                 {{ name }}
-              </el-tag>
+              </StatusBadge>
             </div>
           </template>
-        </el-tab-pane>
-      </el-tabs>
+        </TabPage>
+      </TabSet>
     </template>
 
     <template #footer>
-      <el-button
+      <ActionButton
         v-if="skill"
-        type="danger"
+        tone="danger"
         plain
         @click="emit('remove', skill); open = false"
       >
         卸载
-      </el-button>
-      <el-button
+      </ActionButton>
+      <ActionButton
         v-if="tab === 'config'"
-        type="primary"
-        :loading="Boolean(isStrategySkill ? strategyPanel?.saving : jobPanel?.saving)"
+        tone="primary"
+        :busy="Boolean(isStrategySkill ? strategyPanel?.saving : jobPanel?.saving)"
         :disabled="!skill"
         @click="saveJob"
       >
         保存配置
-      </el-button>
-      <el-button
+      </ActionButton>
+      <ActionButton access="read"
         v-else
-        type="primary"
+        tone="primary"
         :disabled="!skill || skill.enabled === false"
         @click="skill && emit('openScreen', skill.slug); open = false"
       >
         去选股
-      </el-button>
+      </ActionButton>
     </template>
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>
-.detail-tabs :deep(.el-tabs__header) {
+.detail-tabs :deep(.tab-set__list) {
   margin-bottom: 0.75rem;
 }
 .meta-grid {
@@ -339,7 +348,7 @@ async function saveJob(): Promise<void> {
   flex-direction: column;
   gap: 0.2rem;
   padding: 0.45rem 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--rule);
 }
 .meta-desc {
   margin-top: 0.25rem;
@@ -365,9 +374,9 @@ async function saveJob(): Promise<void> {
 }
 .manual-body {
   padding: 1rem 1.15rem;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--rule);
   border-radius: var(--radius);
-  background: var(--el-fill-color-blank);
+  background: var(--surface);
   font-size: var(--fs-body);
   line-height: 1.7;
   word-break: break-word;
@@ -406,14 +415,14 @@ async function saveJob(): Promise<void> {
 .md-quote {
   margin: 0 0 0.7rem;
   padding-left: 0.7rem;
-  border-left: 2px solid var(--el-border-color);
+  border-left: 2px solid var(--rule);
   color: var(--muted);
 }
 .md-code {
   margin: 0 0 0.7rem;
   padding: 0.55rem 0.7rem;
   border-radius: var(--radius);
-  background: var(--el-fill-color-light);
+  background: var(--surface-sunken);
   font-family: var(--mono);
   font-size: var(--fs-aux);
   line-height: 1.55;
@@ -436,7 +445,7 @@ async function saveJob(): Promise<void> {
 }
 .tool-item {
   padding: 0.55rem 0.65rem;
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--rule);
   border-radius: var(--radius);
 }
 .tool-head {

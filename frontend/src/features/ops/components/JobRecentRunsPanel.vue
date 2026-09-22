@@ -1,15 +1,20 @@
 <script setup lang="ts">
+import { Label } from '@/shared/components/ui/label'
 /**
- * 当前任务的最近执行历史：BasicTable（常规表，条数少不必虚拟化）。
+ * 当前任务的最近执行历史：**时间线**（Linear activity 一路），不再是四列表格。
  *
- * 失败原因**必须点得开**：`error_text` 在单元格里只放得下第一行，全文经
- * `JobRunErrorDialog` 展开并可整段复制。此前全文只挂在原生 `title` 上，
- * 读不完也复制不走。
+ * 每条 = 左侧状态点（成功 / 失败 / 跳过 / 运行中）挂在一根 1px 竖线上，右侧一行
+ * 「结果 · 触发 · 耗时」+ 时间；失败条把错误首行摆出来，点开 `JobRunErrorDialog`
+ * 看全文并整段复制。此前全文只挂在原生 `title` 上，读不完也复制不走。
  */
 import { computed, ref, watch } from 'vue'
-import { CircleCheck, CircleClose, WarningFilled } from '@element-plus/icons-vue'
+import { ListFilter, RefreshCw } from '@lucide/vue'
 
-import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Skeleton } from '@/shared/components/ui/skeleton'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import type { JobRun } from '@/shared/types/quant'
 
 import JobRunErrorDialog from './JobRunErrorDialog.vue'
@@ -38,46 +43,8 @@ const activeRun = ref<JobRun | null>(null)
 const visibleRuns = computed(() =>
   failedOnly.value ? runs.value.filter((run) => run.status === 'failed') : runs.value,
 )
-const tableRows = computed(() => visibleRuns.value as unknown as Record<string, unknown>[])
 const runCount = computed(() => visibleRuns.value.length)
 const failedCount = computed(() => runs.value.filter((run) => run.status === 'failed').length)
-
-const columns = ref<BasicTableColumn[]>([
-  {
-    prop: 'started_at',
-    label: '时间',
-    minWidth: 168,
-    align: 'center',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-    formatter: (row) => formatStartedAt(String(row.started_at ?? '')),
-  },
-  {
-    prop: 'trigger',
-    label: '触发',
-    width: 88,
-    align: 'center',
-    headerAlign: 'center',
-    slotName: 'trigger',
-  },
-  {
-    prop: 'duration_ms',
-    label: '耗时',
-    width: 104,
-    align: 'center',
-    headerAlign: 'center',
-    slotName: 'duration',
-  },
-  {
-    prop: 'status',
-    label: '结果',
-    minWidth: 220,
-    align: 'left',
-    headerAlign: 'left',
-    showOverflowTooltip: true,
-    slotName: 'result',
-  },
-])
 
 function formatStartedAt(raw: string): string {
   const text = raw.trim()
@@ -85,27 +52,20 @@ function formatStartedAt(raw: string): string {
   return text.replace('T', ' ').slice(0, 19)
 }
 
-function statusType(status: string): 'success' | 'danger' | 'info' | 'warning' {
-  if (status === 'failed') return 'danger'
-  if (status === 'success') return 'success'
-  if (status === 'running') return 'warning'
-  return 'info'
-}
-
-function statusIcon(status: string) {
-  if (status === 'failed') return CircleClose
-  if (status === 'success') return CircleCheck
-  return WarningFilled
+function statusVariant(status: string): 'ok' | 'stamp' | 'warn' | 'info' | 'secondary' {
+  if (status === 'failed') return 'stamp'
+  if (status === 'success' || status === 'ok') return 'ok'
+  if (status === 'running') return 'info'
+  if (status === 'skipped') return 'warn'
+  return 'secondary'
 }
 
 async function reload(): Promise<void> {
   await refetch()
 }
 
-function openError(row: Record<string, unknown>): void {
-  const id = String(row.id ?? '')
-  activeRun.value = runs.value.find((run) => run.id === id) ?? null
-  if (!activeRun.value) return
+function openError(run: JobRun): void {
+  activeRun.value = run
   errorOpen.value = true
 }
 
@@ -137,202 +97,301 @@ defineExpose({ reload, focusLatestFailure })
 </script>
 
 <template>
-  <section class="job-runs-panel" aria-label="最近执行历史">
-    <BasicTable
-      v-model:columns="columns"
-      class="job-runs-panel__table"
-      :data-source="tableRows"
-      :pagination="false"
-      :toolbar-config="{ refresh: true }"
-      :loading="isPending"
-      stripe
-      border
-      size="small"
-      row-key="id"
-      max-height="22rem"
-      empty-text="还没有执行记录"
-      @refresh="reload"
-    >
-      <template #toolbarButtons>
-        <div class="job-runs-panel__title">
-          <strong>最近执行</strong>
-          <span class="job-runs-panel__meta">仅当前任务</span>
-          <el-tag size="small" effect="plain" type="info">{{ runCount }} 条</el-tag>
-          <el-checkbox
-            v-model="failedOnly"
-            size="small"
-            class="job-runs-panel__only-failed"
-            :disabled="!failedCount"
-          >
-            只看失败{{ failedCount ? `（${failedCount}）` : '' }}
-          </el-checkbox>
-        </div>
-      </template>
+  <section class="job-runs" aria-label="最近执行历史">
+    <header class="job-runs__head">
+      <div class="job-runs__title">
+        <strong>最近执行</strong>
+        <UiBadge variant="secondary">{{ runCount }} 条</UiBadge>
+      </div>
+      <div class="job-runs__tools">
+        <Label class="job-runs__only-failed" :class="{ 'is-disabled': !failedCount }">
+          <Checkbox v-model="failedOnly" :disabled="!failedCount" aria-label="只看失败" />
+          <ListFilter aria-hidden="true" />
+          <span>只看失败{{ failedCount ? `（${failedCount}）` : '' }}</span>
+        </Label>
+        <Button access="read" variant="ghost" size="icon-sm" aria-label="刷新执行历史" :disabled="isPending" @click="reload">
+          <RefreshCw :class="isPending ? 'animate-spin' : ''" />
+        </Button>
+      </div>
+    </header>
 
-      <template #trigger="{ row }">
-        <el-tag size="small" effect="plain" type="info">
-          {{ triggerLabel(String(row.trigger ?? '')) }}
-        </el-tag>
-      </template>
-
-      <template #duration="{ row }">
-        <span class="job-runs-panel__duration">
-          {{ formatRunDuration(Number(row.duration_ms ?? 0)) }}
-        </span>
-      </template>
-
-      <template #result="{ row }">
-        <div class="job-runs-panel__result">
-          <el-tag
-            size="small"
-            effect="light"
-            :type="statusType(String(row.status ?? ''))"
-            class="job-runs-panel__status"
-          >
-            <el-icon class="job-runs-panel__status-icon">
-              <component :is="statusIcon(String(row.status ?? ''))" />
-            </el-icon>
-            {{ statusLabel(String(row.status ?? '')) }}
-          </el-tag>
-          <el-button
-            v-if="row.error_text"
-            link
-            size="small"
-            class="job-runs-panel__err"
+    <div v-if="isPending && !runs.length" class="job-runs__skeleton" aria-busy="true">
+      <Skeleton v-for="n in 3" :key="n" class="h-10 w-full" />
+    </div>
+    <ol v-else-if="visibleRuns.length" class="job-runs__timeline">
+      <li
+        v-for="run in visibleRuns"
+        :key="run.id"
+        class="run"
+        :class="`is-${statusVariant(String(run.status ?? ''))}`"
+      >
+        <span class="run__dot" aria-hidden="true" />
+        <div class="run__body">
+          <div class="run__line">
+            <UiBadge :variant="statusVariant(String(run.status ?? ''))">{{ statusLabel(String(run.status ?? '')) }}</UiBadge>
+            <span class="run__meta">{{ triggerLabel(String(run.trigger ?? '')) }}</span>
+            <span class="run__meta run__dur">{{ formatRunDuration(Number(run.duration_ms ?? 0)) }}</span>
+            <time class="run__time">{{ formatStartedAt(String(run.started_at ?? '')) }}</time>
+          </div>
+          <Button access="read" variant="ghost"
+            v-if="run.error_text"
+            type="button"
+            class="run__err"
             title="点开看失败全文并复制"
-            @click="openError(row)"
+            @click="openError(run)"
           >
-            <span class="job-runs-panel__err-body">
-              <span class="job-runs-panel__err-line">{{ firstLine(String(row.error_text)) }}</span>
-              <span class="job-runs-panel__err-more">全文</span>
-            </span>
-          </el-button>
+            <span class="run__err-line">{{ firstLine(String(run.error_text)) }}</span>
+            <span class="run__err-more">全文</span>
+          </Button>
         </div>
-      </template>
-    </BasicTable>
+      </li>
+    </ol>
+    <EmptyState
+      v-else
+      compact
+      :description="failedOnly ? '这条任务没有失败记录' : '还没有执行记录'"
+      :reason="failedOnly ? '取消「只看失败」看全部' : '点「立即执行」跑一次'"
+    />
 
     <JobRunErrorDialog v-model="errorOpen" :run="activeRun" />
   </section>
 </template>
 
 <style scoped>
-.job-runs-panel {
-  flex: 1 1 auto;
-  min-height: 0;
+.job-runs {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
+  min-height: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
 }
 
-.job-runs-panel__table {
+.job-runs__head {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2);
+  padding: var(--gap-3) var(--gap-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.job-runs__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+  color: var(--text-primary);
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.job-runs__tools {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.job-runs__only-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  cursor: pointer;
+}
+
+.job-runs__only-failed :deep(svg) {
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+}
+
+.job-runs__only-failed.is-disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.job-runs__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-4);
+}
+
+.job-runs__timeline {
+  position: relative;
+  margin: 0;
+  padding: var(--gap-3) var(--gap-4) var(--gap-4) var(--gap-4);
+  list-style: none;
+  overflow: auto;
+  max-height: 26rem;
+  scrollbar-width: thin;
+}
+
+.run {
+  position: relative;
+  display: flex;
+  gap: var(--gap-3);
+  padding: var(--gap-2) 0 var(--gap-3) 0;
+}
+
+/* 竖线：从点的中心往下连到下一条 */
+.run::before {
+  content: '';
+  position: absolute;
+  top: 22px;
+  bottom: -4px;
+  left: 5px;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+.run:last-child::before {
+  display: none;
+}
+
+.run__dot {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  margin-top: 11px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.run.is-ok .run__dot {
+  background: var(--ok);
+}
+
+.run.is-stamp .run__dot {
+  background: var(--stamp);
+}
+
+.run.is-warn .run__dot {
+  background: var(--warn);
+}
+
+.run.is-info .run__dot {
+  background: var(--info);
+  animation: run-pulse 1.4s ease-in-out infinite;
+}
+
+.run__body {
+  display: flex;
   flex: 1 1 auto;
-  min-height: 0;
-  height: auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
-.job-runs-panel__table :deep(.basic-table__toolbar) {
-  padding: var(--gap-1) var(--gap-2);
-  background: var(--surface-sunken);
-}
-
-.job-runs-panel__title {
+.run__line {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-2);
-  min-width: 0;
+  min-height: 28px;
 }
 
-.job-runs-panel__title strong {
-  font-size: var(--fs-title);
-}
-
-.job-runs-panel__meta {
+.run__meta {
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
-  color: var(--muted);
 }
 
-.job-runs-panel__duration {
-  font-variant-numeric: tabular-nums;
+.run__dur {
   font-family: var(--mono);
-  font-size: var(--fs-body);
-  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
-.job-runs-panel__result {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-  width: 100%;
-}
-
-.job-runs-panel__status {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-.job-runs-panel__status-icon {
-  margin-right: 0.1rem;
-  vertical-align: middle;
-}
-
-.job-runs-panel__only-failed {
+.run__time {
   margin-left: auto;
-}
-
-/* 失败原因是个 el-button link：一眼看得出「这半句还能点开」，不是一段哑掉的灰字。 */
-.job-runs-panel__err.el-button {
-  height: auto;
-  min-width: 0;
-  padding: 0;
-  overflow: hidden;
+  color: var(--text-tertiary);
+  font-family: var(--mono);
   font-size: var(--fs-aux);
-  font-weight: 400;
-  text-align: left;
-  --el-button-text-color: var(--muted);
-  --el-button-hover-text-color: var(--el-color-danger);
-  --el-button-active-text-color: var(--el-color-danger);
-}
-
-/* EP 把默认插槽再包一层 span，省略号要靠 min-width:0 一路传下去才生效 */
-.job-runs-panel__err :deep(span) {
-  min-width: 0;
-}
-
-.job-runs-panel__err-body {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gap-1);
-  min-width: 0;
-}
-
-.job-runs-panel__err:hover .job-runs-panel__err-line,
-.job-runs-panel__err:focus-visible .job-runs-panel__err-line {
-  /* 失败用全站危险色（EP 语义 token），不借涨跌色 */
-  color: var(--el-color-danger);
-  text-decoration: underline;
-}
-
-.job-runs-panel__err-line {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.job-runs-panel__err-more {
-  flex: 0 0 auto;
-  padding: 0 var(--gap-1);
-  border: 1px solid color-mix(in oklab, var(--el-color-danger) 35%, var(--rule));
+.run__err {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  max-width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in oklab, var(--stamp) 25%, var(--border-subtle));
   border-radius: var(--radius);
+  background: var(--stamp-soft);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.run__err:hover,
+.run__err:focus-visible {
+  border-color: var(--stamp);
+  color: var(--stamp);
+}
+
+.run__err:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.run__err-line {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.run__err-more {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--stamp);
   font-size: var(--fs-kicker);
-  color: var(--el-color-danger);
+  font-weight: 600;
+}
+
+@keyframes run-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--surface);
+  }
+  50% {
+    box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--info-soft);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run.is-info .run__dot {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .job-runs__head,
+  .job-runs__timeline {
+    padding-left: var(--gap-3);
+    padding-right: var(--gap-3);
+  }
+
+  .run__time {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
 }
 </style>

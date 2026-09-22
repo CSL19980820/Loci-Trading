@@ -137,9 +137,10 @@ def _maybe_seed_nextday_plan(
         return
     if not slug or "/" in slug or " " in slug:
         return
+    from src.ops.application.retired_slugs import is_retired_strategy_slug
     from src.ops.application.retire_dragon_return import is_retired_paper_cabin
 
-    if is_retired_paper_cabin(slug):
+    if is_retired_paper_cabin(slug) or is_retired_strategy_slug(slug):
         return
     cabin = store.ensure_paper_cabin(slug)
     from src.ops.application.jobs.paper_quant_support import _paper_quant_config

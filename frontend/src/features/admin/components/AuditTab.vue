@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Search, RefreshRight } from '@element-plus/icons-vue'
 /**
  * 审计日志。全站统一的「筛选栏 + BasicTable + 分页」列表骨架。
  *
@@ -14,22 +13,26 @@ import { Search, RefreshRight } from '@element-plus/icons-vue'
 import { computed, ref } from 'vue'
 
 import { listAdminAudit } from '@/shared/api/admin'
-import PageContainer from '@/shared/components/layout/PageContainer.vue'
-import BasicForm from '@/shared/components/ui/BasicForm.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import type { AuditLogItem } from '@/shared/types/admin'
 import {
   ACTION_OPTIONS,
+  OUTCOME_OPTIONS,
   actionLabel,
   logTime,
   outcomeLabel,
   outcomeTagType,
+  tagVariant,
 } from '../lib/adminDict'
+import AdminLogFilters from './AdminLogFilters.vue'
 import {
   EMPTY_LOG_FILTERS,
   createLogColumns,
-  createLogFilterSchemas,
   fetchLogPage,
   formatLogDetail,
   type LogFilters,
@@ -40,15 +43,6 @@ const filters = ref<LogFilters>({ ...EMPTY_LOG_FILTERS })
 
 const detailVisible = ref(false)
 const detailRow = ref<AuditLogItem | null>(null)
-
-const filterSchemas = createLogFilterSchemas({
-  keywordPlaceholder: '操作人 / 目标对象',
-  actionLabel: '操作类型',
-  actionOptions: ACTION_OPTIONS,
-  outcomeLabel: '执行结果',
-  // 操作类型有十几项，不给搜索框就得在下拉里滚着找
-  actionFilterable: true,
-})
 
 const shared = createLogColumns({
   actorLabel: '操作人',
@@ -128,112 +122,107 @@ function openDetail(row: AuditLogItem): void {
 
 <template>
   <div class="admin-pane admin-list">
-    <PageContainer>
-      <template #search>
-        <div class="admin-pane__filters">
-          <BasicForm
-            v-model="filters"
-            :schemas="filterSchemas"
-            :columns="3"
-            label-position="left"
-            label-width="5em"
+    
+
+    <AdminLogFilters
+      v-model="filters"
+      keyword-placeholder="操作人 / 目标对象"
+      action-label="操作类型"
+      :action-options="ACTION_OPTIONS"
+      outcome-label="执行结果"
+      :outcome-options="OUTCOME_OPTIONS"
+      @search="reload"
+      @reset="onReset"
+    />
+
+    <div class="admin-list__table">
+      <BasicTable
+        ref="tableRef"
+        v-model:columns="columns"
+        :request="loadAudit"
+        :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
+        :toolbar-config="{ refresh: true, custom: true }"
+        height="100%"
+        row-key="id"
+        empty-text="没有匹配的审计记录"
+      >
+        <template #actor="{ row }">
+          <Tooltip v-if="row.actor_id" :delay-duration="200">
+            <TooltipTrigger as-child>
+              <span class="audit-actor">{{ row.actor_name || '系统' }}</span>
+            </TooltipTrigger>
+            <TooltipContent>账号 ID：{{ row.actor_id }}</TooltipContent>
+          </Tooltip>
+          <span v-else class="audit-actor">{{ row.actor_name || '系统' }}</span>
+        </template>
+
+        <template #action="{ row }">
+          <UiBadge variant="info">
+            {{ actionLabel(row.action as string) }}
+          </UiBadge>
+        </template>
+
+        <template #outcome="{ row }">
+          <UiBadge :variant="tagVariant(outcomeTagType(row.outcome as string))" dot>
+            {{ outcomeLabel(row.outcome as string) }}
+          </UiBadge>
+        </template>
+
+        <template #ip="{ row }">
+          <span class="is-code">{{ row.ip || '—' }}</span>
+        </template>
+
+        <template #detail="{ row }">
+          <Button access="read" variant="ghost" size="sm" @click="openDetail(row as unknown as AuditLogItem)">
+            查看
+          </Button>
+        </template>
+      </BasicTable>
+    </div>
+
+    <Dialog v-model:open="detailVisible">
+      <DialogContent class="audit-detail-dialog sm:max-w-xl">
+        <DialogHeader class="gap-1 text-left">
+          <DialogTitle>审计详情</DialogTitle>
+        </DialogHeader>
+
+        <div v-if="detailRow" class="audit-detail-dialog__body min-w-0">
+          <dl class="audit-facts">
+            <div v-for="fact in detailFacts" :key="fact.label" class="audit-facts__cell">
+              <dt class="audit-facts__key">{{ fact.label }}</dt>
+              <dd class="audit-facts__val">{{ fact.value }}</dd>
+            </div>
+          </dl>
+
+          <pre v-if="detailText" class="audit-json">{{ detailText }}</pre>
+          <EmptyState
+            v-else
+            compact
+            description="这条操作没有附加参数"
+            reason="未记录附加参数"
           />
         </div>
-        <div class="admin-pane__filter-actions">
-          <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
-          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
-        </div>
-      </template>
-
-      <template #main>
-        <BasicTable
-          ref="tableRef"
-          v-model:columns="columns"
-          :request="loadAudit"
-          :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
-          :toolbar-config="{ refresh: true, custom: true }"
-          height="100%"
-          row-key="id"
-          stripe
-          empty-text="没有匹配的审计记录"
-        >
-          <template #actor="{ row }">
-            <el-tooltip
-              v-if="row.actor_id"
-              :content="`账号 ID：${row.actor_id}`"
-              placement="top"
-              :show-after="200"
-            >
-              <span class="audit-actor">{{ row.actor_name || '系统' }}</span>
-            </el-tooltip>
-            <span v-else class="audit-actor">{{ row.actor_name || '系统' }}</span>
-          </template>
-
-          <template #action="{ row }">
-            <el-tag size="small" type="info" effect="plain">
-              {{ actionLabel(row.action as string) }}
-            </el-tag>
-          </template>
-
-          <template #outcome="{ row }">
-            <el-tag :type="outcomeTagType(row.outcome as string)" size="small" effect="plain">
-              {{ outcomeLabel(row.outcome as string) }}
-            </el-tag>
-          </template>
-
-          <template #ip="{ row }">
-            <span class="is-code">{{ row.ip || '—' }}</span>
-          </template>
-
-          <template #detail="{ row }">
-            <el-button text size="small" @click="openDetail(row as unknown as AuditLogItem)">
-              查看
-            </el-button>
-          </template>
-        </BasicTable>
-      </template>
-    </PageContainer>
-
-    <el-dialog
-      v-model="detailVisible"
-      title="审计详情"
-      width="min(92vw, 560px)"
-      append-to-body
-      destroy-on-close
-      class="audit-detail-dialog dialog-body--scroll"
-    >
-      <template v-if="detailRow">
-        <dl class="audit-facts">
-          <div v-for="fact in detailFacts" :key="fact.label" class="audit-facts__cell">
-            <dt class="audit-facts__key">{{ fact.label }}</dt>
-            <dd class="audit-facts__val">{{ fact.value }}</dd>
-          </div>
-        </dl>
-
-        <pre v-if="detailText" class="audit-json">{{ detailText }}</pre>
-        <EmptyState
-          v-else
-          description="这条操作没有附加参数"
-          reason="未记录附加参数"
-        />
-      </template>
-    </el-dialog>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <style scoped>
 .audit-actor {
-  color: var(--ink);
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
-/*
- * 全局只有 `td.is-code .cell` 一条等宽规则，插槽里的 span 命中不到；
- * 这里按同一口径补一条，不新造 class-name。
- */
 .is-code {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
+}
+
+.audit-detail-dialog__body {
+  max-height: min(62vh, 30rem);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 /* 事实格：label 压到 11px 让位给值，值走等宽以便对齐时间戳与 IP */
@@ -245,43 +234,41 @@ function openDetail(row: AuditLogItem): void {
 }
 
 .audit-facts__cell {
-  padding: var(--gap-2);
-  border: 1px solid var(--rule-soft);
+  min-width: 0;
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   background: var(--surface-sunken);
-  min-width: 0;
 }
 
 .audit-facts__key {
+  color: var(--text-tertiary);
   font-size: var(--fs-kicker);
   line-height: 1.4;
-  color: var(--mist);
 }
 
 .audit-facts__val {
   margin: var(--gap-1) 0 0;
+  color: var(--text-primary);
   font-family: var(--mono);
   font-size: var(--fs-aux);
   line-height: 1.5;
-  color: var(--ink);
   word-break: break-all;
 }
 
-/* 详情 JSON：整块围一圈细线即可，不加左竖条——它只是一段文本，不是引用 */
 .audit-json {
   margin: 0;
-  padding: var(--gap-2);
-  background: var(--sheet-alt);
-  border: 1px solid var(--rule);
+  padding: var(--gap-3);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
   font-family: var(--mono);
   font-size: var(--fs-aux);
   line-height: 1.5;
-  color: var(--ink);
   white-space: pre-wrap;
   word-break: break-all;
 }
 </style>
-
 
 <style scoped src="./AdminList.css" />

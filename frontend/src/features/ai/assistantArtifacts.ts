@@ -40,7 +40,7 @@ export interface ArtifactSourceItem {
 
 export interface ArtifactEquityPayload {
   dates: string[]
-  values: number[]
+  values: Array<number | null>
 }
 
 /** Known rich-render kinds (ADR-006 大包 C). Unknown kinds fall back to JSON. */
@@ -174,7 +174,8 @@ export function parseEchartsOption(data: Record<string, unknown>): Record<string
   } catch {
     return null
   }
-  const series = arrayValue(option.series)
+  const series = Array.isArray(option.series) ? option.series : option.series && typeof option.series === 'object' ? [option.series] : []
+  if (!series.length) return null
   for (const item of series) {
     const type = stringValue(objectValue(item).type)
     if (type && !ECHARTS_SERIES_WHITELIST.has(type)) return null
@@ -186,25 +187,30 @@ export function parseEquityPayload(data: Record<string, unknown>): ArtifactEquit
   const points = arrayValue(data.points ?? data.series)
   if (points.length) {
     const dates: string[] = []
-    const values: number[] = []
+    const values: Array<number | null> = []
     for (const point of points) {
       if (Array.isArray(point)) {
         const date = String(point[0] ?? '')
         const value = numeric(point[1])
-        if (date && value != null) { dates.push(date); values.push(value) }
+        if (date) { dates.push(date); values.push(value ?? null) }
         continue
       }
       const row = objectValue(point)
       const date = stringValue(row.date ?? row.trade_date ?? row.day)
       const value = numberValue(row.value ?? row.equity ?? row.nav)
-      if (date && value != null) { dates.push(date); values.push(value) }
+      if (date) { dates.push(date); values.push(value ?? null) }
     }
     return { dates, values }
   }
-  const dates = arrayValue(data.dates).map((item) => String(item))
-  const values = arrayValue(data.values).map((item) => numeric(item)).filter((item): item is number => item != null)
-  const len = Math.min(dates.length, values.length)
-  return { dates: dates.slice(0, len), values: values.slice(0, len) }
+  const dates: string[] = []
+  const values: Array<number | null> = []
+  const rawValues = arrayValue(data.values)
+  for (const [index, date] of arrayValue(data.dates).entries()) {
+    if (date == null || date === '') continue
+    dates.push(String(date))
+    values.push(numeric(rawValues[index]) ?? null)
+  }
+  return { dates, values }
 }
 
 export function parseSources(data: Record<string, unknown>): ArtifactSourceItem[] {

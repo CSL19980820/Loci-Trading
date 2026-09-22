@@ -1,7 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useVisitorMode, type ControlAccess } from '@/shared/composables/useAccess'
+import { Ellipsis } from '@lucide/vue'
+
+import { Button } from '@/shared/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/shared/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
 export interface RowAction {
+  access?: ControlAccess
   key: string
   label: string
   type?: 'primary' | 'danger' | 'success' | 'warning' | 'info'
@@ -21,8 +34,21 @@ const props = withDefaults(
   { maxVisible: 2 },
 )
 
-const primary = computed(() => props.actions.slice(0, props.maxVisible))
-const extra = computed(() => props.actions.slice(props.maxVisible))
+const visitor = useVisitorMode()
+const permitted = computed(() => props.actions.filter(action => !visitor.value || action.access === 'read'))
+const primary = computed(() => permitted.value.slice(0, props.maxVisible))
+const extra = computed(() => permitted.value.slice(props.maxVisible))
+
+function isDanger(action: RowAction): boolean {
+  return action.type === 'danger'
+}
+
+/*
+ * 行内动作是「小号文字按钮」：控件高 28px，字 12px；主色文字，危险用印章红。
+ * 「更多」是一枚 ⋯ 图标按钮（Linear / Notion 风），不再是一个文字按钮。
+ */
+const ACTION_CLASS = 'row-actions__btn h-[var(--ctl-h-sm)] px-2 text-aux font-medium text-seal-ink hover:bg-seal-soft hover:text-seal-ink'
+const DANGER_CLASS = 'row-actions__btn h-[var(--ctl-h-sm)] px-2 text-aux font-medium text-stamp hover:bg-stamp-soft hover:text-stamp'
 
 function onMore(key: string): void {
   const action = extra.value.find((item) => item.key === key)
@@ -32,55 +58,42 @@ function onMore(key: string): void {
 </script>
 
 <template>
-  <div class="inline-flex flex-nowrap items-center justify-end gap-0 whitespace-nowrap" @click.stop>
-    <el-tooltip
-      v-for="action in primary"
-      :key="action.key"
-      :content="action.tip || ''"
-      :disabled="!action.disabled || !action.tip"
-      placement="top"
-      :show-after="200"
-    >
-      <span class="inline-flex items-center">
-        <el-button
-          text
-          :type="action.type || 'primary'"
-          size="small"
-          :disabled="action.disabled"
-          class="m-0 px-1"
-          @click="action.onClick"
-        >
-          {{ action.label }}
-        </el-button>
-      </span>
-    </el-tooltip>
-    <el-dropdown v-if="extra.length" trigger="click" @command="onMore">
-      <el-button text size="small">更多</el-button>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item
-            v-for="action in extra"
-            :key="action.key"
-            :command="action.key"
-            :divided="action.divided"
-            :disabled="action.disabled"
+  <div class="row-actions inline-flex flex-nowrap items-center justify-end gap-0.5 whitespace-nowrap" @click.stop>
+    <Tooltip v-for="action in primary" :key="action.key" :disabled="!action.disabled || !action.tip">
+      <TooltipTrigger as-child>
+        <span class="inline-flex items-center">
+   <Button :access="action.access"
+     variant="ghost"
+     size="sm"
+     :class="isDanger(action) ? DANGER_CLASS : ACTION_CLASS"
+     :disabled="action.disabled"
+     @click="action.onClick"
+   >
+     {{ action.label }}
+   </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{{ action.tip }}</TooltipContent>
+    </Tooltip>
+
+    <DropdownMenu v-if="extra.length">
+      <DropdownMenuTrigger as-child>
+        <Button access="read" variant="ghost" size="icon-sm" class="row-actions__more text-mist hover:text-ink" aria-label="更多操作">
+   <Ellipsis />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <template v-for="(action, index) in extra" :key="action.key">
+   <DropdownMenuSeparator v-if="action.divided && index > 0" />
+   <DropdownMenuItem :access="action.access"
+     :disabled="action.disabled"
+     :variant="isDanger(action) ? 'destructive' : 'default'"
+     @select="onMore(action.key)"
           >
             {{ action.label }}
-          </el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
+   </DropdownMenuItem>
+        </template>
+      </DropdownMenuContent>
+    </DropdownMenu>
   </div>
 </template>
-
-<style scoped>
-/* 行内删除类动作同样走印章红，不借 EP 默认 danger 的橙红 */
-.inline-flex :deep(.el-button) {
-  margin: 0;
-}
-.inline-flex :deep(.el-button--danger.is-text) {
-  --el-button-text-color: var(--stamp);
-  --el-button-hover-text-color: var(--stamp);
-  --el-button-hover-bg-color: color-mix(in oklab, var(--stamp) 8%, transparent);
-}
-</style>

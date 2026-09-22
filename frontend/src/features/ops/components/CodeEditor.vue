@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import type { editor as MonacoEditorNs } from 'monaco-editor'
 
 import { APPEARANCE_OPTIONS } from '@/shared/lib/theme'
+import { useVisitorMode } from '@/shared/composables/useAccess'
 import { ensureMonacoEnv } from './monacoEnv'
 
 const props = withDefaults(
@@ -20,12 +22,16 @@ const props = withDefaults(
   },
 )
 
+const visitor = useVisitorMode()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const host = ref<HTMLDivElement | null>(null)
 const editorRef = shallowRef<MonacoEditorNs.IStandaloneCodeEditor | null>(null)
 /** Monaco 挂载失败时的降级开关：原生 textarea，保证内容永远可见 */
 const mountFailed = ref(false)
+const isMobile = useMediaQuery('(max-width: 767px)')
+const ready = ref(false)
+const nativeEditor = ref<HTMLTextAreaElement | null>(null)
 
 type MonacoModule = typeof import('monaco-editor')
 
@@ -108,7 +114,7 @@ function applyLociTheme(monaco: MonacoModule): void {
 }
 
 async function mountEditor(): Promise<void> {
-  if (!host.value || editorRef.value) return
+  if (isMobile.value || !host.value || editorRef.value) return
   const generation = ++mountGeneration
   ensureMonacoEnv()
   monacoMod = await loadMonaco()
@@ -118,7 +124,7 @@ async function mountEditor(): Promise<void> {
   const ed = monacoMod.editor.create(host.value, {
     value: props.modelValue ?? '',
     language: props.language || 'plaintext',
-    readOnly: props.readOnly,
+    readOnly: props.readOnly || visitor.value,
     automaticLayout: true,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
@@ -133,6 +139,7 @@ async function mountEditor(): Promise<void> {
     scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
   })
   editorRef.value = ed
+  ready.value = true
 
   ed.onDidChangeModelContent(() => {
     if (suppressModelEmit) return
@@ -156,7 +163,7 @@ onMounted(() => {
   })
 })
 
-onBeforeUnmount(() => {
+function disposeEditor(): void {
   mountGeneration += 1
   themeObserver?.disconnect()
   themeObserver = null
@@ -165,7 +172,16 @@ onBeforeUnmount(() => {
   model?.dispose()
   editorRef.value = null
   monacoMod = null
-})
+  ready.value = false
+}
+onBeforeUnmount(disposeEditor)
+watch(isMobile, async mobile => {
+  disposeEditor()
+  if (mobile) return
+  mountFailed.value = false
+  await nextTick()
+  try { await mountEditor() } catch { mountFailed.value = true }
+}, { flush: 'post' })
 
 watch(
   () => props.modelValue,
@@ -190,16 +206,26 @@ watch(
 )
 
 watch(
-  () => props.readOnly,
+  () => props.readOnly || visitor.value,
   (ro) => {
     editorRef.value?.updateOptions({ readOnly: Boolean(ro) })
   },
 )
 
 function insertText(text: string): void {
+  if (visitor.value || props.readOnly) return
   const editor = editorRef.value
   const monaco = monacoMod
-  if (!editor || !monaco || !text) return
+  if (!text) return
+  if (!editor || !monaco) {
+    const field = nativeEditor.value
+    if (!field) return
+    const start = field.selectionStart ?? props.modelValue.length
+    const end = field.selectionEnd ?? start
+    emit('update:modelValue', props.modelValue.slice(0, start) + text + props.modelValue.slice(end))
+    void nextTick(() => { field.focus(); field.setSelectionRange(start + text.length, start + text.length) })
+    return
+  }
   const selection = editor.getSelection()
   const range = selection ?? new monaco.Range(1, 1, 1, 1)
   editor.executeEdits('catalog-insert', [{ range, text, forceMoveMarkers: true }])
@@ -208,7 +234,16 @@ function insertText(text: string): void {
 
 function focusLine(line: number, column = 1): void {
   const editor = editorRef.value
-  if (!editor) return
+  if (!editor) {
+    const field = nativeEditor.value
+    if (!field) return
+    const lines = props.modelValue.split('\n')
+    const index = Math.max(0, Math.min(Math.trunc(line) - 1, lines.length - 1))
+    const offset = lines.slice(0, index).reduce((size, item) => size + item.length + 1, 0) + Math.min(Math.max(0, column - 1), lines[index]?.length ?? 0)
+    field.focus(); field.setSelectionRange(offset, offset)
+    field.scrollTop = index * 22
+    return
+  }
   const model = editor.getModel()
   const safeLine = Math.max(1, Math.min(Math.trunc(line), model?.getLineCount() ?? 1))
   const safeColumn = Math.max(1, Math.trunc(column))
@@ -224,20 +259,22 @@ defineExpose({ focusLine, insertText })
   <div class="code-editor" :style="{ height }" data-testid="code-editor">
     <!-- Monaco 挂载失败降级：内容仍可见可改，不留白板 -->
     <textarea
-      v-if="mountFailed"
+      v-if="isMobile || mountFailed || !ready"
+      ref="nativeEditor"
       class="code-editor__fallback"
       :value="modelValue"
-      :readonly="readOnly"
+      :readonly="readOnly || visitor"
       :aria-label="`${language} ${readOnly ? '代码预览' : '代码编辑器'}`"
       spellcheck="false"
       @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
     />
-    <div v-else ref="host" class="code-editor__host" />
+    <div v-show="!isMobile && !mountFailed" ref="host" class="code-editor__host" :class="{ 'code-editor__host--loading': !ready }" />
   </div>
 </template>
 
 <style scoped>
 .code-editor {
+  position: relative;
   width: 100%;
   min-width: 0;
   min-height: 6rem;
@@ -252,6 +289,7 @@ defineExpose({ focusLine, insertText })
   height: 100%;
 }
 
+.code-editor__host--loading { position:absolute; inset:0; visibility:hidden; }
 .code-editor__fallback {
   width: 100%;
   height: 100%;

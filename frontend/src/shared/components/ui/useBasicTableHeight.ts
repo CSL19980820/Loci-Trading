@@ -1,7 +1,7 @@
 /**
  * BasicTable 的高度。两路互不抢：
- *   offsetHeight —— 视口减去偏移，给「按窗口扣顶栏」的旧页
- *   fillHeight   —— 表体 clientHeight 的像素值，给 height="100%" 的页级表
+ * offsetHeight —— 视口减去偏移，给「按窗口扣顶栏」的旧页
+ * fillHeight —— 表体 clientHeight 的像素值，给 height="100%" 的页级表
  *
  * 监听器对称性：注册与移除必须无条件配对，条件判断只允许出现在
  * calcOffsetHeight / measureFill 内部。回归用例 `BasicTable.resize.test.ts`

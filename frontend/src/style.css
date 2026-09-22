@@ -1,6 +1,12 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/preflight.css" layer(base);
 @import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+/*
+ * vue-sonner v2 不再自动注入样式：不引这一行，toaster 就是 position:static，
+ * 气泡会被排到视口外（全站所有 toast 都看不见）。必须是本仓库里唯一的那次引用。
+ */
+@import "vue-sonner/style.css";
 @import "./style.tw-theme.css";
 @import "./style.base.css";
 @import "./style.foundation.css";
@@ -11,4 +17,6 @@
 @import "./style.content.css";
 @import "./style.tail.css";
 /* 主题最后加载：外观/主色需覆盖前面各层的 token 默认值 */
+@import "./style.controls.css";
 @import "./style.theme.css";
+@import "./style.mobile.css";

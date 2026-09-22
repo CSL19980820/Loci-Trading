@@ -371,4 +371,7 @@ __all__ = [
     "tencent",
     "to_sina_symbol",
     "universe_stats",
+    "query_agent_market",
 ]
+
+from src.market.application.agent_query import query_agent_market

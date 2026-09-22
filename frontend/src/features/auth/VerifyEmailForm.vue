@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import { LoaderCircle } from '@lucide/vue'
+
+import { Button } from '@/shared/components/ui/button'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+
+/** 邮箱验证码：目标邮箱由 LoginView 卡头的说明文字交代，这里只剩大号验证码框与重发 */
 defineProps<{
   email: string
   code: string
@@ -17,14 +24,11 @@ const emit = defineEmits<{
 
 <template>
   <div class="verify-panel">
-    <div class="panel-head">
-      <h2 class="panel-title">输入邮箱验证码</h2>
-      <span class="panel-target">{{ email }}</span>
-    </div>
-
-    <el-form label-position="top" :aria-busy="submitting" @submit.prevent="emit('submit')">
-      <el-form-item label="6 位验证码">
-        <el-input
+    <form class="auth-fields" :aria-busy="submitting" @submit.prevent="emit('submit')">
+      <div class="field">
+        <Label for="verify-code" class="field-label">6 位验证码</Label>
+        <Input
+          id="verify-code"
           :model-value="code"
           maxlength="8"
           placeholder="123456"
@@ -34,37 +38,32 @@ const emit = defineEmits<{
           autofocus
           @update:model-value="emit('update:code', String($event))"
         />
-      </el-form-item>
+      </div>
 
       <div class="resend-row">
         <span class="resend-label">没有收到验证码？</span>
-        <el-button
-          text
-          type="primary"
-          size="small"
-          :disabled="resendCountdown > 0"
-          :loading="resending"
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          class="link-btn"
+          :disabled="resendCountdown > 0 || resending"
           @click="emit('resend')"
         >
+          <LoaderCircle v-if="resending" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           {{ resendCountdown > 0 ? `${resendCountdown}s 后重发` : '重新发送' }}
-        </el-button>
+        </Button>
       </div>
 
-      <el-button
-        type="primary"
-        native-type="submit"
-        :loading="submitting"
-        class="login-submit"
-      >
+      <Button type="submit" :disabled="submitting" class="login-submit">
+        <LoaderCircle v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
         {{ submitting ? '验证中' : '完成验证并进入' }}
-      </el-button>
+      </Button>
+    </form>
 
-      <div class="form-bottom-link">
-        <el-button text class="sub-link" @click="emit('backSignin')">
-          返回登录
-        </el-button>
-      </div>
-    </el-form>
+    <p class="form-bottom-link">
+      <Button type="button" variant="link" size="sm" class="link-btn" @click="emit('backSignin')">返回登录</Button>
+    </p>
   </div>
 </template>
 

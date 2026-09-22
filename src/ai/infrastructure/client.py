@@ -14,7 +14,7 @@ Kimi、通义、硅基流动、任何自建中转，以及 Anthropic 官方，�
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import logging
 import re
@@ -23,6 +23,8 @@ from typing import Any
 import httpx2
 
 from src.ai.infrastructure.connection_retry import ConnectionRetryClient
+from src.shared.http_protocol import http_protocol_options
+from src.ai.infrastructure.client_session import borrow_client
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,21 @@ LIST_MODELS_TIMEOUT = 20.0
 
 class LLMError(RuntimeError):
     """调用失败。消息可以给用户看，但绝不包含 Authorization 头的内容。"""
+    allow_retry = True
+
+
+class LLMNoReplayError(LLMError):
+    """请求可能已被执行，禁止协议降级或重试造成重复推理。"""
+    allow_retry = False
+
+
+class LLMGenerationInterrupted(LLMNoReplayError):
+    """Transient generation failure; only an explicitly opted-in agent may recover.
+
+    The provider may have billed the abandoned request. Transport-level replay
+    stays disabled; recovery must retain completed tool results and discard the
+    interrupted generation before executing any tool or account action.
+    """
 
 
 @dataclass
@@ -92,6 +109,11 @@ class ProviderConfig:
     timeout: float = DEFAULT_TIMEOUT
     context_window: int | None = None
     max_output_tokens: int | None = None
+    grpc_endpoint: str = ""
+    grpc_token: str = field(default="", repr=False)
+    grpc_ca_file: str = ""
+    grpc_fallback: bool = False
+    grpc_tenant: str = ""
 
     def __post_init__(self) -> None:
         if self.protocol not in PROTOCOLS:
@@ -104,8 +126,11 @@ class ProviderConfig:
 
 
 def _client(config: ProviderConfig) -> httpx2.Client:
-    kwargs: dict[str, Any] = {"timeout": config.timeout}
-    if config.proxy_url:
+    kwargs: dict[str, Any] = {"timeout": config.timeout, **http_protocol_options()}
+    if config.grpc_endpoint:
+        from src.ai.infrastructure.grpc_transport import GrpcTransport
+        kwargs.update(transport=GrpcTransport(config), trust_env=False)
+    elif config.proxy_url:
         kwargs["proxy"] = config.proxy_url
     return ConnectionRetryClient(**kwargs)
 
@@ -334,7 +359,7 @@ def _chat_openai(
         body["tools"] = tools
         body["tool_choice"] = "auto"
     _apply_openai_thinking(body, thinking)
-    with _client(config) as client:
+    with borrow_client(config, lambda: _client(config)) as client:
         try:
             response = client.post(
                 f"{config.base_url}/chat/completions",
@@ -343,7 +368,10 @@ def _chat_openai(
                     "Content-Type": "application/json",
                 },
                 json=body,
+                timeout=config.timeout,
             )
+        except LLMError:
+            raise
         except Exception as exc:
             raise LLMError(
                 f"{config.name} 请求失败：{type(exc).__name__}: {_redact(str(exc), config.api_key)}"
@@ -440,7 +468,7 @@ def _chat_anthropic(
     if tools:
         body["tools"] = tools
     body["max_tokens"] = _apply_anthropic_thinking(body, thinking, max_tokens)
-    with _client(config) as client:
+    with borrow_client(config, lambda: _client(config)) as client:
         try:
             response = client.post(
                 f"{config.base_url}/messages",
@@ -450,7 +478,10 @@ def _chat_anthropic(
                     "Content-Type": "application/json",
                 },
                 json=body,
+                timeout=config.timeout,
             )
+        except LLMError:
+            raise
         except Exception as exc:
             raise LLMError(
                 f"{config.name} 请求失败：{type(exc).__name__}: {_redact(str(exc), config.api_key)}"
@@ -485,15 +516,8 @@ def _chat_anthropic(
 
 def validate(config: ProviderConfig) -> ChatResponse:
     """用户主动测试时发一条短对话；保存配置默认不调用。"""
-    probe = ProviderConfig(
-        name=config.name,
-        protocol=config.protocol,
-        base_url=config.base_url,
-        api_key=config.api_key,
-        model=config.model,
-        proxy_url=config.proxy_url,
-        timeout=config.timeout,
-    )
+    # Preserve transport, tenant binding and limits for saved-provider tests.
+    probe = replace(config)
     # 推理模型也需要生成预算；1 token 会被部分兼容端点直接拒绝。
     response = chat(probe, [ChatMessage(role="user", content="Reply with only OK.")],
                     max_tokens=1024, temperature=0.0)

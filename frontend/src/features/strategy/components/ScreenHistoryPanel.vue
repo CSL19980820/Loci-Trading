@@ -1,11 +1,17 @@
 <script setup lang="ts">
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+
 /**
  * 入库历史列表：日期筛选 + BasicTable 分页（列表页样式，嵌在弹窗里）。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { RefreshRight, Search } from '@element-plus/icons-vue'
+import { LoaderCircle, RefreshCw, Search } from '@lucide/vue'
 
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
 import BasicTable, {
@@ -164,7 +170,7 @@ onMounted(() => {
 
 const detailColumns: BasicTableColumn[] = [
   { type: 'index', label: '#', width: 48, align: 'center', headerAlign: 'center' },
-  { prop: 'code', label: '标的', minWidth: 148, align: 'center', headerAlign: 'center', slotName: 'code' },
+  { prop: 'code', label: '标的 · 编码', minWidth: 168, align: 'center', headerAlign: 'center', slotName: 'code' },
   { prop: 'decision', label: '裁决', width: 82, align: 'center', headerAlign: 'center', slotName: 'decision' },
   {
     prop: 'score',
@@ -178,8 +184,8 @@ const detailColumns: BasicTableColumn[] = [
     prop: 'reason',
     label: '理由',
     minWidth: 200,
-    align: 'left',
-    headerAlign: 'left',
+    align: 'center',
+    headerAlign: 'center',
     showOverflowTooltip: true,
     formatter: (row) => String(row.reason || '—'),
   },
@@ -234,14 +240,19 @@ function onToolbarRefresh(): void {
         class="history-panel__form"
       />
       <div class="history-panel__actions">
-        <el-button type="primary" :icon="Search" :loading="loading" @click="handleSearch">
+        <Button access="read" :disabled="loading" @click="handleSearch">
+          <LoaderCircle v-if="loading" class="size-4 animate-spin" aria-hidden="true" />
+          <Search v-else class="size-4" aria-hidden="true" />
           查询
-        </el-button>
-        <el-button :icon="RefreshRight" :loading="loading" @click="handleReset">重置</el-button>
+        </Button>
+        <Button access="read" variant="outline" :disabled="loading" @click="handleReset">
+          <RefreshCw class="size-4" aria-hidden="true" />
+          重置
+        </Button>
       </div>
     </div>
 
-    <div v-if="allRows.length || loading" class="history-panel__table" v-loading="loading && !allRows.length">
+    <div v-if="allRows.length || loading" class="history-panel__table">
       <BasicTable
         ref="basicTableRef"
         v-model:columns="columns"
@@ -265,22 +276,22 @@ function onToolbarRefresh(): void {
       >
         <template #actions="{ row }">
           <div class="history-ops">
-            <el-button
-              link
-              type="primary"
-              size="small"
+            <Button access="read"
+              variant="link"
+              size="sm"
               @click="openDetail(row as unknown as HistoryRow)"
             >
               详情
-            </el-button>
-            <el-button
-              link
-              size="small"
+            </Button>
+            <Button
+              variant="link"
+              size="sm"
+              class="text-foreground"
               :disabled="running"
               @click="emit('rerun', String((row as HistoryRow).tradeDate))"
             >
               重跑
-            </el-button>
+            </Button>
           </div>
         </template>
       </BasicTable>
@@ -292,7 +303,7 @@ function onToolbarRefresh(): void {
       :image-size="56"
     />
 
-    <el-dialog
+    <DialogPanel
       v-model="detailOpen"
       append-to-body
       :title="
@@ -315,24 +326,27 @@ function onToolbarRefresh(): void {
         max-height="22rem"
       >
         <template #code="{ row }">
-          <StockLink
-            :code="String(row.code)"
-            :name="String(row.name || row.code)"
-            :date="detailRow?.tradeDate"
-            :batch="detailBatch"
-          />
+          <span class="history-cell-inline" :title="`${row.name || row.code} ${row.code}`">
+            <StockLink
+              :code="String(row.code)"
+              :name="String(row.name || row.code)"
+              :date="detailRow?.tradeDate"
+              :batch="detailBatch"
+            />
+            <span class="history-code">{{ row.code }}</span>
+          </span>
         </template>
         <template #decision="{ row }">
-          <el-tag
+          <StatusBadge
             size="small"
-            :type="row.decision === '精选' ? 'primary' : row.decision === '观察' ? 'warning' : 'info'"
+            :tone="row.decision === '精选' ? 'primary' : row.decision === '观察' ? 'warning' : 'info'"
             effect="plain"
           >
             {{ row.decision || '—' }}
-          </el-tag>
+          </StatusBadge>
         </template>
       </BasicTable>
-    </el-dialog>
+    </DialogPanel>
   </div>
 </template>
 
@@ -360,7 +374,7 @@ function onToolbarRefresh(): void {
   min-width: 0;
 }
 
-.history-panel__form :deep(.el-form-item) {
+.history-panel__form :deep(.form-field) {
   margin-bottom: 0;
 }
 
@@ -392,8 +406,26 @@ function onToolbarRefresh(): void {
 .history-ops {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.15rem;
   white-space: nowrap;
+}
+
+.history-cell-inline {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-code {
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
 }
 </style>
 

@@ -1,4 +1,17 @@
 <script setup lang="ts">
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as CheckboxField } from '@/shared/components/ui/app/CheckboxField.vue'
+import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
+import { default as RadioChoice } from '@/shared/components/ui/app/RadioChoice.vue'
+import { default as CheckboxChoices } from '@/shared/components/ui/app/CheckboxChoices.vue'
+import { default as TreeChoice } from '@/shared/components/ui/app/TreeChoice.vue'
+import { default as CascadeChoice } from '@/shared/components/ui/app/CascadeChoice.vue'
+
 import {
   computed,
   h,
@@ -198,7 +211,7 @@ const isTextarea = computed(
     :is="{ render: () => schema.render?.(h, { model, field: schema.field }) ?? null }"
     v-else-if="schema.render"
   />
-  <el-input
+  <TextField
     v-else-if="!schema.component || schema.component === 'input'"
     :model-value="inputDraft"
     v-bind="fieldProps()"
@@ -209,7 +222,7 @@ const isTextarea = computed(
     @change="flushInput"
     v-on="bindEvents()"
   />
-  <el-input-number
+  <NumberInput
     v-else-if="schema.component === 'input-number'"
     :model-value="model[schema.field] as number"
     v-bind="fieldProps()"
@@ -217,24 +230,25 @@ const isTextarea = computed(
     @update:model-value="setValue"
     v-on="bindEvents()"
   />
-  <el-select
+  <ChoiceField
     v-else-if="schema.component === 'select'"
     :model-value="model[schema.field]"
+    :options="options"
     v-bind="fieldProps()"
     clearable
     class="basic-form__full"
     @update:model-value="setValue"
     v-on="bindEvents()"
   >
-    <el-option
+    <ChoiceOption
       v-for="opt in options"
       :key="String(opt.value)"
       :label="opt.label"
       :value="opt.value"
       :disabled="opt.disabled"
     />
-  </el-select>
-  <el-date-picker
+  </ChoiceField>
+  <DateField
     v-else-if="schema.component === 'date-picker'"
     :model-value="model[schema.field]"
     v-bind="fieldProps()"
@@ -242,14 +256,14 @@ const isTextarea = computed(
     @update:model-value="setValue"
     v-on="bindEvents()"
   />
-  <el-switch
+  <ToggleSwitch
     v-else-if="schema.component === 'switch'"
     :model-value="model[schema.field] as boolean"
     v-bind="fieldProps()"
     @update:model-value="setValue"
     v-on="bindEvents()"
   />
-  <el-checkbox
+  <CheckboxField
     v-else-if="schema.component === 'checkbox'"
     :model-value="model[schema.field]"
     v-bind="fieldProps()"
@@ -257,30 +271,30 @@ const isTextarea = computed(
     v-on="bindEvents()"
   >
     {{ (schema.componentProps?.label as string) || '' }}
-  </el-checkbox>
-  <el-radio-group
+  </CheckboxField>
+  <RadioChoices
     v-else-if="schema.component === 'RadioGroup'"
     :model-value="model[schema.field]"
     v-bind="fieldProps()"
     @update:model-value="setValue"
     v-on="bindEvents()"
   >
-    <el-radio v-for="opt in options" :key="String(opt.value)" :value="opt.value">
+    <RadioChoice v-for="opt in options" :key="String(opt.value)" :value="opt.value">
       {{ opt.label }}
-    </el-radio>
-  </el-radio-group>
-  <el-checkbox-group
+    </RadioChoice>
+  </RadioChoices>
+  <CheckboxChoices
     v-else-if="schema.component === 'CheckboxGroup'"
     :model-value="(model[schema.field] as unknown[]) ?? []"
     v-bind="fieldProps()"
     @update:model-value="setValue"
     v-on="bindEvents()"
   >
-    <el-checkbox v-for="opt in options" :key="String(opt.value)" :label="opt.value">
+    <CheckboxField v-for="opt in options" :key="String(opt.value)" :label="opt.value">
       {{ opt.label }}
-    </el-checkbox>
-  </el-checkbox-group>
-  <el-tree-select
+    </CheckboxField>
+  </CheckboxChoices>
+  <TreeChoice
     v-else-if="schema.component === 'tree-select'"
     :model-value="model[schema.field]"
     :data="treeData"
@@ -289,7 +303,7 @@ const isTextarea = computed(
     @update:model-value="setValue"
     v-on="bindEvents()"
   />
-  <el-cascader
+  <CascadeChoice
     v-else-if="schema.component === 'cascader'"
     :model-value="model[schema.field]"
     :options="cascaderOptions"

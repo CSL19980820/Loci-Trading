@@ -1,3 +1,7 @@
+/*
+ * K 线工作台卡：面板壳 = 圆角 12 + hairline + 极淡投影；顶栏两组药片分段；
+ * 读数浮层压在图上。尺度全部走令牌，深色档由 --surface / --border-* 自己切换。
+ */
 .tdx-desk {
   display: flex;
   flex-direction: column;
@@ -5,27 +9,24 @@
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--sheet);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
 }
 
 .tdx-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--gap-1) var(--gap-3);
-  padding: var(--gap-1) var(--gap-2);
-  border-bottom: 1px solid var(--rule);
-  background: var(--sheet-alt);
+  gap: var(--gap-2) var(--gap-3);
+  min-height: 52px;
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .tdx-back {
   flex-shrink: 0;
-  min-height: var(--ctl-h);
-  font-size: var(--fs-aux);
-  padding: 0 var(--gap-2);
-  border-radius: var(--radius);
 }
 
 .tdx-id {
@@ -37,29 +38,32 @@
 }
 
 .tdx-name {
-  font-family: var(--font-sans);
-  font-size: var(--fs-hero);
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  color: var(--text-primary);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .tdx-code {
-  color: var(--mist);
+  color: var(--text-tertiary);
+  font-family: var(--mono);
   font-size: var(--fs-aux);
   font-variant-numeric: tabular-nums;
 }
 
 .tdx-last {
   font-family: var(--mono);
-  font-size: var(--fs-tape);
-  font-weight: 700;
+  font-size: var(--fs-hero);
+  font-weight: 600;
   line-height: 1.05;
+  font-variant-numeric: tabular-nums;
 }
 
 .tdx-pct {
   font-family: var(--mono);
-  font-size: var(--fs-title);
-  font-weight: 700;
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .tdx-controls {
@@ -68,56 +72,92 @@
   align-items: center;
   gap: var(--gap-2);
   margin-left: auto;
+  min-width: 0;
+}
+
+.tdx-desk--embedded .tdx-controls {
+  margin-left: 0;
+  flex: 1 1 auto;
+}
+
+.tdx-desk--embedded .tdx-meta {
+  margin-left: auto;
 }
 
 /*
- * 通达信/同花顺风格紧凑控件：周期/复权按钮组与均线按钮共用同一副皮肤。
- * 曾是两段逐字重复的 8 属性，各自再手写一份 night/ink/dark 覆盖；外观差异本就由
- * --sheet / --rule / --ink 自己切换，feature 层不该二次声明（令牌唯一真相）。
- * 周期、复权与均线控件沿用 --ctl-h，保证与主工作台一致的可点击面积。
+ * 药片分段（PageTabs pill 同款）：下沉底轨道 + 选中项白底浮起。
+ * ToggleGroupItem 自带的 outline/圆角在这里全部归零，由 .tdx-seg 统一给。
  */
-.tdx-btn-group,
-.tdx-ma-btn {
-  min-height: var(--ctl-h);
+.tdx-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
 }
-.tdx-btn-group :deep(.el-radio-button__inner),
-.tdx-ma-btn {
-  height: var(--ctl-h);
-  line-height: calc(var(--ctl-h) - 2px);
-  padding: 0 var(--gap-2);
+
+.tdx-seg :deep(.tdx-seg__item),
+.tdx-seg :deep([data-slot='toggle-group-item']) {
+  height: 26px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
   font-weight: 500;
-  border: 1px solid var(--rule);
-  background: var(--sheet);
-  color: var(--ink);
-  transition: all 180ms ease;
+  line-height: 1;
+  box-shadow: none;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
 }
-/* 按钮组靠首尾圆角连成一条，独立按钮四角同圆 */
-.tdx-ma-btn {
-  border-radius: var(--radius);
+
+.tdx-seg :deep([data-slot='toggle-group-item']:hover) {
+  color: var(--text-primary);
 }
-.tdx-btn-group :deep(.el-radio-button:first-child .el-radio-button__inner) {
-  border-radius: var(--radius) 0 0 var(--radius);
-}
-.tdx-btn-group :deep(.el-radio-button:last-child .el-radio-button__inner) {
-  border-radius: 0 var(--radius) var(--radius) 0;
-}
-.tdx-btn-group :deep(.el-radio-button__inner:hover),
-.tdx-ma-btn:hover {
-  border-color: var(--seal);
-  color: var(--seal-ink);
-}
-.tdx-btn-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background-color: var(--seal) !important;
-  border-color: var(--seal) !important;
-  /* 压在实心主色上的文字色由 --on-primary 决定；写死白字在 amber 档只有 2.53:1 */
-  color: var(--on-primary) !important;
+
+.tdx-seg :deep([data-slot='toggle-group-item'][data-state='on']) {
+  background: var(--surface);
+  color: var(--text-primary);
   font-weight: 600;
-  box-shadow: -1px 0 0 0 var(--seal);
+  box-shadow: var(--shadow-xs);
 }
-.tdx-meta {
+
+.tdx-seg :deep([data-slot='toggle-group-item']:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.tdx-seg--mini {
+  padding: 2px;
+  background: color-mix(in oklab, var(--surface-sunken) 85%, transparent);
+}
+
+/* tooltip 触发器包一层 span：as-child 直接落到 ToggleGroupItem 会覆盖它的 data-state（选中态永远画不出来） */
+.tdx-seg__tip {
+  display: inline-flex;
+}
+
+.tdx-seg--mini :deep([data-slot='toggle-group-item']) {
+  height: 20px;
+  padding: 0 7px;
   font-size: var(--fs-kicker);
-  color: var(--mist);
+}
+
+.tdx-ma-btn {
+  flex-shrink: 0;
+}
+
+.tdx-meta {
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .tdx-ma-rail {
@@ -125,10 +165,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-1) var(--gap-3);
-  padding: 0 var(--gap-2);
-  border-bottom: 1px solid var(--rule);
+  min-height: 30px;
+  padding: 0 var(--gap-3);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--mono);
   font-size: var(--fs-kicker);
-  min-height: var(--head-h);
+  font-variant-numeric: tabular-nums;
 }
 
 .tdx-ma-rail__item {
@@ -136,19 +178,21 @@
 }
 
 .tdx-ma-rail__empty {
-  color: var(--mist);
+  color: var(--text-tertiary);
+  font-family: var(--font);
 }
 
 .tdx-ma-pop__title {
-  margin: 0 0 var(--gap-1);
-  font-size: var(--fs-body);
-  font-weight: 700;
+  margin: 0 0 2px;
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 600;
 }
 
 .tdx-ma-pop__hint {
   margin: 0 0 var(--gap-2);
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
-  color: var(--mist);
   line-height: 1.4;
 }
 
@@ -162,14 +206,15 @@
 
 .tdx-ma-pop__row {
   display: grid;
-  grid-template-columns: 2.4rem 1fr auto;
+  grid-template-columns: 2.6rem 1fr auto;
   gap: var(--gap-1);
   align-items: center;
 }
 
 .tdx-ma-pop__label {
-  font-size: var(--fs-aux);
-  color: var(--mist);
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
 }
 
 .tdx-ma-pop__actions {
@@ -199,7 +244,6 @@
   min-height: 0;
 }
 
-
 .tdx-pane {
   position: absolute;
   left: 0.35rem;
@@ -209,10 +253,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-1) var(--gap-2);
-  padding: 0 var(--gap-1) 0 3.2rem;
+  padding: 2px var(--gap-1) 2px 3.2rem;
   pointer-events: none;
+  font-family: var(--mono);
   font-size: var(--fs-kicker);
-  background: color-mix(in oklab, var(--sheet) 82%, transparent);
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in oklab, var(--surface) 82%, transparent);
 }
 
 /* 顶部位置由 KLINE_GRID_TOPS 经内联变量注入，与 ECharts grid 同源 */
@@ -226,13 +272,13 @@
 }
 
 .tdx-pane__tag {
+  color: var(--text-tertiary);
   font-weight: 700;
-  color: var(--mist);
 }
 
 .tdx-pane__item {
+  color: var(--text-primary);
   font-weight: 600;
-  color: var(--ink);
 }
 
 /* 指标读数配色走语义 token，别再直写 hex（深色外观下会失配） */
@@ -264,20 +310,58 @@
   margin-right: 0.25rem;
 }
 
-.tdx-ind-switch :deep(.el-radio-button__inner) {
-  padding: 0 var(--gap-1);
-  font-size: var(--fs-kicker);
-}
-
-.mono {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
-
 .is-up {
   color: var(--up);
 }
 
 .is-down {
   color: var(--down);
+}
+
+@media (max-width: 640px) {
+  .tdx-head {
+    padding: var(--gap-2);
+    gap: var(--gap-2);
+  }
+
+  .tdx-controls {
+    gap: var(--gap-2);
+  }
+
+  .tdx-seg :deep([data-slot='toggle-group-item']) {
+    height: 30px;
+    padding: 0 9px;
+  }
+
+  .tdx-ma-btn {
+    height: var(--ctl-h-lg);
+  }
+
+  .tdx-meta {
+    flex-basis: 100%;
+    margin-left: 0 !important;
+  }
+
+  .tdx-pane {
+    padding-left: 2.4rem;
+  }
+}
+
+
+.tdx-head,.tdx-ma-rail { flex-shrink:0; }
+@media(max-width:640px) {
+ .tdx-head { min-height:0; padding:6px; }
+ .tdx-controls { display:flex; flex-wrap:wrap; gap:5px; width:100%; }
+ .tdx-controls>.tdx-seg { padding:2px; gap:0; }
+ .tdx-controls :deep(.tdx-seg__item) { padding:0 6px; height:30px; font-size:11px; white-space:nowrap; }
+ .tdx-ma-btn { height:30px; padding-inline:7px; font-size:11px; }
+ .tdx-meta { font-size:10px; }
+ .tdx-ma-rail { gap:4px 10px; padding:5px 8px; min-height:24px; font-size:10px; }
+ .tdx-mobile-readout { position:static; flex:none; width:100%; max-width:none; max-height:none; border:0; border-bottom:1px solid var(--border-subtle); border-radius:0; box-shadow:none; background:var(--surface-sunken); }
+ .tdx-mobile-readout :deep(.k-readout__head) { padding:4px 8px; }
+ .tdx-mobile-readout :deep(.k-readout__body) { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:5px 8px; gap:4px 9px; }
+ .tdx-mobile-readout :deep(.k-readout__row) { gap:4px; font-size:11px; }
+ .tdx-mobile-readout :deep(.k-readout__date) { font-size:11px; }
+ .tdx-pane { padding-left:34px; gap:2px 6px; font-size:10px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; pointer-events:auto; }
+ .tdx-pane__item { white-space:nowrap; }
 }

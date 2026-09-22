@@ -66,7 +66,6 @@ AGENT_BLURBS: dict[str, str] = {
 改 MCP 契约、限流、内置工具时必须更新本文。""",
     "formula": """## 给 Agent 的用法
 - `from src.formula import MA, REF, COST, ...`
-- 潜龙指标：`from src.formula.domain.qianlong import ...`
 - 面板 DataFrame 与单票 Series 同构实现
 
 ## README 维护

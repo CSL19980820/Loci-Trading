@@ -12,9 +12,19 @@
  * 所以这里同时写回 `cron` 与 `config.schedule`，与战法弹窗保存的是同一份东西。
  */
 import { computed, reactive, ref, watch } from 'vue'
+import { TriangleAlert } from '@lucide/vue'
 
-import UiCard from '@/shared/components/ui/UiCard.vue'
-import UiCardContent from '@/shared/components/ui/UiCardContent.vue'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardContent } from '@/shared/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/shared/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/shared/components/ui/toggle-group'
 import type { Job } from '@/shared/types/quant'
 
 import {
@@ -55,6 +65,26 @@ const tooFrequent = computed(
   () => intervalSeconds.value !== null && intervalSeconds.value < TENANT_CRON_FLOOR_SECONDS,
 )
 const dirty = computed(() => composed.value !== (props.job.cron || ''))
+
+/*
+ * 原生 select 原语只吃字符串值，而档位里的小时/分钟/间隔都是数字。
+ * 五个计算代理把「数字模型 ↔ 字符串选项」这一层收在一个地方，
+ * 免得每个 `<Select>` 上各写一遍 `Number($event)`。
+ */
+function numberProxy(key: 'run_hour' | 'run_minute' | 'interval_minutes' | 'window_start_hour' | 'window_end_hour') {
+  return computed({
+    get: () => String(draft[key]),
+    set: (value: string) => {
+      draft[key] = Number(value)
+    },
+  })
+}
+
+const runHour = numberProxy('run_hour')
+const runMinute = numberProxy('run_minute')
+const intervalMinutes = numberProxy('interval_minutes')
+const windowStartHour = numberProxy('window_start_hour')
+const windowEndHour = numberProxy('window_end_hour')
 
 watch(
   () => [props.job.id, props.job.cron] as const,
@@ -141,51 +171,89 @@ defineExpose({ open })
 </script>
 
 <template>
-  <UiCard class="shrink-0 min-w-0 overflow-hidden" aria-label="就地改时点">
-    <UiCardContent :padded="true">
+  <Card
+    class="shrink-0 min-w-0 gap-0 overflow-hidden rounded-[var(--radius)] border-line bg-surface py-0 shadow-none"
+    aria-label="就地改时点"
+  >
+    <CardContent class="min-w-0 p-[var(--pad-sheet-y)_var(--pad-sheet-x)]">
       <div class="flex min-w-0 items-center justify-between gap-2">
         <span class="flex min-w-0 items-baseline gap-1 overflow-hidden">
           <span class="text-aux text-mist">调度</span>
           <span class="text-body truncate font-mono tabular-nums">{{ job.cron || '仅手动' }}</span>
         </span>
-        <el-button v-if="!open" size="small" :disabled="busy" @click="open = true">
+        <Button v-if="!open" variant="outline" size="sm" :disabled="busy" @click="open = true">
           改时点
-        </el-button>
+        </Button>
       </div>
-    </UiCardContent>
-    <UiCardContent v-if="open" :padded="true">
+    </CardContent>
+    <CardContent v-if="open" class="min-w-0 p-[var(--pad-sheet-y)_var(--pad-sheet-x)]">
       <div class="flex min-w-0 flex-col gap-1">
-        <el-radio-group v-model="draft.mode" size="small" aria-label="任务调度方式" class="schedule-modes">
-          <el-radio-button value="off">仅手动</el-radio-button>
-          <el-radio-button value="once">每交易日定点</el-radio-button>
-          <el-radio-button value="interval">盘中间隔</el-radio-button>
-        </el-radio-group>
+        <ToggleGroup v-model="draft.mode" type="single" variant="outline" size="sm" class="schedule-modes" aria-label="任务调度方式">
+          <ToggleGroupItem value="off">仅手动</ToggleGroupItem>
+          <ToggleGroupItem value="once">每交易日定点</ToggleGroupItem>
+          <ToggleGroupItem value="interval">盘中间隔</ToggleGroupItem>
+        </ToggleGroup>
 
         <div v-if="draft.mode === 'once'" class="flex flex-wrap items-center gap-1">
           <span class="text-aux text-mist">时点</span>
-          <el-select v-model="draft.run_hour" size="small" class="w-24 shrink-0" aria-label="执行小时">
-            <el-option v-for="h in HOURS" :key="`h${h}`" :label="String(h).padStart(2, '0')" :value="h" />
-          </el-select>
+          <Select v-model="runHour">
+            <SelectTrigger size="sm" class="job-sched__pick" aria-label="执行小时">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="h in HOURS" :key="`h${h}`" :value="String(h)">
+                {{ String(h).padStart(2, '0') }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <span class="text-mist">:</span>
-          <el-select v-model="draft.run_minute" size="small" class="w-24 shrink-0" aria-label="执行分钟">
-            <el-option v-for="m in MINUTES" :key="`m${m}`" :label="String(m).padStart(2, '0')" :value="m" />
-          </el-select>
+          <Select v-model="runMinute">
+            <SelectTrigger size="sm" class="job-sched__pick" aria-label="执行分钟">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="m in MINUTES" :key="`m${m}`" :value="String(m)">
+                {{ String(m).padStart(2, '0') }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <span class="text-aux text-mist">只在交易日（周一至周五）触发</span>
         </div>
 
         <div v-else-if="draft.mode === 'interval'" class="flex flex-wrap items-center gap-1">
           <span class="text-aux text-mist">每</span>
-          <el-select v-model="draft.interval_minutes" size="small" class="w-24 shrink-0" aria-label="执行间隔">
-            <el-option v-for="n in TRADING_INTERVALS" :key="`i${n}`" :label="`${n} 分钟`" :value="n" />
-          </el-select>
+          <Select v-model="intervalMinutes">
+            <SelectTrigger size="sm" class="job-sched__pick" aria-label="执行间隔">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="n in TRADING_INTERVALS" :key="`i${n}`" :value="String(n)">
+                {{ n }} 分钟
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <span class="text-aux text-mist">时段</span>
-          <el-select v-model="draft.window_start_hour" size="small" class="w-24 shrink-0" aria-label="时段开始小时">
-            <el-option v-for="h in HOURS" :key="`ws${h}`" :label="String(h).padStart(2, '0')" :value="h" />
-          </el-select>
+          <Select v-model="windowStartHour">
+            <SelectTrigger size="sm" class="job-sched__pick" aria-label="时段开始小时">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="h in HOURS" :key="`ws${h}`" :value="String(h)">
+                {{ String(h).padStart(2, '0') }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <span class="text-mist">—</span>
-          <el-select v-model="draft.window_end_hour" size="small" class="w-24 shrink-0" aria-label="时段结束小时">
-            <el-option v-for="h in HOURS" :key="`we${h}`" :label="String(h).padStart(2, '0')" :value="h" />
-          </el-select>
+          <Select v-model="windowEndHour">
+            <SelectTrigger size="sm" class="job-sched__pick" aria-label="时段结束小时">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="h in HOURS" :key="`we${h}`" :value="String(h)">
+                {{ String(h).padStart(2, '0') }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <span class="text-aux text-mist">点</span>
         </div>
 
@@ -199,28 +267,18 @@ defineExpose({ open })
           <span v-else class="text-warn">无法预览这个表达式</span>
         </p>
 
-        <el-alert
-          v-if="tooFrequent"
-          type="warning"
-          show-icon
-          :closable="false"
-          :title="cronTooFrequentTitle(intervalSeconds)"
-        />
+        <Alert v-if="tooFrequent">
+          <TriangleAlert />
+          <AlertTitle class="line-clamp-none">{{ cronTooFrequentTitle(intervalSeconds) }}</AlertTitle>
+        </Alert>
 
         <div class="flex justify-end gap-1">
-          <el-button size="small" @click="cancel">取消</el-button>
-          <el-button
-            size="small"
-            type="primary"
-            :disabled="busy || !dirty"
-            @click="submit"
-          >
-            保存时点
-          </el-button>
+          <Button variant="outline" size="sm" @click="cancel">取消</Button>
+          <Button size="sm" :disabled="busy || !dirty" @click="submit">保存时点</Button>
         </div>
       </div>
-    </UiCardContent>
-  </UiCard>
+    </CardContent>
+  </Card>
 </template>
 
 <style scoped>

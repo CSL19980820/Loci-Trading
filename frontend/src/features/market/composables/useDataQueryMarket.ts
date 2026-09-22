@@ -21,7 +21,6 @@ export interface DataQueryMarket {
   pageSize: Ref<number>
   boardRows: Ref<BoardRow[]>
   boardTotal: Ref<number>
-  boardAsOf: Ref<string>
   loadBoard: () => Promise<void>
   onSearch: () => void
   onPageSizeChange: () => void
@@ -48,7 +47,6 @@ export function useDataQueryMarket(opts: {
   const pageSize = ref(50)
   const boardRows = ref<BoardRow[]>([])
   const boardTotal = ref(0)
-  const boardAsOf = ref('')
   const liveEnriching = ref(false)
 
   let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -172,7 +170,6 @@ export function useDataQueryMarket(opts: {
       if (seq !== listRequestSeq) return
       boardRows.value = board.items
       boardTotal.value = board.total
-      boardAsOf.value = board.as_of?.slice(11, 19) || ''
       opts.liveError.value = ''
     } catch (caught: unknown) {
       if (seq !== listRequestSeq) return
@@ -211,7 +208,6 @@ export function useDataQueryMarket(opts: {
       if (seq !== liveRequestSeq) return
       boardRows.value = board.items
       boardTotal.value = board.total
-      boardAsOf.value = board.as_of?.slice(11, 19) || ''
       opts.liveError.value = board.live_error || ''
     } catch (caught: unknown) {
       if (seq !== liveRequestSeq) return
@@ -290,7 +286,6 @@ export function useDataQueryMarket(opts: {
     pageSize,
     boardRows,
     boardTotal,
-    boardAsOf,
     loadBoard,
     onSearch,
     onPageSizeChange,

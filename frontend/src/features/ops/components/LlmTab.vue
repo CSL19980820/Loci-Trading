@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue'
+import { Sparkles } from '@lucide/vue'
 
 import {
   deleteProvider,
@@ -9,6 +10,7 @@ import {
   setDefaultProvider,
   testProvider,
 } from '@/shared/api/quant'
+import { Button } from '@/shared/components/ui/button'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import type { LlmProvider } from '@/shared/types/quant'
@@ -182,9 +184,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <SettingsPanel title="LLM 供应商" :receipt="receipt" fill>
+  <SettingsPanel
+    title="AI 模型"
+    :receipt="receipt"
+  >
     <template #action>
-      <el-button type="primary" :disabled="busy" @click="openCreate">+ 添加供应商</el-button>
+      <Button size="sm" :disabled="busy" @click="openCreate">+ 添加供应商</Button>
     </template>
 
     <div v-if="providers.length" class="provider-grid">
@@ -201,8 +206,14 @@ onUnmounted(() => {
         @remove="confirmDropProvider(row.name)"
       />
     </div>
-    <EmptyState v-else description="还没有 AI 线路">
-      <el-button type="primary" @click="openCreate">添加供应商</el-button>
+    <EmptyState
+      v-else
+      description="还没有 AI 线路"
+      reason="添加一家供应商并拉取模型，助手才能开始对话"
+      :icon="Sparkles"
+      class="provider-empty"
+    >
+      <Button @click="openCreate">添加供应商</Button>
     </EmptyState>
   </SettingsPanel>
 
@@ -223,5 +234,18 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.provider-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr)); align-content:start; gap:var(--gap-2); min-width:0; min-height:0; overflow:auto; overscroll-behavior:contain; padding:var(--gap-3); }
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  align-content: start;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
+.provider-empty {
+  min-height: 320px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
 </style>

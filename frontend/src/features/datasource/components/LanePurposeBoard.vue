@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import { StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
+import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as DataGrid } from '@/shared/components/ui/app/DataGrid.vue'
+import { default as DataColumn } from '@/shared/components/ui/app/DataColumn.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+
 import LatencyMeter from './LatencyMeter.vue'
 import type { LaneRow, LaneSource } from '../composables/useDataSources'
 import type { LanePolicyMode } from '@/shared/types/quant'
@@ -75,37 +86,37 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
       <header class="lane-card__head">
         <div class="lane-card__title">
           <strong>{{ row.label }}</strong>
-          <el-tag v-if="row.required" size="small" type="warning" effect="plain">必需</el-tag>
-          <el-tag v-if="!row.sources.length" size="small" type="info" effect="plain">
+          <StatusBadge v-if="row.required" size="small" tone="warning" effect="plain">必需</StatusBadge>
+          <StatusBadge v-if="!row.sources.length" size="small" tone="info" effect="plain">
             未接内置源
-          </el-tag>
-          <el-tag v-else-if="!row.effectiveCount" size="small" type="danger">无可用源</el-tag>
-          <el-tag
+          </StatusBadge>
+          <StatusBadge v-else-if="!row.effectiveCount" size="small" tone="danger">无可用源</StatusBadge>
+          <StatusBadge
             v-else-if="row.required && row.effectiveCount === 1"
             size="small"
-            type="warning"
+            tone="warning"
           >
             仅 1 个源
-          </el-tag>
+          </StatusBadge>
           <span class="lane-card__meta">
             来源 <b>{{ row.sources.length }}</b> · 生效 <b>{{ row.effectiveCount }}</b>
           </span>
         </div>
 
         <div v-if="row.sources.length" class="lane-card__tools">
-          <el-radio-group
+          <RadioChoices
             :model-value="row.mode"
             size="small"
             :disabled="policyBusy(row.lane)"
             :aria-label="`${row.label} 选源方式`"
             @change="(mode: string | number | boolean) => changeMode(row, mode as LanePolicyMode)"
           >
-            <el-radio-button value="auto">自动</el-radio-button>
-            <el-radio-button value="manual" :disabled="!enabledSources(row).length">
+            <RadioButton value="auto">自动</RadioButton>
+            <RadioButton value="manual" :disabled="!enabledSources(row).length">
               手选
-            </el-radio-button>
-          </el-radio-group>
-          <el-select
+            </RadioButton>
+          </RadioChoices>
+          <ChoiceField
             v-if="row.mode === 'manual'"
             :model-value="row.providerId"
             size="small"
@@ -113,16 +124,16 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
             placeholder="选首选源"
             :disabled="policyBusy(row.lane)"
             :aria-label="`${row.label} 首选源`"
-            @change="(id: string) => changeProvider(row, id)"
+            @change="id => changeProvider(row, id)"
           >
-            <el-option
+            <ChoiceOption
               v-for="item in enabledSources(row)"
               :key="item.id"
               :label="item.label"
               :value="item.id"
             />
-          </el-select>
-          <el-switch
+          </ChoiceField>
+          <ToggleSwitch
             :model-value="row.fallback"
             size="small"
             active-text="失败回退"
@@ -130,57 +141,57 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
             :aria-label="`${row.label} 失败回退`"
             @change="(next: string | number | boolean) => changeFallback(row, Boolean(next))"
           />
-          <el-button
+          <ActionButton
             size="small"
-            :loading="busyKey === `lane:${row.lane}`"
+            :busy="busyKey === `lane:${row.lane}`"
             @click="emit('probe', row.lane)"
           >
             探测
-          </el-button>
-          <el-button
+          </ActionButton>
+          <ActionButton
             v-if="row.supportsDownloadTest"
             size="small"
-            :loading="busyKey === `speed:${row.lane}`"
+            :busy="busyKey === `speed:${row.lane}`"
             @click="emit('download', row.lane)"
           >
             下载测速
-          </el-button>
+          </ActionButton>
         </div>
       </header>
 
-      <el-table
+      <DataGrid
         v-if="row.sources.length"
         :data="sourceRows(row)"
         size="small"
         row-key="id"
         class="lane-card__table"
       >
-        <el-table-column label="顺位" width="60" align="center" header-align="center">
+        <DataColumn label="顺位" width="60" align="center" header-align="center">
           <template #default="{ row: item }">
             <span class="ord">{{ asSource(item).order ?? '—' }}</span>
           </template>
-        </el-table-column>
-        <el-table-column label="来源" min-width="140">
+        </DataColumn>
+        <DataColumn label="来源" min-width="140">
           <template #default="{ row: item }">
             <span :class="{ off: !asSource(item).enabled }">{{ asSource(item).label }}</span>
             <code>{{ asSource(item).id }}</code>
-            <el-tag v-if="asSource(item).masterOff" size="small" type="info" effect="plain">
+            <StatusBadge v-if="asSource(item).masterOff" size="small" tone="info" effect="plain">
               整源停用
-            </el-tag>
+            </StatusBadge>
           </template>
-        </el-table-column>
-        <el-table-column label="启用" width="62" align="center">
+        </DataColumn>
+        <DataColumn label="启用" width="62" align="center">
           <template #default="{ row: item }">
-            <el-switch
+            <ToggleSwitch
               size="small"
               :model-value="asSource(item).masterEnabled"
-              :loading="busyKey === `toggle:${asSource(item).id}:${row.lane}`"
+              :busy="busyKey === `toggle:${asSource(item).id}:${row.lane}`"
               :aria-label="`在${row.label}启用 ${asSource(item).label}`"
               @change="(next: string | number | boolean) => toggleSourceOnLane(row.lane, asSource(item).id, Boolean(next))"
             />
           </template>
-        </el-table-column>
-        <el-table-column label="耗时" min-width="118">
+        </DataColumn>
+        <DataColumn label="耗时" min-width="118">
           <template #default="{ row: item }">
             <LatencyMeter
               v-if="asSource(item).probe"
@@ -189,13 +200,13 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
             />
             <span v-else class="dim">未测</span>
           </template>
-        </el-table-column>
-        <el-table-column label="结果" min-width="150" show-overflow-tooltip>
+        </DataColumn>
+        <DataColumn label="结果" min-width="150" show-overflow-tooltip>
           <template #default="{ row: item }">
             <template v-if="asSource(item).probe">
-              <el-tag size="small" :type="asSource(item).probe?.ok ? 'success' : 'danger'" effect="plain">
+              <StatusBadge size="small" :tone="asSource(item).probe?.ok ? 'success' : 'danger'" effect="plain">
                 {{ asSource(item).probe?.ok ? '正常' : '失败' }}
-              </el-tag>
+              </StatusBadge>
               <span v-if="asSource(item).probe?.kind === 'download'" class="kind">下载</span>
               <span v-if="asSource(item).probe?.rows != null" class="rows">
                 {{ asSource(item).probe?.rows }} 行
@@ -206,11 +217,11 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
             </template>
             <span v-else class="dim">—</span>
           </template>
-        </el-table-column>
-      </el-table>
-      <el-tooltip v-else content="去「按接口」自己勾一个上桌，或等内置源接进来" placement="top-start">
+        </DataColumn>
+      </DataGrid>
+      <HintTooltip v-else content="去「按接口」自己勾一个上桌，或等内置源接进来" placement="top-start">
         <p class="lane-card__empty">这条用途还没有内置源</p>
-      </el-tooltip>
+      </HintTooltip>
     </section>
   </div>
 </template>
@@ -290,7 +301,7 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
   color: var(--mist);
 }
 
-.lane-card__table .el-tag {
+.lane-card__table .status-badge {
   margin-left: 0.35rem;
 }
 
@@ -320,12 +331,12 @@ function changeFallback(row: LaneRow, fallback: boolean): void {
 .err {
   margin-left: 0.35rem;
   font-size: 0.76rem;
-  color: var(--el-color-danger);
+  color: var(--stamp);
 }
 
 .dim {
   color: var(--mist);
 }
-.lane-card__tools :deep(.el-button + .el-button) { margin-left: 0; }
+.lane-card__tools :deep(.action-button + .action-button) { margin-left: 0; }
 @media (max-width: 640px) { .lane-card__tools { width: 100%; gap: var(--gap-2); } }
 </style>

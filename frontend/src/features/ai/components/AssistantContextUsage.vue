@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { default as PopoverPanel } from '@/shared/components/ui/app/PopoverPanel.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+
 import { computed, ref } from 'vue'
 
 import {
@@ -56,7 +60,7 @@ function close(): void {
     <!--
       受控 visible 不要再给 reference 绑 toggle：与 trigger=click 叠在一起会同一次点击开→关闪退。
     -->
-    <el-popover
+    <PopoverPanel
       v-model:visible="open"
       placement="top-end"
       :width="320"
@@ -64,9 +68,9 @@ function close(): void {
       popper-class="ctx-usage-popper"
     >
       <template #reference>
-        <el-button
+        <ActionButton
           class="ctx-usage__trigger"
-          text
+          variant="ghost"
           data-testid="assistant-context-usage-trigger"
           :aria-expanded="open"
           aria-haspopup="dialog"
@@ -98,25 +102,25 @@ function close(): void {
             </svg>
           </span>
           <span class="ctx-usage__pct">{{ usage.percent }}%</span>
-        </el-button>
+        </ActionButton>
       </template>
 
       <div class="ctx-usage__panel" role="dialog" aria-label="上下文用量">
         <header class="ctx-usage__head">
           <h3 class="ctx-usage__title">{{ title }}</h3>
-          <el-tooltip content="粗估喂模上下文（汉字≈1、其它≈4字/token），非供应商计费账单" placement="top">
+          <HintTooltip content="粗估喂模上下文（汉字≈1、其它≈4字/token），非供应商计费账单" placement="top">
             <span class="ctx-usage__summary mono" tabindex="0">{{ summary }}</span>
-          </el-tooltip>
-          <el-button
+          </HintTooltip>
+          <ActionButton access="read"
             class="ctx-usage__close"
-            text
-            circle
+            variant="ghost"
+            icon-only
             size="small"
             aria-label="关闭"
             @click="close"
           >
             ×
-          </el-button>
+          </ActionButton>
         </header>
         <p v-if="compactHint" class="ctx-usage__compact" role="status" data-testid="assistant-context-compacted">{{ compactHint }}</p>
         <p v-if="pressureHint" class="ctx-usage__pressure" role="status">{{ pressureHint }}</p>
@@ -145,7 +149,7 @@ function close(): void {
           </li>
         </ul>
       </div>
-    </el-popover>
+    </PopoverPanel>
   </div>
 </template>
 

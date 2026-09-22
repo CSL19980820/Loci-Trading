@@ -4,13 +4,9 @@ import type {
   AdminOverviewResponse,
   AdminUserItem,
   AdminUsersResponse,
-  AuditLogItem,
-  AdminAnnouncementItem,
   CreateAdminUserPayload,
-  SetQuotaPayload,
-  UpsertAnnouncementPayload,
 } from '@/shared/types/admin'
-import type { Role, UserQuota, UserStatus } from '@/shared/types/auth'
+import type { Role, UserStatus } from '@/shared/types/auth'
 
 export async function getAdminOverview(): Promise<AdminOverviewResponse> {
   return apiRequest<AdminOverviewResponse>('/admin/overview')
@@ -50,13 +46,6 @@ export async function setUserStatus(userId: string, status: UserStatus): Promise
   return apiRequest<AdminUserItem>(`/admin/users/${encodeURIComponent(userId)}/status`, {
     method: 'PUT',
     body: JSON.stringify({ status }),
-  })
-}
-
-export async function setUserQuota(userId: string, limits: SetQuotaPayload): Promise<UserQuota> {
-  return apiRequest<UserQuota>(`/admin/users/${encodeURIComponent(userId)}/quota`, {
-    method: 'PUT',
-    body: JSON.stringify(limits),
   })
 }
 
@@ -110,24 +99,18 @@ export async function listAdminAudit(params?: AdminLogQuery): Promise<AdminAudit
 
 /** 登录日志 = 审计流里的登录类事件，后端按 action 白名单收窄，行结构不变。 */
 export async function listAdminLogins(params?: AdminLogQuery): Promise<AdminAuditResponse> {
-  return apiRequest<AdminAuditResponse>(`/admin/logins${logQuery(params, false)}`)
+  return apiRequest<AdminAuditResponse>(`/admin/logins${logQuery(params, true)}`)
 }
 
-export async function listAdminAnnouncements(): Promise<{ items: AdminAnnouncementItem[] }> {
-  return apiRequest<{ items: AdminAnnouncementItem[] }>('/admin/announcements')
+export interface ModelUsageItem {
+  day: string
+  provider: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  calls: number
 }
-
-export async function upsertAdminAnnouncement(
-  payload: UpsertAnnouncementPayload,
-): Promise<{ id: string }> {
-  return apiRequest<{ id: string }>('/admin/announcements', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function deleteAdminAnnouncement(announcementId: string): Promise<{ ok: boolean }> {
-  return apiRequest<{ ok: boolean }>(`/admin/announcements/${encodeURIComponent(announcementId)}`, {
-    method: 'DELETE',
-  })
+export async function getAdminModelUsage(start: string, end: string): Promise<{ items: ModelUsageItem[]; unavailable_tenants: string[] }> {
+  const query = new URLSearchParams({ start, end })
+  return apiRequest(`/admin/llm-usage?${query}`)
 }

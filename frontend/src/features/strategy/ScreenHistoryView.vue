@@ -1,14 +1,29 @@
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
+import { Label } from '@/shared/components/ui/label'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Clock, InfoFilled, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { useMediaQuery } from '@vueuse/core'
+import { useMobileLayout } from '@/shared/composables/useMobileLayout'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu'
+import { Ellipsis, SlidersHorizontal } from '@lucide/vue'
+import { DialogDescription, DialogFooter } from '@/shared/components/ui/dialog'
+import { CircleAlert, Clock, Info, ListFilter, LoaderCircle, Play, RefreshCw, X } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 
 import { getMarketSession, getProviders } from '@/shared/api/quant'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
+import { Switch } from '@/shared/components/ui/switch'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/components/ui/sheet'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 import { strategyLabel } from '@/shared/lib/format'
 import { useScreenRunStore } from '@/shared/stores/screenRun'
 import type { LlmProvider, ScreenResult } from '@/shared/types/quant'
+import { useUserStore } from '@/shared/stores/user'
 import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
 import ScreenCatalogRail from './components/ScreenCatalogRail.vue'
 import ScreenHistoryPanel from './components/ScreenHistoryPanel.vue'
@@ -28,8 +43,24 @@ import { useScreenHistoryQuery } from './composables/useScreenHistoryQuery'
 import { useWorkbenchAbandon } from './composables/useWorkbenchAbandon'
 import { useWorkbenchSkillRun } from './composables/useWorkbenchSkillRun'
 
+const userStore = useUserStore()
 const route = useRoute()
 const router = useRouter()
+const isMobile = useMobileLayout()
+const conditionsOpen = ref(false)
+const conditionRange = ref<TradeDateRange | null>(null)
+const conditionRecord = ref(true)
+const conditionProvider = ref('')
+watch(conditionsOpen, open => {
+  if (open) { conditionRange.value = dateRange.value ? [...dateRange.value] as TradeDateRange : null; conditionRecord.value = recordCandidates.value; conditionProvider.value = skillProvider.value }
+})
+function applyConditions(): void {
+  dateRange.value = conditionRange.value
+  if (userStore.canWrite) { recordCandidates.value = conditionRecord.value; skillProvider.value = conditionProvider.value }
+  conditionsOpen.value = false
+}
+/** ≤640 目录不占左栏，从页头「目录」按钮拉出贴底 sheet */
+const catalogOpen = ref(false)
 
 const {
   filtered,
@@ -228,7 +259,7 @@ function readQueryState(): void {
 }
 
 function pushQueryState(): void {
-  if (syncingQuery) return
+  if (syncingQuery || route.name !== 'screen-history') return
   const query: Record<string, string | undefined> = {}
   for (const [key, value] of Object.entries(route.query)) {
     if (key === 'select' || key === 'kind' || key === 'from' || key === 'to' || key === 'record') {
@@ -278,7 +309,7 @@ watch(recordCandidates, () => {
 watch(
   () => route.fullPath,
   () => {
-    if (syncingQuery) return
+    if (syncingQuery || route.name !== 'screen-history') return
     readQueryState()
   },
 )
@@ -309,7 +340,7 @@ async function refreshAll(): Promise<void> {
   if (selected.value?.kind === 'engine') void refetchHistory()
   try {
     const [providerList, session] = await Promise.all([
-      getProviders(),
+      userStore.canWrite ? getProviders() : Promise.resolve([]),
       getMarketSession().catch(() => null),
     ])
     providers.value = providerList
@@ -328,7 +359,7 @@ async function runPrimary(): Promise<void> {
   if (!target) return
   if (dateRange.value && !isValidTradeDateRange(dateRange.value)) {
     runError.value = '选股跨度不能超过一个月'
-    ElMessage.warning(runError.value)
+    toast.warning(runError.value)
     return
   }
   if (target.kind === 'skill') {
@@ -350,7 +381,7 @@ async function runEngine(slug: string, override?: TradeDateRange | string): Prom
   if (!screenRun.canStart(slug)) {
     // 「等一下」不是答复：说清是谁在跑、先停哪一个
     runError.value = screenRun.blockedReason(slug)
-    ElMessage.warning(runError.value)
+    toast.warning(runError.value)
     if (screenRun.isRunning(slug)) focusRun(slug)
     return
   }
@@ -378,14 +409,14 @@ async function runEngine(slug: string, override?: TradeDateRange | string): Prom
   const outcome = await screenRun.start(payload)
   if (outcome === 'busy') {
     runError.value = screenLastError.value || '已有选股任务在跑'
-    ElMessage.warning(runError.value)
+    toast.warning(runError.value)
     return
   }
   if (outcome === 'error') {
     runError.value = screenLastError.value || '启动选股失败'
     return
   }
-  ElMessage.info(start && end && start !== end ? '区间选股已在后台进行' : '选股已在后台进行，进度见跑道')
+  toast.info(start && end && start !== end ? '区间选股已在后台进行' : '选股已在后台进行，进度见跑道')
 }
 
 async function onRerun(date: string): Promise<void> {
@@ -393,7 +424,7 @@ async function onRerun(date: string): Promise<void> {
   historyOpen.value = false
   const target = selected.value
   if (!target || target.kind !== 'engine') {
-    ElMessage.warning('请先选中战法再重跑')
+    toast.warning('请先选中战法再重跑')
     return
   }
   await runEngine(target.slug, date)
@@ -404,14 +435,14 @@ function openDetail(): void {
   if (!target) return
   if (target.kind === 'engine') {
     if (!selectedStrategy.value) {
-      ElMessage.warning('战法详情尚未加载完，请刷新后再试')
+      toast.warning('战法详情尚未加载完，请刷新后再试')
       return
     }
     strategyDetailOpen.value = true
     return
   }
   if (!selectedSkill.value) {
-    ElMessage.warning('技能详情尚未加载完，请刷新后再试')
+    toast.warning('技能详情尚未加载完，请刷新后再试')
     return
   }
   skillDetailOpen.value = true
@@ -422,6 +453,16 @@ function openHistory(): void {
   historyOpen.value = true
 }
 
+/** 手机端从 sheet 里选完就收起，让结果区立刻露出来 */
+function selectFromSheet(id: string): void {
+  select(id)
+  catalogOpen.value = false
+}
+
+const selectedKindLabel = computed(() =>
+  selected.value?.kind === 'skill' ? '技能' : selected.value?.kind === 'engine' ? '战法' : '',
+)
+
 onMounted(() => {
   void screenRun.hydrate()
   void refreshAll()
@@ -429,56 +470,87 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="screen-workspace page-fill flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-    <PageToolbar>
+  <div class="screen-workspace page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <header v-if="isMobile" class="screen-phone-header"><h1>选股</h1><div><Button access="read" variant="ghost" size="icon" aria-label="选股条件" @click="conditionsOpen = true"><SlidersHorizontal /></Button><DropdownMenu><DropdownMenuTrigger as-child><Button access="read" variant="ghost" size="icon" aria-label="选股操作"><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem access="read" :disabled="detailDisabled" @select="openDetail"><Info />{{ detailLabel }}</DropdownMenuItem><DropdownMenuItem access="read" :disabled="!selected" @select="openHistory"><Clock />入库历史</DropdownMenuItem><DropdownMenuItem access="read" :disabled="catalogLoading" @select="refreshAll"><RefreshCw />刷新目录</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></header>
+    <h1 v-else class="sr-only">选股</h1>
+    <div v-if="isMobile" class="screen-phone-choice"><Button access="read" variant="outline" class="screen-phone-catalog" aria-haspopup="dialog" @click="catalogOpen = true"><ListFilter /><span>{{ selected?.name || '选择战法或技能' }}</span></Button><Button v-if="userStore.canWrite" :disabled="primaryDisabled" class="screen-phone-run" @click="runPrimary"><LoaderCircle v-if="engineRunning || skillBusy" class="animate-spin" /><Play v-else />{{ primaryLabel }}</Button></div>
+    <div v-if="isMobile" class="screen-phone-scope"><span>{{ dateRange ? `${dateRange[0]} — ${dateRange[1]}` : '默认交易日' }}</span><span v-if="userStore.canWrite">{{ recordCandidates && selected?.kind !== 'skill' ? '入库候选' : '不自动入库' }}</span></div>
+
+    <PageToolbar v-if="!isMobile" dense class="screen-primary-toolbar">
       <TradeDateRangeField v-model="dateRange" :last-trading-day="lastTradingDay" />
-      <el-checkbox v-model="recordCandidates" :disabled="selected?.kind === 'skill'">
-        入库候选
-      </el-checkbox>
-      <el-select
-        v-if="selected?.kind === 'skill'"
-        v-model="skillProvider"
-        placeholder="LLM"
-        aria-label="技能模型供应商"
-        size="small"
-        filterable
-        style="width: 8.5rem"
+      <Label v-if="userStore.canWrite" class="screen-toolbar__check">
+        <Checkbox
+          :model-value="recordCandidates"
+          :disabled="selected?.kind === 'skill'"
+          aria-label="入库候选"
+          @update:model-value="(value) => (recordCandidates = value === true)"
+        />
+        <span>入库候选</span>
+      </Label>
+      <Select
+        v-if="userStore.canWrite && selected?.kind === 'skill'"
+        :model-value="skillProvider"
+        @update:model-value="(value) => (skillProvider = String(value))"
       >
-        <el-option v-for="p in providers" :key="p.name" :label="p.name" :value="p.name" />
-      </el-select>
+        <SelectTrigger size="sm" class="w-36" aria-label="技能模型供应商">
+          <SelectValue placeholder="LLM" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="p in providers" :key="p.name" :value="p.name">{{ p.name }}</SelectItem>
+        </SelectContent>
+      </Select>
       <template #actions>
-        <el-button :icon="InfoFilled" :disabled="detailDisabled" @click="openDetail">{{ detailLabel }}</el-button>
-        <el-button :icon="Clock" :disabled="!selected" @click="openHistory">入库历史</el-button>
-        <el-button :icon="RefreshRight" :loading="catalogLoading" @click="refreshAll">
-          刷新
-        </el-button>
-        <el-tooltip
-          :content="selected ? '' : '先在左侧选一个战法或技能'"
-          placement="bottom-end"
-          :disabled="Boolean(selected)"
-        >
-          <el-button
-            type="primary"
-            :icon="VideoPlay"
-            :loading="selected?.kind === 'skill' && skillBusy"
-            :disabled="primaryDisabled"
-            @click="runPrimary"
-          >
-            {{ primaryLabel }}
-          </el-button>
-        </el-tooltip>
-      </template>
+        <Button access="read" variant="outline" size="sm" :disabled="detailDisabled" @click="openDetail">
+   <Info aria-hidden="true" />
+          {{ detailLabel }}
+        </Button>
+
+        <Button access="read" v-if="isMobile" variant="outline" size="sm" class="screen-mobile-catalog" aria-haspopup="dialog" :aria-expanded="catalogOpen" @click="catalogOpen = true">
+          <ListFilter aria-hidden="true" />
+          {{ selected ? selected.name : '选目录' }}
+        </Button>
+        <Button access="read" variant="ghost" size="icon-sm" aria-label="刷新目录" :disabled="catalogLoading" @click="refreshAll">
+          <LoaderCircle v-if="catalogLoading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <RefreshCw v-else aria-hidden="true" />
+        </Button>
+        <Button access="read" variant="outline" size="sm" :disabled="!selected" @click="openHistory">
+          <Clock aria-hidden="true" />
+          入库历史
+        </Button>
+        <Tooltip v-if="userStore.canWrite" :disabled="Boolean(selected)">
+          <TooltipTrigger as-child>
+            <Button class="screen-run-primary" size="sm" :disabled="primaryDisabled" @click="runPrimary">
+              <LoaderCircle
+                v-if="selected?.kind === 'skill' && skillBusy"
+                class="animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+              <Play v-else aria-hidden="true" />
+              {{ primaryLabel }}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent v-if="!selected" side="bottom" align="end">
+            先在目录里选一个战法或技能
+          </TooltipContent>
+        </Tooltip>
+            </template>
     </PageToolbar>
 
-    <el-alert
-      v-if="pageError"
-      :title="pageError"
-      type="error"
-      show-icon
-      closable
-      class="m-0 shrink-0"
-      @close="runError = ''"
-    />
+    <Alert v-if="pageError" variant="destructive" class="screen-alert">
+      <CircleAlert />
+      <div class="flex w-full min-w-0 items-start justify-between gap-2">
+        <AlertTitle class="line-clamp-none min-w-0">{{ pageError }}</AlertTitle>
+        <Button access="read"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="关闭提示"
+          class="shrink-0"
+          @click="runError = ''"
+        >
+          <X class="size-3.5" />
+        </Button>
+      </div>
+    </Alert>
 
     <ScreenRunBanners
       :parallel-runs="parallelRuns"
@@ -491,8 +563,8 @@ onMounted(() => {
       @dismiss-abandoned="screenRun.dismissAbandoned(engineSlug)"
     />
 
-    <div class="screen-workspace-grid">
-      <aside class="border-line bg-surface min-h-0 overflow-hidden rounded-md border" aria-label="战法与技能目录">
+    <div class="screen-workspace-grid" :class="{ 'screen-workspace-grid--single': isMobile }">
+      <aside v-if="!isMobile" class="screen-catalog" aria-label="战法与技能目录">
         <ScreenCatalogRail
           v-model:kind-filter="kindFilter"
           :rows="filtered"
@@ -506,6 +578,7 @@ onMounted(() => {
         <ScreenRunPanel
           :kind="selected?.kind ?? null"
           :selected-name="selected?.name ?? ''"
+          :kind-label="selectedKindLabel"
           :snap="engineSnap"
           :running="engineRunning"
           :percent="enginePercent"
@@ -522,41 +595,60 @@ onMounted(() => {
         />
       </div>
     </div>
-    <el-dialog
-      v-model="historyOpen"
-      :title="historyTitle"
-      width="min(92vw, 56rem)"
-      top="6vh"
-      destroy-on-close
-      append-to-body
-      class="screen-history-dialog"
-    >
-      <el-alert
-        v-if="historyError"
-        :title="historyError instanceof Error ? historyError.message : String(historyError)"
-        type="error"
-        show-icon
-        class="mb"
-      >
-        <el-button size="small" @click="refetchHistory">重试</el-button>
-      </el-alert>
-      <div class="screen-history-toolbar mb">
-        <el-switch
-          v-model="historyIncludeBackfill"
-          inline-prompt
-          active-text="含回填"
-          inactive-text="仅真选"
-        />
-      </div>
-      <ScreenHistoryPanel
-        :capability-name="selected?.name ?? ''"
-        :history="history"
-        :loading="historyPending"
-        :running="engineRunning"
-        @rerun="onRerun"
-        @refresh="refetchHistory"
-      />
-    </el-dialog>
+
+    <!-- 手机：目录从底部拉出 -->
+    <Dialog v-model:open="conditionsOpen"><DialogContent class="screen-conditions-dialog sm:max-w-lg"><DialogHeader><DialogTitle>选股条件</DialogTitle><DialogDescription class="sr-only">交易日期、模型与候选入库方式</DialogDescription></DialogHeader><TradeDateRangeField v-model="conditionRange" :last-trading-day="lastTradingDay" /><Label v-if="userStore.canWrite" class="screen-condition-record"><Checkbox v-model="conditionRecord" :disabled="selected?.kind === 'skill'" />入库候选</Label><Select v-if="userStore.canWrite && selected?.kind === 'skill'" v-model="conditionProvider"><SelectTrigger aria-label="技能模型供应商"><SelectValue placeholder="选择模型供应商" /></SelectTrigger><SelectContent><SelectItem v-for="provider in providers" :key="provider.name" :value="provider.name">{{ provider.name }}</SelectItem></SelectContent></Select><DialogFooter><Button access="read" variant="outline" @click="conditionsOpen = false">取消</Button><Button access="read" @click="applyConditions">应用</Button></DialogFooter></DialogContent></Dialog>
+    <Sheet v-if="isMobile" v-model:open="catalogOpen">
+      <SheetContent side="left" class="screen-catalog-sheet gap-0 p-0">
+        <SheetHeader class="border-b border-line px-4 py-3 text-left">
+          <SheetTitle class="text-title">战法与技能目录</SheetTitle>
+        </SheetHeader>
+        <div class="screen-catalog-sheet__body">
+          <ScreenCatalogRail
+            v-model:kind-filter="kindFilter"
+            :rows="filtered"
+            :selected-id="selectedId"
+            :loading="catalogLoading"
+            @select="selectFromSheet"
+          />
+        </div>
+      </SheetContent>
+    </Sheet>
+
+    <Dialog v-model:open="historyOpen">
+      <DialogContent class="screen-history-dialog gap-3 sm:max-w-4xl">
+        <DialogHeader class="gap-1 text-left">
+          <DialogTitle>{{ historyTitle }}</DialogTitle>
+        </DialogHeader>
+        <div class="screen-history-dialog__body">
+          <Alert v-if="historyError" variant="destructive">
+            <CircleAlert />
+            <div class="flex w-full min-w-0 items-start justify-between gap-2">
+              <AlertTitle class="line-clamp-none min-w-0">
+                {{ historyError instanceof Error ? historyError.message : String(historyError) }}
+              </AlertTitle>
+              <Button access="read" variant="outline" size="sm" class="shrink-0" @click="refetchHistory">
+                重试
+              </Button>
+            </div>
+          </Alert>
+          <div class="screen-history-toolbar">
+            <span class="text-aux text-mist">
+              {{ historyIncludeBackfill ? '含回填' : '仅真选' }}
+            </span>
+            <Switch v-model="historyIncludeBackfill" aria-label="含区间回填" />
+          </div>
+          <ScreenHistoryPanel
+            :capability-name="selected?.name ?? ''"
+            :history="history"
+            :loading="historyPending"
+            :running="engineRunning"
+            @rerun="onRerun"
+            @refresh="refetchHistory"
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
 
     <StrategyDetailDialog v-model="strategyDetailOpen" :strategy="selectedStrategy" />
     <SkillDetailDialog

@@ -156,7 +156,7 @@ def _create_from_external(store: IdentityStore, external: ExternalIdentity) -> U
                 password_hash=None,
                 password_algo="",
                 display_name=external.display_name or candidate,
-                role="member",
+                role="visitor",
                 # 社交登录没有邮箱可验，直接 active；敏感能力另有 email 门槛。
                 status="active",
             )

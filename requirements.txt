@@ -13,7 +13,9 @@ duckdb>=1.0.0
 polars>=1.0.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
-httpx2>=2.9.0
+httpx2[http2]>=2.9.0
+grpcio>=1.84.0,<2
+protobuf>=7.35.1,<8
 # 无处直接 import：starlette SessionMiddleware 运行时依赖它签会话 cookie，删了登录即挂
 itsdangerous>=2.2.0
 # 同理无处直接 import：UploadFile/File 路由（账本导入、技能包、战法包）在

@@ -1,11 +1,15 @@
 """交易员咨询：异步回答与租户内会话历史。"""
 from uuid import UUID
+import asyncio
+import json
 from typing import Annotated
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from src.ledger import GuardianStore
 from src.ops.application.guardian_consult import run_consultation
-from src.shared.tenancy import current_tenant
+from src.shared.tenancy import current_tenant, tenant_scope
 
 
 class ConsultQuestion(BaseModel):
@@ -18,6 +22,33 @@ class ConsultQuestion(BaseModel):
 
 def build_consult_router(write_dependency):
     router=APIRouter(prefix='/consultations')
+    @router.get('/{conversation_id}/turns/{request_id}/stream')
+    async def stream_turn(conversation_id: UUID, request_id: UUID, request: Request):
+        tenant = current_tenant()
+        def snapshot():
+            # SQLite 连接只在线程内存活，不跨越流式等待；每次显式绑定请求租户。
+            with tenant_scope(tenant), GuardianStore() as ledger:
+                return ledger.consultation_turn(str(conversation_id), str(request_id))
+        initial = await run_in_threadpool(snapshot)
+        if initial is None:
+            raise HTTPException(404, '未找到该咨询消息')
+        async def events():
+            turn, previous = initial, None
+            while not await request.is_disconnected():
+                if turn is None:
+                    return
+                data = json.dumps(turn, ensure_ascii=False)
+                if data != previous:
+                    yield f'event: snapshot\ndata: {data}\n\n'
+                    previous = data
+                else:
+                    yield ': keepalive\n\n'
+                if turn['status'] not in {'queued', 'running'}:
+                    return
+                await asyncio.sleep(0.25)
+                turn = await run_in_threadpool(snapshot)
+        return StreamingResponse(events(), media_type='text/event-stream',
+                                 headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
     @router.get('')
     def conversations():
         with GuardianStore() as ledger:
@@ -29,6 +60,17 @@ def build_consult_router(write_dependency):
             if result is None:
                 raise HTTPException(404,'未找到该咨询话题')
             return result
+    @router.delete('/{conversation_id}')
+    def delete_conversation(conversation_id: UUID, _write: Annotated[object, Depends(write_dependency)]):
+        with GuardianStore() as ledger:
+            try:
+                ledger.consultation(str(conversation_id))
+                deleted = ledger.delete_consultation(str(conversation_id))
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            if not deleted:
+                raise HTTPException(404, '未找到该咨询话题')
+        return {'deleted': True}
     @router.post('',status_code=202)
     def ask(payload:ConsultQuestion,background:BackgroundTasks,_write:Annotated[object,Depends(write_dependency)]):
         with GuardianStore() as ledger:

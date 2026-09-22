@@ -1,14 +1,18 @@
 """增强版 Agent 环：支持消息续跑、HITL 暂停、事件回调。"""
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field
 from collections.abc import Collection
 import logging
 import math
 import re
+import time
 from typing import Any, Callable
 
 from src.ai import ChatMessage, ChatResponse, LLMError, ProviderConfig, ToolCall as ToolCall, chat
+from src.ai.infrastructure.client_session import llm_client_scope
 from src.ai.infrastructure.client_stream import chat_stream
 from src.ai.application.agent_mcp import make_mcp_executor as make_mcp_executor, format_tool_trace as format_tool_trace
 from src.ai.application.agent_messages import messages_to_json, messages_from_json
@@ -214,6 +218,7 @@ def apply_hitl_tool_result(
 
 
 @capture_agent_usage
+@llm_client_scope()
 def run_agent(
     config: ProviderConfig,
     *,
@@ -236,6 +241,8 @@ def run_agent(
     on_event: EventCallback | None = None,
     emit_terminal_event: bool = True,
     stream: bool = True,
+    retry_stream_failures: bool = False,
+    recover_interrupted_generation: bool = False,
 ) -> AgentResult:
     """跑 Agent 直到不再请求工具、撞刹车，或 HITL 暂停。
 
@@ -246,6 +253,9 @@ def run_agent(
     流式不可用且尚未发出增量时降级为非流式 ``chat``（仅终稿 ``done``）。
     ``parallel_tool_names`` 仅列出独立只读工具，默认串行；其余工具按原顺序隔开。
     ``deadline`` 为 monotonic 绝对时间；``check_cancelled`` 与事件均在调用线程执行。
+    ``retry_stream_failures`` 仅在未输出正文/推理时，对网络故障重发一次当前流式请求。
+    ``recover_interrupted_generation`` 允许内部研判丢弃断流残片并续用已完成消息；
+    整个 Agent 最多恢复两次，需明确 deadline，可能产生未获用量回执的重复推理费用。
     """
     if (max_calls_per_round is not None and max_calls_per_round < 0) or max_parallel_tools < 1 or max_tokens < 1:
         raise ValueError("工具调用上限不能为负，并发数和输出预算必须为正")
@@ -253,6 +263,8 @@ def run_agent(
         raise ValueError("不设研究轮数上限时须提供明确的运行截止时间")
     if deadline is not None and not math.isfinite(deadline):
         raise ValueError("deadline 必须是有限的 monotonic 时间")
+    if recover_interrupted_generation and (deadline is None or not stream):
+        raise ValueError("生成恢复要求流式调用及明确截止时间")
 
     def checkpoint() -> None:
         if check_cancelled is not None:
@@ -274,6 +286,7 @@ def run_agent(
     pending_ask: dict[str, Any] = {}
     # OpenClaw reasoning-only：本轮流式是否只吐了 think
     round_streamed_think = False
+    generation_recoveries = 0
 
     def _call_llm(round_messages: list[ChatMessage]) -> ChatResponse:
         nonlocal round_streamed_think
@@ -293,10 +306,18 @@ def run_agent(
 
         streamed_any = False
         round_streamed_think = False
+        stream_options = {"first_response_timeout": 90.0, "deadline": deadline} if retry_stream_failures else {}
 
         def on_delta(kind: str, delta: str) -> None:
             nonlocal streamed_any, round_streamed_think
             checkpoint()
+            if kind == "stream_status":
+                if on_event:
+                    on_event({"type": kind, **json.loads(delta)})
+                return
+            if kind == "tool_delta" and delta:
+                streamed_any = True
+                return
             if not delta or kind not in {"think", "token"}:
                 return
             streamed_any = True
@@ -307,14 +328,34 @@ def run_agent(
 
         try:
             result = usage.record(chat_stream(request_config(config, deadline), round_messages,
-                                              on_delta=on_delta, **kwargs))
+                                              on_delta=on_delta, **stream_options, **kwargs))
             checkpoint()
             return result
         except LLMError as exc:
             reraise_stop(exc)
             checkpoint()
-            if streamed_any:
+            if recover_interrupted_generation:
+                # One run-wide retry budget; do not nest the legacy fallback.
                 raise
+            if streamed_any or not exc.allow_retry:
+                raise
+            if retry_stream_failures:
+                import httpx2
+                cause = exc.__cause__
+                seen: set[int] = set()
+                while cause is not None and id(cause) not in seen:
+                    if isinstance(cause, httpx2.TransportError):
+                        # 重发当前模型请求，不重跑Agent或工具；已有正文/推理增量时不走此分支。
+                        if on_event:
+                            on_event({"type": "model_retry", "attempt": 2,
+                                      "reason": "first_response_timeout" if type(cause).__name__ == "FirstResponseTimeout" else "transport_failure_before_response",
+                                      "transport_error": type(cause).__name__})
+                        result = usage.record(chat_stream(request_config(config, deadline), round_messages,
+                                                          on_delta=on_delta, **stream_options, **kwargs))
+                        checkpoint()
+                        return result
+                    seen.add(id(cause))
+                    cause = cause.__cause__
             logger.info("流式不可用，降级非流式：%s", exc)
             result = usage.record(chat(request_config(config, deadline), round_messages, **kwargs))
             checkpoint()
@@ -331,7 +372,37 @@ def run_agent(
         if on_event:
             on_event({"type": "round_start", "round": rounds})
         try:
-            response = _call_llm(chat_messages)
+            while True:
+                try:
+                    response = _call_llm(chat_messages)
+                    break
+                except LLMError as exc:
+                    from src.ai.infrastructure.client import LLMGenerationInterrupted
+                    import httpx2
+                    reraise_stop(exc)
+                    checkpoint()
+                    cause = exc
+                    transient = False
+                    seen = set()
+                    while cause is not None and id(cause) not in seen:
+                        if isinstance(cause, (LLMGenerationInterrupted, httpx2.TransportError)):
+                            transient = True
+                        seen.add(id(cause))
+                        cause = cause.__cause__
+                    if (not recover_interrupted_generation or not transient or generation_recoveries >= 2
+                            or deadline - time.monotonic() < 15):
+                        raise
+                    generation_recoveries += 1
+                    # No messages/tool results from the incomplete generation were
+                    # appended. Retry this model turn, never restart the tool loop.
+                    if on_event:
+                        on_event({"type": "model_retry", "attempt": generation_recoveries + 1,
+                                  "reason": "interrupted_generation", "transport_error": type(exc).__name__})
+                    until = time.monotonic() + generation_recoveries
+                    while time.monotonic() < until:
+                        checkpoint()
+                        time.sleep(min(0.1, max(0, until - time.monotonic())))
+                    checkpoint()
         except LLMError as exc:
             reraise_stop(exc)
             checkpoint()

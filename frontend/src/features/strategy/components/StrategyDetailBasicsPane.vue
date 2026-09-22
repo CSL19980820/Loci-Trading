@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { vBusy } from '@/shared/directives/busy'
+import { DetailList, DetailItem, StatusBadge } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed } from 'vue'
 import type { StrategyInfo, StrategyVersion } from '@/shared/types/quant'
 import {
@@ -42,77 +46,73 @@ function activeVersion(row: StrategyVersion): boolean {
 </script>
 
 <template>
-  <!--
-    两块 el-descriptions 而不是一块：短读数走两列，长文本走单列整宽。
-    合成一块时，前面 9 个短项把第 5 行占掉一格，紧跟着的「回测口径」`:span="2"`
-    会被 EP 裁成 1 格 —— 那段几百字的等宽回测参数于是挤在 296px 的窄栏里排十几行。
-  -->
-  <el-descriptions :column="2" border size="small" class="detail-desc">
-    <el-descriptions-item label="来源">{{ sourceLabel }}</el-descriptions-item>
-    <el-descriptions-item label="入场">{{ entryLabel }}</el-descriptions-item>
-    <el-descriptions-item label="最少 K 线">{{ strategy?.min_bars }}</el-descriptions-item>
-    <el-descriptions-item label="修订">{{ revisionLabel }}</el-descriptions-item>
-    <el-descriptions-item label="当前版本">{{ strategy?.version || '—' }}</el-descriptions-item>
-    <el-descriptions-item label="回测交易数">{{ backtestMetrics?.trades ?? '—' }}</el-descriptions-item>
-    <el-descriptions-item label="回测胜率">{{ formatPercent(backtestMetrics?.win_rate) }}</el-descriptions-item>
-    <el-descriptions-item label="平均净收益">{{ formatPercent(backtestMetrics?.avg_net_return) }}</el-descriptions-item>
-    <el-descriptions-item label="PF">{{ formatProfitFactor(backtestMetrics?.profit_factor) }}</el-descriptions-item>
-  </el-descriptions>
+
+  <DetailList :column="2" border size="small" class="detail-desc">
+    <DetailItem label="来源">{{ sourceLabel }}</DetailItem>
+    <DetailItem label="入场">{{ entryLabel }}</DetailItem>
+    <DetailItem label="最少 K 线">{{ strategy?.min_bars }}</DetailItem>
+    <DetailItem label="修订">{{ revisionLabel }}</DetailItem>
+    <DetailItem label="当前版本">{{ strategy?.version || '—' }}</DetailItem>
+    <DetailItem label="回测交易数">{{ backtestMetrics?.trades ?? '—' }}</DetailItem>
+    <DetailItem label="回测胜率">{{ formatPercent(backtestMetrics?.win_rate) }}</DetailItem>
+    <DetailItem label="平均净收益">{{ formatPercent(backtestMetrics?.avg_net_return) }}</DetailItem>
+    <DetailItem label="PF">{{ formatProfitFactor(backtestMetrics?.profit_factor) }}</DetailItem>
+  </DetailList>
 
   <!-- margin-top:-1px：两张表的边框各 1px，叠在一起才是一条线，不是两条 -->
-  <el-descriptions :column="1" border size="small" class="detail-desc detail-desc--prose">
-    <el-descriptions-item label="回测口径">
+  <DetailList :column="1" border size="small" class="detail-desc detail-desc--prose">
+    <DetailItem label="回测口径">
       <div class="desc-text mono-text">{{ backtestConfigLabel }}</div>
-    </el-descriptions-item>
-    <el-descriptions-item v-if="strategy?.entry_instructions" label="买入说明">
+    </DetailItem>
+    <DetailItem v-if="strategy?.entry_instructions" label="买入说明">
       <div class="desc-text">{{ strategy.entry_instructions }}</div>
-    </el-descriptions-item>
-    <el-descriptions-item label="说明">
+    </DetailItem>
+    <DetailItem label="说明">
       <div class="desc-text">{{ strategy?.description || '—' }}</div>
-    </el-descriptions-item>
-    <el-descriptions-item label="所需字段">
+    </DetailItem>
+    <DetailItem label="所需字段">
       <div v-if="fieldRows.length" class="field-tags">
-        <el-tag
+        <StatusBadge
           v-for="row in fieldRows"
           :key="row.key"
           size="small"
           effect="plain"
-          type="info"
+          tone="info"
         >
           {{ row.label }}
           <span class="field-key">{{ row.key }}</span>
-        </el-tag>
+        </StatusBadge>
       </div>
       <span v-else class="dim">—</span>
-    </el-descriptions-item>
-  </el-descriptions>
-  <div class="version-history" v-loading="loadingVersions">
+    </DetailItem>
+  </DetailList>
+  <div class="version-history" v-busy="loadingVersions">
     <div class="version-history__title">历史版本</div>
     <div v-if="versionRows.length" class="version-list">
       <div v-for="row in versionRows" :key="row.id || row.version" class="version-row">
         <div class="version-row__meta">
           <strong class="mono">{{ row.version }}</strong>
-          <el-tag v-if="activeVersion(row)" size="small" type="success">当前</el-tag>
-          <el-tag v-else-if="row.status" size="small" effect="plain">{{ row.status }}</el-tag>
+          <StatusBadge v-if="activeVersion(row)" size="small" tone="success">当前</StatusBadge>
+          <StatusBadge v-else-if="row.status" size="small" effect="plain">{{ row.status }}</StatusBadge>
           <span class="dim">{{ row.created_at || '—' }}</span>
         </div>
         <div v-if="canManageVersions && !activeVersion(row)" class="version-row__actions">
-          <el-button
-            link
-            type="primary"
-            :loading="versionActing === versionKey(row.version)"
+          <ActionButton
+            variant="link"
+            tone="primary"
+            :busy="versionActing === versionKey(row.version)"
             @click="emit('rollback', row.version)"
           >
             回滚
-          </el-button>
-          <el-button
-            link
-            type="danger"
+          </ActionButton>
+          <ActionButton
+            variant="link"
+            tone="danger"
             :disabled="Boolean(versionActing)"
             @click="emit('remove-version', row.version)"
           >
             删除
-          </el-button>
+          </ActionButton>
         </div>
       </div>
     </div>
@@ -122,18 +122,10 @@ function activeVersion(row: StrategyVersion): boolean {
 
 <style scoped>
 .detail-desc { width: 100%; }
-/*
- * 列宽由这里定，不许内容抢。
- * el-descriptions 默认是 `table-layout: auto`：「回测口径」那段等宽长串的 max-content
- * 有几千 px，auto 布局按 max-content 分配富余宽度，右列吃干抹净；再叠上
- * `word-break: break-word`（等价 overflow-wrap: anywhere，会把 min-content 压到一个字），
- * 左边的「内置」「56.00%」就被挤成一字一行的竖排。
- * fixed 布局下四列写死：两条 label 各 6.5rem，两条 value 平分剩下的宽度。
- */
-.detail-desc :deep(.el-descriptions__table) { table-layout: fixed; }
-.detail-desc :deep(.el-descriptions__label) { color: var(--mist); width: 6.5rem; text-align: right; }
+.detail-desc :deep(.detail-list) { table-layout: fixed; }
+.detail-desc :deep(.detail-item__label) { color: var(--mist); width: 6.5rem; text-align: right; }
 /* 断行只在「一个词真的放不下」时发生：不再逐字断，中文与百分数才不会竖排 */
-.detail-desc :deep(.el-descriptions__content) { min-width: 0; word-break: normal; overflow-wrap: break-word; }
+.detail-desc :deep(.detail-item__content) { min-width: 0; word-break: normal; overflow-wrap: break-word; }
 /* 长文本块紧贴上一张表：两张表各带 1px 边框，-1px 才收成一条线 */
 .detail-desc--prose { margin-top: -1px; }
 .desc-text { line-height: 1.5; font-size: var(--fs-aux); white-space: pre-wrap; overflow-wrap: break-word; }

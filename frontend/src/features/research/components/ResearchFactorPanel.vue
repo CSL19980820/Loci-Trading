@@ -1,7 +1,15 @@
 <script setup lang="ts">
+import { ChartNoAxesCombined as DataAnalysis, Download, RefreshCw as RefreshRight, Play as VideoPlay } from '@lucide/vue'
+import { toast } from 'vue-sonner'
+import { IconBox, StatusBadge, Notice, DetailList, DetailItem, ActionLink } from '@/shared/components/ui/app/presentation'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import { computed, onActivated, onDeactivated, onUnmounted, ref } from 'vue'
-import { DataAnalysis, Download, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+
+
 
 import {
   getResearchBacktestRun,
@@ -208,7 +216,7 @@ async function submit(): Promise<void> {
     const result = await submitPth252FactorJob(requestPayload())
     if (sequence !== pollSequence) return
     activeJob.value = result.job
-    ElMessage.success('PTH252 因子实验已提交')
+    toast.success('PTH252 因子实验已提交')
     void pollJob(result.job.id, sequence)
   } catch (caught: unknown) {
     if (sequence === pollSequence) {
@@ -239,15 +247,15 @@ const artifactColumns: BasicTableColumn[] = [
   <section class="factor-panel research-surface" aria-labelledby="pth252-title">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行（用户原话：一行能显示的话两行） -->
     <header class="section-head">
-      <h3 id="pth252-title"><el-icon aria-hidden="true"><DataAnalysis /></el-icon>PTH252</h3>
-      <el-tooltip content="研究候选，不改变生产策略。Top 10% 只保留可成交标的；数据缺失或不可成交的位置留空，不以弱票替补。" placement="top">
-        <el-tag type="info" effect="plain">仅研究</el-tag>
-      </el-tooltip>
+      <h3 id="pth252-title"><IconBox aria-hidden="true"><DataAnalysis /></IconBox>PTH252</h3>
+      <HintTooltip content="研究候选，不改变生产策略。Top 10% 只保留可成交标的；数据缺失或不可成交的位置留空，不以弱票替补。" placement="top">
+        <StatusBadge tone="info" effect="plain">仅研究</StatusBadge>
+      </HintTooltip>
     </header>
 
     <div class="factor-form">
       <UiField class="form-wide" label="样本区间">
-        <el-date-picker
+        <DateField
           v-model="form.range"
           type="daterange"
           value-format="YYYY-MM-DD"
@@ -257,22 +265,22 @@ const artifactColumns: BasicTableColumn[] = [
         />
       </UiField>
       <UiField label="train 开始">
-        <el-date-picker v-model="form.split.train_start" type="date" value-format="YYYY-MM-DD" />
+        <DateField v-model="form.split.train_start" type="date" value-format="YYYY-MM-DD" />
       </UiField>
       <UiField label="train 结束">
-        <el-date-picker v-model="form.split.train_end" type="date" value-format="YYYY-MM-DD" />
+        <DateField v-model="form.split.train_end" type="date" value-format="YYYY-MM-DD" />
       </UiField>
       <UiField label="OOS 开始">
-        <el-date-picker v-model="form.split.oos_start" type="date" value-format="YYYY-MM-DD" />
+        <DateField v-model="form.split.oos_start" type="date" value-format="YYYY-MM-DD" />
       </UiField>
       <UiField label="OOS 结束">
-        <el-date-picker v-model="form.split.oos_end" type="date" value-format="YYYY-MM-DD" />
+        <DateField v-model="form.split.oos_end" type="date" value-format="YYYY-MM-DD" />
       </UiField>
       <UiField label="历史股票池">
-        <el-input v-model="form.historicalUniverseId" placeholder="例如 a-share-pit-v1" clearable />
+        <TextField v-model="form.historicalUniverseId" placeholder="例如 a-share-pit-v1" clearable />
       </UiField>
       <div class="flex items-end">
-        <el-button type="primary" :icon="VideoPlay" :loading="submitting" @click="submit">提交实验</el-button>
+        <ActionButton tone="primary" :icon="VideoPlay" :busy="submitting" @click="submit">提交实验</ActionButton>
       </div>
     </div>
 
@@ -285,10 +293,10 @@ const artifactColumns: BasicTableColumn[] = [
       <span>沪深 300</span>
     </div>
 
-    <el-alert
+    <Notice
       v-if="error"
       :title="error"
-      type="error"
+      tone="error"
       show-icon
       :closable="false"
       class="panel-alert"
@@ -298,23 +306,23 @@ const artifactColumns: BasicTableColumn[] = [
       <div class="job-head">
         <span>任务</span>
         <code>{{ activeJob.id }}</code>
-        <el-tag :type="statusType(activeJob.status)" effect="plain">{{ statusLabel(activeJob.status) }}</el-tag>
+        <StatusBadge :tone="statusType(activeJob.status)" effect="plain">{{ statusLabel(activeJob.status) }}</StatusBadge>
       </div>
       <div class="job-meta">
         <span>run id</span>
         <code>{{ activeJob.run_id || '等待后端生成' }}</code>
         <span v-if="loadingRun">正在读取运行结果…</span>
       </div>
-      <el-alert
+      <Notice
         v-if="activeJob.error"
         :title="activeJob.error"
-        type="error"
+        tone="error"
         show-icon
         :closable="false"
         class="job-error"
       />
       <div v-if="pollingFailed" class="job-retry">
-        <el-button type="warning" plain size="small" :icon="RefreshRight" @click="retryPolling">重试读取任务状态</el-button>
+        <ActionButton access="read" tone="warning" plain size="small" :icon="RefreshRight" @click="retryPolling">重试读取任务状态</ActionButton>
       </div>
     </section>
 
@@ -322,18 +330,18 @@ const artifactColumns: BasicTableColumn[] = [
       <div class="run-head">
         <span>实验 run</span>
         <code>{{ completedRun.run_id }}</code>
-        <el-tag :type="statusType(completedRun.status === 'failed' ? 'failed' : 'completed')" effect="plain">
+        <StatusBadge :tone="statusType(completedRun.status === 'failed' ? 'failed' : 'completed')" effect="plain">
           {{ completedRun.status }}
-        </el-tag>
+        </StatusBadge>
       </div>
       <div class="detail-grid">
         <section v-for="group in runDetails" :key="group.title" class="detail-group">
           <h4>{{ group.title }}</h4>
-          <el-descriptions v-if="group.items.length" :column="1" border size="small">
-            <el-descriptions-item v-for="item in group.items" :key="item.key" :label="item.key">
+          <DetailList v-if="group.items.length" :column="1" border size="small">
+            <DetailItem v-for="item in group.items" :key="item.key" :label="item.key">
               {{ item.value }}
-            </el-descriptions-item>
-          </el-descriptions>
+            </DetailItem>
+          </DetailList>
           <span v-else class="missing">后端未提供</span>
         </section>
       </div>
@@ -347,7 +355,7 @@ const artifactColumns: BasicTableColumn[] = [
           empty-text="后端未提供 artifact"
         >
           <template #download="{ row }">
-            <el-link
+            <ActionLink
               :href="researchArtifactUrl(completedRun!.run_id, String(row.path))"
               :icon="Download"
               :aria-label="`下载 artifact ${row.path}`"
@@ -363,14 +371,13 @@ const artifactColumns: BasicTableColumn[] = [
 .factor-panel { overflow: hidden; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
 .section-head, .job-head, .run-head { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-3); padding: var(--pad-sheet); border-bottom: 1px solid var(--rule); }
 .section-head h3, h4 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: .03em; }
-/* 表单栅格挂在 el-form 自身：不插裸 div，label 宽仍由 EP 的 label-width 算 */
 .factor-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--gap-1) var(--gap-3); align-items: start; padding: var(--pad-sheet); }
-.factor-form :deep(.el-form-item) { margin-bottom: 0; min-width: 0; }
-.factor-form :deep(.el-date-editor) { width: 100%; }
+.factor-form :deep(.form-field) { margin-bottom: 0; min-width: 0; }
+.factor-form :deep(.date-field) { width: 100%; }
 .form-action { justify-content: flex-end; }
 /* 区间控件压到 200px 会折行：整行占满，控件本身再收到可读宽度 */
 .form-wide { grid-column: 1 / -1; }
-.form-wide :deep(.el-form-item__content) { max-width: 28rem; }
+.form-wide :deep(.form-field__content) { max-width: 28rem; }
 .fixed-config, .job-meta { display: flex; flex-wrap: wrap; gap: var(--gap-1) var(--gap-2); padding: var(--gap-2) var(--pad-sheet-x); color: var(--mist); font: var(--fs-aux)/1.4 var(--mono); }
 .fixed-config span + span::before { content: '·'; margin-right: var(--gap-2); color: var(--rule); }
 .panel-alert { margin: var(--gap-2) var(--pad-sheet-x); }
@@ -387,13 +394,13 @@ code { color: var(--ink); font-family: var(--mono); font-size: var(--fs-aux); fo
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--gap-2); padding: var(--pad-sheet); }
 .detail-group { min-width: 0; }
 .detail-group h4, .artifact-section h4 { margin: 0 0 var(--gap-1); font-size: var(--fs-body); }
-.detail-group :deep(.el-descriptions__label) { width: 40%; font-size: var(--fs-aux); overflow-wrap: anywhere; }
-.detail-group :deep(.el-descriptions__content) { font: var(--fs-aux)/1.35 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.detail-group :deep(.detail-item__label) { width: 40%; font-size: var(--fs-aux); overflow-wrap: anywhere; }
+.detail-group :deep(.detail-item__content) { font: var(--fs-aux)/1.35 var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .artifact-section { padding: var(--pad-sheet); border-top: 1px solid var(--rule); }
 .missing { color: var(--mist); font-size: var(--fs-aux); }
 @media (max-width: 700px) {
   .section-head { align-items: flex-start; flex-direction: column; }
-  .form-wide :deep(.el-form-item__content) { max-width: none; }
+  .form-wide :deep(.form-field__content) { max-width: none; }
 }
 </style>
 <style scoped src="./ResearchSurfaces.css"></style>

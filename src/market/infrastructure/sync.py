@@ -11,6 +11,7 @@ from typing import Any, Callable, Sequence
 
 import pandas as pd
 
+from src.market.infrastructure.history_floor import MIN_TRADE_DATE
 from src.market.infrastructure.sources import QuoteSource, SourceError, fetch_with_fallback
 from src.market.infrastructure.store import MarketError, MarketStore, normalize_code
 from src.market.infrastructure.store_quote_payload import partition_valid_ohlc_rows
@@ -37,11 +38,12 @@ from src.market.infrastructure.sync_factors import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_BENCHMARKS = ("000300", "000905", "000852")
-_HISTORICAL_REQUEST_START = "1990-01-01"
+# 全量/强制同步的历史请求起点统一夹到防回填地板，旧行情不再被重新拉取。
+_HISTORICAL_REQUEST_START = MIN_TRADE_DATE
 
 #: 历史日 K 同步默认并发。主源是通达信二进制协议（单票 p50 约 28ms），
 #: 实测 8~16 路才吃得满；旧默认 4 是为逐票 HTTP 源留的，早已不是瓶颈所在。
-DEFAULT_SYNC_WORKERS = 12
+DEFAULT_SYNC_WORKERS = sync_engine.env_int("LOCI_SYNC_WORKERS", 12)
 #: 每个 worker 槽位的最小请求间隔。聚合速率 = workers / interval，
 #: 12 路 × 0.02s ≈ 600 次/秒上限，实际由各源在途名额门闩先卡住。
 DEFAULT_SYNC_INTERVAL = 0.02

@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { Close } from '@element-plus/icons-vue'
+import { X } from '@lucide/vue'
 import { computed } from 'vue'
 
 import { chgClass } from '@/features/market/composables/dataQueryFormat'
+import { Button } from '@/shared/components/ui/button'
 import { compactNumber } from '@/shared/lib/format'
 import { boardLimitRatio, detectLimitHit, limitLabel } from '@/shared/lib/limitBoard'
 import type { KlineHoverPayload } from '@/shared/lib/klineConfig'
 
+/**
+ * 十字光标锁定的那根 K 线的读数：浮层卡（浮层底 + 大投影 + 毛玻璃），压在图上、不压弹层。
+ * 头部 = 日期 + 涨跌 chip（+ 触板标签）；正文两列键值，数字等宽右对齐。
+ */
 const props = defineProps<{
   locked: KlineHoverPayload
   detailCode: string
@@ -104,65 +109,58 @@ const lockLimitTone = computed(() => {
 <template>
   <aside class="k-readout" aria-label="K 线读数">
     <header class="k-readout__head">
-      <div>
-        <strong>{{ locked.bar.trade_date.replaceAll('-', '/') }}</strong>
-        <span v-if="lockLimitHint" class="k-readout__limit" :class="lockLimitTone">
-          {{ lockLimitHint }}
-        </span>
+      <div class="k-readout__lead">
+        <strong class="k-readout__date">{{ locked.bar.trade_date.replaceAll('-', '/') }}</strong>
+        <span class="k-readout__chip" :class="toneOf(lockPct)">{{ fmtSignedPct(lockPct) }}</span>
+        <span v-if="lockLimitHint" class="k-readout__limit" :class="lockLimitTone">{{ lockLimitHint }}</span>
       </div>
-      <el-button
-        native-type="button"
+      <Button access="read"
+        type="button"
+        variant="ghost"
+        size="icon-xs"
         class="k-readout__close"
-        circle
-        text
-        size="small"
-        :icon="Close"
         aria-label="关闭读盘"
         @click="emit('close')"
-      />
+      >
+        <X aria-hidden="true" />
+      </Button>
     </header>
     <dl class="k-readout__body">
       <div class="k-readout__row">
         <dt>开</dt>
-        <dd class="mono" :class="toneOf(vsPrevPct(locked.bar.open))">{{ fmtPx(locked.bar.open) }}</dd>
+        <dd :class="toneOf(vsPrevPct(locked.bar.open))">{{ fmtPx(locked.bar.open) }}</dd>
       </div>
       <div class="k-readout__row">
         <dt>高</dt>
-        <dd class="mono" :class="toneOf(vsPrevPct(locked.bar.high))">{{ fmtPx(locked.bar.high) }}</dd>
+        <dd :class="toneOf(vsPrevPct(locked.bar.high))">{{ fmtPx(locked.bar.high) }}</dd>
       </div>
       <div class="k-readout__row">
         <dt>低</dt>
-        <dd class="mono" :class="toneOf(vsPrevPct(locked.bar.low))">{{ fmtPx(locked.bar.low) }}</dd>
+        <dd :class="toneOf(vsPrevPct(locked.bar.low))">{{ fmtPx(locked.bar.low) }}</dd>
       </div>
       <div class="k-readout__row">
         <dt>收</dt>
-        <dd class="mono" :class="toneOf(lockPct)">{{ fmtPx(locked.bar.close) }}</dd>
+        <dd :class="toneOf(lockPct)">{{ fmtPx(locked.bar.close) }}</dd>
       </div>
       <div class="k-readout__row">
-        <dt>量</dt>
-        <dd class="mono k-readout__vol">{{ fmtVol(locked.volume) }}</dd>
-      </div>
-      <div v-if="locked.bar.amount != null" class="k-readout__row">
-        <dt>额</dt>
-        <dd class="mono">{{ fmtAmt(locked.bar.amount) }}</dd>
-      </div>
-      <div class="k-readout__row">
-        <dt>涨幅</dt>
-        <dd class="mono k-readout__pair" :class="toneOf(lockPct)">
-          <span>{{ fmtSignedPx(lockChange) }}</span>
-          <span>{{ fmtSignedPct(lockPct) }}</span>
-        </dd>
+        <dt>涨跌</dt>
+        <dd :class="toneOf(lockPct)">{{ fmtSignedPx(lockChange) }}</dd>
       </div>
       <div v-if="lockAmp" class="k-readout__row">
         <dt>振幅</dt>
-        <dd class="mono k-readout__pair">
-          <span>{{ lockAmp.abs.toFixed(2) }}</span>
-          <span>{{ lockAmp.pct.toFixed(2) }}%</span>
-        </dd>
+        <dd>{{ lockAmp.pct.toFixed(2) }}%</dd>
+      </div>
+      <div class="k-readout__row">
+        <dt>量</dt>
+        <dd class="k-readout__vol">{{ fmtVol(locked.volume) }}</dd>
+      </div>
+      <div v-if="locked.bar.amount != null" class="k-readout__row">
+        <dt>额</dt>
+        <dd>{{ fmtAmt(locked.bar.amount) }}</dd>
       </div>
       <div v-if="locked.bar.turnover != null" class="k-readout__row">
         <dt>换手</dt>
-        <dd class="mono">{{ (Number(locked.bar.turnover) * 100).toFixed(2) }}%</dd>
+        <dd>{{ (Number(locked.bar.turnover) * 100).toFixed(2) }}%</dd>
       </div>
     </dl>
   </aside>
@@ -172,104 +170,125 @@ const lockLimitTone = computed(() => {
 /* 图内浮层（压图表不压弹层），组件内部层叠，不进全局 --z-* 序列 */
 .k-readout {
   position: absolute;
-  top: 0.45rem;
-  left: 0.45rem;
+  top: 8px;
+  left: 8px;
   z-index: 5;
-  width: 10.25rem;
-  max-height: min(52%, 22rem);
+  width: 11.5rem;
+  max-height: min(58%, 24rem);
   display: flex;
   flex-direction: column;
   overflow: auto;
-  border: 1px solid color-mix(in oklab, var(--rule) 70%, var(--seal) 18%);
-  border-radius: var(--radius);
-  background: color-mix(in oklab, var(--sheet) 95%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  /* D3：卡片无阴影，靠 hairline 与半透明底分层 */
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--surface-raised) 92%, transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px) saturate(1.3);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
   pointer-events: auto;
   user-select: text;
 }
+
 .k-readout__head {
+  position: sticky;
+  top: 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.35rem;
-  padding: 0.4rem 0.45rem 0.3rem;
-  border-bottom: 1px solid color-mix(in oklab, var(--rule) 65%, transparent);
-  position: sticky;
-  top: 0;
-  background: color-mix(in oklab, var(--paper) 88%, transparent);
-  backdrop-filter: blur(8px);
+  gap: var(--gap-1);
+  padding: 8px 6px 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: inherit;
 }
-.k-readout__head strong {
-  display: block;
-  font: 700 var(--fs-aux)/1.3 var(--mono);
-  color: var(--ink);
+
+.k-readout__lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
 }
-.k-readout__limit {
-  display: inline-block;
-  margin-top: 0.15rem;
-  font-size: var(--fs-kicker);
-  font-weight: 700;
-}
-.k-readout__close.el-button {
-  --el-button-text-color: var(--mist);
-  --el-button-hover-text-color: var(--ink);
-  --el-button-hover-bg-color: color-mix(in oklab, var(--sheet) 72%, transparent);
-  --el-button-active-text-color: var(--ink);
-  flex: 0 0 auto;
-  width: var(--ctl-h);
-  height: var(--ctl-h);
-  margin: -0.18rem -0.15rem 0 0;
-  padding: 0;
-}
-.k-readout__body {
-  margin: 0;
-  padding: 0.25rem 0.45rem 0.45rem;
-}
-.k-readout__row {
-  display: grid;
-  grid-template-columns: 1.6rem 1fr;
-  gap: 0.25rem;
-  align-items: baseline;
-  padding: 0.12rem 0;
-  font-size: var(--fs-aux);
+
+.k-readout__date {
+  color: var(--text-primary);
+  font: 600 var(--fs-aux) / 1.3 var(--mono);
   font-variant-numeric: tabular-nums;
-  border-bottom: 1px dashed color-mix(in oklab, var(--rule) 55%, transparent);
 }
-.k-readout__row:last-child {
-  border-bottom: 0;
+
+.k-readout__chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font: 600 var(--fs-kicker) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
 }
+
+.k-readout__chip.is-up {
+  background: var(--up-soft);
+  color: var(--up);
+}
+
+.k-readout__chip.is-down {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.k-readout__limit {
+  flex-basis: 100%;
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+}
+
+.k-readout__close {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.k-readout__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 10px;
+  margin: 0;
+  padding: 8px 10px 10px;
+}
+
+.k-readout__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 20px;
+  font-size: var(--fs-aux);
+}
+
 .k-readout__row dt {
   margin: 0;
-  color: var(--mist);
+  color: var(--text-tertiary);
   font-weight: 500;
-}
-.k-readout__row dd {
-  margin: 0;
-  text-align: right;
-  font-weight: 700;
-}
-.k-readout__pair {
-  display: flex;
-  justify-content: flex-end;
-  align-items: baseline;
-  gap: 0.35rem;
   white-space: nowrap;
 }
-.k-readout__pair span:last-child {
-  font-size: var(--fs-kicker);
-  font-weight: 500;
-  opacity: 0.9;
+
+.k-readout__row dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
+
 /* 量不是涨跌语义，用状态橙 */
 .k-readout__vol {
   color: var(--warn);
 }
-/* D1：读盘里的涨跌只能是涨跌色，旧版借了 --seal（品牌）与 --lake（旧湖绿） */
+
 .k-readout .is-up {
   color: var(--up);
 }
+
 .k-readout .is-down {
   color: var(--down);
 }
@@ -278,7 +297,18 @@ const lockLimitTone = computed(() => {
   .k-readout {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background: var(--sheet);
+    background: var(--surface-raised);
+  }
+}
+
+@media (max-width: 640px) {
+  .k-readout {
+    width: calc(100% - 16px);
+    max-height: 44%;
+  }
+
+  .k-readout__body {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 </style>

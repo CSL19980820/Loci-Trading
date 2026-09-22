@@ -345,11 +345,14 @@ class SystemToolBus:
 
     def _artifact(
         self, kind: str, title: str, data: dict[str, Any], *, status: str = "ready",
+        artifact_id: str | None = None,
     ) -> None:
         if self.on_event:
             payload: dict[str, Any] = {
                 "type": "artifact", "kind": kind, "title": title, "data": data, "status": status,
             }
+            if artifact_id:
+                payload["id"] = artifact_id
             self.on_event(payload)
 
     def wait_for_background_tasks(

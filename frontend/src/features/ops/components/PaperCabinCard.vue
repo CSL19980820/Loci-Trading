@@ -1,4 +1,15 @@
 <script setup lang="ts">
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { StatusBadge, Notice } from '@/shared/components/ui/app/presentation'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+
 /**
  * 纸面舱卡：舱配置表单 + 两道闸门读数 + 持仓 + 次日情景预案。
  *
@@ -76,66 +87,66 @@ const planColumns: BasicTableColumn[] = [
 <template>
   <SettingsPanel title="纸面量化舱" :receipt="receipt">
     <template #action>
-      <el-button size="small" @click="loadCabin">刷新</el-button>
-      <el-button type="primary" size="small" @click="saveCabin">保存舱配置</el-button>
-      <el-button type="primary" plain size="small" @click="monitorNow">立即盯盘</el-button>
-      <el-button size="small" @click="eodNow">日终总结</el-button>
+      <ActionButton size="small" @click="loadCabin">刷新</ActionButton>
+      <ActionButton tone="primary" size="small" @click="saveCabin">保存舱配置</ActionButton>
+      <ActionButton tone="primary" plain size="small" @click="monitorNow">立即盯盘</ActionButton>
+      <ActionButton size="small" @click="eodNow">日终总结</ActionButton>
     </template>
 
-    <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
-      <el-form-item label="战法标识">
+    <FormLayout label-position="right" label-width="6.5em" size="small" @submit.prevent>
+      <FormField label="战法标识">
         <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <el-input v-model="slug" class="max-w-48" />
-          <el-tag size="small" effect="plain">{{ cnStrategyName('', slug.trim() || 'demo') }}</el-tag>
+          <TextField v-model="slug" class="max-w-48" />
+          <StatusBadge size="small" effect="plain">{{ cnStrategyName('', slug.trim() || 'demo') }}</StatusBadge>
         </div>
-      </el-form-item>
-      <el-form-item label="企微跟随">
-        <el-switch v-model="followWecom" aria-label="启用企微跟随" />
-      </el-form-item>
-      <el-form-item label="模型">
-        <el-input v-model="model" placeholder="空则情景门闩（非盲目开仓）" />
-      </el-form-item>
-      <el-form-item label="思考档">
-        <el-select v-model="thinking" class="w-40">
-          <el-option label="off" value="off" />
-          <el-option label="low" value="low" />
-          <el-option label="medium" value="medium" />
-          <el-option label="high" value="high" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="满仓层数">
-        <el-input-number v-model="maxLayers" :min="1" :max="20" :step="0.5" />
-      </el-form-item>
-      <el-form-item label="高开可追" class="mb-0">
-        <el-tooltip placement="top-start" content="默认不追；开启后只在浅高开时买半层">
-          <el-switch v-model="gapUpChase" aria-label="允许浅高开追入半层" />
-        </el-tooltip>
-      </el-form-item>
-    </el-form>
+      </FormField>
+      <FormField label="企微跟随">
+        <ToggleSwitch v-model="followWecom" aria-label="启用企微跟随" />
+      </FormField>
+      <FormField label="模型">
+        <TextField v-model="model" placeholder="空则情景门闩（非盲目开仓）" />
+      </FormField>
+      <FormField label="思考档">
+        <ChoiceField v-model="thinking" class="w-40">
+          <ChoiceOption label="off" value="off" />
+          <ChoiceOption label="low" value="low" />
+          <ChoiceOption label="medium" value="medium" />
+          <ChoiceOption label="high" value="high" />
+        </ChoiceField>
+      </FormField>
+      <FormField label="满仓层数">
+        <NumberInput v-model="maxLayers" :min="1" :max="20" :step="0.5" />
+      </FormField>
+      <FormField label="高开可追" class="mb-0">
+        <HintTooltip placement="top-start" content="默认不追；开启后只在浅高开时买半层">
+          <ToggleSwitch v-model="gapUpChase" aria-label="允许浅高开追入半层" />
+        </HintTooltip>
+      </FormField>
+    </FormLayout>
 
     <p class="text-aux text-mist m-0 mt-2">统一监察池 · 20万底仓 / 100%</p>
 
-    <el-tooltip
+    <HintTooltip
       v-if="tradingDayGateAlert"
       placement="top-start"
       :content="tradingDayGateAlert.note"
     >
-      <el-alert
+      <Notice
         class="mt-2"
-        :type="tradingDayGateAlert.type"
+        :tone="tradingDayGateAlert.type"
         :closable="false"
         show-icon
         :title="tradingDayGateAlert.title"
       />
-    </el-tooltip>
+    </HintTooltip>
 
     <p v-if="latestMarketGate" class="mt-2 flex flex-wrap items-center gap-2">
-      <el-tag size="small" effect="plain" :type="latestMarketGateType">
+      <StatusBadge size="small" effect="plain" :tone="latestMarketGateType">
         龙空龙闸门 {{ String(latestMarketGate.mode || '观察') }}
-      </el-tag>
-      <el-tooltip placement="top-start" :content="String(latestMarketGate.reason || '这次没有给出闸门说明')">
+      </StatusBadge>
+      <HintTooltip placement="top-start" :content="String(latestMarketGate.reason || '这次没有给出闸门说明')">
         <span class="text-aux text-mist">{{ String(latestMarketGate.label || '—') }}</span>
-      </el-tooltip>
+      </HintTooltip>
     </p>
 
     <BasicTable

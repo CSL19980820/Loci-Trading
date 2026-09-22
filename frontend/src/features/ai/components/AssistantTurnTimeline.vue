@@ -1,8 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { normalizeArtifacts } from '../assistantArtifactState'
+import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/shared/components/ui/message'
+import { Bubble, BubbleContent } from '@/shared/components/ui/bubble'
+import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar'
+import { Attachment, AttachmentMedia, AttachmentTrigger } from '@/shared/components/ui/attachment'
+import RecordDetailsDialog from '@/shared/components/ui/RecordDetailsDialog.vue'
+import { TriangleAlert } from '@lucide/vue'
 
 import { messagePlainText } from '../assistantMessageActions'
 import { renderAssistantMarkdown } from '../assistantMarkdown'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
 import type { AiAgentProgress, AiMessage } from '@/shared/types/ai_assistant'
 import AssistantActivityStrip from './AssistantActivityStrip.vue'
 import AssistantArtifactHost from './AssistantArtifactHost.vue'
@@ -30,7 +38,10 @@ const emit = defineEmits<{
 const isUser = computed(() => props.message.role === 'user')
 const streaming = computed(() => props.message.status === 'streaming')
 const tools = computed(() => props.message.tool_receipts ?? [])
-const artifacts = computed(() => props.message.artifacts ?? [])
+const artifactRows = computed(() => props.message.artifacts)
+const artifacts = computed(() => normalizeArtifacts(artifactRows.value ?? [], streaming.value))
+const previewImage = ref('')
+const imageOpen = computed({ get:() => Boolean(previewImage.value), set:value => { if (!value) previewImage.value = '' } })
 const toolsRunning = computed(() => tools.value.some((tool) => tool.status === 'running'))
 const activityAgents = computed(() => {
   if (!props.showActivity) return []
@@ -51,7 +62,7 @@ const answerPlain = computed(() => {
   const content = props.message.content ?? ''
   if (content) return content
   if (streaming.value) return '正在生成…'
-  if (props.message.status === 'done' && props.message.role === 'assistant') return '正在整理回复…'
+  if (props.message.status === 'done' && props.message.role === 'assistant' && !artifacts.value.length) return '本轮未返回文字回复。'
   return ''
 })
 
@@ -93,221 +104,426 @@ function onRerun(): void {
 </script>
 
 <template>
-  <article
+  <Message as="article" :align="isUser ? 'end' : 'start'"
     class="assistant-turn"
     :class="[`is-${message.role}`, { 'is-streaming': streaming }]"
     data-testid="assistant-turn"
     :aria-label="isUser ? '你的消息' : '助手消息'"
   >
-    <header class="assistant-turn__identity">{{ isUser ? '你' : 'Loci' }}</header>
-    <template v-if="isUser">
-      <div class="assistant-turn__bubble">
+    <MessageContent v-if="isUser" class="assistant-user-content">
+      <header class="assistant-turn__identity sr-only">你</header>
+      <Bubble align="end" class="assistant-turn__bubble"><BubbleContent>
         <div v-if="message.images?.length" class="assistant-turn__images">
-          <img
-            v-for="(src, index) in message.images"
-            :key="`${message.id}-img-${index}`"
-            :src="src"
-            alt="用户附图"
-            class="assistant-turn__image"
-          >
+          <Attachment v-for="(src,index) in message.images" :key="`${message.id}-img-${index}`" orientation="vertical" class="assistant-image-attachment">
+            <AttachmentMedia class="assistant-image-media"><img :src="src" alt="用户附图" class="assistant-turn__image" /></AttachmentMedia>
+            <AttachmentTrigger :aria-label="`放大附图 ${index + 1}`" @click="previewImage = src" />
+          </Attachment>
         </div>
         <p v-if="message.content" class="assistant-turn__content">{{ message.content }}</p>
-      </div>
+      </BubbleContent></Bubble>
       <AssistantMessageActions
         v-if="showActions"
         :rerun-label="rerunLabel"
         show-rerun
         :disabled="actionsDisabled"
+        class="assistant-turn__actions"
         @copy="onCopy"
         @rerun="onRerun"
       />
-    </template>
+    </MessageContent>
 
     <template v-else>
-      <!-- TurnTimeline: Thinking → Activity → Tool → Artifact* → Answer → Actions -->
-      <AssistantThinkingBlock
-        :content="message.thinking ?? ''"
-        :streaming="thinkingLive"
-        :auto-collapse="collapseThinking"
-      />
-      <AssistantActivityStrip
-        v-if="activityAgents.length"
-        :agents="activityAgents"
-        :lines="[]"
-        @open="emit('open-agent', $event)"
-      />
-      <AssistantToolReceiptList :tools="tools" :has-activity="activityAgents.length > 0" />
-      <AssistantArtifactHost
-        v-for="artifact in artifacts"
-        :key="artifact.id"
-        :artifact="artifact"
-      />
-      <div v-if="showAnswer" class="assistant-turn__bubble">
-        <div
-          v-if="answerHtml"
-          class="assistant-turn__content is-markdown"
-          v-html="answerHtml"
+      <MessageAvatar class="assistant-message-avatar"><Avatar class="size-8"><AvatarFallback class="assistant-avatar-fallback">LC</AvatarFallback></Avatar></MessageAvatar>
+      <MessageContent class="assistant-turn__flow">
+        <MessageHeader class="assistant-turn__identity">Loci</MessageHeader>
+        <!-- TurnTimeline: Thinking → Activity → Tool → Artifact* → Answer → Actions -->
+        <AssistantThinkingBlock
+          :content="message.thinking ?? ''"
+          :streaming="thinkingLive"
+          :auto-collapse="collapseThinking"
         />
-        <p
-          v-else
-          class="assistant-turn__content"
-          v-text="answerPlain"
+        <AssistantActivityStrip
+          v-if="activityAgents.length"
+          :agents="activityAgents"
+          :lines="[]"
+          @open="emit('open-agent', $event)"
         />
-      </div>
-      <AssistantMessageActions
-        v-if="showActions"
-        :rerun-label="rerunLabel"
-        show-rerun
-        :disabled="actionsDisabled"
-        @copy="onCopy"
-        @rerun="onRerun"
-      />
-      <el-alert
-        v-for="(warning, warningIndex) in message.warnings"
-        :key="`${message.id}-warn-${warningIndex}`"
-        class="assistant-turn__warning"
-        type="warning"
-        :closable="false"
-        :title="warning"
-        show-icon
-      />
-      <AssistantConfirmCard
-        v-if="showConfirm"
-        :ask="message.hitl"
-        :fallback="!message.hitl?.prompt"
-        @reply="emit('confirm-reply', $event)"
-      />
+        <AssistantToolReceiptList :tools="tools" :has-activity="activityAgents.length > 0" />
+        <AssistantArtifactHost
+          v-for="artifact in artifacts"
+          :key="artifact.id"
+          :artifact="artifact"
+          :active="streaming"
+        />
+        <div v-if="showAnswer" class="assistant-turn__answer">
+          <div
+            v-if="answerHtml"
+            class="assistant-turn__content is-markdown"
+            v-html="answerHtml"
+          />
+          <p
+            v-else
+            class="assistant-turn__content"
+            :class="{ 'is-placeholder': !message.content }"
+            v-text="answerPlain"
+          />
+          <span v-if="streaming && message.content" class="assistant-turn__caret" aria-hidden="true" />
+        </div>
+        <AssistantMessageActions
+          v-if="showActions"
+          :rerun-label="rerunLabel"
+          show-rerun
+          :disabled="actionsDisabled"
+          class="assistant-turn__actions"
+          @copy="onCopy"
+          @rerun="onRerun"
+        />
+        <Alert
+          v-for="(warning, warningIndex) in message.warnings"
+          :key="`${message.id}-warn-${warningIndex}`"
+          class="assistant-turn__warning"
+        >
+          <TriangleAlert class="assistant-turn__warning-icon" />
+          <AlertTitle class="line-clamp-none">{{ warning }}</AlertTitle>
+        </Alert>
+        <AssistantConfirmCard
+          v-if="showConfirm"
+          :ask="message.hitl"
+          :fallback="!message.hitl?.prompt"
+          @reply="emit('confirm-reply', $event)"
+        />
+      </MessageContent>
     </template>
-  </article>
+  </Message>
+  <RecordDetailsDialog v-model:open="imageOpen" title="查看附图"><img :src="previewImage" alt="附图完整预览" class="assistant-full-image" /></RecordDetailsDialog>
 </template>
 
 <style scoped>
 .assistant-turn {
-  display: flex; width: 100%; max-width: 100%; min-width: 0;
-  flex-direction: column; gap: var(--ai-gap-md); align-self: stretch;
-}
-.assistant-turn.is-user { align-items: flex-end; }
-.assistant-turn.is-assistant {
-  align-items: stretch;
-}
-.assistant-turn.is-assistant > :deep(.assistant-thinking),
-.assistant-turn.is-assistant > :deep(.assistant-activity),
-.assistant-turn.is-assistant > :deep(.assistant-receipts),
-.assistant-turn.is-assistant > :deep(.assistant-artifact-host),
-.assistant-turn.is-assistant > .assistant-turn__bubble,
-.assistant-turn.is-assistant > .assistant-turn__warning {
+  display: flex;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  flex-direction: column;
+  gap: var(--gap-1);
   align-self: stretch;
-  box-sizing: border-box;
 }
-.assistant-turn__bubble {
-  min-width: 0; max-width: 100%;
-  padding: var(--gap-3);
-  border: 1px solid var(--rule);
-  border-radius: var(--ai-r-card); background: var(--panel-2);
-  box-sizing: border-box;
+
+/* ─── 用户：右对齐的主色浅底气泡 ─── */
+.assistant-turn.is-user {
+  align-items: flex-end;
 }
-.assistant-turn.is-assistant .assistant-turn__bubble {
-  width: 100%;
-  background: var(--surface);
-  border-color: color-mix(in oklab, var(--rule) 85%, transparent);
-}
+
 .assistant-turn.is-user .assistant-turn__bubble {
-  max-width: min(100%, 42rem);
+  max-width: min(85%, 42rem);
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-xs) var(--radius-xl);
   background: var(--seal-soft);
-  border-color: color-mix(in oklab, var(--seal) 28%, var(--rule));
+  color: var(--text-primary);
+  box-sizing: border-box;
 }
-.assistant-turn.is-streaming .assistant-turn__bubble { border-color: var(--seal-border); }
+
+.assistant-turn.is-user .assistant-turn__actions {
+  justify-content: flex-end;
+}
+
+/* ─── 助手：左侧品牌头像 + 全宽正文 ─── */
+.assistant-turn.is-assistant {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--gap-3);
+}
+
+
+.assistant-turn__flow {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gap-2);
+  min-width: 0;
+}
+
+.assistant-turn__flow > :deep(*) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.assistant-turn__identity {
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.assistant-turn__answer {
+  position: relative;
+  min-width: 0;
+  padding: 2px 0;
+}
+
 .assistant-turn__images {
   display: flex;
   flex-wrap: wrap;
-  gap: .4rem;
-  margin-bottom: .35rem;
+  gap: var(--gap-2);
+  margin-bottom: var(--gap-2);
 }
+
 .assistant-turn__image {
   display: block;
   max-width: min(12rem, 100%);
   max-height: 10rem;
-  border-radius: var(--ai-r-card);
+  border-radius: var(--radius);
   object-fit: cover;
 }
+
 .assistant-turn__content {
-  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
-  color: var(--ink); font-size: var(--ai-fs-prose); line-height: 1.65;
+  margin: 0;
   max-width: 100%;
   min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--ai-fs-prose);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
-.assistant-turn__content.is-markdown { white-space: normal; overflow-x: hidden; }
-.assistant-turn__content.is-markdown :deep(p) { margin: 0 0 .55rem; }
-.assistant-turn__content.is-markdown :deep(p:last-child) { margin-bottom: 0; }
+
+.assistant-turn__content.is-placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 流式光标 */
+.assistant-turn__caret {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 2px;
+  border-radius: 2px;
+  background: var(--seal);
+  vertical-align: -2px;
+  animation: assistant-caret 1s steps(2, start) infinite;
+}
+
+@keyframes assistant-caret {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* ─── Markdown 正文 ─── */
+.assistant-turn__content.is-markdown {
+  white-space: normal;
+  overflow-x: hidden;
+}
+
+.assistant-turn__content.is-markdown :deep(p) {
+  margin: 0 0 0.7em;
+}
+
+.assistant-turn__content.is-markdown :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
 .assistant-turn__content.is-markdown :deep(h1),
 .assistant-turn__content.is-markdown :deep(h2),
 .assistant-turn__content.is-markdown :deep(h3) {
-  margin: .55rem 0 .35rem; color: var(--ink); font-weight: 650; line-height: 1.35;
+  margin: 1em 0 0.4em;
+  color: var(--text-primary);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
 }
-/* 标题跟着 --ai-fs-body 缩放：调契约时正文与小标题不会脱节 */
-.assistant-turn__content.is-markdown :deep(h1) { font-size: 1.3em; }
-.assistant-turn__content.is-markdown :deep(h2) { font-size: 1.15em; }
-.assistant-turn__content.is-markdown :deep(h3) { font-size: 1.05em; }
+
+.assistant-turn__content.is-markdown :deep(h1) {
+  font-size: 1.25em;
+}
+
+.assistant-turn__content.is-markdown :deep(h2) {
+  font-size: 1.12em;
+}
+
+.assistant-turn__content.is-markdown :deep(h3) {
+  font-size: 1.04em;
+}
+
 .assistant-turn__content.is-markdown :deep(h1:first-child),
 .assistant-turn__content.is-markdown :deep(h2:first-child),
-.assistant-turn__content.is-markdown :deep(h3:first-child) { margin-top: 0; }
+.assistant-turn__content.is-markdown :deep(h3:first-child) {
+  margin-top: 0;
+}
+
 .assistant-turn__content.is-markdown :deep(ul),
-.assistant-turn__content.is-markdown :deep(ol) { margin: .2rem 0 .55rem; padding-left: 1.2rem; }
+.assistant-turn__content.is-markdown :deep(ol) {
+  margin: 0.3em 0 0.7em;
+  padding-left: 1.4em;
+}
+
+.assistant-turn__content.is-markdown :deep(li) {
+  margin: 0.15em 0;
+}
+
+.assistant-turn__content.is-markdown :deep(strong) {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 .assistant-turn__content.is-markdown :deep(a) {
-  color: var(--el-color-primary); text-decoration: underline; text-underline-offset: 2px;
+  color: var(--seal-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--seal-border);
+  text-underline-offset: 3px;
   overflow-wrap: anywhere;
 }
+
+.assistant-turn__content.is-markdown :deep(a:hover) {
+  text-decoration-color: currentColor;
+}
+
 .assistant-turn__content.is-markdown :deep(blockquote) {
-  margin: .35rem 0 .55rem; padding: .2rem 0 .2rem .7rem;
-  border-left: 3px solid color-mix(in oklab, var(--el-color-primary) 45%, var(--rule));
-  color: var(--muted);
+  margin: 0.5em 0 0.7em;
+  padding: 0.2em 0 0.2em 0.9em;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
 }
+
 .assistant-turn__content.is-markdown :deep(hr) {
-  margin: .65rem 0; border: 0; border-top: 1px solid var(--rule);
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
 }
+
+/* 表格：横向可滚，不把正文列撑爆 */
 .assistant-turn__content.is-markdown :deep(table) {
-  display: table;
+  display: block;
   width: 100%;
   max-width: 100%;
-  margin: .35rem 0 .55rem;
+  margin: 0.5em 0 0.8em;
   border-collapse: collapse;
-  table-layout: fixed;
-  font-size: var(--ai-fs-aux);
+  overflow-x: auto;
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
+  scrollbar-width: thin;
 }
+
 .assistant-turn__content.is-markdown :deep(th),
 .assistant-turn__content.is-markdown :deep(td) {
-  padding: .2rem .35rem; border: 1px solid var(--rule); text-align: left; vertical-align: top;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
 }
+
 .assistant-turn__content.is-markdown :deep(th) {
-  background: color-mix(in oklab, var(--ink) 6%, transparent); font-weight: 600;
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  background: var(--surface-sunken);
 }
+
 .assistant-turn__content.is-markdown :deep(code) {
-  padding: .05rem .3rem; border-radius: var(--ai-r-chip);
-  background: color-mix(in oklab, var(--ink) 8%, transparent);
-  font-family: var(--mono); font-size: .82em;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--mono);
+  font-size: 0.86em;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+
 .assistant-turn__content.is-markdown :deep(pre) {
-  margin: .35rem 0 .55rem; padding: .55rem .65rem;
+  margin: 0.5em 0 0.8em;
+  padding: var(--gap-3);
   max-width: 100%;
   overflow-x: auto;
-  border-radius: var(--ai-r-card); background: color-mix(in oklab, var(--ink) 8%, transparent);
-  white-space: pre-wrap;
-  word-break: break-word;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  white-space: pre;
+  scrollbar-width: thin;
 }
+
 .assistant-turn__content.is-markdown :deep(pre code) {
-  padding: 0; background: transparent; white-space: inherit;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--fs-aux);
+  line-height: 1.6;
+  white-space: inherit;
 }
+
 .assistant-turn__content.is-markdown :deep(img) {
-  display: block; max-width: 100%; height: auto; margin: .35rem 0; border-radius: var(--ai-r-chip);
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border-radius: var(--radius);
 }
-.assistant-turn__warning { width: 100%; min-width: 0; }
-.assistant-turn__identity { color: var(--mist); font-size: var(--ai-fs-body); font-weight: 600; }
-.assistant-turn.is-user .assistant-turn__identity { align-self: flex-end; }
+
+.assistant-turn__warning {
+  width: 100%;
+  min-width: 0;
+  padding: var(--gap-2) var(--gap-3);
+  border-color: color-mix(in oklab, var(--warn) 32%, var(--border-subtle));
+  background: var(--warn-soft);
+}
+
+.assistant-turn__warning-icon {
+  color: var(--warn);
+}
+
+/* 操作按钮 hover 才浮现（触控设备常显） */
+.assistant-turn__actions {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.assistant-turn:hover .assistant-turn__actions,
+.assistant-turn:focus-within .assistant-turn__actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .assistant-turn__actions {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .assistant-turn.is-assistant {
+    gap: var(--gap-2);
+  }
+
+  .assistant-turn__avatar {
+    width: 22px;
+    height: 22px;
+    font-size: 8px;
+  }
+
+  .assistant-turn.is-user .assistant-turn__bubble {
+    max-width: 92%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-turn__caret {
+    animation: none;
+  }
+}
+
+
+.assistant-turn { flex-direction:row; }
+.assistant-user-content { align-items:flex-end; }
+.assistant-message-avatar { align-self:flex-start; margin-top:2px; transform:none; translate:none; background:transparent; }
+.assistant-avatar-fallback { background:var(--seal); color:var(--primary-foreground); font:600 10px var(--mono); }
+.assistant-image-attachment { width:auto; padding:0; min-width:0; border:0; background:transparent; }
+.assistant-image-media { width:auto; height:auto; background:transparent; }
+.assistant-full-image { display:block; max-width:100%; max-height:72dvh; margin:auto; object-fit:contain; }
+.assistant-turn.is-user .assistant-turn__bubble { padding:0; max-width:min(85%,52rem); }
+.assistant-turn__image { object-fit:contain; max-height:180px; }
 </style>

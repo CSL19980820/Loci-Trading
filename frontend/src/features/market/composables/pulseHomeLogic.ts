@@ -1,14 +1,6 @@
 /** 首页盘面纯逻辑（可单测）。 */
-import type { BoardRow, ScreenCandidate, ScreenHistory } from '@/shared/types/quant'
+import type { BoardRow } from '@/shared/types/quant'
 import { strategyShortLabel } from '@/shared/lib/format'
-
-export type PulseBoardTab = 'gain' | 'turnover' | 'sector'
-
-export const PULSE_BOARD_TABS = [
-  { key: 'gain' as const, label: '涨幅' },
-  { key: 'turnover' as const, label: '换手' },
-  { key: 'sector' as const, label: '板块' },
-]
 
 const CJK = /[\u4e00-\u9fa5]/
 
@@ -37,11 +29,6 @@ export function localIsoDate(d = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
-export function effectivePct(row: BoardRow): number | null {
-  if (row.pct != null && Number.isFinite(Number(row.pct))) return Number(row.pct)
-  if (row.local_pct != null && Number.isFinite(Number(row.local_pct))) return Number(row.local_pct)
-  return null
-}
 
 /** 市场榜行按 code 索引，供轮询叠价复用、减少 codes spot 请求。 */
 export function boardRowsToSpotMap(rows: BoardRow[]): Map<string, BoardRow> {
@@ -53,55 +40,8 @@ export function boardRowsToSpotMap(rows: BoardRow[]): Map<string, BoardRow> {
   return map
 }
 
-/** 涨幅榜叠 live 后按有效涨跌重排；换手榜保持服务端顺序。 */
-export function rankBoardRows(rows: BoardRow[], tab: PulseBoardTab): BoardRow[] {
-  if (tab === 'turnover') return rows.slice(0, 10)
-  if (tab === 'sector') return []
-  const sorted = [...rows].sort((a, b) => {
-    const ap = effectivePct(a)
-    const bp = effectivePct(b)
-    if (ap == null && bp == null) return 0
-    if (ap == null) return 1
-    if (bp == null) return -1
-    return bp - ap
-  })
-  return sorted.slice(0, 10)
-}
-
-export type SectorBoardRow = {
-  name: string
-  pct: number | null
-  count: number
-}
-
-/** 库内按行业聚合涨幅（成交额加权）；供「板块」页，不是个股榜。 */
-export function rankSectorRows(rows: BoardRow[], limit = 10): SectorBoardRow[] {
-  const buckets = new Map<string, { weight: number; pctWeight: number; count: number }>()
-  for (const row of rows) {
-    const name = String(row.industry || '').trim()
-    if (!name) continue
-    const pct = effectivePct(row)
-    if (pct == null || !Number.isFinite(pct)) continue
-    const amount = row.amount != null ? Number(row.amount) : NaN
-    const weight = Number.isFinite(amount) && amount > 0 ? amount : 1
-    const prev = buckets.get(name) ?? { weight: 0, pctWeight: 0, count: 0 }
-    prev.weight += weight
-    prev.pctWeight += pct * weight
-    prev.count += 1
-    buckets.set(name, prev)
-  }
-  return [...buckets.entries()]
-    .map(([name, bucket]) => ({
-      name,
-      pct: bucket.weight > 0 ? bucket.pctWeight / bucket.weight : null,
-      count: bucket.count,
-    }))
-    .sort((a, b) => (b.pct ?? Number.NEGATIVE_INFINITY) - (a.pct ?? Number.NEGATIVE_INFINITY))
-    .slice(0, limit)
-}
-
 /**
- * 「今日选股」锚点交易日。
+ * 选股窗口的锚点交易日。
  * 开盘前 last_trading_day 常已切到自然交易日，但盘后真选仍落在覆盖日（昨收）。
  */
 export function screenSessionDay(input: {
@@ -118,25 +58,6 @@ export function screenSessionDay(input: {
     return coverage
   }
   return last || today
-}
-
-/**
- * 拆分「今日选股 / 昨选今涨」对应的入库日。
- * ``sessionDay``：最近已收盘交易日（休市日用 last_trading_day，勿用自然日周六）。
- */
-export function splitScreenDates(
-  datesDesc: string[],
-  calendarToday: string,
-  sessionDay: string = calendarToday,
-): { todayHit: string; ydayHit: string } {
-  const session = (sessionDay || calendarToday || '').trim()
-  const todayHit =
-    datesDesc.find((d) => d === session) ||
-    datesDesc.find((d) => d === calendarToday) ||
-    datesDesc.find((d) => d >= calendarToday) ||
-    ''
-  const ydayHit = datesDesc.find((d) => d < (todayHit || session || calendarToday)) || ''
-  return { todayHit, ydayHit }
 }
 
 /** 选入价→最新价的累计涨跌幅（%）；缺一侧则 null。 */
@@ -252,53 +173,4 @@ export function dedupeTrackRowsByDayCode<T extends TrackDedupeRow>(rows: T[]): T
     if ((row.score ?? -1) > (prev.score ?? -1)) best.set(key, row)
   }
   return [...best.values()]
-}
-
-/** 今日选股行（首页「今日选股」表）。 */
-export type PulsePickRow = {
-  rank: number
-  code: string
-  name: string
-  strategy: string
-  strategyName: string
-  score: number | null
-  reason: string
-  pct: number | null
-  date: string
-}
-
-/**
- * 合并各战法在 ``date`` 当天的入库候选：同 code 只留 score 更高的一行。
- * rank/pct 留给调用方叠价后再定。
- */
-export function collectPicksForDate(
-  histories: ScreenHistory[],
-  date: string,
-  nameBySlug: Map<string, string>,
-): PulsePickRow[] {
-  if (!date) return []
-  const merged: PulsePickRow[] = []
-  for (const h of histories) {
-    const rows: ScreenCandidate[] = h.by_date[date] || []
-    for (const row of rows) {
-      if (!row.code) continue
-      merged.push({
-        rank: 0,
-        code: row.code,
-        name: row.name || row.code,
-        strategy: h.strategy,
-        strategyName: strategyDisplayName(h.strategy, nameBySlug),
-        score: row.score,
-        reason: row.reason || '',
-        pct: null,
-        date,
-      })
-    }
-  }
-  const dedup = new Map<string, PulsePickRow>()
-  for (const row of merged) {
-    const prev = dedup.get(row.code)
-    if (!prev || (row.score ?? -1) > (prev.score ?? -1)) dedup.set(row.code, row)
-  }
-  return [...dedup.values()]
 }

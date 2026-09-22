@@ -3,12 +3,19 @@
  * 定时台「执行历史」弹窗：宽表、任务名左置、耗时可读。
  */
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import { batchDeleteJobRuns } from '@/shared/api/quant'
 import BasicTable, {
   type BasicTableColumn,
 } from '@/shared/components/ui/BasicTable.vue'
+import { Badge } from '@/shared/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
 import ListToolbar, { type ListToolbarConfig } from '@/shared/components/ui/ListToolbar.vue'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import type { JobRun } from '@/shared/types/quant'
@@ -133,7 +140,7 @@ async function confirmBatchDelete(): Promise<void> {
   }
   const result = await guard(() => batchDeleteJobRuns(ids))
   if (!result) return
-  ElMessage.success(`已删除 ${result.removed} 条`)
+  toast.success(`已删除 ${result.removed} 条`)
   emit('changed')
   await load()
 }
@@ -151,53 +158,57 @@ defineExpose({ load })
 </script>
 
 <template>
-  <el-dialog
-    v-model="open"
-    title="执行历史"
-    width="min(92vw, 72rem)"
-    top="6vh"
-    destroy-on-close
-    class="job-runs-dialog ops-dialog"
-    append-to-body
-  >
-    <div class="runs-body">
-      <BasicTable
-        ref="basicTableRef"
-        v-model:columns="columns"
-        :data-source="tableRows"
-        :pagination="false"
-        virtualized
-        :toolbar-config="{ refresh: true }"
-        :loading="busy"
-        stripe
-        row-key="id"
-        height="100%"
-        empty-text="还没有执行记录"
-        empty-reason="任务跑过一次后出现在这里"
-        @selection-change="onSelectionChange"
-        @refresh="load"
-      >
-        <template #toolbarButtons>
-          <ListToolbar :config="listToolbar" />
-        </template>
-        <template #duration="{ row }">
-          <span class="runs-duration">{{ formatRunDuration(Number(row.duration_ms ?? 0)) }}</span>
-        </template>
-        <template #result="{ row }">
-          <el-tag
-            size="small"
-            effect="light"
-            :type="
-              row.status === 'failed' ? 'danger' : row.status === 'success' ? 'success' : 'info'
-            "
-          >
-            {{ statusLabel(String(row.status ?? '')) }}
-          </el-tag>
-          <span v-if="row.error_text" class="dim">{{ firstLine(String(row.error_text)) }}</span>
-        </template>
-      </BasicTable>
-    </div>
-  </el-dialog>
+  <Dialog v-model:open="open">
+    <DialogContent class="w-[min(92vw,72rem)] max-w-none gap-[var(--gap-2)] rounded-[var(--radius)] p-[var(--gap-3)] sm:max-w-none">
+      <DialogHeader class="gap-1 border-b border-line pb-[var(--gap-2)] text-left">
+        <DialogTitle>执行历史</DialogTitle>
+      </DialogHeader>
+      <div class="runs-body">
+        <BasicTable
+          ref="basicTableRef"
+          v-model:columns="columns"
+          :data-source="tableRows"
+          :pagination="false"
+          virtualized
+          :toolbar-config="{ refresh: true }"
+          :loading="busy"
+          stripe
+          row-key="id"
+          height="100%"
+          empty-text="还没有执行记录"
+          empty-reason="任务跑过一次后出现在这里"
+          @selection-change="onSelectionChange"
+          @refresh="load"
+        >
+          <template #toolbarButtons>
+            <ListToolbar :config="listToolbar" />
+          </template>
+          <template #duration="{ row }">
+            <span class="runs-duration">{{ formatRunDuration(Number(row.duration_ms ?? 0)) }}</span>
+          </template>
+          <template #result="{ row }">
+            <!-- 成功走状态色 --ok（绿留给价格），失败走印章红，其余是中性档 -->
+            <Badge
+              v-if="row.status === 'failed'"
+              variant="destructive"
+            >
+              {{ statusLabel(String(row.status ?? '')) }}
+            </Badge>
+            <Badge
+              v-else-if="row.status === 'success'"
+              class="border-transparent bg-ok-soft text-ok"
+            >
+              {{ statusLabel(String(row.status ?? '')) }}
+            </Badge>
+            <Badge v-else variant="secondary">
+              {{ statusLabel(String(row.status ?? '')) }}
+            </Badge>
+            <span v-if="row.error_text" class="dim">{{ firstLine(String(row.error_text)) }}</span>
+          </template>
+        </BasicTable>
+      </div>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -219,7 +230,7 @@ defineExpose({ load })
   margin: 0;
 }
 
-.runs-body :deep(.el-table .cell) {
+.runs-body :deep(.data-grid .cell) {
   white-space: nowrap;
 }
 
@@ -234,10 +245,3 @@ defineExpose({ load })
   color: var(--muted);
 }
 </style>
-
-<style scoped>
-.job-runs-dialog :deep(.el-dialog__body) {
-  padding-top: var(--gap-2);
-}
-</style>
-<style scoped src="./OpsDialogSurface.css"></style>

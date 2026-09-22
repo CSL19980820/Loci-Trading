@@ -3,6 +3,10 @@ export interface GuardianConfig {
   provider: string
   model: string
   prompt: string
+  common_prompt?: string
+  premarket_prompt?: string
+  review_prompt?: string
+  weekly_prompt?: string
   strategies: string[]
   notify: boolean
 }
@@ -53,7 +57,7 @@ export interface GuardianWatch {
   position?: GuardianPosition
 }
 
-export interface GuardianHistoryQuery { start: string; end: string; limit: number; offset: number }
+export interface GuardianHistoryQuery { start: string; end: string; limit: number; offset: number; keyword?: string }
 export interface GuardianPage<T> { items: T[]; total: number; start?: string; end?: string; limit?: number; offset?: number }
 export type GuardianResearch = Pick<GuardianStatus, 'active_strategies' | 'watchlist' | 'watchlist_as_of' | 'watchlist_note'>
 
@@ -62,6 +66,7 @@ export interface GuardianRun {
   slot: string
   status: string
   result: {
+    sections?: GuardianReportSection[]
     body?: string
     analysis?: string
     analysis_only?: boolean
@@ -79,6 +84,7 @@ export interface GuardianRun {
 }
 
 export interface GuardianStatus {
+  experience?: GuardianExperience
   notification_silence?: string
   reports?: GuardianReviewSummary[]
   watchlist?: GuardianWatch[]
@@ -88,6 +94,7 @@ export interface GuardianStatus {
   data_source?: { label: string; wudao: boolean; reason: string; tool_count: number }
   config: GuardianConfig
   default_prompt: string
+  default_weekly_prompt?: string
   job_id: string | null
   state: GuardianAccount
   observation_count?: number
@@ -96,11 +103,31 @@ export interface GuardianStatus {
   runs: GuardianRun[]
 }
 
+export interface GuardianExperience {
+  origins: Record<string, { source_report: string; source_revision: number }>
+  revision: number
+  source_report: string
+  source_revision: number
+  trade_date: string
+  created_at: string
+  characters: number
+  max_characters: number
+  max_items: number
+  items: Array<{
+    id: string
+    hypothesis: string
+    validation_plan: string
+    status: 'proposed' | 'supported' | 'refuted' | 'inconclusive' | 'corrected'
+    evidence_ids: string[]
+  }>
+}
+
 export interface GuardianConversation { id: string; title: string; notes: string; created: number; updated: number }
 export interface GuardianConsultTurn { id: string; question: string; status: string; created: number; result: { answer?: string; error?: string; model?: string; as_of?: string; tools?: { name: string; ok: boolean }[] } }
 export interface GuardianConversationDetail extends GuardianConversation { turns: GuardianConsultTurn[] }
 
 export interface GuardianAccount {
+  watchlist?: NonNullable<GuardianWatch['watch']>[]
   account_version: number
   initial_capital_cents: number
   cash_cents: number
@@ -130,9 +157,10 @@ export interface GuardianReviewSummary {
   notify?: { success?: boolean; skipped?: string }
 }
 export interface GuardianReviewDetail extends GuardianReviewSummary {
-  result: { body?: string; sections?: GuardianReportSection[]; error?: string; notify?: { success?: boolean; skipped?: string } }
+  result: { body?: string; created_at?: string; revision?: number; sections?: GuardianReportSection[]; error?: string; notify?: { success?: boolean; skipped?: string } }
 }
 export interface GuardianReportSection {
+  detail?: boolean
   heading: string
   kind: string
   paragraphs: string[]

@@ -1,6 +1,21 @@
 <script setup lang="ts">
-import { ChatDotRound, Close } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { useMediaQuery } from '@vueuse/core'
+import { SidebarProvider } from '@/shared/components/ui/sidebar'
+import { useVisitorMode } from '@/shared/composables/useAccess'
+const visitor = useVisitorMode()
+import {
+  History,
+  ListTodo,
+  Maximize2,
+  Minimize2,
+  Settings2,
+  X as Close,
+} from '@lucide/vue'
+import { toast } from 'vue-sonner'
+import { Button } from '@/shared/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
 
 import { copyTextToClipboard } from '../assistantMessageActions'
@@ -22,12 +37,23 @@ import type {
   AiToolsCatalog,
 } from '@/shared/types/ai_assistant'
 
+/**
+ * 助手面板（ChatGPT / Claude 桌面端一路）。
+ *
+ * 壳：桌面默认是**贴右侧浮起的 520px 面板**（四角 16px、大投影、透明遮罩点外即关），
+ * 可一键展开成占满视口的工作台（左会话列表 / 中对话 / 右任务侧栏三栏）；
+ * ≤640 直接铺满整屏。不再借 DialogPanel：它的居中卡片 + 90% 宽在 1440 上留两条空白边，
+ * 在手机上又要靠 !important 抠边距。
+ *
+ * 侧栏：宽屏工作台里两栏内联；贴右 / 窄屏时它们是**从面板边缘滑出的抽屉**，
+ * 由页头按钮开关，同一时刻只开一侧。
+ */
 const HISTORY_KEY = 'loci.assistant.historyOpen'
 const TASK_KEY = 'loci.assistant.taskSidebarOpen'
+const WIDE_KEY = 'loci.assistant.wide'
 /*
  * 侧栏折叠态是 v-if 切 DOM 的 rail 视图（历史 48px / 任务 44px），纯 CSS 断点只会把
  * 展开态的 280–300px 内容裁进窄壳里，所以断点必须落在 JS 上。
- * 900px 沿用此前 historyOpen 的初始化阈值；任务侧栏更宽，980px 以下先收它。
  */
 const SESSION_RAIL_MIN_W = 900
 const TASK_SIDEBAR_MIN_W = 980
@@ -130,12 +156,16 @@ const emit = defineEmits<{
 /** true = expanded; false = collapsed icon strip (history / task). */
 const historyOpen = ref(true)
 const taskSidebarOpen = ref(false)
+/** 宽屏工作台（占满视口）还是贴右浮起的窄面板 */
+const wide = ref(false)
+const smallScreen = useMediaQuery('(max-width: 640px)')
+const workspaceWide = computed(() => wide.value && !smallScreen.value)
 const threadOpen = ref(false)
 const threadAgentId = ref<string | null>(null)
 const senderDock = ref<{ focus: () => void; setText: (text: string) => void } | null>(null)
 
 const sessionLocked = computed(() => Boolean(props.busy || props.waitingUser))
-const showEmpty = computed(() => !props.messages.length && props.providerReady)
+const showEmpty = computed(() => !props.messages.length && (props.providerReady || visitor.value))
 const taskModel = computed(() => buildTaskModel({
   agents: props.agents,
   messages: props.messages,
@@ -152,6 +182,8 @@ const latestAssistant = computed(() => {
   }
   return undefined
 })
+const liveAgents = computed(() => props.agents.filter((agent) => agent.status === 'running' || agent.status === 'queued').length)
+const activeModelLabel = computed(() => props.model || '')
 
 watch(() => props.open, async (open) => {
   if (!open || !props.providerReady) return
@@ -168,6 +200,11 @@ function hasRoom(minWidth: number): boolean {
   return window.matchMedia(`(min-width: ${minWidth}px)`).matches
 }
 
+/** 侧栏能不能内联：只有宽屏工作台且视口够宽才行，其余情况都是抽屉 */
+function inlineRoom(minWidth: number): boolean {
+  return wide.value && hasRoom(minWidth)
+}
+
 function applyAutoCollapse(key: 'history' | 'task', open: Ref<boolean>, roomy: boolean): void {
   if (userToggled[key]) return
   if (!roomy && open.value) {
@@ -180,8 +217,8 @@ function applyAutoCollapse(key: 'history' | 'task', open: Ref<boolean>, roomy: b
 }
 
 function syncViewportCollapse(): void {
-  applyAutoCollapse('history', historyOpen, hasRoom(SESSION_RAIL_MIN_W))
-  applyAutoCollapse('task', taskSidebarOpen, hasRoom(TASK_SIDEBAR_MIN_W))
+  applyAutoCollapse('history', historyOpen, inlineRoom(SESSION_RAIL_MIN_W))
+  applyAutoCollapse('task', taskSidebarOpen, inlineRoom(TASK_SIDEBAR_MIN_W))
 }
 
 onMounted(() => {
@@ -191,6 +228,7 @@ onMounted(() => {
   const taskSaved = localStorage.getItem(TASK_KEY)
   if (taskSaved === '0') taskSidebarOpen.value = false
   if (taskSaved === '1') taskSidebarOpen.value = true
+  wide.value = localStorage.getItem(WIDE_KEY) === '1'
   // 记住的偏好也要过一遍断点：窄屏上把侧栏铺开等于把正文区挤没
   syncViewportCollapse()
   window.addEventListener('resize', syncViewportCollapse)
@@ -203,18 +241,46 @@ onUnmounted(() => {
 function setHistoryOpen(value: boolean): void {
   historyOpen.value = value
   // 覆盖侧栏同一时刻只展开一侧；不改写另一侧的持久偏好。
-  if (value && !hasRoom(1101)) taskSidebarOpen.value = false
+  if (value && !inlineRoom(1101)) taskSidebarOpen.value = false
   userToggled.history = true
   autoCollapsed.history = false
   localStorage.setItem(HISTORY_KEY, value ? '1' : '0')
 }
 
+function setTaskSidebarOpen(value: boolean, byUser = true): void {
+  taskSidebarOpen.value = value
+  if (value && !inlineRoom(1101)) historyOpen.value = false
+  if (byUser) {
+    userToggled.task = true
+    autoCollapsed.task = false
+  }
+  localStorage.setItem(TASK_KEY, value ? '1' : '0')
+}
+
+function toggleWide(): void {
+  wide.value = !wide.value
+  localStorage.setItem(WIDE_KEY, wide.value ? '1' : '0')
+  // 切回窄面板时抽屉不该还敞着
+  if (!wide.value) {
+    if (historyOpen.value) historyOpen.value = false
+    if (taskSidebarOpen.value) taskSidebarOpen.value = false
+  }
+}
+
+/** 抽屉模式下遮罩点一下就收起 */
+function closeDrawers(): void {
+  if (historyOpen.value) setHistoryOpen(false)
+  if (taskSidebarOpen.value) setTaskSidebarOpen(false)
+}
+
 function pickPrompt(prompt: string): void {
+  if (visitor.value) return
   if (props.busy || !props.providerReady) return
   senderDock.value?.setText(prompt)
 }
 
 function onConfirmReply(text: string): void {
+  if (visitor.value) return
   const trimmed = text.trim()
   if (!trimmed || props.busy || !props.providerReady) return
   // Cursor askQuestions：选项点击直接开下一轮，不再只填草稿
@@ -223,11 +289,12 @@ function onConfirmReply(text: string): void {
 
 async function onCopyMessage(text: string): Promise<void> {
   const ok = await copyTextToClipboard(text)
-  if (ok) ElMessage.success('已复制')
-  else ElMessage.error('复制失败，请手动选中消息文本复制')
+  if (ok) toast.success('已复制')
+  else toast.error('复制失败，请手动选中消息文本复制')
 }
 
 function onRerunMessage(payload: { text: string; images?: string[] }): void {
+  if (visitor.value) return
   if (props.busy || props.waitingUser || !props.providerReady) return
   emit('send', payload)
 }
@@ -238,201 +305,268 @@ function openAgent(agentId: string): void {
   setTaskSidebarOpen(true)
 }
 
-function setTaskSidebarOpen(value: boolean, byUser = true): void {
-  taskSidebarOpen.value = value
-  if (value && !hasRoom(1101)) historyOpen.value = false
-  if (byUser) {
-    userToggled.task = true
-    autoCollapsed.task = false
-  }
-  localStorage.setItem(TASK_KEY, value ? '1' : '0')
+function onOverlayClick(): void {
+  emit('close')
+}
+
+/** 抽屉模式下选了会话 / 新建后自动收起抽屉，别让用户再点一次遮罩 */
+function onSelectSession(id: string): void {
+  emit('select', id)
+  if (!workspaceWide.value && historyOpen.value) setHistoryOpen(false)
+}
+
+function onCreateSession(): void {
+  emit('create')
+  if (!workspaceWide.value && historyOpen.value) setHistoryOpen(false)
 }
 </script>
 
 <template>
-  <el-dialog
-    :model-value="open"
-    width="90%"
-    :align-center="false"
-    top="5vh"
-    :show-close="false"
-    :destroy-on-close="false"
-    :close-on-click-modal="true"
-    append-to-body
-    aria-label="落点助手"
-    class="assistant-dialog"
-    modal-class="assistant-dialog-overlay"
-    @update:model-value="(value: boolean) => !value && emit('close')"
-  >
-    <section
-      class="assistant-panel flex min-h-0 flex-col overflow-hidden"
-      :class="{ 'has-rail': historyOpen, 'has-task': taskSidebarOpen }"
-      aria-label="落点助手"
-    >
-      <header class="assistant-panel__head">
-        <span class="assistant-panel__identity"><el-icon><ChatDotRound /></el-icon><strong>{{ title || 'Loci 助手' }}</strong></span>
-        <el-tag v-if="waitingUser" size="small" type="warning" effect="plain">等待确认</el-tag>
-        <el-tag v-else-if="busy" size="small" effect="plain">运行中</el-tag>
-        <span v-if="model" class="assistant-panel__model" :title="model">{{ model }}</span>
-        <el-tooltip content="关闭助手 · Esc">
-          <el-button class="assistant-panel__close" :icon="Close" text circle aria-label="关闭助手" @click="emit('close')" />
-        </el-tooltip>
-      </header>
-      <el-alert
-        v-if="error"
-        class="assistant-panel__alert"
-        type="error"
-        closable
-        :title="error"
-        show-icon
-        @close="emit('clear-error')"
-      />
-      <div v-if="!providerReady" class="assistant-panel__provider-empty">
-        <el-alert
-          class="assistant-panel__alert"
-          type="warning"
-          :closable="false"
-          title="尚未配置可用模型"
-          show-icon
-        />
-        <el-button data-testid="assistant-configure-provider" type="primary" plain size="small" @click="emit('configure')">
-          配置模型
-        </el-button>
-      </div>
+  <Teleport to="body">
+    <Transition name="assistant-fade">
+      <div
+        v-show="open"
+        class="assistant-overlay"
+        :class="{ 'is-wide': workspaceWide }"
+        data-testid="assistant-overlay"
+        @click.self="onOverlayClick"
+      >
+        <section
+          class="assistant-panel"
+          :class="{ 'is-wide': workspaceWide, 'has-rail': historyOpen, 'has-task': taskSidebarOpen }"
+          role="dialog"
+          aria-modal="true"
+          aria-label="落点助手"
+          data-testid="assistant-dialog"
+        >
+          <header class="assistant-panel__head">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Button access="read"
+                  variant="ghost"
+                  size="icon-sm"
+                  class="assistant-panel__icon"
+                  :class="{ 'is-on': historyOpen }"
+                  :aria-pressed="historyOpen"
+                  aria-label="历史对话"
+                  data-testid="assistant-history-toggle"
+                  @click="setHistoryOpen(!historyOpen)"
+                >
+                  <History />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>历史对话</TooltipContent>
+            </Tooltip>
+            <span class="assistant-panel__brand" aria-hidden="true">LC</span>
+            <div class="assistant-panel__identity">
+              <strong class="assistant-panel__title">{{ title || 'Loci 助手' }}</strong>
+              <span v-if="activeModelLabel" class="assistant-panel__model" :title="activeModelLabel">{{ activeModelLabel }}</span>
+            </div>
+            <UiBadge v-if="waitingUser" variant="warn" dot class="assistant-panel__state">等待确认</UiBadge>
+            <UiBadge v-else-if="busy" variant="info" dot class="assistant-panel__state">运行中</UiBadge>
+            <div class="assistant-panel__tools">
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button access="read"
+                    variant="ghost"
+                    size="icon-sm"
+                    class="assistant-panel__icon"
+                    :class="{ 'is-on': taskSidebarOpen }"
+                    :aria-pressed="taskSidebarOpen"
+                    aria-label="本轮任务"
+                    data-testid="assistant-task-toggle"
+                    @click="setTaskSidebarOpen(!taskSidebarOpen)"
+                  >
+                    <ListTodo />
+                    <span v-if="liveAgents" class="assistant-panel__live" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>本轮任务 / 来源 / 产物</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button access="read"
+                    variant="ghost"
+                    size="icon-sm"
+                    class="assistant-panel__icon assistant-panel__wide"
+                    :aria-label="wide ? '收成侧栏' : '展开为工作台'"
+                    data-testid="assistant-wide-toggle"
+                    @click="toggleWide"
+                  >
+                    <Minimize2 v-if="wide" />
+                    <Maximize2 v-else />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{{ wide ? '收成侧栏' : '展开为工作台' }}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="assistant-panel__icon"
+                    aria-label="助手设置"
+                    data-testid="assistant-settings"
+                    @click="emit('settings')"
+                  >
+                    <Settings2 />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>助手设置</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button access="read"
+                    variant="ghost"
+                    size="icon-sm"
+                    class="assistant-panel__icon assistant-panel__close"
+                    aria-label="关闭助手"
+                    @click="emit('close')"
+                  >
+                    <Close />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>关闭助手 · Esc</TooltipContent>
+              </Tooltip>
+            </div>
+          </header>
 
-      <div class="assistant-panel__body">
-        <AssistantSessionRail
-          :sessions="sessions"
-          :archived-sessions="archivedSessions"
-          :rail-tab="railTab"
-          :active-id="activeId"
-          :loading="loading"
-          :disabled="sessionLocked"
-          :collapsed="!historyOpen"
-          @create="emit('create')"
-          @select="emit('select', $event)"
-          @remove="emit('remove', $event)"
-          @archive="emit('archive', $event)"
-          @restore="emit('restore', $event)"
-          @batch="emit('batch', $event)"
-          @settings="emit('settings')"
-          @update:rail-tab="emit('update:railTab', $event)"
-          @update:collapsed="(value) => setHistoryOpen(!value)"
-        />
-        <main class="assistant-panel__stage">
-          <AssistantEmptyState
-            v-if="showEmpty"
-            :prompts="PROMPTS"
-            :busy="busy"
-            :provider-ready="providerReady"
-            @pick="pickPrompt"
-          />
-          <AssistantConversation
-            v-else
-            :messages="messages"
-            :busy="busy"
-            :waiting-user="waitingUser"
-            :agents="agents"
-            @confirm-reply="onConfirmReply"
-            @open-agent="openAgent"
-            @copy="onCopyMessage"
-            @rerun="onRerunMessage"
-          />
-          <footer class="assistant-panel__composer">
-            <AssistantSenderDock
-              ref="senderDock"
-              :providers="providers"
-              :provider="provider"
-              :model="model"
-              :thinking="thinking"
-              :provider-ready="providerReady"
-              :busy="busy"
-              :waiting-user="waitingUser"
-              :session-locked="sessionLocked"
-              :messages="messages"
+          <div v-if="error" class="assistant-panel__alert" role="alert">
+            <span class="min-w-0 flex-1">{{ error }}</span>
+            <Button access="read" variant="ghost" size="icon-xs" aria-label="关闭提示" @click="emit('clear-error')">
+              <Close class="size-3.5" />
+            </Button>
+          </div>
+          <div v-if="!providerReady && !visitor" class="assistant-panel__provider-empty" role="status">
+            <span class="assistant-panel__provider-text">尚未配置可用模型，先接一家供应商再开始对话。</span>
+            <Button data-testid="assistant-configure-provider" size="sm" @click="emit('configure')">
+              配置模型
+            </Button>
+          </div>
+
+          <SidebarProvider :open="historyOpen" :persist="false" :keyboard-shortcut="false" class="assistant-panel__body min-h-0" @update:open="setHistoryOpen">
+            <div
+              v-if="!workspaceWide && (historyOpen || taskSidebarOpen)"
+              class="assistant-panel__scrim"
+              aria-hidden="true"
+              @click="closeDrawers"
+            />
+            <AssistantSessionRail
+              :sessions="sessions"
+              :archived-sessions="archivedSessions"
+              :rail-tab="railTab"
+              :active-id="activeId"
+              :loading="loading"
+              :disabled="sessionLocked"
+              :collapsed="!historyOpen"
+              :drawer="!workspaceWide"
+              @create="onCreateSession"
+              @select="onSelectSession"
+              @remove="emit('remove', $event)"
+              @archive="emit('archive', $event)"
+              @restore="emit('restore', $event)"
+              @batch="emit('batch', $event)"
+              @settings="emit('settings')"
+              @update:rail-tab="emit('update:railTab', $event)"
+              @update:collapsed="(value) => setHistoryOpen(!value)"
+            />
+            <main class="assistant-panel__stage">
+              <AssistantEmptyState
+                v-if="showEmpty"
+                :prompts="PROMPTS"
+                :busy="busy"
+                :provider-ready="providerReady"
+                @pick="pickPrompt"
+              />
+              <AssistantConversation
+                v-else
+                :messages="messages"
+                :busy="busy"
+                :waiting-user="waitingUser"
+                :agents="agents"
+                @confirm-reply="onConfirmReply"
+                @open-agent="openAgent"
+                @copy="onCopyMessage"
+                @rerun="onRerunMessage"
+              />
+              <footer v-if="!visitor" class="assistant-panel__composer">
+                <AssistantSenderDock
+                  ref="senderDock"
+                  :providers="providers"
+                  :provider="provider"
+                  :model="model"
+                  :thinking="thinking"
+                  :provider-ready="providerReady"
+                  :busy="busy"
+                  :waiting-user="waitingUser"
+                  :session-locked="sessionLocked"
+                  :messages="messages"
+                  :profile="profile"
+                  :memories="memories"
+                  :tools-catalog="toolsCatalog"
+                  :observed-input-tokens="observedInputTokens"
+                  @send="emit('send', $event)"
+                  @cancel="emit('cancel')"
+                  @runtime-select="emit('runtime-select', $event)"
+                  @thinking="emit('thinking', $event)"
+                  @slash-command="emit('slash-command', $event)"
+                />
+              </footer>
+            </main>
+            <AssistantTaskSidebar
+              :model="taskModel"
+              :open="taskSidebarOpen"
+              :drawer="!workspaceWide"
+              :tools="latestAssistant?.tool_receipts"
+              :artifacts="taskModel.artifacts"
               :profile="profile"
               :memories="memories"
-              :tools-catalog="toolsCatalog"
-              :observed-input-tokens="observedInputTokens"
-              @send="emit('send', $event)"
-              @cancel="emit('cancel')"
-              @runtime-select="emit('runtime-select', $event)"
-              @thinking="emit('thinking', $event)"
-              @slash-command="emit('slash-command', $event)"
+              @update:open="setTaskSidebarOpen"
+              @open-agent="openAgent"
+              @settings="emit('settings')"
             />
-          </footer>
-        </main>
-        <AssistantTaskSidebar
-          :model="taskModel"
-          :open="taskSidebarOpen"
-          :tools="latestAssistant?.tool_receipts"
-          :artifacts="latestAssistant?.artifacts"
-          :profile="profile"
-          :memories="memories"
-          @update:open="setTaskSidebarOpen"
-          @open-agent="openAgent"
-          @settings="emit('settings')"
-        />
-      </div>
-    </section>
+          </SidebarProvider>
+        </section>
 
-    <AssistantAgentThread v-model:open="threadOpen" :agent="threadAgent" />
-  </el-dialog>
+        <AssistantAgentThread v-model:open="threadOpen" :agent="threadAgent" />
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped src="./AssistantPanel.css"></style>
 
-<!-- Dialog shell must be unscoped: el-dialog teleports to body. -->
+<!-- 助手域尺寸契约（unscoped）：弹层被 teleport 到 body，取不到 .assistant-panel 的继承链 -->
 <style>
-/*
- * 助手域尺寸契约：间距 / 字阶 / 圆角 / 分类色只在这里定义一次。
- * 必须 unscoped 并列出各弹层根——AgentThread、设置弹窗、上下文用量 popover
- * 都被 el-dialog / el-popover teleport 到 body，取不到 .assistant-panel 的继承链。
- */
 .assistant-panel,
 .assistant-task-sidebar,
 .assistant-agent-thread-dialog,
 .assistant-settings-dialog,
 .assistant-runtime-popper,
 .ctx-usage-popper {
-  /* 紧凑内容型：行内有气口，块与块别糊、也别拉成空白大海 */
   --ai-gap-xs: var(--gap-1);
   --ai-gap-sm: var(--gap-2);
-  --ai-gap-md: var(--gap-2);
-  --ai-gap-lg: var(--gap-3);
+  --ai-gap-md: var(--gap-3);
+  --ai-gap-lg: var(--gap-4);
   --ai-pad-y: var(--gap-2);
   --ai-pad-x: var(--gap-3);
   --ai-block-pad: var(--ai-pad-y) var(--ai-pad-x);
   --ai-row-min: var(--ctl-h);
   --ai-process-max: 100%;
 
-  /*
-   * 字阶：助手是密集工作面，正文比全站正文紧一档（--fs-body .9 → --fs-aux .8）。
-   * 整体放大 / 缩小只改这四行，不要回到各组件里写死。
-   * aux 与 meta 今天同值：全站字阶在 .8 与 .7 之间没有档位，--fs-kicker 就是本域地板；
-   * 两者语义仍分开（aux = 次要正文，meta = mono / 大写微标），要拉开层级也只改这里。
-   */
   --ai-fs-title: var(--fs-title);
-  /*
-   * prose 只给「用户真正在读的」助手回答正文，与全站正文同档；
-   * body 给面板 chrome（卡片小标题、回执行、会话列表）保持紧一档。
-   * 两者分开，是因为把阅读正文和 UI 元信息压成同一个字号，
-   * 会让助手成为全站唯一需要凑近看的区域。
-   */
   --ai-fs-prose: var(--fs-body);
-  --ai-fs-body: var(--fs-aux);
-  --ai-fs-aux: var(--fs-kicker);
+  --ai-fs-body: var(--fs-ui);
+  --ai-fs-aux: var(--fs-aux);
   --ai-fs-meta: var(--fs-kicker);
 
-  /* 圆角：卡片跟全站 --radius，chip 收一档，pill 走胶囊 */
-  --ai-r-card: var(--radius);
+  --ai-r-card: var(--radius-lg);
   --ai-r-chip: var(--radius-sm);
   --ai-r-pill: var(--radius-pill);
 
   /*
    * 上下文构成条的定性分类色：只负责「八段互相可分」，不承载涨跌 / 成败语义，
    * 因此不挂 --up / --down / --warn 这类会被误读的 token。
-   * 这批是 Tailwind 600/700 档（L≈0.47–0.55），只为浅底挑的；深色档覆写见下面一块。
    */
   --ai-cat-1: #64748b;
   --ai-cat-2: #4f46e5;
@@ -444,13 +578,6 @@ function setTaskSidebarOpen(value: boolean, byUser = true): void {
   --ai-cat-8: #0369a1;
 }
 
-/*
- * night / ink / dark 的画布明度只有 0.13–0.19，上面那批 600/700 档 hex 压上去
- * 对画布只有 2.5–4.2:1，相邻两段糊成一片（实测：明档八色对 night 画布 3.89 2.94
- * 3.69 3.76 3.06 2.53 3.38 3.12）。深色档把 L 抬到 .64–.78，色相沿用明档实测的
- * 八个（257 277 150 72 350 33 186 243），保证同一段换外观还是「同一个色」。
- * 实测改后对 night 画布 5.1–9.0:1，八段两两 sRGB 最小色距 56（明档 48），可分性不降。
- */
 html[data-appearance='night']
   :is(.assistant-panel, .assistant-task-sidebar, .assistant-agent-thread-dialog, .assistant-settings-dialog, .assistant-runtime-popper, .ctx-usage-popper),
 html[data-appearance='ink']
@@ -467,55 +594,43 @@ html.dark
   --ai-cat-8: oklch(.72 .12 243);
 }
 
-.assistant-dialog.el-dialog {
-  --el-dialog-padding-primary: 0;
-  width: 90% !important;
-  height: 90dvh;
-  max-height: 90dvh;
-  margin-top: 5vh !important;
-  margin-bottom: 5vh !important;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 0 !important;
+/* 开合动效：遮罩淡入，面板从右侧 12px 滑入（手机从底部） */
+.assistant-fade-enter-active,
+.assistant-fade-leave-active {
+  transition: opacity var(--dur) var(--ease);
 }
-.assistant-dialog .el-dialog__header {
-  display: none;
-  padding: 0 !important;
-  margin: 0;
+
+.assistant-fade-enter-active .assistant-panel,
+.assistant-fade-leave-active .assistant-panel {
+  transition:
+    transform var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
 }
-.assistant-dialog > .el-dialog__body {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  height: 100%;
-  min-height: 0;
-  /* 普通表单弹窗的全局 68dvh 限高不适用于已自行管理滚动的助手工作台。 */
-  max-height: none;
-  /* 去掉 dialog 默认内边距，内容贴齐弹窗内沿 */
-  padding: 0 !important;
-  margin: 0 !important;
-  overflow: hidden;
+
+.assistant-fade-enter-from,
+.assistant-fade-leave-to {
+  opacity: 0;
 }
-.assistant-dialog-overlay {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
+
+.assistant-fade-enter-from .assistant-panel,
+.assistant-fade-leave-to .assistant-panel {
+  transform: translateX(16px);
+  opacity: 0;
 }
-.assistant-dialog-overlay .el-overlay-dialog {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 0;
-}
+
 @media (max-width: 640px) {
-  .assistant-dialog.el-dialog {
-    width: calc(100% - var(--gap-4)) !important;
-    max-width: calc(100vw - var(--gap-4));
-    height: calc(100dvh - var(--gap-4));
-    max-height: calc(100dvh - var(--gap-4));
-    margin-block: var(--gap-2) !important;
+  .assistant-fade-enter-from .assistant-panel,
+  .assistant-fade-leave-to .assistant-panel {
+    transform: translateY(24px);
   }
-  .ctx-usage-popper { max-width: calc(100vw - var(--gap-4)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-fade-enter-active,
+  .assistant-fade-leave-active,
+  .assistant-fade-enter-active .assistant-panel,
+  .assistant-fade-leave-active .assistant-panel {
+    transition: none;
+  }
 }
 </style>

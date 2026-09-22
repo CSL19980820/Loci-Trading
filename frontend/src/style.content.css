@@ -1,8 +1,3 @@
-/*
- * 内容层：列表行 / 时间线 / 键值表 / 迷你图等业务块的共享皮肤。
- * 规矩：只用令牌，不写魔法色号与魔法字号；红绿只出现在涨跌语义上（D1）。
- * .form-grid 与 .tone-* 已收口到 style.components.css，本文件不再重复定义。
- */
 .empty,
 .empty-inline {
   color: var(--mist);
@@ -60,10 +55,6 @@
 .grow {
   min-width: 0;
 }
-
-/*
- * 评分徽章：评分是排序不是价格，按 D1 不能上红绿——高分用主色，低分退到弱色。
- */
 .score {
   display: grid;
   place-items: center;
@@ -123,8 +114,6 @@
   color: var(--mist);
   font-size: var(--fs-aux);
 }
-
-/* 键值表的值是读数：等宽 + tabular-nums，且是这块里最大的字（D2） */
 .kv dd {
   margin: 1px 0 0;
   font: 700 var(--fs-title) / 1.2 var(--mono);
@@ -186,8 +175,6 @@
   flex-wrap: wrap;
   gap: var(--gap-1) var(--gap-3);
 }
-
-/* 页标题 17px/700：中文标题小而稳，不用衬线、不放大（D2） */
 .toolbar h1 {
   margin: 0;
   font-family: var(--font);
@@ -303,8 +290,6 @@
   background: color-mix(in oklab, var(--rule) 80%, var(--paper));
   overflow: hidden;
 }
-
-/* 进度/占比条用主色，不用红绿（D1） */
 .bar-fill {
   height: 100%;
   border-radius: inherit;

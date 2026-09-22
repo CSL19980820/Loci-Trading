@@ -1,86 +1,30 @@
-# AI Assistant
+# AI Assistant · 当前实现导览
 
-全局助手隔离功能包。`AssistantHost.vue` 挂在应用壳上（浮球 + 近全屏弹窗），通过 `shared/api/ai_assistant.ts` 消费会话与运行事件；SSE/轮询运行循环在 `useAssistantHostRun.ts`。
+本文用于定位界面与运行事件，不冻结设计、模型、思考程度、上下文能力、工具或后续架构。具体功能以当前源码为准。
 
-## 布局约定
+`AssistantHost.vue` 挂在应用壳上，通过 `shared/api/ai_assistant.ts` 读取会话与运行事件；SSE / 轮询循环在 `useAssistantHostRun.ts`。
 
-- 助手自行管理内层滚动，专属 `.assistant-dialog > .el-dialog__body` 必须清除普通表单弹窗的全局 `68dvh` 限高；对话舞台和输入坞撑满助手外框，不能出现底部大片空白。手机外边距走 `--gap-2`，宽度与最大宽度一致。
-- 在不超过 1100px 的窗口中，展开的历史/任务侧栏覆盖舞台而不挤压输入框；手动打开一侧收起另一侧，但不改写另一侧已保存的偏好。较宽屏幕仍可并列展开。原有 900px / 980px 初始化自动折叠规则保留。
-- 回归入口：在 `frontend` 执行 `node e2e/ui-finish.mjs`，助手场景检查展开侧栏、长会话、空会话、设置分区与 Esc 层级；全部使用模拟接口，不调用真实模型。
+## 界面与组件
 
-- 助手以 `el-dialog` 打开，宽高均为视口 **90%**（相对浏览器约 5% 外边距）；**dialog 自身无内边距**（`el-dialog__body { padding:0 }`），内容贴齐弹窗内沿。点击遮罩或 Esc 关闭。
-- 对话舞台对齐主流助手骨架：**左历史轨常驻可收缩（约 280px）** / **中对话柱** / **右任务侧栏常驻可收缩** / 底输入坞。无最右图标栏。**对话区用细滚动条**（`scrollbar-width: thin`，hover 加深）——长会话里滚动条是唯一的位置感知，不隐藏；会话列表 / 任务侧栏 / 思考块内滚仍为隐藏滚动条（待收口）。
-- 左右侧栏用同一套面板图标：左侧条在左、右侧条在右；展开态底栏左侧 LC、右侧齿轮进设置；收缩态仅 LC 点开设置。
-- 输入坞与回合内容随中间舞台变宽，不再锁死 48/56rem。
-- 紧凑顶栏显示会话标题、运行状态与当前模型，关闭按钮常驻；也可用浮球 / Esc / 点遮罩关闭。中止本轮仍在输入坞。
-- 空「新对话」（无消息）关闭助手时静默删除；点新建若已有空草稿则复用，不堆重复会话。
-- 会话标题：首条消息立刻用用户话生成临时标题；首轮助手回答收口后由模型精炼短标题（SSE `session_title`）；用户手动改名会锁定不再覆盖。侧栏左对齐：上行标题、下行模型名。
-- 任务侧栏：右侧图标展开/收起（默认收起为 ~44px 窄条，展开约 **300px**）；顶栏直接是 pill 分区「计划 / 子进程 / 来源 / 产物 / 上下文」（无「检查器」标题与摘要废话）。计划为竖向步进；子进程为状态点卡片（`AssistantAgentCard`，运行中为 **SVG 边框追光**，短 dash 沿周界跑；不用 conic，避免 WebView 斜线残影）；有子进程时自动切到该页。「上下文」为人话摘要（安全底线 / 偏好 / 记忆用量 / 本轮查询），「改设置」打开 `AssistantSettingsDialog`。助手设置也可由**左历史轨左下角 LC** 打开。过程与工具名均中文展示。
-- 助手叠层统一用 **`el-dialog`**（设置、子进程线程），不用 drawer。设置弹窗宽约 **780px**：指令双栏；规则为归拢列表；记忆为**用户画像 / 工作记忆各一整段 Markdown**（`PUT /api/ai/memories/document` 整仓替换），顶栏开关条保留。
-- 展开偏好写入 localStorage；有子进程时自动展开侧栏（**仅在够宽时**：`< 980px` 不自动铺开任务侧栏，折叠态的 live dot 已经提示有任务在跑）。
-- **窄屏自动折叠（JS 断点，不是 CSS）**：`AssistantPanel` 在挂载与 `resize` 时按 `window.innerWidth` 判定——`< 980px` 折任务侧栏、`< 900px` 折历史轨。折叠态是 `v-if` 切 DOM 的 rail 视图（44px / 48px），纯 CSS 断点只会把展开态内容裁进窄壳里，所以断点必须落在 JS 上。自动折叠**不写 localStorage**（偏好不被窄屏访问改写），窗口变宽会还回去；用户本次会话显式动过的那一侧，断点不再插手。两个侧栏的 `flex` 同时改成可收缩（`0 1 300px` / `0 1 280px` + `min-width`），兜住断点之间的中间地带；折叠态必须自己把 `min-width` 清回 0，否则 rail 会被展开态的 `min-width` 撑开。
-- 主时间线含**活动条**（Evidence lane）：派生的子进程以卡片列出，可点开线程弹窗查看加载过程；结论仍置底。
-- **思考块**：流式时对话区贴底跟滚（含 `thinking` 增量）；块内限高并内滚跟最新句。思考阶段一结束（出工具 / 正文 / 收口）自动收起，视口留给最新过程与结论。
-- 输入坞使用 EP-X **`XSender`**（`AssistantSenderDock`）+ 底栏 `AssistantRuntimeBar`（分组模型 + 思考程度 `off/low/medium/high/xhigh/max`，默认 `medium`，偏好存 `localStorage`）+ 图片上传/粘贴 + **行首 `/` 斜杠**（内置 `/compact` + 技能包；Cursor 式，仅当本行左右无其它文字）+ 发送/中止。
-- **上下文用量**：输入坞右侧环状百分比（对齐 Cursor Context Usage）：点开看分段条与分类（系统提示 / 工具 / 规则 / 记忆 / MCP / 技能 / 会话 / 草稿）。窗口取当前模型 `context_window`（缺省 128k）；`GET /api/ai/tools` 回 `system_prompt_tokens` + 工具 `schema_tokens`/`tags` + `model_catalog`。粗估汉字≈1、其它≈4字/token（口径写在读数 tooltip，不占常驻脚注）；≥70%/90% 弹出压力提示。有最近一轮 `input_tokens` 时按比例校准环上 used；`context_compacted.tokens_after` 写入消息后会话段按喂模体积收缩。后端超阈值自动压缩喂模历史时发 `context_compacted`，用量环与时间线显示「已压缩」（库内原文仍在；无事件不显示）。**手动 `/compact`**：`POST /api/ai/sessions/{id}/compact` 强制压缩喂模快照写入 `session.metadata.context_feed`（不删库原文）；会话占用中拒绝；成功后末条助手加 warning 并刷新 `context_feed_tokens`。
-- **主柱 Activity**：忙态仅末条用 Host `agents`；历史轮有 `message.agents` 也展示折叠子进程条。子进程线程弹窗可展示嵌套 **工具回执**（SSE `subagent_tool` → `agent.tool_receipts`）。
-- 对话中柱助手回合 **横向拉满**：Activity / 回执 / Markdown 气泡 `width:100%`；表用 `table-layout:fixed` 换行，对话区 `overflow-x:hidden`，避免无谓横滚。
-- 空状态为 Instrument Stage：Ink Ribbon「落点」标 + 「今天想落在哪？」**同一行** + 一行下一步（「点一条范例，改完再发」）+ **列表式范例**（含「记录当日交割 / 昨日交割补充」等，点击填入输入框）。范例行是 `el-button`，忙态 / 未配模型时置灰（父级 `pickPrompt` 此时会丢弃点击）。**交割范例只写 `<价格>买入<数量>股<标的>` 这类占位**，禁止填看着像真实持仓的价格与股数——范例进输入框后离「回车写进账本」只差一步。
-- 助手弹窗相对视口顶部 **5vh**（`top=5vh`，遮罩顶部对齐，不再垂直居中）；高度仍为 `90dvh`，`el-dialog__body` 无内边距。
-- 子进程线程弹窗贴顶 **5vh**、加宽约 **52rem**：单行标题（名称 + 状态 + 进度），自定义关闭钮；小节标题一律单行（「加载过程 N 步」/「工具回执 N 条」/摘要标签与正文同框）；有摘要才展示摘要块，无空话占位；有嵌套工具时展示回执列表。
-- 浮球默认位置在移动端抬高避开 `--mobile-nav-h`；拖拽后的 inline `bottom`/`right` 生效，clamp 下限含底栏净空。
-- 浮球视觉为 Ink Ribbon Disc（深色盘 + 浅色丝带结 + `--seal` 落点；打开变 X；忙态虚线轨道环）。
-- 助手回复用 `marked` + `DOMPurify` 渲染 Markdown；**流式中**（`status===streaming`）结论区用纯文本追加，收口后再 Markdown；用户消息保持纯文本。`applyAiRunEvent` 对 `token`/`think` 等只替换末条 assistant（O(末条)），不深拷贝整表。
+助手使用 shadcn-vue / Reka 原语：`AssistantSenderDock` 组合 Textarea、Button 和工具栏；`AssistantThinkingBlock` 使用 Collapsible；弹窗与侧栏使用 Dialog / Sheet 组合。
+没有额外的助手组件库运行时。模型、提供方与运行参数仍由 `AssistantRuntimeBar` 和既有 API 配置，不因本次 UI 替换改变算法或提示词。
 
-## 尺寸契约（改字号 / 圆角先看这里）
+界面由会话历史、中间时间线、任务侧栏与输入区组成；展开偏好记录在 localStorage，窄屏响应式行为避免挤压输入区。宽高、断点、字号、布局和滚动策略均可根据体验继续改进，不受固定像素表限制。
 
-助手域的间距、字阶、圆角、上下文分类色**只在 `AssistantPanel.vue` 末尾的 unscoped `<style>` 里定义一次**，组件一律 `var(--ai-*)`，不再各写各的 rem / px。
+时间线组件分别呈现推理摘要、活动、工具回执、产物、正文和操作。图表/代码等产物由 `AssistantArtifactHost` 分发；Markdown 使用 marked 与 DOMPurify，流式正文先增量展示、收口后再完整渲染。
+`toolLabel.ts` 提供可读工具名称。事件状态与数据来源、用户草稿和模型分析保持可区分，不把模拟值伪装成已发生的账本交易。
 
-| 组 | 变量 | 值 |
-|---|---|---|
-| 字阶 | `--ai-fs-title` / `--ai-fs-prose` / `--ai-fs-body` / `--ai-fs-aux` / `--ai-fs-meta` | `--fs-title` / `--fs-body` / `--fs-aux` / `--fs-kicker` / `--fs-kicker` |
-| 圆角 | `--ai-r-card` / `--ai-r-chip` / `--ai-r-pill` | `--radius` / `4px` / `999px` |
-| 间距 | `--ai-gap-xs…lg` / `--ai-pad-x` / `--ai-pad-y` / `--ai-row-min` | 见契约块 |
-| 分类色 | `--ai-cat-1…8` | 上下文构成条专用；`assistantContextUsage.ts` 只返回 `var(--ai-cat-N)`；night / ink / `html.dark` 另有一档覆写（明档 600/700 hex 压深色画布只有 2.5–4.2:1） |
+输入区支持草稿、发送/中止、图片上传/粘贴和行首斜杠命令。中文输入法确认、Shift+Enter 换行和点击发送需要分别处理，避免误发或丢失最后输入。
+上下文用量展示来自模型配置、接口元数据与近轮统计，具体估算和压缩接口见 `assistantContextUsage.ts` 与相应 API。估算值不是对模型能力的限制。
 
-- **阅读正文与面板 chrome 分档**：助手回答（`.assistant-turn__content` 及其 markdown）用 `--ai-fs-prose`，与全站正文同档 .9rem——它是用户真正在读的内容，不能跟着元信息一起缩；卡片小标题、回执行、会话列表等 chrome 用 `--ai-fs-body` .8rem，比全站正文紧一档。`--fs-kicker` .7rem 是本域**字号地板**，不要再写更小的值。
-- `--ai-fs-aux` 与 `--ai-fs-meta` 今天同值（全站字阶 .8 与 .7 之间无档位），语义仍分开：aux = 次要正文，meta = mono / 大写微标。
-- 契约块的选择器**必须**同时列出各弹层根（`.assistant-agent-thread-dialog`、`.assistant-settings-dialog`、`.assistant-runtime-popper`、`.ctx-usage-popper`）——它们被 teleport 到 body，取不到 `.assistant-panel` 的继承链。新增 teleport 弹层要顺手加进去。
-- **不要给 `var(--ai-*)` 写 fallback**：此前 6 处 fallback 与定义值早已对不上，成了误导性的过期快照。
-- **卡片外壳走 `assistant-card.css`**：七张产物卡（Code / DataTable / DecisionChart / Echarts / Equity / Kline / SourceStrip）共用全局类 `.assistant-card` + `.assistant-card__heading`，条状卡加 `.assistant-card--tight`。组件里不要再抄外壳（此前七份逐字重复，改一次间距要动七个文件）。它必须是**全局**样式：各卡片自己 scoped，共享壳只能落在不带 scope 属性的规则上。
+通用卡片外观见 `assistant-card.css`，助手主题令牌见 `AssistantPanel.vue`。复用令牌有助于一致性，但可以添加或调整令牌、局部样式和组件。
 
-## 富渲染时间线（ADR-006）
+## 时间线与持久化
 
-单轮助手回复走 **TurnTimeline**（`AssistantTurnTimeline.vue`），顺序固定：
-
-1. **Thinking**（`AssistantThinkingBlock`）— `vue-element-plus-x` 的 `Thinking`；无 reasoning 则不渲染
-2. **Activity**（`AssistantActivityStrip`）— 仅最新助手回合；子进程 Evidence lane（「仅证据 · 非终裁」）；可点开线程弹窗
-3. **ToolReceipt***（`AssistantToolReceiptList`）— **本机回执条**：默认一行总览，展开逐步；有 Activity 时降权折叠；失败自动展开
-4. **Artifact***（`AssistantArtifactHost`）— 仅工具/引擎真值；`status=loading` 显示 skeleton
-5. **Answer** — Markdown 结论，**永远在最底**
-6. **MessageActions** — 用户气泡「复制 / 重跑」；助手气泡「复制 / 重新生成」（重跑上一轮用户输入；忙态禁用）
-7. **Warnings / Confirm** — Confirm 仅 `waiting_user` HITL
-
-### 工具过程三面职责
-
-| 面 | 职责 | 文案 |
-|---|---|---|
-| 主柱回执条 | 流式过程；无子 Agent 时为签名位 | `toolLabel` 人话标题；raw name 仅展开后次要显示 |
-| 任务侧栏 · 来源 | Codex 式审计索引（计划在侧栏，不进主柱） | 同源 `toolLabel`；detail 可含 raw / preview |
-| 任务侧栏 · 上下文 | 人话摘要（安全 / 偏好 / 记忆 / 本轮查询） | 短句；深潜设置走 LC /「改设置」 |
-
-映射表：`toolLabel.ts`。过程 ≠ 产物：图表/表走 Artifact，不进回执正文。写操作确认入口只有底部 `AssistantConfirmCard`。
-
-Artifact 大包：`kline`（兼容 `qianlong_kline`，复用 `KlineChart` + `prepChartOffthread`，MA5/10/20，可视≥20）/ `table` / `echarts`·`dual_axis` / `equity_curve` / `candidate_verdict` / `source_strip` / `code`；未知 kind 折叠 JSON。
-
-持久化字段与后端对齐（GET session 带回时消费）：`thinking` / `tool_receipts` / `artifacts` / 可选 `agents` / `hitl`；`empty_completion` 消息可带 `status=error`。`assistantRunState` 认 SSE `think` / `token` / `artifact(status)` / 工具与 plan 事件；收口（`done`/`error`/`cancelled`/`waiting_user`）把直播 `agents` fold 进末条 assistant，并收口未完成的 tool receipts。`error` 且 `stopped_reason=empty_completion`/`llm_error*` 时覆盖工具前计划旁白；`finishRun` 空二次 settle 不冲已写失败文案；sync merge 保本地/远端 `error`。主柱 Activity：忙态用 Host `agents`，历史用 `message.agents`；任务侧栏经 `buildTaskModel` 同样回退。
-
-### EP-X 与降级
-
-- 已安装 `vue-element-plus-x@2.0.3`（peer：Vue ^3.5.17、Element Plus ^2.9；本仓 Vue 3.5 + EP 2.14 兼容）。
-- **Thinking**：助手层直接用 EP-X；业务页不引入。
-- **Sender**：助手层用 EP-X **`XSender`**（`AssistantSenderDock`）+ 底栏 RuntimeBar/发送/中止，对齐网关 ChatSenderComposite。
-- 若某环境装不上 EP-X：Thinking/Sender 可自研降级，**保持 TurnTimeline 顺序不变**，并在本段注明降级。
+`AssistantTurnTimeline.vue` 当前编排思考摘要、活动、工具回执、产物、正文、操作与等待确认。顺序可以因新的交互需求而演进。
+会话报文包含 `thinking`、`tool_receipts`、`artifacts`、可选 `agents` / `hitl`。
+`assistantRunState` 处理 `think`、`token`、产物、工具和计划事件；终态收口未完成的回执并保留错误文案。
+已支持 K 线、表格、ECharts、权益曲线、候选分析、来源和代码产物；未知类型使用可展开 JSON，后续可以扩展新的渲染器。
 
 ## `waiting_user`
 
@@ -102,21 +46,10 @@ Artifact 大包：`kline`（兼容 `qianlong_kline`，复用 `KlineChart` + `pre
 - SSE 若中途断流而 run 仍 `running`，会回落 JSON 轮询，避免停在「正在整理回复…」。后端 `done` 先于标题 LLM 落库，避免 completed 后关流丢终稿。空助手正文不进入多轮模型历史。
 - 对话区贴底跟滚：用户上翻后不再抢滚动，回到底部附近再恢复。
 
-## README 维护
 
-改助手布局、事件消费、会话恢复、归档/删除、富渲染时间线或 HITL 交互时同步更新本文。设计冻结见 [`docs/architecture/ai-assistant-rich-render.md`](../../../../docs/architecture/ai-assistant-rich-render.md) 与词表 [`CONTEXT.md`](./CONTEXT.md)。
+## 测试定位
 
-## 相关测试
+`AssistantHost.run.stream.test.ts` 覆盖 SSE 与轮询恢复；`run.hitl` 覆盖等待答复与中止；`run.sync` 覆盖发送和回填；`session` / `resume` 覆盖会话操作与刷新恢复。
+共享夹具和 API / 确认替身在 `AssistantHost.test.helpers.ts`。组件测试见 `components/*.test.ts`；浏览器检查可使用隔离接口夹具，不调用真实模型或修改真实账本。
 
-`frontend/src/features/ai/**/*.test.ts`
-
-Host 级用例按主题分文件，单文件不超 600 行：
-
-| 文件 | 覆盖 |
-|---|---|
-| `AssistantHost.run.stream.test.ts` | SSE 流、断流/失败后回落 JSON 轮询、`active_run` 续跑 |
-| `AssistantHost.run.hitl.test.ts` | `waiting_user` 还原与答复、中止收口（含取消 API 失败的本机强收） |
-| `AssistantHost.run.sync.test.ts` | 发送护栏（建会话中重复发送、发送中卸载）、`finishRun` 后的会话回填与旧轮延迟 sync |
-| `AssistantHost.session.test.ts` / `AssistantHost.resume.test.ts` | 会话列表/归档删除、刷新恢复 |
-
-**共享 mock 与 fixture 都在 `AssistantHost.test.helpers.ts`**：`vi.mock('@/shared/api/ai_assistant' | 'vue-router' | 'element-plus')` 是模块级提升的，只能待在该文件（或各测试文件）顶部；`toolsReady` / `sessionDetail` / `aiRun` / `primeAssistantReady` / `primeNewSession` / `transcriptPanel` 等是纯 fixture 与面板 stub 工厂。改后端报文契约只改这一处，别把 mock 复制进各测试文件。
+这些文件是定位入口，不设文件行数上限、固定阅读顺序或强制工作流程。历史架构资料描述过去的实现，不是设计冻结。

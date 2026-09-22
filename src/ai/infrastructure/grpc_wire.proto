@@ -1,0 +1,30 @@
+syntax = "proto3";
+package loci.llm.v1;
+
+// Credentials and the upstream URL are resolved inside the tenant-bound gateway.
+service ModelGateway {
+  rpc Check(Provider) returns (Ready);
+  rpc Exchange(ModelRequest) returns (stream Frame);
+}
+message Provider {
+  string name = 1;
+  string model = 2;
+  string protocol = 3;
+}
+message Ready { bool ready = 1; }
+message ModelRequest {
+  Provider provider = 1;
+  // Preserve the provider's native JSON contract, including exact integer values.
+  bytes json_body = 2;
+}
+message ResponseHeaders {
+  int32 status = 1;
+  string content_type = 2;
+  string upstream_http_version = 3;
+}
+message Frame {
+  oneof payload {
+    ResponseHeaders headers = 1;
+    bytes body = 2;
+  }
+}

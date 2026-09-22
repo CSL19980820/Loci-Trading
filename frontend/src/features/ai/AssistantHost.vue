@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
+import { useVisitorMode } from '@/shared/composables/useAccess'
+const visitor = useVisitorMode()
+import { toast } from 'vue-sonner'
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
-
-import { ElMessage } from 'element-plus'
 
 import {
   compactAiSession,
@@ -46,6 +48,7 @@ const THINKING_KEY = 'loci.assistant.thinking'
 const THINKING_LEVELS: ThinkingLevel[] = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
 
 const open = ref(false)
+const compactMobile = useMediaQuery('(max-width:767px)')
 const router = useRouter()
 const loading = ref(false)
 const error = ref('')
@@ -110,6 +113,7 @@ async function syncSessionMessages(sessionId: string): Promise<void> {
 }
 
 async function loadCatalog(): Promise<void> {
+  if (visitor.value) return
   const catalog = await getAiTools()
   if (disposed) return
   toolsCatalog.value = catalog
@@ -123,6 +127,7 @@ async function loadCatalog(): Promise<void> {
 }
 
 async function loadContextSources(): Promise<void> {
+  if (visitor.value) return
   try {
     const [nextProfile, nextMemories] = await Promise.all([
       getAiProfile(),
@@ -220,6 +225,7 @@ async function selectSession(id: string): Promise<void> {
 }
 
 async function createSession(options: { fromSend?: boolean } = {}): Promise<AiSessionDetail | null> {
+  if (visitor.value) return null
   if (isActiveRun() || isWaitingUser() || (dispatching.value && !options.fromSend)) return null
   // Reuse the current empty draft so 「新建」不会堆出一串「新对话」.
   if (active.value && !messages.value.length) return active.value
@@ -282,11 +288,11 @@ async function onSlashCommand(slug: string): Promise<void> {
   if (slug !== 'compact') return
   const sessionId = active.value?.id
   if (!sessionId) {
-    ElMessage.warning('请先打开或新建对话')
+    toast.warning('请先打开或新建对话')
     return
   }
   if (isSessionLocked()) {
-    ElMessage.warning('会话占用中，请先结束或取消本轮再压缩')
+    toast.warning('会话占用中，请先结束或取消本轮再压缩')
     return
   }
   try {
@@ -305,14 +311,15 @@ async function onSlashCommand(slug: string): Promise<void> {
       messages.value = [...msgs.slice(0, i), next, ...msgs.slice(i + 1)]
       break
     }
-    ElMessage.success(notice)
+    toast.success(notice)
   } catch (caught) {
-    ElMessage.error(toErrorMessage(caught, '压缩失败'))
+    toast.error(toErrorMessage(caught, '压缩失败'))
   }
 }
 
 /** Drop empty drafts when leaving the assistant; landed sessions (有消息) keep. */
 async function discardEmptyDraftOnClose(): Promise<void> {
+  if (visitor.value) return
   if (isSessionLocked()) return
   const draft = active.value
   if (!draft || messages.value.length > 0) return
@@ -404,7 +411,7 @@ function onShortcut(event: KeyboardEvent): void {
     void openAssistant()
   }
   // 设置等子弹窗自己会吃掉 Esc；这里再关一次会把助手一起收走
-  if (event.key === 'Escape' && open.value && !document.querySelector('.el-overlay')) {
+  if (event.key === 'Escape' && open.value && !document.querySelector('[data-state="open"][role="dialog"], [data-state="open"][role="alertdialog"]')) {
     open.value = false
   }
 }
@@ -439,7 +446,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <AssistantFloatBall :open="open" :busy="isBusy() || isWaitingUser()" :unavailable="!providerReady" @toggle="open ? (open = false) : openAssistant()" />
+  <AssistantFloatBall v-if="!compactMobile" :open="open" :busy="isBusy() || isWaitingUser()" :unavailable="!providerReady && !visitor" @toggle="open ? (open = false) : openAssistant()" />
   <AssistantPanel
     :open="open"
     :title="active?.title"
@@ -480,5 +487,5 @@ onUnmounted(() => {
     @configure="configureProviders"
     @slash-command="onSlashCommand"
   />
-  <AssistantSettingsDialog v-model:open="settingsOpen" />
+  <AssistantSettingsDialog v-if="!visitor" v-model:open="settingsOpen" />
 </template>

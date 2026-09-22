@@ -1,7 +1,7 @@
 """独立守护现金账户：金额以分记账，股数为整数，成本含买入费用。"""
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -49,30 +49,11 @@ def available_quantity(position: dict[str, Any], day: str) -> int:
 
 
 def guardian_position_policy(state: dict[str, Any], now: datetime) -> dict[str, Any]:
-    """股票只数约束；T+1锁定的股票决定今天最少必须留下几只。"""
-    return {"normal_max": 4, "absolute_max": 8, "close_max": 4,
-            "close_rebalance_at": "14:50", "close_due": now.time() >= time(14, 50),
-            "locked_codes": [p["code"] for p in state.get("positions", [])
-                             if available_quantity(p, now.date().isoformat()) < p["quantity"]],
-            "close_keep_codes": state.get("close_keep_codes"),
-            "close_plan_date": state.get("close_plan_date", "")}
-
-
-def validate_guardian_close_plan(state: dict[str, Any], keep: list[str] | None, now: datetime) -> list[str]:
-    """临时超额仓位必须有模型明确选定、按当日T+1可执行的收盘留仓名单。"""
-    policy = guardian_position_policy(state, now)
-    if keep is None and state.get("close_plan_date") == now.date().isoformat():
-        keep = state.get("close_keep_codes")
-    if keep is None:
-        raise ValueError("临时超过4只持仓时，模型必须明确close_keep_codes收盘留仓名单")
-    if len(keep) > policy["close_max"] or len(set(keep)) != len(keep):
-        raise ValueError("收盘留仓名单最多4只且不可重复")
-    held = {p["code"] for p in state["positions"]}
-    if not set(keep) <= held:
-        raise ValueError("收盘留仓名单包含未实际持有的股票，需按实际成交重新选择")
-    if not set(policy["locked_codes"]) <= set(keep):
-        raise ValueError("T+1锁定股票必须全部纳入收盘留仓名单，不能当天清仓")
-    return list(keep)
+    """持仓描述；股票只数与仓位由模型自主决定，上限为空表示不设限。"""
+    locked = [p["code"] for p in state.get("positions", [])
+              if available_quantity(p, now.date().isoformat()) < p["quantity"]]
+    return {"position_count": len(state.get("positions", [])),
+            "locked_codes": locked, "locked_count": len(locked)}
 
 
 def guardian_quantity_error(code: str, quantity: int, selling: bool, available: int) -> str:
@@ -94,12 +75,14 @@ def guardian_quantity_error(code: str, quantity: int, selling: bool, available: 
         if not selling and quantity % 100:
             return "普通 A 股买入须为 100 股的整数倍"
         if selling and quantity % 100 not in (0, available % 100):
+            if available % 100 == 0:
+                return f"普通 A 股卖出须为 100 股的整数倍；当前可卖 {available} 股，可自主选择合法分批股数"
             return "零股余额须一次性卖出，不能拆分"
     return ""
 
 
 def settle_guardian_order(state: dict[str, Any], order: dict[str, Any], quote: dict[str, Any],
-                          now: datetime, reference: dict[str, Any]) -> dict[str, Any]:
+                          now: datetime, reference: dict[str, Any], *, guardian_policy: bool = True) -> dict[str, Any]:
     """调用方先检查新鲜度；校验完成前不写 state，拒单不会留下半笔账。"""
     code, action, quantity = order["code"], order["action"], order["quantity"]
     if action not in ("buy", "add", "sell", "reduce", "take_profit", "stop_loss"):
@@ -109,14 +92,6 @@ def settle_guardian_order(state: dict[str, Any], order: dict[str, Any], quote: d
     if action == "add" and before is None:
         raise ValueError("没有持仓，首次建仓请使用买入")
     day = now.date().isoformat()
-    if not selling:
-        policy = guardian_position_policy(state, now)
-        if before is None:
-            limit = policy["close_max"] if policy["close_due"] else policy["absolute_max"]
-            if len(state["positions"]) >= limit:
-                raise ValueError(f"{'尾盘收敛期' if policy['close_due'] else '盘中'}持仓上限为{limit}只，须先卖出再新开仓")
-        if len(set(policy["locked_codes"]) | {code}) > policy["close_max"]:
-            raise ValueError("T+1锁定股票将超过4只，今天无法收敛至收盘上限；不能继续买入或加仓")
     available = available_quantity(before, day) if before else 0
     error = guardian_quantity_error(code, quantity, selling, available)
     if error:

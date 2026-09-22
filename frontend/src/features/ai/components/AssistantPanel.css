@@ -1,103 +1,348 @@
-.assistant-panel {
+/* ─── 遮罩：桌面透明点外即关；宽屏工作台加一层淡墨 + 模糊 ─── */
+.assistant-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-popup);
   display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  background: var(--surface);
-  color: var(--ink);
+  justify-content: flex-end;
+  background: color-mix(in oklab, var(--n-12) 10%, transparent);
 }
+
+.assistant-overlay.is-wide {
+  background: color-mix(in oklab, var(--n-12) 28%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ─── 面板：贴右浮起 520px，四角 16px，大投影 ─── */
+.assistant-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  width: min(520px, calc(100vw - 24px));
+  min-height: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px color-mix(in oklab, var(--n-12) 4%, transparent);
+  overflow: hidden;
+  transition: width var(--dur) var(--ease), left var(--dur) var(--ease);
+}
+
+.assistant-panel.is-wide {
+  left: 12px;
+  width: auto;
+}
+
+/* ─── 页头：48px，按钮 + 品牌盘 + 标题 / 模型 + 状态徽标 + 工具 ─── */
 .assistant-panel__head {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
   gap: var(--gap-2);
-  padding: var(--gap-2) var(--gap-3);
-  border-bottom: 1px solid var(--rule);
-  background: var(--surface-raised);
   min-width: 0;
+  height: 48px;
+  padding: 0 var(--gap-2) 0 var(--gap-2);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
 }
+
+.assistant-panel__brand {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, color-mix(in oklab, var(--seal) 90%, white), var(--seal-hover));
+  color: var(--on-primary);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: var(--shadow-inset-highlight);
+}
+
 .assistant-panel__identity {
-  display: inline-flex;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.assistant-panel__title {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.assistant-panel__model {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.assistant-panel__state {
+  flex: 0 0 auto;
+}
+
+.assistant-panel__tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.assistant-panel__icon {
+  position: relative;
+  color: var(--text-tertiary);
+}
+
+.assistant-panel__icon.is-on {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.assistant-panel__live {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--seal);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* ─── 提示条 ─── */
+.assistant-panel__alert {
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--gap-2);
-  min-width: 0;
-  color: var(--ink);
-  font-size: var(--ai-fs-body);
+  margin: var(--gap-2) var(--gap-3) 0;
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid color-mix(in oklab, var(--stamp) 30%, var(--border-subtle));
+  border-radius: var(--radius);
+  background: var(--stamp-soft);
+  color: var(--stamp);
+  font-size: var(--fs-aux);
+  line-height: 1.5;
 }
-.assistant-panel__identity .el-icon { flex-shrink: 0; color: var(--seal-ink); }
-.assistant-panel__identity strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.assistant-panel__model {
-  margin-left: auto;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--mist);
-  font: var(--ai-fs-meta) var(--mono);
-}
-.assistant-panel__close { flex-shrink: 0; margin-left: auto; }
-.assistant-panel__model + .assistant-panel__close { margin-left: 0; }
-.assistant-panel__alert { margin: var(--gap-2) var(--gap-3) 0; }
+
 .assistant-panel__provider-empty {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--gap-2);
+  gap: var(--gap-2) var(--gap-3);
+  margin: var(--gap-2) var(--gap-3) 0;
   padding: var(--gap-2) var(--gap-3);
+  border: 1px solid color-mix(in oklab, var(--warn) 30%, var(--border-subtle));
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+  font-size: var(--fs-aux);
 }
-.assistant-panel__provider-empty .assistant-panel__alert { flex: 1; margin: 0; }
+
+.assistant-panel__provider-text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* ─── 主体三栏 ─── */
 .assistant-panel__body {
   position: relative;
   display: flex;
-  min-height: 0;
-  min-width: 0;
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
+
+.assistant-panel__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: color-mix(in oklab, var(--n-12) 20%, transparent);
+  animation: assistant-scrim-in var(--dur-fast) var(--ease);
+}
+
 .assistant-panel__stage {
   display: flex;
-  min-width: 0;
-  min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  background: var(--surface-canvas);
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface);
   container-type: inline-size;
 }
+
 .assistant-panel__composer {
   flex: 0 0 auto;
   min-width: 0;
-  padding: var(--gap-3);
-  border-top: 1px solid var(--rule);
+  padding: var(--gap-2) var(--gap-3) var(--gap-3);
   background: var(--surface);
 }
+
+.assistant-panel.is-wide .assistant-panel__composer {
+  padding: var(--gap-2) var(--gap-4) var(--gap-4);
+}
+
+.assistant-panel__composer > :deep(.assistant-sender) {
+  max-width: none;
+  margin: 0 auto;
+}
+
 .assistant-panel__stage :deep(.assistant-conversation),
 .assistant-panel__stage :deep(.assistant-empty) {
   padding-inline: var(--gap-3);
   box-sizing: border-box;
 }
+
+.assistant-panel.is-wide .assistant-panel__stage :deep(.assistant-conversation),
+.assistant-panel.is-wide .assistant-panel__stage :deep(.assistant-empty) {
+  padding-inline: var(--gap-5);
+}
+
 .assistant-panel :deep(button:focus-visible) {
-  outline: 2px solid var(--seal);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
-@media (max-width: 640px) {
-  .assistant-panel__head { padding: var(--gap-1) var(--gap-2); }
-  .assistant-panel__model { display: none; }
-  .assistant-panel__composer { padding: var(--gap-2); }
+
+/* ─── 抽屉模式（贴右 / 窄屏）：侧栏从面板边缘滑出，收起时不占位 ─── */
+.assistant-panel:not(.is-wide) .assistant-panel__body > :deep(.assistant-session-rail.is-collapsed),
+.assistant-panel:not(.is-wide) .assistant-panel__body > :deep(.assistant-task-sidebar.is-collapsed) {
+  display: none;
 }
+
+.assistant-panel:not(.is-wide) .assistant-panel__body > :deep(.assistant-session-rail:not(.is-collapsed)),
+.assistant-panel:not(.is-wide) .assistant-panel__body > :deep(.assistant-task-sidebar:not(.is-collapsed)) {
+  position: absolute;
+  inset-block: 0;
+  z-index: 5;
+  width: min(300px, calc(100% - 44px));
+  min-width: 0;
+  box-shadow: var(--shadow-lg);
+  animation: assistant-drawer-in var(--dur) var(--ease);
+}
+
+.assistant-panel:not(.is-wide) .assistant-panel__body > :deep(.assistant-session-rail:not(.is-collapsed)) {
+  left: 0;
+}
+
+.assistant-panel:not(.is-wide) .assistant-panel__body > :deep(.assistant-task-sidebar:not(.is-collapsed)) {
+  right: 0;
+  animation-name: assistant-drawer-in-right;
+}
+
+/* 宽屏工作台在 1100 以下同样用覆盖侧栏，保留完整的对话和输入宽度 */
 @media (max-width: 1100px) {
-  /* 手机与窄平板都用覆盖侧栏，保留完整的对话和输入宽度。 */
-  .assistant-panel__body :deep(.assistant-session-rail:not(.is-collapsed)),
-  .assistant-panel__body :deep(.assistant-task-sidebar:not(.is-collapsed)) {
+  .assistant-panel.is-wide .assistant-panel__body > :deep(.assistant-session-rail:not(.is-collapsed)),
+  .assistant-panel.is-wide .assistant-panel__body > :deep(.assistant-task-sidebar:not(.is-collapsed)) {
     position: absolute;
     inset-block: 0;
-    z-index: 3;
-    width: min(280px, calc(100% - 44px));
+    z-index: 5;
+    width: min(300px, calc(100% - 44px));
     min-width: 0;
+    box-shadow: var(--shadow-lg);
   }
-  .assistant-panel__body :deep(.assistant-session-rail:not(.is-collapsed)) { left: 0; }
-  .assistant-panel__body :deep(.assistant-task-sidebar:not(.is-collapsed)) { right: 0; }
+
+  .assistant-panel.is-wide .assistant-panel__body > :deep(.assistant-session-rail:not(.is-collapsed)) {
+    left: 0;
+  }
+
+  .assistant-panel.is-wide .assistant-panel__body > :deep(.assistant-task-sidebar:not(.is-collapsed)) {
+    right: 0;
+  }
+}
+
+@keyframes assistant-drawer-in {
+  from {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes assistant-drawer-in-right {
+  from {
+    transform: translateX(12px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes assistant-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ─── 手机：铺满整屏，安全区留白 ─── */
+@media (max-width: 640px) {
+  .assistant-overlay {
+    background: transparent;
+  }
+
+  .assistant-panel,
+  .assistant-panel.is-wide {
+    inset: 0;
+    width: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .assistant-panel__head {
+    height: 52px;
+    padding-top: env(safe-area-inset-top, 0);
+  }
+
+  .assistant-panel__model,
+  .assistant-panel__wide {
+    display: none;
+  }
+
+  .assistant-panel__composer {
+    padding: var(--gap-2) var(--gap-3) calc(var(--gap-3) + env(safe-area-inset-bottom, 0));
+  }
+
+  .assistant-panel__stage :deep(.assistant-conversation),
+  .assistant-panel__stage :deep(.assistant-empty) {
+    padding-inline: var(--gap-3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-panel,
+  .assistant-panel__scrim,
+  .assistant-panel__body > :deep(.assistant-session-rail),
+  .assistant-panel__body > :deep(.assistant-task-sidebar) {
+    transition: none;
+    animation: none;
+  }
 }

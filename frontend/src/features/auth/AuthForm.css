@@ -1,27 +1,21 @@
-.panel-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--gap-2);
-  margin-bottom: var(--gap-4);
+/* 五张认证表单共用：label + 控件纵向成列，40px 输入，满宽主按钮 */
+.auth-fields {
+  display: grid;
+  gap: var(--gap-4);
 }
-.panel-title {
-  margin: 0;
-  color: var(--ink);
-  font: 700 var(--fs-hero) / 1.35 var(--font);
-  letter-spacing: .03em;
-}
-.panel-switch, .panel-target {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-aux);
-}
-.panel-target {
+
+.field {
+  display: grid;
+  gap: 6px;
   min-width: 0;
-  overflow-wrap: anywhere;
-  font-family: var(--mono);
 }
+
+.field-label {
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 500;
+}
+
 .label-row {
   display: flex;
   align-items: baseline;
@@ -29,48 +23,113 @@
   gap: var(--gap-2);
   width: 100%;
 }
-.link-btn { padding-inline: var(--gap-1); }
-.strength-tip {
-  margin-top: var(--gap-1);
+
+.link-btn,
+.sub-link {
+  height: auto;
+  padding: 0;
+  color: var(--text-secondary);
   font-size: var(--fs-aux);
 }
+
+.sub-link:hover,
+.link-btn:hover {
+  color: var(--seal-ink);
+}
+
+/* 40px 输入 + 前导图标 */
+.auth-input {
+  height: 40px;
+  font-size: var(--fs-body);
+}
+
+.field-icon {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: var(--text-tertiary);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.field-reveal {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+}
+
+.strength-tip {
+  font-size: var(--fs-aux);
+}
+
 .login-submit {
   width: 100%;
-  height: var(--ctl-h);
-  margin-top: var(--gap-2);
+  height: 40px;
+  margin-top: var(--gap-1);
   font-size: var(--fs-body);
   font-weight: 600;
 }
+
 .form-bottom-link {
-  margin-top: var(--gap-3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: var(--gap-4);
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
   text-align: center;
 }
-.sub-link { color: var(--muted); font-size: var(--fs-aux); }
+
 .resend-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-2);
-  margin-bottom: var(--gap-3);
 }
-.resend-label { color: var(--muted); font-size: var(--fs-aux); }
-.code-input :deep(input) {
-  font: 600 var(--fs-title) / 1.4 var(--mono);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .22em;
-  text-align: center;
-}
-.signin-handle :deep(.el-input__inner) { font-family: var(--mono); }
-.signin-providers :deep(.el-divider--horizontal) { margin-block: var(--gap-4); }
-.signin-providers :deep(.el-divider__text) {
-  color: var(--muted);
-  background: var(--surface);
+
+.resend-label {
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
 }
+
+.code-input {
+  height: 48px;
+  font: 600 var(--fs-hero) / 1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.32em;
+  text-align: center;
+}
+
+.signin-handle {
+  font-family: var(--mono);
+}
+
+/* 带中文标注的分隔线：两段 flex 横线夹一个词 */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-3);
+  margin-block: var(--gap-4) var(--gap-3);
+}
+
+.auth-divider__text {
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+  white-space: nowrap;
+}
+
 .signin-providers__row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
   gap: var(--gap-2);
 }
-.signin-providers__btn { width: 100%; margin-left: 0; }
+
+.signin-providers__btn {
+  width: 100%;
+  height: 40px;
+}

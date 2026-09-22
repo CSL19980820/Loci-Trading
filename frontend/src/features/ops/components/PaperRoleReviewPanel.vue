@@ -1,8 +1,15 @@
 <script setup lang="ts">
+import { Label } from '@/shared/components/ui/label'
 import { computed, ref, watch } from 'vue'
+import { ChevronDown } from '@lucide/vue'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Popover, PopoverContent, PopoverTrigger } from '@/shared/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 import type {
   LeaderRoleHistoryResponse,
   LeaderRoleSummary,
@@ -24,12 +31,26 @@ const props = defineProps<{
 
 const EXIT_ROLES = new Set(['weakened', 'failed'])
 
+/** 图上最多叠 6 只；超出后未选中的项置灰，与原 `el-select` 的禁用规则一致 */
+const MAX_SERIES = 6
+
 const ROLE_TYPE: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
   leader: 'success',
   secondary: 'info',
   follower: 'info',
   weakened: 'warning',
   failed: 'danger',
+}
+
+/**
+ * 角色档位 → 标签配色。绿红留给价格，状态走 `--ok` / `--warn` / `--info`，
+ * 破坏性走印章红（`--stamp`）。
+ */
+const ROLE_BADGE: Record<string, string> = {
+  success: 'border-transparent bg-ok-soft text-ok',
+  warning: 'border-transparent bg-warn-soft text-warn-ink',
+  danger: 'border-stamp/40 bg-surface text-stamp',
+  info: 'border-transparent bg-info-soft text-info-ink',
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -56,6 +77,32 @@ const warningLead = computed(() => summary.value?.warning_lead ?? null)
 const timelineModel = computed(() =>
   buildRoleTimeline(historyRows.value, { codes: selectedCodes.value }),
 )
+
+/** 触发器上一行摘要：与原 `collapse-tags` + `max-collapse-tags="2"` 同口径 */
+const selectedLabel = computed(() => {
+  const picked = timelineModel.value.codeOptions.filter((o) => selectedCodes.value.includes(o.code))
+  if (!picked.length) return '选择代码'
+  const shown = picked.slice(0, 2).map((o) => `${o.name}(${o.code})`)
+  const more = picked.length - shown.length
+  return more > 0 ? `${shown.join('、')} +${more}` : shown.join('、')
+})
+
+function codeDisabled(code: string): boolean {
+  return selectedCodes.value.length >= MAX_SERIES && !selectedCodes.value.includes(code)
+}
+
+function toggleCode(code: string): void {
+  if (selectedCodes.value.includes(code)) {
+    selectedCodes.value = selectedCodes.value.filter((item) => item !== code)
+    return
+  }
+  if (codeDisabled(code)) return
+  selectedCodes.value = [...selectedCodes.value, code]
+}
+
+function roleBadgeClass(role?: string): string {
+  return ROLE_BADGE[ROLE_TYPE[String(role ?? '')] ?? 'info'] ?? ROLE_BADGE.info
+}
 
 const positionAlerts = computed(() => {
   const history = props.roleData?.history ?? []
@@ -161,30 +208,39 @@ const transitionColumns: BasicTableColumn[] = [
     <template v-else>
       <template v-if="historyRows.length && timelineModel.codeOptions.length">
         <div class="mb-1 flex items-center justify-end gap-3">
-          <el-tooltip
-            placement="top-end"
-            content="纵轴是角色档位（不是收益）；最多叠 6 只，缺口表示当日无观测"
-          >
-            <el-select
-              v-model="selectedCodes"
-              multiple
-              collapse-tags
-              collapse-tags-tooltip
-              :max-collapse-tags="2"
-              size="small"
-              placeholder="选择代码"
-              aria-label="角色演进图 · 选择代码"
-              class="min-w-56 max-w-88"
-            >
-              <el-option
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <PopoverTrigger as-child>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="min-w-56 max-w-88 justify-between"
+                    aria-label="角色演进图 · 选择代码"
+                  >
+                    <span class="truncate">{{ selectedLabel }}</span>
+                    <ChevronDown class="size-4 opacity-50" aria-hidden="true" />
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent>纵轴是角色档位（不是收益）；最多叠 6 只，缺口表示当日无观测</TooltipContent>
+            </Tooltip>
+            <PopoverContent align="end" class="w-64 p-1">
+              <Label
                 v-for="opt in timelineModel.codeOptions"
                 :key="opt.code"
-                :label="`${opt.name}(${opt.code})`"
-                :value="opt.code"
-                :disabled="selectedCodes.length >= 6 && !selectedCodes.includes(opt.code)"
-              />
-            </el-select>
-          </el-tooltip>
+                class="code-option"
+                :class="{ 'is-disabled': codeDisabled(opt.code) }"
+              >
+                <Checkbox
+                  :model-value="selectedCodes.includes(opt.code)"
+                  :disabled="codeDisabled(opt.code)"
+                  @update:model-value="toggleCode(opt.code)"
+                />
+                <span class="truncate">{{ opt.name }}({{ opt.code }})</span>
+              </Label>
+            </PopoverContent>
+          </Popover>
         </div>
         <PaperRoleTimelineChart :model="timelineModel" :height="260" />
       </template>
@@ -199,7 +255,7 @@ const transitionColumns: BasicTableColumn[] = [
             :key="String(alert.code)"
             class="border-rule flex flex-wrap items-center gap-x-2 gap-y-1 border-b py-1 text-[length:var(--fs-body)] last:border-b-0"
           >
-            <el-tag size="small" type="warning" effect="plain">{{ String(alert.role_label) }}</el-tag>
+            <Badge :class="roleBadgeClass(String(alert.role))">{{ String(alert.role_label) }}</Badge>
             <span class="font-semibold">{{ String(alert.name) }} {{ String(alert.code) }}</span>
             <span>已判{{ String(alert.role_label) }}仍在持仓</span>
             <span class="text-mist">{{ String(alert.role_basis || '角色依据缺失') }}</span>
@@ -223,13 +279,9 @@ const transitionColumns: BasicTableColumn[] = [
           empty-text="还没有存活统计"
         >
           <template #status="{ row }">
-            <el-tag
-              size="small"
-              :type="row.still_leader ? 'success' : ROLE_TYPE[String(row.current_role)] || 'info'"
-              effect="plain"
-            >
+            <Badge :class="roleBadgeClass(row.still_leader ? 'leader' : String(row.current_role))">
               {{ row.still_leader ? '仍是龙头' : roleLabel(String(row.current_role)) }}
-            </el-tag>
+            </Badge>
           </template>
         </BasicTable>
         <p v-if="warningLead?.samples" class="text-body text-mist mt-1 mb-0">
@@ -259,3 +311,26 @@ const transitionColumns: BasicTableColumn[] = [
     </template>
   </SettingsPanel>
 </template>
+
+<style scoped>
+/* 多选列表项：整行可点，禁用项置灰 */
+.code-option {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+  padding: var(--gap-1) var(--gap-2);
+  border-radius: var(--radius);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+
+.code-option:hover {
+  background: var(--surface-hover);
+}
+
+.code-option.is-disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+</style>

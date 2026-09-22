@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import { default as SidePanel } from '@/shared/components/ui/app/SidePanel.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { StatusBadge, Notice } from '@/shared/components/ui/app/presentation'
+import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as DataGrid } from '@/shared/components/ui/app/DataGrid.vue'
+import { default as DataColumn } from '@/shared/components/ui/app/DataColumn.vue'
+
 import { computed } from 'vue'
 
 import LatencyMeter from './LatencyMeter.vue'
@@ -50,21 +58,21 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
 </script>
 
 <template>
-  <el-drawer v-model="open" class="source-detail-drawer" size="min(540px, 100vw)" direction="rtl" append-to-body>
+  <SidePanel v-model="open" class="source-detail-drawer" size="min(540px, 100vw)" direction="rtl" append-to-body>
     <template #header="{ titleId, titleClass }">
       <div class="ds-detail__head">
         <div class="ds-detail__name">
           <h4 :id="titleId" :class="titleClass">{{ row?.label ?? '数据源' }}</h4>
-          <el-tooltip v-if="row" :content="scopeHint" placement="bottom-start">
+          <HintTooltip v-if="row" :content="scopeHint" placement="bottom-start">
             <code>{{ row.id }}</code>
-          </el-tooltip>
+          </HintTooltip>
           <p v-if="row?.baseUrl" class="ds-detail__url">{{ row.baseUrl }}</p>
         </div>
-        <el-tag v-if="row?.interfaceOnly" size="small" type="info" effect="plain">接口源</el-tag>
-        <el-switch
+        <StatusBadge v-if="row?.interfaceOnly" size="small" tone="info" effect="plain">接口源</StatusBadge>
+        <ToggleSwitch
           v-else-if="row"
           :model-value="row.masterEnabled"
-          :loading="busyKey === `toggle:${row.id}`"
+          :busy="busyKey === `toggle:${row.id}`"
           active-text="启用"
           inactive-text="停用"
           :aria-label="`启用 ${row.label}`"
@@ -83,64 +91,64 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
           <template v-if="row.interfaceCount != null">
             <template v-if="row.tools.length"> · </template>
             <!-- 接口明细不在本抽屉，给一条能点过去的路，别让这个数字成为死数 -->
-            <el-button link type="primary" class="ds-detail__jump" @click="emit('interfaces', row!.id)">
+            <ActionButton access="read" variant="link" tone="primary" class="ds-detail__jump" @click="emit('interfaces', row!.id)">
               接口 {{ row.interfaceCount }} →
-            </el-button>
+            </ActionButton>
           </template>
         </p>
-        <el-button
+        <ActionButton
           v-if="row.tools.length"
-          type="primary"
+          tone="primary"
           size="small"
-          :loading="probing"
+          :busy="probing"
           @click="emit('probe', row.id)"
         >
           探测连接
-        </el-button>
+        </ActionButton>
       </div>
 
-      <el-alert
+      <Notice
         v-if="row.probedCount && row.failedCount"
         :title="`${row.failedCount} 个工具本次探测失败`"
-        type="warning"
+        tone="warning"
         show-icon
         :closable="false"
         class="ds-detail__alert"
       />
 
-      <el-table
+      <DataGrid
         v-if="row.tools.length"
         :data="toolRows()"
         size="small"
         row-key="lane"
         class="ds-detail__table"
       >
-        <el-table-column label="工具" min-width="118">
+        <DataColumn label="工具" min-width="118">
           <template #default="{ row: item }">
             <span class="tool-name">{{ asTool(item).label }}</span>
-            <el-tag v-if="asTool(item).required" size="small" type="warning" effect="plain">
+            <StatusBadge v-if="asTool(item).required" size="small" tone="warning" effect="plain">
               必需
-            </el-tag>
+            </StatusBadge>
           </template>
-        </el-table-column>
-        <el-table-column label="顺位" width="62" align="center" header-align="center">
+        </DataColumn>
+        <DataColumn label="顺位" width="62" align="center" header-align="center">
           <template #default="{ row: item }">
             <span class="ord">{{ asTool(item).order ?? '—' }}</span>
           </template>
-        </el-table-column>
-        <el-table-column label="启用" width="62" align="center">
+        </DataColumn>
+        <DataColumn label="启用" width="62" align="center">
           <template #default="{ row: item }">
-            <el-switch
+            <ToggleSwitch
               size="small"
               :model-value="asTool(item).enabled"
               :disabled="!row!.enabled"
-              :loading="busyKey === `toggle:${row!.id}:${asTool(item).lane}`"
+              :busy="busyKey === `toggle:${row!.id}:${asTool(item).lane}`"
               :aria-label="`启用 ${asTool(item).label}`"
               @change="(next: string | number | boolean) => emit('toggleTool', { id: row!.id, lane: asTool(item).lane, enabled: Boolean(next) })"
             />
           </template>
-        </el-table-column>
-        <el-table-column label="耗时" min-width="120">
+        </DataColumn>
+        <DataColumn label="耗时" min-width="120">
           <template #default="{ row: item }">
             <LatencyMeter
               v-if="asTool(item).probe"
@@ -149,12 +157,12 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
             />
             <span v-else class="dim">—</span>
           </template>
-        </el-table-column>
-        <el-table-column label="结果" min-width="140" show-overflow-tooltip>
+        </DataColumn>
+        <DataColumn label="结果" min-width="140" show-overflow-tooltip>
           <template #default="{ row: item }">
-            <el-tag size="small" :type="statusOf(asTool(item)).type" effect="plain">
+            <StatusBadge size="small" :tone="statusOf(asTool(item)).type" effect="plain">
               {{ statusOf(asTool(item)).label }}
-            </el-tag>
+            </StatusBadge>
             <span v-if="asTool(item).probe?.rows != null" class="rows">
               {{ asTool(item).probe?.rows }} 行
             </span>
@@ -162,11 +170,11 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
               {{ asTool(item).probe?.error }}
             </span>
           </template>
-        </el-table-column>
-      </el-table>
+        </DataColumn>
+      </DataGrid>
     </template>
     <EmptyState v-else description="未选中数据源" reason="在列表里点一行查看" />
-  </el-drawer>
+  </SidePanel>
 </template>
 
 <style scoped>
@@ -256,13 +264,13 @@ function statusOf(tool: SourceTool): { label: string; type: 'success' | 'danger'
 .err {
   margin-left: 0.35rem;
   font-size: 0.76rem;
-  color: var(--el-color-danger);
+  color: var(--stamp);
 }
 
 .dim {
   color: var(--mist);
 }
 .ds-detail__name { min-width: 0; }
-.source-detail-drawer :deep(.el-drawer__header) { border-bottom: 1px solid var(--rule); padding-bottom: var(--gap-3); }
-.source-detail-drawer :deep(.el-drawer__body) { overscroll-behavior: contain; }
+.source-detail-drawer :deep(.side-panel__header) { border-bottom: 1px solid var(--rule); padding-bottom: var(--gap-3); }
+.source-detail-drawer :deep(.side-panel__body) { overscroll-behavior: contain; }
 </style>

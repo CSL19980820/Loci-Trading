@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { h, inject, type Slots } from 'vue'
-
+import { computed, h, inject, type Slots } from 'vue'
+import TextField from './app/TextField.vue'
+import NumberInput from './app/NumberInput.vue'
+import ChoiceField from './app/ChoiceField.vue'
+import ToggleSwitch from './app/ToggleSwitch.vue'
+import { VNodeContent } from './app/vnodeContent'
+import type { ChoiceEntry } from './app/choiceOptions'
 import type { BasicTableColumn } from './basicTableTypes'
 
 const props = defineProps<{
@@ -9,82 +14,53 @@ const props = defineProps<{
   index: number
   editing: boolean
 }>()
-
-const emit = defineEmits<{
-  'update:field': [prop: string, value: unknown]
-}>()
-
+const emit = defineEmits<{ 'update:field': [prop: string, value: unknown] }>()
 const tableSlots = inject<Slots>('basicTableSlots', {})
-
-function onEditInput(value: unknown): void {
-  if (props.col.prop) emit('update:field', props.col.prop, value)
-}
-
-function slotVNode() {
-  const name = props.col.slotName
-  if (!name) return null
-  const fn = tableSlots[name]
-  if (!fn) return null
-  return fn({
-    row: props.row,
-    prop: props.col.prop,
-    index: props.index,
+const value = computed(() => props.col.prop ? props.row[props.col.prop] : undefined)
+const kind = computed(() => props.col.editRender?.component || 'input')
+const editorProps = computed(() => {
+  const { options: _options, ...rest } = props.col.editRender?.componentProps ?? {}
+  return rest
+})
+const options = computed<ChoiceEntry[]>(() => {
+  const options = props.col.editRender?.componentProps?.options
+  if (!Array.isArray(options)) return []
+  return options.map(option => {
+    if (option && typeof option === 'object') {
+      const item = option as Record<string, unknown>
+      return { value: item.value ?? item.id, label: String(item.label ?? item.name ?? item.value ?? ''), disabled: Boolean(item.disabled) }
+    }
+    return { value: option, label: String(option) }
   })
+})
+const numberValue = computed(() => {
+  if (value.value === '' || value.value == null) return undefined
+  const number = Number(value.value)
+  return Number.isFinite(number) ? number : undefined
+})
+function update(next: unknown) { if (props.col.prop) emit('update:field', props.col.prop, next) }
+function updateNumber(next: unknown) {
+  // Empty/invalid intermediate edits must not silently replace a saved value with zero or NaN.
+  if (typeof next === 'number' && Number.isFinite(next)) update(next)
+}
+function slotContent() {
+  const slot = props.col.slotName ? tableSlots[props.col.slotName] : undefined
+  return slot?.({ row: props.row, prop: props.col.prop, index: props.index })
 }
 </script>
 
 <template>
   <template v-if="editing && col.editRender">
-    <el-input
-      v-if="!col.editRender.component || col.editRender.component === 'el-input'"
-      :model-value="col.prop ? String(row[col.prop] ?? '') : ''"
-      v-bind="col.editRender.componentProps ?? {}"
-      size="small"
-      @update:model-value="onEditInput"
-    />
-    <el-input-number
-      v-else-if="col.editRender.component === 'el-input-number'"
-      :model-value="col.prop ? Number(row[col.prop] ?? 0) : 0"
-      v-bind="col.editRender.componentProps ?? {}"
-      size="small"
-      @update:model-value="onEditInput"
-    />
-    <el-select
-      v-else-if="col.editRender.component === 'el-select'"
-      :model-value="col.prop ? row[col.prop] : undefined"
-      v-bind="col.editRender.componentProps ?? {}"
-      size="small"
-      @update:model-value="onEditInput"
-    >
-      <el-option
-        v-for="opt in ((col.editRender.componentProps?.options as { label: string; value: unknown }[]) ?? [])"
-        :key="String(opt.value)"
-        :label="opt.label"
-        :value="opt.value"
-      />
-    </el-select>
-    <span v-else>{{ col.prop ? row[col.prop] : '' }}</span>
+    <NumberInput v-if="kind === 'input-number'" v-bind="editorProps" :model-value="numberValue" @update:model-value="updateNumber" />
+    <ChoiceField v-else-if="kind === 'select'" v-bind="editorProps" :model-value="value" :options="options" @update:model-value="update" />
+    <ToggleSwitch v-else-if="kind === 'switch'" v-bind="editorProps" :model-value="Boolean(value)" @update:model-value="update" />
+    <TextField v-else v-bind="editorProps" :model-value="value" @update:model-value="update" />
   </template>
-  <component :is="{ render: () => slotVNode() }" v-else-if="col.slotName" />
-  <component
-    :is="{
-      render: () =>
-        col.render?.(h, { row, prop: col.prop, index }) ?? null,
-    }"
-    v-else-if="col.render"
-  />
-  <span v-else-if="col.formatter" class="cell-text">{{ col.formatter(row) }}</span>
-  <span v-else class="cell-text">{{ col.prop ? row[col.prop] : '' }}</span>
+  <VNodeContent v-else-if="col.slotName" :render="slotContent" />
+  <VNodeContent v-else-if="col.render" :render="() => col.render?.(h, { row, prop: col.prop, index })" />
+  <span v-else class="cell-text">{{ col.formatter ? col.formatter(row) : value ?? '' }}</span>
 </template>
 
 <style scoped>
-/* .cell-text 只用于 formatter/纯文本分支：slot/render 分支自管展示，省略与 tooltip 由列配置决定 */
-.cell-text {
-  display: inline-block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: middle;
-}
+.cell-text { display:inline-block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; }
 </style>

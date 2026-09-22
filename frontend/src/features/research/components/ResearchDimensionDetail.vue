@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CircleCheck, InfoFilled } from '@element-plus/icons-vue'
+import { CircleCheck, Info } from '@lucide/vue'
 
-import type { ResearchQuality } from '@/shared/types/quant'
+import { Badge } from '@/shared/components/ui/badge'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+import type { ResearchQuality } from '@/shared/types/quant'
 
 import type { ResearchDimensionRow } from '../researchTypes'
 
@@ -41,12 +44,32 @@ function qualityText(value: ResearchQuality | undefined): string {
   return '缺失'
 }
 
+/**
+ * 质量档 → 语义色。shadcn Badge 只有 default/secondary/destructive/outline，
+ * 状态色由令牌类补上（与配色规范 D1 的状态色一致，不借涨跌色）。
+ */
+const QUALITY_TONE: Record<'success' | 'warning' | 'info' | 'danger', string> = {
+  success: 'border-transparent bg-ok-soft text-ok',
+  warning: 'border-transparent bg-warn-soft text-warn-ink',
+  info: 'border-line bg-sunken text-mist',
+  danger: 'text-stamp border-[color-mix(in_oklab,var(--stamp)_38%,var(--rule))] bg-surface',
+}
+
 function qualityType(value: ResearchQuality | undefined): 'success' | 'warning' | 'info' | 'danger' {
   if (value === 'full') return 'success'
   if (value === 'partial') return 'warning'
   if (value === 'error') return 'danger'
   return 'info'
 }
+
+/** 最近 60 根日线：列固定，行由 result.values.recent 给 */
+const recentColumns: BasicTableColumn[] = [
+  { prop: 'trade_date', label: '日期', width: 112, align: 'center', headerAlign: 'center' },
+  { prop: 'close', label: '收盘', minWidth: 96, align: 'right', headerAlign: 'right' },
+  { prop: 'ma20', label: 'MA20', minWidth: 96, align: 'right', headerAlign: 'right' },
+  { prop: 'rsi14', label: 'RSI14', minWidth: 96, align: 'right', headerAlign: 'right' },
+  { prop: 'macd_hist', label: 'MACD 柱', minWidth: 110, align: 'right', headerAlign: 'right' },
+]
 
 function formatValue(value: unknown): string {
   if (value === true) return '是'
@@ -70,11 +93,16 @@ function sourceText(row: ResearchDimensionRow): string {
       <div>
         <span class="research-kicker">{{ props.row.group }} · {{ props.row.key }}</span>
         <h3>{{ props.row.name }}</h3>
-        <el-tooltip v-if="props.row.summary" :content="props.row.summary" placement="top"><el-icon tabindex="0" aria-label="维度说明"><InfoFilled /></el-icon></el-tooltip>
+        <Tooltip v-if="props.row.summary">
+          <TooltipTrigger as-child>
+            <span class="detail-hint" tabindex="0" aria-label="维度说明"><Info aria-hidden="true" /></span>
+          </TooltipTrigger>
+          <TooltipContent side="top">{{ props.row.summary }}</TooltipContent>
+        </Tooltip>
       </div>
-      <el-tag :type="qualityType(result?.quality)" effect="plain">
+      <Badge variant="outline" :class="QUALITY_TONE[qualityType(result?.quality)]">
         {{ qualityText(result?.quality) }}
-      </el-tag>
+      </Badge>
     </header>
 
     <div class="detail-meta">
@@ -97,13 +125,14 @@ function sourceText(row: ResearchDimensionRow): string {
           <span>最近 60 根</span>
           <span>{{ formatValue(values.bars) }} 根样本</span>
         </div>
-        <el-table :data="recentRows" size="small" height="250" stripe>
-          <el-table-column prop="trade_date" label="日期" width="112" align="center" header-align="center" />
-          <el-table-column prop="close" label="收盘" align="right" header-align="right" />
-          <el-table-column prop="ma20" label="MA20" align="right" header-align="right" />
-          <el-table-column prop="rsi14" label="RSI14" align="right" header-align="right" />
-          <el-table-column prop="macd_hist" label="MACD 柱" align="right" header-align="right" />
-        </el-table>
+        <BasicTable
+          :columns="recentColumns"
+          :data-source="recentRows"
+          :pagination="false"
+          height="250"
+          stripe
+          empty-text="没有近期日线"
+        />
       </div>
     </template>
 
@@ -123,7 +152,7 @@ function sourceText(row: ResearchDimensionRow): string {
       <span v-for="gap in result.data_gaps" :key="gap">{{ gap }}</span>
     </div>
     <div v-if="result?.evidence.length" class="evidence-strip">
-      <el-icon aria-hidden="true"><CircleCheck /></el-icon>
+      <CircleCheck class="evidence-strip__icon" aria-hidden="true" />
       <span>证据已绑定</span>
       <code :title="result.evidence[0].payload_sha256">
         {{ result.evidence[0].payload_sha256.slice(0, 16) }}…
@@ -177,6 +206,23 @@ function sourceText(row: ResearchDimensionRow): string {
   font-size: var(--fs-aux);
   line-height: 1.4;
 }
+.detail-hint {
+  display: inline-flex;
+  margin-top: var(--gap-1);
+  color: var(--mist);
+  cursor: help;
+}
+
+.detail-hint svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.evidence-strip__icon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+}
 
 .detail-meta {
   display: flex;
@@ -218,8 +264,6 @@ function sourceText(row: ResearchDimensionRow): string {
   color: var(--mist);
   font-size: var(--fs-aux);
 }
-
-/* D2：最大的字是数字 */
 .technical-cell strong,
 .value-cell strong {
   overflow-wrap: anywhere;
@@ -267,8 +311,6 @@ function sourceText(row: ResearchDimensionRow): string {
 .gap-title {
   font-weight: 700;
 }
-
-/* 证据已绑定是「完成」而非「下跌」：走品牌朱红，不借涨跌色（D1） */
 .evidence-strip {
   /* 同上：去掉左竖条，改用中性 hairline 外框 */
   border-color: var(--rule);

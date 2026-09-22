@@ -11,6 +11,7 @@ export interface TopLlmUsageItem {
 export interface AuditLogItem {
   id: string
   occurred_at: string
+  login_at?: string | null
   actor_id: string
   actor_name: string
   action: string
@@ -20,24 +21,12 @@ export interface AuditLogItem {
   ip: string
 }
 
-export interface AdminAnnouncementItem {
-  id: string
-  title: string
-  body_md: string
-  level: 'info' | 'warn' | 'critical'
-  published_at: string | null
-  expires_at: string | null
-  created_by?: string
-  created_at?: string
-  updated_at?: string
-}
-
 export interface AdminOverviewResponse {
   users: number
   admins: number
   top_llm_usage: TopLlmUsageItem[]
   recent_audit: AuditLogItem[]
-  announcements: AdminAnnouncementItem[]
+  visitors: number
   tenants: string[]
 }
 
@@ -69,24 +58,6 @@ export interface AdminUserItem {
 export interface AdminUsersResponse {
   items: AdminUserItem[]
   total: number
-}
-
-export interface SetQuotaPayload {
-  llm_monthly_tokens?: number
-  llm_daily_calls?: number
-  strategy_slots?: number
-  publish_slots?: number
-  job_slots?: number
-  storage_mb?: number
-}
-
-export interface UpsertAnnouncementPayload {
-  id?: string
-  title: string
-  body_md: string
-  level?: 'info' | 'warn' | 'critical'
-  published_at?: string | null
-  expires_at?: string | null
 }
 
 /** 审计 / 登录日志共用的分页响应。`total` 是过滤后的总条数，不是当前页条数。 */

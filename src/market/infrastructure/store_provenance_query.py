@@ -53,7 +53,10 @@ class MarketProvenanceQueryMixin:
                 {"receipt_id": receipt_id, "code": detail["code"], **attempt}
                 for attempt in receipt_attempts
             )
-        sources = self._source_summaries(quote_rows)
+        sources = self._source_summaries(
+            quote_rows,
+            receipt_map={str(row["receipt_id"]): row for row in receipt_rows},
+        )
         if not sources and requested_codes and not receipts:
             sources.append(
                 {"source_id": "market.db", "state": "failed", "rows": 0, "codes": 0,
@@ -151,7 +154,7 @@ class MarketProvenanceQueryMixin:
         receipt_ids = list(dict.fromkeys([*linked_ids, *unlinked_ids]))
         if not receipt_ids:
             return []
-        rows: list[sqlite3.Row] = []
+        rows: list[sqlite3.Row | dict[str, object]] = []
         for offset in range(0, len(receipt_ids), _SQL_IN_CHUNK):
             chunk = receipt_ids[offset : offset + _SQL_IN_CHUNK]
             chunk_rows = self.conn.execute(
@@ -161,6 +164,17 @@ class MarketProvenanceQueryMixin:
                 chunk,
             ).fetchall()
             rows.extend(chunk_rows)
+        found = {str(row["receipt_id"]) for row in rows}
+        missing = [receipt_id for receipt_id in receipt_ids if receipt_id not in found]
+        if missing:
+            # 旧 selected 回执已经从 SQLite 热窗口移入 Parquet/Zstd 冷归档；
+            # 只按本次范围实际关联的 receipt_id 回查，不扫描整个归档目录。
+            from src.market.application.provenance_archive import (
+                default_archive_root,
+                query_archived_receipts,
+            )
+
+            rows.extend(query_archived_receipts(default_archive_root(self.db_path), missing))
         rows.sort(key=lambda row: (str(row["generated_at"] or ""), str(row["receipt_id"])))
         return rows
 
@@ -343,6 +357,37 @@ class MarketProvenanceQueryMixin:
                      "availability_status": str(row["availability_status"] or "not_observed"),
                      "error": str(row["error"] or "")}
                 )
+        missing = [receipt_id for receipt_id, attempts in grouped.items() if not attempts]
+        if missing:
+            from src.market.application.provenance_archive import (
+                default_archive_root,
+                query_archived_attempts,
+            )
+
+            for row in query_archived_attempts(default_archive_root(self.db_path), missing):
+                try:
+                    fields = json.loads(str(row.get("fields_json") or "[]"))
+                except json.JSONDecodeError:
+                    fields = []
+                grouped[str(row["receipt_id"])].append(
+                    {
+                        "source_id": str(row.get("source_id") or ""),
+                        "state": str(row.get("state") or ""),
+                        "checked_at": str(row.get("checked_at") or ""),
+                        "rows": row.get("rows"),
+                        "fields": fields if isinstance(fields, list) else [],
+                        "source_url": str(row.get("source_url") or ""),
+                        "published_at": str(row.get("published_at") or ""),
+                        "publication_status": str(row.get("publication_status") or "not_observed"),
+                        "fetched_at": str(row.get("fetched_at") or ""),
+                        "as_of": str(row.get("as_of") or ""),
+                        "payload_sha256": str(row.get("payload_sha256") or ""),
+                        "parser_revision": str(row.get("parser_revision") or ""),
+                        "available_at": str(row.get("available_at") or ""),
+                        "availability_status": str(row.get("availability_status") or "not_observed"),
+                        "error": str(row.get("error") or ""),
+                    }
+                )
         return grouped
 
     def _receipt_detail(self, row: sqlite3.Row, attempts: list[dict[str, object]]) -> dict[str, object]:
@@ -442,14 +487,22 @@ class MarketProvenanceQueryMixin:
         }
 
     @staticmethod
-    def _source_summaries(rows: Sequence[sqlite3.Row]) -> list[dict[str, object]]:
+    def _source_summaries(
+        rows: Sequence[sqlite3.Row],
+        *,
+        receipt_map: dict[str, sqlite3.Row | dict[str, object]] | None = None,
+    ) -> list[dict[str, object]]:
         buckets: dict[str, dict[str, object]] = {}
         source_codes: dict[str, set[str]] = {}
         for row in rows:
             # 空/孤儿关联不能变成 legacy；原 SQL 只接纳 NULL receipt 或非空 selected_source。
-            if row["source_id"] is None or row["source_id"] == "":
+            source_value = row["source_id"]
+            if (source_value is None or source_value == "") and receipt_map:
+                receipt = receipt_map.get(str(row["receipt_id"] or ""))
+                source_value = receipt["selected_source"] if receipt else None
+            if source_value is None or source_value == "":
                 continue
-            source_id = str(row["source_id"])
+            source_id = str(source_value)
             bucket = buckets.setdefault(
                 source_id,
                 {

@@ -3,7 +3,7 @@
  *
  * 后端存的是 `admin.set_role` / `active` / `__primary__` 这类机器口径，
  * 之前各个 Tab 各写各的三元表达式（有的漏了 pending、有的直接把
- * `admin.set_role` 原样打进 el-tag），于是同一个状态在四个页面有四种写法。
+ * `admin.set_role` 原样打进标记里），于是同一个状态在四个页面有四种写法。
  * 这里是唯一真相：**新增枚举先加到这，再在页面里用 `*Label` / `*_OPTIONS`**。
  *
  * 下拉选项与文案共用同一张表——「筛选框里写中文、表格里也写中文」因此是结构保证，
@@ -24,11 +24,31 @@ function toOptions(map: Readonly<Record<string, string>>): DictOption[] {
 /** 未登记的机器码兜底：显示占位符而不是把英文原样漏出去。 */
 const UNKNOWN = '—'
 
+// ---- 标记色 --------------------------------------------------------------
+
+/** `*TagType` 的返回值：后端语义色名，界面上再翻成 Badge 的变体。 */
+export type TagTone = 'success' | 'danger' | 'warning' | 'info'
+
+/** 本仓 `UiBadge` 的语义变体（D1：涨跌色只给价格，状态走 ok / warn / info / stamp）。 */
+export type BadgeTone = 'ok' | 'warn' | 'info' | 'stamp' | 'secondary'
+
+/**
+ * 语义色名 → Badge 变体。**只此一张表**：四个 Tab 曾各自写三元表达式，
+ * 同一状态在不同页出现过三种颜色。
+ */
+export function tagVariant(tone: TagTone | string | null | undefined): BadgeTone {
+  if (tone === 'success') return 'ok'
+  if (tone === 'danger') return 'stamp'
+  if (tone === 'warning') return 'warn'
+  if (tone === 'info') return 'info'
+  return 'secondary'
+}
+
 // ---- 角色 ----------------------------------------------------------------
 
 const ROLE_LABELS: Readonly<Record<string, string>> = {
   admin: '管理员',
-  member: '普通成员',
+  visitor: '只读访客',
 }
 
 export const ROLE_OPTIONS: readonly DictOption[] = toOptions(ROLE_LABELS)

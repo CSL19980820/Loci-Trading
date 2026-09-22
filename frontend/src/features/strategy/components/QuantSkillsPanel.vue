@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, ref, watch } from 'vue'
+import { toast } from 'vue-sonner'
+import { ChevronDown, Cpu, Ellipsis, Info, Play, RefreshCw, Search, Trash2, Upload, X } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
-import { RefreshRight, Search } from '@element-plus/icons-vue'
 
 import { installSkill, syncSkillTemplates } from '@/shared/api/quant'
-import PageContainer from '@/shared/components/layout/PageContainer.vue'
-import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
-import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
-import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import RowActions from '@/shared/components/ui/RowActions.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/shared/components/ui/dropdown-menu'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Input } from '@/shared/components/ui/input'
+import { Skeleton } from '@/shared/components/ui/skeleton'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
 import { zipFolderFiles } from '@/shared/lib/zipStore'
 import { strategyLabel } from '@/shared/lib/format'
@@ -30,11 +38,10 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const router = useRouter()
-const basicFormRef = ref<InstanceType<typeof BasicForm>>()
 const zipInput = ref<HTMLInputElement | null>(null)
 const folderInput = ref<HTMLInputElement | null>(null)
 const installing = ref(false)
-const nameQuery = ref('')
+const query = ref('')
 const detailOpen = ref(false)
 const detail = ref<Skill | null>(null)
 
@@ -54,33 +61,8 @@ watch(
   { immediate: true },
 )
 
-const filters = reactive({
-  name: '',
-})
-
-const filterModel = computed({
-  get: () => filters as Record<string, unknown>,
-  set: (value: Record<string, unknown>) => {
-    const next = String(value.name ?? '')
-    if (!formValuesEqual(filters.name, next)) filters.name = next
-  },
-})
-
-const filterSchemas: BasicFormSchema[] = [
-  {
-    field: 'name',
-    label: '名称',
-    component: 'input',
-    componentProps: {
-      clearable: true,
-      placeholder: '模糊查询技能名',
-      maxlength: 64,
-    },
-  },
-]
-
 /**
- * 名称列一律中文：后端 `name` 缺失、或它本身就是 slug 形状时退回共享词表。
+ * 名称一律中文：后端 `name` 缺失、或它本身就是 slug 形状时退回共享词表。
  * 搜索仍然吃 slug，那是标识不是展示。
  */
 function displayName(name: unknown, slug: unknown): string {
@@ -89,82 +71,40 @@ function displayName(name: unknown, slug: unknown): string {
   return strategyLabel(String(slug || '') || text)
 }
 
-const filteredRows = computed(() => {
-  const q = nameQuery.value.trim().toLowerCase()
-  const list = !q
-    ? props.skills
-    : props.skills.filter(
-        (row) =>
-          row.name.toLowerCase().includes(q)
-          || row.slug.toLowerCase().includes(q)
-          || row.description.toLowerCase().includes(q),
-      )
-  return list as unknown as Record<string, unknown>[]
+/** 运行时徽标：隔离等级 + 权限策略（技能包 metadata 里声明的口径） */
+function isolationLabel(value: string | undefined): string {
+  if (!value) return ''
+  if (value === 'sandbox') return '沙箱'
+  if (value === 'strict') return '严格隔离'
+  if (value === 'none') return '无隔离'
+  return value
+}
+
+function policyLabel(value: string | undefined): string {
+  if (!value) return ''
+  if (value === 'read_only') return '只读'
+  if (value === 'trade') return '可交易'
+  return value
+}
+
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return props.skills
+  return props.skills.filter(
+    (row) =>
+      row.name.toLowerCase().includes(q)
+      || row.slug.toLowerCase().includes(q)
+      || row.description.toLowerCase().includes(q),
+  )
 })
 
-const columns = ref<BasicTableColumn[]>([
-  {
-    prop: 'name',
-    label: '名称',
-    minWidth: 180,
-    slotName: 'name',
-  },
-  {
-    prop: 'version',
-    label: '版本',
-    width: 88,
-    formatter: (row) => String(row.version || '—'),
-  },
-  {
-    prop: 'enabled',
-    label: '状态',
-    width: 88,
-    slotName: 'enabled',
-  },
-  {
-    prop: 'allowed_tools',
-    label: '工具',
-    minWidth: 160,
-    slotName: 'tools',
-  },
-  {
-    prop: 'description',
-    label: '说明',
-    minWidth: 180,
-    align: 'left',
-    headerAlign: 'left',
-    showOverflowTooltip: true,
-    formatter: (row) => String(row.description || '—'),
-  },
-  {
-    prop: 'actions',
-    label: '操作',
-    align: 'center',
-    headerAlign: 'center',
-    width: 132,
-    fixed: 'right',
-    slotName: 'actions',
-  },
-])
-
-function handleSubmit(): void {
-  nameQuery.value = filters.name
-}
-
-function handleReset(): void {
-  basicFormRef.value?.resetForm()
-  filters.name = ''
-  nameQuery.value = ''
-}
-
-function onRowClick(row: Record<string, unknown>): void {
-  detail.value = row as unknown as Skill
+function openDetail(skill: Skill): void {
+  detail.value = skill
   detailOpen.value = true
 }
 
-function toolLabels(row: Record<string, unknown>): string[] {
-  const tools = row.allowed_tools
-  return Array.isArray(tools) ? tools.map((item) => String(item)) : []
+function toolLabels(row: Skill): string[] {
+  return Array.isArray(row.allowed_tools) ? row.allowed_tools.map((item) => String(item)) : []
 }
 
 function pickZip(): void {
@@ -173,11 +113,6 @@ function pickZip(): void {
 
 function pickFolder(): void {
   folderInput.value?.click()
-}
-
-function onUploadCommand(command: string | number | object): void {
-  if (command === 'folder') pickFolder()
-  else pickZip()
 }
 
 async function syncFromTemplates(): Promise<void> {
@@ -189,13 +124,13 @@ async function syncFromTemplates(): Promise<void> {
     if (result.skipped.length) parts.push(`跳过 ${result.skipped.length} 个`)
     if (result.errors.length) parts.push(`失败 ${result.errors.length} 个`)
     if (result.errors.length) {
-      ElMessage.warning(parts.join('，') || '同步完成')
+      toast.warning(parts.join('，') || '同步完成')
     } else {
-      ElMessage.success(parts.join('，') || '模板目录为空，无需同步')
+      toast.success(parts.join('，') || '模板目录为空，无需同步')
     }
     if (result.installed.length) emit('refresh')
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '模板同步失败'))
+    toast.error(toErrorMessage(caught, '模板同步失败'))
   } finally {
     installing.value = false
   }
@@ -205,10 +140,10 @@ async function installPackage(file: File): Promise<void> {
   installing.value = true
   try {
     const installed = await installSkill(file)
-    ElMessage.success(`已安装「${installed.name}」`)
+    toast.success(`已安装「${installed.name}」`)
     emit('refresh')
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '安装失败'))
+    toast.error(toErrorMessage(caught, '安装失败'))
   } finally {
     installing.value = false
   }
@@ -231,10 +166,10 @@ async function onFolderSelected(event: Event): Promise<void> {
   try {
     const zip = await zipFolderFiles(files)
     const installed = await installSkill(zip)
-    ElMessage.success(`已安装「${installed.name}」`)
+    toast.success(`已安装「${installed.name}」`)
     emit('refresh')
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '安装失败'))
+    toast.error(toErrorMessage(caught, '安装失败'))
   } finally {
     installing.value = false
   }
@@ -242,7 +177,7 @@ async function onFolderSelected(event: Event): Promise<void> {
 </script>
 
 <template>
-  <div class="skills-panel strategy-surface">
+  <div class="skills-panel">
     <!-- 原生 file：选 zip / 选文件夹（webkitdirectory）；由「上传技能」触发 -->
     <input
       ref="zipInput"
@@ -259,116 +194,144 @@ async function onFolderSelected(event: Event): Promise<void> {
       hidden
       @change="onFolderSelected"
     />
-    <PageContainer>
-      <template #search>
-        <div class="skills-search-form">
-          <BasicForm
-            ref="basicFormRef"
-            v-model="filterModel"
-            :schemas="filterSchemas"
-            :columns="3"
-            :input-debounce-ms="0"
-            label-width="6.5em"
-          />
+
+    <div class="skills-toolbar">
+      <div class="skills-search">
+        <Search class="skills-search__icon" aria-hidden="true" />
+        <Input
+          v-model="query"
+          size="sm"
+          class="skills-search__input"
+          placeholder="搜索技能名、slug 或说明"
+          aria-label="搜索技能"
+          maxlength="64"
+        />
+        <Button access="read" v-if="query" variant="ghost" size="icon-xs" class="skills-search__clear" aria-label="清空搜索" @click="query = ''">
+          <X aria-hidden="true" />
+        </Button>
+      </div>
+      <div class="skills-toolbar__actions">
+        <Button access="read" size="sm" variant="ghost" :disabled="loading || installing" aria-label="刷新技能列表" @click="emit('refresh')">
+          <RefreshCw :class="{ 'animate-spin motion-reduce:animate-none': loading }" aria-hidden="true" />
+          刷新
+        </Button>
+        <Button size="sm" variant="outline" :disabled="installing" @click="syncFromTemplates">
+          从模板同步
+        </Button>
+        <div class="upload-split">
+          <Button size="sm" class="upload-split__main" :disabled="installing" @click="pickZip">
+            <Upload aria-hidden="true" />
+            上传技能
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+              <Button size="sm" class="upload-split__caret" :disabled="installing" aria-label="更多上传方式">
+                <ChevronDown aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem @select="pickZip">选择 zip</DropdownMenuItem>
+              <DropdownMenuItem @select="pickFolder">选择文件夹</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <div class="skills-search-actions">
-          <el-button type="primary" :icon="Search" @click="handleSubmit">筛选</el-button>
-          <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
-        </div>
-      </template>
-      <template #main>
-        <BasicTable
-          v-model:columns="columns"
-          :data-source="filteredRows"
-          :pagination="false"
-          :loading="loading || installing"
-          :toolbar-config="{ refresh: true }"
-          height="100%"
-          stripe
-          row-key="slug"
-          :empty-text="nameQuery.trim() ? '当前筛选下无结果，可点重置' : '还没有技能'"
-          :empty-reason="
-            nameQuery.trim()
-              ? ''
-              : '上传技能或从模板同步'
-          "
-          @row-click="onRowClick"
-          @refresh="emit('refresh')"
-        >
-          <template #toolbarButtons>
-            <el-button
-              size="small"
-              :disabled="installing"
-              @click="syncFromTemplates"
-              :icon="RefreshRight"
-            >
-              从模板同步战法
-            </el-button>
-            <el-dropdown
-              split-button
-              type="primary"
-              size="small"
-              :disabled="installing"
-              @click="pickZip"
-              @command="onUploadCommand"
-            >
-              上传技能
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="zip">选择 zip</el-dropdown-item>
-                  <el-dropdown-item command="folder">选择文件夹</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-          </template>
-          <template #name="{ row }">
-            <el-button link class="catalog-name" :aria-label="`查看${displayName(row.name, row.slug)}详情`" @click.stop="onRowClick(row)">{{ displayName(row.name, row.slug) }}</el-button>
-          </template>
-          <template #enabled="{ row }">
-            <el-tag
-              size="small"
-              :type="row.enabled === false ? 'info' : 'primary'"
-              effect="plain"
-            >
-              {{ row.enabled === false ? '停用' : '启用' }}
-            </el-tag>
-          </template>
-          <template #tools="{ row }">
-            <el-tag
-              v-for="tool in toolLabels(row).slice(0, 3)"
-              :key="tool"
-              size="small"
-              effect="plain"
-              class="tool-tag"
-            >
-              {{ tool }}
-            </el-tag>
-            <span v-if="toolLabels(row).length > 3" class="more">
-              +{{ toolLabels(row).length - 3 }}
-            </span>
-            <span v-if="!toolLabels(row).length" class="dim">—</span>
-          </template>
-          <template #actions="{ row }">
-            <RowActions
-              :max-visible="2"
-              :actions="[
-                {
-                  key: 'open',
-                  label: '去选股',
-                  onClick: () => emit('openScreen', String(row.slug)),
-                },
-                {
-                  key: 'remove',
-                  label: '卸载',
-                  type: 'danger',
-                  onClick: () => emit('remove', row as unknown as Skill),
-                },
-              ]"
-            />
-          </template>
-        </BasicTable>
-      </template>
-    </PageContainer>
+      </div>
+    </div>
+
+    <div class="skills-scroll">
+      <div v-if="(loading || installing) && !skills.length" class="skills-grid" aria-hidden="true">
+        <Skeleton v-for="n in 3" :key="n" class="h-[196px] rounded-lg" />
+      </div>
+
+      <EmptyState
+        v-else-if="!filtered.length"
+        :icon="Cpu"
+        :description="query ? '当前筛选下无结果' : '还没有技能'"
+        :reason="query ? '换个关键字，或清空搜索' : '上传技能包，或从模板目录同步内置技能'"
+        class="skills-empty"
+      >
+        <Button access="read" v-if="query" variant="outline" size="sm" @click="query = ''">清空搜索</Button>
+        <template v-else>
+          <Button size="sm" :disabled="installing" @click="pickZip">
+            <Upload aria-hidden="true" />
+            上传技能
+          </Button>
+          <Button variant="outline" size="sm" :disabled="installing" @click="syncFromTemplates">从模板同步</Button>
+        </template>
+      </EmptyState>
+
+      <ul v-else class="skills-grid" :aria-busy="installing">
+        <li v-for="row in filtered" :key="row.slug">
+          <Card
+            interactive
+            class="skill-card"
+            :class="{ 'is-disabled': row.enabled === false }"
+            role="button"
+            tabindex="0"
+            :aria-label="`查看${displayName(row.name, row.slug)}详情`"
+            @click="openDetail(row)"
+            @keydown.enter.prevent="openDetail(row)"
+          >
+            <header class="skill-card__head">
+              <span class="skill-card__avatar" aria-hidden="true"><Cpu /></span>
+              <div class="skill-card__identity">
+                <strong class="skill-card__name">{{ displayName(row.name, row.slug) }}</strong>
+                <span class="skill-card__slug">{{ row.slug }}<template v-if="row.version"> · v{{ row.version }}</template></span>
+              </div>
+              <UiBadge :variant="row.enabled === false ? 'secondary' : 'ok'" dot class="skill-card__status">
+                {{ row.enabled === false ? '停用' : '启用' }}
+              </UiBadge>
+            </header>
+
+            <p class="skill-card__desc">{{ row.description || '这个技能没有说明。' }}</p>
+
+            <div class="skill-card__runtime">
+              <UiBadge v-if="isolationLabel(row.isolation)" variant="info">{{ isolationLabel(row.isolation) }}</UiBadge>
+              <UiBadge v-if="policyLabel(row.policy)" variant="outline">{{ policyLabel(row.policy) }}</UiBadge>
+              <UiBadge v-if="row.mcp_servers?.length" variant="outline">MCP × {{ row.mcp_servers.length }}</UiBadge>
+              <span v-if="toolLabels(row).length" class="skill-card__tools">
+                <span v-for="tool in toolLabels(row).slice(0, 3)" :key="tool" class="skill-card__tool">{{ tool }}</span>
+                <span v-if="toolLabels(row).length > 3" class="skill-card__tool skill-card__tool--more">+{{ toolLabels(row).length - 3 }}</span>
+              </span>
+              <span v-else class="skill-card__tools skill-card__tools--none">未声明工具</span>
+            </div>
+
+            <footer class="skill-card__foot" @click.stop>
+              <Button access="read" size="xs" variant="outline" :disabled="row.enabled === false" @click="emit('openScreen', row.slug)">
+                <Play aria-hidden="true" />
+                去选股
+              </Button>
+              <Button access="read" size="xs" variant="ghost" @click="openDetail(row)">
+                <Info aria-hidden="true" />
+                详情
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button size="icon-xs" variant="ghost" class="ml-auto" :aria-label="`${displayName(row.name, row.slug)} 更多操作`">
+                    <Ellipsis aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem access="read" @select="openDetail(row)">
+                    <Info aria-hidden="true" />
+                    查看详情
+                  </DropdownMenuItem>
+                  <DropdownMenuItem access="read" :disabled="row.enabled === false" @select="emit('openScreen', row.slug)">
+                    <Play aria-hidden="true" />
+                    去选股
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" @select="emit('remove', row)">
+                    <Trash2 aria-hidden="true" />
+                    卸载技能
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </footer>
+          </Card>
+        </li>
+      </ul>
+    </div>
 
     <SkillDetailDialog
       v-model="detailOpen"
@@ -381,38 +344,253 @@ async function onFolderSelected(event: Event): Promise<void> {
 
 <style scoped>
 .skills-panel {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gap-3);
   min-height: 0;
   height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 
-.skills-search-form {
-  flex: 1;
+.skills-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2) var(--gap-3);
+}
+
+.skills-search {
+  position: relative;
+  display: flex;
+  flex: 0 1 320px;
+  align-items: center;
+  min-width: 200px;
+}
+
+.skills-search__icon {
+  position: absolute;
+  left: 9px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.skills-search__input {
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+.skills-search__clear {
+  position: absolute;
+  right: 3px;
+}
+
+.skills-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2);
+}
+
+.upload-split {
+  display: inline-flex;
+  align-items: center;
+}
+
+.upload-split__main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.upload-split__caret {
+  padding-inline: var(--gap-1);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: none;
+  border-left: 1px solid color-mix(in oklab, var(--on-primary, #fff) 25%, transparent);
+}
+
+.skills-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-bottom: var(--gap-4);
+}
+
+.skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--gap-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skills-empty {
+  min-height: 260px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.skill-card {
+  gap: var(--gap-3);
+  height: 100%;
+  padding: var(--gap-4);
+}
+
+.skill-card:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--seal));
+  outline-offset: 2px;
+}
+
+.skill-card.is-disabled {
+  background: color-mix(in oklab, var(--surface) 70%, var(--surface-canvas));
+}
+
+.skill-card.is-disabled .skill-card__name,
+.skill-card.is-disabled .skill-card__desc {
+  color: var(--text-secondary);
+}
+
+.skill-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-3);
   min-width: 0;
 }
 
-.skills-search-actions {
+.skill-card__avatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+}
+
+.skill-card__avatar :deep(svg) {
+  width: 16px;
+  height: 16px;
+}
+
+.skill-card__identity {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.skill-card__name {
+  color: var(--text-primary);
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-card__slug {
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-card__status {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.skill-card__desc {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-ui);
+  line-height: 1.55;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.skill-card__runtime {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  flex-shrink: 0;
-  padding-bottom: 0.65rem;
+  align-items: center;
+  gap: 6px;
 }
 
-.tool-tag {
-  margin: 0 0.25rem 0.2rem 0;
+.skill-card__tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
-.more,
-.dim {
-  color: var(--mist);
-  font-size: var(--fs-aux);
+.skill-card__tool {
+  padding: 1px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
 }
 
-:deep(.el-dropdown) {
-  vertical-align: middle;
+.skill-card__tool--more,
+.skill-card__tools--none {
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+}
+
+.skill-card__foot {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: auto -6px -6px;
+  padding-top: var(--gap-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 640px) {
+  .skills-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .skills-search {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .skills-toolbar__actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .skills-toolbar__actions > * {
+    flex-shrink: 0;
+  }
+
+  .skills-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .skill-card__foot :deep(button) {
+    min-height: 40px;
+  }
 }
 </style>
-<style scoped src="./StrategySurfaces.css"></style>

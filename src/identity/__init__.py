@@ -18,7 +18,7 @@
 - ``build_auth_dependency(identity_db)``：给组合根用，产出 ``AuthContext`` 依赖。
 - ``build_auth_router`` / ``build_admin_router``：HTTP 适配器。
 - ``seed_default_admin(store)``：首启种子（lociAdmin / Asdf!234，主租户）。
-- ``resolve_session`` / ``resolve_api_key``：凭证 → ``AuthContext``。
+- ``resolve_session``：凭证 → ``AuthContext``。
 
 如何扩展
 --------
@@ -62,7 +62,6 @@ from src.identity.application.accounts import (
     login_with_password,
     logout,
     register_with_email,
-    resolve_api_key,
     resolve_session,
     verify_email,
 )
@@ -122,7 +121,6 @@ __all__ = [
     "logout",
     "public_base_url",
     "register_with_email",
-    "resolve_api_key",
     "resolve_session",
     "seed_default_admin",
     "verify_email",

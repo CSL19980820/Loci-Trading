@@ -1,29 +1,78 @@
 <script setup lang="ts">
-import { shortTime } from '@/shared/lib/format'
+/**
+ * 个股时间线：竖向轨道 + 节点（Linear activity 一路）。
+ * 每个事件一张小行：日期（等宽）· 类型点 · 标题（战法名）+ 裁决徽标 · 理由（两行截断）· 评分。
+ * `focusDate` 命中的事件高亮——从候选池带 ?date= 进档案时，一眼看到是哪一次。
+ */
+import { computed } from 'vue'
+
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import { decisionLabel, shortTime } from '@/shared/lib/format'
 import type { TimelineEvent } from '@/shared/types/palace'
 
-defineProps<{
+const props = defineProps<{
   events: TimelineEvent[]
+  /** 高亮这一天的事件 */
+  focusDate?: string
 }>()
 
 function typeLabel(type: TimelineEvent['type']): string {
   return { candidate: '候选', plan: '预案', review: '复盘' }[type] ?? type
 }
 
-function candidateSummary(event: TimelineEvent): string {
-  const d = event.detail
-  return `${d.score ?? '—'} ${d.timing ?? ''} ${d.reason ?? ''}`.trim()
+function decisionVariant(decision: unknown): 'info' | 'warn' | 'secondary' {
+  const label = decisionLabel(String(decision ?? ''))
+  if (label === '精选') return 'info'
+  if (label === '观察') return 'warn'
+  return 'secondary'
 }
+
+function scoreText(value: unknown): string {
+  if (value == null || value === '' || !Number.isFinite(Number(value))) return ''
+  const n = Number(value)
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
+function bodyText(event: TimelineEvent): string {
+  const d = event.detail
+  const parts = [d.timing, d.reason].filter((part) => typeof part === 'string' && part.trim())
+  return parts.join(' · ')
+}
+
+/** 同一天多条事件只印一次日期 */
+const rows = computed(() =>
+  props.events.map((event, index) => ({
+    event,
+    showDate: index === 0 || props.events[index - 1]?.date !== event.date,
+    isFocus: Boolean(props.focusDate) && event.date === props.focusDate,
+  })),
+)
 </script>
 
 <template>
-  <ol class="sw-tl">
-    <li v-for="event in events" :key="event.id" class="sw-tl__item" :class="{ 'is-cand': event.type === 'candidate' }">
-      <span class="sw-tl__date mono">{{ event.date }}</span>
-      <span class="sw-tl__tag">{{ typeLabel(event.type) }}</span>
-      <strong class="sw-tl__title">{{ event.label }}</strong>
-      <span class="sw-tl__body" :title="candidateSummary(event)">{{ candidateSummary(event) }}</span>
-      <span class="sw-tl__foot mono dim">{{ shortTime(event.created_at) }}</span>
+  <ol class="sw-tl" aria-label="个股时间线">
+    <li
+      v-for="{ event, showDate, isFocus } in rows"
+      :key="event.id"
+      class="sw-tl__item"
+      :class="[`is-${event.type}`, { 'is-focus': isFocus }]"
+    >
+      <span class="sw-tl__date" :class="{ 'is-muted': !showDate }">{{ event.date }}</span>
+      <span class="sw-tl__track" aria-hidden="true">
+        <span class="sw-tl__dot" />
+      </span>
+      <div class="sw-tl__card">
+        <div class="sw-tl__head">
+          <span class="sw-tl__type">{{ typeLabel(event.type) }}</span>
+          <strong class="sw-tl__title">{{ event.label }}</strong>
+          <UiBadge v-if="event.detail.decision" :variant="decisionVariant(event.detail.decision)">
+            {{ decisionLabel(String(event.detail.decision)) }}
+          </UiBadge>
+          <span v-if="scoreText(event.detail.score)" class="sw-tl__score">{{ scoreText(event.detail.score) }}</span>
+        </div>
+        <p v-if="bodyText(event)" class="sw-tl__body" :title="bodyText(event)">{{ bodyText(event) }}</p>
+        <span v-if="event.created_at" class="sw-tl__foot">{{ shortTime(event.created_at) }}</span>
+      </div>
     </li>
   </ol>
 </template>
@@ -32,88 +81,173 @@ function candidateSummary(event: TimelineEvent): string {
 .sw-tl {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--gap-3) var(--gap-3) var(--gap-3) var(--gap-2);
   display: flex;
   flex-direction: column;
 }
-/* D3：行高钉 --row-h，1px hairline 分隔 */
+
 .sw-tl__item {
+  display: grid;
+  grid-template-columns: 5.4rem 16px minmax(0, 1fr);
+  gap: 0 var(--gap-2);
+  align-items: start;
+}
+
+.sw-tl__date {
+  padding-top: 9px;
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sw-tl__date.is-muted {
+  visibility: hidden;
+}
+
+/* 轨道：贯穿整项的竖线 + 居中的节点 */
+.sw-tl__track {
+  position: relative;
   display: flex;
+  justify-content: center;
+  align-self: stretch;
+}
+
+.sw-tl__track::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border-subtle);
+}
+
+.sw-tl__item:first-child .sw-tl__track::before {
+  top: 14px;
+}
+
+.sw-tl__item:last-child .sw-tl__track::before {
+  bottom: calc(100% - 14px);
+}
+
+.sw-tl__dot {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin-top: 10px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  box-shadow: 0 0 0 1px var(--border-default);
+}
+
+.is-candidate .sw-tl__dot {
+  background: var(--seal);
+  box-shadow: 0 0 0 1px var(--seal-border);
+}
+
+.is-plan .sw-tl__dot {
+  background: var(--info);
+}
+
+.is-review .sw-tl__dot {
+  background: var(--ok);
+}
+
+.sw-tl__card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.sw-tl__item:last-child .sw-tl__card {
+  margin-bottom: 0;
+}
+
+.sw-tl__card:hover {
+  border-color: var(--border-default);
+}
+
+.is-focus .sw-tl__card {
+  border-color: var(--seal-border);
+  background: var(--seal-soft);
+}
+
+.sw-tl__head {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-2);
-  min-height: var(--row-h);
-  padding: 0 var(--gap-2);
-  border-bottom: 1px solid var(--rule);
-}
-.sw-tl__item:last-child {
-  border-bottom: 0;
-}
-/* 候选轨命中态：整行底色 + 印章字色（对齐 style.content.css 的 .day-item.active），不再画左侧色条 */
-.sw-tl__item.is-cand {
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-}
-.sw-tl__date {
-  flex: 0 0 6.2rem;
-  font-size: var(--fs-aux);
-  font-variant-numeric: tabular-nums;
-  color: var(--mist);
-  white-space: nowrap;
-}
-/* 描边徽章：不再用实心色块 + 白字，深色档下也不会糊成白块 */
-.sw-tl__tag {
-  flex: 0 0 auto;
-  font-size: var(--fs-kicker);
-  line-height: 1.4;
-  padding: 0 var(--gap-1);
-  border: 1px solid color-mix(in oklab, var(--seal) 42%, var(--rule));
-  border-radius: var(--radius);
-  background: var(--seal-soft);
-  color: var(--seal-ink);
-  white-space: nowrap;
-}
-.sw-tl__title {
-  flex: 0 0 auto;
-  max-width: 8rem;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sw-tl__body {
-  flex: 1 1 auto;
   min-width: 0;
-  margin: 0;
-  font-size: var(--fs-body);
-  line-height: 1.35;
-  color: var(--ink);
-  white-space: nowrap;
+}
+
+.sw-tl__type {
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.sw-tl__title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 600;
 }
+
+.sw-tl__score {
+  margin-left: auto;
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sw-tl__body {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  line-height: 1.5;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .sw-tl__foot {
-  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-family: var(--mono);
   font-size: var(--fs-kicker);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
-@media (max-width: 720px) {
+
+@media (max-width: 640px) {
+  .sw-tl {
+    padding: var(--gap-3) var(--gap-3) var(--gap-3) var(--gap-1);
+  }
+
   .sw-tl__item {
-    flex-wrap: wrap;
-    gap: var(--gap-1) var(--gap-2);
-    padding: var(--gap-1) var(--gap-2);
+    grid-template-columns: 4.6rem 16px minmax(0, 1fr);
   }
+
   .sw-tl__date {
-    flex-basis: auto;
-  }
-  .sw-tl__body {
-    flex: 1 1 100%;
-    order: 4;
-    white-space: normal;
-  }
-  .sw-tl__foot {
-    margin-left: auto;
+    font-size: 11px;
   }
 }
 </style>

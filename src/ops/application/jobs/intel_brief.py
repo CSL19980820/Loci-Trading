@@ -206,29 +206,31 @@ def execute_intel_brief(config: dict[str, Any], context: JobContext) -> dict[str
         if config.get("chunk_interval_sec") is not None
         else DEFAULT_CHUNK_INTERVAL_SEC
     )
-    for index, chunk in enumerate(chunks, start=1):
-        if index > 1 and interval > 0:
-            time.sleep(interval)
-        marker = f"（{index}/{total}）" if total > 1 else ""
-        outcome = dispatch_text(
-            store_ops,
-            title=f"{label}·悟道",
-            body=f"{header}{marker}\n{chunk}",
-            # 正文首行已经是自带标题，别让企微再前缀一次
-            prepend_title_to_wecom=False,
-            bypass_quiet=bool(config.get("bypass_quiet")),
-        )
-        if outcome.get("skipped"):
-            skipped_reason = str(outcome.get("skipped"))
-            break
-        if outcome.get("sent"):
-            sent += 1
-        for message in outcome.get("errors") or []:
-            errors.append(str(message))
-        if outcome.get("error"):
-            errors.append(str(outcome.get("error")))
+    from src.ops.application.notify_dispatch import delivery_lock
+    with delivery_lock:
+        for index, chunk in enumerate(chunks, start=1):
+            if index > 1 and interval > 0:
+                time.sleep(interval)
+            marker = f"（{index}/{total}）" if total > 1 else ""
+            outcome = dispatch_text(
+                store_ops,
+                title=f"{label}·悟道",
+                body=f"{header}{marker}\n{chunk}",
+                prepend_title_to_wecom=False,
+                bypass_quiet=bool(config.get("bypass_quiet")),
+            )
+            if outcome.get("skipped"):
+                skipped_reason = str(outcome.get("skipped"))
+                break
+            if outcome.get("sent"):
+                sent += 1
+            errors.extend(str(message) for message in outcome.get("errors") or [])
+            if outcome.get("error"):
+                errors.append(str(outcome["error"]))
+            if not outcome.get("success"):
+                break
 
-    if sent and store_ops is not None:
+    if sent == total and not errors and store_ops is not None:
         mark_screen_pushed(
             store_ops,
             job_id=job_id,
@@ -244,7 +246,7 @@ def execute_intel_brief(config: dict[str, Any], context: JobContext) -> dict[str
             "reason": skipped_reason,
             "summary": f"{label}未推送：{skipped_reason}",
         }
-    if not sent:
+    if sent < total or errors:
         detail = "；".join(errors) or "没有可用的通知渠道"
         return {
             **result,

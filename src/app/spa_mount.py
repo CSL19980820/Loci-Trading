@@ -27,7 +27,13 @@ def install_spa_cache_control(app: FastAPI) -> None:
         if path.startswith("/api/"):
             return response
         if path.startswith("/assets/"):
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            # A transient missing chunk must never poison the browser cache for
+            # a year. Only successful immutable assets (including 304) qualify.
+            if 200 <= response.status_code < 300 or response.status_code == 304:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
             return response
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         response.headers["Pragma"] = "no-cache"
@@ -62,6 +68,8 @@ def mount_spa(app: FastAPI, static_dir: Path | str | None = None) -> None:
             requested = (resolved_dist / frontend_path).resolve()
             if frontend_path and requested.is_relative_to(resolved_dist) and requested.is_file():
                 return FileResponse(requested)
+            if frontend_path.startswith("assets/"):
+                raise HTTPException(status_code=404, detail="静态资源不存在")
             return FileResponse(
                 resolved_dist / "index.html",
                 headers={

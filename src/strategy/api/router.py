@@ -316,7 +316,8 @@ def build_strategy_router(
         job_name = f"screen:{slug}"
         with _ops() as store:
             job = store.get_job_by_name(job_name)
-        if job is None:
+            opted_out = store.is_screen_job_opted_out(slug)
+        if job is None or opted_out or not bool(job.get("enabled", True)):
             return {"slug": slug, "bound": False, "next_runs": []}
         cfg = job.get("config") if isinstance(job.get("config"), dict) else {}
         schedule = cfg.get("schedule") if isinstance(cfg.get("schedule"), dict) else {}
@@ -376,6 +377,7 @@ def build_strategy_router(
                 existing = store.get_job_by_name(job_name)
                 if existing is not None:
                     store.delete_job(existing["id"])
+                store.set_screen_job_opt_out(slug)
             _reload_scheduler()
             return {"slug": slug, "bound": False, "next_runs": []}
 
@@ -396,7 +398,8 @@ def build_strategy_router(
                 )
             except TradingScheduleError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
-            enabled = True
+            # schedule_mode 只负责合成 cron；用户明确传入 enabled=false 时，
+            # 不能因为「有定时配置」就把已关闭的任务重新打开。
 
         if cron:
             try:
@@ -439,6 +442,8 @@ def build_strategy_router(
                     store.update_job(
                         job_id, cron=cron, config=config, enabled=enabled,
                     )
+                # 写入成功后再更新 opt-out；若创建/更新失败，旧的关闭意图仍有效。
+                store.set_screen_job_opt_out(slug, not enabled)
             except OpsError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
@@ -460,7 +465,12 @@ def build_strategy_router(
                 )
             except TradingScheduleError:
                 next_runs = []
-        return {"slug": slug, "bound": True, "next_runs": next_runs, **(job or {})}
+        return {
+            "slug": slug,
+            "bound": bool(job and job.get("enabled", True)),
+            "next_runs": next_runs if job and job.get("enabled", True) else [],
+            **(job or {}),
+        }
 
     @router.delete("/api/strategies/{slug}/job", tags=["strategy"])
     def unbind_strategy_job(slug: str, _write: None = write_guard) -> dict[str, bool]:
@@ -471,6 +481,7 @@ def build_strategy_router(
             if job is None:
                 raise HTTPException(status_code=404, detail=f"战法 {slug} 没有绑定定时任务")
             store.delete_job(job["id"])
+            store.set_screen_job_opt_out(slug)
         _reload_scheduler()
         return {"removed": True}
 

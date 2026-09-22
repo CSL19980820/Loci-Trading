@@ -103,6 +103,12 @@ def build_jobs_router(
         if scheduler is not None and scheduler.running:
             scheduler.reload()
 
+    def _managed_screen_slug(job: dict[str, Any] | None) -> str | None:
+        if not job or job.get("kind") != "screen":
+            return None
+        name = str(job.get("name") or "")
+        return name[len("screen:") :] if name.startswith("screen:") else None
+
     @router.get("/api/jobs", tags=["jobs"])
     def list_jobs() -> list[dict[str, Any]]:
         # 托管任务由 lifespan 与 screen-skill 变更时 ensure；列表只读，避免读接口改写 ops.db
@@ -136,6 +142,10 @@ def build_jobs_router(
                     name=payload.name, kind=payload.kind, cron=payload.cron,
                     config=payload.config, enabled=payload.enabled,
                 )
+                created = store.get_job(job_id)
+                screen_slug = _managed_screen_slug(created)
+                if screen_slug:
+                    store.set_screen_job_opt_out(screen_slug, not payload.enabled)
             except OpsError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
@@ -166,6 +176,10 @@ def build_jobs_router(
             guard_system_job_kind(existing.get("kind"), action="修改")
             try:
                 store.update_job(job_id, **fields)
+                if "enabled" in fields:
+                    screen_slug = _managed_screen_slug(existing)
+                    if screen_slug:
+                        store.set_screen_job_opt_out(screen_slug, not bool(fields["enabled"]))
             except OpsError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
@@ -175,8 +189,14 @@ def build_jobs_router(
     @router.delete("/api/jobs/{job_id}", tags=["jobs"])
     def delete_job(job_id: str, _write: None = write_guard) -> dict[str, bool]:
         with _ops() as store:
+            existing = store.get_job(job_id)
+            if existing is None:
+                raise HTTPException(status_code=404, detail=f"未知任务：{job_id}")
             if not store.delete_job(job_id):
                 raise HTTPException(status_code=404, detail=f"未知任务：{job_id}")
+            screen_slug = _managed_screen_slug(existing)
+            if screen_slug:
+                store.set_screen_job_opt_out(screen_slug)
         _reload_scheduler()
         return {"removed": True}
 

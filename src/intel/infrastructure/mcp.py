@@ -35,6 +35,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx2
+from src.shared.http_protocol import http_protocol_options
 from src.intel.infrastructure.mcp_deadline import active_deadline, deadline_request, deadline_scope, reraise_stop
 
 logger = logging.getLogger(__name__)
@@ -346,6 +347,7 @@ class McpClient:
             timeout=self.timeout,
             trust_env=needs_system_proxy(self.url),
             follow_redirects=False,
+            **http_protocol_options(),
         )
 
     def _rpc(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:

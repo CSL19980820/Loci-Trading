@@ -205,7 +205,7 @@ def _translate_screen_error(exc: Exception) -> None:
         raise HTTPException(status_code=422, detail=detail) from exc
     if isinstance(exc, ScreenPackageError):
         detail = str(exc)
-        if detail in {"revision_conflict", "slug_conflict", "builtin_slug_conflict"}:
+        if detail in {"revision_conflict", "slug_conflict", "builtin_slug_conflict", "strategy_retired"}:
             raise HTTPException(status_code=409, detail=detail) from exc
         if detail in {"not_found", "history_not_found"}:
             raise HTTPException(status_code=404, detail=detail) from exc

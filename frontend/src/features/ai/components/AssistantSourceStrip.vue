@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { Card, CardHeader, CardContent, CardTitle } from '@/shared/components/ui/card'
 import { computed } from 'vue'
 
 import { artifactShellTitle, parseSources } from '../assistantArtifacts'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Badge } from '@/shared/components/ui/badge'
 import type { AiChartArtifact } from '@/shared/types/ai_assistant'
 
 import './assistant-card.css'
@@ -13,29 +15,30 @@ const sources = computed(() => parseSources(props.artifact.data ?? {}))
 </script>
 
 <template>
-  <section
+  <Card
     class="assistant-source-strip assistant-card assistant-card--tight"
     :aria-label="artifactShellTitle(artifact)"
   >
-    <div class="assistant-card__heading">
-      <h3>{{ artifactShellTitle(artifact) }}</h3>
-    </div>
+    <CardHeader class="assistant-card__heading">
+      <CardTitle>{{ artifactShellTitle(artifact) }}</CardTitle>
+    </CardHeader>
+    <CardContent class="assistant-card__content">
     <div v-if="sources.length" class="assistant-source-strip__list">
-      <el-tag
+      <Badge
         v-for="(source, index) in sources"
         :key="`${source.label}-${index}`"
-        size="small"
-        effect="plain"
+        variant="outline"
         class="assistant-source-strip__item"
         :title="[source.detail, source.code, source.date, source.hash].filter(Boolean).join(' · ')"
       >
         {{ source.label }}
         <span v-if="source.code" class="assistant-source-strip__meta">{{ source.code }}</span>
         <span v-if="source.date" class="assistant-source-strip__meta">{{ source.date }}</span>
-      </el-tag>
+      </Badge>
     </div>
     <EmptyState v-else description="无来源条目" reason="换个问法重问" />
-  </section>
+    </CardContent>
+  </Card>
 </template>
 
 <style scoped>

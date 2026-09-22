@@ -1,42 +1,95 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from 'vue'
-import type { GuardianAccount } from '@/shared/types/guardian'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
+import { ChevronRight, ChartNoAxesCombined } from '@lucide/vue'
+import { Button } from '@/shared/components/ui/button'
+
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs'
+import type { GuardianAccount, GuardianExperience } from '@/shared/types/guardian'
+import GuardianExperiencePanel from './GuardianExperiencePanel.vue'
+import GuardianPositionsMobile from './GuardianPositionsMobile.vue'
+import GuardianPositionDetails from './GuardianPositionDetails.vue'
+import { useMobileLayout } from '@/shared/composables/useMobileLayout'
+const mobile = useMobileLayout()
 const GuardianTradesPanel = defineAsyncComponent(() => import('./GuardianTradesPanel.vue'))
 const GuardianPerformancePanel = defineAsyncComponent(() => import('./GuardianPerformancePanel.vue'))
-defineProps<{ account: GuardianAccount }>()
+const props = defineProps<{ account: GuardianAccount; experience?: GuardianExperience }>()
+const positionDetailCode = ref('')
+const selectedPosition = computed(() => props.account.positions.find(row => row.code === positionDetailCode.value))
+const positionDetailOpen = computed({ get: () => Boolean(selectedPosition.value), set: value => { if (!value) positionDetailCode.value = '' } })
 const tab = ref('positions')
+const GuardianHoldingCurve = defineAsyncComponent(() => import('./GuardianHoldingCurve.vue'))
+const emit = defineEmits<{ review: []; 'section-change': [value: string] }>()
+watch(tab, value => emit('section-change', value), { immediate: true })
+const curveCode = ref(''), accountHost = ref<HTMLElement>()
+async function selectCurve(code: string): Promise<void> {
+  curveCode.value = code
+  tab.value = 'curve'
+  await nextTick()
+  const trigger = accountHost.value?.querySelector<HTMLElement>('[data-curve-tab]')
+  trigger?.focus({ preventScroll: true })
+  trigger?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+}
 const money = (cents?: number) => cents == null ? '—' : (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const pnlClass = (value: number) => value > 0 ? 'gain' : value < 0 ? 'loss' : ''
 const cost = (value?: number) => value == null ? '—' : value.toFixed(4)
+/** `Tabs` 的 modelValue 是 reka-ui 的 `AcceptableValue`，这里收成本页的 string 档 */
+function onTabChange(value: unknown): void {
+  tab.value = String(value)
+}
 </script>
 
 <template>
-  <section class="guardian-account" aria-label="守护现金账户">
-    <div class="account-heading"><h3>模拟交易账户</h3><span>初始本金 {{ money(account.initial_capital_cents) }} 元 · T+1 · 遵循自主交易员现有持仓规则</span><span v-if="account.valuation_kind === 'official_close'">{{ account.valuation_date }} 收盘估值</span></div>
-    <div class="account-totals">
-      <div class="account-total-primary"><span>总资产 / 元</span><strong>{{ money(account.equity_cents) }}</strong></div>
-      <div><span>可用现金</span><strong>{{ money(account.cash_cents) }}</strong></div>
-      <div><span>持仓市值</span><strong>{{ money(account.market_value_cents) }}</strong></div>
-      <div><span>累计盈亏</span><strong :class="pnlClass(account.total_pnl_cents)">{{ money(account.total_pnl_cents) }}</strong></div>
-      <div><span>已实现盈亏</span><strong :class="pnlClass(account.realized_pnl_cents)">{{ money(account.realized_pnl_cents) }}</strong></div>
-      <div><span>浮动盈亏</span><strong :class="pnlClass(account.unrealized_pnl_cents)">{{ money(account.unrealized_pnl_cents) }}</strong></div>
-    </div>
-    <el-alert v-if="account.stale_codes?.length" type="warning" :closable="false" show-icon :title="`部分持仓沿用最后有效报价：${account.stale_codes.join('、')}，请核对行情时间`" />
-    <el-tabs v-model="tab" class="account-tabs">
-      <el-tab-pane :label="`精确持仓 · ${account.positions.length}`" name="positions">
-        <div v-if="account.positions.length" class="position-cards" aria-label="精确持仓明细">
+  <section ref="accountHost" class="guardian-account" aria-label="守护现金账户">
+    <Tabs :model-value="tab" class="account-tabs" @update:model-value="onTabChange">
+      <div class="account-tabs__navigation">
+      <TabsList class="account-tabs__list" aria-label="账户明细">
+        <TabsTrigger value="positions">持仓 · {{ account.positions.length }}</TabsTrigger>
+        <TabsTrigger value="curve" data-curve-tab>持仓曲线</TabsTrigger>
+        <TabsTrigger value="experience">经验沉淀<span v-if="experience?.items.length" class="ml-1 tabular-nums">· {{ experience.items.length }}</span></TabsTrigger>
+        <TabsTrigger value="trades">成交明细</TabsTrigger>
+        <TabsTrigger value="performance">个股盈亏</TabsTrigger>
+      </TabsList>
+      </div>
+      <TabsContent value="positions" class="account-tabs__panel positions-panel">
+        <GuardianPositionsMobile v-if="mobile" :account="account" @curve="selectCurve" @detail="positionDetailCode = $event" />
+        <div v-else-if="account.positions.length" class="position-cards-grid" aria-label="精确持仓明细">
           <article v-for="row in account.positions" :key="row.code" class="position-card">
-            <header><h4>{{ row.name }}（{{ row.code }}）</h4><b :class="pnlClass(row.unrealized_pnl_cents)">{{ money(row.unrealized_pnl_cents) }} 元</b></header>
-            <dl><div><dt>持仓 / 可卖</dt><dd>{{ row.quantity.toLocaleString() }} / {{ row.available_quantity.toLocaleString() }} 股</dd></div><div><dt>含费每股成本</dt><dd>{{ cost(row.average_cost) }} 元</dd></div><div><dt>成本总额</dt><dd>{{ money(row.cost_cents) }} 元</dd></div><div><dt>参考现价</dt><dd>{{ money(row.mark_price_cents) }} 元</dd></div></dl>
-            <div class="position-plans"><p><b>持股</b>{{ row.holding_plan || '等待下一轮研判' }}</p><p><b>止盈</b>{{ row.take_profit_plan || '等待下一轮研判' }}</p><p><b>止损</b>{{ row.stop_loss_plan || '等待下一轮研判' }}</p><p v-if="row.exit_today_plan"><b>换仓</b>{{ row.exit_today_plan }}</p></div>
+            <header class="position-card-head">
+              <div class="position-identity">
+                <h4>{{ row.name }}</h4>
+                <span class="font-mono text-xs text-mist">{{ row.code }}</span>
+                <Button access="read" variant="ghost" size="xs" class="position-curve-link" :aria-label="`查看${row.name}持仓曲线`" @click="selectCurve(row.code)"><ChartNoAxesCombined :size="13" />走势</Button>
+              </div>
+              <strong :class="pnlClass(row.unrealized_pnl_cents)" class="font-mono text-sm font-semibold">
+                {{ (row.unrealized_pnl_cents ?? 0) > 0 ? '+' : '' }}{{ money(row.unrealized_pnl_cents) }} 元
+              </strong>
+            </header>
+
+            <div class="position-metrics-strip">
+              <div><span class="metric-dt">持仓 / 可卖</span><span class="metric-dd">{{ row.quantity.toLocaleString() }} / {{ row.available_quantity.toLocaleString() }} 股</span></div>
+              <div><span class="metric-dt">含费成本</span><span class="metric-dd">{{ cost(row.average_cost) }} 元</span></div>
+              <div><span class="metric-dt">参考现价</span><span class="metric-dd">{{ money(row.mark_price_cents) }} 元</span></div>
+              <div><span class="metric-dt">成本总额</span><span class="metric-dd">{{ money(row.cost_cents) }} 元</span></div>
+            </div>
+
+            <div class="position-plan-preview">
+              <p>{{ row.holding_plan || '等待下一轮研判' }}</p>
+              <Button access="read" variant="ghost" size="sm" :aria-label="`查看${row.name}持仓详情`" @click="positionDetailCode = row.code">详情<ChevronRight /></Button>
+            </div>
           </article>
         </div>
-        <el-empty v-else description="当前空仓，等待有依据的交易机会" :image-size="64" />
-      </el-tab-pane>
-      <el-tab-pane label="成交明细" name="trades"><GuardianTradesPanel v-if="tab === 'trades'" /></el-tab-pane>
-      <el-tab-pane label="个股盈亏" name="performance"><GuardianPerformancePanel v-if="tab === 'performance'" :account="account" /></el-tab-pane>
-    </el-tabs>
-    <footer class="account-foot"><span>累计费用 {{ money(account.fees_cents) }} 元 · 成本含买入费用，卖出净收入扣除费用后计盈亏</span><span>佣金万 2.5（免 5，无最低收费）；印花税卖出万五；过户费双向十万一</span><span>按新鲜行情参考价模拟成交，未模拟盘口排队及分红送转</span></footer>
+        <EmptyState v-else description="当前空仓" />
+      </TabsContent>
+      <TabsContent value="curve" class="account-tabs__panel curve-panel">
+        <GuardianHoldingCurve v-model:selected-code="curveCode" :account="account" @review="emit('review')" />
+      </TabsContent>
+      <TabsContent value="trades" class="account-tabs__panel"><GuardianTradesPanel /></TabsContent>
+      <TabsContent value="experience" class="account-tabs__panel"><GuardianExperiencePanel :experience="experience" /></TabsContent>
+      <TabsContent value="performance" class="account-tabs__panel"><GuardianPerformancePanel :account="account" /></TabsContent>
+    </Tabs>
+    <GuardianPositionDetails v-model:open="positionDetailOpen" :position="selectedPosition" />
+
   </section>
 </template>
 

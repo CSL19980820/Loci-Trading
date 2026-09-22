@@ -65,81 +65,165 @@ def minute_quote(payload: dict[str, Any], code: str) -> dict[str, Any]:
             "source": "wudao", "high": last.get("high"), "low": last.get("low")}
 
 
+_PRIMARY_QUOTE_SECONDS = 4.0
+_DIRECT_QUOTE_SECONDS = 5.0
+_SNAPSHOT_SECONDS = 20.0
+
+
 def snapshot(codes: list[str], *, include_minute: bool = False, force_refresh: bool = True,
              now: datetime | None = None, check_cancelled: Callable[[], None] | None = None,
-             deadline: float | None = None) -> Any:
+             deadline: float | None = None, require_order_book: bool = False) -> Any:
+    """逐股保留结果；主源限时，给独立直连和系统备用源留出预算。"""
     from src.ai.application.agent_execution import reraise_stop
+    from src.intel import call_mcp_tool
     from src.market.application.live_cache import build_monitor_snapshot
+    from src.market.infrastructure.adapters.tencent_adapter import TencentAdapter
 
     def checkpoint() -> None:
         if check_cancelled:
             check_cancelled()
-        if deadline is not None and time.monotonic() >= deadline:
-            raise TimeoutError("实时取价超过本轮剩余预算")
 
     def current_time() -> datetime:
         return now or datetime.now(ZoneInfo("Asia/Shanghai"))
 
-    checkpoint()
-    source = data_source()
-    from src.intel import call_mcp_tool
-    quotes = {}
-    # minute_data 的实际 schema 只接受单票。这里不伪造批量参数。
-    def fetch(code):
+    def failure(exc: Exception) -> str:
+        # 请求超时只淘汰该来源；任务取消/JobTimedOut 和其包装原因仍向上传播。
         try:
-            if deadline is not None and time.monotonic() >= deadline:
-                raise TimeoutError("实时取价超过本轮剩余预算")
-            payload = call_mcp_tool("minute_data", {"code": code, "format": "json", "detailLevel": "standard"},
-                                    server=source["server"], pool="skill", cache=False,
-                                    **({"deadline": deadline} if deadline is not None else {}))
-            quote = minute_quote(payload, code)
-            error = quote_error(code, quote, current_time())
-            return code, {**quote, **({"error": error} if error else {})}
-        except (ValueError, RuntimeError, KeyError, TypeError, OSError) as exc:
             reraise_stop(exc)
-            return code, {"code": code, "error": f"实时取价失败：{exc}"}
+        except TimeoutError as timeout:
+            return f"{type(timeout).__name__}: {str(timeout).strip() or '上游请求超时'}"
+        return f"{type(exc).__name__}: {str(exc).strip() or '上游请求失败'}"
+
+    checkpoint()
+    started = time.monotonic()
+    if deadline is not None and started >= deadline:
+        raise TimeoutError("实时取价超过本轮剩余预算")
     unique = list(dict.fromkeys(codes))
     if not unique:
         return SimpleNamespace(quotes={})
-    pool = ThreadPoolExecutor(max_workers=min(4, len(unique)))
+    # 在调用方硬截止前留出返回余量，不能因一股超时丢掉其他股票的成功报价。
+    end = min(started + _SNAPSHOT_SECONDS, deadline - 0.05 if deadline is not None else float('inf'))
+    primary_end = min(started + _PRIMARY_QUOTE_SECONDS, started + max(0.0, end - started) / 3)
+    quotes: dict[str, dict[str, Any]] = {}
+    attempts: dict[str, list[dict[str, Any]]] = {code: [] for code in unique}
+    # 独立线程池保证挂起的四个主源请求不能占住备用源的执行名额。
+    primary_pool = ThreadPoolExecutor(max_workers=min(4, len(unique)), thread_name_prefix="guardian-primary")
+    backup_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="guardian-backup")
 
-    def collect(futures: list) -> list:
+    def collect(futures: dict, until: float, accept: Callable) -> None:
+        def completed(future) -> None:
+            try:
+                value, error = future.result(), None
+            except Exception as exc:
+                value, error = None, failure(exc)
+            accept(futures[future], value, error)
+
         pending = set(futures)
         while pending:
             checkpoint()
-            done, pending = wait(pending, timeout=0.1, return_when=FIRST_COMPLETED)
+            remaining = until - time.monotonic()
+            if remaining <= 0:
+                break
+            done, pending = wait(pending, timeout=min(0.05, remaining), return_when=FIRST_COMPLETED)
             for future in done:
-                future.result()
-        checkpoint()
-        return [future.result() for future in futures]
+                completed(future)
+        for future in pending:
+            if future.done():
+                completed(future)
+            else:
+                future.cancel()
+                accept(futures[future], None, "TimeoutError: 来源未在分配预算内返回")
+
+    def record(code: str, quote: Any, error: str | None, stage: str) -> None:
+        error = error or quote_error(code, quote, current_time())
+        attempts[code].append({"stage": stage, "error": error or "", "checked_at": current_time().isoformat()})
+        if error:
+            previous = quotes.get(code, {})
+            if quote_error(code, previous, current_time()) is not None:
+                quotes[code] = {**previous, "code": code, "error": previous.get("error") or error,
+                                **({"fallback_error": error} if stage != "primary" else {})}
+        else:
+            previous_error = quotes.get(code, {}).get("error")
+            quotes[code] = {**quote, **({"primary_error": previous_error} if previous_error else {})}
+
+    def missing() -> list[str]:
+        return [code for code in unique if quote_error(code, quotes.get(code, {}), current_time())]
+
+    def fetch(code: str, server: str) -> dict:
+        payload = call_mcp_tool("minute_data", {"code": code, "format": "json", "detailLevel": "standard"},
+                                server=server, pool="skill", cache=False, deadline=primary_end)
+        return minute_quote(payload, code)
 
     try:
-        if source["wudao"]:
-            quotes = dict(collect([pool.submit(copy_context().run, fetch, code) for code in unique]))
-        failed = [code for code in unique if quote_error(code, quotes.get(code, {}), current_time())]
-        if failed:
+        discovery: dict[str, Any] = {}
+        def accept_source(_key, value, error):
+            discovery.update(source=value if isinstance(value, dict) else {}, error=error)
+        task = primary_pool.submit(copy_context().run, data_source)
+        collect({task: "source"}, primary_end, accept_source)
+        source = discovery.get("source", {})
+        if source.get("wudao") and time.monotonic() < primary_end:
+            tasks = {primary_pool.submit(copy_context().run, fetch, code, source["server"]): code for code in unique}
+            collect(tasks, primary_end, lambda code, q, error: record(code, q, error, "primary"))
+        else:
+            for code in unique:
+                record(code, {}, discovery.get("error") or "主源未启用或发现超时", "primary")
+
+        failed = missing()
+        direct_codes = unique if require_order_book else failed
+        books: dict[str, dict] = {}
+        book_errors: dict[str, str] = {}
+        if direct_codes and time.monotonic() < end:
             checkpoint()
-            try:
-                task = pool.submit(copy_context().run, build_monitor_snapshot, failed,
-                                   include_minute=include_minute, force_refresh=force_refresh)
-                fallback = collect([task])[0].quotes
+            direct_end = min(time.monotonic() + _DIRECT_QUOTE_SECONDS,
+                             time.monotonic() + max(0.0, end - time.monotonic()) / 2)
+            def accept_direct(_key, rows, error):
+                if not isinstance(rows, (list, tuple)):
+                    error = error or "直连源返回格式无效"
+                    rows = []
+                by_code = {q.get("code"): q for q in rows or [] if isinstance(q, dict)}
+                for code in direct_codes:
+                    q = by_code.get(code)
+                    problem = error or ("直连源未返回该股票" if q is None else quote_error(code, q, current_time()))
+                    if not problem and not q.get("source"):
+                        problem = "直连报价缺少来源"
+                    if require_order_book:
+                        if problem:
+                            book_errors[code] = problem
+                        else:
+                            books[code] = dict(q)
+                    if code in failed:
+                        record(code, q, problem, "direct")
+            task = backup_pool.submit(copy_context().run, TencentAdapter().fetch_live_quotes, direct_codes)
+            collect({task: "direct"}, direct_end, accept_direct)
+
+        failed = missing()
+        if failed and time.monotonic() < end:
+            checkpoint()
+            def accept_backup(_key, result, error):
+                rows = getattr(result, "quotes", {})
                 for code in failed:
-                    quote = fallback.get(code, {})
-                    error = quote_error(code, quote, current_time())
-                    primary = quotes.get(code, {}).get("error")
-                    if error is None:
-                        quotes[code] = {**quote, **({"primary_error": primary} if primary else {})}
-                    else:
-                        quotes[code] = {**quotes.get(code, {}), "code": code, "error": primary or error, "fallback_error": error}
-            except (ValueError, RuntimeError, OSError) as exc:
-                reraise_stop(exc)
-                for code in failed:
-                    quotes[code] = {**quotes.get(code, {}), "code": code, "error": quotes.get(code, {}).get("error") or str(exc), "fallback_error": str(exc)}
+                    q = rows.get(code, {}) if isinstance(rows, dict) else {}
+                    record(code, q, error, "system")
+            task = backup_pool.submit(copy_context().run, build_monitor_snapshot, failed,
+                                      include_minute=include_minute, force_refresh=force_refresh)
+            collect({task: "system"}, end, accept_backup)
         checkpoint()
+        for code in unique:
+            row = quotes.setdefault(code, {"code": code, "error": "实时取价预算耗尽"})
+            # 慢源等待期间，之前成功的报价也可能过期，返回前再次校验。
+            problem = quote_error(code, row, current_time())
+            if problem:
+                row["error"] = problem
+            row["quote_attempts"] = attempts[code]
+            if require_order_book:
+                if code in books:
+                    row["order_book"] = books[code]
+                else:
+                    row["order_book_error"] = book_errors.get(code, "盘口取价预算耗尽")
         return SimpleNamespace(quotes=quotes)
     finally:
-        # External reads finish under their transport timeout; cancelled results never reach settlement.
-        pool.shutdown(wait=False, cancel_futures=True)
+        primary_pool.shutdown(wait=False, cancel_futures=True)
+        backup_pool.shutdown(wait=False, cancel_futures=True)
 
 
 def agent_tools(protocol: str, *, read_only: bool = False,

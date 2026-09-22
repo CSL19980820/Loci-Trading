@@ -1,17 +1,22 @@
 <script setup lang="ts">
+import { type GridHandle } from '@/shared/components/ui/app/gridTypes'
+import { vBusy } from '@/shared/directives/busy'
+import { default as DataGrid } from '@/shared/components/ui/app/DataGrid.vue'
+import { default as Pager } from '@/shared/components/ui/app/Pager.vue'
+
 /**
  * 全站表格契约。本文件只做三件事：收 props / 拼装、把事件原样转发出去、
  * 编排「工具行 — 表体 — 分页器」三段版型。
  *
  * 真正有状态的三块各自成文件，改动前先看它们头部的说明：
- *   useBasicTableSource —— 取数、分页与请求世代（并发丢弃旧响应）
- *   useBasicTableEdit —— 行内编辑态与行主键口径
- *   useBasicTableHeight —— offsetHeight 自适应与 resize 监听对称性
+ * useBasicTableSource —— 取数、分页与请求世代（并发丢弃旧响应）
+ * useBasicTableEdit —— 行内编辑态与行主键口径
+ * useBasicTableHeight —— offsetHeight 自适应与 resize 监听对称性
  */
 import { computed, provide, ref, useAttrs, useSlots } from 'vue'
-import type { TableInstance } from 'element-plus'
 
-import BasicTableColumns from './BasicTableColumns.vue'
+
+import BasicTableCell from './BasicTableCell.vue'
 import BasicTableToolbar from './BasicTableToolbar.vue'
 import BasicTableVirtual from './BasicTableVirtual.vue'
 import EmptyState from './EmptyState.vue'
@@ -53,7 +58,7 @@ defineSlots<{
 
 const props = withDefaults(
   defineProps<{
-    dataSource?: Record<string, unknown>[]
+    dataSource?: object[]
     request?: BasicTableRequest
     pagination?: BasicTablePagination | boolean
     hasDefaultRequest?: boolean
@@ -99,7 +104,7 @@ const emit = defineEmits<{
 const attrs = useAttrs()
 const slots = useSlots()
 provide('basicTableSlots', slots)
-const tableRef = ref<TableInstance>()
+const tableRef = ref<GridHandle>()
 const virtualTableRef = ref<InstanceType<typeof BasicTableVirtual>>()
 const bodyRef = ref<HTMLElement>()
 const zoomed = ref(false)
@@ -233,7 +238,7 @@ defineExpose({
       </template>
     </BasicTableToolbar>
 
-    <div ref="bodyRef" class="basic-table__body" v-loading="busy">
+    <div ref="bodyRef" class="basic-table__body" v-busy="busy">
       <BasicTableVirtual
         v-if="useVirtualized"
         ref="virtualTableRef"
@@ -246,6 +251,7 @@ defineExpose({
         :stripe="stripe"
         :size="size"
         :max-height="maxHeight"
+        :height="resolvedHeight"
         :row-class-name="rowClassName"
         :is-editing="isEditByRow"
         v-bind="attrs"
@@ -260,10 +266,11 @@ defineExpose({
           </slot>
         </template>
       </BasicTableVirtual>
-      <el-table
+      <DataGrid
         v-else
         ref="tableRef"
         :data="rows"
+        :columns="columns"
         :stripe="stripe"
         :border="border"
         :size="size"
@@ -273,30 +280,29 @@ defineExpose({
         :row-class-name="rowClassName"
         :empty-text="emptyText"
         :span-method="spanMethod"
-        class="basic-table__el"
+        class="basic-table__grid"
         v-bind="attrs"
         @row-click="onRowClick"
         @cell-click="onCellClick"
         @selection-change="onSelectionChange"
       >
-        <BasicTableColumns
-          :columns="columns"
-          :is-editing="isEditByRow"
-          @update:field="onUpdateField"
-        />
+        <template #cell="{ row, column, index }">
+          <BasicTableCell :col="column" :row="row" :index="index" :editing="isEditByRow(row)"
+            @update:field="(prop, value) => onUpdateField(row, prop, value)" />
+        </template>
         <template #empty>
           <slot name="empty">
             <EmptyState :description="emptyText" :reason="emptyReason" />
           </slot>
         </template>
-      </el-table>
+      </DataGrid>
     </div>
 
     <div
       v-if="showPager && (!pagerOpts.hideOnSinglePage || pager.total > pager.pageSize)"
       class="basic-table__foot"
     >
-      <el-pagination
+      <Pager
         v-model:current-page="pager.currentPage"
         v-model:page-size="pager.pageSize"
         :total="pager.total"
@@ -312,133 +318,20 @@ defineExpose({
 </template>
 
 <style scoped>
-/*
- * 不写 height: 100%。在弹性父级里 flex:1 1 auto 已经能吃满高度；
- * 而在普通块级父级（如账本持仓卡）里，100% 会把只有几行的表撑成整屏，
- * 把后面的兄弟节点顶出父级 overflow:hidden 之外——账本页的「交割绩效 /
- * 月度盈亏」曾因此被整块裁掉且无法滚动到。
- */
-.basic-table {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1 1 auto;
-  background: transparent;
-}
-
-/*
- * 页级满高：父级已经是 h-0 + flex-1（PageContainer #main）。
- * 这里再给表体一条确定高度，el-table 的 height="100%" 才不会塌成内容高，
- * 下面那块画布空洞就是这么来的。
- */
-.basic-table--fill {
-  height: 100%;
-}
-
-.basic-table--fill .basic-table__body {
-  height: 0;
-  background-color: var(--surface);
-}
-
-.basic-table--fill :deep(.basic-table__el),
-.basic-table--fill :deep(.el-table),
-.basic-table--fill :deep(.el-table__inner-wrapper),
-.basic-table--fill :deep(.el-table__body-wrapper) {
-  height: 100%;
-  background-color: var(--surface);
-}
-.basic-table--fill :deep(.el-table__empty-block) {
-  height: 100%;
-  background: transparent;
-}
-
-/*
- * 放大态：整屏浮层。不加投影——终端里的层级靠边框与底色区分（D3 卡片无阴影），
- * 一圈 40px 的模糊阴影只会让下面的行看起来发灰。
- */
-.basic-table--zoom {
-  position: fixed;
-  inset: var(--gap-2);
-  z-index: var(--z-table-zoom);
-  padding: var(--gap-2);
-  background: var(--sheet);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-}
-
-.basic-table__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-
-
-.basic-table__el :deep(.el-table__header-wrapper th.el-table__cell) {
-  height: var(--head-h);
-  background: var(--sheet-alt);
-  color: var(--muted);
-  font-size: var(--fs-aux);
-  font-weight: 400;
-  text-align: center;
-}
-
-.basic-table__el :deep(.el-table__body td.el-table__cell) {
-  height: var(--row-h);
-  padding: var(--gap-1) 0;
-  text-align: center;
-}
-
-.basic-table__el :deep(.el-table__header .cell),
-.basic-table__el :deep(.el-table__body .cell) {
-  padding-left: var(--gap-2);
-  padding-right: var(--gap-2);
-  text-align: center;
-}
-
-.basic-table__el :deep(.el-table__cell.is-left .cell) {
-  text-align: left;
-}
-
-.basic-table__el :deep(.el-table__cell.is-right .cell) {
-  text-align: right;
-}
-
-.basic-table__el :deep(.el-table__row--striped td.el-table__cell) {
-  background: var(--sheet-alt);
-}
-
-.basic-table__el :deep(.el-table__inner-wrapper::before) {
-  background-color: var(--rule);
-}
-
-/* D1：表内只有这三类语义可以上红绿 */
-.basic-table__el :deep(.is-up) {
-  color: var(--up);
-}
-
-.basic-table__el :deep(.is-down) {
-  color: var(--down);
-}
-
-.basic-table__el :deep(.is-flat) {
-  color: var(--flat);
-}
-
-.basic-table__el :deep(.is-frozen) {
-  color: var(--mist);
-}
-
-.basic-table__foot {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--gap-1) var(--pad-sheet-x);
-  border-top: 1px solid var(--rule);
-  background: var(--sheet);
-}
-
-.basic-table__foot :deep(.el-pagination) {
-  flex-wrap: wrap;
-  justify-content: flex-end;
+.basic-table { display:flex; flex-direction:column; min-height:0; flex:1 1 auto; background:transparent; }
+.basic-table--fill { height:100%; }
+.basic-table--fill .basic-table__body { height:0; background:var(--surface); }
+.basic-table--fill :deep(.data-grid) { height:100%; background:var(--surface); }
+.basic-table--zoom { position:fixed; inset:var(--gap-4); z-index:var(--z-table-zoom); padding:var(--gap-2); background:var(--surface-raised); border:1px solid var(--border-subtle); border-radius:var(--radius-xl); box-shadow:var(--shadow-lg); }
+.basic-table__body { flex:1 1 auto; min-height:0; overflow:hidden; }
+.basic-table__foot { flex-shrink:0; display:flex; justify-content:flex-end; padding:5px 0 0; background:transparent; }
+.basic-table__foot :deep(.pager) { justify-content:flex-end; margin-top:0; }
+.basic-table__grid :deep(.is-up) { color:var(--up); }
+.basic-table__grid :deep(.is-down) { color:var(--down); }
+.basic-table__grid :deep(.is-flat) { color:var(--flat); }
+.basic-table__grid :deep(.is-frozen) { color:var(--text-tertiary); }
+@media (max-width: 640px) {
+  .basic-table--zoom { inset:0; border-radius:0; }
+  .basic-table__foot { justify-content:center; padding:5px 0 0; }
 }
 </style>

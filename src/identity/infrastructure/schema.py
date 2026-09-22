@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -36,12 +36,12 @@ CREATE TABLE IF NOT EXISTS users (
     display_name       TEXT NOT NULL DEFAULT '',
     avatar_url TEXT NOT NULL DEFAULT '',
     bio        TEXT NOT NULL DEFAULT '',
-    role TEXT NOT NULL DEFAULT 'member',
+    role TEXT NOT NULL DEFAULT 'visitor',
     status          TEXT NOT NULL DEFAULT 'active',
     created_at         TEXT NOT NULL,
     updated_at           TEXT NOT NULL,
     last_login_at        TEXT,
-    CHECK (role IN ('admin', 'member')),
+    CHECK (role IN ('admin', 'visitor')),
 CHECK (status IN ('active', 'pending', 'disabled', 'deleted'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_users_username ON users(lower(username));
@@ -171,33 +171,6 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 CREATE INDEX IF NOT EXISTS ix_notifications_user ON notifications(user_id, created_at DESC);
 
--- 公告：管理员发，全站可见。
-CREATE TABLE IF NOT EXISTS announcements (
- id       TEXT PRIMARY KEY,
-    title        TEXT NOT NULL,
-    body_md      TEXT NOT NULL DEFAULT '',
-    level        TEXT NOT NULL DEFAULT 'info',
-    published_at TEXT,
- expires_at   TEXT,
-    created_by   TEXT NOT NULL DEFAULT '',
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
-);
-
--- 开放 API Key。只存 sha256；明文只在创建响应里出现一次。
-CREATE TABLE IF NOT EXISTS api_keys (
-    id   TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL,
-    name    TEXT NOT NULL DEFAULT '',
-    prefix       TEXT NOT NULL,
-    key_hash     TEXT NOT NULL UNIQUE,
-    scopes       TEXT NOT NULL DEFAULT 'read',
-    created_at   TEXT NOT NULL,
-    last_used_at TEXT,
-    expires_at   TEXT,
-    revoked_at   TEXT
-);
-CREATE INDEX IF NOT EXISTS ix_api_keys_user ON api_keys(user_id, revoked_at);
 """
 
 #: 后续演进只准往这个列表尾部追加，且每条必须可重复执行。
@@ -224,3 +197,6 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             # 幂等迁移在已应用时会报 duplicate column 之类；这是预期路径。
             continue
     conn.commit()
+    from src.identity.infrastructure.access_migration import migrate_access_model
+
+    migrate_access_model(conn)

@@ -78,13 +78,8 @@ class MockConfirmRequest(AuthModel):
     handle: str = Field(default="demo", max_length=32)
 
 
-class ApiKeyRequest(AuthModel):
-    name: str = Field(default="", max_length=64)
-    scopes: str = Field(default="read", max_length=64)
-
-
 class RoleRequest(AuthModel):
-    role: str = Field(pattern="^(admin|member)$")
+    role: str = Field(pattern="^(admin|visitor)$")
 
 
 class StatusRequest(AuthModel):
@@ -111,17 +106,8 @@ class AdminCreateUserRequest(AuthModel):
     password: str = Field(min_length=8, max_length=256)
     display_name: str = Field(default="", max_length=64)
     email: str = Field(default="", max_length=254)
-    role: str = Field(default="member", pattern="^(admin|member)$")
+    role: str = Field(default="visitor", pattern="^(admin|visitor)$")
     status: str = Field(default="active", pattern="^(active|disabled)$")
-
-
-class AnnouncementRequest(AuthModel):
-    id: str = Field(default="", max_length=64)
-    title: str = Field(min_length=1, max_length=120)
-    body_md: str = Field(default="", max_length=8000)
-    level: str = Field(default="info", pattern="^(info|warn|critical)$")
-    published_at: str | None = None
-    expires_at: str | None = None
 
 
 def client_ip(request: Request) -> str:
@@ -160,8 +146,7 @@ def build_auth_dependency(
 ):
     """返回 FastAPI 依赖：``Request -> AuthContext``。
 
-    识别顺序：会话 Cookie → ``Authorization: Bearer loci_xxx``（开放 API Key）
-    → 桌面自动登录（仅当 ``auto_login_primary``）。都没命中就是匿名——
+    识别顺序：会话 Cookie → 无凭证的桌面自动登录。个人开放 API Key 已停用。都没命中就是匿名——
     **这里不抛异常**，鉴权由各路由自己按需 require。
 
     ``auto_login_primary`` 是桌面单机形态的兼容闸门：本地跑 ``loci.py`` 的人
@@ -179,12 +164,7 @@ def build_auth_dependency(
         with IdentityStore(identity_db) as store:
             if token:
                 context = accounts.resolve_session(store, token)
-            if not context.authenticated:
-                header = request.headers.get("Authorization", "")
-                scheme, _, value = header.partition(" ")
-                if scheme.lower() == "bearer" and value.startswith("loci_"):
-                    context = accounts.resolve_api_key(store, value)
-            if not context.authenticated and auto_login_primary:
+            if not context.authenticated and auto_login_primary and not token and not request.headers.get("Authorization"):
                 context = _primary_admin_context(store)
         request.state.loci_auth = context
         return context
@@ -197,7 +177,7 @@ def _primary_admin_context(store: IdentityStore) -> AuthContext:
     from src.shared.tenancy import PRIMARY_TENANT
 
     row = store.conn.execute(
-        "SELECT id FROM users WHERE tenant_id = ? AND status = 'active' LIMIT 1",
+        "SELECT id FROM users WHERE tenant_id = ? AND status = 'active' AND role = 'admin' LIMIT 1",
         (PRIMARY_TENANT,),
     ).fetchone()
     if row is None:

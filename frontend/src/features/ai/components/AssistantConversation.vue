@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed } from 'vue'
+import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '@/shared/components/ui/message-scroller'
 
 import {
   messagePlainText,
@@ -36,51 +37,6 @@ function onRerun(message: AiMessage): void {
   emit('rerun', { text, ...(images?.length ? { images } : {}) })
 }
 
-const scrollRoot = ref<HTMLElement | null>(null)
-const stickToBottom = ref(true)
-
-function onScroll(): void {
-  const root = scrollRoot.value
-  if (!root) return
-  stickToBottom.value = root.scrollHeight - root.scrollTop - root.clientHeight < 80
-}
-
-function scrollToLatest(): void {
-  if (!stickToBottom.value) return
-  void nextTick(() => {
-    const root = scrollRoot.value
-    if (root) root.scrollTop = root.scrollHeight
-  })
-}
-
-// 避免 deep watch 在每个 token 扫整棵 messages；长度/末条内容+思考变化即够滚底。
-watch(
-  () => {
-    const list = props.messages
-    const last = list[list.length - 1]
-    return [
-      list.length,
-      last?.id ?? '',
-      last?.content?.length ?? 0,
-      last?.thinking?.length ?? 0,
-      last?.status ?? '',
-      last?.tool_receipts?.length ?? 0,
-      last?.artifacts?.length ?? 0,
-    ].join(':')
-  },
-  scrollToLatest,
-  { flush: 'post' },
-)
-watch(() => props.waitingUser, () => {
-  stickToBottom.value = true
-  scrollToLatest()
-})
-watch(() => props.busy, scrollToLatest)
-onMounted(() => {
-  stickToBottom.value = true
-  scrollToLatest()
-})
-
 const lastAssistantId = computed(() => {
   for (let index = props.messages.length - 1; index >= 0; index -= 1) {
     if (props.messages[index]?.role === 'assistant') return props.messages[index]?.id
@@ -115,18 +71,12 @@ const showGlobalConfirm = computed(() => {
 </script>
 
 <template>
-  <section
-    ref="scrollRoot"
-    class="assistant-conversation"
-    role="log"
-    aria-label="对话记录"
-    tabindex="0"
-    aria-live="polite"
-    @scroll.passive="onScroll"
-  >
+  <MessageScrollerProvider default-scroll-position="end" :auto-scroll="true" :scroll-edge-threshold="80">
+    <MessageScroller class="assistant-conversation">
+      <MessageScrollerViewport class="assistant-conversation__viewport" aria-label="对话记录">
+        <MessageScrollerContent class="assistant-conversation__content" aria-live="polite">
+          <MessageScrollerItem v-for="message in messages" :key="message.id" :message-id="message.id" :scroll-anchor="message.role === 'user'">
     <AssistantTurnTimeline
-      v-for="message in messages"
-      :key="message.id"
       :message="message"
       :show-confirm="showConfirmFor(message)"
       :agents="message.id === lastAssistantId && (busy || waitingUser) && agents?.length ? agents : undefined"
@@ -137,6 +87,7 @@ const showGlobalConfirm = computed(() => {
       @copy="emit('copy', $event)"
       @rerun="onRerun(message)"
     />
+          </MessageScrollerItem>
     <AssistantConfirmCard
       v-if="showGlobalConfirm"
       fallback
@@ -145,40 +96,17 @@ const showGlobalConfirm = computed(() => {
     <p v-else-if="busy && !waitingUser" class="assistant-conversation__status" aria-live="polite">
       正在接收运行事件…
     </p>
-  </section>
+        </MessageScrollerContent>
+      </MessageScrollerViewport>
+      <MessageScrollerButton access="read" aria-label="回到最新消息" />
+    </MessageScroller>
+  </MessageScrollerProvider>
 </template>
 
 <style scoped>
-.assistant-conversation {
-  display: flex; min-height: 0; flex: 1; flex-direction: column;
-  gap: var(--ai-gap-lg);
-  overflow-x: hidden; overflow-y: auto;
-  /* 滚动条是长会话里唯一的位置感知，只压细不隐藏 */
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklab, var(--ink) 20%, transparent) transparent;
-  padding: var(--gap-3) 0;
-  overscroll-behavior: contain;
-  align-items: stretch;
-  width: 100%; box-sizing: border-box;
-}
-.assistant-conversation::-webkit-scrollbar {
-  width: 8px;
-}
-.assistant-conversation::-webkit-scrollbar-track {
-  background: transparent;
-}
-.assistant-conversation::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: var(--ai-r-pill);
-  background: color-mix(in oklab, var(--ink) 18%, transparent);
-  background-clip: padding-box;
-}
-.assistant-conversation:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in oklab, var(--ink) 32%, transparent);
-  background-clip: padding-box;
-}
-.assistant-conversation__status {
-  margin: var(--gap-1) 0 0; color: var(--mist); font-size: var(--ai-fs-aux); width: 100%;
-}
-.assistant-conversation:focus-visible { outline: 2px solid var(--seal); outline-offset: -2px; }
+.assistant-conversation { flex:1 1 0%; height:auto; min-height:0; width:100%; }
+.assistant-conversation__viewport { padding:var(--gap-4) 0 var(--gap-3); overflow-x:hidden; scrollbar-width:thin; }
+.assistant-conversation__content { width:100%; max-width:none; margin:0 auto; gap:var(--gap-5); }
+.assistant-conversation__status { margin:var(--gap-1) 0 0; color:var(--mist); font-size:var(--ai-fs-aux); }
+.assistant-conversation__viewport:focus-visible { outline:2px solid var(--seal); outline-offset:-2px; }
 </style>

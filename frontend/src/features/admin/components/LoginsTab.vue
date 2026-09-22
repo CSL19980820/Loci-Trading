@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Search, RefreshRight } from '@element-plus/icons-vue'
 /**
  * 登录日志。与审计日志同一条流、同一套「筛选栏 + BasicTable + 分页」骨架，
  * 但问的是另一个问题：谁、什么时候、用什么方式、从哪个 IP 进来的，成没成。
@@ -13,14 +12,21 @@ import { Search, RefreshRight } from '@element-plus/icons-vue'
 import { ref } from 'vue'
 
 import { listAdminLogins } from '@/shared/api/admin'
-import PageContainer from '@/shared/components/layout/PageContainer.vue'
-import BasicForm from '@/shared/components/ui/BasicForm.vue'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import { LOGIN_ACTION_OPTIONS, actionLabel, outcomeLabel, outcomeTagType } from '../lib/adminDict'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import {
+  LOGIN_ACTION_OPTIONS,
+  OUTCOME_OPTIONS,
+  actionLabel,
+  outcomeLabel,
+  outcomeTagType,
+  tagVariant,
+} from '../lib/adminDict'
+import AdminLogFilters from './AdminLogFilters.vue'
 import {
   EMPTY_LOG_FILTERS,
   createLogColumns,
-  createLogFilterSchemas,
   fetchLogPage,
   parseLogDetail,
   type LogFilters,
@@ -28,13 +34,6 @@ import {
 
 const tableRef = ref<InstanceType<typeof BasicTable>>()
 const filters = ref<LogFilters>({ ...EMPTY_LOG_FILTERS })
-
-const filterSchemas = createLogFilterSchemas({
-  keywordPlaceholder: '登录账号 / 用户名称',
-  actionLabel: '登录方式',
-  actionOptions: LOGIN_ACTION_OPTIONS,
-  outcomeLabel: '登录结果',
-})
 
 const shared = createLogColumns({
   actorLabel: '登录账号',
@@ -46,28 +45,28 @@ const shared = createLogColumns({
 })
 
 const columns = ref<BasicTableColumn[]>([
-  shared.time,
+  { ...shared.time, label: '登录时间' },
   shared.actor,
   shared.action,
   shared.outcome,
   shared.ip,
   {
     prop: 'detail_json',
-    label: '备注',
+    label: '客户端 / 认证信息',
     minWidth: 140,
     showOverflowTooltip: true,
     formatter: (row) => {
-      const provider = parseLogDetail(row.detail_json)?.provider
-      return provider ? `渠道：${String(provider)}` : '—'
+      const detail = parseLogDetail(row.detail_json)
+      const agent = String(detail?.user_agent || '')
+      const device = /Mobile|Android|iPhone/.test(agent) ? '移动设备' : agent ? '桌面设备' : ''
+      const browser = /Edg\//.test(agent) ? 'Edge' : /Chrome\//.test(agent) ? 'Chrome' : /Firefox\//.test(agent) ? 'Firefox' : /Safari\//.test(agent) ? 'Safari' : ''
+      const channel = detail?.provider === 'local' ? '账号密码' : String(detail?.provider || '')
+      return [device, browser, channel, detail?.reason === 'invalid_credentials' ? '凭据校验失败' : ''].filter(Boolean).join(' · ') || '历史记录未采集客户端信息'
     },
   },
 ])
 
-/**
- * `listAdminLogins` 的后端**不收 `action` 参数**（它已按登录动作白名单收窄），
- * 所以「登录方式」只能在拿到当页之后本地过滤；分页总数仍报后端口径，
- * 不假装「登录方式也参与了分页」。与 `UsersTab` 处理角色筛选的口径一致。
- */
+/** 登录方式、结果和关键词统一由服务端过滤，分页总数与筛选保持一致。 */
 async function loadLogins(params: {
   currentPage: number
   pageSize: number
@@ -76,7 +75,7 @@ async function loadLogins(params: {
     fetcher: listAdminLogins,
     filters: filters.value,
     params,
-    actionMode: 'client',
+    actionMode: 'server',
     errorMessage: '加载登录日志失败',
   })
 }
@@ -98,89 +97,74 @@ function rowClassName(data: { row: Record<string, unknown> }): string {
 
 <template>
   <div class="admin-pane admin-list">
-    <PageContainer>
-      <template #search>
-        <div class="admin-pane__filters">
-          <BasicForm
-            v-model="filters"
-            :schemas="filterSchemas"
-            :columns="3"
-            label-position="left"
-            label-width="5em"
-          />
-        </div>
-        <div class="admin-pane__filter-actions">
-          <el-button type="primary" :icon="Search" @click="reload">查询</el-button>
-          <el-button :icon="RefreshRight" @click="onReset">重置</el-button>
-        </div>
-      </template>
+    
 
-      <template #main>
-        <BasicTable
-          ref="tableRef"
-          v-model:columns="columns"
-          :request="loadLogins"
-          :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
-          :toolbar-config="{ refresh: true, custom: true }"
-          :row-class-name="rowClassName"
-          height="100%"
-          row-key="id"
-          stripe
-          empty-text="没有匹配的登录记录"
-        >
-          <template #actor="{ row }">
-            <el-tooltip
-              v-if="row.actor_id"
-              :content="`账号 ID：${row.actor_id}`"
-              placement="top"
-              :show-after="200"
-            >
+    <AdminLogFilters
+      v-model="filters"
+      keyword-placeholder="登录账号 / 用户名称"
+      action-label="登录方式"
+      :action-options="LOGIN_ACTION_OPTIONS"
+      outcome-label="登录结果"
+      :outcome-options="OUTCOME_OPTIONS"
+      @search="reload"
+      @reset="onReset"
+    />
+
+    <div class="admin-list__table">
+      <BasicTable
+        ref="tableRef"
+        v-model:columns="columns"
+        :request="loadLogins"
+        :pagination="{ pageSize: 20, pageSizes: [20, 50, 100] }"
+        :toolbar-config="{ refresh: true, custom: true }"
+        :row-class-name="rowClassName"
+        height="100%"
+        row-key="id"
+        empty-text="没有匹配的登录记录"
+      >
+        <template #actor="{ row }">
+          <Tooltip v-if="row.actor_id" :delay-duration="200">
+            <TooltipTrigger as-child>
               <span class="logins-actor">{{ row.actor_name || '系统' }}</span>
-            </el-tooltip>
-            <span v-else class="logins-actor">{{ row.actor_name || '系统' }}</span>
-          </template>
+            </TooltipTrigger>
+            <TooltipContent>账号 ID：{{ row.actor_id }}</TooltipContent>
+          </Tooltip>
+          <span v-else class="logins-actor">{{ row.actor_name || '系统' }}</span>
+        </template>
 
-          <template #action="{ row }">
-            <el-tag size="small" type="info" effect="plain">
-              {{ actionLabel(row.action as string) }}
-            </el-tag>
-          </template>
+        <template #action="{ row }">
+          <UiBadge variant="info">
+            {{ actionLabel(row.action as string) }}
+          </UiBadge>
+        </template>
 
-          <template #outcome="{ row }">
-            <el-tag :type="outcomeTagType(row.outcome as string)" size="small" effect="plain">
-              {{ outcomeLabel(row.outcome as string) }}
-            </el-tag>
-          </template>
+        <template #outcome="{ row }">
+          <UiBadge :variant="tagVariant(outcomeTagType(row.outcome as string))" dot>
+            {{ outcomeLabel(row.outcome as string) }}
+          </UiBadge>
+        </template>
 
-          <template #ip="{ row }">
-            <span class="is-code">{{ row.ip || '—' }}</span>
-          </template>
-        </BasicTable>
-      </template>
-    </PageContainer>
+        <template #ip="{ row }">
+          <span class="is-code">{{ row.ip || '—' }}</span>
+        </template>
+      </BasicTable>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .logins-actor {
-  color: var(--ink);
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
-/*
- * 全局只有 `td.is-code .cell` 一条等宽规则，插槽里的 span 命中不到；
- * 这里按同一口径补一条，不新造 class-name。
- */
 .is-code {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
 }
 
-/*
- * 行底色落在 el-table 自己渲染的 td 上，scoped 属性够不着，只能 :deep。
- * 8% 是刻意压到「扫得出、读不烦」的下限：连着二十行也不会把表变成一片黄。
- */
-.admin-pane :deep(.el-table__row.logins-row--alert > td.el-table__cell) {
+.admin-pane :deep([data-slot='table-row'].logins-row--alert > td[data-slot='table-cell']) {
   background: color-mix(in oklab, var(--warn) 8%, transparent);
 }
 </style>

@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import { notifyUser } from '@/shared/api/admin'
-import type { AdminUserItem } from '@/shared/types/admin'
+import { Button } from '@/shared/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
+import { Input } from '@/shared/components/ui/input'
+import { Textarea } from '@/shared/components/ui/textarea'
+import UiField from '@/shared/components/ui/UiField.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
+import type { AdminUserItem } from '@/shared/types/admin'
 
 const props = defineProps<{
   visible: boolean
@@ -28,21 +39,26 @@ function onClose(): void {
   emit('update:visible', false)
 }
 
+/** 点遮罩 / 按 Esc 关闭 = 取消，清掉未发送的草稿 */
+function onOpenChange(next: boolean): void {
+  if (!next) onClose()
+}
+
 async function onSubmit(): Promise<void> {
   if (!props.user) return
   if (!form.title.trim()) {
-    ElMessage.warning('请输入通知标题')
+    toast.warning('请输入通知标题')
     return
   }
 
   loading.value = true
   try {
     await notifyUser(props.user.id, form.title.trim(), form.body.trim())
-    ElMessage.success('通知已发送')
+    toast.success('通知已发送')
     emit('sent')
     onClose()
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, '发送通知失败'))
+    toast.error(toErrorMessage(caught, '发送通知失败'))
   } finally {
     loading.value = false
   }
@@ -50,34 +66,47 @@ async function onSubmit(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog
-    class="admin-form-dialog dialog-body--scroll"
-    :model-value="visible"
-    :title="`发送站内通知 - ${user?.display_name || user?.username}`"
-    width="min(92vw, 560px)"
-    @close="onClose"
-  >
-    <el-form label-position="right" label-width="6.5em" size="small">
-      <el-form-item label="标题" required>
-        <el-input v-model="form.title" placeholder="如：系统重要通知" maxlength="120" show-word-limit />
-      </el-form-item>
-      <el-form-item label="正文">
-        <el-input
-          v-model="form.body"
-          type="textarea"
-          :rows="4"
-          placeholder="请输入通知详细内容（支持纯文本）"
-          maxlength="2000"
-          show-word-limit
-        />
-      </el-form-item>
-    </el-form>
+  <Dialog :open="visible" @update:open="onOpenChange">
+    <DialogContent
+      class="admin-form-dialog w-[min(92vw,560px)] max-w-none gap-3 rounded-[var(--radius)] p-4 sm:max-w-none"
+    >
+      <DialogHeader class="gap-1 text-left">
+        <DialogTitle class="admin-form-dialog__title">
+          {{ `发送站内通知 - ${user?.display_name || user?.username}` }}
+        </DialogTitle>
+      </DialogHeader>
 
-    <template #footer>
-      <el-button @click="onClose">取消</el-button>
-      <el-button type="primary" :loading="loading" @click="onSubmit">发送通知</el-button>
-    </template>
-  </el-dialog>
+      <div class="admin-form-dialog__body notify-form">
+        <UiField label="标题" required>
+          <Input
+            v-model="form.title"
+            placeholder="如：系统重要通知"
+            maxlength="120"
+          />
+        </UiField>
+        <UiField label="正文">
+          <Textarea
+            v-model="form.body"
+            :rows="4"
+            placeholder="请输入通知详细内容（支持纯文本）"
+            maxlength="2000"
+          />
+        </UiField>
+      </div>
+
+      <DialogFooter class="admin-form-dialog__footer">
+        <Button access="read" variant="outline" @click="onClose">取消</Button>
+        <Button :disabled="loading" @click="onSubmit">发送通知</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
+
+<style scoped>
+.notify-form {
+  display: grid;
+  gap: var(--gap-2);
+}
+</style>
 
 <style scoped src="./AdminDialog.css" />

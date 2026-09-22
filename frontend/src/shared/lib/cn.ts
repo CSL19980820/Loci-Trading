@@ -1,5 +1,15 @@
 import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import { extendTailwindMerge } from 'tailwind-merge'
+
+// These are font sizes, not colours. Without this registration, `text-aux`
+// from a small button removes `text-primary-foreground`, leaving black text.
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      'font-size': [{ text: ['micro', 'kicker', 'aux', 'ui', 'body', 'title', 'hero', 'tape', 'display'] }],
+    },
+  },
+})
 
 /**
  * cn —— shadcn 构造的唯一类名出口。

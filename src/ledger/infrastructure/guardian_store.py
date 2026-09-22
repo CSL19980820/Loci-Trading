@@ -10,13 +10,15 @@ from collections.abc import Callable
 
 from src.shared.paths import palace_db
 from src.ledger.domain.guardian_account import new_guardian_account, check_guardian_account
+from src.ledger.domain.guardian_curve import curve_snapshot
 from src.ledger.infrastructure.guardian_queries import GuardianQueriesMixin
 from src.ledger.infrastructure.guardian_reports import GuardianReportsMixin, REPORT_SCHEMA
 from src.ledger.infrastructure.guardian_consults import GuardianConsultMixin, CONSULT_SCHEMA
 from src.ledger.infrastructure.guardian_notices import GuardianNoticesMixin, NOTICE_SCHEMA
+from src.ledger.infrastructure.guardian_experience import GuardianExperienceMixin, EXPERIENCE_SCHEMA
 
 
-class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultMixin, GuardianNoticesMixin):
+class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultMixin, GuardianNoticesMixin, GuardianExperienceMixin):
     def __init__(self, db_path: str | Path | None = None) -> None:
         path = Path(db_path or palace_db())
         self.db_path = path
@@ -26,6 +28,7 @@ class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultM
         self.conn.executescript(REPORT_SCHEMA)
         self.conn.executescript(CONSULT_SCHEMA)
         self.conn.executescript(NOTICE_SCHEMA)
+        self.conn.executescript(EXPERIENCE_SCHEMA)
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS guardian_portfolio (
                 id INTEGER PRIMARY KEY CHECK(id=1), state_json TEXT NOT NULL
@@ -96,6 +99,16 @@ class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultM
     def running_cycles(self) -> list[dict[str, Any]]:
         return [{'slot': r['slot'], 'result': json.loads(r['result_json'])} for r in self.conn.execute("SELECT slot,result_json FROM guardian_cycles WHERE status='running'")]
 
+    def opening_plan_cycles(self, day: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute("""SELECT slot,status,
+            json_extract(result_json,'$.opening_plans') AS plans,
+            json_extract(result_json,'$.opening_plan_updates') AS updates
+            FROM guardian_cycles WHERE slot>=? AND slot<? ORDER BY slot""",
+            (day + 'T', day + 'U')).fetchall()
+        return [{'slot': row['slot'], 'status': row['status'], 'result': {
+            'opening_plans': json.loads(row['plans'] or '[]'),
+            'opening_plan_updates': json.loads(row['updates'] or '[]')}} for row in rows]
+
     def claim(self, slot: str, *, run_id: str = '') -> bool:
         # 跨进程互斥；过期 worker 不能提交，完整一轮只能落一次账。
         with self.conn:
@@ -117,6 +130,7 @@ class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultM
                notice: dict[str, str] | None = None) -> None:
         if state is not None:
             check_guardian_account(state)
+            result = {**result, "curve_snapshot": curve_snapshot(state)}
         with self.conn:
             self.conn.execute("BEGIN IMMEDIATE")
             row = self.conn.execute("SELECT status,result_json FROM guardian_cycles WHERE slot=?", (slot,)).fetchone()

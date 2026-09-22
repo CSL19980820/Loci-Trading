@@ -12,7 +12,7 @@
  * 通知策略与价格提醒不在这里：它们走各自的接口，与纸面舱没有共享字段。
  */
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import {
   absorbPaperStyle,
@@ -95,7 +95,6 @@ export function usePaperCabin() {
     return {
       type,
       title,
-      // el-alert 禁 description：闸门备注改挂 tooltip，页面上只留 ≤20 字的标题
       note: String(gate.note || '请同步 market.db 交易日历后再开仓'),
     }
   })
@@ -175,7 +174,7 @@ export function usePaperCabin() {
       style_md: styleMd.value,
       watch_hints: hints,
     })
-    ElMessage.success('战法风格记忆已保存')
+    toast.success('战法风格记忆已保存')
     await loadCabin()
   }
 
@@ -183,7 +182,7 @@ export function usePaperCabin() {
     cabinBusy.value = true
     try {
       const result = await absorbPaperStyle(slug.value.trim() || 'demo')
-      ElMessage.success(`已吸入 ${String(result.absorbed ?? 0)} 条教训`)
+      toast.success(`已吸入 ${String(result.absorbed ?? 0)} 条教训`)
       await loadCabin()
     } finally {
       cabinBusy.value = false
@@ -208,7 +207,7 @@ export function usePaperCabin() {
     cabinBusy.value = true
     try {
       await rebuildPaperMemory(slug.value.trim() || 'demo')
-      ElMessage.success('记忆图已重建')
+      toast.success('记忆图已重建')
       await loadCabin()
     } finally {
       cabinBusy.value = false
@@ -226,7 +225,7 @@ export function usePaperCabin() {
       ai_apply_paper: true,
       ai_mode: model.value ? 'suggest' : 'rules',
     })
-    ElMessage.success('纸面舱配置已保存')
+    toast.success('纸面舱配置已保存')
     await loadCabin()
   }
 
@@ -234,7 +233,7 @@ export function usePaperCabin() {
     cabinBusy.value = true
     try {
       await runPaperMonitor(slug.value.trim() || 'demo')
-      ElMessage.success('盯盘已执行')
+      toast.success('盯盘已执行')
       await loadCabin()
     } finally {
       cabinBusy.value = false
@@ -250,7 +249,7 @@ export function usePaperCabin() {
         | undefined
       const miss = Array.isArray(lb?.missed) ? lb.missed.length : 0
       const bought = Array.isArray(lb?.bought) ? lb.bought.length : 0
-      ElMessage.success(
+      toast.success(
         lb?.days?.length
           ? `日终完成：回看 ${lb.days.length} 日 · 买过 ${bought} · 错过 ${miss}`
           : '日终总结已执行',

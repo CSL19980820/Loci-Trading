@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Upload } from '@element-plus/icons-vue'
+import { Upload } from '@lucide/vue'
 
 import { installSkill } from '@/shared/api/quant'
 import PageToolbar from '@/shared/components/layout/PageToolbar.vue'
-import UiCard from '@/shared/components/ui/UiCard.vue'
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import { toErrorMessage } from '@/shared/lib/errors'
@@ -47,18 +48,24 @@ async function onUpload(event: Event): Promise<void> {
     原来的 Sheet 标题「安装 Skill 包」+ chip「zip」各占一行却不导航也不操作，
     整体迁到按钮文案上，口径进 note 的 ⓘ。
   -->
-  <UiCard class="publish min-h-0 flex-1" :aria-busy="busy">
+  <Card
+    class="publish min-h-0 flex-1 gap-0 rounded-md border-line bg-surface py-0 shadow-none"
+    :aria-busy="busy"
+  >
     <PageToolbar
       dense
       seamless
       note="技能包是 zip：内含 skill.yaml 与提示词，装完落在「已装」分区"
     >
-      <span class="text-muted text-sm font-medium">本地技能包</span>
-      <UiBadge variant="secondary">.zip</UiBadge>
+      <span class="text-muted-foreground text-sm font-medium">本地技能包</span>
+      <Badge variant="secondary">.zip</Badge>
     </PageToolbar>
     <PageBusy v-if="busy" label="正在安装技能包…" />
     <EmptyState v-else description="尚未选择技能包" reason="选择 .zip 文件安装">
-      <el-button type="primary" :icon="Upload" @click="pickFile">选择文件</el-button>
+      <Button @click="pickFile">
+        <Upload aria-hidden="true" />
+        选择文件
+      </Button>
     </EmptyState>
     <!-- 原生 file input：浏览器选文件能力，隐藏后由上方按钮触发 -->
     <input
@@ -68,5 +75,5 @@ async function onUpload(event: Event): Promise<void> {
       hidden
       @change="onUpload"
     />
-  </UiCard>
+  </Card>
 </template>

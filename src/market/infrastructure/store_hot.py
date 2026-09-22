@@ -21,6 +21,7 @@ from pathlib import Path
 import sqlite3
 
 from src.market.infrastructure.store import MarketStore
+from src.market.infrastructure.storage_health import require_rebuild_headroom
 from src.market.infrastructure.store_row_count import note_trim_below, track_hot_window_rewrite
 from src.shared.paths import market_hot_db as _default_hot_db
 
@@ -328,6 +329,9 @@ def mirror_to_hot(
     start_date = _window_start(full, window_trading_days)
     if not start_date:
         return {"quotes": 0, "start": "", "end": "", "mode": "empty"}
+    page_count = int(hot.conn.execute("PRAGMA page_count").fetchone()[0])
+    page_size = int(hot.conn.execute("PRAGMA page_size").fetchone()[0])
+    require_rebuild_headroom(hot.db_path, database_bytes=page_count * page_size)
     _copy_small_tables(full, hot, force=True)
     written = _copy_quotes_window(full, hot, start_date, force=True)
     # 裁掉窗外旧行（rebuild 的 copy start 即窗口起点；仍显式 trim 保证幂等）。

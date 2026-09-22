@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Delete, Right } from '@element-plus/icons-vue'
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import { ChevronRight, Trash } from '@lucide/vue'
+
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 
 import { dialogWidth } from '@/shared/lib/format'
@@ -61,42 +70,54 @@ function onRemove(): void {
 </script>
 
 <template>
-  <el-dialog
-    v-model="open"
-    :title="title"
-    :width="dialogWidth()"
-    destroy-on-close
-    class="market-detail-dialog"
-  >
-    <div v-if="item" class="market-detail-body">
-      <div class="meta-grid">
-        <div class="meta-cell"><span class="dim">品类</span><strong>{{ kindLabel }}</strong></div>
-        <div class="meta-cell"><span class="dim">信任</span><strong>{{ trustLabel }}</strong></div>
-        <div class="meta-cell"><span class="dim">版本</span><strong>{{ versionLabel }}</strong></div>
-        <div class="meta-cell"><span class="dim">状态</span><UiBadge :variant="item.enabled === false ? 'secondary' : 'info'">{{ stateLabel }}</UiBadge></div>
-      </div>
-      <div v-if="item.kind === 'source'" class="meta-desc">
-        <span class="dim">来源地址</span>
-        <strong class="url">{{ item.baseUrl || '未登记' }}</strong>
-      </div>
-      <div class="meta-desc">
-        <span class="dim">说明</span>
-        <strong>{{ item.description || '—' }}</strong>
-      </div>
+  <Dialog v-model:open="open">
+    <DialogContent
+      class="market-detail-dialog max-w-none sm:max-w-none"
+      :style="{ width: dialogWidth() }"
+    >
+      <DialogHeader class="text-left">
+        <DialogTitle>{{ title }}</DialogTitle>
+      </DialogHeader>
+      <div v-if="item" class="market-detail-body">
+        <div class="meta-grid">
+          <div class="meta-cell"><span class="dim">品类</span><strong>{{ kindLabel }}</strong></div>
+          <div class="meta-cell"><span class="dim">信任</span><strong>{{ trustLabel }}</strong></div>
+          <div class="meta-cell"><span class="dim">版本</span><strong>{{ versionLabel }}</strong></div>
+          <div class="meta-cell">
+            <span class="dim">状态</span>
+            <Badge v-if="item.enabled === false" variant="secondary">{{ stateLabel }}</Badge>
+            <Badge v-else class="border-transparent bg-info-soft text-info-ink">{{ stateLabel }}</Badge>
+          </div>
+        </div>
+        <div v-if="item.kind === 'source'" class="meta-desc">
+          <span class="dim">来源地址</span>
+          <strong class="url">{{ item.baseUrl || '未登记' }}</strong>
+        </div>
+        <div class="meta-desc">
+          <span class="dim">说明</span>
+          <strong>{{ item.description || '—' }}</strong>
+        </div>
 
-      <section v-if="item.kind === 'source'" class="section" aria-label="数据列表">
-        <SourceDatasetList :source-id="item.slug" @select="onPickDataset" />
-      </section>
-    </div>
-    <EmptyState v-else description="未选择货品" />
+        <section v-if="item.kind === 'source'" class="section" aria-label="数据列表">
+          <SourceDatasetList :source-id="item.slug" @select="onPickDataset" />
+        </section>
+      </div>
+      <EmptyState v-else description="未选择货品" />
 
-    <template #footer>
-      <el-button v-if="canRemove" type="danger" :icon="Delete" plain @click="onRemove">卸载</el-button>
-      <el-button type="primary" :icon="Right" :disabled="!item" @click="onOpen">{{ openLabel }}</el-button>
-    </template>
+      <DialogFooter>
+        <Button v-if="canRemove" variant="destructive" @click="onRemove">
+          <Trash aria-hidden="true" />
+          卸载
+        </Button>
+        <Button access="read" :disabled="!item" @click="onOpen">
+          <ChevronRight aria-hidden="true" />
+          {{ openLabel }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 
-    <SourceDatasetDialog v-model="datasetOpen" :dataset="dataset" />
-  </el-dialog>
+  <SourceDatasetDialog v-model="datasetOpen" :dataset="dataset" />
 </template>
 
 <style scoped>

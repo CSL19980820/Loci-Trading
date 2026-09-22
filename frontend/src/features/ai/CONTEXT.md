@@ -31,7 +31,7 @@
 | 流式深度 | 真 SSE `token`/`think` | 本轮改 chat_stream；不做假打字机 |
 | 思考块来源 | 供应商原生 reasoning 流 | 无则空块；禁止提示词伪造 `<think>` |
 | Artifact MVP 包 | 大包 C | K线+表+ECharts+Confirm+代码块；另含净值曲线、候选裁决升级、来源条、对比双轴 |
-| 思考/发送器组件栈 | 引入 vue-element-plus-x（助手层） | Thinking + **XSender**（AssistantSenderDock）；业务页仍纯 EP |
+| 思考/发送器组件栈 | shadcn-vue / Reka 组合 | Collapsible + Textarea / Button；与业务页共享原语 |
 | 富状态持久化 | 消息 metadata/旁表随 GET session 带回 | 刷新可复盘；含 agents；不做文件仓 |
 | 任务侧栏 | Codex 同构 Plan/Sources/Threads/Artifacts/Summary | 活动条点开子线程检视加载过程 |
 | Confirm/HITL 范围 | 仅 waiting_user / needs_hitl | 日常写工具不逐笔确认 |

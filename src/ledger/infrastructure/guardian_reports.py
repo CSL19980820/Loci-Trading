@@ -1,5 +1,6 @@
 """交易员报告与带租约的幂等生成；报告不产生买卖。"""
 import json
+import secrets
 import time
 import uuid
 from datetime import datetime
@@ -35,6 +36,23 @@ class GuardianReportsMixin:
             pending = {"status": "failed", "error": "等待更正生成", "correction_reason": reason, "next_revision": revision + 1}
             self.conn.execute("UPDATE guardian_reports SET status='failed',token='',started=0,result_json=? WHERE report_key=?", (json.dumps(pending, ensure_ascii=False), key))
 
+    def report_share_token(self, period: str, day: str, created_at: str) -> str:
+        """随机地址只绑定当前报告版本；更正后的新结果自然获得新地址。"""
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            row = self.conn.execute("SELECT status,result_json FROM guardian_reports WHERE report_key=?", (f"{period}:{day}",)).fetchone()
+            if not row or row["status"] != "success":
+                raise ValueError("只有已完成的报告可以分享")
+            result = json.loads(row["result_json"])
+            if result.get("created_at", "") != created_at:
+                raise ValueError("报告已更新，请重新读取后分享")
+            token = result.get("share_token")
+            if not token:
+                token = secrets.token_urlsafe(32)
+                result["share_token"] = token
+                self.conn.execute("UPDATE guardian_reports SET result_json=? WHERE report_key=?", (json.dumps(result, ensure_ascii=False), f"{period}:{day}"))
+            return token
+
     def report(self, period: str, day: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT * FROM guardian_reports WHERE report_key=?", (f"{period}:{day}",)).fetchone()
         return self._report_row(row) if row else None
@@ -68,6 +86,24 @@ class GuardianReportsMixin:
                 (result["status"], json.dumps(result, ensure_ascii=False), f"{period}:{day}", token))
             if cursor.rowcount != 1:
                 raise RuntimeError("报告租约已过期，拒绝覆盖或重复完成")
+            if result['status'] == 'success':
+                updates = (result.get('analysis') or {}).get('watchlist_updates', [])
+                if len({u['code'] for u in updates}) != len(updates):
+                    raise ValueError('同一股票只能有一个观察名单决定')
+                if updates:
+                    state = self.state()
+                    from src.ledger.domain.guardian_watchlist import update_watchlist
+                    names = result.get('facts', {}).get('stock_names', {})
+                    for update in updates:
+                        update_watchlist(state, update, result['created_at'], name=names.get(update['code'], ''),
+                                         source=f'{period}:{day}')
+                    self.conn.execute('UPDATE guardian_portfolio SET state_json=? WHERE id=1',
+                                      (json.dumps(state, ensure_ascii=False),))
+            items = (result.get('analysis') or {}).get('experience')
+            if result['status'] == 'success' and period in {'daily', 'weekly'} and items is not None:
+                self._save_experience(items, source_report=f'{period}:{day}',
+                    source_revision=result.get('revision', 1), day=day,
+                    expected_revision=result['facts']['experience']['revision'])
 
     def report_notification(self, period: str, day: str, receipt: dict[str, Any], *, pending: bool = False) -> None:
         with self.conn:

@@ -5,7 +5,7 @@
  * 一个共享字段，当初只因为「同一屏能一起改」才挤进同一个 script setup。
  */
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import {
   getNotifySettings,
@@ -37,13 +37,13 @@ export function useNotifyPolicy() {
         server_url: barkServer.value,
       },
     })
-    ElMessage.success('通知策略已保存')
+    toast.success('通知策略已保存')
     await loadNotify()
   }
 
   async function testNotify(): Promise<void> {
     await testNotifySettings()
-    ElMessage.success('测试推送已发送')
+    toast.success('测试推送已发送')
   }
 
   return { quietHours, barkEnabled, barkKey, barkServer, loadNotify, saveNotify, testNotify }

@@ -25,6 +25,7 @@ from typing import Any
 import pandas as pd
 
 from src.market.infrastructure.em_industry import fetch_em_industry_map
+from src.market.infrastructure.history_floor import MIN_TRADE_DATE, clamp_start
 from src.market.infrastructure.store import normalize_code, to_sina_symbol
 
 logger = logging.getLogger(__name__)
@@ -120,9 +121,10 @@ class BaostockSource(QuoteSource):
         code: str,
         *,
         instrument_type: str = "STOCK",
-        start_date: str = "1990-01-01",
+        start_date: str = MIN_TRADE_DATE,
         end_date: str = "2099-12-31",
     ) -> pd.DataFrame:
+        start_date = clamp_start(start_date)
         try:
             import baostock as bs
         except ImportError as exc:  # pragma: no cover - 依赖缺失路径
@@ -178,9 +180,13 @@ class EastmoneySource(QuoteSource):
         code: str,
         *,
         instrument_type: str = "STOCK",
-        start_date: str = "19900101",
+        start_date: str = "20230101",
         end_date: str = "20991231",
     ) -> pd.DataFrame:
+        # 防回填地板：东财用紧凑 YYYYMMDD，字典序即时间序，夹到地板之后。
+        _floor = MIN_TRADE_DATE.replace("-", "")
+        if not start_date or start_date < _floor:
+            start_date = _floor
         ak = _import_akshare()
         plain = normalize_code(code)
         try:

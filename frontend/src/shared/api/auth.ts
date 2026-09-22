@@ -1,10 +1,8 @@
 import { apiRequest } from '@/shared/api/palace'
 import type {
-  ApiKeyItem,
   AuthMeResponse,
   AuthOptionsResponse,
   AuthSessionResponse,
-  NotificationsResponse,
   QrPollResult,
   QrStartResult,
   UserProfile,
@@ -160,33 +158,4 @@ export async function confirmMockQr(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   })
-}
-
-export async function listApiKeys(): Promise<{ items: ApiKeyItem[] }> {
-  return apiRequest<{ items: ApiKeyItem[] }>('/auth/api-keys')
-}
-
-export async function createApiKey(payload: {
-  name: string
-  scopes?: string
-}): Promise<{ id: string; key: string }> {
-  return apiRequest<{ id: string; key: string }>('/auth/api-keys', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export async function revokeApiKey(keyId: string): Promise<{ ok: boolean }> {
-  return apiRequest<{ ok: boolean }>(`/auth/api-keys/${encodeURIComponent(keyId)}`, {
-    method: 'DELETE',
-  })
-}
-
-export async function getNotifications(unreadOnly = false): Promise<NotificationsResponse> {
-  const query = unreadOnly ? '?unread_only=true' : ''
-  return apiRequest<NotificationsResponse>(`/auth/notifications${query}`)
-}
-
-export async function markNotificationsRead(): Promise<{ marked: number }> {
-  return apiRequest<{ marked: number }>('/auth/notifications/read', { method: 'POST' })
 }

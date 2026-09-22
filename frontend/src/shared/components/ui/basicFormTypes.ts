@@ -1,4 +1,6 @@
-import type { FormRules } from 'element-plus'
+
+import { type FormRules } from '@/shared/components/ui/app/context'
+
 import type { h as VueH, VNode } from 'vue'
 
 export type BasicFormComponent =
@@ -36,7 +38,7 @@ export type BasicFormSchema = {
   tooltip?: string
   /** 占满整行（textarea / 长文本 / 一行放不下的组合控件） */
   fullRow?: boolean
-  /** 必填星号；省略时由 `rules` 推导（EP 原生行为） */
+  /** 必填状态；省略时由当前字段的规则推导。 */
   required?: boolean
   /**
    * 24 栅格跨列数。**兼容入口**：只服务尚未迁到 `columns` 的存量筛选条

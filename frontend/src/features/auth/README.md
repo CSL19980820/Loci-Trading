@@ -71,7 +71,7 @@ Loci 前端身份认证模块提供多态登录/注册流、QR 扫码状态机�
 
 ## 3. 当前用户 Store (`useUserStore`)
 
-- **数据字段**：`user`（`UserProfile`）、`quota`（配额）、`unread`（未读通知数）、`loading`、`initialized`。
+- **数据字段**：`user`（`UserProfile`）、`quota`（配额）、`loading`、`initialized`。
 - **计算属性**：`authenticated`、`isAdmin`、`mustChangePassword`。
 - **方法**：
   - `load()`：轻量拉取 `/api/auth/session`，供路由守卫与首屏使用。

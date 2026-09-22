@@ -15,7 +15,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 import json
-import secrets
 import sqlite3
 
 from src.identity.domain.models import iso, utc_now
@@ -63,6 +62,7 @@ def _audit_filters(
     keyword: str = "",
     outcome: str = "",
     actions: Sequence[str] | None = None,
+    exclude_actions: Sequence[str] = (),
 ) -> tuple[str, list[Any]]:
     """审计查询的 WHERE 构造。返回 ``("WHERE …" | "", params)``。
 
@@ -96,6 +96,9 @@ def _audit_filters(
             params.extend(actions)
         else:
             clauses.append("1 = 0")
+    if exclude_actions:
+        clauses.append(f"action NOT IN ({','.join('?' for _ in exclude_actions)})")
+        params.extend(exclude_actions)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where, params
 
@@ -216,6 +219,7 @@ class PlatformMixin:
         keyword: str = "",
         outcome: str = "",
         actions: Sequence[str] | None = None,
+        exclude_actions: Sequence[str] = (),
     ) -> list[dict[str, Any]]:
         """审计倒序分页。``action`` 是前缀匹配，``keyword`` 命中操作者或对象。
 
@@ -224,14 +228,25 @@ class PlatformMixin:
         不要 account.register」。
         """
         where, params = _audit_filters(
-            actor_id=actor_id, action=action, keyword=keyword, outcome=outcome, actions=actions
+            actor_id=actor_id, action=action, keyword=keyword, outcome=outcome, actions=actions,
+            exclude_actions=exclude_actions,
         )
         rows = self.conn.execute(
             f"""SELECT * FROM audit_log {where}
             ORDER BY occurred_at DESC LIMIT ? OFFSET ?""",
             (*params, limit, offset),
         ).fetchall()
-        return [dict(row) for row in rows]
+        items = [dict(row) for row in rows]
+        for item in items:
+            # Historical actions must not inherit the user's latest login today.
+            login = self.conn.execute(
+                "SELECT occurred_at FROM audit_log WHERE actor_id = ? AND actor_id <> '' "
+                "AND action IN ('account.login','account.social_login') AND outcome = 'ok' "
+                "AND occurred_at <= ? ORDER BY occurred_at DESC LIMIT 1",
+                (item["actor_id"], item["occurred_at"]),
+            ).fetchone()
+            item["login_at"] = login["occurred_at"] if login else None
+        return items
 
     def count_audit(
         self,
@@ -241,10 +256,12 @@ class PlatformMixin:
         keyword: str = "",
         outcome: str = "",
         actions: Sequence[str] | None = None,
+        exclude_actions: Sequence[str] = (),
     ) -> int:
         """与 ``list_audit`` 同一套过滤条件下的总数，供分页器用。"""
         where, params = _audit_filters(
-            actor_id=actor_id, action=action, keyword=keyword, outcome=outcome, actions=actions
+            actor_id=actor_id, action=action, keyword=keyword, outcome=outcome, actions=actions,
+            exclude_actions=exclude_actions,
         )
         row = self.conn.execute(f"SELECT COUNT(*) AS n FROM audit_log {where}", params).fetchone()
         return int(row["n"]) if row else 0
@@ -306,109 +323,20 @@ class PlatformMixin:
         self.conn.commit()
         return cursor.rowcount
 
-    # ---- announcements ----------------------------------------------------
+    def purge_audit_logs(self, *, login_days: int = 0, audit_days: int = 0,
+                         batch: int = 5000) -> dict[str, int]:
+        """Independent login/audit retention. Zero preserves that stream."""
+        from datetime import timedelta
+        from src.shared.sqlite_retention import delete_in_batches
 
-    def upsert_announcement(self, payload: dict[str, Any]) -> str:
-        from src.identity.infrastructure.store import new_id
-
-        now = iso(utc_now())
-        announcement_id = payload.get("id") or new_id("ann")
-        self.conn.execute(
-            """INSERT INTO announcements
-            (id, title, body_md, level, published_at, expires_at, created_by, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET
-            title = excluded.title, body_md = excluded.body_md, level = excluded.level,
-            published_at = excluded.published_at, expires_at = excluded.expires_at,
-            updated_at = excluded.updated_at""",
-            (
-                announcement_id,
-                str(payload.get("title") or ""),
-                str(payload.get("body_md") or ""),
-                str(payload.get("level") or "info"),
-                payload.get("published_at"),
-                payload.get("expires_at"),
-                str(payload.get("created_by") or ""),
-                now,
-                now,
-            ),
-        )
-        self.conn.commit()
-        return announcement_id
-
-    def list_announcements(self, *, only_live: bool = True) -> list[dict[str, Any]]:
-        if only_live:
-            now = iso(utc_now())
-            rows = self.conn.execute(
-                """SELECT * FROM announcements
-                WHERE published_at IS NOT NULL AND published_at <= ?
-                AND (expires_at IS NULL OR expires_at > ?)
-                ORDER BY published_at DESC LIMIT 20""",
-                (now, now),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                "SELECT * FROM announcements ORDER BY created_at DESC LIMIT 100"
-            ).fetchall()
-        return [dict(row) for row in rows]
-
-    def delete_announcement(self, announcement_id: str) -> bool:
-        cursor = self.conn.execute("DELETE FROM announcements WHERE id = ?", (announcement_id,))
-        self.conn.commit()
-        return cursor.rowcount > 0
-
-    # ---- api keys ----------------------------------------------------------
-
-    def create_api_key(self, *, user_id: str, name: str, scopes: str = "read") -> tuple[str, str]:
-        """返回 ``(key_id, 明文 key)``；明文只此一次，库里存 sha256。"""
-        from src.identity.infrastructure.store import new_id, token_digest
-
-        secret = secrets.token_urlsafe(32)
-        plaintext = f"loci_{secret}"
-        key_id = new_id("ak")
-        self.conn.execute(
-            """INSERT INTO api_keys (id, user_id, name, prefix, key_hash, scopes, created_at)
-            VALUES (?,?,?,?,?,?,?)""",
-            (
-                key_id,
-                user_id,
-                name[:64],
-                plaintext[:12],
-                token_digest(plaintext),
-                scopes,
-                iso(utc_now()),
-            ),
-        )
-        self.conn.commit()
-        return key_id, plaintext
-
-    def resolve_api_key(self, plaintext: str) -> dict[str, Any] | None:
-        from src.identity.infrastructure.store import token_digest
-
-        now = iso(utc_now())
-        row = self.conn.execute(
-            """SELECT * FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL
-            AND (expires_at IS NULL OR expires_at > ?)""",
-            (token_digest(plaintext), now),
-        ).fetchone()
-        if row is None:
-            return None
-        self.conn.execute("UPDATE api_keys SET last_used_at = ? WHERE id = ?", (now, row["id"]))
-        self.conn.commit()
-        return dict(row)
-
-    def list_api_keys(self, user_id: str) -> list[dict[str, Any]]:
-        rows = self.conn.execute(
-            """SELECT id, name, prefix, scopes, created_at, last_used_at, expires_at, revoked_at
-            FROM api_keys WHERE user_id = ? ORDER BY created_at DESC""",
-            (user_id,),
-        ).fetchall()
-        return [dict(row) for row in rows]
-
-    def revoke_api_key(self, key_id: str, user_id: str) -> bool:
-        cursor = self.conn.execute(
-            "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
-            (iso(utc_now()), key_id, user_id),
-        )
-        self.conn.commit()
-        return cursor.rowcount > 0
+        out = {"logins": 0, "audit": 0}
+        for name, days, comparison in (("logins", login_days, "IN"), ("audit", audit_days, "NOT IN")):
+            if days <= 0:
+                continue
+            cutoff = iso(utc_now() - timedelta(days=days))
+            out[name] = delete_in_batches(
+                self.conn, "audit_log",
+                where=f"action {comparison} (?, ?) AND julianday(occurred_at) < julianday(?)",
+                params=("account.login", "account.social_login", cutoff), batch=batch,
+            )
+        return out

@@ -7,7 +7,7 @@
  * 硬合成一个带 props 的万能表，只会让「审计要详情弹窗、登录要失败底色」这些
  * 各自的界面判断挤进同一份模板，读起来比抄两遍还贵。
  */
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import type { AdminLogQuery } from '@/shared/api/admin'
 import type { BasicFormSchema } from '@/shared/components/ui/basicFormTypes'
@@ -192,7 +192,7 @@ export async function fetchLogPage(
       total: res.total,
     }
   } catch (caught: unknown) {
-    ElMessage.error(toErrorMessage(caught, errorMessage))
+    toast.error(toErrorMessage(caught, errorMessage))
     return { list: [], total: 0 }
   }
 }

@@ -12,8 +12,9 @@
  * 把「停得掉」和「停不掉」写成同一句话，就是在骗人。
  */
 import type { Ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { toast } from 'vue-sonner'
 
+import { confirmAction } from '@/shared/lib/confirm'
 import { strategyLabel } from '@/shared/lib/format'
 import type { useScreenRunStore } from '@/shared/stores/screenRun'
 
@@ -34,16 +35,12 @@ export function useWorkbenchAbandon(opts: {
   selectedKind: () => 'engine' | 'skill' | null
 }) {
   async function confirm(detail: string, title = '放弃跟踪？', ok = '放弃跟踪'): Promise<boolean> {
-    try {
-      await ElMessageBox.confirm(detail, title, {
-        confirmButtonText: ok,
-        cancelButtonText: '继续跑',
-        type: 'warning',
-      })
-    } catch {
-      return false
-    }
-    return true
+    return confirmAction({
+      message: detail,
+      title,
+      confirmText: ok,
+      cancelText: '继续跑',
+    })
   }
 
   /**
@@ -58,7 +55,7 @@ export function useWorkbenchAbandon(opts: {
     const label = strategyLabel(target) || target
     if (!(await confirm(ENGINE_DETAIL, `停止「${label}」这次选股？`, '停止'))) return
     await opts.screenRun.abandon(target)
-    ElMessage.info(
+    toast.info(
       opts.screenRun.abandonedFor(target)?.stopping
         ? `已请求停止 · ${label} 当前交易日跑完后结束`
         : `没能通知到后端 · ${label} 这一轮仍会在后台跑完`,
@@ -69,7 +66,7 @@ export function useWorkbenchAbandon(opts: {
     if (!opts.skillActive.value) return
     if (!(await confirm(SKILL_DETAIL))) return
     opts.abandonSkill()
-    ElMessage.info('已停止跟踪 · 该次技能仍在后台继续')
+    toast.info('已停止跟踪 · 该次技能仍在后台继续')
   }
 
   /** 跑道上那一个按钮：按当前选中的是战法还是技能分派。 */

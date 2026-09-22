@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { toast } from 'vue-sonner'
+import { default as SegmentedControl } from '@/shared/components/ui/app/SegmentedControl.vue'
+import { Notice } from '@/shared/components/ui/app/presentation'
+
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 
 import {
   claimQrSession,
@@ -13,18 +16,31 @@ import {
   resetPassword,
   verifyEmail,
 } from '@/shared/api/auth'
+import PageTabs, { type PageTabItem } from '@/shared/components/ui/PageTabs.vue'
+import { Button } from '@/shared/components/ui/button'
+import { BRAND_MARK, BRAND_NAME } from '@/shared/lib/brand'
+import { APP_VERSION } from '@/shared/lib/release'
 import { useThemeStore } from '@/shared/stores/theme'
 import { useUserStore } from '@/shared/stores/user'
 import type { ProviderOption, UserProfile } from '@/shared/types/auth'
 import ForgotPasswordForm from '@/features/auth/ForgotPasswordForm.vue'
-import LoginBrandSide from '@/features/auth/LoginBrandSide.vue'
 import QrLoginPanel from '@/features/auth/QrLoginPanel.vue'
 import ResetPasswordForm from '@/features/auth/ResetPasswordForm.vue'
 import SigninForm from '@/features/auth/SigninForm.vue'
 import SignupForm from '@/features/auth/SignupForm.vue'
 import VerifyEmailForm from '@/features/auth/VerifyEmailForm.vue'
 
+/**
+ * 登录页（非壳内页，自管 100dvh）。
+ *
+ * 版面（Linear / Vercel 登录页一路）：点阵 + 径向渐变的画布，中央一张 420px 卡：
+ *   品牌标 · 标题 · 一句说明
+ *   药片分段：账号密码 | 扫码登录（有第三方通道才出现）
+ *   表单 / 二维码
+ * 顶栏左品牌、右外观切换；手机端卡片铺满、去掉边框。
+ */
 type AuthMode = 'signin' | 'signup' | 'verify' | 'forgot' | 'reset'
+type LoginTab = 'password' | 'qr'
 
 const router = useRouter()
 const route = useRoute()
@@ -37,6 +53,7 @@ const appearanceOptions = computed(() =>
 )
 
 const mode = ref<AuthMode>('signin')
+const loginTab = ref<LoginTab>('password')
 const activeQrProvider = ref<ProviderOption | null>(null)
 const emailSignupEnabled = ref<boolean>(true)
 const providers = ref<ProviderOption[]>([])
@@ -68,6 +85,46 @@ const resendCountdown = ref<number>(0)
 const errorMessage = ref<string>('')
 
 let resendTimer: ReturnType<typeof setInterval> | null = null
+
+/** 有第三方通道才给「扫码登录」这一页 */
+const hasProviders = computed(() => providers.value.length > 0)
+const providerTabLabel = computed(() =>
+  providers.value.every((p) => p.mode === 'qrcode') ? '扫码登录' : '第三方登录',
+)
+const loginTabs = computed<PageTabItem[]>(() => [
+  { name: 'password', label: '账号密码' },
+  { name: 'qr', label: providerTabLabel.value },
+])
+const loginTabModel = computed({
+  get: () => loginTab.value,
+  set: (next: string) => {
+    if (next === 'qr') {
+      activeQrProvider.value ??= providers.value[0] ?? null
+      loginTab.value = 'qr'
+    } else {
+      loginTab.value = 'password'
+    }
+  },
+})
+
+const showQr = computed(() => mode.value === 'signin' && loginTab.value === 'qr' && activeQrProvider.value)
+
+const heading = computed(() => {
+  if (mode.value === 'signup') return '注册账号'
+  if (mode.value === 'verify') return '输入邮箱验证码'
+  if (mode.value === 'forgot') return '找回密码'
+  if (mode.value === 'reset') return '重置密码'
+  return `登录 ${BRAND_NAME}`
+})
+
+const subheading = computed(() => {
+  if (mode.value === 'signup') return '邮箱注册，验证后即可进入工作台'
+  if (mode.value === 'verify') return verifyEmailAddr.value ? `验证码已发送到 ${verifyEmailAddr.value}` : '输入邮件里的 6 位验证码'
+  if (mode.value === 'forgot') return '输入注册邮箱，我们会发送重置验证码'
+  if (mode.value === 'reset') return resetEmailAddr.value ? `为 ${resetEmailAddr.value} 设置新密码` : '输入验证码并设置新密码'
+  if (showQr.value) return '用手机扫码，在手机上确认后自动进入'
+  return '量化工作台 · 行情、账本、策略与复盘'
+})
 
 async function fetchOptions(): Promise<void> {
   try {
@@ -110,7 +167,7 @@ function targetRedirect(): string {
 
 async function onAuthSuccess(user: UserProfile): Promise<void> {
   userStore.setUser(user)
-  ElMessage.success(`欢迎回来，${user.display_name || user.username}`)
+  toast.success(`欢迎回来，${user.display_name || user.username}`)
   await router.replace(targetRedirect())
 }
 
@@ -157,7 +214,7 @@ async function handleSignup(): Promise<void> {
     verifyEmailAddr.value = signupEmail.value
     mode.value = 'verify'
     startResendCountdown()
-    ElMessage.success('验证码已发送至您的邮箱')
+    toast.success('验证码已发送至您的邮箱')
   } catch (err: unknown) {
     errorMessage.value = err instanceof Error ? err.message : '注册失败'
   } finally {
@@ -192,9 +249,9 @@ async function handleResendCode(): Promise<void> {
   try {
     await resendVerificationCode(verifyEmailAddr.value)
     startResendCountdown()
-    ElMessage.success('验证码已重新发送')
+    toast.success('验证码已重新发送')
   } catch (err: unknown) {
-    ElMessage.error(err instanceof Error ? err.message : '重发失败')
+    toast.error(err instanceof Error ? err.message : '重发失败')
   } finally {
     resending.value = false
   }
@@ -212,7 +269,7 @@ async function handleForgot(): Promise<void> {
     resetEmailAddr.value = forgotEmail.value
     mode.value = 'reset'
     startResendCountdown()
-    ElMessage.success('重置邮件/验证码已发出')
+    toast.success('重置邮件/验证码已发出')
   } catch (err: unknown) {
     errorMessage.value = err instanceof Error ? err.message : '发起找回密码失败'
   } finally {
@@ -243,7 +300,7 @@ async function handleReset(): Promise<void> {
       token: resetToken.value || undefined,
       new_password: resetNewPassword.value,
     })
-    ElMessage.success('密码已成功重置，请使用新密码登录')
+    toast.success('密码已成功重置，请使用新密码登录')
     mode.value = 'signin'
     signinHandle.value = resetEmailAddr.value
     signinPassword.value = ''
@@ -252,6 +309,21 @@ async function handleReset(): Promise<void> {
   } finally {
     submitting.value = false
   }
+}
+
+function pickProvider(provider: ProviderOption): void {
+  activeQrProvider.value = provider
+  loginTab.value = 'qr'
+}
+
+function cancelQr(): void {
+  activeQrProvider.value = null
+  loginTab.value = 'password'
+}
+
+function switchMode(next: AuthMode): void {
+  errorMessage.value = ''
+  mode.value = next
 }
 
 async function handleUrlQueries(): Promise<void> {
@@ -293,9 +365,14 @@ async function handleUrlQueries(): Promise<void> {
       label: '演示扫码',
       mode: 'qrcode',
     }
-    activeQrProvider.value = mockOpt
+    pickProvider(mockOpt)
   }
 }
+
+/* 切换表单时清掉上一张表单的报错，别让「密码不一致」挂在找回密码页上 */
+watch(mode, () => {
+  errorMessage.value = ''
+})
 
 onMounted(async () => {
   await fetchOptions()
@@ -304,43 +381,76 @@ onMounted(async () => {
 </script>
 
 <template>
-  <!--
-    非壳内页例外（AGENTS §3.7.1）：这里自管 100dvh。
-    骨架是「深色品牌侧 + 满高表单侧」的双栏对撞，不是浮在留白里的卡片——
-    旧版 700px 卡片只占视口 18%，且底色与卡片只差 2% 亮度，看着像没加载完。
-  -->
+  <!-- 非壳内页例外（AGENTS §3.7.1）：这里自管 100dvh。 -->
   <main id="auth-main" class="auth-shell">
-    <LoginBrandSide />
+    <div class="auth-canvas" aria-hidden="true" />
 
-    <section class="auth-panel" aria-label="账号登录" :aria-busy="submitting">
-      <nav class="auth-panel__top" aria-label="外观">
-        <el-segmented
+    <header class="auth-top">
+      <div class="auth-brand">
+        <span class="auth-brand__mark">{{ BRAND_MARK }}</span>
+        <span class="auth-brand__name">{{ BRAND_NAME }}</span>
+        <span class="auth-brand__tag">量化工作台</span>
+      </div>
+      <nav class="auth-top__appearance" aria-label="外观">
+        <SegmentedControl
           :model-value="themeStore.appearanceId"
           :options="appearanceOptions"
           @change="themeStore.setAppearance(String($event))"
         />
       </nav>
+    </header>
 
-      <div class="auth-panel__mid">
-        <QrLoginPanel
-          v-if="activeQrProvider"
-          :provider="activeQrProvider"
-          :redirect-to="targetRedirect()"
-          @success="onAuthSuccess"
-          @cancel="activeQrProvider = null"
+    <section class="auth-panel" aria-label="账号登录" :aria-busy="submitting">
+      <div class="auth-card">
+        <div class="auth-card__head">
+          <span class="auth-card__mark" aria-hidden="true">{{ BRAND_MARK }}</span>
+          <h1 class="auth-card__title">{{ heading }}</h1>
+          <p class="auth-card__desc">{{ subheading }}</p>
+        </div>
+
+        <PageTabs
+          v-if="mode === 'signin' && hasProviders"
+          v-model="loginTabModel"
+          :items="loginTabs"
+          variant="pill"
+          :sticky="false"
+          aria-label="登录方式"
+          class="auth-tabs"
         />
 
-        <div v-else class="auth-form">
-          <!-- 只报当前真实异常，一行 title，无 description -->
-          <el-alert
-            v-if="errorMessage"
-            :title="errorMessage"
-            type="error"
-            show-icon
-            :closable="false"
-            class="auth-form__alert"
-          />
+        <!-- 只报当前真实异常，一行 title，无 description -->
+        <Notice
+          v-if="errorMessage"
+          :title="errorMessage"
+          tone="error"
+          show-icon
+          :closable="false"
+          class="auth-form__alert"
+        />
 
+        <template v-if="showQr && activeQrProvider">
+          <div v-if="providers.length > 1" class="auth-providers" role="group" aria-label="选择登录通道">
+            <Button
+              v-for="p in providers"
+              :key="p.name"
+              type="button"
+              size="sm"
+              :variant="p.name === activeQrProvider.name ? 'secondary' : 'ghost'"
+              :aria-pressed="p.name === activeQrProvider.name"
+              @click="activeQrProvider = p"
+            >
+              {{ p.label }}
+            </Button>
+          </div>
+          <QrLoginPanel
+            :provider="activeQrProvider"
+            :redirect-to="targetRedirect()"
+            @success="onAuthSuccess"
+            @cancel="cancelQr"
+          />
+        </template>
+
+        <div v-else class="auth-form">
           <SigninForm
             v-if="mode === 'signin'"
             v-model:handle="signinHandle"
@@ -349,9 +459,9 @@ onMounted(async () => {
             :email-signup-enabled="emailSignupEnabled"
             :providers="providers"
             @submit="handleSignin"
-            @switch-signup="mode = 'signup'"
-            @switch-forgot="mode = 'forgot'"
-            @pick-provider="activeQrProvider = $event"
+            @switch-signup="switchMode('signup')"
+            @switch-forgot="switchMode('forgot')"
+            @pick-provider="pickProvider"
           />
 
           <SignupForm
@@ -363,7 +473,7 @@ onMounted(async () => {
             v-model:displayName="signupDisplayName"
             :submitting="submitting"
             @submit="handleSignup"
-            @switchSignin="mode = 'signin'"
+            @switchSignin="switchMode('signin')"
           />
 
           <VerifyEmailForm
@@ -375,7 +485,7 @@ onMounted(async () => {
             :resend-countdown="resendCountdown"
             @submit="handleVerify"
             @resend="handleResendCode"
-            @backSignin="mode = 'signin'"
+            @backSignin="switchMode('signin')"
           />
 
           <ForgotPasswordForm
@@ -383,7 +493,7 @@ onMounted(async () => {
             v-model:email="forgotEmail"
             :submitting="submitting"
             @submit="handleForgot"
-            @backSignin="mode = 'signin'"
+            @backSignin="switchMode('signin')"
           />
 
           <ResetPasswordForm
@@ -395,12 +505,15 @@ onMounted(async () => {
             :email="resetEmailAddr"
             :submitting="submitting"
             @submit="handleReset"
-            @backSignin="mode = 'signin'"
+            @backSignin="switchMode('signin')"
           />
         </div>
       </div>
 
-      <footer class="auth-panel__bot">仅供研究与复盘，不构成投资建议</footer>
+      <footer class="auth-foot">
+        <span>仅供研究与复盘，不构成投资建议</span>
+        <span class="auth-foot__ver">v{{ APP_VERSION }}</span>
+      </footer>
     </section>
   </main>
 </template>

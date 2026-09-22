@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import BasicTable from '@/shared/components/ui/BasicTable.vue'
+import type { BasicTableColumn } from '@/shared/components/ui/basicTableTypes'
 import type { HorizonStats } from '@/shared/types/quant'
 
 import { buildHorizonCompareRows } from '../composables/quantBacktestSummary'
@@ -11,6 +13,12 @@ const props = defineProps<{
 }>()
 
 const rows = computed(() => buildHorizonCompareRows(props.t1 ?? null, props.t3 ?? null))
+
+const columns: BasicTableColumn[] = [
+  { prop: 'label', label: '指标', minWidth: 110 },
+  { prop: 't1', label: 'T+1', minWidth: 100 },
+  { prop: 't3', label: 'T+3', minWidth: 100 },
+]
 </script>
 
 <template>
@@ -19,36 +27,33 @@ const rows = computed(() => buildHorizonCompareRows(props.t1 ?? null, props.t3 ?
       <span>T+1 / T+3 对照</span>
       <span class="cmp__hint">乐观差 = 高点均值 − 收盘均值</span>
     </div>
-    <el-table :data="rows" size="small" class="cmp__table">
-      <el-table-column prop="label" label="指标" min-width="110" />
-      <el-table-column prop="t1" label="T+1" min-width="100" />
-      <el-table-column prop="t3" label="T+3" min-width="100" />
-    </el-table>
+    <BasicTable :columns="columns" :data-source="rows" :pagination="false" size="small" class="cmp__table" />
   </div>
 </template>
 
 <style scoped>
 .cmp {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  padding: 0.55rem 0.7rem 0.35rem;
-  background: var(--paper);
+  padding: var(--gap-2) var(--gap-4) var(--gap-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
 }
 .cmp__head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 0.35rem 0.75rem;
-  margin-bottom: 0.35rem;
-  font-size: var(--fs-aux);
-  color: var(--ink);
+  gap: var(--gap-1) var(--gap-3);
+  margin-bottom: var(--gap-2);
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
   font-weight: 600;
 }
 .cmp__hint {
-  font-weight: 400;
+  color: var(--text-tertiary);
   font-size: var(--fs-kicker);
-  color: var(--mist);
+  font-weight: 400;
 }
 .cmp__table {
   width: 100%;

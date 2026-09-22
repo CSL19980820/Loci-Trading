@@ -1,50 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
-/**
- * 空态 —— 一行主文案 + 最多一个主操作，铺满父级剩余高度并居中。
- *
- * 旧版锁 `max-h-24`（96px）：文案自己是小岛，主区剩一大片白。
- * 规范：主文案 ≤14 字讲「为什么空」，`reason` 一行讲「下一步」，
- * 两者合计 ≤24 字；插图一律不要。高度吃满父级，内容居中。
- */
-const props = withDefaults(
-  defineProps<{
-    /** 为什么空，≤14 字 */
-    description?: string
-    /** 下一步做什么；与 description 合计 ≤24 字，单行显示 */
-    reason?: string
-    /** 可选：预计恢复/产出时间，接在 reason 后同一行 */
-    eta?: string
-    /** @deprecated 空态不再有插图，保留仅为不破坏存量调用 */
-    imageSize?: number
-  }>(),
-  {
-    // 默认值不该是一句可以直接交付的墓碑：调用方应当讲清「这里会出现什么」
-    description: '这里还没有记录',
-  },
-)
-
-const hint = computed(() => {
-  const parts = [props.reason, props.eta ? `预计 ${props.eta}` : ''].filter(Boolean)
-  return parts.join('；')
-})
+import { Inbox } from '@lucide/vue'
+import { computed, type Component } from 'vue'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/shared/components/ui/empty'
+const props = withDefaults(defineProps<{ description?:string; reason?:string; eta?:string; icon?:Component; compact?:boolean; imageSize?:number }>(), {description:'这里还没有记录',compact:false})
+const hint = computed(() => [props.reason,props.eta ? `预计 ${props.eta}` : ''].filter(Boolean).join('；'))
 </script>
-
 <template>
-  <div class="empty-state flex h-full min-h-0 min-w-0 w-full flex-1 flex-col items-center justify-center gap-2 overflow-hidden px-3 py-6 text-center">
-    <p class="empty-state__title text-body text-ink m-0 max-w-full leading-snug font-medium break-words">{{ description }}</p>
-    <el-tooltip
-      v-if="hint"
-      :content="hint"
-      placement="top"
-      :show-after="200"
-      trigger="hover"
-    >
-      <p class="empty-state__hint text-aux text-mist m-0 max-w-[52ch] leading-snug [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden">{{ hint }}</p>
-    </el-tooltip>
-    <div v-if="$slots.default" class="mt-px flex items-center gap-2">
-      <slot />
-    </div>
-  </div>
+  <Empty class="empty-state" :class="{ 'empty-state--compact':compact }">
+    <EmptyHeader class="empty-state__header"><EmptyMedia variant="icon" class="empty-state__icon"><component :is="icon ?? Inbox" aria-hidden="true" /></EmptyMedia><EmptyTitle class="empty-state__title">{{ description }}</EmptyTitle><EmptyDescription v-if="hint" :title="hint" class="empty-state__hint">{{ hint }}</EmptyDescription></EmptyHeader>
+    <EmptyContent v-if="$slots.default" class="empty-state__actions"><slot /></EmptyContent>
+  </Empty>
 </template>
+<style scoped>
+.empty-state { flex:1 1 auto; width:100%; min-height:0; padding:24px 16px; }
+.empty-state__header { max-width:100%; gap:8px; }.empty-state__title { font-size:14px; font-weight:550; overflow-wrap:anywhere; }
+.empty-state__hint { max-width:44ch; font-size:12px; overflow-wrap:anywhere; }
+.empty-state__actions { flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; }
+.empty-state--compact { flex-direction:row; gap:10px; padding:16px; }
+.empty-state--compact .empty-state__header { flex-direction:row; justify-content:center; gap:8px; }.empty-state--compact .empty-state__icon { width:28px; height:28px; margin:0; }.empty-state--compact .empty-state__icon :deep(svg) { width:14px; height:14px; }
+.empty-state--compact .empty-state__title { font-size:13px; font-weight:400; }.empty-state--compact .empty-state__hint { display:none; }.empty-state--compact .empty-state__actions { width:auto; margin:0 0 0 auto; }
+</style>

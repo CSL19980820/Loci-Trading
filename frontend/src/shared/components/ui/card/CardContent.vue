@@ -1,0 +1,17 @@
+<script setup lang="ts">
+import type { HTMLAttributes } from "vue"
+import { cn } from '@/shared/lib/utils'
+
+const props = defineProps<{
+  class?: HTMLAttributes["class"]
+}>()
+</script>
+
+<template>
+  <div
+    data-slot="card-content"
+    :class="cn('min-w-0 px-4 py-3', props.class)"
+  >
+    <slot />
+  </div>
+</template>

@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { ChatDotRound, Close } from '@element-plus/icons-vue'
+import { MessageCircle as ChatDotRound, X as Close } from '@lucide/vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+/**
+ * 助手启动球（Intercom / ChatGPT launcher 一路）：48px 实心主色圆盘 + 白色图标 + 软投影；
+ * 运行中外圈脉冲一圈；打开后缩成 40px 的关闭键。可拖拽，位置记在 localStorage。
+ * 手机端默认落在底部导航之上（`--mobile-nav-h` + 16px），不压「记一笔」FAB。
+ */
 defineProps<{ open: boolean; busy?: boolean; unavailable?: boolean }>()
 const emit = defineEmits<{ toggle: [] }>()
 
@@ -13,19 +20,14 @@ let ignoreNextClick = false
 
 const style = computed(() => ({ right: `${position.value.right}px`, bottom: `${position.value.bottom}px` }))
 
-/**
- * 底栏 + 「记一笔」FAB 的避让高度；两者都在 ≤980px 出现（与 AppSidebar 隐藏点一致）。
- * 断点此前写的 768，导致 769–980px 时浮球以为自己在桌面，落点正好压住 FAB，
- * 断点此前写的 768，导致 769–980px 时浮球以为自己在桌面，落点正好压住 FAB，
- * 而浮球 z-index（--z-assistant-ball）远高于 FAB（--z-record-fab），FAB 会被盖住且点不到。
- */
+/** 底栏 + 「记一笔」FAB 的避让高度；两者都在 ≤980px 出现（与 AppSidebar 隐藏点一致）。 */
 function navClearancePx(): number {
   if (typeof window === 'undefined' || window.innerWidth > 980) return 0
   const root = document.documentElement
   const fs = Number.parseFloat(getComputedStyle(root).fontSize) || 16
-  const raw = getComputedStyle(root).getPropertyValue('--mobile-nav-h').trim() || '3.5rem'
-  const nav = raw.endsWith('rem') ? Number.parseFloat(raw) * fs : Number.parseFloat(raw) || 3.5 * fs
-  return Math.round(nav + fs * 0.75)
+  const raw = getComputedStyle(root).getPropertyValue('--mobile-nav-h').trim() || '56px'
+  const nav = raw.endsWith('rem') ? Number.parseFloat(raw) * fs : Number.parseFloat(raw) || 56
+  return Math.round(nav + 16)
 }
 
 /** 下限要越过「记一笔」FAB（约 40px + 间距），否则用户往下一拖就把它盖死 */
@@ -40,14 +42,13 @@ function bottomFloor(): number {
 
 function defaultBottom(): number {
   if (window.innerWidth > 980) return 88
-  const fs = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-  return Math.round(navClearancePx() + 3.5 * fs)
+  return navClearancePx() + fabClearancePx() + 12
 }
 
 function clamp(): void {
   const minBottom = bottomFloor()
-  position.value.right = Math.max(12, Math.min(position.value.right, Math.max(12, window.innerWidth - 52)))
-  position.value.bottom = Math.max(minBottom, Math.min(position.value.bottom, Math.max(minBottom + 60, window.innerHeight - 52)))
+  position.value.right = Math.max(12, Math.min(position.value.right, Math.max(12, window.innerWidth - 60)))
+  position.value.bottom = Math.max(minBottom, Math.min(position.value.bottom, Math.max(minBottom + 60, window.innerHeight - 60)))
 }
 
 function persist(): void {
@@ -111,42 +112,151 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 </script>
 
 <template>
-  <el-tooltip
-    :content="unavailable ? '请先在运维中配置模型' : open ? '关闭 Loci 助手' : '打开 Loci 助手（Ctrl+/）'"
-  >
-    <el-button
-      class="assistant-float-ball"
-      :class="{ 'is-busy': busy, 'is-open': open, 'is-unavailable': unavailable, 'is-dragging': dragging }"
-      :style="style"
-      circle
-      :aria-label="open ? '关闭 Loci 助手' : '打开 Loci 助手'"
-      :aria-expanded="open"
-      :aria-busy="busy"
-      @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
-      @pointercancel="onPointerCancel"
-      @click="onClick"
-    >
-      <el-icon class="ball-mark" aria-hidden="true"><Close v-if="open" /><ChatDotRound v-else /></el-icon>
-    </el-button>
-  </el-tooltip>
+  <Tooltip>
+    <TooltipTrigger as-child>
+      <button
+        type="button"
+        class="assistant-float-ball"
+        :class="{ 'is-busy': busy, 'is-open': open, 'is-unavailable': unavailable, 'is-dragging': dragging }"
+        :style="style"
+        :aria-label="open ? '关闭 Loci 助手' : '打开 Loci 助手'"
+        :aria-expanded="open"
+        :aria-busy="busy"
+        @pointerdown="onPointerDown"
+        @pointermove="onPointerMove"
+        @pointerup="onPointerUp"
+        @pointercancel="onPointerCancel"
+        @click="onClick"
+      >
+        <span class="assistant-float-ball__mark" aria-hidden="true">
+          <Close v-if="open" />
+          <ChatDotRound v-else />
+        </span>
+        <span v-if="busy && !open" class="assistant-float-ball__pulse" aria-hidden="true" />
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="left">
+      {{ unavailable ? '请先在设置里配置模型' : open ? '关闭 Loci 助手 · Esc' : '打开 Loci 助手 · Ctrl+/' }}
+    </TooltipContent>
+  </Tooltip>
 </template>
 
 <style scoped>
-/* 尺寸与脚本中的拖拽边界保持一致；浮球使用公共浮层阴影。 */
-.assistant-float-ball.el-button.is-circle {
-  --ball-size: 52px;
-  position: fixed; z-index: var(--z-assistant-ball); display: grid; place-items: center; width: var(--ball-size); height: var(--ball-size); min-width: var(--ball-size); min-height: var(--ball-size); margin: 0; padding: 0; border: 1px solid var(--seal-border); border-radius: 50%; background: var(--surface-raised); color: var(--seal-ink); box-shadow: var(--shadow-hover); touch-action: none; transition: border-color var(--dur-fast), background var(--dur-fast);
+/* 尺寸与脚本中的拖拽边界保持一致 */
+.assistant-float-ball {
+  --ball-size: 48px;
+  position: fixed;
+  z-index: var(--z-assistant-ball);
+  display: grid;
+  place-items: center;
+  width: var(--ball-size);
+  height: var(--ball-size);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background:
+    linear-gradient(160deg, color-mix(in oklab, var(--seal) 92%, white), var(--seal) 60%, var(--seal-hover));
+  color: var(--on-primary);
+  box-shadow:
+    var(--shadow-inset-highlight),
+    0 10px 28px -8px color-mix(in oklab, var(--seal) 55%, transparent),
+    var(--shadow-md);
+  cursor: pointer;
+  touch-action: none;
+  transition:
+    transform var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    width var(--dur) var(--ease),
+    height var(--dur) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
-.assistant-float-ball.el-button.is-circle.is-open { --ball-size: 40px; }
-.assistant-float-ball.el-button.is-circle:hover { background: var(--surface-hover); border-color: var(--seal); }
-.assistant-float-ball :deep(> span) { display: flex; align-items: center; justify-content: center; }
-.assistant-float-ball .ball-mark { font-size: var(--fs-hero); }
-.assistant-float-ball:focus-visible { outline: 2px solid var(--seal); outline-offset: 3px; }
-.assistant-float-ball.el-button.is-unavailable { color: var(--mist); border-color: var(--rule); background: var(--surface-sunken); }
-.assistant-float-ball.is-busy::after { position: absolute; inset: calc(-1 * var(--gap-1)); border: 1px dashed var(--seal); border-radius: 50%; content: ''; pointer-events: none; animation: assistant-orbit 2s linear infinite; }
-.assistant-float-ball.is-dragging { cursor: grabbing; transition: none; }
-@keyframes assistant-orbit { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .assistant-float-ball.el-button.is-circle { transition: none; } .assistant-float-ball.is-busy::after { animation: none; border-style: solid; } }
+
+.assistant-float-ball:hover {
+  transform: translateY(-1px) scale(1.04);
+  box-shadow:
+    var(--shadow-inset-highlight),
+    0 14px 32px -8px color-mix(in oklab, var(--seal) 60%, transparent),
+    var(--shadow-lg);
+}
+
+.assistant-float-ball:active {
+  transform: scale(0.97);
+}
+
+.assistant-float-ball:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.assistant-float-ball__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.assistant-float-ball__mark :deep(svg) {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2;
+}
+
+/* 打开后面板自带关闭键，浮球退场（保留 DOM 供键盘 / 测试语义） */
+.assistant-float-ball.is-open {
+  --ball-size: 40px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-md), 0 0 0 1px var(--border-subtle);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.8);
+}
+
+.assistant-float-ball.is-open .assistant-float-ball__mark :deep(svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.assistant-float-ball.is-unavailable {
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--border-default);
+}
+
+/* 运行中：外圈脉冲 */
+.assistant-float-ball__pulse {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklab, var(--seal) 70%, transparent);
+  animation: assistant-pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.assistant-float-ball.is-dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+@keyframes assistant-pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.45);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-float-ball {
+    transition: none;
+  }
+
+  .assistant-float-ball__pulse {
+    animation: none;
+    opacity: 0.7;
+  }
+}
 </style>

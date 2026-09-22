@@ -5,7 +5,7 @@
 
   .subject-lockup {
     grid-column: 1 / -1;
-    border-block-end: 1px solid var(--rule);
+    border-block-end: 1px solid var(--border-subtle);
     border-inline-end: 0;
   }
 }
@@ -18,12 +18,12 @@
 
 @media (max-width: 560px) {
   .research-query,
-  .research-code,
-  .research-query :deep(.el-radio-group) {
+.research-code,
+.research-query :deep(.radio-choices) {
     width: 100%;
   }
 
-  .research-query .el-button--primary {
+  .research-query .action-button[data-tone='primary'] {
     flex: 1;
   }
 
@@ -32,7 +32,7 @@
   }
 
   .summary-metric:nth-last-child(-n + 2) {
-    border-top: 1px solid var(--rule);
+    border-top: 1px solid var(--border-subtle);
   }
 
   .summary-metric:nth-child(even) {

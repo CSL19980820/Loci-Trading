@@ -19,6 +19,13 @@ class OpsJobsMixin:
 
     conn: sqlite3.Connection
 
+    @staticmethod
+    def _screen_job_opt_out_key(slug: str) -> str:
+        value = str(slug or "").strip()
+        if not value:
+            raise OpsError("Screen 任务 slug 不能为空")
+        return f"screen_job_opt_out:{value}"
+
     def create_job(
         self, *, name: str, kind: str, cron: str = "", config: dict[str, Any] | None = None,
         enabled: bool = True,
@@ -132,6 +139,22 @@ class OpsJobsMixin:
         with self._transaction() as cursor:
             cursor.execute(f"DELETE FROM jobs WHERE {' AND '.join(where)}", params)
             return cursor.rowcount > 0
+
+    def is_screen_job_opted_out(self, slug: str) -> bool:
+        """返回用户是否明确关闭了该内置 Screen 任务。"""
+        return bool(self.get_setting(self._screen_job_opt_out_key(slug), False))
+
+    def set_screen_job_opt_out(self, slug: str, opted_out: bool = True) -> None:
+        """保存/清除用户对托管 Screen 任务的显式关闭意图。
+
+        任务行本身可能被「关闭」操作删除；单靠 jobs 行无法区分「用户关闭」和
+        「从未创建」。该标记按租户存入 meta，供启动期 ensure 使用。
+        """
+        key = self._screen_job_opt_out_key(slug)
+        if opted_out:
+            self.set_setting(key, True)
+        else:
+            self.delete_setting(key)
 
     def ensure_job(
         self,
@@ -282,6 +305,19 @@ class OpsJobsMixin:
                 " ON CONFLICT(key) DO UPDATE SET value=excluded.value,"
                 " updated_at=excluded.updated_at",
                 (key, dumps(value), _now()),
+            )
+
+    def set_versioned_setting(self, key: str, value: Any, *, expected_revision: int) -> None:
+        """Compare-and-swap a versioned settings document under one write lock."""
+        with self._transaction(immediate=True) as cursor:
+            row = cursor.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+            previous = loads(row["value"], {}) if row else {}
+            if int(previous.get("revision", 0)) != expected_revision:
+                raise ValueError("设置已被其他页面修改，请刷新后重试")
+            cursor.execute(
+                "INSERT INTO meta(key, value, updated_at) VALUES(?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (key, dumps({**value, "revision": expected_revision + 1}), _now()),
             )
 
     def delete_setting(self, key: str) -> bool:

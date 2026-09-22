@@ -15,7 +15,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 
 from src.identity.api.schemas import (
-    ApiKeyRequest,
     BINDING_COOKIE,
     ChangePasswordRequest,
     EmailOnlyRequest,
@@ -329,30 +328,7 @@ def build_auth_router(
             )
         return RedirectResponse(url=f"/login?claim_state={state}", status_code=302)
 
-    # ---- API Key / 通知 --------------------------------------------------
-
-    @router.get("/api-keys")
-    def list_api_keys(context: AuthContext = Auth) -> dict[str, Any]:
-        user = context.require_user()
-        with _store() as store:
-            return {"items": store.list_api_keys(user.id)}
-
-    @router.post("/api-keys")
-    def create_api_key(payload: ApiKeyRequest, context: AuthContext = Auth) -> dict[str, Any]:
-        user = context.require_user()
-        with _store() as store:
-            key_id, plaintext = store.create_api_key(
-                user_id=user.id, name=payload.name or "default", scopes=payload.scopes
-            )
-            store.write_audit(action="account.create_api_key", actor_id=user.id, target=key_id)
-        # 明文只在这一次响应里出现。
-        return {"id": key_id, "key": plaintext}
-
-    @router.delete("/api-keys/{key_id}")
-    def revoke_api_key(key_id: str, context: AuthContext = Auth) -> dict[str, bool]:
-        user = context.require_user()
-        with _store() as store:
-            return {"ok": store.revoke_api_key(key_id, user.id)}
+    # ---- 本人通知 --------------------------------------------------
 
     @router.get("/notifications")
     def notifications(
@@ -363,7 +339,6 @@ def build_auth_router(
             return {
                 "items": store.list_notifications(user.id, unread_only=unread_only),
                 "unread": store.unread_count(user.id),
-                "announcements": store.list_announcements(),
             }
 
     @router.post("/notifications/read")

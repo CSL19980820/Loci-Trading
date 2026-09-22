@@ -32,20 +32,33 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 import logging
+import os
 import queue
 import threading
 import time
 from typing import Any, Callable, Sequence
 
+from src.market.infrastructure.storage_health import is_fatal_storage_error
+
 
 logger = logging.getLogger(__name__)
 
-#: 增量近窗时的落库批大小。一批 = 一个写事务。
-CHUNK_INCREMENTAL = 200
+def env_int(name: str, default: int) -> int:
+    """运维内存/并发旋钮：从环境变量取正整数，非法或缺省一律回落默认值。"""
+    try:
+        value = int(os.environ.get(name, ""))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+#: 增量近窗时的落库批大小。一批 = 一个写事务。LOCI_SYNC_CHUNK_INCREMENTAL 可收紧。
+CHUNK_INCREMENTAL = env_int("LOCI_SYNC_CHUNK_INCREMENTAL", 200)
 #: 全量回填时的落库批大小。单票动辄六千行，批太大会把一次事务撑成几十万行。
-CHUNK_FULL = 40
+CHUNK_FULL = env_int("LOCI_SYNC_CHUNK_FULL", 40)
 #: 取数队列相对批大小的倍数；给写线程留缓冲，又不至于囤太多 DataFrame。
-_QUEUE_DEPTH_FACTOR = 3
+#: LOCI_SYNC_QUEUE_DEPTH_FACTOR 调小可直接压低在途 DataFrame 占用的内存。
+_QUEUE_DEPTH_FACTOR = env_int("LOCI_SYNC_QUEUE_DEPTH_FACTOR", 3)
 #: drain 的轮询粒度。见 ``drain`` 的注释:超时**不是**放弃条件,
 #: 只是让主线程周期性醒过来看一眼 abort 闸。
 _DRAIN_POLL_SEC = 0.5
@@ -126,6 +139,8 @@ class BatchWriter:
             try:
                 self._store.upsert_adjust_factors(item.code, frame, source=factor_source)
             except Exception as exc:
+                if is_fatal_storage_error(exc):
+                    raise
                 logger.debug("写 %s 复权因子失败：%s", item.code, exc)
 
     def _flush_ok(self) -> None:
@@ -139,6 +154,8 @@ class BatchWriter:
                 [(item.receipt, item.frame, item.source) for item in batch]
             )
         except Exception as exc:
+            if is_fatal_storage_error(exc):
+                raise
             # 整批事务失败时逐票重试一次：一只坏票不该让另外 199 只也丢。
             logger.warning("批量落库失败，改逐票重试：%s", exc)
             written_by_code = self._retry_one_by_one(batch)
@@ -166,6 +183,8 @@ class BatchWriter:
                     )
                 )
             except Exception as exc:
+                if is_fatal_storage_error(exc):
+                    raise
                 item.message = f"{type(exc).__name__}: {exc}"
                 logger.warning("落库 %s 失败：%s", item.code, item.message)
         return out
@@ -184,6 +203,8 @@ class BatchWriter:
             self._store.set_watermarks(marks, status="ok", sources=sources)
             return
         except Exception as exc:
+            if is_fatal_storage_error(exc):
+                raise
             # 只兜运行时故障(库忙/锁冲突),逐票重试还有机会成功。
             logger.warning("批量水位写入失败,改逐票:%s", exc)
         for code, last_date in marks:
@@ -195,6 +216,8 @@ class BatchWriter:
                     source=sources.get(code, ""),
                 )
             except Exception as exc:
+                if is_fatal_storage_error(exc):
+                    raise
                 logger.debug("写 %s 水位失败：%s", code, exc)
 
     def _flush_other(self) -> None:
@@ -214,11 +237,15 @@ class BatchWriter:
                         message=item.message,
                         source=item.source,
                     )
-                except Exception:
+                except Exception as exc:
+                    if is_fatal_storage_error(exc):
+                        raise
                     logger.exception("写 %s 的失败 watermark 时又出错", item.code)
         try:
             self._store.persist_source_receipts([item.receipt for item in batch])
-        except Exception:
+        except Exception as exc:
+            if is_fatal_storage_error(exc):
+                raise
             logger.exception("批量持久化终态回执失败")
         for item in batch:
             if item.kind == "fail":

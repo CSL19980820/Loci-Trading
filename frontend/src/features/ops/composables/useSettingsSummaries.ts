@@ -1,14 +1,15 @@
 import { getCurrentScope, onScopeDispose, reactive } from 'vue'
-import { getMarketSyncSettings, getMcpServers, getProviders, getSharePackStatus } from '@/shared/api/quant'
+import { getMarketSyncSettings, getMcpServers, getProviders } from '@/shared/api/quant'
 import { APPEARANCE_OPTIONS, getStoredAppearance } from '@/shared/lib/theme'
 import { APP_VERSION } from '@/shared/lib/release'
 import type { RailMark } from '../components/SettingsRail.vue'
 
-export type OpsTab = 'mcp' | 'llm' | 'system' | 'pack'
+export type OpsTab = 'mcp' | 'llm' | 'system' | 'retention'
 export type RailSummary = { tail: string; state: RailMark }
 const EMPTY: Record<OpsTab, RailSummary> = {
+  retention: { tail: '保留策略', state: 'idle' },
   mcp: { tail: '—', state: 'idle' }, llm: { tail: '—', state: 'idle' },
-  system: { tail: '—', state: 'idle' }, pack: { tail: '—', state: 'idle' },
+  system: { tail: '—', state: 'idle' },
 }
 
 export function useSettingsSummaries() {
@@ -42,9 +43,6 @@ export function useSettingsSummaries() {
           state: on ? 'ok' : 'idle',
         })
       }),
-      settle(getSharePackStatus(), 'pack', pack => Object.assign(summaries.pack, {
-        tail: pack?.can_pack ? `v${pack.version}` : '未编译', state: pack?.can_pack ? 'ok' : 'idle',
-      })),
     ])
   }
   function refreshAppearanceLocal(): void {

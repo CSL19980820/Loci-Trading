@@ -1,6 +1,11 @@
 <script setup lang="ts">
+import { X as Close } from '@lucide/vue'
+import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { IconBox } from '@/shared/components/ui/app/presentation'
+
 import { computed } from 'vue'
-import { Close } from '@element-plus/icons-vue'
+
 
 import {
   agentDisplayName,
@@ -54,7 +59,7 @@ function close(): void {
 </script>
 
 <template>
-  <el-dialog
+  <DialogPanel
     v-model="visible"
     width="min(92vw, 52rem)"
     top="5vh"
@@ -75,15 +80,15 @@ function close(): void {
           v-if="agent?.progress != null"
           class="assistant-agent-thread__pct"
         >{{ agent.progress }}%</span>
-        <el-button
+        <ActionButton access="read"
           class="assistant-agent-thread__close"
-          text
-          circle
+          variant="ghost"
+          icon-only
           aria-label="关闭"
           @click="close"
         >
-          <el-icon :size="16"><Close /></el-icon>
-        </el-button>
+          <IconBox :size="16"><Close /></IconBox>
+        </ActionButton>
       </div>
     </template>
 
@@ -142,7 +147,7 @@ function close(): void {
       </section>
     </template>
     <EmptyState v-else description="未选择子进程" />
-  </el-dialog>
+  </DialogPanel>
 </template>
 
 <style scoped>
@@ -341,20 +346,20 @@ function close(): void {
 </style>
 
 <style>
-.assistant-agent-thread-dialog.el-dialog {
+.assistant-agent-thread-dialog.dialog-panel {
   width: min(92vw, 52rem) !important;
   max-width: calc(100vw - 1.5rem);
   margin-top: 5vh !important;
   border-radius: var(--ai-r-card);
   overflow: hidden;
 }
-.assistant-agent-thread-dialog .el-dialog__header {
+.assistant-agent-thread-dialog .dialog-panel__header {
   margin: 0;
   padding: .7rem .85rem;
   border-bottom: 1px solid var(--rule);
   background: color-mix(in oklab, var(--panel-2) 88%, transparent);
 }
-.assistant-agent-thread-dialog .el-dialog__body {
+.assistant-agent-thread-dialog .dialog-panel__body {
   max-height: min(78dvh, 44rem);
   overflow: auto;
   padding: .85rem 1rem 1rem;

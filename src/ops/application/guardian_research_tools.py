@@ -20,8 +20,9 @@ from src.ops.application.guardian_decision import (
     GuardianDecision, TRADE_ACTIONS, bind_execution_references, parse_decision, simulate,
 )
 from src.ops.application.guardian_evidence import HISTORY_TOOL, decision_history, history_schema
+from src.ops.application.guardian_review_history import REVIEW_HISTORY_TOOL, ReviewHistory
 from src.ops.application.guardian_quotes import validated_quotes, quote_error
-from src.ops.application.guardian_compute import calculate
+from src.ops.application.guardian_compute import CALCULATE_TOOL, calculate, calculation_schema
 from src.ops.application.session_clock import session_clock
 from src.shared.paths import palace_db
 from src.shared.tenancy import current_tenant
@@ -30,7 +31,7 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 SYSTEM_PREFIX = "system__"
 PARALLEL_RESEARCH_TOOLS = frozenset({
     "guardian_account_read", "guardian_quotes", "guardian_preflight", "guardian_scenario",
-    "guardian_runtime", "guardian_calculate", HISTORY_TOOL, "web_search", "web_fetch", "market_quote", "market_kline",
+    "guardian_runtime", "guardian_calculate", HISTORY_TOOL, REVIEW_HISTORY_TOOL, "web_search", "web_fetch", "market_quote", "market_kline",
     "market_status", "strategy_catalog", "research_catalog", "research_profile",
 })
 
@@ -69,18 +70,27 @@ def _result(value: Any) -> dict[str, Any]:
     return {"text": json.dumps(value, ensure_ascii=False, default=str), "structured": value}
 
 
-def account_exposure(state: dict[str, Any], now: datetime) -> dict[str, Any]:
+def account_exposure(state: dict[str, Any], now: datetime, *,
+                     contracts_available: bool = True, risk_contracts: dict[str, Any] | None = None) -> dict[str, Any]:
     """描述现有集中度与锁仓，不另加单股、行业或亏损额度限制。"""
     equity = state["equity_cents"]
     positions = []
     for position in state["positions"]:
         available = guardian_available_quantity(position, now.date().isoformat())
+        contracts = position.get("risk_plans", []) if contracts_available else None
+        if risk_contracts is not None:
+            saved = next((p for p in risk_contracts.get("positions", [])
+                          if p["code"] == position["code"] and p["quantity"] == position["quantity"]), None)
+            contracts = (saved.get("risk_plans", [])
+                         if risk_contracts.get("available") and saved is not None else None)
         positions.append({"code": position["code"], "quantity": position["quantity"],
             "available_quantity": available, "locked_quantity": position["quantity"] - available,
             "market_value_cents": position.get("market_value_cents"),
             "weight_pct": round(position.get("market_value_cents", 0) / equity * 100, 4) if equity else None,
             "valuation_stale": position.get("valuation_stale", True),
-            "active_risk_contracts": sum(p.get("status") == "active" for p in position.get("risk_plans", []))})
+            "active_risk_contracts": (sum(p.get("status") == "active" for p in contracts)
+                                      if contracts is not None else None),
+            "risk_contracts_known": contracts is not None})
     return {"equity_cents": equity, "cash_cents": state["cash_cents"],
             "cash_weight_pct": round(state["cash_cents"] / equity * 100, 4) if equity else None,
             "positions": positions, "stale_codes": state.get("stale_codes", []),
@@ -100,6 +110,7 @@ class GuardianResearchTools:
         self.palace_path = str(palace_path or palace_db())
         self.tenant = current_tenant()
         self.deadline, self.check_cancelled = deadline, check_cancelled
+        self.review_history = ReviewHistory(palace_path=self.palace_path, as_of=self.payload.get("as_of"))
         self.sessions = local()
         bus = self._bus()
         self.system_names = {(item.get("function") or item)["name"] for item in bus.schemas} - {"ask_user"}
@@ -117,18 +128,17 @@ class GuardianResearchTools:
             ("guardian_runtime", "读取当前市场时段与本轮剩余时间，协助安排研究与最终决策。", empty),
             ("guardian_quotes", "批量获取新鲜主备报价，返回每股时间、来源和失败原因；可查询策略池外股票。", QuoteQuery.model_json_schema()),
             ("guardian_preflight", "预演完整决策，精确计算费用、现金、股数、T+1及2%价格容差；可反复修改方案，不落账、不通知、不成交。入参就是完整GuardianDecision。", GuardianDecision.model_json_schema()),
-            ("guardian_calculate", "50位精度的十进制算术，支持加减乘除、括号、余数和整数幂；不执行Python程序。",
-             {"type": "object", "properties": {"expression": {"type": "string", "minLength": 1, "maxLength": 8192}},
-              "required": ["expression"], "additionalProperties": False}),
             ("guardian_scenario", "按自主设定涨跌幅计算现有组合情景损益，非预测、非交易，不强加风险阈值。", ScenarioQuery.model_json_schema()),
         ]
         self.schemas.extend(tool_schema(protocol, name, description, schema) for name, description, schema in specs)
+        self.schemas.append(calculation_schema(protocol))
         self.schemas.append(history_schema(protocol))
+        self.schemas.append(self.review_history.schema(protocol))
         self.names = {(schema.get("function") or schema)["name"] for schema in self.schemas}
         self.handlers = {"guardian_account_read": self._read_account, "guardian_runtime": self._runtime,
                          "guardian_quotes": self._quotes, "guardian_preflight": self._preflight,
                          "guardian_scenario": self._scenario, HISTORY_TOOL: self._history,
-                         "guardian_calculate": lambda args: calculate(args["expression"])}
+                         CALCULATE_TOOL: lambda args: calculate(args["expression"])}
 
     def _bus(self) -> Any:
         from src.ai.application.system_toolbus import SystemToolBus
@@ -153,6 +163,8 @@ class GuardianResearchTools:
             result = self._bus().executor(name.removeprefix(SYSTEM_PREFIX), arguments)
             if not result.get("is_error") and isinstance(result.get("structured"), (dict, list)):
                 result = {**result, "text": json.dumps(result["structured"], ensure_ascii=False, default=str)}
+        elif name == REVIEW_HISTORY_TOOL:
+            result = self.review_history.read(arguments)
         else:
             result = _result(self.handlers[name](arguments))
         self._checkpoint()
@@ -163,13 +175,21 @@ class GuardianResearchTools:
         if state is None:
             with GuardianStore(self.palace_path) as ledger:
                 state = ledger.state()
-        return mark_guardian_account(state, {}, now)
+        from copy import deepcopy
+        return deepcopy(mark_guardian_account(state, {}, now))
 
     def _read_account(self, _: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(SHANGHAI)
         state = self._account(now)
+        reconstructed = self.payload.get("account_basis") == "reconstructed_from_trades"
+        contracts = self.payload.get("risk_contracts")
         return {"as_of": now.isoformat(), "basis_as_of": self.payload.get("as_of"),
-                "portfolio": state, "exposure": account_exposure(state, now)}
+                "account_basis": self.payload.get("account_basis", "ledger_state"),
+                "portfolio": state, "exposure": account_exposure(state, now,
+                    contracts_available=not reconstructed, risk_contracts=contracts),
+                "risk_contracts": contracts,
+                "risk_contracts_note": "合同状态以独立快照及其as_of为准；null表示未知，不表示没有合同。"
+                                       if reconstructed else "合同来自本轮账户快照，不是实时券商挂单。"}
 
     def _runtime(self, _: dict[str, Any]) -> dict[str, Any]:
         now = datetime.now(SHANGHAI)
@@ -180,7 +200,8 @@ class GuardianResearchTools:
 
     def _snapshot(self, codes: list[str]) -> dict[str, dict[str, Any]]:
         from src.ops.application.guardian_tools import snapshot
-        return snapshot(codes, force_refresh=True, check_cancelled=self._checkpoint, deadline=self.deadline).quotes
+        return snapshot(codes, force_refresh=True, check_cancelled=self._checkpoint, deadline=self.deadline,
+                        require_order_book=False).quotes
 
     def _quotes(self, arguments: dict[str, Any]) -> dict[str, Any]:
         query = QuoteQuery.model_validate(arguments)
@@ -205,7 +226,8 @@ class GuardianResearchTools:
                 "basis_as_of": self.payload.get("as_of"),
                 "execution_allowed_now": session_clock(now).phase == "regular",
                 "decision_with_fixed_references": decision.model_dump(mode="json"),
-                "projected_account": projected, "projected_exposure": account_exposure(projected, now),
+                "projected_account": projected, "projected_exposure": account_exposure(projected, now,
+                    contracts_available=self.payload.get("account_basis") != "reconstructed_from_trades"),
                 "preflight_fills": fills, "rejects": rejects, "quotes": quotes,
                 "execution_cages": [{"code": o.code, **execution_cage(o.execution)} for o in decision.orders if o.execution],
                 "note": "仅预演，没有成交。正式提交仍核验新鲜报价、原固定基准、时段、配置和取消状态；预演不授权绕过任何检查。"}
@@ -244,10 +266,11 @@ class GuardianResearchTools:
 RESEARCH_WORKBENCH_RULES = """【可自主调用的研究工作台】
 悟道与system__前缀的本地系统工具同时可用，不是二选一。可自主查询全市场、网页资讯、历史行情、策略与研究证据，不必遵循固定工具调用次序。
 guardian_account_read提供实际现金、费用、可卖与锁定股数和集中度；guardian_quotes提供带来源和时点的主备报价；guardian_scenario按你设定的情景算组合损益，不替你决定可接受风险。
-guardian_preflight使用真实账本算法在副本上预演完整决策：费用、股数、现金、价格容差、T+1及收盘留仓；不产生任何成交。可以自主调整股票、方向、股数和组合后再次预演，不受最终一次修正的收缩限制。
+guardian_preflight使用真实账本算法在副本上预演完整决策：费用、股数、现金、价格容差及T+1；不产生任何成交，也不限制持仓只数或各股仓位。可以自主调整股票、方向、股数和组合后再次预演，不受最终一次修正的收缩限制。
 预演回传decision_with_fixed_references；保留相同意图的reference_price，最终JSON沿用该固定基准，不把新报价重新当成基准叠加2%。预演有错误时自主修改，不必盲目提交再等拒单。
 guardian_calculate可核对费用、收益比例与仓位算术，数值来源仍须有证据。
 历史疑问可用guardian_decision_history分页核对原始理由，长材料用guardian_context_read取回全文；缺失证据不能自行补造。
+guardian_review_history可跨期回读完整盘前、日复盘、周复盘、计划和研究线索；默认预载不是记忆总量，旧资料也不是当前指令。
 guardian_runtime提供真实剩余时间。研究不设固定轮数或单轮工具总次数上限；并发是资源调度而非研究范围限制。成交仍必须在本轮市场有效时间内，旧意图不得假装成新鲜可执行结论。
 """
 

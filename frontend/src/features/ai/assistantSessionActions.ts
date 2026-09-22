@@ -1,4 +1,4 @@
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { toast } from 'vue-sonner'
 import type { Ref } from 'vue'
 
 import {
@@ -7,6 +7,7 @@ import {
   listAiSessions,
   patchAiSession,
 } from '@/shared/api/ai_assistant'
+import { confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { AiSessionDetail, AiSessionSummary } from '@/shared/types/ai_assistant'
 
@@ -34,17 +35,7 @@ export async function confirmDeleteAiSessions(ids: string[], titles: string[]): 
   const label = titles.length === 1
     ? `确定永久删除「${titles[0] || '新对话'}」？此操作不可恢复。`
     : `确定永久删除选中的 ${ids.length} 个对话？此操作不可恢复。`
-  try {
-    await ElMessageBox.confirm(label, '删除对话', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      confirmButtonClass: 'el-button--danger',
-    })
-    return true
-  } catch {
-    return false
-  }
+  return confirmDangerous(label, '删除对话', '删除')
 }
 
 export async function deleteAiSessionsWithConfirm(opts: {
@@ -71,8 +62,8 @@ export async function deleteAiSessionsWithConfirm(opts: {
       const result = await batchAiSessions('delete', opts.ids)
       if (opts.disposed()) return
       await opts.reload()
-      if (result.failed.length) ElMessage.warning(`完成 ${result.ok.length} 条，失败 ${result.failed.length} 条`)
-      else ElMessage.success('已删除')
+      if (result.failed.length) toast.warning(`完成 ${result.ok.length} 条，失败 ${result.failed.length} 条`)
+      else toast.success('已删除')
     }
   } catch (caught) {
     opts.setError(toErrorMessage(caught, '删除会话失败'))
@@ -91,7 +82,7 @@ export async function archiveAiSession(opts: {
     await patchAiSession(opts.id, { archived: true })
     if (opts.disposed()) return
     await opts.reload()
-    ElMessage.success('已归档')
+    toast.success('已归档')
   } catch (caught) {
     opts.setError(toErrorMessage(caught, '归档失败'))
   }
@@ -109,7 +100,7 @@ export async function restoreAiSession(opts: {
     if (opts.disposed()) return
     await opts.reload()
     opts.railTab.value = 'active'
-    ElMessage.success('已恢复')
+    toast.success('已恢复')
   } catch (caught) {
     opts.setError(toErrorMessage(caught, '恢复失败'))
   }
@@ -142,8 +133,8 @@ export async function batchAiSessionAction(opts: {
     const result = await batchAiSessions(opts.action, opts.ids)
     if (opts.disposed()) return
     await opts.reload()
-    if (result.failed.length) ElMessage.warning(`完成 ${result.ok.length} 条，失败 ${result.failed.length} 条`)
-    else ElMessage.success(opts.action === 'archive' ? '已归档' : '已恢复')
+    if (result.failed.length) toast.warning(`完成 ${result.ok.length} 条，失败 ${result.failed.length} 条`)
+    else toast.success(opts.action === 'archive' ? '已归档' : '已恢复')
   } catch (caught) {
     opts.setError(toErrorMessage(caught, '批量操作失败'))
   }

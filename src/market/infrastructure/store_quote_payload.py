@@ -7,6 +7,7 @@ import sqlite3
 
 import pandas as pd
 
+from src.market.infrastructure.history_floor import MIN_TRADE_DATE
 from src.market.infrastructure.store_codes import MarketError, normalize_code
 from src.market.infrastructure.store_schema import PANEL_FIELDS
 from src.market.infrastructure.store_row_count import track_quote_upsert
@@ -82,6 +83,11 @@ def quote_payload_from_bars(
     frame["trade_date"] = pd.to_datetime(
         frame["trade_date"], format="ISO8601"
     ).dt.strftime("%Y-%m-%d")
+    # 防回填地板：早于 MIN_TRADE_DATE 的 bar 一律不落库（与 market.db 的
+    # quotes_daily_floor 触发器同口径，代码侧再兜一层）。YYYY-MM-DD 字典序即时间序。
+    frame = frame[frame["trade_date"] >= MIN_TRADE_DATE]
+    if frame.empty:
+        return []
     frame = frame[["code", "trade_date", *PANEL_FIELDS]].drop_duplicates(
         subset=["code", "trade_date"], keep="last"
     )

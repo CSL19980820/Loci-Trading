@@ -1,3 +1,4 @@
+import { normalizeArtifacts } from './assistantArtifactState'
 import { normalizeArtifactKind } from './assistantArtifacts'
 import type {
   AiAgentProgress,
@@ -105,6 +106,7 @@ export function applyAiRunEvent(state: AssistantRunState, event: AiRunEvent): As
       'error',
     )
     settleLiveTools(assistant, 'error')
+    assistant.artifacts = normalizeArtifacts(assistant.artifacts ?? [])
     assistant.agents = settled.length ? settled : assistant.agents
     touched = true
     return { messages: replaceMessageAt(state.messages, index, assistant), agents: settled.length ? settled : agents }
@@ -118,6 +120,7 @@ export function applyAiRunEvent(state: AssistantRunState, event: AiRunEvent): As
       'done',
     )
     settleLiveTools(assistant, 'done')
+    assistant.artifacts = normalizeArtifacts(assistant.artifacts ?? [])
     assistant.agents = settled.length ? settled : assistant.agents
     touched = true
     return { messages: replaceMessageAt(state.messages, index, assistant), agents: settled.length ? settled : agents }
@@ -141,6 +144,7 @@ export function applyAiRunEvent(state: AssistantRunState, event: AiRunEvent): As
       'cancelled',
     )
     settleLiveTools(assistant, 'cancelled')
+    assistant.artifacts = normalizeArtifacts(assistant.artifacts ?? [])
     assistant.agents = settled.length ? settled : assistant.agents
     touched = true
     return { messages: replaceMessageAt(state.messages, index, assistant), agents: settled.length ? settled : agents }
@@ -170,6 +174,7 @@ export function applyAiRunEvent(state: AssistantRunState, event: AiRunEvent): As
       ...(questions?.length ? { questions } : {}),
     }
     assistant.hitl = hitl
+    assistant.artifacts = normalizeArtifacts(assistant.artifacts ?? [])
     if (prompt && !assistant.content.trim()) assistant.content = prompt
     assistant.status = 'done'
     const settled = settleLiveAgents(agents, 'done')
@@ -298,20 +303,7 @@ function addArtifact(message: AiMessage, data: Record<string, unknown>, eventId:
     status,
     data: payload,
   }
-  const previous = message.artifacts ?? []
-  message.artifacts = previous.some((item) => item.id === artifact.id)
-    ? previous.map((item) => item.id === artifact.id ? mergeArtifact(item, artifact) : item)
-    : [...previous, artifact]
-}
-
-function mergeArtifact(prior: AiChartArtifact, next: AiChartArtifact): AiChartArtifact {
-  return {
-    ...prior,
-    ...next,
-    title: next.title ?? prior.title,
-    data: Object.keys(next.data).length ? next.data : prior.data,
-    status: next.status ?? prior.status,
-  }
+  message.artifacts = normalizeArtifacts([...(message.artifacts ?? []), artifact], true)
 }
 
 function omitMeta(data: Record<string, unknown>): Record<string, unknown> {

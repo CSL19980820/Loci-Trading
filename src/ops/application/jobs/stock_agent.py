@@ -3,22 +3,22 @@ from __future__ import annotations
 
 import logging
 import time
-from collections import deque
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from threading import Lock
 from zoneinfo import ZoneInfo
 
-from src.ledger import PalaceStore, StockAgentStore, StockAgentConflict
+from src.ledger import StockAgentStore, StockAgentConflict
 from src.market import calendar_trading_day
 from src.ops.application.guardian_decision import TRADE_ACTIONS, GuardianDecision, bind_execution_references
-from src.ops.application.guardian_quotes import quote_error
+from src.ops.application.guardian_quotes import executable_quote, quote_error
+from src.ops.application.guardian_contract import ExecutionTerms, execution_error
 from src.ops.application.guardian_tools import snapshot
 from src.ops.application.jobs.context import JobContext, JobSkipped, JobCancelled
 from src.ops.application.session_clock import session_clock
-from src.ops.application.stock_agent_policy import simulate_stock_agent, closing_stock_agent_decision
-from src.ops.application.guardian_risk import evaluate_risk_plans, consume_risk_plans
+from src.ops.application.stock_agent_policy import simulate_stock_agent, closing_stock_agent_decision, leader_research_codes
+from src.ops.application.guardian_risk import evaluate_risk_plans
 from src.ops.application.stock_agent_prompts import PHASE_NAMES
-from src.ops.application.stock_agent_service import agent_time, workshop_options
+from src.ops.application.stock_agent_service import agent_time
 from src.ops.infrastructure.store import OpsStore
 from src.shared.paths import palace_db
 from src.shared.tenancy import current_tenant, tenant_scope
@@ -65,11 +65,38 @@ def execute_stock_agent(cfg: dict, context: JobContext) -> dict:
     return run_claimed(claimed, phase, context, path)
 
 
-def run_claimed(profile: dict, phase: str, context: JobContext, path: str) -> dict:
+def research_scope(phase: str, now: datetime, research_date: str | None = None) -> dict:
+    target = date.fromisoformat(research_date) if research_date else now.date()
+    if research_date:
+        if phase != "review" or target > now.date() or (target == now.date() and now.hour < 15):
+            raise ValueError("指定日期仅用于已收盘交易日的复盘，不回填历史成交")
+        if not calendar_trading_day(target.isoformat()):
+            raise ValueError("所选研究日期不是交易日")
+    else:
+        require_phase(phase, now)
+    historical = target < now.date()
+    cutoff = now.replace(year=target.year, month=target.month, day=target.day, hour=23, minute=59, second=59, microsecond=0) if historical else now
+    daily_cutoff = target if historical or now.hour >= 15 else target - timedelta(days=1)
+    return {"research_date": target.isoformat(), "historical_review": historical,
+            "research_cutoff": cutoff.isoformat(), "market_history_cutoff": daily_cutoff.isoformat()}
+
+
+def phase_budget(phase: str, now: datetime, configured: int) -> float:
+    """墙钟是运维预算；竞价研究及时收束，让09:30轮能读取其最终计划。"""
+    boundary = None
+    if phase == "auction":
+        boundary = now.replace(hour=9, minute=29, second=50, microsecond=0)
+    elif phase in {"intraday", "closeout"}:
+        boundary = now.replace(hour=11, minute=29, second=50, microsecond=0) if now.hour < 12 else now.replace(hour=14, minute=56, second=50, microsecond=0)
+    return max(1, min(configured, (boundary-now).total_seconds())) if boundary else configured
+
+
+def run_claimed(profile: dict, phase: str, context: JobContext, path: str, research_date: str | None = None) -> dict:
     from src.ops.application.stock_agent_decide import decide_stock_agent
     config, agent_id, run_id = profile["config"], profile["id"], profile["run_id"]
     started, tenant = agent_time(), current_tenant()
-    deadline = time.monotonic() + config["timeout_seconds"]
+    budget = phase_budget(phase, started, config["timeout_seconds"])
+    deadline = time.monotonic() + budget
     ops_path = str(context.ops_store.db_path)
     last_check, check_lock = [0.0], Lock()
 
@@ -98,23 +125,10 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str) -> di
 
     committed = False
     try:
-        require_phase(phase, started)
+        scope = research_scope(phase, started, research_date)
         checkpoint()
-        options = workshop_options(context.ops_store)
-        allowed = {row["slug"] for row in options}
-        requested = set(config["strategies"])
-        reference = requested & allowed if requested else allowed
         with StockAgentStore(path) as ledger:
             recent = ledger.history(agent_id, limit=12)["items"]
-        candidates = deque(maxlen=60)
-        with context.market() as market:
-            days = market.trading_days(end=started.date().isoformat())[-3:]
-        with PalaceStore(path) as palace:
-            for day in days:
-                for row in palace.candidates_payload(day):
-                    slug = row.get("strategy_slug") or row.get("rule_version") or ""
-                    if slug in reference and row.get("decision") == "精选":
-                        candidates.append({key: row.get(key) for key in ("code", "name", "decision", "reason", "strategy_slug")})
         analysis_only = phase not in {"intraday", "closeout"}
         decision = None
         risk_events = []
@@ -125,23 +139,31 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str) -> di
             decision = closing_stock_agent_decision(profile["state"], agent_time(), config)
             if risk_orders and decision is None:
                 decision = GuardianDecision.model_validate({"summary": "优先执行本账户已确认并触发的止损/止盈合同。", "orders": risk_orders})
-            if phase == "closeout" and decision is None:
-                decision = GuardianDecision(summary="已核对收盘持仓与风险合同，当前无需额外收敛。", orders=[])
         payload = {"as_of": started.isoformat(), "phase": phase, "phase_name": PHASE_NAMES[phase],
                    "analysis_only": analysis_only, "portfolio": profile["state"],
-                   "recent_work": recent, "workshop": [row for row in options if row["slug"] in reference],
-                   "candidates": list(candidates), "candidate_note": "参考样本不等于已入选，最终观察与每日入选受数量上限校验"}
+                   "recent_work": recent, "research_plan": profile["state"].get("research_plan", ""),
+                   "execution_deadline": (started + timedelta(seconds=budget)).isoformat(),
+                   "independent_research": True, **scope}
         usage = {"model": "已保存的执行计划", "input_tokens": 0, "output_tokens": 0}
         if decision is None:
             decision, usage = decide_stock_agent(context.ops_store, profile, payload, palace_path=path,
                                                  checkpoint=checkpoint, deadline=deadline)
         checkpoint()
         codes = list(dict.fromkeys([p["code"] for p in profile["state"]["positions"]] + [o.code for o in decision.orders]))
-        quotes = snapshot(codes, force_refresh=True, check_cancelled=checkpoint, deadline=deadline).quotes if codes else {}
+        research_codes = leader_research_codes(profile["state"], config, phase)
+        if research_codes is not None:
+            codes = [code for code in codes if code in research_codes]
+        quotes = snapshot(codes, force_refresh=True, check_cancelled=checkpoint, deadline=deadline,
+                          require_order_book=True).quotes if codes and not analysis_only else {}
         now = agent_time()
         decision = bind_execution_references(decision, quotes, now)
-        state, fills, rejects = simulate_stock_agent(profile["state"], decision, quotes, now, config, analysis_only=analysis_only)
-        consume_risk_plans(state, risk_events, fills)
+        state, fills, rejects = simulate_stock_agent(profile["state"], decision, quotes, now, config,
+                                                    analysis_only=analysis_only, phase=phase)
+        plan = getattr(decision, "research_plan", None)
+        if plan is not None:
+            state.update(research_plan=plan, research_plan_date=scope["research_date"], research_plan_at=now.isoformat())
+        from src.ops.application.guardian_risk_execution import finish_risk_execution
+        state, risk_events = finish_risk_execution(state, risk_events, fills, quotes, now)
         # 以实际成交/接受观察标识动作；被拒绝的买单不能显示成“已买入”。
         rejected_codes = {(item.get("code"), item.get("action")) for item in rejects}
         actions = [{"code": order.code, "name": str(quotes.get(order.code, {}).get("name") or order.name),
@@ -151,9 +173,10 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str) -> di
                                else "rejected" if order.action in TRADE_ACTIONS else "recorded")}
                    for order in decision.orders]
         result = {"summary": decision.summary, "phase": phase, "analysis_only": analysis_only, "risk_events": risk_events,
+                  **scope, "research_plan": state.get("research_plan", ""), "workshop_access": False,
                   "actions": actions, "decisions": [o.model_dump(mode="json") for o in decision.orders],
                   "fills": fills, "rejects": rejects, "usage": usage,
-                  "quotes": {code: {k: q.get(k) for k in ("name", "price", "trade_date", "trade_time", "source", "error")}
+                  "quotes": {code: {k: q.get(k) for k in ("name", "price", "trade_date", "trade_time", "source", "error", "order_book", "order_book_error")}
                              for code, q in quotes.items()}, "as_of": now.isoformat()}
 
         def final_check():
@@ -165,15 +188,27 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str) -> di
                 if analysis_only or not phase_allowed("intraday", current):
                     raise ValueError("成交前已离开连续交易时段")
                 for fill in fills:
+                    executable_quote(fill["code"], fill["action"], fill["quantity"], quotes.get(fill["code"], {}), current)
                     error = quote_error(fill["code"], quotes.get(fill["code"], {}), current)
+                    if error:
+                        raise ValueError(error)
+                    _, error = execution_error(ExecutionTerms.model_validate(fill["execution"]),
+                                               fill["price_cents"] / 100, current, required=True)
                     if error:
                         raise ValueError(error)
         with context.ops_store.guardian_commit_guard(context.run_id):
             with StockAgentStore(path) as ledger:
                 ledger.finish_run(agent_id, run_id, state, result, before_commit=final_check)
         committed = True
+        from src.ops.application.stock_agent_notify import notify_stock_agent
+        try:
+            notification = notify_stock_agent(context.ops_store, path, agent_id, run_id)
+        except Exception as exc:
+            logger.warning("智能体研究已保存，推送失败：%s", exc)
+            notification = {"success": False, "errors": [str(exc)]}
         return {"status": "success", "agent_id": agent_id, "run_id": run_id, "ledger_committed": True,
-                "summary": decision.summary[:800], "fills": len(fills), "rejects": len(rejects), "usage": usage}
+                "summary": decision.summary[:800], "fills": len(fills), "rejects": len(rejects), "usage": usage,
+                "notify": notification}
     except Exception as exc:
         if not committed:
             with StockAgentStore(path) as ledger:
@@ -187,9 +222,9 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str) -> di
             logger.warning("智能体日记清理失败，财务提交不受影响", exc_info=True)
 
 
-def run_manual(tenant: str, profile: dict, phase: str, path: str):
+def run_manual(tenant: str, profile: dict, phase: str, path: str, research_date: str | None = None):
     with tenant_scope(tenant), OpsStore(None) as ops:
         try:
-            run_claimed(profile, phase, JobContext(ops_store=ops, palace_db=path), path)
+            run_claimed(profile, phase, JobContext(ops_store=ops, palace_db=path), path, research_date)
         except Exception:
             logger.warning("智能体手动运行未完成，失败原因已写入日记", exc_info=True)

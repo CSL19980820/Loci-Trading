@@ -1,8 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { recoverLazyRoute } from '@/shared/lib/chunkRecovery'
 
 import { useUserStore } from '@/shared/stores/user'
 import { brandTitle } from '@/shared/lib/brand'
 import { navRoute } from '@/shared/lib/navLabels'
+import { navigationPending } from '@/shared/stores/navigation'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -75,7 +77,8 @@ const router = createRouter({
   },
 })
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
+  navigationPending.value = to.name !== from.name || to.params.id !== from.params.id
   // 失败页 / 行情 Peek：禁止等会话。Peek 是独立小窗，boot-splash 挂载后即卸；
   // 若这里再 await 会话，导航未完成时主区只剩 #eef2f6 白方块。
   if (to.name === 'auth-unavailable' || to.name === 'peek') return true
@@ -85,7 +88,7 @@ router.beforeEach(async (to) => {
   // 以前守卫走 palace.getSession()（窄契约，只回 authenticated/username），
   // 而 userStore 走 /auth/session 的完整契约，两条腿互不连通且没人在启动时
   // 调 load()。后果是刷新一次用户态全丢：头像变「未登录」、isAdmin 归 false
-  // 让管理后台入口整个消失、强制改密提示条永不出现、未读角标恒为 0。
+  // 让管理后台入口整个消失、强制改密提示条永不出现。
   // 守卫本来就要在首屏渲染前等一次会话，顺手水合是零额外成本的。
   //
   // 但**只有首屏那一次**该等。旧写法每次导航都 `await load()`，而 load() 除了
@@ -106,12 +109,20 @@ router.beforeEach(async (to) => {
   if (to.meta.public === true) {
     return authed ? { name: 'pulse' } : true
   }
-  if (authed) return true
+  if (authed) {
+    if (!userStore.isAdmin && ['/ops', '/admin', '/account'].some(path => to.path === path || to.path.startsWith(path + '/'))) return { name: 'pulse' }
+    return true
+  }
   return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined }
 })
 
 router.afterEach((to) => {
+  navigationPending.value = false
   document.title = brandTitle(String(to.meta.title ?? ''))
 })
 
+router.onError((error, target) => {
+  navigationPending.value = false
+  recoverLazyRoute(error, target.fullPath)
+})
 export default router

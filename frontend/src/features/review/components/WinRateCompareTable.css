@@ -1,23 +1,183 @@
-.cmp-container, .cmp-table-wrap {
+.cmp-container {
   display: flex;
   flex-direction: column;
   width: 100%;
   min-width: 0;
   min-height: 0;
-  flex: 1 1 auto;
 }
-.cmp-container { height: 100%; }
-.cmp-tag-cell { display: inline-flex; align-items: center; gap: var(--gap-2); }
-.cmp-tag-title { color: var(--ink); font-size: var(--fs-body); font-weight: 600; }
-.cmp-source-text { font-size: var(--fs-aux); }
-.cmp-meter { width: 100%; }
-.cmp-meter__header { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-1); }
-.cmp-meter__rate, .cmp-return-text { font-size: var(--fs-body); font-weight: 600; }
-.cmp-meter__count { font-size: var(--fs-aux); }
-.cmp-best-pill { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: var(--gap-2); }
-.cmp-best-tag { color: var(--seal-ink); background: var(--seal-soft); border-radius: var(--radius); padding: 0 var(--gap-1); font-size: var(--fs-aux); font-weight: 600; }
-.cmp-best-rate, .cmp-best-avg { font-size: var(--fs-aux); font-weight: 600; }
-.dim { color: var(--muted); }
-.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-:deep(.is-clickable) { cursor: pointer; }
-:deep(.is-active-row > td.el-table__cell) { background: var(--seal-soft); }
+
+.cmp-table {
+  width: 100%;
+  min-width: 0;
+}
+
+.cmp-num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.cmp-dim {
+  color: var(--text-tertiary);
+}
+
+.cmp-strong {
+  font-weight: 600;
+}
+
+/* 名称两行：战法名加粗 + 口径小字 */
+.cmp-cell-name {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.cmp-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+}
+
+.cmp-source {
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+}
+
+.cmp-rate {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-2);
+}
+
+.cmp-rate__val {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.cmp-rate__count {
+  font-size: var(--fs-aux);
+}
+
+.cmp-best {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap-2);
+}
+
+.cmp-best__tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  background: var(--seal-soft);
+  color: var(--seal-ink);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmp-arrow {
+  color: var(--text-tertiary);
+}
+
+.cmp-empty {
+  min-height: 240px;
+}
+
+:deep(.is-clickable) {
+  cursor: pointer;
+}
+
+:deep(.is-active-row),
+:deep(.is-active-row > *) {
+  background: var(--seal-soft);
+}
+
+/* ─── 手机：卡片列表 ─── */
+.cmp-cards {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cmp-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--gap-3);
+  padding: 12px var(--gap-4);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cmp-card:last-child {
+  border-bottom: 0;
+}
+
+.cmp-card:active,
+.cmp-card.is-active {
+  background: var(--surface-hover);
+}
+
+.cmp-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.cmp-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cmp-card__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2);
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+}
+
+.cmp-card__sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-1) var(--gap-2);
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+}
+
+.cmp-card__num {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.cmp-card__big {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+.cmp-card__small {
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+}

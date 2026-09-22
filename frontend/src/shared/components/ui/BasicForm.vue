@@ -1,4 +1,12 @@
 <script setup lang="ts">
+import { CircleHelp as QuestionFilled } from '@lucide/vue'
+import { type FormHandle, type FormRules } from '@/shared/components/ui/app/context'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { IconBox } from '@/shared/components/ui/app/presentation'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+
 import {
   computed,
   h,
@@ -10,8 +18,8 @@ import {
   watch,
   type CSSProperties,
 } from 'vue'
-import { QuestionFilled } from '@element-plus/icons-vue'
-import type { FormInstance, FormRules } from 'element-plus'
+
+
 
 import BasicFormField from './BasicFormField.vue'
 import { formRecordsEqual, formValuesEqual } from './basicFormEqual'
@@ -25,16 +33,9 @@ export type {
 } from './basicFormTypes'
 
 /**
- * 全站表单契约（用法见 shared/components/ui/README.md「表单契约」）：
- *
- * 1. label 右对齐 + 定宽 `--form-label-w`(6.5em)，`size=small`（控件 28px）。
- * 2. 排布只有两种 —— 单列（默认）与 `columns=2|3`。栅格是 **el-form 自身**的
- *    CSS Grid，绝不在 `el-form` 与 `el-form-item` 之间插裸 `div`：插了就绕过
- *    EP 的 label 宽度计算，这是全站表单错位的第一主因（docs/ui-audit-2026-08.md §3.5）。
- * 3. form-item 底距统一 8px（全局 style.components.css），错误提示走 EP 原生
- *    绝对定位，不占位、不跳动。
- * 4. 字段说明只有两个去处：≤20 字的 `hint` 跟随控件左缘，>20 字自动进 label 旁的
- *    tooltip。禁止在表单外另起 `<p class="form-hint">`。
+ * Schema-driven form built from local shadcn compositions.
+ * Layout, label width and help placement are configurable presentation defaults,
+ * not restrictions on future designs. Validation and draft flushing are shared.
  */
 
 defineOptions({ inheritAttrs: false })
@@ -96,7 +97,7 @@ type FieldExpose = { getRequest?: () => Promise<void>; flush?: () => void }
 const attrs = useAttrs()
 const slots = useSlots()
 provide('basicFormSlots', slots)
-const formRef = ref<FormInstance>()
+const formRef = ref<FormHandle>()
 const local = reactive<Record<string, unknown>>({})
 const collapsed = reactive({ open: false })
 const fieldRefs = ref<Record<string, FieldExpose>>({})
@@ -296,7 +297,7 @@ defineExpose({
 </script>
 
 <template>
-  <el-form
+  <FormLayout
     ref="formRef"
     :model="local"
     :rules="formRules"
@@ -311,16 +312,12 @@ defineExpose({
     v-bind="attrs"
     @submit.prevent
   >
-    <!--
-      表单级说明借 EP「无 label 的 form-item 自动补 label 宽度」这条原生行为
-      （form-item.vue 的 contentStyle）拿缩进，因此 hint 与第一个字段的控件左缘
-      天然对齐：这里不写死 6.5em，也不需要外层再包一个 div。
-    -->
-    <el-form-item v-if="hint" class="basic-form__lead is-full-row">
+    <!-- 表单说明与字段共享布局；标签宽度由当前 FormLayout 传递。 -->
+    <FormField v-if="hint" class="basic-form__lead is-full-row">
       <p class="basic-form__hint">{{ hint }}</p>
-    </el-form-item>
+    </FormField>
 
-    <el-form-item
+    <FormField
       v-for="schema in displaySchemas"
       :key="schema.field"
       :label="labelOf(schema)"
@@ -336,8 +333,8 @@ defineExpose({
       <template v-else-if="tipOf(schema)" #label>
         <span class="basic-form__label">
           {{ labelTextOf(schema) }}
-          <el-tooltip :content="tipOf(schema)" placement="top" :show-after="120">
-            <el-icon
+          <HintTooltip :content="tipOf(schema)" placement="top" :show-after="120">
+            <IconBox
               class="basic-form__tip"
               tabindex="0"
               role="note"
@@ -345,8 +342,8 @@ defineExpose({
               @click.prevent
             >
               <QuestionFilled />
-            </el-icon>
-          </el-tooltip>
+            </IconBox>
+          </HintTooltip>
         </span>
       </template>
       <BasicFormField
@@ -357,26 +354,21 @@ defineExpose({
         @update:field="onFieldUpdate"
       />
       <p v-if="inlineHintOf(schema)" class="basic-form__hint">{{ inlineHintOf(schema) }}</p>
-    </el-form-item>
+    </FormField>
 
-    <el-button
+    <ActionButton access="read"
       v-if="useCollapse && visibleSchemas.length > displaySchemas.length"
       class="basic-form__collapse"
-      link
-      type="primary"
+      variant="link"
+      tone="primary"
       @click="collapsed.open = !collapsed.open"
     >
       {{ collapsed.open ? '收起' : '展开' }}
-    </el-button>
-  </el-form>
+    </ActionButton>
+  </FormLayout>
 </template>
 
 <style scoped>
-/*
- * 栅格直接落在 el-form 上：列宽 260px 起，列数由容器宽度决定，内容不足不留硬空格。
- * 行距交给全局 `.el-form .el-form-item{margin-bottom:var(--gap-2)}`，这里只管列间距。
- */
-
 .basic-form--c1,
 .basic-form--c2,
 .basic-form--c3,
@@ -385,6 +377,12 @@ defineExpose({
   display: grid;
   align-items: start;
   column-gap: var(--gap-3, 12px);
+  row-gap: var(--gap-4, 16px);
+}
+
+/* Grid gaps separate rows without leaving an invisible trailing row under filters. */
+.basic-form > :deep(.form-field) {
+  margin-bottom: 0;
 }
 
 .basic-form--c1 {
@@ -412,7 +410,7 @@ defineExpose({
   grid-template-columns: repeat(24, minmax(0, 1fr));
 }
 
-.basic-form--legacy :deep(.el-form-item) {
+.basic-form--legacy :deep(.form-field) {
   grid-column: span var(--bf-span, 24);
 }
 
@@ -420,23 +418,19 @@ defineExpose({
   grid-column: span 6;
 }
 
-.basic-form :deep(.el-form-item.is-full-row) {
+.basic-form :deep(.form-field.is-full-row) {
   grid-column: 1 / -1;
 }
-
-/* label 与控件同高：EP small 档 label 是 24px，控件被钉到 28px，不同高就不同基线 */
-.basic-form:not(.el-form--label-top):not(.el-form--inline) :deep(.el-form-item__label) {
+.basic-form:not(.form-layout--top):not(.form-layout--inline) :deep(.form-field__label) {
   height: var(--ctl-h);
   line-height: var(--ctl-h);
 }
 
-.basic-form :deep(.el-form-item__content) {
+.basic-form :deep(.form-field__content) {
   align-items: center;
   row-gap: 2px;
 }
-
-/* 错误提示：EP 原生 absolute(top:100%)，这里钉成单行，既不占位也不顶开 8px 行距 */
-.basic-form :deep(.el-form-item__error) {
+.basic-form :deep(.form-field__error) {
   max-width: 100%;
   overflow: hidden;
   line-height: 1.1;
@@ -448,9 +442,9 @@ defineExpose({
   width: 100%;
 }
 
-.basic-form :deep(.el-date-editor.el-input),
-.basic-form :deep(.el-date-editor.el-input__wrapper),
-.basic-form :deep(.el-cascader) {
+.basic-form :deep(.date-field.text-field),
+.basic-form :deep(.date-field.text-field__body),
+.basic-form :deep(.choice-field) {
   width: 100%;
 }
 
@@ -463,7 +457,7 @@ defineExpose({
   line-height: 1.4;
 }
 
-.basic-form__lead :deep(.el-form-item__content) {
+.basic-form__lead :deep(.form-field__content) {
   min-height: 0;
 }
 
@@ -500,9 +494,10 @@ defineExpose({
   .basic-form--c4,
   .basic-form--legacy {
     grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--gap-3, 12px);
   }
 
-  .basic-form--legacy :deep(.el-form-item) {
+  .basic-form--legacy :deep(.form-field) {
     grid-column: 1 / -1;
   }
 }

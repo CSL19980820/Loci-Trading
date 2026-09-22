@@ -20,7 +20,7 @@
   - 跑道：`ScreenRunPanel` — 待命/状态行折叠日志（默认展开，跑完自动收起；贴底滚动）；今日/区间末日结果把正式精选与“低吸观察（不计正式胜率）”分区，**零条也留 `BasicTable` 列头**，空文案走表内 `EmptyState`
   - 入库历史：顶栏按钮打开宽弹窗；默认 `live_only` 仅盘后真选，开关「含回填」可审计；`ScreenHistoryPanel` 按“正式 / 观察”分别计数，详情显示每票裁决（日期区间筛选 · BasicTable 分页 · 详情/重跑）
     - 详情：顶栏打开既有 `StrategyDetailDialog` / `SkillDetailDialog`（与工坊战法/技能页一致）
-- **选股后台（战法级多槽，可并行）**：`useScreenRunStore` 一条全局轮询拿聚合快照（`GET /api/screen/run` 返回 `runs: {slug: 槽}`），状态是**字典** `runs[slug]`——潜龙 / 三源 / 杨氏可以同时在跑，各有独立进度、日志、结果。按战法查询走 `runFor` / `isRunning` / `percentFor` / `resultFor` / `detailFor` / `elapsedTextFor`；`canStart(slug)` 只在**这个战法自己在跑**或撞到并发上限（`atCapacity`，后端 `max_concurrent_runs` 默认 3）时为假。顶栏 `ScreenRunChip` 摊开最早那条 + `+N`，并行时不给「停止」（指谁全靠猜，工作台里逐条停）；区间跑按交易日循环通用 `screen` + 同日同池入库，进度日志逐日输出
+- **选股后台（战法级多槽，可并行）**：`useScreenRunStore` 一条全局轮询拿聚合快照（`GET /api/screen/run` 返回 `runs: {slug: 槽}`），状态是**字典** `runs[slug]`——潜龙 / 三源 / 杨氏可以同时在跑，各有独立进度、日志、结果。按战法查询走 `runFor` / `isRunning` / `percentFor` / `resultFor` / `detailFor` / `elapsedTextFor`；`canStart(slug)` 只在**这个战法自己在跑**或撞到并发上限（`atCapacity`，后端 `max_concurrent_runs` 默认 3）时为假。顶栏不再有常驻状态轨：选股进度与「停止」走一条 toast 气泡（`useShellNotices`，最早那条 + `+N`），并行时不给「停止」（指谁全靠猜，工作台里逐条停）；在选股工作台那一页不弹（页面自己有整块进度面板）。区间跑按交易日循环通用 `screen` + 同日同池入库，进度日志逐日输出
 - **停止选股（协作式取消，不是掐断，且按战法点名）**：后端 `POST /api/screen/run/cancel?strategy=` 只立一面旗，选股线程在**下一个交易日**的检查点退出——当前这一日会先跑完并照常入库，**已入库的候选不回滚**。`screenRun.abandon(slug)` 先打端点、再把这一个战法从本地进度里摘掉并加入静音集（轮询回来不复活），**别的战法照旧跑、轮询不停**；受理成功文案写「已请求停止 · 当前交易日跑完后结束」，端点够不着（老后端/断网）时降级成纯前端放弃并写「仍会在后台跑完」。**任何情况都禁止写「已取消」**——检查点没到之前那是谎话。残影按战法记在 `abandonedRuns[slug]`（战法 + 停止时百分比 + `stopping` 标记后端是否受理），`dismissAbandoned(slug)` 收掉
 - **谁在跑（可以有多个）**：`runs[slug]` 是每个战法自己的槽，`detailFor(slug)`（战法 · 已跑时长 · 百分比 · 当前阶段）+ `elapsedTextFor(slug)`；后端槽带 `started_at` 时耗时是权威的「已跑」，老后端缺这个字段才降级成「已跟踪」（前端观测点为下限）。`ScreenRunBanners.vue` 只出三种横幅：**并发到顶**（说清先停谁）、**其它战法并行跑着**（看进度 / 停止入口）、**本战法放弃后的残影**——历史上那句「引擎是后端全局单槽：它跑完之前，所有战法的选股都开不了」已随多槽改造删除，现在是假话。`useWorkbenchAbandon.ts` 管确认弹窗（标题带战法名）与分派（战法/技能共用）
 - **技能不同**：`useWorkbenchSkillRun` 的 `abandon()` 仍**只是前端放弃**——`/api/skill-runs/{id}` 只有查询/事件/回复，没有中止端点，那条线程会跑到自己结束。所以技能的确认框文案与选股**不能共用**（见 `useWorkbenchAbandon.ts` 的两条常量）
@@ -44,7 +44,6 @@
   - 战法区：统一目录；来源/修订中文（内置·公式）；名称不展示 slug；产品内置为潜龙出海 / 三源尾盘共振（15:30 定时）/ 杨氏尾盘选股（15:30 定时）；14:50 两档已整体删除，不再出现在目录；RSI 抄底、潜龙尾盘、海底捞月、三外有三与其他旧版只保留在归档回测，不进入活动目录；`formula` 可跳工坊编辑，`builtin` 行点击打开详情弹窗。**零条战法也留 `BasicTable` 列头**，空文案走表内 `EmptyState`，不再整表换成白板
   - 详情/配置弹窗 `StrategyDetailDialog`（行「配置」或点行）：壳层编排 hydrate/save/版本回滚；**基础信息** Tab → `StrategyDetailBasicsPane`；**配置** Tab → `StrategyDetailConfigPane`（行情范围、定时选股、**推送企微**）；纯展示/格式化在 `strategyDetailFormat.ts`；底栏保存 → `PUT /api/strategies/{slug}/job`；**关定时（off）自动剔除绑定**
     - `StrategyDetailBasicsPane` 是**两块 `el-descriptions`**：短读数走 `:column="2"`，长文本（回测口径 / 买入说明 / 说明 / 所需字段）单独一块 `:column="1"` 吃整宽。
-      合成一块时 9 个短项会把最后一行占掉一格，紧跟的 `:span="2"` 被 EP 裁成 1 格，几百字的回测参数就挤在 296px 窄栏里。
       两块都套 `table-layout: fixed`（列宽由 CSS 定，不让 `max-content` 抢）且内容用 `overflow-wrap: break-word` 而非 `word-break: break-word`（后者会把 min-content 压到一个字，「内置」被排成竖列）。
   - 定时台对 `screen:{slug}` 战法绑定只读（改配置走战法详情 / 「去战法改」带 `?strategy=`）；本机任务可 CRUD，战法/技能/供应商下拉选择
   - 主动作「选股」深链 `/screen-history?select=engine:|skill:`；操作列仅「选股」与「编辑(可编辑时)」；技能维持独立入口，不再混入公式工坊

@@ -262,9 +262,15 @@ def create_app(
                 _ensure_managed_jobs()
             except Exception as jobs_exc:  # noqa: BLE001
                 logger.debug("托管任务预写跳过：%s", jobs_exc)
+        gateway = None
+        if os.getenv("LOCI_GRPC_LISTEN"):
+            from src.ai.infrastructure.grpc_gateway import start_from_env
+            gateway = await start_from_env()
         try:
             yield
         finally:
+            if gateway is not None:
+                await gateway.stop(5)
             scheduler = scheduler_box.get("instance")
             if scheduler is not None:
                 scheduler.shutdown()
@@ -369,6 +375,9 @@ def create_app(
 
     install_spa_cache_control(app)
 
+    from src.ops.api.guardian_share import PUBLIC_REPORT_PATH, build_report_share_router
+    app.include_router(build_report_share_router())
+
     @app.middleware("http")
     async def require_authenticated_access(request: Request, call_next: Any) -> Any:
         """线上仅开放登录页、健康检查及 Agent API；工作台路由需浏览器会话。"""
@@ -376,6 +385,8 @@ def create_app(
             return await call_next(request)
 
         path = request.url.path
+        if request.method in {"GET", "HEAD"} and PUBLIC_REPORT_PATH.fullmatch(path):
+            return await call_next(request)
         # /api/auth/** 整个前缀公开：注册、找回密码、扫码轮询本来就是给未登录的人
         # 用的。只放行 /api/auth/login 会让注册页把自己挡在门外。
         public_api_prefixes = ("/api/auth/",)
@@ -432,6 +443,9 @@ def create_app(
     # 必须是最外层中间件：后加的先跑。生产鉴权闸门 require_authenticated_access
     # 读的是 request.state.loci_auth，晚一层注册它就永远读不到（真踩过：登录 200
     # 但下一个请求仍然 401）。
+    from src.app.visitor_access import VisitorAccessMiddleware
+
+    app.add_middleware(VisitorAccessMiddleware)
     app.add_middleware(TenantResolverMiddleware, resolver=auth_dependency)
 
     @app.exception_handler(PalaceError)

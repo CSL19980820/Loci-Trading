@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { Picture, Promotion, Stopwatch } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ArrowUp, ImagePlus, Sparkles, Square, X } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import XSender from 'vue-element-plus-x/es/XSender/index.js'
+
+import { Button } from '@/shared/components/ui/button'
+import { InputGroup, InputGroupAddon } from '@/shared/components/ui/input-group'
+import { Attachment, AttachmentMedia } from '@/shared/components/ui/attachment'
+import { Textarea } from '@/shared/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
 import {
   applySlashSelection,
@@ -27,13 +32,6 @@ import type {
   AiToolsCatalog,
 } from '@/shared/types/ai_assistant'
 
-type SenderExpose = {
-  clear?: () => void
-  focus?: (type?: string) => void
-  getModelValue?: () => { text?: string; html?: string }
-  setText?: (text: string) => void
-}
-
 export type AssistantSendPayload = {
   text: string
   images: string[]
@@ -42,6 +40,8 @@ export type AssistantSendPayload = {
 
 const MAX_IMAGES = 4
 const MAX_FILE_BYTES = 1_600_000
+/** 与旧 XSender 的 `max-length` 一致 */
+const MAX_TEXT_LENGTH = 12_000
 
 const props = defineProps<{
   providers: AiProviderProfile[]
@@ -68,8 +68,10 @@ const emit = defineEmits<{
   'slash-command': [slug: string]
 }>()
 
-const senderRef = ref<(InstanceType<typeof XSender> & SenderExpose) | null>(null)
+/** 输入框本体；对外暴露的 clear / focus / setText / getText 都作用在它上面 */
+const inputRef = ref<InstanceType<typeof Textarea> | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const draft = ref('')
 const pendingText = ref('')
 const pendingImages = ref<string[]>([])
 const empty = ref(true)
@@ -142,7 +144,7 @@ const compactNotice = computed(() => {
 })
 
 function readText(): string {
-  return senderRef.value?.getModelValue?.()?.text ?? ''
+  return draft.value
 }
 
 function syncEmpty(): void {
@@ -156,7 +158,7 @@ function syncEmpty(): void {
 }
 
 function clear(): void {
-  senderRef.value?.clear?.()
+  draft.value = ''
   pendingText.value = ''
   pendingImages.value = []
   empty.value = true
@@ -165,11 +167,21 @@ function clear(): void {
 }
 
 function focus(): void {
-  senderRef.value?.focus?.('end')
+  // Textarea 是 SFC 组件，`$el` 才是真正的 <textarea>
+  const el = (inputRef.value as unknown as { $el?: unknown } | null)?.$el
+  if (!(el instanceof HTMLTextAreaElement)) return
+  el.focus()
+  // 旧 `focus('end')`：光标落到文末，填入范例后可以接着改
+  const end = el.value.length
+  try {
+    el.setSelectionRange(end, end)
+  } catch {
+    /* 某些输入类型不支持 setSelectionRange；光标已在输入框内即可 */
+  }
 }
 
 function setText(text: string): void {
-  senderRef.value?.setText?.(text)
+  draft.value = text
   pendingText.value = text.trim()
   empty.value = !text.trim()
   void nextTick(() => {
@@ -187,7 +199,7 @@ function pickSkill(item: SlashSkillItem): void {
   const match = slashMatch.value ?? detectSlashTrigger(text)
   if (match) {
     const next = applySlashSelection(text, match, '')
-    senderRef.value?.setText?.(next)
+    draft.value = next
     pendingText.value = next.trim()
     empty.value = !next.trim()
   }
@@ -221,6 +233,25 @@ function onSlashKeydown(event: KeyboardEvent): void {
   }
 }
 
+/**
+ * 旧 XSender 的 `submit-type="enter"`：回车发送、Shift+Enter 换行。
+ * 斜杠菜单开着时把回车让给菜单（菜单在组件根上处理同一事件），避免既选技能又发送。
+ */
+function onInputKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' || event.shiftKey) return
+  // 中文输入法组字中的回车是在确认候选，不能当发送
+  if (event.isComposing) return
+  if (slashMatch.value && slashItems.value.length) return
+  event.preventDefault()
+  submit()
+}
+
+function onPaste(event: ClipboardEvent): void {
+  const files = event.clipboardData?.files
+  if (!files?.length) return
+  void addImageFiles(files)
+}
+
 function removeImage(index: number): void {
   pendingImages.value = pendingImages.value.filter((_, i) => i !== index)
 }
@@ -242,18 +273,18 @@ async function fileToDataUrl(file: File): Promise<string> {
 async function addImageFiles(files: FileList | File[]): Promise<void> {
   const list = Array.from(files).filter((f) => f.type.startsWith('image/'))
   if (!list.length) {
-    ElMessage.warning('请选择图片文件')
+    toast.warning('请选择图片文件')
     return
   }
   const room = MAX_IMAGES - pendingImages.value.length
   if (room <= 0) {
-    ElMessage.warning(`最多 ${MAX_IMAGES} 张图`)
+    toast.warning(`最多 ${MAX_IMAGES} 张图`)
     return
   }
   const next = [...pendingImages.value]
   for (const file of list.slice(0, room)) {
     if (file.size > MAX_FILE_BYTES) {
-      ElMessage.warning(`${file.name} 过大（≤1.5MB）`)
+      toast.warning(`${file.name} 过大（≤1.5MB）`)
       continue
     }
     try {
@@ -261,7 +292,7 @@ async function addImageFiles(files: FileList | File[]): Promise<void> {
       if (!url.startsWith('data:image/')) continue
       next.push(url)
     } catch {
-      ElMessage.warning(`${file.name} 读取失败`)
+      toast.warning(`${file.name} 读取失败`)
     }
   }
   pendingImages.value = next
@@ -271,11 +302,6 @@ async function onFileChange(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   if (input.files?.length) await addImageFiles(input.files)
   input.value = ''
-}
-
-async function onPasteFile(first: File, list: FileList): Promise<void> {
-  const files = list?.length ? list : [first]
-  await addImageFiles(files)
 }
 
 function submit(): void {
@@ -325,16 +351,11 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
 
 <template>
   <div
-    class="assistant-sender flex w-full min-w-0 flex-col overflow-hidden"
+    class="assistant-sender flex w-full min-w-0 flex-col"
     :class="{ 'is-generating': busy, 'is-locked': sessionLocked || !providerReady }"
     data-testid="assistant-sender"
     @keydown="onSlashKeydown"
   >
-    <div v-if="activeSkill" class="assistant-sender__skill" data-testid="assistant-active-skill">
-      <el-tag size="small" effect="plain" type="primary" closable @close="clearActiveSkill">
-        /{{ activeSkill.slug }} · {{ activeSkill.name }}
-      </el-tag>
-    </div>
     <div
       v-if="slashMatch && slashItems.length"
       class="assistant-sender__slash"
@@ -342,114 +363,140 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
       role="listbox"
       aria-label="技能"
     >
-      <el-button
+      <Button variant="ghost"
         v-for="(item, index) in slashItems"
         :key="item.slug"
+        type="button"
         class="assistant-sender__slash-item"
         :class="{ 'is-active': index === slashIndex }"
-        text
         role="option"
         :aria-selected="index === slashIndex"
         @mousedown.prevent
         @click="pickSkill(item)"
       >
+        <span class="assistant-sender__slash-slug">/{{ item.slug }}</span>
         <span class="assistant-sender__slash-copy">
-          <strong>/{{ item.slug }}</strong>
           <span>{{ item.name }}</span>
           <small v-if="item.description">{{ item.description }}</small>
         </span>
-      </el-button>
+      </Button>
     </div>
-    <div v-if="pendingImages.length" class="assistant-sender__previews" data-testid="assistant-image-previews">
-      <div
-        v-for="(src, index) in pendingImages"
-        :key="`${index}-${src.slice(0, 32)}`"
-        class="assistant-sender__preview"
-      >
-        <img :src="src" alt="待发送图片" />
-        <el-button
-          class="assistant-sender__preview-remove"
-          type="danger"
-          circle
-          size="small"
-          :aria-label="`移除第 ${index + 1} 张图片`"
-          @click="removeImage(index)"
-        >
-          ×
-        </el-button>
+
+    <InputGroup class="assistant-sender__box">
+      <div v-if="activeSkill || pendingImages.length" class="assistant-sender__chips">
+        <span v-if="activeSkill" class="assistant-sender__skill-chip" data-testid="assistant-active-skill">
+          <Sparkles aria-hidden="true" />
+          /{{ activeSkill.slug }} · {{ activeSkill.name }}
+          <Button variant="ghost"
+            type="button"
+            class="assistant-sender__skill-close"
+            :aria-label="`取消技能 /${activeSkill.slug}`"
+            @click="clearActiveSkill"
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </span>
+        <div v-if="pendingImages.length" class="assistant-sender__previews" data-testid="assistant-image-previews">
+          <Attachment
+            v-for="(src, index) in pendingImages"
+            :key="`${index}-${src.slice(0, 32)}`"
+            class="assistant-sender__preview"
+          >
+            <AttachmentMedia><img :src="src" alt="待发送图片" /></AttachmentMedia>
+            <Button variant="ghost"
+              type="button"
+              class="assistant-sender__preview-remove"
+              :aria-label="`移除第 ${index + 1} 张图片`"
+              @click="removeImage(index)"
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </Attachment>
+        </div>
       </div>
-    </div>
-    <XSender
-      ref="senderRef"
-      class="assistant-sender__x"
-      :class="{ 'has-sender-bar': true, 'is-generating': busy }"
-      :placeholder="placeholder"
-      aria-label="消息内容"
-      submit-type="enter"
-      variant="default"
-      clearable
-      :loading="false"
-      :disabled="busy || !providerReady"
-      :max-length="12000"
-      @submit="submit"
-      @change="syncEmpty"
-      @paste-file="onPasteFile"
-    />
-    <div class="assistant-sender__bar">
-      <div class="assistant-sender__bar-left">
-        <el-tooltip content="上传图片">
-          <el-button
-            circle
-            size="small"
-            :icon="Picture"
-            :disabled="busy || !providerReady || pendingImages.length >= MAX_IMAGES"
-            aria-label="上传图片"
-            data-testid="assistant-attach-image"
-            @click="openFilePicker"
+      <Textarea
+        data-slot="input-group-control" ref="inputRef"
+        v-model="draft"
+        class="assistant-sender__input"
+        :placeholder="placeholder"
+        aria-label="消息内容"
+        :disabled="busy || !providerReady"
+        :maxlength="MAX_TEXT_LENGTH"
+        :rows="1"
+        @input="syncEmpty"
+        @keydown="onInputKeydown"
+        @paste="onPaste"
+      />
+      <InputGroupAddon align="block-end" class="assistant-sender__bar">
+        <div class="assistant-sender__bar-left">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                class="assistant-sender__attach"
+                :disabled="busy || !providerReady || pendingImages.length >= MAX_IMAGES"
+                aria-label="上传图片"
+                data-testid="assistant-attach-image"
+                @click="openFilePicker"
+              >
+                <ImagePlus />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>上传图片（≤4 张）</TooltipContent>
+          </Tooltip>
+          <input
+            ref="fileInput"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            class="assistant-sender__file"
+            @change="onFileChange"
+          >
+          <AssistantRuntimeBar
+            :providers="providers"
+            :provider="provider"
+            :model="model"
+            :thinking="thinking"
+            :disabled="Boolean(sessionLocked) || !providers.length"
+            @select="emit('runtime-select', $event)"
+            @thinking="emit('thinking', $event)"
           />
-        </el-tooltip>
-        <input
-          ref="fileInput"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          multiple
-          class="assistant-sender__file"
-          @change="onFileChange"
-        >
-        <AssistantRuntimeBar
-          :providers="providers"
-          :provider="provider"
-          :model="model"
-          :thinking="thinking"
-          :disabled="Boolean(sessionLocked) || !providers.length"
-          @select="emit('runtime-select', $event)"
-          @thinking="emit('thinking', $event)"
-        />
-      </div>
-      <div class="assistant-sender__actions">
-        <AssistantContextUsage :usage="contextUsage" :compact-notice="compactNotice" />
-        <span class="assistant-sender__hint" aria-live="polite">{{ hint }}</span>
-        <el-tooltip v-if="busy || waitingUser" :content="waitingUser ? '取消等待并中止' : '中止运行'">
-          <el-button
-            type="warning"
-            circle
-            :icon="Stopwatch"
-            :aria-label="waitingUser ? '取消等待' : '中止运行'"
-            @click="emit('cancel')"
-          />
-        </el-tooltip>
-        <el-tooltip v-if="!busy" :content="waitingUser ? '回复并继续' : '发送 · Shift+Enter 换行'">
-          <el-button
-            type="primary"
-            circle
-            :icon="Promotion"
-            :disabled="!canSend"
-            :aria-label="waitingUser ? '回复并继续' : '发送消息'"
-            @click="submit"
-          />
-        </el-tooltip>
-      </div>
-    </div>
+        </div>
+        <div class="assistant-sender__actions">
+          <AssistantContextUsage :usage="contextUsage" :compact-notice="compactNotice" />
+          <span class="assistant-sender__hint" aria-live="polite">{{ hint }}</span>
+          <Tooltip v-if="busy || waitingUser">
+            <TooltipTrigger as-child>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                class="assistant-sender__stop"
+                :aria-label="waitingUser ? '取消等待' : '中止运行'"
+                @click="emit('cancel')"
+              >
+                <Square class="size-3.5 fill-current" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{{ waitingUser ? '取消等待并中止' : '中止运行' }}</TooltipContent>
+          </Tooltip>
+          <Tooltip v-if="!busy">
+            <TooltipTrigger as-child>
+              <Button
+                size="icon-sm"
+                class="assistant-sender__send"
+                :disabled="!canSend"
+                :aria-label="waitingUser ? '回复并继续' : '发送消息'"
+                @click="submit"
+              >
+                <ArrowUp />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{{ waitingUser ? '回复并继续' : '发送 · Shift+Enter 换行' }}</TooltipContent>
+          </Tooltip>
+        </div>
+      </InputGroupAddon>
+    </InputGroup>
   </div>
 </template>
 

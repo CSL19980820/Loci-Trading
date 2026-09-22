@@ -85,9 +85,9 @@ docs = {
     ),
     "src/formula/README.md": dict(
         title="公式（formula）",
-        duty="通达信向量化函数、筹码、板块涨跌停、潜龙指标。",
+        duty="通达信向量化函数、筹码、板块涨跌停。",
         boundary="纯计算，无 IO。",
-        entries="`MA`/`REF`/…；`src.formula.domain.qianlong`",
+        entries="`MA`/`REF`/…",
         extend="新函数保持面板/Series 同构；补 tests/formula。",
         tests="`tests/formula/`",
     ),

@@ -5,7 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from src.ledger import StockAgentStore, mark_guardian_account
-from src.ops.application.stock_agent_prompts import CUSTOM_PROMPT, LEADER_PROMPT, PHASE_NAMES
+from src.ops.application.stock_agent_prompts import CUSTOM_PHASE_PROMPTS, LEADER_PHASE_PROMPTS, PHASE_NAMES, stock_agent_prompt_config
 from src.ops.domain.stock_agent import StockAgentConfig
 
 
@@ -24,17 +24,28 @@ def workshop_options(store) -> list[dict]:
 
 def validate_agent_config(store, config: StockAgentConfig) -> dict:
     from src.ai import resolve_config
-    data = config.model_dump()
+    data = {**config.model_dump(), **stock_agent_prompt_config(config.model_dump(exclude_unset=True))}
     if config.enabled:
         provider = resolve_config(store, config.provider, model=config.model)
         if provider.model != config.model:
             raise ValueError("所选模型未启用")
-        available = {row["slug"] for row in workshop_options(store)}
-        if not set(config.strategies) <= available:
-            raise ValueError("参考战法中存在已删除或未启用的战法，请重新选择")
     if not data["prompt"]:
-        data["prompt"] = LEADER_PROMPT if config.kind == "leader" else CUSTOM_PROMPT
+        data["prompt"] = (LEADER_PHASE_PROMPTS if config.kind == "leader" else CUSTOM_PHASE_PROMPTS)["prompt"]
     return data
+
+
+def stock_agent_templates(store) -> dict:
+    """只继承自主交易员的模型选择，不继承战法、提示词、账户或交易结论。"""
+    from src.ops.application.guardian_config import get_config
+    guardian = get_config(store)
+    model = {"provider": guardian.get("provider") or "", "model": guardian.get("model") or "",
+             "thinking": guardian.get("thinking") or "", "parallel_tools": guardian.get("parallel_tools") or 4}
+    return {
+        "custom": StockAgentConfig(name="我的股票智能体", **CUSTOM_PHASE_PROMPTS, **model).model_dump(),
+        "leader": StockAgentConfig(name="龙头选手", kind="leader", description="独立研究起爆点 · 首板与龙头接力 · 集中出手，可空仓",
+                                   initial_capital_cents=10_000_000, watch_limit=5,
+                                   **LEADER_PHASE_PROMPTS, **model).model_dump(),
+    }
 
 
 def schedules(profile: dict) -> list[dict]:
@@ -82,7 +93,7 @@ def public_profile(profile: dict, *, summary: bool = False) -> dict:
     result = {key: profile[key] for key in (
         "id", "revision", "state_version", "created_at", "updated_at", "archived", "total_runs", "total_actions",
         "total_trades", "cleaned_runs", "history_kept", "latest_at", "latest_phase", "latest_summary", "latest_actions")}
-    result.update(running=running, latest_status=status, config=profile["config"], state=state, schedules=schedules(profile))
+    result.update(running=running, latest_status=status, config=stock_agent_prompt_config(profile["config"]), state=state, schedules=schedules(profile))
     if summary:
         result["config"] = {key: profile["config"][key] for key in ("name", "kind", "description", "provider", "model", "enabled")}
         result["state"] = {key: state.get(key) for key in ("equity_cents", "cash_cents", "initial_capital_cents", "total_pnl_cents", "valuation_at", "stale_codes")}

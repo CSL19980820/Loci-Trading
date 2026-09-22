@@ -1,5 +1,17 @@
 <script setup lang="ts">
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as HintTooltip } from '@/shared/components/ui/app/HintTooltip.vue'
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { Notice } from '@/shared/components/ui/app/presentation'
+import { default as DataGrid } from '@/shared/components/ui/app/DataGrid.vue'
+import { default as DataColumn } from '@/shared/components/ui/app/DataColumn.vue'
+
 import { computed } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+const narrow = useMediaQuery('(max-width: 640px)')
 
 import CodeEditor from '@/features/ops/components/CodeEditor.vue'
 import UiField from '@/shared/components/ui/UiField.vue'
@@ -49,101 +61,117 @@ const editorLanguage = computed(() => (props.draft.runtime === 'python' ? 'pytho
     form-item label 也已经说清楚了。两种取值都属于白占一行。
   -->
   <Sheet padded margin>
-    <div class="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-2">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-2">
       <UiField label="运行时">
-        <el-select
+        <ChoiceField
           :model-value="props.draft.runtime"
           class="w-full"
           @update:model-value="requestRuntimeChange"
         >
-          <el-option label="公式（通达信兼容）" value="formula" />
-          <el-option label="脚本（高级）" value="python" />
-        </el-select>
+          <ChoiceOption label="公式（通达信兼容）" value="formula" />
+          <ChoiceOption label="脚本（高级）" value="python" />
+        </ChoiceField>
       </UiField>
       <UiField v-if="props.draft.runtime === 'python'" label="入口函数" required :error="err('entrypoint')">
-        <el-input
+        <TextField
           v-model.trim="props.draft.entrypoint"
           maxlength="80"
           placeholder="文件:函数名，例如 strategy.py:compute"
         />
       </UiField>
       <UiField v-else label="公式方言">
-        <el-input model-value="通达信 / 同花顺兼容写法" readonly />
+        <TextField model-value="通达信 / 同花顺兼容写法" readonly />
       </UiField>
     </div>
 
-    <el-form-item
+    <FormField
       v-if="showEditor !== false"
       :label="props.draft.runtime === 'python' ? '脚本源码' : '公式正文'"
       required
     >
       <CodeEditor v-model="editorContent" :language="editorLanguage" height="24rem" />
-    </el-form-item>
+    </FormField>
 
     <div class="section-head">
       <!-- 标题旁那句常驻介绍收进 tooltip：页面上不留介绍段（AGENTS.md 4） -->
-      <el-tooltip placement="bottom-start" content="编译、保存、试跑共用同一份参数定义">
+      <HintTooltip placement="bottom-start" content="编译、保存、试跑共用同一份参数定义">
         <strong class="section-head__title">参数表</strong>
-      </el-tooltip>
-      <el-button size="small" @click="emit('addParam')">新增参数</el-button>
+      </HintTooltip>
+      <ActionButton size="small" @click="emit('addParam')">新增参数</ActionButton>
     </div>
-    <el-alert
+    <Notice
       v-if="err('params')"
       :title="err('params')"
-      type="error"
+      tone="error"
       show-icon
       :closable="false"
       class="params-alert"
     />
 
-    <el-table :data="props.draft.params" size="small" border class="params-table">
-      <el-table-column label="参数名" min-width="120">
+    <div v-if="narrow" class="param-cards">
+      <fieldset v-for="(row, index) in props.draft.params" :key="index" class="param-card">
+        <legend>参数 {{ index + 1 }}</legend>
+        <UiField label="参数名"><TextField v-model.trim="row.key" maxlength="32" placeholder="N" aria-label="参数名" /></UiField>
+        <UiField label="类型"><ChoiceField v-model="row.type" aria-label="参数类型"><ChoiceOption label="整数" value="int" /><ChoiceOption label="小数" value="float" /><ChoiceOption label="开关" value="bool" /></ChoiceField></UiField>
+        <UiField label="默认值"><TextField v-model.trim="row.defaultValue" :placeholder="row.type === 'bool' ? '是 / 否' : '20'" aria-label="默认值" /></UiField>
+        <UiField label="标签"><TextField v-model.trim="row.label" maxlength="32" placeholder="均线周期" aria-label="参数标签" /></UiField>
+        <UiField label="最小值"><TextField v-model.trim="row.min" :disabled="row.type === 'bool'" placeholder="5" aria-label="最小值" /></UiField>
+        <UiField label="最大值"><TextField v-model.trim="row.max" :disabled="row.type === 'bool'" placeholder="120" aria-label="最大值" /></UiField>
+        <ActionButton class="param-card__remove" variant="ghost" tone="danger" size="small" :aria-label="'删除参数 ' + (index + 1)" @click="emit('removeParam', index)">删除</ActionButton>
+      </fieldset>
+    </div>
+    <DataGrid v-else :data="props.draft.params" size="small" border class="params-table">
+      <DataColumn label="参数名" min-width="120">
         <template #default="{ row }">
-          <el-input v-model.trim="row.key" maxlength="32" placeholder="N" />
+          <TextField v-model.trim="row.key" maxlength="32" placeholder="N" />
         </template>
-      </el-table-column>
-      <el-table-column label="类型" width="112">
+      </DataColumn>
+      <DataColumn label="类型" width="112">
         <template #default="{ row }">
-          <el-select v-model="row.type" class="full">
-            <el-option label="整数" value="int" />
-            <el-option label="小数" value="float" />
-            <el-option label="开关" value="bool" />
-          </el-select>
+          <ChoiceField v-model="row.type" class="full">
+            <ChoiceOption label="整数" value="int" />
+            <ChoiceOption label="小数" value="float" />
+            <ChoiceOption label="开关" value="bool" />
+          </ChoiceField>
         </template>
-      </el-table-column>
-      <el-table-column label="默认值" min-width="110">
+      </DataColumn>
+      <DataColumn label="默认值" min-width="110">
         <template #default="{ row }">
-          <el-input
+          <TextField
             v-model.trim="row.defaultValue"
             :placeholder="row.type === 'bool' ? '是 / 否' : '20'"
           />
         </template>
-      </el-table-column>
-      <el-table-column label="最小值" min-width="96">
+      </DataColumn>
+      <DataColumn label="最小值" min-width="96">
         <template #default="{ row }">
-          <el-input v-model.trim="row.min" :disabled="row.type === 'bool'" placeholder="5" />
+          <TextField v-model.trim="row.min" :disabled="row.type === 'bool'" placeholder="5" />
         </template>
-      </el-table-column>
-      <el-table-column label="最大值" min-width="96">
+      </DataColumn>
+      <DataColumn label="最大值" min-width="96">
         <template #default="{ row }">
-          <el-input v-model.trim="row.max" :disabled="row.type === 'bool'" placeholder="120" />
+          <TextField v-model.trim="row.max" :disabled="row.type === 'bool'" placeholder="120" />
         </template>
-      </el-table-column>
-      <el-table-column label="标签" min-width="120">
+      </DataColumn>
+      <DataColumn label="标签" min-width="120">
         <template #default="{ row }">
-          <el-input v-model.trim="row.label" maxlength="32" placeholder="均线周期" />
+          <TextField v-model.trim="row.label" maxlength="32" placeholder="均线周期" />
         </template>
-      </el-table-column>
-      <el-table-column label="操作" width="76" align="center">
+      </DataColumn>
+      <DataColumn label="操作" width="76" align="center">
         <template #default="{ $index }">
-          <el-button text type="danger" size="small" @click="emit('removeParam', $index)">删除</el-button>
+          <ActionButton variant="ghost" tone="danger" size="small" @click="emit('removeParam', $index)">删除</ActionButton>
         </template>
-      </el-table-column>
-    </el-table>
+      </DataColumn>
+    </DataGrid>
   </Sheet>
 </template>
 
 <style scoped>
+.param-cards { display: grid; gap: 10px; }
+.param-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 6px; }
+.param-card legend { padding: 0 4px; color: var(--text-secondary); font-size: 12px; }
+.param-card__remove { grid-column: 1 / -1; justify-self: end; }
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

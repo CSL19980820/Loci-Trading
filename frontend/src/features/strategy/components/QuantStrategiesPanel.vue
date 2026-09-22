@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { useVisitorMode } from '@/shared/composables/useAccess'
+const visitor = useVisitorMode()
+import { computed, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+import { ChevronRight, Pencil, Play, Search, Settings2, SlidersHorizontal, Upload, X } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowDown, Plus, RefreshRight, Search, Upload } from '@element-plus/icons-vue'
 
-import PageContainer from '@/shared/components/layout/PageContainer.vue'
-import BasicForm, { type BasicFormSchema } from '@/shared/components/ui/BasicForm.vue'
-import { formValuesEqual } from '@/shared/components/ui/basicFormEqual'
-import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import RowActions from '@/shared/components/ui/RowActions.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Card } from '@/shared/components/ui/card'
+import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Input } from '@/shared/components/ui/input'
+import { Skeleton } from '@/shared/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { strategyLabel } from '@/shared/lib/format'
 import type { StrategyInfo } from '@/shared/types/quant'
 
@@ -39,6 +44,13 @@ function revisionLabel(revision: string | null | undefined, sourceKind?: string 
   return raw.startsWith('公式') ? raw : `公式 · ${raw.slice(0, 8)}`
 }
 
+function entryLabel(value: StrategyInfo['entry_timing']): string {
+  if (value === 'open') return '当日开盘'
+  if (value === 'close') return '当日收盘'
+  if (value === 'next_dip') return '次日低吸'
+  return '次日开盘'
+}
+
 const props = defineProps<{
   strategies: StrategyInfo[]
   loading?: boolean
@@ -52,8 +64,8 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const route = useRoute()
-const basicFormRef = ref<InstanceType<typeof BasicForm>>()
-const nameQuery = ref('')
+const isMobile = useMediaQuery('(max-width: 640px)')
+const query = ref('')
 const detailOpen = ref(false)
 const detail = ref<StrategyInfo | null>(null)
 
@@ -72,106 +84,16 @@ watch(
   { immediate: true },
 )
 
-const filters = reactive({
-  name: '',
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return props.strategies
+  return props.strategies.filter(
+    (row) =>
+      row.name.toLowerCase().includes(q)
+      || row.slug.toLowerCase().includes(q)
+      || String(row.description || '').toLowerCase().includes(q),
+  )
 })
-
-const filterModel = computed({
-  get: () => filters as Record<string, unknown>,
-  set: (value: Record<string, unknown>) => {
-    const next = String(value.name ?? '')
-    if (!formValuesEqual(filters.name, next)) filters.name = next
-  },
-})
-
-const filterSchemas: BasicFormSchema[] = [
-  {
-    field: 'name',
-    label: '名称',
-    component: 'input',
-    componentProps: {
-      clearable: true,
-      placeholder: '模糊查询战法名',
-      maxlength: 64,
-    },
-  },
-]
-
-const filteredRows = computed(() => {
-  const q = nameQuery.value.trim().toLowerCase()
-  const list = !q
-    ? props.strategies
-    : props.strategies.filter(
-        (row) =>
-          row.name.toLowerCase().includes(q)
-          || row.slug.toLowerCase().includes(q)
-          || String(row.description || '')
-            .toLowerCase()
-            .includes(q),
-      )
-  return list as unknown as Record<string, unknown>[]
-})
-
-const columns = ref<BasicTableColumn[]>([
-  {
-    prop: 'name',
-    label: '名称',
-    minWidth: 180,
-    slotName: 'name',
-  },
-  {
-    prop: 'source_kind',
-    label: '来源',
-    width: 92,
-    slotName: 'source',
-  },
-  {
-    prop: 'entry_timing',
-    label: '入场',
-    width: 110,
-    formatter: (row) => {
-      const value = row.entry_timing as StrategyInfo['entry_timing']
-      if (value === 'open') return '当日开盘'
-      if (value === 'close') return '当日收盘'
-      if (value === 'next_dip') return '次日低吸'
-      return '次日开盘'
-    },
-  },
-  {
-    prop: 'min_bars',
-    label: '最少K线',
-    align: 'center',
-    headerAlign: 'center',
-    width: 100,
-  },
-  {
-    prop: 'strategy_revision',
-    label: '修订',
-    align: 'center',
-    headerAlign: 'center',
-    width: 118,
-    slotName: 'revision',
-  },
-  {
-    prop: 'actions',
-    label: '操作',
-    align: 'center',
-    headerAlign: 'center',
-    width: 168,
-    fixed: 'right',
-    slotName: 'actions',
-  },
-])
-
-function handleSubmit(): void {
-  nameQuery.value = filters.name
-}
-
-function handleReset(): void {
-  basicFormRef.value?.resetForm()
-  filters.name = ''
-  nameQuery.value = ''
-}
 
 function openDetail(row: StrategyInfo): void {
   detail.value = row
@@ -188,124 +110,138 @@ function openWorkbench(query: Record<string, string | undefined>): void {
 function openEditableStrategy(slug: string): void {
   openWorkbench({ slug })
 }
-
-function openCreate(source: 'blank' | 'description' | 'tdx'): void {
-  openWorkbench({ source })
-}
-
-function onRowClick(row: Record<string, unknown>): void {
-  openDetail(row as unknown as StrategyInfo)
-}
 </script>
 
 <template>
-  <div class="strategies-panel strategy-surface">
-    <PageContainer>
-      <template #search>
-        <div class="strategies-search-form">
-          <BasicForm
-            ref="basicFormRef"
-            v-model="filterModel"
-            :schemas="filterSchemas"
-            :columns="3"
-            :input-debounce-ms="0"
-            label-width="6.5em"
+  <div class="strategies-panel">
+    <Card class="strategies-card">
+      <div class="strategies-toolbar">
+        <div class="strategies-search">
+          <Search class="strategies-search__icon" aria-hidden="true" />
+          <Input
+            v-model="query"
+            size="sm"
+            class="strategies-search__input"
+            placeholder="搜索战法名、slug 或说明"
+            aria-label="搜索战法"
+            maxlength="64"
           />
+          <Button access="read" v-if="query" variant="ghost" size="icon-xs" class="strategies-search__clear" aria-label="清空搜索" @click="query = ''">
+            <X aria-hidden="true" />
+          </Button>
         </div>
-        <div class="strategies-search-actions">
-          <el-button type="primary" :icon="Search" @click="handleSubmit">筛选</el-button>
-          <el-button :icon="RefreshRight" @click="handleReset">重置</el-button>
-          <el-dropdown trigger="click" @command="openCreate">
-            <!-- 主操作跟随印章红主色；此前是 EP 默认绿，与同页空态里的同一动作撞了两种主色 -->
-            <el-button type="primary" :icon="Plus">
-              新建
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="blank">空白新建</el-dropdown-item>
-                <el-dropdown-item command="description">AI 草稿</el-dropdown-item>
-                <el-dropdown-item command="tdx">TDX 草稿</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <!-- 克隆包的落地口：别人导出的战法 JSON 在这里粘贴导入 -->
-          <el-button :icon="Upload" @click="emit('importBundle')">从克隆包导入</el-button>
-        </div>
-      </template>
-      <template #main>
-        <BasicTable
-          v-model:columns="columns"
-          :data-source="filteredRows"
-          :pagination="false"
-          :loading="loading"
-          height="100%"
-          stripe
-          row-key="slug"
-          :empty-text="nameQuery.trim() ? '当前筛选下无结果，可点重置' : '还没有量化选股战法'"
-          :empty-reason="
-            nameQuery.trim()
-              ? ''
-              : '新建战法或导入克隆包'
-          "
-          @row-click="onRowClick"
-        >
-          <template #name="{ row }">
-            <div class="name-cell">
-              <div class="name-line">
-                <el-button link class="catalog-name" :aria-label="`配置${displayName(row.name, row.slug)}`" @click.stop="onRowClick(row)">{{ displayName(row.name, row.slug) }}</el-button>
-                <el-tag v-if="row.editable" size="small" type="primary" effect="plain"
-                  >可编辑</el-tag
-                >
-                <el-tag v-else size="small" effect="plain">只读</el-tag>
-              </div>
+        <span class="strategies-count">
+          {{ query ? `${filtered.length} / ${strategies.length}` : strategies.length }} 个战法
+        </span>
+      </div>
+
+      <div v-if="loading && !strategies.length" class="strategies-skeleton" aria-hidden="true">
+        <Skeleton v-for="n in 5" :key="n" class="h-11 w-full" />
+      </div>
+
+      <EmptyState
+        v-else-if="!filtered.length"
+        :icon="SlidersHorizontal"
+        :description="query ? '当前筛选下无结果' : '还没有量化选股战法'"
+        :reason="query ? '换个关键字，或清空搜索' : '新建一个公式战法，或粘贴别人导出的克隆包'"
+        class="strategies-empty"
+      >
+        <Button access="read" v-if="query" variant="outline" size="sm" @click="query = ''">清空搜索</Button>
+        <template v-else>
+          <Button size="sm" @click="openWorkbench({ source: 'blank' })">新建战法</Button>
+          <Button variant="outline" size="sm" @click="emit('importBundle')">
+            <Upload aria-hidden="true" />
+            导入克隆包
+          </Button>
+        </template>
+      </EmptyState>
+
+      <!-- 手机：卡片列表 -->
+      <ul v-else-if="isMobile" class="strategy-cards">
+        <li v-for="row in filtered" :key="row.slug">
+          <article class="strategy-card" role="button" tabindex="0" :aria-label="`查看${displayName(row.name, row.slug)}配置`" @click="openDetail(row)" @keydown.enter.prevent="openDetail(row)">
+            <div class="strategy-card__head">
+              <span class="name-inline">
+                <strong class="name-inline__name">{{ displayName(row.name, row.slug) }}</strong>
+                <span class="revision">{{ row.slug }}</span>
+              </span>
+              <ChevronRight class="strategy-card__chevron" aria-hidden="true" />
             </div>
-          </template>
-          <template #source="{ row }">
-            <el-tag
-              size="small"
-              type="info"
-              effect="plain"
-            >
-              {{ sourceKindLabel(String(row.source_kind)) }}
-            </el-tag>
-          </template>
-          <template #revision="{ row }">
-            <span class="dim">
-              {{
-                revisionLabel(String(row.strategy_revision || ''), String(row.source_kind || ''))
-              }}
-            </span>
-          </template>
-          <template #actions="{ row }">
-            <RowActions
-              :max-visible="3"
-              :actions="[
-                {
-                  key: 'open',
-                  label: '选股',
-                  onClick: () => emit('openScreen', String(row.slug)),
-                },
-                {
-                  key: 'config',
-                  label: '配置',
-                  onClick: () => openDetail(row as unknown as StrategyInfo),
-                },
-                ...(row.editable
-                  ? [
-                      {
-                        key: 'edit',
-                        label: '编辑公式',
-                        onClick: () => openEditableStrategy(String(row.slug)),
-                      },
-                    ]
-                  : []),
-              ]"
-            />
-          </template>
-        </BasicTable>
-      </template>
-    </PageContainer>
+            <div class="strategy-card__meta">
+              <UiBadge :variant="row.source_kind === 'formula' ? 'info' : 'secondary'">{{ sourceKindLabel(row.source_kind) }}{{ row.editable ? ' · 可改' : '' }}</UiBadge>
+              <span>入场 {{ entryLabel(row.entry_timing) }} · {{ row.min_bars }} 根</span>
+              <span class="font-mono">{{ revisionLabel(row.strategy_revision, row.source_kind) }}</span>
+            </div>
+            <div class="strategy-card__actions">
+              <Button access="read" size="sm" variant="outline" class="flex-1" @click.stop="emit('openScreen', row.slug)">
+                <Play aria-hidden="true" />
+                选股
+              </Button>
+              <Button access="read" size="sm" variant="ghost" @click.stop="openDetail(row)">
+                <Settings2 aria-hidden="true" />
+                {{ visitor ? '详情' : '配置' }}
+              </Button>
+              <Button access="read" v-if="row.editable" size="sm" variant="ghost" @click.stop="openEditableStrategy(row.slug)">
+                <Pencil aria-hidden="true" />
+                公式
+              </Button>
+            </div>
+          </article>
+        </li>
+      </ul>
+
+      <!-- 桌面：表格 -->
+      <Table v-else class="strategies-table">
+        <TableHeader>
+          <TableRow>
+            <TableHead class="text-center">战法</TableHead>
+            <TableHead class="w-[112px] text-center">来源</TableHead>
+            <TableHead class="w-[170px] text-center">入场 · 最少 K 线</TableHead>
+            <TableHead class="w-[150px] text-center">编码 · 修订</TableHead>
+            <TableHead class="w-[150px] text-center">操作</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow
+            v-for="row in filtered"
+            :key="row.slug"
+            class="strategy-row"
+            tabindex="0"
+            :aria-label="`查看${displayName(row.name, row.slug)}配置`"
+            @click="openDetail(row)"
+            @keydown.enter.prevent="openDetail(row)"
+          >
+            <TableCell class="text-center">
+              <span class="name-inline" :title="`${displayName(row.name, row.slug)} · ${row.slug}`">
+                <strong class="name-inline__name">{{ displayName(row.name, row.slug) }}</strong>
+                <span class="revision">{{ row.slug }}</span>
+              </span>
+            </TableCell>
+            <TableCell class="text-center">
+              <UiBadge :variant="row.source_kind === 'formula' ? 'info' : 'secondary'">{{ sourceKindLabel(row.source_kind) }}{{ row.editable ? ' · 可改' : '' }}</UiBadge>
+            </TableCell>
+            <TableCell class="text-center text-ink-2">{{ entryLabel(row.entry_timing) }} · {{ row.min_bars }} 根</TableCell>
+            <TableCell class="text-center revision">{{ revisionLabel(row.strategy_revision, row.source_kind) }}</TableCell>
+            <TableCell class="text-center" @click.stop>
+              <div class="row-actions row-actions--center">
+                <Button access="read" size="xs" variant="outline" @click="emit('openScreen', row.slug)">
+                  <Play aria-hidden="true" />
+                  选股
+                </Button>
+                <Button access="read" v-if="row.editable" size="xs" variant="ghost" @click="openEditableStrategy(row.slug)">
+                  <Pencil aria-hidden="true" />
+                  公式
+                </Button>
+                <Button access="read" size="xs" variant="ghost" @click="openDetail(row)">
+                  <Settings2 aria-hidden="true" />
+                  {{ visitor ? '详情' : '配置' }}
+                </Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </Card>
 
     <StrategyDetailDialog v-model="detailOpen" :strategy="detail" />
   </div>
@@ -313,40 +249,203 @@ function onRowClick(row: Record<string, unknown>): void {
 
 <style scoped>
 .strategies-panel {
+  display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
   height: 100%;
+}
+
+.strategies-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.strategies-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2) var(--gap-3);
+  padding: var(--gap-2) var(--gap-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.strategies-search {
+  position: relative;
+  display: flex;
+  flex: 0 1 320px;
+  align-items: center;
+  min-width: 200px;
+}
+
+.strategies-search__icon {
+  position: absolute;
+  left: 9px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.strategies-search__input {
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+.strategies-search__clear {
+  position: absolute;
+  right: 3px;
+}
+
+.strategies-count {
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+  font-variant-numeric: tabular-nums;
+}
+
+.strategies-skeleton {
   display: flex;
   flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-3);
 }
 
-.strategies-search-form {
-  flex: 1;
+.strategies-empty {
+  min-height: 260px;
+}
+
+/* 表格：表头内容全部居中，行高 40px 一行展示 */
+.strategies-table :deep(th) {
+  height: var(--head-h);
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+  font-weight: 500;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.strategies-table :deep(td) {
+  height: 40px;
+  font-size: var(--fs-ui);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.strategies-table :deep(th:first-child),
+.strategies-table :deep(td:first-child) {
+  padding-left: var(--gap-4);
+}
+
+.strategies-table :deep(th:last-child),
+.strategies-table :deep(td:last-child) {
+  padding-right: var(--gap-3);
+}
+
+.strategy-row {
+  cursor: pointer;
+}
+
+.strategy-row:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--seal));
+  outline-offset: -2px;
+}
+
+/* 名称一行展示：名称 + 编码单行，超出省略 */
+.name-inline {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--gap-2);
   min-width: 0;
+  max-width: 100%;
 }
 
-.strategies-search-actions {
+.name-inline__name {
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revision {
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.row-actions--center {
+  justify-content: center;
+}
+
+/* 手机卡片 */
+.strategy-cards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.strategy-card {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  flex-shrink: 0;
-  padding-bottom: 0.65rem;
+  flex-direction: column;
+  gap: var(--gap-2);
+  padding: var(--gap-3);
+  border-top: 1px solid var(--border-subtle);
+  cursor: pointer;
 }
 
-.name-cell {
-  min-width: 0;
+.strategy-card:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--seal));
+  outline-offset: -2px;
 }
 
-.name-line {
+.strategy-card__head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+  justify-content: space-between;
+  gap: var(--gap-2);
 }
 
-.dim {
-  color: var(--mist);
-  font-size: 0.76rem;
+.strategy-card__chevron {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--text-tertiary);
+}
+
+.strategy-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--gap-3);
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+.strategy-card__actions {
+  display: flex;
+  gap: var(--gap-2);
+  padding-top: 2px;
+}
+
+.strategy-card__actions :deep(button) {
+  min-height: 40px;
 }
 </style>
-<style scoped src="./StrategySurfaces.css"></style>

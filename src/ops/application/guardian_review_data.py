@@ -1,14 +1,54 @@
 """交易员盘前/盘后报告的可核对事实，模型不参与资金计算。"""
+from copy import deepcopy
+from collections import Counter
 from datetime import date, datetime, time, timedelta, timezone
 import math
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.ledger import guardian_account_at, mark_guardian_account
+from src.ledger import guardian_account_at, guardian_position_policy, mark_guardian_account
 from src.market import scheduled_trading_days
+from src.ops.application.retired_slugs import RETIRED_STRATEGY_MARKERS
+from src.ops.application.guardian_opening_plans import fold_opening_plans
 
 TZ = ZoneInfo("Asia/Shanghai")
 PERIOD_LABELS = {"premarket": "盘前计划", "daily": "日复盘", "weekly": "周复盘"}
+
+
+def allocation_snapshot(account: dict, day: str) -> dict:
+    """收盘资金配置事实，不以期末仓位代替全周平均暴露。"""
+    equity, cash = account['equity_cents'], account['cash_cents']
+    return {'date': day, 'equity_cents': equity, 'cash_cents': cash,
+            'exposure_pct': (equity - cash) / equity * 100 if equity > 0 else None,
+            'position_count': len(account['positions']),
+            'positions': [{'code': p['code'], 'name': p['name'], 'quantity': p['quantity'],
+                           'market_value_cents': p['market_value_cents'],
+                           'weight_pct': p['market_value_cents'] / equity * 100 if equity > 0 else None}
+                          for p in account['positions']]}
+
+
+def _report_available_as_of(report: dict[str, Any] | None, cutoff: datetime) -> bool:
+    """Match history-tool visibility; nominal trade dates do not date revisions."""
+    if not report or report.get("status") != "success":
+        return False
+    raw = (report.get("result") or {}).get("created_at")
+    try:
+        # guardian_reports.started is a Unix timestamp, not a date string.
+        stamp = (datetime.fromtimestamp(float(report.get("started")), timezone.utc)
+                 if raw is None else datetime.fromisoformat(str(raw)))
+    except (TypeError, ValueError, OverflowError, OSError):
+        return False
+    # As in SQLite julianday(), timezone-less date strings represent UTC.
+    return stamp.replace(tzinfo=stamp.tzinfo or timezone.utc) <= cutoff
+
+
+def _contains_retired_strategy_reference(report: dict[str, Any]) -> bool:
+    """历史报告保留，但不把已退役战法的分析原文带入新计划。"""
+    import json
+
+    analysis = report.get("result", {}).get("analysis") or {}
+    serialized = json.dumps(analysis, ensure_ascii=False)
+    return any(marker in serialized for marker in RETIRED_STRATEGY_MARKERS)
 
 
 def report_window(period: str, day: str, now: datetime) -> tuple[str, str]:
@@ -79,10 +119,23 @@ def closing_account(market: Any, trades: list[dict], day: str, initial: int) -> 
 def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: datetime) -> dict[str, Any]:
     start, end = report_window(period, day, now)
     current = ledger.state()
+    # 成交流水可重建收益，不能重建没有成交的合同安装、撤回及过期。
+    # 当前报告独立保存实际合同快照；历史报告不以今天的合同冒充过去状态。
+    risk_contracts = {"available": False, "as_of": None, "source": "not_recorded",
+                      "positions": [], "note": "成交流水不包含完整风险合同，缺失不等于零条。"}
+    if day == now.date().isoformat():
+        from src.ops.application.guardian_risk import evaluate_risk_plans
+        checked, _, _ = evaluate_risk_plans(current, {}, now)
+        risk_contracts = {"available": True, "as_of": now.isoformat(), "source": "ledger_state",
+            "positions": [{"code": p["code"], "quantity": p["quantity"],
+                           "entry_context": deepcopy(p.get("entry_context", {})),
+                           "risk_plans": deepcopy(p.get("risk_plans", []))} for p in checked["positions"]],
+            "note": "独立于收盘账务的实际合同快照；按as_of检查有效期与持仓绑定，不写回、不下单。"}
     initial = current["initial_capital_cents"]
     trades = ledger.all_trades(end)
     baseline_day = previous_day(market, start)
     baseline = closing_account(market, trades, baseline_day, initial)
+    allocation_points = [allocation_snapshot(baseline, baseline_day)]
     if period == "premarket":
         account = mark_guardian_account(baseline, {}, now)
         account["valuation_kind"] = "previous_close"
@@ -94,6 +147,7 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
         for trade_day in scheduled_trading_days(start, end):
             close = account if trade_day == end else closing_account(market, trades, trade_day, initial)
             points.append({"date": trade_day, "equity_cents": close["equity_cents"]})
+            allocation_points.append(allocation_snapshot(close, trade_day))
         period_trades = [t for t in trades if start <= t["occurred_at"][:10] <= end]
     by_code: dict[str, dict[str, Any]] = {}
     for source, key in ((baseline, "start_value_cents"), (account, "end_value_cents")):
@@ -117,16 +171,25 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
         peak = max(peak, point["equity_cents"])
         drawdown = min(drawdown, (point["equity_cents"] / peak - 1) * 100 if peak else 0)
     cycles = ledger.cycles_between(start, end)
+    status_counts = Counter((row['slot'][:10], row['status']) for row in cycles)
+    status_by_date = {day_key: {status: count for (day_value, status), count in status_counts.items()
+                                if day_value == day_key} for day_key in sorted({key[0] for key in status_counts})}
     preopen = ledger.report("premarket", day)
+    memory_cutoff = min(now, datetime.combine(date.fromisoformat(day), time(23, 59, 59), TZ))
+    experience = ledger.experience(as_of=memory_cutoff.isoformat(), day=day)
+    daily_learning = ledger.daily_learning(start, end, memory_cutoff.isoformat()) if period == 'weekly' else []
     from src.ops.application.guardian_evidence import cycle_evidence
     cycle_rows = [{k: v for k, v in cycle_evidence(c).items() if k not in {"input_candidates", "account_before"}}
                   for c in cycles]
-    earlier = [r for r in ledger.reports(30) if r["status"] == "success" and r["trade_date"] <= day
+    earlier = [r for r in ledger.reports(30) if _report_available_as_of(r, memory_cutoff) and r["trade_date"] <= day
                and (r["period"], r["trade_date"]) != (period, day)]
     if period == "weekly":
         earlier = [r for r in earlier if r["period"] == "daily" and r["trade_date"] >= start]
     else:
         earlier = [r for r in earlier if r["period"] != "premarket" or r["trade_date"] == day]
+    # 旧报告仍是审计历史；已退役战法不再作为新复盘的研究输入，避免名称/观点
+    # 从盘前或旧日复盘的 analysis 原文重新污染当前计划。
+    earlier = [r for r in earlier if not _contains_retired_strategy_reference(r)]
     next_trade_date = None
     for offset in range(1, 16):
         candidate = (date.fromisoformat(day) + timedelta(days=offset)).isoformat()
@@ -137,30 +200,39 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
         except ValueError:
             break
     return {"period": period, "start_date": start, "trade_date": day, "baseline_date": baseline_day,
-            "created_at": now.isoformat(), "account": account, "baseline_equity_cents": baseline["equity_cents"],
+            "experience": experience, "daily_learning": daily_learning,
+            "created_at": now.isoformat(), "account": account, "account_basis": "reconstructed_from_trades",
+            "risk_contracts": risk_contracts, "baseline_equity_cents": baseline["equity_cents"],
+            "current_position_policy": {"as_of": now.isoformat(), "usage": "当前及未来计划；不能代替历史当轮规则快照。",
+                                        **guardian_position_policy(current, now)},
             "baseline_sources": baseline.get("closing_sources", []),
             "period_pnl_cents": pnl, "period_return_pct": round(pnl / baseline["equity_cents"] * 100, 4) if baseline["equity_cents"] else None,
             "period_realized_pnl_cents": sum(t["realized_pnl_cents"] for t in period_trades),
-            "execution_facts": {"has_premarket_report": bool(preopen and preopen["status"] == "success"),
+            "opening_plan_reconciliation": fold_opening_plans(cycles, now),
+            "execution_facts": {"has_premarket_report": _report_available_as_of(preopen, memory_cutoff),
                                 "trade_records": len(period_trades),
                                 "legacy_conversions": sum(t.get("origin") == "legacy_conversion" for t in period_trades),
                                 "model_trade_records": sum(t.get("origin") != "legacy_conversion" for t in period_trades),
                                 "expired_cycles": sum(c["status"] == "expired" for c in cycles),
                                 "expired_cycle_slots": [c["slot"] for c in cycles if c["status"] == "expired"],
                                 "failed_cycles": sum(c["status"] == "failed" for c in cycles),
+                                "failed_cycles_with_fills": sum(c["status"] == "failed" and bool(c["result"].get("fills")) for c in cycles),
                                 "failed_cycle_slots": [c["slot"] for c in cycles if c["status"] == "failed"],
+                                "cycle_status_counts_by_date": status_by_date,
                                 "first_successful_cycle": min((c["slot"] for c in cycles if c["status"] == "success"), default=None),
                                 "first_buy_decision_cycle": min((c["slot"] for c in cycles if any(d.get("action") == "buy" for d in c["result"].get("decisions", []))), default=None),
-                                "timing_semantics": "cycle时间是轮次开始；成交时间用trades.occurred_at，不用trade.id。工程失败、模型观望、旧约束拒单分别归因，不能说全天无判断或所有尾盘成交均由早盘故障导致。",
-                                "current_scope": "全市场自主选择，观察池不是买入准入白名单；历史观察范围拒单属于已取消的旧约束",
+                                "timing_semantics": "cycle时间是轮次开始；成交时间用trades.occurred_at，不用trade.id。failed可能已有部分成交，不等于整轮未执行；工程失败、模型观望、旧约束拒单分别归因，不能说全天无判断或所有尾盘成交均由早盘故障导致。",
+                                "current_scope": "全市场自主选择，观察池是研究参考；历史操作按当时记录评价。",
                                 "execution_cadence": "连续竞价期间每5分钟研判，最后连续竞价研判轮次14:55，15:00另做收盘研判；不是实时或券商条件单，15:00后不能成交"},
             "period_fees_cents": sum(t["fees_cents"] for t in period_trades),
             "close_drawdown_pct": round(drawdown, 4), "equity_points": points,
+            "allocation_points": allocation_points,
             "trades": period_trades, "stock_performance": list(by_code.values()), "cycles": cycle_rows,
             "next_trade_date": next_trade_date,
             "planning_trade_date": day if period == "premarket" else next_trade_date,
             "planning_sellable": [{"code": p["code"], "quantity": p["available_quantity"] if period == "premarket" else p["quantity"]} for p in account["positions"]],
             "watchlist": current.get("watchlist", []) if day == now.date().isoformat() else [],
             "current_plans": [{k: p.get(k) for k in ("code", "holding_plan", "take_profit_plan", "stop_loss_plan", "exit_today_plan")} for p in current["positions"]] if day == now.date().isoformat() else [],
+            "previous_reviews_as_of": memory_cutoff.isoformat(),
             "previous_reviews": [{"id": r["report_key"], "date": r["trade_date"], "analysis": r["result"].get("analysis")} for r in earlier[:5]],
-            "evidence_ids": [f"trade:{t['id']}" for t in period_trades] + [c["id"] for c in cycle_rows] + [f"close:{p['code']}:{account['valuation_at'][:10]}" for p in account["positions"]] + [r["report_key"] for r in earlier[:5]]}
+            "evidence_ids": [f"experience:{experience['revision']}:{item['id']}" for item in experience['items']] + [r['report_key'] for r in daily_learning] + [f"trade:{t['id']}" for t in period_trades] + [c["id"] for c in cycle_rows] + [f"close:{p['code']}:{account['valuation_at'][:10]}" for p in account["positions"]] + [r["report_key"] for r in earlier[:5]]}

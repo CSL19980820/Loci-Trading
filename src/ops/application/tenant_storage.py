@@ -98,6 +98,24 @@ def _unlink(path: Path) -> int:
         return 0
 
 
+def _active_or_unreadable(state: Path) -> bool:
+    """Never remove a live/pending run or a state file that cannot be inspected."""
+    import json
+
+    if state.is_symlink():
+        return True
+    if not state.is_file():
+        return False  # Legacy orphan directories still obey their age policy.
+    try:
+        payload = json.loads(state.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return True
+    if not isinstance(payload, dict):
+        return True
+    status = str(payload.get("status", "")).lower()
+    return status in {"running", "pending", "queued", "waiting", "waiting_input", "awaiting_input", "paused", "created"} or bool(payload.get("pending_ask"))
+
+
 def prune_skill_runs(
     root: Path,
     *,
@@ -119,6 +137,8 @@ def prune_skill_runs(
     freed = 0
     truncated = False
     for state in sorted(root.glob("SR-*.json")):
+        if _active_or_unreadable(state):
+            continue
         if deleted >= max_delete:
             truncated = True
             break
@@ -129,9 +149,11 @@ def prune_skill_runs(
                 newest = max(newest, events.stat().st_mtime)
         except OSError:
             continue
-        if newest >= cutoff:
+        if newest >= cutoff or events.is_symlink():
             continue
         freed += _unlink(state)
+        if state.exists():
+            continue
         if events.is_file():
             freed += _unlink(events)
         deleted += 1
@@ -166,7 +188,7 @@ def prune_research_runs(
     import shutil
 
     for run_dir in sorted(root.glob("RR-*")):
-        if not run_dir.is_dir():
+        if not run_dir.is_dir() or run_dir.is_symlink() or _active_or_unreadable(run_dir / "run.json"):
             continue
         if deleted >= max_delete:
             truncated = True
@@ -176,6 +198,9 @@ def prune_research_runs(
         try:
             newest = run_dir.stat().st_mtime
             for item in run_dir.rglob("*"):
+                if item.is_symlink():
+                    newest = float("inf")
+                    break
                 if not item.is_file():
                     continue
                 stat = item.stat()

@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
 import { computed, onMounted, ref, watch } from 'vue'
+import { Database, LoaderCircle, RefreshCw, TriangleAlert, Wrench, X } from '@lucide/vue'
+import { toast } from 'vue-sonner'
 
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Button } from '@/shared/components/ui/button'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Input } from '@/shared/components/ui/input'
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
-import SegmentSwitch from '@/shared/components/ui/SegmentSwitch.vue'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
+import PageTabs from '@/shared/components/ui/PageTabs.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
 import AkshareToolTable from './components/AkshareToolTable.vue'
 import LanePurposeBoard from './components/LanePurposeBoard.vue'
@@ -72,6 +79,13 @@ function parseView(raw: string | undefined): PanelView {
 }
 
 const view = ref<PanelView>(parseView(props.initialView))
+/** PageTabs 只认 string，这里做一次窄化 */
+const viewTab = computed({
+  get: () => view.value as string,
+  set: (next: string) => {
+    view.value = parseView(next)
+  },
+})
 const detailId = ref('')
 const detailOpen = ref(false)
 const mcpOpen = ref(false)
@@ -105,7 +119,7 @@ function openDetail(id: string): void {
 watch([notice, akshareNotice], ([main, akshare]) => {
   const text = main || akshare
   if (!text) return
-  ElMessage.success(text)
+  toast.success(text)
   notice.value = ''
   akshareNotice.value = ''
 })
@@ -143,83 +157,96 @@ function setAkshareBatchOpen(open: boolean): void {
 
 <template>
   <div class="ds-panel min-w-0 overflow-hidden" aria-label="数据源控制台">
-    <header class="ds-bar">
-      <SegmentSwitch
-        v-model="view"
-        class="ds-views"
-        :items="viewItems"
-        aria-label="数据源视图"
-      />
-
-      <p class="ds-readout" aria-label="数据源统计">
-        数据源<b>{{ stats.total }}</b>
-        <span class="ds-readout__sep" />
-        启用<b>{{ stats.enabled }}</b>
-        <span class="ds-readout__sep" />
-        停用<b>{{ stats.disabled }}</b>
-      </p>
+    <header class="ds-head">
+      <div class="ds-head__lead">
+        <PageTabs
+          v-model="viewTab"
+          class="ds-views"
+          :items="viewItems"
+          variant="pill"
+          dense
+          :sticky="false"
+          aria-label="数据源视图"
+        />
+        <p class="ds-readout" aria-label="数据源统计">
+          <Database class="ds-readout__icon" aria-hidden="true" />
+          <span>数据源 <b>{{ stats.total }}</b></span>
+          <UiBadge variant="ok" dot>启用 {{ stats.enabled }}</UiBadge>
+          <UiBadge v-if="stats.disabled" variant="secondary" dot>停用 {{ stats.disabled }}</UiBadge>
+        </p>
+      </div>
 
       <div class="ds-bar__tools">
-        <el-button class="ds-mcp" link type="primary" @click="mcpOpen = true">MCP 工具清单</el-button>
+        <Button variant="ghost" size="sm" class="ds-mcp" @click="mcpOpen = true">
+          <Wrench />
+          MCP 工具清单
+        </Button>
         <template v-if="view !== 'interfaces'">
-          <el-input
+          <Input
             v-model="code"
             class="ds-code"
-            size="small"
+            size="sm"
             maxlength="6"
             inputmode="numeric"
             placeholder="样例代码"
             aria-label="探测用样例代码"
           />
-          <el-select v-model="runs" size="small" class="ds-runs" aria-label="探测次数">
-            <el-option :value="1" label="1 次" />
-            <el-option :value="2" label="2 次" />
-            <el-option :value="3" label="3 次" />
-          </el-select>
-          <el-tooltip content="探测所有行情线路的连通性（不是 AkShare 接口全测）" placement="bottom">
-            <el-button
-              size="small"
-              type="primary"
-              :loading="busyKey === 'all'"
-              @click="probeAll()"
-            >
-              探测线路
-            </el-button>
-          </el-tooltip>
+          <Select v-model="runs">
+            <SelectTrigger size="sm" class="ds-runs" aria-label="探测次数">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem :value="1">1 次</SelectItem>
+              <SelectItem :value="2">2 次</SelectItem>
+              <SelectItem :value="3">3 次</SelectItem>
+            </SelectContent>
+          </Select>
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button size="sm" :disabled="busyKey === 'all'" @click="probeAll()">
+                <LoaderCircle v-if="busyKey === 'all'" class="size-4 animate-spin" aria-hidden="true" />
+                探测线路
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>探测所有行情线路的连通性（不是 AkShare 接口全测）</TooltipContent>
+          </Tooltip>
         </template>
-        <el-button size="small" :disabled="loading" @click="view === 'interfaces' ? loadAkshare() : load()">
+        <Button access="read" variant="outline" size="sm" :disabled="loading" aria-label="刷新" @click="view === 'interfaces' ? loadAkshare() : load()">
+          <RefreshCw :class="loading ? 'animate-spin' : ''" />
           刷新
-        </el-button>
+        </Button>
       </div>
     </header>
 
     <!-- 常驻故障条：标题压到 8 字，后果与线路名进 tooltip（不写 description） -->
-    <el-tooltip
-      v-if="brokenRequiredLanes.length"
-      :content="`${brokenText}：这几条线路已无可用源，同步与选股会直接失败`"
-      placement="bottom-start"
-    >
-      <el-alert type="error" show-icon :closable="false" class="ds-alert" title="必需线路无可用源" />
-    </el-tooltip>
-    <el-alert
-      v-if="error"
-      :title="error"
-      type="error"
-      show-icon
-      closable
-      class="ds-alert"
-      @close="error = ''"
-    />
+    <Tooltip v-if="brokenRequiredLanes.length">
+      <TooltipTrigger as-child>
+        <Alert class="ds-alert">
+          <TriangleAlert />
+          <AlertTitle class="line-clamp-none min-w-0">必需线路无可用源</AlertTitle>
+        </Alert>
+      </TooltipTrigger>
+      <TooltipContent>{{ brokenText }}：这几条线路已无可用源，同步与选股会直接失败</TooltipContent>
+    </Tooltip>
+    <Alert v-if="error" variant="destructive" class="ds-alert">
+      <TriangleAlert />
+      <div class="flex w-full min-w-0 items-start justify-between gap-2">
+        <AlertTitle class="line-clamp-none min-w-0">{{ error }}</AlertTitle>
+        <Button access="read" variant="ghost" size="icon-xs" aria-label="关闭提示" class="shrink-0" @click="error = ''">
+          <X class="size-3.5" />
+        </Button>
+      </div>
+    </Alert>
 
-    <el-alert
-      v-if="akshareError"
-      :title="akshareError"
-      type="warning"
-      show-icon
-      closable
-      class="ds-alert"
-      @close="akshareError = ''"
-    />
+    <Alert v-if="akshareError" class="ds-alert text-warn">
+      <TriangleAlert />
+      <div class="flex w-full min-w-0 items-start justify-between gap-2">
+        <AlertTitle class="line-clamp-none min-w-0">{{ akshareError }}</AlertTitle>
+        <Button access="read" variant="ghost" size="icon-xs" aria-label="关闭提示" class="shrink-0" @click="akshareError = ''">
+          <X class="size-3.5" />
+        </Button>
+      </div>
+    </Alert>
 
     <div class="ds-body">
       <AkshareToolTable
@@ -263,8 +290,10 @@ function setAkshareBatchOpen(open: boolean): void {
         v-else
         description="暂无数据源"
         reason="刷新后检查服务配置"
+        :icon="Database"
+        class="ds-empty"
       >
-        <el-button type="primary" @click="load()">刷新</el-button>
+        <Button access="read" @click="load()">刷新</Button>
       </EmptyState>
     </div>
 
@@ -285,70 +314,50 @@ function setAkshareBatchOpen(open: boolean): void {
 <style scoped>
 .ds-panel {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  /* flex:1 已经吃满父级高度；再写 height:100% 会与它互相打架（体检 §4.4） */
-  flex: 1 1 auto;
 }
 
-.ds-bar {
+/* 顶部一行：左侧视图药片 + 读数，右侧工具；透明底坐在画布上 */
+.ds-head {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-2) var(--gap-3);
+  margin-bottom: var(--gap-3);
+}
+
+.ds-head__lead {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-2) var(--gap-3);
-  flex-shrink: 0;
-  padding: var(--gap-2) var(--gap-3);
-  margin-bottom: var(--gap-2);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-/* 视图切换是这一页的主导航，比工具条更该被一眼看到；inset/选中阴影是控件质感（非业务卡片），保留 */
-.ds-views {
-  --el-segmented-padding: 0.2rem;
-  --el-segmented-item-selected-bg-color: var(--paper);
-  padding: 0.2rem;
-  border: 1px solid var(--rule);
-  border-radius: calc(var(--radius) + 2px);
-  background: var(--surface-sunken);
-}
-
-.ds-views :deep(.el-segmented__item) {
-  padding: 0 var(--gap-3);
-  font-size: var(--fs-body);
-  line-height: var(--ctl-h);
-}
-
-.ds-views :deep(.el-segmented__item.is-selected) {
-  color: var(--seal-ink);
+  min-width: 0;
 }
 
 .ds-readout {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.3rem;
+  gap: var(--gap-2);
   margin: 0;
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
-  color: var(--mist);
+}
+
+.ds-readout__icon {
+  width: 14px;
+  height: 14px;
 }
 
 .ds-readout b {
-  margin-left: 2px;
-  font: 700 var(--fs-hero)/1 var(--mono);
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
-}
-
-.ds-mcp {
-  font-size: var(--fs-aux);
-}
-
-.ds-readout__sep {
-  width: 1px;
-  height: 0.85rem;
-  margin: 0 var(--gap-1);
-  background: var(--rule);
 }
 
 .ds-bar__tools {
@@ -359,8 +368,13 @@ function setAkshareBatchOpen(open: boolean): void {
   margin-left: auto;
 }
 
+.ds-mcp {
+  color: var(--text-secondary);
+}
+
 .ds-code {
   width: 6.5rem;
+  font-family: var(--mono);
 }
 
 .ds-runs {
@@ -368,17 +382,35 @@ function setAkshareBatchOpen(open: boolean): void {
 }
 
 .ds-alert {
-  margin-bottom: var(--gap-2);
   flex-shrink: 0;
+  margin-bottom: var(--gap-2);
 }
 
 .ds-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  /* 按用途/按数据源卡片高于视口时在此内滚；按接口表仍靠自身吃满高度 */
-  overflow: auto;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  padding: var(--gap-1) var(--gap-1) var(--gap-2);
+  min-height: 0;
+  padding: 2px 2px var(--gap-4);
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.ds-empty {
+  min-height: 260px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+@media (max-width: 640px) {
+  .ds-bar__tools {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .ds-bar__tools > :deep(button) {
+    min-height: 36px;
+  }
 }
 </style>

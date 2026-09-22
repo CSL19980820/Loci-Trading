@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, vi } from 'vitest'
-import { ElMessageBox } from 'element-plus'
+import { confirmDangerous } from '@/shared/lib/confirm'
 
 import {
   cancelAiRun,
@@ -43,14 +43,8 @@ vi.mock('@/shared/api/ai_assistant', () => ({
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: routerPush }) }))
 
-vi.mock('element-plus', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('element-plus')>()
-  return {
-    ...actual,
-    ElMessageBox: { confirm: vi.fn(() => Promise.resolve('confirm')) },
-    ElMessage: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
-  }
-})
+vi.mock('@/shared/lib/confirm', async (importOriginal) => ({ ...await importOriginal<typeof import('@/shared/lib/confirm')>(), confirmDangerous: vi.fn().mockResolvedValue(true) }))
+vi.mock('vue-sonner', () => ({ toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 
 import AssistantHost from './AssistantHost.vue'
 
@@ -67,7 +61,7 @@ export const api = {
   streamAiRunEvents: vi.mocked(streamAiRunEvents),
 }
 
-export const messageBox = { confirm: vi.mocked(ElMessageBox.confirm) }
+export const messageBox = { confirm: vi.mocked(confirmDangerous) }
 
 export const router = { push: routerPush }
 

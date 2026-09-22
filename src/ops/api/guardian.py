@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.ledger import GuardianStore, mark_guardian_account
 from src.ops.application.guardian_config import DEFAULT_PROMPT, get_job, get_config, save_config
+from src.ops.application.guardian_weekly_prompt import DEFAULT_WEEKLY_PROMPT
 from src.ops.infrastructure.store import OpsError, OpsStore
 from src.shared.tenancy import current_tenant, tenant_scope
 
@@ -25,6 +26,10 @@ class GuardianConfigIn(BaseModel):
     provider: str = Field(default="", max_length=200)
     model: str = Field(default="", max_length=200)
     prompt: str = Field(default=DEFAULT_PROMPT, min_length=1, max_length=16000)
+    common_prompt: str = Field(default="", max_length=16000)
+    premarket_prompt: str = Field(default="", max_length=16000)
+    review_prompt: str = Field(default="", max_length=16000)
+    weekly_prompt: str = Field(default="", description="独立周复盘提示词；留空使用内置整周总结，不继承日复盘或盘中提示词")
     strategies: list[str] = Field(default_factory=list, max_length=100)
     notify: bool = True
 
@@ -63,8 +68,10 @@ def build_guardian_router(*, write_dependency, scheduler_getter=None) -> APIRout
             from src.ops.application.notify_calendar import notification_silence_reason
             state = mark_guardian_account(ledger.state(), {}, datetime.now(ZoneInfo("Asia/Shanghai")))
             return {"config": get_config(store), "default_prompt": DEFAULT_PROMPT,
+                    "default_weekly_prompt": DEFAULT_WEEKLY_PROMPT,
                     "notification_silence": notification_silence_reason(),
                     "job_id": job["id"] if job else None, "state": state,
+                    "experience": ledger.experience(),
                     "runs": ledger.latest_cycle_summary(), "delivery": ledger.notice_backlog(),
                     "observation_count": len(state.get("watchlist", []))}
 
@@ -89,7 +96,7 @@ def build_guardian_router(*, write_dependency, scheduler_getter=None) -> APIRout
                 result['body'] = report_body(result['facts'], result['analysis'])
             # The stored facts/tool evidence remain available to the agent and audit trail.
             # A document view only needs its rendered sections, not another copy of all evidence.
-            visible = {key: result[key] for key in ("body", "sections", "error", "created_at") if key in result}
+            visible = {key: result[key] for key in ("body", "sections", "error", "created_at", "revision") if key in result}
             if result.get("notify"):
                 visible["notify"] = {key: result["notify"][key] for key in ("success", "skipped") if key in result["notify"]}
             return {key: value for key, value in {**report, "result": visible}.items() if key != "token"}

@@ -19,6 +19,8 @@ import sqlite3
 
 from src.identity.domain.models import (
     ConflictError,
+    AuthenticationError,
+    ValidationError,
     Identity,
     SessionInfo,
     User,
@@ -138,6 +140,7 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
             updated_at=row["updated_at"],
             last_login_at=row["last_login_at"],
             must_change_password=bool(row["must_change_password"]),
+            view_tenant_id=row["view_tenant_id"],
         )
 
     def create_user(
@@ -148,11 +151,14 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
         password_hash: str | None,
         password_algo: str,
         display_name: str = "",
-        role: str = "member",
+        role: str = "visitor",
         status: str = "pending",
         tenant_id: str | None = None,
         must_change_password: bool = False,
+        view_tenant_id: str = "",
     ) -> User:
+        if role not in ("admin", "visitor"):
+            raise ValidationError("角色只能是 admin 或 visitor")
         now = iso(utc_now())
         user_id = new_id("u")
         resolved_tenant = tenant_id or user_id
@@ -160,8 +166,8 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
             self.conn.execute(
                 """INSERT INTO users (id, tenant_id, username, email, password_hash, password_algo,
                 password_updated_at, must_change_password, display_name, role, status,
-                created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_at, updated_at, view_tenant_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     user_id,
                     resolved_tenant,
@@ -176,6 +182,7 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
                     status,
                     now,
                     now,
+                    (view_tenant_id or resolved_tenant) if role == "visitor" else "",
                 ),
             )
         except sqlite3.IntegrityError as exc:
@@ -228,6 +235,7 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
             "email_verified_at",
             "last_login_at",
             "must_change_password",
+            "view_tenant_id",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
@@ -397,23 +405,25 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
         """返回**明文 token**（只此一次）。库里只留 sha256。"""
         token = secrets.token_urlsafe(32)
         now = utc_now()
-        self.conn.execute(
-            """INSERT INTO sessions (id, user_id, identity_id, created_at, last_seen_at,
-            expires_at, absolute_expires_at, ip, user_agent)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-            (
-                token_digest(token),
-                user_id,
-                identity_id,
-                iso(now),
-                iso(now),
-                in_seconds(SESSION_SLIDING_SEC, now=now),
-                in_seconds(SESSION_ABSOLUTE_SEC, now=now),
-                ip[:64],
-                user_agent[:256],
-            ),
-        )
-        self.conn.commit()
+        # Revocation and creation share the same SQLite write transaction. A pair
+        # of concurrent visitor logins can never leave two live sessions behind.
+        with self.conn:
+            self.conn.execute("BEGIN IMMEDIATE")
+            user = self.get_user(user_id)
+            if user is None or not user.can_login:
+                raise AuthenticationError("账号不可登录")
+            if not user.is_admin:
+                self.conn.execute(
+                    "UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+                    (iso(now), user_id),
+                )
+            self.conn.execute(
+                """INSERT INTO sessions (id, user_id, identity_id, created_at, last_seen_at,
+                expires_at, absolute_expires_at, ip, user_agent) VALUES (?,?,?,?,?,?,?,?,?)""",
+                (token_digest(token), user_id, identity_id, iso(now), iso(now),
+                 in_seconds(SESSION_SLIDING_SEC, now=now), in_seconds(SESSION_ABSOLUTE_SEC, now=now),
+                 ip[:64], user_agent[:256]),
+            )
         return token
 
     def get_session(self, token: str) -> SessionInfo | None:

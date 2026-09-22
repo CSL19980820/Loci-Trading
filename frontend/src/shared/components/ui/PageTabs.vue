@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
+import { Tabs, TabsList, TabsTrigger } from '@/shared/components/ui/tabs'
+
 export type PageTabItem = {
   name: string
   label: string
@@ -14,11 +18,14 @@ const props = withDefaults(
     sticky?: boolean
     /** 多标签（如设置 9 项）更紧、可横滑 */
     dense?: boolean
+    /** pill = 药片分段（用于面板内二级切换）；默认 underline = 下划线（页级分区） */
+    variant?: 'underline' | 'pill'
     ariaLabel?: string
   }>(),
   {
     sticky: true,
     dense: false,
+    variant: 'underline',
     ariaLabel: '页面分区',
   },
 )
@@ -27,43 +34,45 @@ const emit = defineEmits<{
   'update:modelValue': [string]
 }>()
 
-function onUpdate(name: string | number): void {
-  const key = String(name)
-  const item = props.items.find((entry) => entry.name === key)
-  if (!item || item.disabled) return
-  if (key !== props.modelValue) emit('update:modelValue', key)
-}
+/**
+ * 分区只切「值」，不渲染面板：面板由父级用 `v-show` 编排（切 Tab 不重建表格、不丢滚动位置）。
+ * 只保留 reka `Tabs` 的 tablist / tab 语义与方向键导航，刻意不挂 `TabsContent`。
+ */
+const value = computed({
+  get: () => props.modelValue,
+  set: (next: string | number) => {
+    const key = String(next)
+    const item = props.items.find((entry) => entry.name === key)
+    if (!item || item.disabled) return
+    if (key !== props.modelValue) emit('update:modelValue', key)
+  },
+})
 </script>
 
 <template>
-  <!-- 分区条=28px控件行。sticky 让它贴在 scroll 顶；badge 是等宽计数 -->
   <div
-    class="page-tabs bg-canvas mx-0 mb-2 shrink-0 px-[var(--pad-sheet-x)]"
-    :class="sticky ? 'page-tabs--sticky sticky top-[var(--page-tabs-sticky-top,0px)] z-[var(--z-sticky)] border-b border-[var(--rule)]' : ''"
+    class="page-tabs"
+    :class="[
+      `page-tabs--${variant}`,
+      { 'page-tabs--sticky': sticky, 'page-tabs--dense': dense },
+    ]"
   >
-    <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-      <el-tabs
-        class="min-w-0 flex-auto"
-        :model-value="modelValue"
-        :aria-label="ariaLabel"
-        :class="dense ? '[--el-tabs-header-height:var(--row-h-sm)]' : '[--el-tabs-header-height:var(--ctl-h)]'"
-        @update:model-value="onUpdate"
-      >
-        <el-tab-pane
-          v-for="item in items"
-          :key="item.name"
-          :name="item.name"
-          :disabled="item.disabled"
-        >
-          <template #label>
-            <span>{{ item.label }}</span>
-            <span v-if="item.badge != null && item.badge !== ''" class="border-line bg-surface text-mist ml-1 inline-flex min-w-4 items-center justify-center rounded border px-1 font-mono text-[length:var(--fs-kicker)] leading-[1.4] font-semibold tabular-nums">{{
-              item.badge
-            }}</span>
-          </template>
-        </el-tab-pane>
-      </el-tabs>
-      <div v-if="$slots.trailing" class="page-tabs__trailing text-mist flex flex-none flex-wrap items-center gap-2 font-mono text-aux">
+    <div class="page-tabs__row">
+      <Tabs v-model="value" class="page-tabs__tabs">
+        <TabsList class="page-tabs__list" :aria-label="ariaLabel">
+          <TabsTrigger
+            v-for="item in items"
+            :key="item.name"
+            :value="item.name"
+            :disabled="item.disabled"
+            class="page-tabs__item"
+          >
+            <span class="page-tabs__label">{{ item.label }}</span>
+            <span v-if="item.badge != null && item.badge !== ''" class="page-tabs__badge">{{ item.badge }}</span>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div v-if="$slots.trailing" class="page-tabs__trailing">
         <slot name="trailing" />
       </div>
     </div>
@@ -71,42 +80,221 @@ function onUpdate(name: string | number): void {
 </template>
 
 <style scoped>
-/* 通过作用域深层选择器调整 EP 子组件，保留其键盘与溢出导航。 */
-.min-w-0 :deep(.el-tabs__header) {
-  margin: 0;
+.page-tabs {
+  margin-bottom: var(--workspace-gap, 5px);
+  flex-shrink: 0;
+  min-width: 0;
 }
-.min-w-0 :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-  background-color: var(--rule);
+
+.page-tabs--sticky {
+  position: sticky;
+  top: var(--page-tabs-sticky-top, 0px);
+  z-index: var(--z-sticky);
+  background: color-mix(in oklab, var(--surface-canvas) 88%, transparent);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
 }
-.min-w-0 :deep(.el-tabs__item) {
-  display: inline-flex;
+
+.page-tabs__row {
+  display: flex;
+  min-width: 0;
   align-items: center;
-  gap: var(--gap-1);
-  padding: 0 var(--gap-3);
-  color: var(--mist);
-  font: 500 var(--fs-body) / 1.25 var(--font);
-  letter-spacing: 0.03em;
+  justify-content: space-between;
+  gap: var(--gap-3);
 }
-.min-w-0 :deep(.el-tabs__item:hover) {
-  color: var(--ink);
+
+.page-tabs__tabs {
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 0;
 }
-.min-w-0 :deep(.el-tabs__item.is-active) {
-  color: var(--seal-ink);
-  font-weight: 700;
+
+/* 列表本体：透明、无圆角、可横滑，不显示滚动条 */
+.page-tabs__list {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
-.min-w-0 :deep(.el-tabs__active-bar) {
-  height: 2px;
-  background-color: var(--seal);
-  border-radius: 1px;
-}
-.min-w-0 :deep(.el-tabs__content) {
+
+.page-tabs__list::-webkit-scrollbar {
   display: none;
 }
-/* 选中态徽标：主色浅底+描边（D1：徽标不是价格，不上红绿） */
-.min-w-0 :deep(.el-tabs__item.is-active) .border-line {
-  border-color: color-mix(in oklab, var(--seal) 35%, var(--rule));
+
+.page-tabs__item {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 var(--gap-3);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-tertiary);
+  font: 500 var(--fs-ui) / 1.25 var(--font);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.page-tabs--dense .page-tabs__item {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.page-tabs__item:hover {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+}
+
+/* 悬停时在文字后面浮起一片淡底（Vercel 式），不占布局 */
+.page-tabs__item::before {
+  content: '';
+  position: absolute;
+  inset: 6px 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+  z-index: -1;
+}
+
+.page-tabs__item:hover::before {
+  opacity: 1;
+}
+
+/* 下划线指示器 */
+.page-tabs--underline .page-tabs__item::after {
+  content: '';
+  position: absolute;
+  right: var(--gap-3);
+  bottom: -1px;
+  left: var(--gap-3);
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--seal);
+  opacity: 0;
+  transform: scaleX(0.6);
+  transition:
+    opacity var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.page-tabs--dense.page-tabs--underline .page-tabs__item::after {
+  right: 10px;
+  left: 10px;
+}
+
+.page-tabs--underline .page-tabs__item[data-state='active'] {
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.page-tabs--underline .page-tabs__item[data-state='active']::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.page-tabs--underline .page-tabs__list {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* 药片式：用于面板里二级切换 */
+.page-tabs--pill .page-tabs__list {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  gap: 2px;
+}
+
+.page-tabs--pill .page-tabs__item {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-aux);
+}
+
+.page-tabs--pill .page-tabs__item::before {
+  display: none;
+}
+
+.page-tabs--pill .page-tabs__item:hover {
+  color: var(--text-primary);
+}
+
+.page-tabs--pill .page-tabs__item[data-state='active'] {
+  background: var(--surface);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+
+.page-tabs__item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+.page-tabs__label {
+  min-width: 0;
+}
+
+.page-tabs__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.page-tabs__item[data-state='active'] .page-tabs__badge {
   background: var(--seal-soft);
   color: var(--seal-ink);
+}
+
+.page-tabs__trailing {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-2);
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
+}
+
+@media (max-width: 640px) {
+  .page-tabs__row {
+    flex-wrap: wrap;
+  }
+
+  .page-tabs__trailing {
+    display: none;
+  }
 }
 </style>

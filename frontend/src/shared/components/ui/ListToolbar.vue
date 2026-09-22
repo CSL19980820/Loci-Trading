@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
-import { Delete, Download, Plus, Upload } from '@element-plus/icons-vue'
+import { Download, LoaderCircle, Plus, Trash2, Upload } from '@lucide/vue'
+
+import { Button } from '@/shared/components/ui/button'
 
 /** 列表工具栏固定键（文案/图标钉死） */
 export type ListToolbarKey = 'create' | 'batchDelete' | 'import' | 'export'
@@ -24,7 +26,7 @@ type Preset = {
 
 const PRESETS: Record<ListToolbarKey, Preset> = {
   create: { label: '新增', icon: Plus, kind: 'primary' },
-  batchDelete: { label: '批量删除', icon: Delete, kind: 'danger' },
+  batchDelete: { label: '批量删除', icon: Trash2, kind: 'danger' },
   import: { label: '导入', icon: Upload, kind: 'default' },
   export: { label: '导出', icon: Download, kind: 'default' },
 }
@@ -52,29 +54,30 @@ const visible = computed(() => {
   return out
 })
 
-function buttonType(kind: Preset['kind']): '' | 'primary' | 'danger' {
-  if (kind === 'primary') return 'primary'
-  if (kind === 'danger') return 'danger'
-  return ''
+/** 破坏性批量操作走印章红描边；其余保持中性，主操作才是实心主色 */
+function variantOf(kind: Preset['kind']) {
+  if (kind === 'primary') return 'default' as const
+  if (kind === 'danger') return 'destructive' as const
+  return 'outline' as const
 }
 </script>
 
 <template>
   <div class="inline-flex flex-wrap items-center gap-2">
-    <el-button
+    <Button
       v-for="action in visible"
       :key="action.key"
-      size="small"
-      :type="buttonType(action.kind)"
-      :plain="action.kind === 'danger'"
-      :icon="action.icon"
-      :loading="action.loading"
-      :disabled="action.disabled"
+      type="button"
+      size="sm"
+      :variant="variantOf(action.kind)"
+      :disabled="action.disabled || action.loading"
       class="m-0"
       @click="action.onClick()"
     >
+      <LoaderCircle v-if="action.loading" class="animate-spin" aria-hidden="true" />
+      <component :is="action.icon" v-else aria-hidden="true" />
       {{ action.label }}
-    </el-button>
+    </Button>
     <slot />
   </div>
 </template>

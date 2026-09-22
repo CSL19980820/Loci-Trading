@@ -1,5 +1,5 @@
 import { computed, onUnmounted, ref, watch, type ComputedRef, type Ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
 import { runBacktest, runHorizonBacktest } from '@/shared/api/quant'
 import { toErrorMessage } from '@/shared/lib/errors'
@@ -305,31 +305,31 @@ export function useQuantBacktestPanel(opts: {
     stopTicker()
     busy.value = false
     errorText.value = ''
-    ElMessage.info('已停止等待 · 这一次的结果不会再回写')
+    toast.info('已停止等待 · 这一次的结果不会再回写')
   }
 
   async function run(): Promise<void> {
     errorText.value = ''
     if (!strategySlug.value) {
-      ElMessage.warning('请先选择战法')
+      toast.warning('请先选择战法')
       return
     }
     if (!range.value?.[0] || !range.value?.[1]) {
-      ElMessage.warning('请选择回测区间')
+      toast.warning('请选择回测区间')
       return
     }
     const [start, end] = range.value
     const span = (Date.parse(end) - Date.parse(start)) / 86_400_000
     if (span < 0) {
-      ElMessage.warning('结束日不能早于开始日')
+      toast.warning('结束日不能早于开始日')
       return
     }
     if (mode.value === 'horizon' && selected.value?.backtest_config?.signal_dataset) {
-      ElMessage.warning('该战法的历史14:50数据用于成交回测，请选择成交模式')
+      toast.warning('该战法的历史14:50数据用于成交回测，请选择成交模式')
       return
     }
     if (mode.value === 'horizon' && span > 186) {
-      ElMessage.warning('Horizon 一次性回测最长约 6 个月（186 天）')
+      toast.warning('Horizon 一次性回测最长约 6 个月（186 天）')
       return
     }
 
@@ -359,8 +359,8 @@ export function useQuantBacktestPanel(opts: {
         rememberResults()
         const n1 = next.horizons.t1?.n ?? 0
         const n3 = next.horizons.t3?.n ?? 0
-        if (!n1 && !n3) ElMessage.info('区间内没有可评估的信号事件')
-        else ElMessage.success(`Horizon 完成 · T+1 ${n1} 笔 · T+3 ${n3} 笔`)
+        if (!n1 && !n3) toast.info('区间内没有可评估的信号事件')
+        else toast.success(`Horizon 完成 · T+1 ${n1} 笔 · T+3 ${n3} 笔`)
       } else {
         const cfg = (selected.value?.backtest_config || {}) as StrategyBacktestTemplate
         const next = await runBacktest(
@@ -389,14 +389,14 @@ export function useQuantBacktestPanel(opts: {
         tradeResult.value = next
         rememberResults()
         const n = next.metrics?.trades ?? 0
-        if (!n) ElMessage.info('区间内没有可评估成交')
-        else ElMessage.success(`成交回测完成 · ${n} 笔`)
+        if (!n) toast.info('区间内没有可评估成交')
+        else toast.success(`成交回测完成 · ${n} 笔`)
       }
     } catch (caught: unknown) {
       // 用户停手 / 组件卸载：这次结果连同报错一起作废，不许再回写界面
       if (token !== runToken) return
       errorText.value = toErrorMessage(caught, '回测失败')
-      ElMessage.error(errorText.value)
+      toast.error(errorText.value)
     } finally {
       if (controller === ctrl) controller = null
       if (token === runToken) {

@@ -76,11 +76,11 @@ const text = computed(() => (props.ms == null ? '—' : `${Math.round(props.ms)}
 }
 
 .lat--slow .lat__fill {
-  background: var(--el-color-warning);
+  background: var(--warn);
 }
 
 .lat--slow .lat__ms {
-  color: var(--el-color-warning);
+  color: var(--warn);
 }
 
 .lat--bad .lat__fill {

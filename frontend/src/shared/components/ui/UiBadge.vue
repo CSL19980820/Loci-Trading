@@ -4,30 +4,52 @@ import { computed } from 'vue'
 import { cn } from '@/shared/lib/cn'
 
 /**
- * UiBadge —— shadcn Badge 构造（cva 变体 + cn 收敛）。
- * D1：涨跌变体只给价格语义（up/down）；状态走 warn/info/ok；默认主色浅底。
+ * UiBadge —— 药片徽标（存量调用面很大，接口不变）。
+ * 涨跌变体只给价格语义（up/down），等宽 tabular；状态走 warn/info/ok/stamp；默认主色浅底。
  */
 const props = withDefaults(
-  defineProps<{ variant?: 'default' | 'secondary' | 'outline' | 'up' | 'down' | 'warn' | 'info' | 'ok' | 'stamp' }>(),
-  { variant: 'default' },
+  defineProps<{
+    variant?: 'default' | 'secondary' | 'outline' | 'up' | 'down' | 'warn' | 'info' | 'ok' | 'stamp'
+    /** 左侧带一颗 6px 状态点 */
+    dot?: boolean
+  }>(),
+  { variant: 'default', dot: false },
 )
 
 const cls = computed(() =>
   cn(
-    'inline-flex shrink-0 items-center gap-1 rounded border px-1.5 py-px font-mono text-[11px] leading-[1.5] font-semibold whitespace-nowrap tabular-nums',
-    props.variant === 'default' && 'bg-seal-soft text-seal-ink border-seal-border border',
-    props.variant === 'secondary' && 'bg-sunken text-mist border-line border',
-    props.variant === 'outline' && 'bg-surface text-mist border-line-default border',
-    props.variant === 'up' && 'bg-up-soft text-up border border-transparent',
-    props.variant === 'down' && 'bg-down-soft text-down border border-transparent',
-    props.variant === 'warn' && 'bg-warn-soft text-warn-ink border border-transparent',
-    props.variant === 'info' && 'bg-info-soft text-info-ink border border-transparent',
-    props.variant === 'ok' && 'bg-ok-soft text-ok border border-transparent',
-    props.variant === 'stamp' && 'bg-surface text-stamp border border-[color-mix(in_oklab,var(--stamp)_38%,var(--rule))]',
+    'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-px text-kicker leading-[1.6] font-medium whitespace-nowrap',
+    props.variant === 'default' && 'border-transparent bg-seal-soft text-seal-ink',
+    props.variant === 'secondary' && 'border-transparent bg-sunken text-ink-2',
+    props.variant === 'outline' && 'border-line-default bg-surface text-ink-2',
+    props.variant === 'up' && 'border-transparent bg-up-soft text-up font-mono tabular-nums',
+    props.variant === 'down' && 'border-transparent bg-down-soft text-down font-mono tabular-nums',
+    props.variant === 'warn' && 'border-transparent bg-warn-soft text-warn-ink',
+    props.variant === 'info' && 'border-transparent bg-info-soft text-info-ink',
+    props.variant === 'ok' && 'border-transparent bg-ok-soft text-ok',
+    props.variant === 'stamp' && 'border-transparent bg-stamp-soft text-stamp',
+  ),
+)
+
+const dotCls = computed(() =>
+  cn(
+    'size-1.5 shrink-0 rounded-full',
+    props.variant === 'default' && 'bg-seal',
+    props.variant === 'secondary' && 'bg-mist',
+    props.variant === 'outline' && 'bg-mist',
+    props.variant === 'up' && 'bg-up',
+    props.variant === 'down' && 'bg-down',
+    props.variant === 'warn' && 'bg-warn',
+    props.variant === 'info' && 'bg-info',
+    props.variant === 'ok' && 'bg-ok',
+    props.variant === 'stamp' && 'bg-stamp',
   ),
 )
 </script>
 
 <template>
-  <span :class="cls"><slot /></span>
+  <span :class="cls">
+    <span v-if="dot" :class="dotCls" aria-hidden="true" />
+    <slot />
+  </span>
 </template>

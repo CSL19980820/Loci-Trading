@@ -7,7 +7,7 @@
 | 类型 | 识别 | 例子 | 运行方式 |
 |---|---|---|---|
 | **专属战法** | `strategy_skill: true` / `signal_engine` / `signals` | `market-leader-map`、`limit-up-momentum` | 工坊战法配置 → 盘后选股 + 盘中监测双 Job。`dragon-return` 纸面舱已退役，模板同步会跳过 |
-| **可编辑选股指标** | `capability: screen` + `screen.yaml` | `yixian-auction` | 指标参数表 + 普通 `screen` 任务；默认参数修改后下次运行生效 |
+| **可编辑选股指标** | `capability: screen` + `screen.yaml` | — | 指标参数表 + 普通 `screen` 任务；默认参数修改后下次运行生效 |
 | **Agent 技能** | 普通 SKILL（无上述战法键） | 暂无内置模板 | 对话 Skill Run，或运维里建 `kind=skill` 任务 |
 
 ## 约定：Skill 不写调度
@@ -38,6 +38,9 @@ python -c "from src.ops.application.skills import sync_skills_from_templates; pr
 前端：**工坊 → 技能** → **「从模板同步战法」**（会同步全部模板，含 Agent 技能）。
 
 打包/便携版从包内 `templates/skills` 解析（与 `PROJECT_ROOT` 一致）。
+
+`yixian-auction`（一线定乾坤·首板次日）已退役。模板源码仍保留作历史研究，但安装、
+导入、活动目录、托管任务和自主交易员研究入口都会拒绝该 slug。
 
 部署产物必须带上 `templates/`：容器镜像的 `COPY templates`、发布包的
 `Copy-Tree templates`、PyInstaller 的 `loci.spec` 三处都已包含，别在瘦身时删掉。

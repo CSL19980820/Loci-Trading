@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { Close } from '@element-plus/icons-vue'
+import { X } from '@lucide/vue'
+
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Button } from '@/shared/components/ui/button'
 
 import { getLiveTape, type LiveTapeItem } from '@/shared/api/quant'
 import { useLivePolling } from '@/shared/composables/useLivePolling'
@@ -213,15 +215,15 @@ onUnmounted(() => {
           <span class="peek-kicker">盘面</span>
           <span class="peek-clock">{{ clock }}</span>
         </div>
-        <el-button
+        <Button access="read"
           class="peek-close"
-          text
-          circle
-          size="small"
-          :icon="Close"
+          variant="ghost"
+          size="icon-sm"
           aria-label="隐藏行情窗"
           @click.stop="onClose"
-        />
+        >
+          <X class="size-3.5" aria-hidden="true" />
+        </Button>
       </div>
     </header>
 
@@ -297,8 +299,6 @@ onUnmounted(() => {
 .peek-close {
   flex: 0 0 auto;
   margin-left: auto;
-  font-size: var(--fs-title);
-  line-height: 1;
   color: var(--mist);
   cursor: pointer;
 }
@@ -331,7 +331,6 @@ onUnmounted(() => {
   font-size: var(--fs-kicker);
   font-weight: 500;
 }
-/* D2：探头窗里最大的字是点位 */
 .peek-rail__cell .px {
   font: 700 var(--fs-hero) / 1.15 var(--mono);
   font-variant-numeric: tabular-nums;
@@ -372,10 +371,6 @@ onUnmounted(() => {
   background: transparent;
   overflow: hidden;
   cursor: pointer;
-  /*
-  * 品牌印记必须无论明暗都是「印章红盘 + 亮字」：字形跟着 --sheet 走会在
-  * 夜盘翻成深色、直接消失在红盘里（参照 style.theme.css:117 的墨盘同款理由）。
-  */
   --peek-badge-glyph: var(--on-primary);
 }
 .icon-shift {

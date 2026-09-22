@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -11,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from src.ledger.domain.guardian_account import check_guardian_account, new_guardian_account
-from src.ledger.domain.stock_agent_account import validate_stock_agent_transition
+from src.ledger.domain.stock_agent_account import pending_watchlist, validate_stock_agent_transition
 from src.ledger.infrastructure.stock_agent_history import (
     StockAgentConflict, StockAgentHistoryMixin, agent_now, encode_agent_json,
 )
@@ -53,6 +54,8 @@ class StockAgentStore(StockAgentHistoryMixin):
         item = dict(row)
         item["config"] = json.loads(item.pop("config_json"))
         item["state"] = json.loads(item.pop("state_json"))
+        if item["config"].get("kind") == "leader":
+            item["state"]["watchlist"] = pending_watchlist(item["state"])
         item["latest_actions"] = json.loads(item.pop("latest_actions_json"))
         item["history_kept"] = item["total_runs"] - item["cleaned_runs"]
         return item
@@ -103,7 +106,8 @@ class StockAgentStore(StockAgentHistoryMixin):
                                  (agent_id, config["name"])).fetchone():
                 raise StockAgentConflict("已有同名智能体")
             state = current["state"]
-            if len(state["positions"]) > config["temporary_position_limit"] or len(state.get("watchlist", [])) > config["watch_limit"]:
+            if ((config["temporary_position_limit"] and len(state["positions"]) > config["temporary_position_limit"])
+                    or (config["watch_limit"] and len(state.get("watchlist", [])) > config["watch_limit"])):
                 raise ValueError("当前持仓或观察数量超过新上限，请先由智能体收敛后再降低")
             self.conn.execute("UPDATE stock_agent_profiles SET config_json=?,revision=revision+1,updated_at=?,cleanup_at=NULL WHERE id=?",
                               (encode_agent_json(config), agent_now().isoformat(), agent_id))
@@ -187,7 +191,7 @@ class StockAgentStore(StockAgentHistoryMixin):
                    *, now: datetime | None = None, before_commit: Callable[[], None] | None = None) -> None:
         current_time = agent_now(now)
         check_guardian_account(state)
-        state_json, detail = encode_agent_json(state), encode_agent_json(result)
+        detail = encode_agent_json(result)
         fills, actions = result.get("fills", []), result.get("actions", [])[:12]
         summary, timestamp = str(result.get("summary") or "本轮无操作")[:2000], current_time.isoformat()
         with self._write():
@@ -195,9 +199,18 @@ class StockAgentStore(StockAgentHistoryMixin):
             if state["initial_capital_cents"] != profile["state"]["initial_capital_cents"]:
                 raise StockAgentConflict("交易不能修改累计投入")
             cfg = profile["config"]
-            if (len(state["positions"]) > cfg["temporary_position_limit"]
-                    or len(state.get("watchlist", [])) > cfg["watch_limit"]
-                    or len(state.get("selected_today", {}).get("codes", [])) > cfg["daily_selection_limit"]):
+            if cfg.get("kind") == "leader":
+                state = {**state, "watchlist": pending_watchlist(state)}
+                phase = self.conn.execute("SELECT phase FROM stock_agent_runs WHERE id=?", (run_id,)).fetchone()[0]
+                if phase in {"intraday", "closeout"}:
+                    held = {p["code"] for p in profile["state"]["positions"] if p["quantity"] > 0}
+                    if state["watchlist"] != profile["state"].get("watchlist", []) or any(
+                            f.get("side") == "buy" or f.get("code") not in held for f in fills):
+                        raise ValueError("龙头选手盘中仅管理已有持仓，禁止修改观察池或提交新增买入")
+            state_json = encode_agent_json(state)
+            if ((cfg["temporary_position_limit"] and len(state["positions"]) > cfg["temporary_position_limit"])
+                    or (cfg["watch_limit"] and len(state.get("watchlist", [])) > cfg["watch_limit"])
+                    or (cfg["daily_selection_limit"] and len(state.get("selected_today", {}).get("codes", [])) > cfg["daily_selection_limit"])):
                 raise ValueError("账户超出智能体数量约束")
             if before_commit:
                 before_commit()
@@ -223,6 +236,33 @@ class StockAgentStore(StockAgentHistoryMixin):
             if changed:
                 self.conn.execute("""UPDATE stock_agent_profiles SET active_run=NULL,lease_until=NULL,latest_status=?,
                     latest_summary=?,latest_actions_json='[]' WHERE id=? AND active_run=?""", (status, message[:2000], agent_id, run_id))
+
+    def run_share_token(self, agent_id: str, run_id: str) -> str:
+        """分享地址绑定本租户的一次已完成工作，不读取其他智能体状态。"""
+        with self._write():
+            row = self.conn.execute("SELECT detail_json FROM stock_agent_runs WHERE id=? AND agent_id=? AND status='success'",
+                                    (run_id, agent_id)).fetchone()
+            if row is None:
+                raise ValueError("只能分享已完成的智能体工作")
+            detail = json.loads(row[0])
+            token = detail.get('share_token')
+            if not token:
+                token = secrets.token_urlsafe(32)
+                detail['share_token'] = token
+                self.conn.execute("UPDATE stock_agent_runs SET detail_json=? WHERE id=? AND agent_id=?",
+                                  (encode_agent_json(detail), run_id, agent_id))
+            return token
+
+    def save_notification(self, agent_id: str, run_id: str, receipt: dict[str, Any]) -> None:
+        with self._write():
+            row = self.conn.execute("SELECT detail_json FROM stock_agent_runs WHERE id=? AND agent_id=? AND status='success'",
+                                    (run_id, agent_id)).fetchone()
+            if row is None:
+                raise ValueError("只能保存已完成研究的推送回执")
+            detail = json.loads(row[0])
+            detail["notify"] = receipt
+            self.conn.execute("UPDATE stock_agent_runs SET detail_json=? WHERE id=? AND agent_id=?",
+                              (encode_agent_json(detail), run_id, agent_id))
 
     def _snapshot(self, agent_id: str, state: dict[str, Any], timestamp: str) -> None:
         self.conn.execute("""INSERT INTO stock_agent_equity VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,day) DO UPDATE SET

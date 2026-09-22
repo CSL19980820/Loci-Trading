@@ -27,6 +27,7 @@ from src.ops import (
     restore_screen_package,
     save_screen_package,
 )
+from src.ops.application.retired_slugs import is_retired_strategy_slug
 from src.formula import (
     build_formula_explanation,
     build_manifest_explanation,
@@ -51,6 +52,8 @@ def refresh_screen_strategy_catalog() -> dict[str, Any]:
     metadata_by_slug: dict[str, dict[str, Any]] = {}
     rejected: list[dict[str, Any]] = []
     for record in list_screen_packages():
+        if is_retired_strategy_slug(record.slug):
+            continue
         if not record.enabled:
             continue
         try:
@@ -91,6 +94,8 @@ def get_screen_skill_catalog() -> dict[str, Any]:
 def list_screen_skill_items() -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for record in list_screen_packages():
+        if is_retired_strategy_slug(record.slug):
+            continue
         engine: ScreenEngine | None = None
         try:
             engine = _compile_record(record)
@@ -101,6 +106,8 @@ def list_screen_skill_items() -> list[dict[str, Any]]:
 
 
 def get_screen_skill_item(slug: str) -> dict[str, Any] | None:
+    if is_retired_strategy_slug(slug):
+        return None
     record = get_screen_package(slug)
     if record is None:
         return None
@@ -205,6 +212,8 @@ def preview_screen_skill(
 
 
 def create_screen_skill(payload: ScreenSkillDraftModel) -> dict[str, Any]:
+    if is_retired_strategy_slug(payload.slug):
+        raise ScreenPackageError("strategy_retired")
     if get_screen_package(payload.slug) is not None:
         raise ScreenPackageError("slug_conflict")
     _ensure_formula_slug_available(payload.slug, allow_existing_formula=False)
@@ -225,6 +234,8 @@ def update_screen_skill(
     *,
     expected_revision: str,
 ) -> dict[str, Any]:
+    if is_retired_strategy_slug(slug):
+        raise ScreenPackageError("strategy_retired")
     if payload.slug != slug:
         raise ScreenPackageError("slug_conflict")
     if get_screen_package(slug) is None:
@@ -249,12 +260,16 @@ def delete_screen_skill(slug: str, *, expected_revision: str) -> bool:
 
 
 def list_screen_skill_history(slug: str) -> list[dict[str, str]]:
+    if is_retired_strategy_slug(slug):
+        return []
     return list_screen_history(slug)
 
 
 def rollback_screen_skill(
     slug: str, revision: str, *, expected_revision: str | None = None
 ) -> dict[str, Any]:
+    if is_retired_strategy_slug(slug):
+        raise ScreenPackageError("strategy_retired")
     record = restore_screen_package(
         slug, revision, expected_revision=expected_revision
     )
@@ -270,6 +285,8 @@ def delete_screen_skill_history(slug: str, revision: str) -> bool:
 
 def import_screen_skill_archive(archive_path: Path | str) -> dict[str, Any]:
     bundle = read_screen_archive(archive_path)
+    if is_retired_strategy_slug(bundle.record.slug):
+        raise ScreenPackageError("strategy_retired")
     if get_screen_package(bundle.record.slug) is not None:
         raise ScreenPackageError("slug_conflict")
     _ensure_formula_slug_available(bundle.record.slug, allow_existing_formula=False)

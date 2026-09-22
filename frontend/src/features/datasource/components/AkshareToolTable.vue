@@ -1,8 +1,27 @@
 <script setup lang="ts">
+import { useVisitorMode } from '@/shared/composables/useAccess'
+const visitor = useVisitorMode()
 import { computed, ref, watch } from 'vue'
+import { LoaderCircle, X } from '@lucide/vue'
 
 import Sheet from '@/shared/components/layout/Sheet.vue'
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import { Badge } from '@/shared/components/ui/badge'
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Button } from '@/shared/components/ui/button'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
+import { Input } from '@/shared/components/ui/input'
+import { Label } from '@/shared/components/ui/label'
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from '@/shared/components/ui/number-field'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
+import { Switch } from '@/shared/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 import type {
   AkshareBatchProbeItem,
   AkshareCatalog,
@@ -38,6 +57,17 @@ const emit = defineEmits<{
   'update:batchOpen': [open: boolean]
 }>()
 
+/** shadcn Select 没有清除按钮，用一个「全部」哨兵项顶替原 el-select 的 clearable */
+const ALL = '__all__'
+
+
+const TAG_TONE: Record<'success' | 'warning' | 'info' | 'danger', string> = {
+  success: 'border-transparent bg-ok-soft text-ok',
+  warning: 'border-transparent bg-warn-soft text-warn-ink',
+  info: 'border-line bg-sunken text-mist',
+  danger: 'text-stamp border-[color-mix(in_oklab,var(--stamp)_38%,var(--rule))] bg-surface',
+}
+
 const query = ref('')
 const category = ref('')
 const provider = ref(props.source ?? '')
@@ -63,6 +93,20 @@ const providerOptions = computed(() => {
     map.set(id, item.provider)
   }
   return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], 'zh'))
+})
+
+/** 三个筛选器：空串仍表示「不筛」，Select 里用哨兵项映射回来 */
+const categoryModel = computed({
+  get: () => category.value || ALL,
+  set: (next: string) => { category.value = next === ALL ? '' : next },
+})
+const providerModel = computed({
+  get: () => provider.value || ALL,
+  set: (next: string) => { provider.value = next === ALL ? '' : next },
+})
+const healthModel = computed({
+  get: () => health.value || ALL,
+  set: (next: string) => { health.value = next === ALL ? '' : (next as typeof health.value) },
 })
 
 const filtered = computed(() => {
@@ -93,7 +137,7 @@ const columns = ref<BasicTableColumn[]>([
   { prop: 'name', label: '接口', minWidth: 190, align: 'center', headerAlign: 'center', showOverflowTooltip: true },
   { prop: 'category_label', label: '类目', width: 110, align: 'center', headerAlign: 'center', slotName: 'category' },
   { prop: 'provider', label: '来源', width: 110, align: 'center', headerAlign: 'center' },
-  { prop: 'summary', label: '说明', minWidth: 200, align: 'left', headerAlign: 'left', showOverflowTooltip: true },
+  { prop: 'summary', label: '说明', minWidth: 200, align: 'center', headerAlign: 'center', showOverflowTooltip: true },
   { prop: 'status', label: '就绪', width: 100, align: 'center', headerAlign: 'center', slotName: 'ready' },
   { prop: 'health_ok', label: '探测', width: 88, align: 'center', headerAlign: 'center', slotName: 'health' },
   { prop: 'health_elapsed_ms', label: '响应', width: 92, align: 'center', headerAlign: 'center', slotName: 'rtt' },
@@ -116,6 +160,18 @@ const sampleColumns = computed(() => {
   if (!result) return []
   return result.columns?.length ? result.columns : [...new Set((result.sample ?? []).flatMap((row) => Object.keys(row)))]
 })
+/** 探测样本表：列由后端返回的字段名动态生成 */
+const sampleTableColumns = computed<BasicTableColumn[]>(() =>
+  sampleColumns.value.map((column) => ({
+    prop: column,
+    label: column,
+    minWidth: 120,
+    showOverflowTooltip: true,
+  })),
+)
+const sampleRows = computed(
+  () => (selectedProbeResult.value?.sample ?? []) as unknown as Record<string, unknown>[],
+)
 const versionChip = computed(() => {
   const info = props.versionInfo
   if (info?.update_available) return `可升级 ${info.latest}`
@@ -167,6 +223,23 @@ function isMissing(value: unknown): boolean {
   return Array.isArray(value) && !value.length
 }
 
+/** 控件都是受控绑定：入参表是 Record<string, unknown>，取值处显式收窄类型 */
+function textParam(name: string): string {
+  const value = params.value[name]
+  return value == null ? '' : String(value)
+}
+
+function numberParam(name: string): number | null {
+  const value = params.value[name]
+  if (value == null || value === '') return null
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function boolParam(name: string): boolean {
+  return params.value[name] === true
+}
+
 function validateParameters(item: AkshareCatalogCapability): boolean {
   const errors: Record<string, string> = {}
   for (const parameter of item.parameters) {
@@ -192,10 +265,10 @@ function submitProbe(): void {
   emit('probe', { name: item.name, params: probeParams })
 }
 
-function healthTag(item: Record<string, unknown>): { type: 'success' | 'danger' | 'info'; label: string } {
-  if (item.health_ok === true) return { type: 'success', label: '通' }
-  if (item.health_ok === false) return { type: 'danger', label: '败' }
-  return { type: 'info', label: '未测' }
+function healthTag(item: Record<string, unknown>): { tone: string; label: string } {
+  if (item.health_ok === true) return { tone: TAG_TONE.success, label: '通' }
+  if (item.health_ok === false) return { tone: TAG_TONE.danger, label: '败' }
+  return { tone: TAG_TONE.info, label: '未测' }
 }
 
 function categoryText(row: Record<string, unknown>): string {
@@ -221,9 +294,18 @@ watch(filtered, () => {
     </template>
 
     <template #actions>
-      <el-button type="primary" size="small" :loading="busy" @click="emit('probe-all')">一键全测</el-button>
-      <el-button size="small" :disabled="!busy" @click="emit('stop-batch')">停止</el-button>
-      <el-button size="small" :loading="busy" @click="emit('check-version')">检查版本更新</el-button>
+      <Button size="sm" :disabled="busy" @click="emit('probe-all')">
+        <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+        一键全测
+      </Button>
+      <Button size="sm" variant="outline" :disabled="!busy" @click="emit('stop-batch')">
+        <X class="size-4" aria-hidden="true" />
+        停止
+      </Button>
+      <Button size="sm" variant="outline" :disabled="busy" @click="emit('check-version')">
+        <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+        检查版本更新
+      </Button>
       <span v-if="versionInfo?.update_available" class="version-hint">
         {{ versionInfo.installed }} → {{ versionInfo.latest }}
       </span>
@@ -231,28 +313,40 @@ watch(filtered, () => {
 
     <div class="ak-panel flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="catalog-filters grid shrink-0">
-        <el-input v-model="query" clearable placeholder="按接口名或说明筛选" aria-label="接口名筛选" />
-        <el-select v-model="category" clearable placeholder="类目" aria-label="类目筛选">
-          <el-option
-            v-for="[value, label] in categoryOptions"
-            :key="value"
-            :label="label"
-            :value="value"
-          />
-        </el-select>
-        <el-select v-model="provider" clearable placeholder="来源" aria-label="来源筛选">
-          <el-option
-            v-for="[value, label] in providerOptions"
-            :key="value"
-            :label="label"
-            :value="value"
-          />
-        </el-select>
-        <el-select v-model="health" clearable placeholder="探测结果" aria-label="探测结果筛选">
-          <el-option value="ok" label="已通过" />
-          <el-option value="fail" label="失败" />
-          <el-option value="untested" label="未测" />
-        </el-select>
+        <Input v-model="query" placeholder="按接口名或说明筛选" aria-label="接口名筛选" />
+        <Select v-model="categoryModel">
+          <SelectTrigger class="w-full" aria-label="类目筛选">
+            <SelectValue placeholder="类目" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="ALL">全部类目</SelectItem>
+            <SelectItem v-for="[value, label] in categoryOptions" :key="value" :value="value">
+              {{ label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Select v-model="providerModel">
+          <SelectTrigger class="w-full" aria-label="来源筛选">
+            <SelectValue placeholder="来源" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="ALL">全部来源</SelectItem>
+            <SelectItem v-for="[value, label] in providerOptions" :key="value" :value="value">
+              {{ label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Select v-model="healthModel">
+          <SelectTrigger class="w-full" aria-label="探测结果筛选">
+            <SelectValue placeholder="探测结果" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem :value="ALL">全部结果</SelectItem>
+            <SelectItem value="ok">已通过</SelectItem>
+            <SelectItem value="fail">失败</SelectItem>
+            <SelectItem value="untested">未测</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div v-if="catalog" class="ak-table-wrap">
@@ -274,17 +368,22 @@ watch(filtered, () => {
           </template>
           <template #category="{ row }">{{ categoryText(row) }}</template>
           <template #ready="{ row }">
-            <el-tag size="small" :type="row.status === 'available' ? 'success' : 'warning'">
+            <Badge
+              variant="outline"
+              :class="row.status === 'available' ? TAG_TONE.success : TAG_TONE.warning"
+            >
               {{ row.status === 'available' ? '可试跑' : '需填写参数' }}
-            </el-tag>
+            </Badge>
           </template>
           <template #health="{ row }">
-            <el-tooltip
-              :content="String(row.health_error || (row.health_elapsed_ms != null ? `${row.health_elapsed_ms} ms` : '尚未探测'))"
-              placement="top"
-            >
-              <el-tag size="small" :type="healthTag(row).type">{{ healthTag(row).label }}</el-tag>
-            </el-tooltip>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <Badge variant="outline" :class="healthTag(row).tone">{{ healthTag(row).label }}</Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {{ String(row.health_error || (row.health_elapsed_ms != null ? `${row.health_elapsed_ms} ms` : '尚未探测')) }}
+              </TooltipContent>
+            </Tooltip>
           </template>
           <template #rtt="{ row }">
             <span class="mono">
@@ -292,9 +391,9 @@ watch(filtered, () => {
             </span>
           </template>
           <template #actions="{ row }">
-            <el-button size="small" link type="primary" @click="openProbe(row as unknown as AkshareCatalogCapability)">
+            <Button variant="link" size="sm" @click="openProbe(row as unknown as AkshareCatalogCapability)">
               试跑
-            </el-button>
+            </Button>
           </template>
         </BasicTable>
       </div>
@@ -310,62 +409,90 @@ watch(filtered, () => {
     @stop="emit('stop-batch')"
   />
 
-  <el-dialog v-model="visible" class="probe-dialog" :title="selected ? `试跑 ${selected.name}` : '接口试跑'" width="min(720px, 96vw)" destroy-on-close>
-    <p v-if="selected" class="signature">{{ selected.signature }} · {{ selected.summary }}</p>
-    <el-form label-position="right" label-width="6.5em" size="small" class="params-form" @submit.prevent="submitProbe">
-      <el-form-item
-        v-for="parameter in selected?.parameters ?? []"
-        :key="parameter.name"
-        :label="parameter.name"
-        :required="parameter.required"
-        :error="parameterErrors[parameter.name]"
-      >
-        <el-switch
-          v-if="inputKind(parameter) === 'boolean'"
-          v-model="params[parameter.name]"
-          :aria-invalid="Boolean(parameterErrors[parameter.name])"
-        />
-        <el-input-number
-          v-else-if="inputKind(parameter) === 'number'"
-          v-model="params[parameter.name]"
-          :aria-label="parameter.name"
-          controls-position="right"
-          :aria-invalid="Boolean(parameterErrors[parameter.name])"
-        />
-        <el-input
-          v-else
-          v-model="params[parameter.name]"
-          :aria-invalid="Boolean(parameterErrors[parameter.name])"
-          :aria-label="parameter.name"
-        />
-        <p class="parameter-meta">
-          {{ parameter.kind }}<span v-if="parameter.annotation"> · {{ parameter.annotation }}</span>
-          <span v-if="parameter.has_default"> · 默认：{{ String(parameter.default) }}</span>
-          <span v-if="parameter.sample != null && parameter.sample !== parameter.default"> · 测试值：{{ String(parameter.sample) }}</span>
-          <span v-else-if="parameter.sample != null"> · 示例：{{ String(parameter.sample) }}</span>
-        </p>
-      </el-form-item>
-    </el-form>
-    <el-alert
-      v-if="Object.keys(parameterErrors).length"
-      :title="Object.values(parameterErrors).join(' ')"
-      type="error"
-      show-icon
-      :closable="false"
-    />
-    <el-alert v-if="selectedProbeResult?.error" :title="selectedProbeResult.error" type="error" show-icon :closable="false" />
-    <div v-else-if="selectedProbeResult" class="probe-summary">
-      RTT：{{ selectedProbeResult.elapsed_ms ?? '—' }} ms；行数：{{ selectedProbeResult.rows ?? '—' }}；列数：{{ sampleColumns.length }}
-      <span v-if="selectedProbeResult.truncated">；样本已截断</span>
-    </div>
-    <el-table v-if="selectedProbeResult?.sample?.length" :data="selectedProbeResult.sample" size="small" max-height="240">
-      <el-table-column v-for="column in sampleColumns" :key="column" :prop="column" :label="column" min-width="120" show-overflow-tooltip />
-    </el-table>
-    <template #footer>
-      <el-button @click="visible = false">关闭</el-button>
-      <el-button type="primary" :loading="busy" :disabled="!selected" @click="submitProbe">执行试跑</el-button>
-    </template>
-  </el-dialog>
+  <Dialog v-model:open="visible">
+    <DialogContent
+      class="probe-dialog w-[min(720px,96vw)] max-w-none gap-3 p-4 sm:max-w-none"
+      @interact-outside="(event: Event) => event.preventDefault()"
+    >
+      <DialogHeader class="gap-1 text-left">
+        <DialogTitle>{{ selected ? `试跑 ${selected.name}` : '接口试跑' }}</DialogTitle>
+      </DialogHeader>
+      <p v-if="selected" class="signature">{{ selected.signature }} · {{ selected.summary }}</p>
+      <form class="params-form" @submit.prevent="submitProbe">
+        <div v-for="parameter in selected?.parameters ?? []" :key="parameter.name" class="param-field">
+          <Label :for="`probe-param-${parameter.name}`">
+            {{ parameter.name }}
+            <span v-if="parameter.required" class="text-stamp" aria-hidden="true">*</span>
+          </Label>
+          <Switch
+            v-if="inputKind(parameter) === 'boolean'"
+            :disabled="visitor"
+            :model-value="boolParam(parameter.name)"
+            :aria-label="parameter.name"
+            :aria-invalid="Boolean(parameterErrors[parameter.name])"
+            @update:model-value="(next: boolean) => { params[parameter.name] = next }"
+          />
+          <NumberField
+            v-else-if="inputKind(parameter) === 'number'"
+            :model-value="numberParam(parameter.name)"
+            @update:model-value="(next: number | null | undefined) => { params[parameter.name] = next ?? null }"
+          >
+            <NumberFieldContent>
+              <NumberFieldInput
+                :id="`probe-param-${parameter.name}`"
+                :aria-label="parameter.name"
+                :aria-invalid="Boolean(parameterErrors[parameter.name])"
+              />
+              <NumberFieldIncrement />
+              <NumberFieldDecrement />
+            </NumberFieldContent>
+          </NumberField>
+          <Input
+            v-else
+            :id="`probe-param-${parameter.name}`"
+            :model-value="textParam(parameter.name)"
+            :aria-invalid="Boolean(parameterErrors[parameter.name])"
+            :aria-label="parameter.name"
+            @update:model-value="(next: string | number) => { params[parameter.name] = String(next) }"
+          />
+          <p class="parameter-meta">
+            {{ parameter.kind }}<span v-if="parameter.annotation"> · {{ parameter.annotation }}</span>
+            <span v-if="parameter.has_default"> · 默认：{{ String(parameter.default) }}</span>
+            <span v-if="parameter.sample != null && parameter.sample !== parameter.default"> · 测试值：{{ String(parameter.sample) }}</span>
+            <span v-else-if="parameter.sample != null"> · 示例：{{ String(parameter.sample) }}</span>
+          </p>
+          <p v-if="parameterErrors[parameter.name]" class="parameter-error" role="alert">
+            {{ parameterErrors[parameter.name] }}
+          </p>
+        </div>
+      </form>
+      <Alert v-if="Object.keys(parameterErrors).length" variant="destructive">
+        <AlertTitle class="line-clamp-none">{{ Object.values(parameterErrors).join(' ') }}</AlertTitle>
+      </Alert>
+      <Alert v-if="selectedProbeResult?.error" variant="destructive">
+        <AlertTitle class="line-clamp-none">{{ selectedProbeResult.error }}</AlertTitle>
+      </Alert>
+      <div v-else-if="selectedProbeResult" class="probe-summary">
+        RTT：{{ selectedProbeResult.elapsed_ms ?? '—' }} ms；行数：{{ selectedProbeResult.rows ?? '—' }}；列数：{{ sampleColumns.length }}
+        <span v-if="selectedProbeResult.truncated">；样本已截断</span>
+      </div>
+      <BasicTable
+        v-if="sampleRows.length"
+        :columns="sampleTableColumns"
+        :data-source="sampleRows"
+        :pagination="false"
+        max-height="240"
+        empty-text="样本为空"
+      />
+      <DialogFooter class="gap-2">
+        <Button access="read" variant="outline" @click="visible = false">关闭</Button>
+        <Button :disabled="busy || !selected" @click="submitProbe">
+          <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+          执行试跑
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -407,16 +534,20 @@ watch(filtered, () => {
 .filter-meta { color: var(--mist); font-size: var(--fs-aux); }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .signature { margin: 0 0 var(--gap-2); color: var(--mist); font-family: var(--mono); font-size: var(--fs-aux); overflow-wrap: anywhere; }
-/* 表单栅格挂在 el-form 自身：不插裸 div，label 宽仍由 EP 的 label-width 算 */
+/* 入参栅格：每个入参是一个 label + 控件 + 元信息的字段列，label 左缘与控件对齐 */
 .params-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-  gap: var(--gap-1) var(--gap-3);
+  gap: var(--gap-2) var(--gap-3);
   align-items: start;
 }
-.params-form :deep(.el-form-item) { margin-bottom: var(--gap-1); min-width: 0; }
+.param-field { display: flex; min-width: 0; flex-direction: column; gap: var(--gap-1); }
 .parameter-meta { margin: 2px 0 0; color: var(--mist); font-size: var(--fs-kicker); line-height: 1.35; }
+.parameter-error { margin: 0; color: var(--stamp); font-size: var(--fs-kicker); font-weight: 500; }
 .probe-summary { margin: var(--gap-2) 0; color: var(--mist); font-size: var(--fs-aux); font-variant-numeric: tabular-nums; }
-.probe-dialog :deep(.el-dialog__body) { max-height: 70dvh; overflow: auto; overscroll-behavior: contain; }
-.probe-dialog :deep(.el-dialog__footer) { border-top: 1px solid var(--rule); padding-top: var(--gap-3); }
+.probe-dialog {
+  max-height: 84dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 </style>

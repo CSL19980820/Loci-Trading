@@ -62,7 +62,7 @@
 | POST | `/users` | `{username,password,display_name?,email?,role?,status?}` | **201** + 单个用户行（与 `/users` 的 `items[i]` 同形） |
 | PUT | `/users/{id}/role` | `{role}` | 用户资料 |
 | PUT | `/users/{id}/status` | `{status}` | 用户资料 |
-| PUT | `/users/{id}/quota` | `{llm_monthly_tokens?,…}` | 配额 |
+| GET | `/llm-usage` | `?start=YYYY-MM-DD&end=YYYY-MM-DD`，范围不超过 366 天 | `{items:[{day,provider,model,input_tokens,output_tokens,calls}],unavailable_tenants}` |
 | POST | `/users/{id}/password` | `{new_password}` | `{ok}` |
 | POST | `/users/{id}/notify` | `?title=&body=` | `{id}` |
 | GET | `/audit` | `?actor_id=`(≤64) `&keyword=`(≤64) `&action=`(≤64) `&outcome=`(≤16) `&limit=`(1..500，默认 50) `&offset=`(≥0) | `{items:[…],total}` |
@@ -113,3 +113,5 @@
 `GET /api/auth/session` 的响应保留了顶层 `username` 字段，
 老前端（v1 的路由守卫）不改也能跑；新前端读 `user` 对象。
 **不要删这个字段**。
+
+管理审计的 `login_at` 是动作发生前最近一次成功登录，未关联到时为 null；`occurred_at` 仍为动作本身时间。配额调整写接口已移除。

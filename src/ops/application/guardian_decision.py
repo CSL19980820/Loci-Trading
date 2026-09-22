@@ -3,16 +3,15 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.ledger import (settle_guardian_order, mark_guardian_account,
-                        guardian_position_policy, validate_guardian_close_plan)
+from src.ledger import settle_guardian_order, mark_guardian_account
 
 from src.ops.application.guardian_contract import ExecutionTerms, execution_error, execution_cage, rejection_code
-from src.ops.application.guardian_quotes import quote_error, validated_quotes
+from src.ops.application.guardian_quotes import executable_quote, quote_error, validated_quotes
 from src.ops.application.guardian_risk import RiskPlan, install_risk_plans
 
 TRADE_ACTIONS = frozenset({"buy", "add", "reduce", "sell", "take_profit", "stop_loss"})
@@ -27,9 +26,10 @@ class GuardianOrder(BaseModel):
     name: str = Field(default="", max_length=64, description="股票名称，尤其用于自主观察股票")
     quantity: int = Field(default=0, ge=0, strict=True, description="本次买入或卖出的整数股数；hold 为 0，卖出必须明确股数")
     reason: str = Field(min_length=1)
+    opening_plan_id: str | None = Field(default=None, description="承接竞价计划时填写该计划id；其余订单留空")
     execution: ExecutionTerms | None = Field(default=None, description="买卖意图的价格授权及有效期；历史记录可缺省")
-    risk_plans: list[RiskPlan] | None = Field(default=None, max_length=16,
-        description="操作后持仓的结构化止损/止盈合同，最多16项；含触发价、股数、成交价限和有效期。null保留，[]撤回；watch/unwatch不可使用")
+    risk_plans: list[RiskPlan] | None = Field(default=None,
+        description="操作后持仓的结构化止损/止盈合同；含触发价、股数、成交价限和有效期。null保留，[]撤回；watch/unwatch不可使用")
     holding_plan: str = Field(default="", description="自主决定的持有周期或持有/退出条件，不要求固定天数")
     take_profit_plan: str = Field(default="", description="持仓止盈条件与理由，每轮由模型复核，不是券商挂单")
     stop_loss_plan: str = Field(default="", description="持仓止损条件与理由，仍遵守T+1")
@@ -47,32 +47,28 @@ class GuardianOrder(BaseModel):
         return self
 
 
+class OpeningPlanReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_id: str
+    decision: Literal['execute', 'wait', 'abandon']
+    reason: str = Field(min_length=1)
+
+
 class GuardianDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     summary: str
+    opening_plan_reviews: list[OpeningPlanReview] = Field(default_factory=list,
+        description="逐笔复核pending_opening_plans：执行、继续观察或主动放弃并说明原因；execute须有绑定该计划id的新订单")
     orders: list[GuardianOrder]
-    close_keep_codes: list[str] | None = Field(default=None, max_length=4,
-        description="本轮交易后持仓超过4只时必须明确收盘保留的股票代码，最多4只且覆盖全部T+1锁定股票；模型可逐轮更新，14:50起按最后有效名单退出其他股票。空数组表示全部退出，null沿用当日有效名单")
 
 
-def closing_decision(state: dict[str, Any], now: datetime) -> GuardianDecision | None:
-    """尾盘执行模型已保存的留仓选择；程序不按涨跌或成本代替模型选股。"""
-    policy = guardian_position_policy(state, now)
-    if not policy["close_due"] or len(state["positions"]) <= policy["close_max"]:
-        return None
-    keep = validate_guardian_close_plan(state, None, now)
-    return GuardianDecision(summary="按最后确认的收盘留仓名单完成尾盘收敛。", close_keep_codes=keep,
-        orders=[GuardianOrder(code=p["code"], action="sell", quantity=p["quantity"],
-                              execution=ExecutionTerms(kind="market", valid_until=(now + timedelta(minutes=5)).isoformat()),
-                              reason="执行模型收盘留仓选择，退出未保留股票。")
-                for p in state["positions"] if p["code"] not in keep])
 
-
-def parse_decision(text: str, *, require_execution_terms: bool = False) -> GuardianDecision:
+def parse_decision(text: str, *, require_execution_terms: bool = False,
+                   decision_type: type[GuardianDecision] = GuardianDecision) -> GuardianDecision:
     raw = text.strip()
     if raw.startswith("```json\n") and raw.endswith("```"):
         raw = raw[8:-3].strip()
-    decision = GuardianDecision.model_validate(json.loads(raw))
+    decision = decision_type.model_validate(json.loads(raw))
     if require_execution_terms:
         missing = [o.code for o in decision.orders if o.action in TRADE_ACTIONS and o.execution is None]
         if missing:
@@ -96,10 +92,12 @@ def bind_execution_references(decision: GuardianDecision, quotes: dict[str, dict
 
 def simulate(state: dict[str, Any], decision: GuardianDecision, candidates: list[dict[str, Any]],
              quotes: dict[str, dict[str, Any]], now: datetime, *,
-             require_execution_terms: bool = False, risk_only: bool = False) -> tuple[dict[str, Any], list[dict], list[dict]]:
+             require_execution_terms: bool = False, risk_only: bool = False,
+             guardian_policy: bool = True) -> tuple[dict[str, Any], list[dict], list[dict]]:
     updated = copy.deepcopy(state)
     references = {item["code"]: item for item in candidates}
     fills, rejects = [], []
+    used_depth: dict[tuple[str, str], int] = {}
     risk_seen: set[str] = set()
     for item in decision.orders:
         if risk_only:
@@ -128,20 +126,9 @@ def simulate(state: dict[str, Any], decision: GuardianDecision, candidates: list
                 rejects.append({**item.model_dump(), "reason": "未持仓，请使用观察动作"})
             continue
         if item.action in ("watch", "unwatch"):
-            watched = updated.setdefault("watchlist", [])
-            existing = next((w for w in watched if w["code"] == item.code), None)
-            if item.action == "unwatch":
-                if existing:
-                    watched.remove(existing)
-            else:
-                entry = {"code": item.code, "name": item.name or references.get(item.code, {}).get("name") or item.code,
-                         "reason": item.reason, "entry_condition": item.entry_condition,
-                         "exit_condition": item.exit_condition, "updated_at": now.isoformat(),
-                         "added_at": (existing or {}).get("added_at", now.isoformat())}
-                if existing:
-                    existing.update(entry)
-                else:
-                    watched.append(entry)
+            from src.ledger.domain.guardian_watchlist import update_watchlist
+            update_watchlist(updated, item.model_dump(), now.isoformat(),
+                             name=item.name or references.get(item.code, {}).get("name", ""), source='intraday')
             continue
         quote = quotes.get(item.code) or {}
         error_code = "quote_unavailable"
@@ -149,12 +136,17 @@ def simulate(state: dict[str, Any], decision: GuardianDecision, candidates: list
             problem = quote_error(item.code, quote, now)
             if problem:
                 raise ValueError(problem)
-            price = quote.get("price", quote.get("current_price"))
+            error_code = "liquidity_unconfirmed"
+            depth_key = (item.code, "ask" if item.action in {"buy", "add"} else "bid")
+            execution_quote = executable_quote(item.code, item.action, item.quantity, quote, now,
+                                              used_quantity=used_depth.get(depth_key, 0), paper=guardian_policy)
+            price = execution_quote["price"]
             error_code, problem = execution_error(item.execution, price, now, required=require_execution_terms)
             if problem:
                 raise ValueError(problem)
             proposed = copy.deepcopy(updated)
-            fill = settle_guardian_order(proposed, item.model_dump(mode="json"), quote, now, references.get(item.code, {}))
+            fill = settle_guardian_order(proposed, item.model_dump(mode="json"), execution_quote, now,
+                                         references.get(item.code, {}), guardian_policy=guardian_policy)
             # 预检必须与提交使用同一个按分成交价，不能到整批提交才发现取整越界。
             error_code, problem = execution_error(item.execution, fill["price_cents"] / 100, now,
                                                    required=require_execution_terms)
@@ -169,33 +161,14 @@ def simulate(state: dict[str, Any], decision: GuardianDecision, candidates: list
             if item.execution is not None:
                 fill["execution_cage"] = execution_cage(item.execution)
             updated = proposed
+            fill["execution_evidence"] = execution_quote["execution_evidence"]
+            used_depth[depth_key] = used_depth.get(depth_key, 0) + item.quantity
             fills.append(fill)
         except ValueError as exc:
             rejects.append({**item.model_dump(mode="json"), "reason": str(exc), "reject_code": error_code or rejection_code(str(exc))})
     valid_quotes = validated_quotes(quotes, now)
-    held = {p["code"] for p in updated["positions"]}
-    closed = {f["code"] for f in fills if f["side"] == "sell" and f["after_quantity"] == 0} - held
-    if updated.get("close_plan_date") == now.date().isoformat() and isinstance(updated.get("close_keep_codes"), list):
-        updated["close_keep_codes"] = [code for code in updated["close_keep_codes"] if code not in closed]
-    if len(updated["positions"]) > guardian_position_policy(updated, now)["close_max"]:
-        try:
-            keep = validate_guardian_close_plan(updated, None if risk_only else decision.close_keep_codes, now)
-        except ValueError as exc:
-            if risk_only:
-                rejects.append({"code": "", "quantity": 0, "action": "close_plan",
-                                "reason": str(exc), "reject_code": "close_plan"})
-                return mark_guardian_account(updated, valid_quotes, now), fills, rejects
-            # 本函数尚未落账，整组意图在预检失败时不产生半套换仓成交。
-            rejects = [{**item.model_dump(), "reason": f"本轮交易组合未成交：{exc}", "reject_code": "close_plan"}
-                       for item in decision.orders if item.action in TRADE_ACTIONS]
-            if not rejects:
-                rejects = [{"code": "", "quantity": 0, "reason": str(exc)}]
-            return mark_guardian_account(state, valid_quotes, now), [], rejects
-        updated.update(close_keep_codes=keep, close_plan_date=now.date().isoformat())
-    elif updated.get("close_plan_date") != now.date().isoformat():
-        updated.pop("close_keep_codes", None)
-        updated.pop("close_plan_date", None)
     return mark_guardian_account(updated, valid_quotes, now), fills, rejects
+
 
 
 def fresh_quote(quote: dict[str, Any], now: datetime) -> bool:

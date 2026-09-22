@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
+import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
+import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
+import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
+
 /** 战法档位的时间输入（定点 / 间隔 + 下次运行预览）。纯受控组件。 */
 import { computed } from 'vue'
 
@@ -30,93 +36,93 @@ const slots = computed(() =>
 </script>
 
 <template>
-  <el-form-item label="方式">
-    <el-radio-group
+  <FormField label="方式">
+    <RadioChoices
       :model-value="modelValue.mode"
       @update:model-value="patch('mode', $event as ScheduleFields['mode'])"
     >
-      <el-radio-button value="once">定点</el-radio-button>
-      <el-radio-button value="interval">间隔</el-radio-button>
-    </el-radio-group>
-  </el-form-item>
+      <RadioButton value="once">定点</RadioButton>
+      <RadioButton value="interval">间隔</RadioButton>
+    </RadioChoices>
+  </FormField>
 
-  <el-form-item v-if="modelValue.mode === 'once'" label="交易日">
+  <FormField v-if="modelValue.mode === 'once'" label="交易日">
     <div class="time-row">
-      <el-select
+      <ChoiceField
         :model-value="modelValue.run_hour"
         class="time-select"
         @update:model-value="patch('run_hour', Number($event))"
       >
-        <el-option v-for="h in HOUR_OPTS" :key="`${idPrefix}rh${h}`" :label="pad(h)" :value="h" />
-      </el-select>
+        <ChoiceOption v-for="h in HOUR_OPTS" :key="`${idPrefix}rh${h}`" :label="pad(h)" :value="h" />
+      </ChoiceField>
       <span class="time-sep">:</span>
-      <el-select
+      <ChoiceField
         :model-value="modelValue.run_minute"
         class="time-select"
         @update:model-value="patch('run_minute', Number($event))"
       >
-        <el-option v-for="m in MINUTE_OPTS" :key="`${idPrefix}rm${m}`" :label="pad(m)" :value="m" />
-      </el-select>
+        <ChoiceOption v-for="m in MINUTE_OPTS" :key="`${idPrefix}rm${m}`" :label="pad(m)" :value="m" />
+      </ChoiceField>
     </div>
-  </el-form-item>
+  </FormField>
 
   <template v-else>
-    <el-form-item label="时段">
+    <FormField label="时段">
       <div class="time-row">
-        <el-select
+        <ChoiceField
           :model-value="modelValue.window_start_hour"
           class="time-select"
           @update:model-value="patch('window_start_hour', Number($event))"
         >
-          <el-option v-for="h in HOUR_OPTS" :key="`${idPrefix}sh${h}`" :label="pad(h)" :value="h" />
-        </el-select>
+          <ChoiceOption v-for="h in HOUR_OPTS" :key="`${idPrefix}sh${h}`" :label="pad(h)" :value="h" />
+        </ChoiceField>
         <span class="time-sep">:</span>
-        <el-select
+        <ChoiceField
           :model-value="modelValue.window_start_minute"
           class="time-select"
           @update:model-value="patch('window_start_minute', Number($event))"
         >
-          <el-option v-for="m in MINUTE_OPTS" :key="`${idPrefix}sm${m}`" :label="pad(m)" :value="m" />
-        </el-select>
+          <ChoiceOption v-for="m in MINUTE_OPTS" :key="`${idPrefix}sm${m}`" :label="pad(m)" :value="m" />
+        </ChoiceField>
         <span class="time-sep">–</span>
-        <el-select
+        <ChoiceField
           :model-value="modelValue.window_end_hour"
           class="time-select"
           @update:model-value="patch('window_end_hour', Number($event))"
         >
-          <el-option v-for="h in HOUR_OPTS" :key="`${idPrefix}eh${h}`" :label="pad(h)" :value="h" />
-        </el-select>
+          <ChoiceOption v-for="h in HOUR_OPTS" :key="`${idPrefix}eh${h}`" :label="pad(h)" :value="h" />
+        </ChoiceField>
         <span class="time-sep">:</span>
-        <el-select
+        <ChoiceField
           :model-value="modelValue.window_end_minute"
           class="time-select"
           @update:model-value="patch('window_end_minute', Number($event))"
         >
-          <el-option v-for="m in MINUTE_OPTS" :key="`${idPrefix}em${m}`" :label="pad(m)" :value="m" />
-        </el-select>
+          <ChoiceOption v-for="m in MINUTE_OPTS" :key="`${idPrefix}em${m}`" :label="pad(m)" :value="m" />
+        </ChoiceField>
       </div>
-    </el-form-item>
-    <el-form-item label="间隔">
-      <el-select
+    </FormField>
+    <FormField label="间隔">
+      <ChoiceField
         :model-value="modelValue.interval_minutes"
         class="time-select wide"
         @update:model-value="patch('interval_minutes', Number($event))"
       >
-        <el-option
+        <ChoiceOption
           v-for="m in INTERVAL_OPTS"
           :key="`${idPrefix}iv${m}`"
           :label="`${m} 分钟`"
           :value="m"
         />
-      </el-select>
-    </el-form-item>
+      </ChoiceField>
+    </FormField>
   </template>
 
-  <el-form-item label="预览">
+  <FormField label="预览">
     <div class="preview">
       <span v-for="slot in slots" :key="`${idPrefix}${slot}`" class="mono">{{ slot }}</span>
     </div>
-  </el-form-item>
+  </FormField>
 </template>
 
 <style scoped>

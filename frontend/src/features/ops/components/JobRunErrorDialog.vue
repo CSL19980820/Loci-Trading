@@ -8,8 +8,17 @@
  * 收成一次点击。
  */
 import { computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast } from 'vue-sonner'
 
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
 import { copyText } from '@/shared/lib/clipboard'
 import type { JobRun } from '@/shared/types/quant'
 
@@ -59,65 +68,73 @@ const copyPayload = computed(() => {
 })
 
 async function copyAll(): Promise<void> {
-  if (await copyText(copyPayload.value)) ElMessage.success('已复制失败全文')
-  else ElMessage.error('复制失败，请手动选中下面的正文复制')
+  if (await copyText(copyPayload.value)) toast.success('已复制失败全文')
+  else toast.error('复制失败，请手动选中下面的正文复制')
 }
 </script>
 
 <template>
-  <el-dialog
-    v-model="open"
-    title="这次为什么失败"
-    class="ops-dialog"
-    width="min(46rem, 96vw)"
-    append-to-body
-    destroy-on-close
-  >
-    <div v-if="run" class="run-error">
-      <dl class="run-error__meta">
-        <div>
-          <dt>任务</dt>
-          <dd>{{ jobLabel }}</dd>
-        </div>
-        <div>
-          <dt>时间</dt>
-          <dd class="mono">{{ startedAt || '—' }}</dd>
-        </div>
-        <div>
-          <dt>触发</dt>
-          <dd>{{ triggerLabel(String(run.trigger || '')) }}</dd>
-        </div>
-        <div>
-          <dt>耗时</dt>
-          <dd class="mono">{{ formatRunDuration(Number(run.duration_ms ?? 0)) }}</dd>
-        </div>
-        <div>
-          <dt>结果</dt>
-          <dd>
-            <el-tag
-              size="small"
-              effect="light"
-              :type="run.status === 'failed' ? 'danger' : run.status === 'success' ? 'success' : 'info'"
-            >
-              {{ statusLabel(String(run.status || '')) }}
-            </el-tag>
-          </dd>
-        </div>
-        <div>
-          <dt>run id</dt>
-          <dd class="mono dim">{{ run.id }}</dd>
-        </div>
-      </dl>
+  <Dialog v-model:open="open">
+    <DialogContent class="w-[min(46rem,96vw)] max-w-none gap-[var(--gap-3)] rounded-[var(--radius)] p-[var(--gap-3)] sm:max-w-none">
+      <DialogHeader class="gap-1 border-b border-line pb-[var(--gap-3)] text-left">
+        <DialogTitle>这次为什么失败</DialogTitle>
+      </DialogHeader>
 
-      <pre v-if="errorText" class="run-error__body" data-testid="run-error-body">{{ errorText }}</pre>
-      <p v-else class="run-error__empty">后台没有留下原因。可先看这条记录的耗时与触发方式。</p>
-    </div>
+      <div v-if="run" class="run-error">
+        <dl class="run-error__meta">
+          <div>
+            <dt>任务</dt>
+            <dd>{{ jobLabel }}</dd>
+          </div>
+          <div>
+            <dt>时间</dt>
+            <dd class="mono">{{ startedAt || '—' }}</dd>
+          </div>
+          <div>
+            <dt>触发</dt>
+            <dd>{{ triggerLabel(String(run.trigger || '')) }}</dd>
+          </div>
+          <div>
+            <dt>耗时</dt>
+            <dd class="mono">{{ formatRunDuration(Number(run.duration_ms ?? 0)) }}</dd>
+          </div>
+          <div>
+            <dt>结果</dt>
+            <dd>
+              <!-- 成功走状态色 --ok（绿留给价格），失败走印章红，其余是中性档 -->
+              <Badge
+                v-if="run.status === 'failed'"
+                variant="destructive"
+              >
+                {{ statusLabel(String(run.status || '')) }}
+              </Badge>
+              <Badge
+                v-else-if="run.status === 'success'"
+                class="border-transparent bg-ok-soft text-ok"
+              >
+                {{ statusLabel(String(run.status || '')) }}
+              </Badge>
+              <Badge v-else variant="secondary">
+                {{ statusLabel(String(run.status || '')) }}
+              </Badge>
+            </dd>
+          </div>
+          <div>
+            <dt>run id</dt>
+            <dd class="mono dim">{{ run.id }}</dd>
+          </div>
+        </dl>
 
-    <template #footer>
-      <el-button :disabled="!run" @click="copyAll">复制全文</el-button>
-      <el-button type="primary" @click="open = false">关闭</el-button>
-    </template>
-  </el-dialog>
+        <pre v-if="errorText" class="run-error__body" data-testid="run-error-body">{{ errorText }}</pre>
+        <p v-else class="run-error__empty">后台没有留下原因。可先看这条记录的耗时与触发方式。</p>
+      </div>
+
+      <DialogFooter class="border-t border-line pt-[var(--gap-3)] sm:justify-end">
+        <Button variant="outline" :disabled="!run" @click="copyAll">复制全文</Button>
+        <Button access="read" @click="open = false">关闭</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
@@ -164,7 +181,7 @@ async function copyAll(): Promise<void> {
   padding: var(--gap-3);
   max-height: 24rem;
   overflow: auto;
-  border: 1px solid color-mix(in oklab, var(--el-color-danger) 30%, var(--rule));
+  border: 1px solid color-mix(in oklab, var(--stamp) 30%, var(--rule));
   border-radius: var(--radius);
   background: var(--surface-canvas);
   font-family: var(--mono);
@@ -190,4 +207,3 @@ async function copyAll(): Promise<void> {
   color: var(--muted);
 }
 </style>
-<style scoped src="./OpsDialogSurface.css"></style>

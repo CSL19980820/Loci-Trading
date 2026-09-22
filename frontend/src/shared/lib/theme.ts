@@ -4,7 +4,7 @@
  * 三层令牌（见 style.base.css / style.theme.css 的文件头）：
  *   ① 原色阶 primitive（--n-1..--n-12 / 主色阶）
  *   ② 语义层 semantic（--surface* / --border-* / --text-*）
- *   ③ 组件层（EP 桥接、Sheet、表格）
+ *   ③ 组件层（源码组件、Sheet、表格）
  * 这里只负责 ①② 里「随用户选择而变」的那部分：往 <html> 上挂
  * data-appearance / data-primary，以及自定义主色时把算好的色阶写成内联变量。
  *
@@ -208,12 +208,10 @@ export function contrastRatio(a: string, b: string): number {
 
 /* ───────────────────────── 主色阶推导 ───────────────────────── */
 
-/** 主色上的文字：超过这个 OKLCH 亮度就该换成深色字（业界惯例 ≈ 0.62） */
+/** Retained for colour-picker compatibility; solid controls always use white text. */
 export const ON_PRIMARY_L_THRESHOLD = 0.62
 /** 实心主色对 --on-primary 必须达到的对比度（WCAG AA 正文档） */
 export const MIN_ON_PRIMARY_CONTRAST = 4.5
-/** 深色字不用纯黑：纯黑在彩色底上发脏 */
-const ON_PRIMARY_DARK = '#14181f'
 const ON_PRIMARY_LIGHT = '#ffffff'
 
 /**
@@ -225,10 +223,8 @@ const LADDER: Record<
   ThemeMode,
   { minL: number; maxL: number; hoverDelta: number; activeDelta: number; ink: number }
 > = {
-  // 明亮档：白字在 L≈0.56 处恰好过 4.5；再亮就会被 fitSolid 判给深色字
-  light: { minL: 0.5, maxL: 0.72, hoverDelta: -0.06, activeDelta: -0.12, ink: 0.45 },
-  // 深色档：实心色整体抬高（深底上要跳出来），hover 往亮走而不是往暗走
-  dark: { minL: 0.55, maxL: 0.78, hoverDelta: 0.07, activeDelta: 0.13, ink: 0.82 },
+  light: { minL: 0.48, maxL: 0.62, hoverDelta: -0.04, activeDelta: -0.08, ink: 0.45 },
+  dark: { minL: 0.51, maxL: 0.64, hoverDelta: -0.03, activeDelta: -0.07, ink: 0.82 },
 }
 
 /** 彩度上限：用户选到荧光色时压一压，避免整屏刺眼；下限不设（纯灰主色是合法选择） */
@@ -242,11 +238,11 @@ function rgbaOf(hex: string, alpha: number): string {
 
 /**
  * 钉住色相/彩度，从目标亮度出发收敛出一个「对 on-primary 一定达标」的实心色。
- * 白字就往暗走、深字就往亮走，单向移动所以不会来回横跳。
+ * 彩色实心按钮统一白字；必要时压暗底色，而不是切换成黑字。
  */
 function fitSolid(h: number, c: number, targetL: number): { hex: string; on: string } {
-  const on = targetL > ON_PRIMARY_L_THRESHOLD ? ON_PRIMARY_DARK : ON_PRIMARY_LIGHT
-  const step = on === ON_PRIMARY_LIGHT ? -0.01 : 0.01
+  const on = ON_PRIMARY_LIGHT
+  const step = -0.01
   let l = targetL
   let hex = oklchToHex({ l, c, h })
   for (let i = 0; i < 60; i += 1) {
@@ -275,13 +271,13 @@ export function derivePrimaryScale(hex: string, mode: ThemeMode = 'light'): Prim
 
   const solid = fitSolid(h, c, clamp(parsed.l, ladder.minL, ladder.maxL))
   const solidL = hexToOklch(solid.hex)?.l ?? ladder.minL
-  const hover = oklchToHex({ l: clamp(solidL + ladder.hoverDelta, 0.08, 0.94), c, h })
-  const active = oklchToHex({ l: clamp(solidL + ladder.activeDelta, 0.08, 0.94), c, h })
+  const hover = fitSolid(h, c, clamp(solidL + ladder.hoverDelta, 0.08, 0.94)).hex
+  const active = fitSolid(h, c, clamp(solidL + ladder.activeDelta, 0.08, 0.94)).hex
   // 主色文字（落在页面表面上，不是落在实心主色上）：明档压暗、暗档提亮
   const inkColor = oklchToHex({ l: ladder.ink, c: Math.min(c, 0.16), h })
   // 浅底/描边用半透明：同一个值在四个外观的表面上都成立，不用为深色再写一份
-  const soft = rgbaOf(solid.hex, mode === 'light' ? 0.12 : 0.22)
-  const border = rgbaOf(solid.hex, mode === 'light' ? 0.45 : 0.55)
+  const soft = rgbaOf(solid.hex, mode === 'light' ? 0.075 : 0.14)
+  const border = rgbaOf(solid.hex, mode === 'light' ? 0.25 : 0.32)
 
   return {
     '--seal': solid.hex,
@@ -308,33 +304,33 @@ export const APPEARANCE_OPTIONS: AppearanceOption[] = [
     id: 'day',
     label: '日间',
     mode: 'light',
-    swatch: '#f2f5f8',
-    hint: 'zinc 冷灰',
-    preview: { canvas: '#f2f5f8', surface: '#fcfdfe', border: '#cdd1d8', text: '#192029' },
+    swatch: '#f9fafb',
+    hint: '纸白冷灰',
+    preview: { canvas: '#f9fafb', surface: '#ffffff', border: '#e2e4e7', text: '#121921' },
   },
   {
     id: 'paper',
     label: '暖纸',
     mode: 'light',
-    swatch: '#faf0e0',
+    swatch: '#fef7ec',
     hint: '暖米护眼',
-    preview: { canvas: '#faf0e0', surface: '#fffaef', border: '#dcd0bc', text: '#2a2318' },
+    preview: { canvas: '#fef7ec', surface: '#fffdf6', border: '#e8dece', text: '#241e14' },
   },
   {
     id: 'night',
     label: '夜间',
     mode: 'dark',
-    swatch: '#0a111c',
+    swatch: '#0a111a',
     hint: '深蓝终端',
-    preview: { canvas: '#0a111c', surface: '#141e2e', border: '#303947', text: '#f1f5fa' },
+    preview: { canvas: '#0a111a', surface: '#131a25', border: '#1f2732', text: '#f1f4f8' },
   },
   {
     id: 'ink',
     label: '墨黑',
     mode: 'dark',
-    swatch: '#050505',
+    swatch: '#060606',
     hint: '纯黑高反差',
-    preview: { canvas: '#050505', surface: '#131313', border: '#3a3a3a', text: '#ffffff' },
+    preview: { canvas: '#060606', surface: '#101010', border: '#1e1e1e', text: '#fcfcfc' },
   },
 ]
 
@@ -346,7 +342,7 @@ export const APPEARANCE_OPTIONS: AppearanceOption[] = [
 export const PRIMARY_OPTIONS: PrimaryOption[] = [
   { id: 'seal', label: '朱红', color: '#cc323e' },
   { id: 'flame', label: '橙红', color: '#c15108' },
-  { id: 'amber', label: '琥珀', color: '#d79700' },
+  { id: 'amber', label: '琥珀', color: '#996500' },
   { id: 'moss', label: '墨绿', color: '#298646' },
   { id: 'lake', label: '湖绿', color: '#008471' },
   { id: 'teal', label: '青青', color: '#007ca8' },
@@ -443,7 +439,7 @@ export function applyTheme(appearanceId: string, primaryId: string, customColor?
   root.setAttribute('data-theme', appearance)
   const isDark = appearanceMode(appearance) === 'dark'
   root.style.colorScheme = isDark ? 'dark' : 'light'
-  // Element Plus 深色变量以 html.dark 为开关
+  // 对齐依赖 html.dark 的源码组件与当前应用外观。
   root.classList.toggle('dark', isDark)
 
   if (primary === CUSTOM_PRIMARY_ID) {

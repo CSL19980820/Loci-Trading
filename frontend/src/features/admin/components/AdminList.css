@@ -1,4 +1,32 @@
-.admin-list { min-width: 0; }
-.admin-list .admin-pane__filters { flex: 1 1 24rem; min-width: 0; }
-.admin-list .admin-pane__filter-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap-2); }
-.admin-list .is-code { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.admin-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 0;
+  min-height: 0;
+}
+
+.admin-list__head {
+  padding-top: var(--gap-1);
+  padding-bottom: 0;
+}
+
+/* 表格坐在一张卡里：hairline + 12px 圆角 + 极淡投影，与 KPI 卡同一层级 */
+.admin-list__table {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.admin-list .is-code {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}

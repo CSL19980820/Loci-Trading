@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { Label } from '@/shared/components/ui/label'
+import { Notice } from '@/shared/components/ui/app/presentation'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { Package, ShieldAlert, ShieldCheck } from '@lucide/vue'
+
 import { computed, reactive, ref } from 'vue'
 
 import {
@@ -6,7 +11,12 @@ import {
   getSharePackStatus,
   type SharePackStatus,
 } from '@/shared/api/quant'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Checkbox } from '@/shared/components/ui/checkbox'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import StatCard from '@/shared/components/ui/StatCard.vue'
+import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { formatBytes } from '../composables/opsLabels'
 import { useOpsFeedback } from '../composables/useOpsFeedback'
 import SettingsPanel, { type ReceiptPair } from './SettingsPanel.vue'
@@ -20,10 +30,7 @@ const lastFile = ref('')
 const passwordInput = ref('')
 const selected = reactive<Record<string, boolean>>({})
 
-/**
- * 清单卡片上那块「Loci v1.x + 封箱印章」删了：版本 / 发布日 / 能不能封箱
- * 都是读数，读数归面板头的回执行，不该在正文里再摆一遍标题。
- */
+/** 版本 / 发布日 / 能不能封箱都是读数，归面板头的回执行。 */
 const receipt = computed((): ReceiptPair[] => {
   const s = status.value
   if (!s) return [{ key: '版本', value: '—' }]
@@ -48,6 +55,8 @@ const estimatedBytes = computed(() => {
   }
   return total
 })
+
+const selectedCount = computed(() => Object.values(selected).filter(Boolean).length)
 
 const canSubmit = computed(
   () =>
@@ -78,6 +87,10 @@ async function load(): Promise<void> {
   emit('changed')
 }
 
+function toggle(id: string, value: boolean | 'indeterminate'): void {
+  selected[id] = value === true
+}
+
 async function packNow(): Promise<void> {
   if (!canSubmit.value) return
   packing.value = true
@@ -104,76 +117,52 @@ defineExpose({ load })
 </script>
 
 <template>
-  <SettingsPanel title="一键打包" :receipt="receipt">
-    <div class="pack-desk page-scroll">
-      <el-alert
-        v-if="notice"
-        :title="notice"
-        type="success"
-        show-icon
-        closable
-        class="pack-alert"
-        @close="notice = ''"
+  <SettingsPanel
+    title="一键打包"
+    :receipt="receipt"
+  >
+    <Notice
+      v-if="notice"
+      :title="notice"
+      tone="success"
+      show-icon
+      closable
+      @close="notice = ''"
+    />
+    <Notice
+      v-if="errorText"
+      :title="errorText"
+      tone="error"
+      show-icon
+      closable
+      @close="errorText = ''"
+    />
+
+    <template v-if="status">
+      <div class="stat-strip stat-strip--plain cols-3 pack-stats">
+        <StatCard label="运行时底座" :value="status.can_pack ? formatBytes(status.runtime_bytes) : '未编译'" :hint="status.can_pack ? String(status.bundle_root || '') : status.reason">
+          <template #icon><Package /></template>
+        </StatCard>
+        <StatCard label="已勾选附件" :value="selectedCount" :hint="`共 ${status.options.length} 项可选`" />
+        <StatCard label="预计体积" :value="formatBytes(estimatedBytes)" :hint="lastFile ? `上次 ${lastFile}` : undefined" />
+      </div>
+
+      <EmptyState
+        v-if="!status.can_pack"
+        description="还没有可分享的编译包"
+        reason="先用打包脚本 scripts/build-loci.ps1 打出 Loci.exe 与运行时目录，再回到这里封箱。"
+        :icon="Package"
+        class="pack-empty"
       />
-      <el-alert
-        v-if="errorText"
-        :title="errorText"
-        type="error"
-        show-icon
-        closable
-        class="pack-alert"
-        @close="errorText = ''"
-      />
 
-      <section v-if="status" class="pack-manifest" aria-label="分享打包">
-        <!--
-          标题「Loci v1.x」与封箱印章一并删除：内容全是读数，已迁到面板头回执
-          （版本 / 发布 / 状态 / 运行时）。这里只留一条功能行：封箱状态 chip +
-          运行时底座路径与体积；封不了箱时同一行直接说原因。
-        -->
-        <p class="pack-lead">
-          <el-tag
-            :type="status.can_pack ? 'success' : 'info'"
-            size="small"
-            effect="plain"
-          >
-            {{ status.can_pack ? '可封箱' : '缺编译' }}
-          </el-tag>
-          <template v-if="status.can_pack">
-            <span class="pack-lead__k">运行时底座</span>
-            <code>{{ status.bundle_root }}</code>
-            <span class="mono">{{ formatBytes(status.runtime_bytes) }}</span>
-          </template>
-          <span v-else class="pack-lead__reason">{{ status.reason }}</span>
-        </p>
-
-        <EmptyState
-          v-if="!status.can_pack"
-          description="还没有可分享的编译包"
-          reason="先用打包脚本 scripts/build-loci.ps1 打出 Loci.exe 与运行时目录，再回到这里封箱。"
-        />
-
-        <template v-else>
-          <el-alert
-            v-if="personalOn.length"
-            type="error"
-            show-icon
-            :closable="false"
-            class="pack-alert"
-            :title="`带走${personalOn.join('、')}，要外发请取消勾选`"
-          />
-          <el-tooltip
-            v-else
-            placement="bottom-start"
-            content="只带骨架（任务 / 战法 / 模板 / 档位）；密钥与纸面记录不进包"
-          >
-            <el-tag class="pack-flag" type="success" effect="plain" size="small">
-              当前是可分享的脱敏包
-            </el-tag>
-          </el-tooltip>
-
+      <template v-else>
+        <Card class="pack-card">
+          <CardHeader class="pack-card__head">
+            <CardTitle>附件清单</CardTitle>
+            
+          </CardHeader>
           <div class="pack-options" role="group" aria-label="可选附件">
-            <label
+            <Label
               v-for="opt in status.options"
               :key="opt.id"
               class="pack-opt"
@@ -183,130 +172,113 @@ defineExpose({ load })
                 'is-private': selected[opt.id] && (opt.id === 'private' || opt.id === 'ledger'),
               }"
             >
-              <el-checkbox
-                v-model="selected[opt.id]"
+              <Checkbox
+                :model-value="Boolean(selected[opt.id])"
                 :disabled="!opt.available"
-              >
+                :aria-label="opt.label"
+                @update:model-value="(v) => toggle(opt.id, v)"
+              />
+              <span class="pack-opt__copy">
                 <span class="pack-opt__label">{{ opt.label }}</span>
-              </el-checkbox>
-              <span class="pack-opt__desc">{{ opt.description }}</span>
-              <span class="pack-opt__size mono">
-                {{ opt.available ? formatBytes(opt.bytes) : '无' }}
+                <span class="pack-opt__desc">{{ opt.description }}</span>
               </span>
-            </label>
+              <span class="pack-opt__size">{{ opt.available ? formatBytes(opt.bytes) : '无' }}</span>
+            </Label>
           </div>
+        </Card>
 
-          <aside class="pack-seal" aria-label="打包密码">
-            <el-form label-position="right" label-width="6.5em" size="small" @submit.prevent>
-              <el-form-item label="打包密码" required>
-                <el-input
-                  v-model="passwordInput"
-                  type="password"
-                  show-password
-                  placeholder="输入打包密码后才能生成"
-                  autocomplete="off"
-                />
-              </el-form-item>
-            </el-form>
-          </aside>
+        <Card class="pack-card">
+          <CardHeader class="pack-card__head">
+            <CardTitle>封箱</CardTitle>
+            <CardDescription>打包密码用于解压；生成后的包请自行保管。</CardDescription>
+          </CardHeader>
+          <div class="pack-seal">
+            <div class="pack-flag" :class="personalOn.length ? 'is-warn' : 'is-ok'" role="status">
+              <ShieldAlert v-if="personalOn.length" aria-hidden="true" />
+              <ShieldCheck v-else aria-hidden="true" />
+              <span v-if="personalOn.length">带走 {{ personalOn.join('、') }}，要外发请取消勾选</span>
+              <span v-else>当前是可分享的脱敏包：只带骨架（任务 / 战法 / 模板 / 档位），密钥与纸面记录不进包</span>
+            </div>
+            <div class="pack-seal__row">
+              <Label class="pack-seal__label" for="pack-password">打包密码</Label>
+              <TextField
+                id="pack-password"
+                v-model="passwordInput"
+                type="password"
+                show-password
+                placeholder="输入打包密码后才能生成"
+                autocomplete="off"
+                class="pack-seal__input"
+              />
+              <Button size="default" :disabled="!canSubmit" @click="packNow">
+                <Package />
+                {{ packing ? '正在生成…' : '生成分享包' }}
+              </Button>
+            </div>
+            <p class="pack-estimate">
+              约 <strong>{{ formatBytes(estimatedBytes) }}</strong>
+              <UiBadge v-if="lastFile" variant="secondary" class="ml-2">上次 {{ lastFile }}</UiBadge>
+            </p>
+          </div>
+        </Card>
+      </template>
+    </template>
 
-          <footer class="pack-foot">
-            <span class="pack-estimate mono">
-              约 {{ formatBytes(estimatedBytes) }}
-              <template v-if="lastFile"> · 上次 {{ lastFile }}</template>
-            </span>
-            <el-button
-              type="primary"
-              :loading="packing"
-              :disabled="!canSubmit"
-              @click="packNow"
-            >
-              生成分享包
-            </el-button>
-          </footer>
-        </template>
-      </section>
-
-      <!-- 真空态描述真空，别再写成「正在读取」——加载态由上面的 busy 分支负责 -->
-      <EmptyState
-        v-else-if="!busy"
-        description="还没有打包状态"
-        reason="刷新后重新读取状态"
-      />
-    </div>
+    <!-- 真空态描述真空，别再写成「正在读取」——加载态由上面的 busy 分支负责 -->
+    <EmptyState
+      v-else-if="!busy"
+      description="还没有打包状态"
+      reason="刷新后重新读取状态"
+      class="pack-empty"
+    />
   </SettingsPanel>
 </template>
 
 <style scoped>
-.pack-desk {
-  padding: 0;
-  min-height: 0;
-  min-width: 0;
+.pack-stats {
+  margin-bottom: 0;
 }
 
-.pack-alert,
-.pack-flag {
-  margin: var(--gap-2) var(--gap-3) 0;
-}
-
-.pack-manifest {
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
+.pack-card {
+  gap: 0;
   overflow: hidden;
+}
+
+.pack-card__head {
+  padding: var(--gap-4) var(--gap-4) var(--gap-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.pack-empty {
+  min-height: 240px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  position: relative;
-}
-
-/* 一条功能行：状态 chip + 运行时底座路径 + 体积（或封不了箱的原因） */
-.pack-lead {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1) var(--gap-2);
-  margin: 0;
-  padding: var(--gap-2) var(--gap-4);
-  font-size: var(--fs-aux);
-  color: var(--mist);
-  border-bottom: 1px solid var(--rule);
-  background: var(--surface-sunken);
-}
-
-.pack-lead__k {
-  color: var(--muted);
-}
-
-.pack-lead code {
-  font-family: var(--mono);
-  font-size: var(--fs-aux);
-  word-break: break-all;
-  color: var(--ink);
-}
-
-.pack-lead__reason {
-  color: var(--seal-ink);
 }
 
 .pack-options {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  padding: var(--gap-1) 0;
-  background: var(--rule);
-  border-bottom: 1px solid var(--rule);
 }
 
 .pack-opt {
   display: grid;
-  grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr) auto;
-  gap: var(--gap-2) var(--gap-3);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  padding: var(--gap-3);
-  background: var(--surface);
+  gap: var(--gap-3);
+  min-height: 52px;
+  padding: var(--gap-3) var(--gap-4);
+  border-top: 1px solid var(--border-subtle);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
 }
 
-.pack-opt.is-on {
-  background: var(--surface-active);
+.pack-opt:first-child {
+  border-top: 0;
+}
+
+.pack-opt:hover {
+  background: var(--surface-hover);
 }
 
 .pack-opt.is-off {
@@ -314,68 +286,110 @@ defineExpose({ load })
   cursor: not-allowed;
 }
 
-/* 会带走个人数据的勾选项要一眼看出来：警告底 + 1px 描边（私密不是价格，不用涨红竖条） */
 .pack-opt.is-private {
   background: var(--warn-soft);
-  border: 1px solid color-mix(in oklab, var(--warn) 35%, var(--rule));
+}
+
+.pack-opt__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .pack-opt__label {
-  font-weight: 600;
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 500;
 }
 
 .pack-opt__desc {
-  overflow-wrap: anywhere;
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
-  color: var(--mist);
-  line-height: 1.35;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .pack-opt__size {
-  font-size: var(--fs-kicker);
-  color: var(--mist);
+  color: var(--text-tertiary);
+  font-family: var(--mono);
+  font-size: var(--fs-aux);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .pack-seal {
-  margin: var(--gap-3) var(--gap-4);
-  padding: var(--gap-2) var(--gap-3) 1px;
-  border: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding: var(--gap-4);
 }
 
-.pack-seal :deep(.el-form-item) {
-  margin-bottom: var(--gap-2);
+.pack-flag {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-2);
+  padding: var(--gap-2) var(--gap-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-aux);
+  line-height: 1.5;
 }
 
-.pack-foot {
+.pack-flag :deep(svg) {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+.pack-flag.is-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.pack-flag.is-warn {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+
+.pack-seal__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-3);
-  padding: var(--gap-2) var(--gap-4) var(--gap-3);
+  gap: var(--gap-2) var(--gap-3);
+}
+
+.pack-seal__label {
+  color: var(--text-secondary);
+  font-size: var(--fs-ui);
+  font-weight: 500;
+}
+
+.pack-seal__input {
+  flex: 1 1 220px;
+  min-width: 0;
 }
 
 .pack-estimate {
-  overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
+  margin: 0;
+  color: var(--text-tertiary);
   font-size: var(--fs-aux);
-  color: var(--mist);
+  font-variant-numeric: tabular-nums;
 }
 
-.mono {
+.pack-estimate strong {
+  color: var(--text-primary);
   font-family: var(--mono);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .pack-opt {
-    grid-template-columns: 1fr;
-    gap: var(--gap-1);
+    padding: var(--gap-3);
   }
 
-  .pack-foot {
-    flex-direction: column;
-    align-items: stretch;
+  .pack-seal__row > :deep(button) {
+    flex: 1 1 100%;
+    min-height: 40px;
   }
 }
 </style>

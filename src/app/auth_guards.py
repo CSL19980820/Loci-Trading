@@ -62,6 +62,11 @@ def build_auth_guards(*, require_write_auth: bool, write_token: str) -> AuthGuar
 
     def require_write_access(request: Request) -> None:
         """浏览器会话或 Agent Bearer 令牌均可写入不可变账本。"""
+        context = current_context(request)
+        if context.user and not context.user.is_admin:
+            raise HTTPException(status_code=403, detail="访客仅可浏览")
+        if not context.authenticated and request.cookies.get("loci_session"):
+            raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
         if has_browser_session(request) or has_agent_token(request):
             return
         raise HTTPException(status_code=401, detail="请先登录或提供有效的 Bearer 令牌")

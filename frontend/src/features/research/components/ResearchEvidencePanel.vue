@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Link } from '@element-plus/icons-vue'
+import { Link } from '@lucide/vue'
 
 import type { ResearchProfile, ResearchQualitySnapshot, ResearchRun } from '@/shared/types/quant'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
-import UiCard from '@/shared/components/ui/UiCard.vue'
-import UiCardHeader from '@/shared/components/ui/UiCardHeader.vue'
-import UiCardTitle from '@/shared/components/ui/UiCardTitle.vue'
+import { Badge } from '@/shared/components/ui/badge'
+import { Button } from '@/shared/components/ui/button'
+import { Card, CardHeader, CardTitle } from '@/shared/components/ui/card'
 
 const props = defineProps<{
   profile: ResearchProfile
@@ -62,7 +61,7 @@ const evidenceColumns: BasicTableColumn[] = [
   <UiCard class="research-surface" aria-label="证据与风险透视">
     <UiCardHeader>
       <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行 -->
-      <UiCardTitle><el-icon aria-hidden="true"><Link /></el-icon>证据与风险透视</UiCardTitle>
+      <UiCardTitle><Link class="size-4" aria-hidden="true" />证据与风险透视</UiCardTitle>
       <template #action>
         <UiBadge :variant="quality.blocked ? 'stamp' : 'ok'">
           {{ quality.blocked ? '已阻断' : '可查看' }}
@@ -105,7 +104,18 @@ const evidenceColumns: BasicTableColumn[] = [
       empty-reason="读取剖面后由后端回执填入"
     >
       <template #hash="{ row }">
-        <el-link v-if="row.source_url" :href="String(row.source_url)" target="_blank" rel="noopener noreferrer" :icon="Link">{{ row.title || row.source_id }}</el-link>
+        <Button
+          v-if="row.source_url"
+          as="a"
+          variant="link"
+          class="h-auto justify-start p-0 text-left"
+          :href="String(row.source_url)"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <Link class="size-3.5" aria-hidden="true" />
+          {{ row.title || row.source_id }}
+        </Button>
         <code v-else :title="String(row.payload_sha256 || '')">{{ row.payload_sha256 || '无 hash' }}</code>
       </template>
     </BasicTable>
@@ -113,7 +123,7 @@ const evidenceColumns: BasicTableColumn[] = [
 </template>
 
 <style scoped>
-/* 皮肤已上移到 UiCard + 工具类；el-table 穿透与 code 等宽保留 */
+/* 皮肤已上移到 UiCard + 工具类；code 等宽保留 */
 .health-item code, code { font-family: var(--mono); font-size: var(--fs-aux); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 </style>
 <style scoped src="./ResearchSurfaces.css"></style>

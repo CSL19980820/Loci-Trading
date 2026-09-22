@@ -1,39 +1,103 @@
-.workbench-page { min-width: 0; }
+.workbench-page {
+  min-width: 0;
+}
+
+.workbench-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.workbench-back:hover {
+  color: var(--text-primary);
+}
+
+/* slug 是区分大小写的标识，别让页头眉题的 uppercase 把它改了样 */
+.workbench-slug {
+  text-transform: none;
+}
+
+/* 名称即标题：去掉输入框的壳，只在聚焦时显形 */
 .workbench-name-input {
-  width: min(18rem, 42vw);
-}
-
-/* 本文件以 <style scoped src> 挂进 SFC：凡是打到 EP 内部结构的选择器都要 :deep() */
-.workbench-name-input :deep(.el-input__wrapper) {
-  box-shadow: none;
+  width: min(24rem, 100%);
+  height: 36px;
+  padding-inline: 6px;
+  margin-left: -6px;
+  border-color: transparent;
   background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-.workbench-name-input :deep(.el-input__inner) {
-  font-weight: 600;
+.workbench-name-input:hover {
+  background: var(--surface-hover);
 }
-.workbench-name-input:focus-within { outline: 2px solid var(--seal); outline-offset: 2px; border-radius: var(--radius); }
+
+.workbench-name-input:focus-visible {
+  border-color: var(--border-default);
+  background: var(--surface);
+}
+
+.workbench-alerts {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--gap-2);
+  margin-top: var(--gap-3);
+}
+
+.workbench-pane-switch {
+  flex-shrink: 0;
+  margin-top: var(--gap-3);
+}
 
 .workbench-settings {
   flex: 1 1 auto;
   min-height: 0;
-  padding: var(--gap-2);
+  padding-top: var(--gap-4);
+  padding-bottom: var(--gap-4);
 }
 
+/* 双栏：编辑器 | 结果坞 */
 .workbench-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
   flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-4);
+  min-width: 0;
+  min-height: 0;
+  margin-top: var(--gap-4);
+  margin-bottom: var(--gap-4);
+  overflow: hidden;
+}
+
+.workbench-shell--side {
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 24rem);
+}
+
+/* 回测含表单与图表，右栏放宽 */
+.workbench-shell--side.workbench-shell--bt {
+  grid-template-columns: minmax(0, 1fr) minmax(24rem, 34rem);
+}
+
+.workbench-editor {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
 }
 
-.workbench-shell--assist {
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, 17.5rem);
+.workbench-side {
+  min-width: 0;
+  min-height: 0;
 }
 
 .copilot-pane {
@@ -42,45 +106,44 @@
   gap: var(--gap-2);
   min-width: 0;
   min-height: 0;
-  overflow: auto;
-  padding: var(--gap-2);
-  border-left: 1px solid var(--rule);
-  background: var(--sheet-alt);
 }
 
-.copilot-pane__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.copilot-pane__head strong {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gap-2);
-  font-size: var(--fs-body);
-}
-
-@media (max-width: 900px) {
-  .workbench-secondary :deep(span) {
-    display: none;
-  }
-
-  .workbench-shell--assist {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(8rem, 1fr) minmax(0, 40%);
-  }
-
-  /* 窄屏助手 pane 不再直接消失：收成底部可展开区，仍可点开看建议 */
-  .workbench-shell--assist .copilot-pane {
-    border-left: none;
-    border-top: 1px solid var(--rule);
-    max-height: 40dvh;
-  }
+/* ≤980：不再并排，编辑器 / 结果二选一 */
+.workbench-shell--narrow,
+.workbench-shell--narrow.workbench-shell--side,
+.workbench-shell--narrow.workbench-shell--bt {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: var(--gap-3);
+  margin-bottom: var(--gap-3);
 }
 
 @media (max-width: 640px) {
-  .workbench-secondary :deep(span) {
-    display: none;
+  .workbench-name-input {
+    height: 32px;
+    font-size: 16px;
   }
+
+  .workbench-settings {
+    padding-top: var(--gap-3);
+  }
+}
+
+
+.workbench-editor { display:grid; grid-template-rows:minmax(0,1fr) var(--ctl-h); height:100%; }
+
+@media(max-width:640px) {
+ .workbench-pane-switch { margin-top:5px; }
+ .workbench-shell,.workbench-shell--narrow { margin-block:5px 8px; gap:5px; }
+ .workbench-page :deep(.page-header) { padding-block:6px; gap:6px; }
+ .workbench-page :deep(.page-header__actions) { gap:5px; }
+ .workbench-page :deep(.page-header__meta) { gap:5px; font-size:10px; }
+ .workbench-page :deep(.page-tabs__item) { padding-inline:10px; height:30px; font-size:12px; }
+ .workbench-editor { border-radius:8px; }
+ .workbench-editor :deep(.code-editor__fallback) { font-size:13px; line-height:1.7; padding:10px; background:var(--surface); }
+}
+
+@media(max-width:767px) {
+ .formula-phone-header { display:flex; align-items:center; gap:3px; flex:none; min-height:54px; padding:6px 0; }.formula-phone-header input { flex:1; min-width:0; border-color:transparent; box-shadow:none; background:transparent; font-weight:550; font-size:16px; padding-inline:4px; }.formula-phone-header>button,.formula-phone-header>a { flex:none; }.formula-phone-header>button[aria-label="策稿操作"],.formula-phone-header>button[aria-label="试跑"] { width:34px; }
+ .formula-phone-navigation { display:flex; align-items:center; gap:10px; flex:none; padding:0 0 8px; }.formula-phone-navigation>button { width:104px; min-height:38px; font-size:13px; box-shadow:none; }.formula-phone-navigation>.page-tabs { margin:0; flex:1; }.formula-phone-navigation :deep(.page-tabs__list) { width:100%; }.formula-phone-navigation :deep(.page-tabs__item) { flex:1; justify-content:center; height:34px; font-size:13px; }.formula-phone-navigation>span { font-size:11px; color:var(--text-tertiary); }
+ .workbench-shell,.workbench-shell--narrow { flex:1 1 0%; height:0; min-height:160px; margin-top:0; margin-bottom:8px; overflow:hidden; }.workbench-editor { height:100%; min-height:0; }.workbench-editor :deep(.code-editor__fallback) { font-size:14px; }.workbench-side { height:100%; min-height:0; }.workbench-side :deep(.dock-body) { overflow:auto; }
 }

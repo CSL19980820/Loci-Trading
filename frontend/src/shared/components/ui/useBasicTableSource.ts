@@ -16,7 +16,7 @@ import type { BasicTablePagination, BasicTableRequest } from './basicTableTypes'
 
 /** 只取 BasicTable props 里与取数有关的四项；组件的完整 props 结构上兼容。 */
 export type BasicTableSourceProps = {
-  dataSource?: Record<string, unknown>[]
+  dataSource?: object[]
   request?: BasicTableRequest
   pagination?: BasicTablePagination | boolean
   hasDefaultRequest?: boolean
@@ -57,7 +57,7 @@ export function useBasicTableSource(props: BasicTableSourceProps) {
     [() => props.dataSource, () => props.dataSource?.length],
     ([list]) => {
       if (props.request) return
-      rows.value = list ?? []
+      rows.value = (list ?? []) as Record<string, unknown>[]
       pager.total =
         typeof props.pagination === 'object' && props.pagination?.total != null
           ? props.pagination.total

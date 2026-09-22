@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
+import { default as FormLayout } from '@/shared/components/ui/app/FormLayout.vue'
+import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
+import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { default as NumberInput } from '@/shared/components/ui/app/NumberInput.vue'
+
 /**
  * 价格提醒卡：填代码与价位加一条规则，或试扫一遍看命中几条。
  *
@@ -29,10 +35,10 @@ onMounted(() => {
 <template>
   <SettingsPanel title="价格提醒规则">
     <template #action>
-      <el-button type="primary" size="small" @click="addRule">添加</el-button>
-      <el-button size="small" @click="scanRules">试扫</el-button>
+      <ActionButton tone="primary" size="small" @click="addRule">添加</ActionButton>
+      <ActionButton size="small" @click="scanRules">试扫</ActionButton>
     </template>
-    <el-form
+    <FormLayout
       inline
       label-position="left"
       label-width="6.5em"
@@ -40,13 +46,13 @@ onMounted(() => {
       class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1"
       @submit.prevent
     >
-      <el-form-item label="代码">
-        <el-input v-model="alertCode" class="w-32" />
-      </el-form-item>
-      <el-form-item label="价≥" class="mb-0">
-        <el-input-number v-model="alertPrice" :step="0.01" />
-      </el-form-item>
-    </el-form>
+      <FormField label="代码">
+        <TextField v-model="alertCode" class="w-32" />
+      </FormField>
+      <FormField label="价≥" class="mb-0">
+        <NumberInput v-model="alertPrice" :step="0.01" />
+      </FormField>
+    </FormLayout>
     <BasicTable
       :columns="columns"
       :data-source="tableRows"

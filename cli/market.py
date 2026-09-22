@@ -30,6 +30,13 @@ from src.market import (
     sync_instruments,
     sync_quotes,
 )
+from src.market.application.storage_governance import (
+    StoragePolicy,
+    report_text,
+    run_storage_maintenance,
+    storage_check,
+    storage_report,
+)
 from cli.market_intraday import (
     cmd_intraday_capture,
     cmd_intraday_prune,
@@ -476,6 +483,30 @@ def build_parser() -> argparse.ArgumentParser:
     rec.add_argument("--force", action="store_true", help="跳过磁盘余量检查")
     rec.add_argument("--json", action="store_true", help="输出 JSON")
     rec.set_defaults(func=cmd_reclaim)
+
+    report = sub.add_parser("storage-report", help="查看磁盘与 SQLite 存储分项")
+    report.add_argument("--no-tables", action="store_true", help="不扫描 SQLite dbstat 分项")
+    report.add_argument("--json", action="store_true", help="输出 JSON")
+    report.set_defaults(func=cmd_storage_report)
+
+    check = sub.add_parser("storage-check", help="执行轻量磁盘容量闸门")
+    check.add_argument("--json", action="store_true", help="输出 JSON")
+    check.set_defaults(func=cmd_storage_check)
+
+    maintenance = sub.add_parser("storage-maintenance", help="执行行情存储保留期维护")
+    maintenance.add_argument("--archive-root", default="", help="来源回执冷归档目录")
+    maintenance.add_argument("--history-floor", default="2023-01-01")
+    maintenance.add_argument("--selected-keep-days", type=int, default=14)
+    maintenance.add_argument("--skipped-keep-days", type=int, default=7)
+    maintenance.add_argument("--intel-keep-days", type=int, default=30)
+    maintenance.add_argument("--archive-keep-days", type=int, default=90)
+    maintenance.add_argument("--batch-size", type=int, default=20_000)
+    maintenance.add_argument("--max-archive-batches", type=int, default=20)
+    maintenance.add_argument("--no-vacuum", action="store_true", help="只清理，不尝试 VACUUM")
+    maintenance.add_argument("--dry-run", action="store_true", help="只统计候选，不改数据库")
+    maintenance.add_argument("--json", action="store_true", help="输出 JSON")
+    maintenance.set_defaults(func=cmd_storage_maintenance)
+
     cap = sub.add_parser("intraday-capture", help="采集今日盘中快照（加密落盘）")
     cap.add_argument("--date", help="交易日 YYYY-MM-DD，默认今天")
     cap.add_argument("--only", help="只采这些数据集，逗号分隔")
@@ -524,6 +555,75 @@ def cmd_reclaim(args: argparse.Namespace) -> int:
         print(f"已 VACUUM：{body['vacuumed']}")
     print(f"回收后大小：{body['size_after_mb']:,.1f} MB（释放 {body['freed_mb']:,.1f} MB）")
     return 0
+
+
+def _storage_policy(args: argparse.Namespace) -> StoragePolicy:
+    return StoragePolicy(
+        history_floor=str(args.history_floor),
+        selected_keep_days=max(0, int(args.selected_keep_days)),
+        skipped_keep_days=max(0, int(args.skipped_keep_days)),
+        intel_keep_days=max(0, int(args.intel_keep_days)),
+        archive_keep_days=max(0, int(args.archive_keep_days)),
+        batch_size=max(1, int(args.batch_size)),
+        max_archive_batches=max(1, int(args.max_archive_batches)),
+    )
+
+
+def cmd_storage_report(args: argparse.Namespace) -> int:
+    payload = storage_report(Path(args.db), include_tables=not args.no_tables)
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        return 0
+    print(f"数据根目录：{payload['root']}")
+    print(report_text(payload))
+    for name, item in payload["databases"].items():
+        print(f"{name:<16} {int(item.get('bytes', 0)) / 1e6:,.1f} MB")
+    for name, size in payload["directories"].items():
+        if size:
+            print(f"{name + '/':<16} {int(size) / 1e6:,.1f} MB")
+    if not args.no_tables:
+        print("最大 SQLite 对象：")
+        for item in payload["databases"]["market.db"].get("tables", [])[:8]:
+            print(f"  {item['name']:<36} {int(item['bytes']) / 1e6:,.1f} MB")
+    return 0
+
+
+def cmd_storage_check(args: argparse.Namespace) -> int:
+    payload = storage_check(Path(args.db))
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(report_text(payload))
+        for reason in payload.get("reasons", []):
+            print(f"  ⚠ {reason}")
+    return {"ok": 0, "warning": 1, "critical": 2}.get(str(payload["status"]), 2)
+
+
+def cmd_storage_maintenance(args: argparse.Namespace) -> int:
+    policy = _storage_policy(args)
+    db_path = Path(args.db)
+    try:
+        # 与同步、spot、热库镜像使用同一把跨进程锁；禁止清理与行情写入交叉。
+        with market_write_lock(db_path, label="storage:maintenance"):
+            payload = run_storage_maintenance(
+                db_path,
+                archive_root=Path(args.archive_root) if args.archive_root else None,
+                policy=policy,
+                vacuum=not args.no_vacuum,
+                dry_run=args.dry_run,
+            )
+    except MarketWriteBusy as exc:
+        print(f"存储维护未开始：{exc}", file=sys.stderr)
+        return 3
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+    else:
+        print(report_text(payload["after"]))
+        print("删除：" + ", ".join(f"{k}={v}" for k, v in payload["deleted"].items()))
+        print(f"完整性：{payload['integrity']}；VACUUM：{payload['vacuum']}")
+        for error in payload.get("errors", []):
+            print(f"  ⚠ {error}", file=sys.stderr)
+    return 1 if payload.get("errors") or payload.get("integrity") not in {"ok", "not_run"} else 0
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
+import { CircleAlert } from '@lucide/vue'
+
+import { Alert, AlertTitle } from '@/shared/components/ui/alert'
+import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
+import { Button } from '@/shared/components/ui/button'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
 import type { AkshareCatalogCapability } from '@/shared/types/quant'
 
@@ -17,6 +23,13 @@ const emit = defineEmits<{
 const { datasets, loading, error, load, reset } = useSourceDatasets()
 
 const rows = computed(() => datasets.value as unknown as Record<string, unknown>[])
+
+const columns: BasicTableColumn[] = [
+  { prop: 'name', label: '接口', minWidth: 180, align: 'center', headerAlign: 'center', slotName: 'name' },
+  { prop: 'summary', label: '作用', minWidth: 220, align: 'center', headerAlign: 'center', slotName: 'summary' },
+  { prop: 'params', label: '入参', minWidth: 150, align: 'center', headerAlign: 'center', slotName: 'params' },
+  { prop: 'returns', label: '返回', minWidth: 140, align: 'center', headerAlign: 'center', slotName: 'returns' },
+]
 
 function onRowClick(row: Record<string, unknown>): void {
   emit('select', row as unknown as AkshareCatalogCapability)
@@ -40,48 +53,64 @@ watch(
 
 <template>
   <div class="dataset-list">
-    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon class="mb">
-      <el-button :disabled="loading" @click="load(sourceId)">重试</el-button>
-    </el-alert>
-    <el-table
-      v-loading="loading"
-      :data="rows"
-      size="small"
+    <Alert v-if="error" variant="destructive" class="mb">
+      <CircleAlert aria-hidden="true" />
+      <div class="flex w-full min-w-0 items-start justify-between gap-2">
+        <AlertTitle class="line-clamp-none min-w-0">{{ error }}</AlertTitle>
+        <Button access="read" variant="outline" size="sm" class="shrink-0" :disabled="loading" @click="load(sourceId)">
+          重试
+        </Button>
+      </div>
+    </Alert>
+    <BasicTable
+      :columns="columns"
+      :data-source="rows"
+      :loading="loading"
+      :pagination="false"
       height="min(36dvh, 18rem)"
       row-key="name"
       class="dataset-table"
       @row-click="onRowClick"
     >
-      <el-table-column prop="name" label="接口" min-width="180">
-        <template #default="{ row }">
-          <el-button link class="mono" :aria-label="`查看接口 ${row.name}`" @click.stop="onRowClick(row)">{{ row.name }}</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column prop="summary" label="作用" min-width="220">
-        <template #default="{ row }">
-          <el-tooltip :content="row.summary || '上游未写说明'" placement="top" :show-after="150">
-            <span class="doc-clip">{{ row.summary || '上游未写说明' }}</span>
-          </el-tooltip>
-        </template>
-      </el-table-column>
-      <el-table-column label="入参" min-width="150">
-        <template #default="{ row }">
-          <el-tooltip :content="paramSummary(row as unknown as AkshareCatalogCapability)" placement="top" :show-after="150">
+      <template #name="{ row }">
+        <Button access="read"
+          variant="link"
+          size="sm"
+          class="mono"
+          :aria-label="`查看接口 ${row.name}`"
+          @click.stop="onRowClick(row)"
+        >
+          {{ row.name }}
+        </Button>
+      </template>
+      <template #summary="{ row }">
+        <Tooltip :delay-duration="150">
+          <TooltipTrigger as-child>
+            <span class="doc-clip">{{ String(row.summary || '上游未写说明') }}</span>
+          </TooltipTrigger>
+          <TooltipContent>{{ String(row.summary || '上游未写说明') }}</TooltipContent>
+        </Tooltip>
+      </template>
+      <template #params="{ row }">
+        <Tooltip :delay-duration="150">
+          <TooltipTrigger as-child>
             <span class="mono dim doc-clip">
               {{ paramSummary(row as unknown as AkshareCatalogCapability) }}
             </span>
-          </el-tooltip>
-        </template>
-      </el-table-column>
-      <el-table-column prop="returns" label="返回" min-width="140">
-        <template #default="{ row }">
-          <el-tooltip :content="row.returns || '—'" placement="top" :show-after="150" :disabled="!row.returns">
-            <span class="doc-clip">{{ row.returns || '—' }}</span>
-          </el-tooltip>
-        </template>
-      </el-table-column>
+          </TooltipTrigger>
+          <TooltipContent>{{ paramSummary(row as unknown as AkshareCatalogCapability) }}</TooltipContent>
+        </Tooltip>
+      </template>
+      <template #returns="{ row }">
+        <Tooltip :delay-duration="150" :disabled="!row.returns">
+          <TooltipTrigger as-child>
+            <span class="doc-clip">{{ String(row.returns || '—') }}</span>
+          </TooltipTrigger>
+          <TooltipContent>{{ String(row.returns || '—') }}</TooltipContent>
+        </Tooltip>
+      </template>
       <template #empty><EmptyState :description="error ? '接口加载失败' : '此来源暂无接口'" /></template>
-    </el-table>
+    </BasicTable>
   </div>
 </template>
 
@@ -90,7 +119,7 @@ watch(
   min-width: 0;
   margin-top: var(--gap-2);
 }
-.dataset-table :deep(.el-table__row) {
+.dataset-table :deep([data-slot='table-row']) {
   cursor: pointer;
 }
 .mb {

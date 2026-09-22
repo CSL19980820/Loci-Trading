@@ -1,22 +1,41 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import WorkspaceLoading from '@/shared/components/ui/WorkspaceLoading.vue'
 const route = useRoute()
 const id = computed(() => String(route.params.id || ''))
-const GuardianStudio = defineAsyncComponent(() => import('./components/GuardianStudio.vue'))
-const StockAgentStudio = defineAsyncComponent(() => import('./components/StockAgentStudio.vue'))
+const GuardianStudio = defineAsyncComponent({ loader: () => import('./components/GuardianStudio.vue'), loadingComponent: WorkspaceLoading, delay: 0 })
+const StockAgentStudio = defineAsyncComponent({ loader: () => import('./components/StockAgentStudio.vue'), loadingComponent: WorkspaceLoading, delay: 0 })
 </script>
 <template>
-  <main class="agent-detail-page">
-    <RouterLink class="back-link" to="/agents"><el-icon><ArrowLeft /></el-icon>全部智能体</RouterLink>
-    <GuardianStudio v-if="id === 'guardian'" />
-    <StockAgentStudio v-else :key="id" :id="id" />
-  </main>
+  <div class="agent-detail-page page-fill">
+    <!-- 页头由各工作室自己渲染（它们知道自己的名字与状态），sticky 依赖这一层滚动容器 -->
+    <div class="agent-detail-scroll page-scroll page-scroll--flush-top" :class="{ 'agent-detail-scroll--guardian': id === 'guardian' }">
+      <GuardianStudio v-if="id === 'guardian'" />
+      <StockAgentStudio v-else-if="id" :key="id" :id="id" />
+    </div>
+  </div>
 </template>
 <style scoped>
-.agent-detail-page { width:100%; max-width:1480px; margin:0 auto; padding:var(--gap-4); min-width:0; }
-.back-link { display:inline-flex; gap:8px; align-items:center; color:var(--muted); text-decoration:none; font-size:13px; margin-bottom:24px; }
-.back-link:hover { color:var(--seal-ink); }
-@media(max-width:640px) { .agent-detail-page { padding:12px; } }
+.agent-detail-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.agent-detail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+@media (min-width: 1024px) and (min-height: 600px) {
+  .agent-detail-scroll--guardian { overflow: hidden; padding-bottom: 8px; }
+}
+@media(max-width:767px) {
+  .agent-detail-scroll--guardian { overflow:hidden; padding:0; }
+}
 </style>

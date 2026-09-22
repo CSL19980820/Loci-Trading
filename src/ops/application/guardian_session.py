@@ -6,6 +6,11 @@ GUARDIAN_CRON = '25-55/5 9 * * mon-fri; */5 10,13-14 * * mon-fri; 0-30/5 11 * * 
 CADENCE_MINUTES = 5
 
 
+def is_opening_review(now: datetime) -> bool:
+    value = now.astimezone(ZoneInfo('Asia/Shanghai'))
+    return value.weekday() < 5 and time(9, 25) <= value.time().replace(tzinfo=None) < time(9, 30)
+
+
 def in_review_window(now: datetime) -> bool:
     value = now.astimezone(ZoneInfo('Asia/Shanghai'))
     clock = value.time().replace(second=0, microsecond=0)
