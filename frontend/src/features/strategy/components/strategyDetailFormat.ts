@@ -68,6 +68,21 @@ export function formatBacktestValue(key: string, value: unknown): string {
   return String(value)
 }
 
+const BACKTEST_LABELS: Record<string, string> = {
+  start: '起始', end: '结束', hold_days: '持有', stop_loss_pct: '止损',
+  take_profit_pct: '止盈', benchmark: '基准', entry_timing: '入场', mode: '模式', universe: '股票池',
+}
+
+/** 回测口径拆成「标签 · 值」对，给详情页排成小格子 */
+export function backtestConfigEntries(
+  config: Record<string, unknown> | null | undefined,
+): { key: string; label: string; value: string }[] {
+  if (!config) return []
+  return Object.entries(config)
+    .filter(([, value]) => value != null && value !== '')
+    .map(([key, value]) => ({ key, label: BACKTEST_LABELS[key] || key, value: formatBacktestValue(key, value) }))
+}
+
 export function formatBacktestConfig(config: Record<string, unknown> | null | undefined): string {
   if (!config) return '—'
   const labels: Record<string, string> = {

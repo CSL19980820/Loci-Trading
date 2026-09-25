@@ -1,20 +1,17 @@
 <script setup lang="ts">
-import { Label } from '@/shared/components/ui/label'
 /**
- * 当前任务的最近执行历史：**时间线**（Linear activity 一路），不再是四列表格。
- *
- * 每条 = 左侧状态点（成功 / 失败 / 跳过 / 运行中）挂在一根 1px 竖线上，右侧一行
- * 「结果 · 触发 · 耗时」+ 时间；失败条把错误首行摆出来，点开 `JobRunErrorDialog`
- * 看全文并整段复制。此前全文只挂在原生 `title` 上，读不完也复制不走。
+ * 当前任务的执行历史：顶部一条脉冲带（最近 60 次，高 = 耗时，色 = 结果），
+ * 下面是时间线。失败条摆出错误首行，点开 `JobRunErrorDialog` 看全文并复制。
  */
 import { computed, ref, watch } from 'vue'
-import { ListFilter, RefreshCw } from '@lucide/vue'
+import { RefreshCw } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
-import { Checkbox } from '@/shared/components/ui/checkbox'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
+import PageTabs, { type PageTabItem } from '@/shared/components/ui/PageTabs.vue'
 import { Skeleton } from '@/shared/components/ui/skeleton'
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
+import { toErrorMessage } from '@/shared/lib/errors'
 import type { JobRun } from '@/shared/types/quant'
 
 import JobRunErrorDialog from './JobRunErrorDialog.vue'
@@ -24,40 +21,65 @@ import {
   statusLabel,
   triggerLabel,
 } from '../composables/opsLabels'
+import { relativeDayTime } from '../composables/jobPresentation'
 import { useJobRunsQuery } from '../composables/useJobRunsQuery'
 
 const props = defineProps<{
   jobId: string
 }>()
 
-const { runs, isPending, refetch } = useJobRunsQuery(() => ({
+const { runs, isPending, error, refetch } = useJobRunsQuery(() => ({
   job_id: props.jobId,
   limit: 200,
 }))
 
-/** 「只看失败」：一屏几十条成功记录里找那一条红的，靠肉眼扫是最慢的一步。 */
-const failedOnly = ref(false)
+const filter = ref<'all' | 'failed'>('all')
 const errorOpen = ref(false)
 const activeRun = ref<JobRun | null>(null)
 
-const visibleRuns = computed(() =>
-  failedOnly.value ? runs.value.filter((run) => run.status === 'failed') : runs.value,
-)
-const runCount = computed(() => visibleRuns.value.length)
 const failedCount = computed(() => runs.value.filter((run) => run.status === 'failed').length)
+const visibleRuns = computed(() =>
+  filter.value === 'failed' ? runs.value.filter((run) => run.status === 'failed') : runs.value,
+)
+const filterItems = computed<PageTabItem[]>(() => [
+  { name: 'all', label: '全部', badge: runs.value.length || undefined },
+  { name: 'failed', label: '失败', badge: failedCount.value || undefined, disabled: !failedCount.value },
+])
+const filterModel = computed({
+  get: () => filter.value,
+  set: (value: string) => {
+    filter.value = value === 'failed' ? 'failed' : 'all'
+  },
+})
+
+type Tone = 'ok' | 'stamp' | 'warn' | 'info' | 'secondary'
+
+function toneOf(status: string): Tone {
+  if (status === 'failed' || status === 'timed_out') return 'stamp'
+  if (status === 'success' || status === 'ok') return 'ok'
+  if (status === 'running') return 'info'
+  if (status === 'skipped' || status === 'cancelled') return 'warn'
+  return 'secondary'
+}
+
+/** 脉冲带：旧 → 新从左到右；高度按对数耗时，免得一次长跑把其余压扁 */
+const pulse = computed(() => {
+  const rows = runs.value.slice(0, 60).reverse()
+  const logs = rows.map((run) => Math.log10(Math.max(1, Number(run.duration_ms) || 1)))
+  const max = Math.max(1, ...logs)
+  return rows.map((run, index) => ({
+    run,
+    tone: toneOf(String(run.status ?? '')),
+    height: 22 + (logs[index]! / max) * 78,
+  }))
+})
+
+const errorText = computed(() => (error.value ? toErrorMessage(error.value, '读取执行历史失败') : ''))
 
 function formatStartedAt(raw: string): string {
   const text = raw.trim()
   if (!text) return '—'
   return text.replace('T', ' ').slice(0, 19)
-}
-
-function statusVariant(status: string): 'ok' | 'stamp' | 'warn' | 'info' | 'secondary' {
-  if (status === 'failed') return 'stamp'
-  if (status === 'success' || status === 'ok') return 'ok'
-  if (status === 'running') return 'info'
-  if (status === 'skipped') return 'warn'
-  return 'secondary'
 }
 
 async function reload(): Promise<void> {
@@ -69,15 +91,12 @@ function openError(run: JobRun): void {
   errorOpen.value = true
 }
 
-/**
- * 直接把最近一条失败摊开。回执上的「上次失败 N」点进来就落在这里——
- * 少掉「猜是哪条任务 → 逐条点开 → 悬停读半句」三步。
- */
+/** 回执上的「上次失败 N」点进来就落在这里：直接摊开最近一条失败全文。 */
 async function focusLatestFailure(): Promise<void> {
   await reload()
   const hit = runs.value.find((run) => run.status === 'failed')
   if (!hit) return
-  failedOnly.value = true
+  filter.value = 'failed'
   activeRun.value = hit
   errorOpen.value = true
 }
@@ -85,7 +104,7 @@ async function focusLatestFailure(): Promise<void> {
 watch(
   () => props.jobId,
   () => {
-    failedOnly.value = false
+    filter.value = 'all'
     errorOpen.value = false
     activeRun.value = null
     void reload()
@@ -97,47 +116,62 @@ defineExpose({ reload, focusLatestFailure })
 </script>
 
 <template>
-  <section class="job-runs" aria-label="最近执行历史">
-    <header class="job-runs__head">
-      <div class="job-runs__title">
-        <strong>最近执行</strong>
-        <UiBadge variant="secondary">{{ runCount }} 条</UiBadge>
-      </div>
-      <div class="job-runs__tools">
-        <Label class="job-runs__only-failed" :class="{ 'is-disabled': !failedCount }">
-          <Checkbox v-model="failedOnly" :disabled="!failedCount" aria-label="只看失败" />
-          <ListFilter aria-hidden="true" />
-          <span>只看失败{{ failedCount ? `（${failedCount}）` : '' }}</span>
-        </Label>
-        <Button access="read" variant="ghost" size="icon-sm" aria-label="刷新执行历史" :disabled="isPending" @click="reload">
-          <RefreshCw :class="isPending ? 'animate-spin' : ''" />
-        </Button>
-      </div>
+  <section class="runs" aria-label="执行历史">
+    <header class="runs__head">
+      <strong class="runs__title">执行历史</strong>
+      <PageTabs v-model="filterModel" :items="filterItems" variant="pill" dense :sticky="false" aria-label="执行结果筛选" class="runs__filter" />
+      <Button access="read" variant="ghost" size="icon-sm" aria-label="刷新执行历史" :disabled="isPending" @click="reload">
+        <RefreshCw :class="isPending ? 'animate-spin' : ''" />
+      </Button>
     </header>
 
-    <div v-if="isPending && !runs.length" class="job-runs__skeleton" aria-busy="true">
-      <Skeleton v-for="n in 3" :key="n" class="h-10 w-full" />
+    <div v-if="pulse.length" class="runs__pulse" role="img" :aria-label="`最近 ${pulse.length} 次执行`">
+      <Tooltip v-for="bar in pulse" :key="bar.run.id" :delay-duration="60">
+        <TooltipTrigger as-child>
+          <button
+            type="button"
+            class="runs__bar"
+            :class="`is-${bar.tone}`"
+            :style="{ height: `${bar.height}%` }"
+            :aria-label="`${formatStartedAt(String(bar.run.started_at ?? ''))} ${statusLabel(String(bar.run.status ?? ''))}`"
+            @click="bar.run.error_text ? openError(bar.run) : undefined"
+          />
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <span class="runs-tip">
+            <b>{{ statusLabel(String(bar.run.status ?? '')) }}</b>
+            <span>{{ relativeDayTime(String(bar.run.started_at ?? '')) }}</span>
+            <span>{{ formatRunDuration(Number(bar.run.duration_ms ?? 0)) }}</span>
+          </span>
+        </TooltipContent>
+      </Tooltip>
     </div>
-    <ol v-else-if="visibleRuns.length" class="job-runs__timeline">
+
+    <p v-if="errorText && !runs.length" class="runs__error" role="alert">{{ errorText }}</p>
+    <div v-else-if="isPending && !runs.length" class="runs__skeleton" aria-busy="true">
+      <Skeleton v-for="n in 3" :key="n" class="h-9 w-full" />
+    </div>
+    <ol v-else-if="visibleRuns.length" class="runs__list">
       <li
         v-for="run in visibleRuns"
         :key="run.id"
         class="run"
-        :class="`is-${statusVariant(String(run.status ?? ''))}`"
+        :class="`is-${toneOf(String(run.status ?? ''))}`"
       >
         <span class="run__dot" aria-hidden="true" />
         <div class="run__body">
           <div class="run__line">
-            <UiBadge :variant="statusVariant(String(run.status ?? ''))">{{ statusLabel(String(run.status ?? '')) }}</UiBadge>
+            <span class="run__status">{{ statusLabel(String(run.status ?? '')) }}</span>
             <span class="run__meta">{{ triggerLabel(String(run.trigger ?? '')) }}</span>
             <span class="run__meta run__dur">{{ formatRunDuration(Number(run.duration_ms ?? 0)) }}</span>
-            <time class="run__time">{{ formatStartedAt(String(run.started_at ?? '')) }}</time>
+            <time class="run__time" :title="formatStartedAt(String(run.started_at ?? ''))">{{ relativeDayTime(String(run.started_at ?? '')) || formatStartedAt(String(run.started_at ?? '')) }}</time>
           </div>
-          <Button access="read" variant="ghost"
+          <Button
             v-if="run.error_text"
+            access="read"
+            variant="ghost"
             type="button"
             class="run__err"
-            title="点开看失败全文并复制"
             @click="openError(run)"
           >
             <span class="run__err-line">{{ firstLine(String(run.error_text)) }}</span>
@@ -149,8 +183,7 @@ defineExpose({ reload, focusLatestFailure })
     <EmptyState
       v-else
       compact
-      :description="failedOnly ? '这条任务没有失败记录' : '还没有执行记录'"
-      :reason="failedOnly ? '取消「只看失败」看全部' : '点「立即执行」跑一次'"
+      :description="filter === 'failed' ? '没有失败记录' : '还没有执行记录'"
     />
 
     <JobRunErrorDialog v-model="errorOpen" :run="activeRun" />
@@ -158,7 +191,7 @@ defineExpose({ reload, focusLatestFailure })
 </template>
 
 <style scoped>
-.job-runs {
+.runs {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -167,87 +200,110 @@ defineExpose({ reload, focusLatestFailure })
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow-xs);
   overflow: hidden;
 }
 
-.job-runs__head {
+.runs__head {
   display: flex;
   flex-shrink: 0;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-2);
-  padding: var(--gap-3) var(--gap-4);
-  border-bottom: 1px solid var(--border-subtle);
+  gap: 10px;
+  padding: 10px 12px 8px 16px;
 }
 
-.job-runs__title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gap-2);
+.runs__title {
   color: var(--text-primary);
   font-size: var(--fs-title);
   font-weight: 600;
 }
 
-.job-runs__tools {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gap-2);
+.runs__filter {
+  margin: 0 auto 0 0;
 }
 
-.job-runs__only-failed {
+.runs__filter :deep(.page-tabs__item) {
+  height: 24px;
+  font-size: var(--fs-kicker);
+}
+
+.runs__pulse {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 2px;
+  height: 44px;
+  margin: 0 16px 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.runs__bar {
+  flex: 1 1 0;
+  max-width: 10px;
+  min-width: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px 2px 1px 1px;
+  background: var(--border-strong);
+  cursor: default;
+  opacity: 0.85;
+  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.runs__bar:hover,
+.runs__bar:focus-visible {
+  opacity: 1;
+  outline: none;
+  transform: scaleY(1.08);
+  transform-origin: bottom;
+}
+
+.runs__bar.is-ok { background: color-mix(in oklab, var(--ok) 78%, transparent); }
+.runs__bar.is-stamp { background: var(--stamp); cursor: pointer; }
+.runs__bar.is-warn { background: var(--warn); }
+.runs__bar.is-info { background: var(--info); }
+
+.runs-tip {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
+  gap: 8px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.runs__error {
+  margin: 8px 16px 16px;
+  color: var(--stamp);
   font-size: var(--fs-aux);
-  cursor: pointer;
 }
 
-.job-runs__only-failed :deep(svg) {
-  width: 14px;
-  height: 14px;
-  color: var(--text-tertiary);
-}
-
-.job-runs__only-failed.is-disabled {
-  color: var(--text-disabled);
-  cursor: not-allowed;
-}
-
-.job-runs__skeleton {
+.runs__skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-2);
-  padding: var(--gap-4);
+  gap: 8px;
+  padding: 8px 16px 16px;
 }
 
-.job-runs__timeline {
-  position: relative;
+.runs__list {
   margin: 0;
-  padding: var(--gap-3) var(--gap-4) var(--gap-4) var(--gap-4);
-  list-style: none;
+  padding: 4px 16px 14px;
   overflow: auto;
-  max-height: 26rem;
+  list-style: none;
   scrollbar-width: thin;
 }
 
 .run {
   position: relative;
   display: flex;
-  gap: var(--gap-3);
-  padding: var(--gap-2) 0 var(--gap-3) 0;
+  gap: 12px;
+  padding: 6px 0;
 }
 
-/* 竖线：从点的中心往下连到下一条 */
 .run::before {
   content: '';
   position: absolute;
-  top: 22px;
-  bottom: -4px;
-  left: 5px;
+  top: 24px;
+  bottom: -8px;
+  left: 4px;
   width: 1px;
   background: var(--border-subtle);
 }
@@ -259,31 +315,19 @@ defineExpose({ reload, focusLatestFailure })
 .run__dot {
   position: relative;
   z-index: 1;
-  flex: 0 0 auto;
-  width: 11px;
-  height: 11px;
-  margin-top: 11px;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 9px;
   border-radius: 50%;
   background: var(--border-strong);
   box-shadow: 0 0 0 3px var(--surface);
 }
 
-.run.is-ok .run__dot {
-  background: var(--ok);
-}
-
-.run.is-stamp .run__dot {
-  background: var(--stamp);
-}
-
-.run.is-warn .run__dot {
-  background: var(--warn);
-}
-
-.run.is-info .run__dot {
-  background: var(--info);
-  animation: run-pulse 1.4s ease-in-out infinite;
-}
+.run.is-ok .run__dot { background: var(--ok); }
+.run.is-stamp .run__dot { background: var(--stamp); }
+.run.is-warn .run__dot { background: var(--warn); }
+.run.is-info .run__dot { background: var(--info); animation: run-pulse 1.4s ease-in-out infinite; }
 
 .run__body {
   display: flex;
@@ -297,9 +341,17 @@ defineExpose({ reload, focusLatestFailure })
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--gap-2);
-  min-height: 28px;
+  gap: 4px 12px;
+  min-height: 26px;
 }
+
+.run__status {
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  font-weight: 550;
+}
+
+.run.is-stamp .run__status { color: var(--stamp); }
 
 .run__meta {
   color: var(--text-tertiary);
@@ -314,84 +366,61 @@ defineExpose({ reload, focusLatestFailure })
 .run__time {
   margin-left: auto;
   color: var(--text-tertiary);
-  font-family: var(--mono);
-  font-size: var(--fs-aux);
+  font: var(--fs-aux) / 1 var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .run__err {
   display: flex;
-  align-items: center;
-  gap: var(--gap-2);
+  justify-content: flex-start;
+  gap: 8px;
+  height: auto;
   max-width: 100%;
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid color-mix(in oklab, var(--stamp) 25%, var(--border-subtle));
   border-radius: var(--radius);
   background: var(--stamp-soft);
   color: var(--text-secondary);
   font-size: var(--fs-aux);
   text-align: left;
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease);
 }
 
 .run__err:hover,
 .run__err:focus-visible {
-  border-color: var(--stamp);
+  background: color-mix(in oklab, var(--stamp) 16%, transparent);
   color: var(--stamp);
-}
-
-.run__err:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
 }
 
 .run__err-line {
   min-width: 0;
   overflow: hidden;
   font-family: var(--mono);
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .run__err-more {
-  flex: 0 0 auto;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  background: var(--surface);
+  flex: none;
+  margin-left: auto;
   color: var(--stamp);
   font-size: var(--fs-kicker);
   font-weight: 600;
 }
 
 @keyframes run-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 3px var(--surface);
-  }
-  50% {
-    box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--info-soft);
-  }
+  0%, 100% { box-shadow: 0 0 0 3px var(--surface); }
+  50% { box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--info-soft); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .run.is-info .run__dot {
-    animation: none;
-  }
+  .run.is-info .run__dot { animation: none; }
 }
 
 @media (max-width: 640px) {
-  .job-runs__head,
-  .job-runs__timeline {
-    padding-left: var(--gap-3);
-    padding-right: var(--gap-3);
-  }
-
-  .run__time {
-    flex-basis: 100%;
-    margin-left: 0;
-  }
+  .runs__head { padding-left: 12px; }
+  .runs__pulse { margin-inline: 12px; }
+  .runs__list { padding-inline: 12px; }
+  .run__time { flex-basis: 100%; margin-left: 0; }
 }
 </style>

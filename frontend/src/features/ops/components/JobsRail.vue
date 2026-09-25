@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
- * 定时台左栏：两个筛选 + 任务卡列表（Linear 式）。
+ * 定时台左栏：两个筛选 + 任务名册。
  *
- * 每张卡：状态点 + 名称 + 来源徽标；第二行是人话调度（`工作日 15:05`）与上次结果。
- * 本组件**只负责显示与选中**：过滤后的数据、名字解析、cron 换算都在 JobsTab 里算好传进来。
- * 点卡除了改选中项还会 emit `pick`，父级在手机端用它打开详情 Sheet。
+ * 每行：健康点 · 名称（绑定任务带来源标）· 人话调度；右侧是下次触发与上次结果。
+ * 本组件只负责显示与选中：名字、调度换算、下次触发都在 JobsTab 算好传进来。
+ * 点行除了改选中项还会 emit `pick`，父级在窄屏用它打开详情 Sheet。
  */
-import { Command, CommandList, CommandItem } from '@/shared/components/ui/command'
-import { Clock3 } from '@lucide/vue'
+import { Command, CommandItem, CommandList } from '@/shared/components/ui/command'
 
 import type { JobHealth } from '../composables/opsLabels'
+import { relativeDayTime } from '../composables/jobPresentation'
 
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import {
@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/shared/components/ui/select'
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
 
 export type JobRailRow = {
   id: string
@@ -31,8 +30,14 @@ export type JobRailRow = {
   enabled: boolean
   health: JobHealth
   healthText: string
-  /** 人话调度，如「工作日 15:05」「仅手动」 */
+  /** 整句人话调度，如「工作日 15:05」「仅手动」 */
   cronText?: string
+  /** 调度的星期部分：「工作日」「每天」 */
+  dayText?: string
+  /** 调度的时点部分：「15:05」「盘中每 5 分钟 · 15:00」 */
+  bodyText?: string
+  /** 下次触发（原文 ISO） */
+  nextRunAt?: string
   /** 上次运行时间（原文，`YYYY-MM-DD HH:mm:ss`） */
   lastRunAt?: string
 }
@@ -47,6 +52,14 @@ const selectedId = defineModel<string | null>('selectedId', { required: true })
 const kindFilter = defineModel<string>('kindFilter', { required: true })
 const statusFilter = defineModel<string>('statusFilter', { required: true })
 
+const HEALTH_GLYPH: Record<JobHealth, string> = {
+  ok: '✓',
+  failed: '✗',
+  skipped: '↷',
+  running: '…',
+  never: '○',
+}
+
 function pick(id: string): void {
   selectedId.value = id
   emit('pick', id)
@@ -56,6 +69,12 @@ function shortTime(raw?: string): string {
   const text = String(raw || '').trim()
   if (!text) return ''
   return text.replace('T', ' ').slice(5, 16)
+}
+
+function nextLabel(row: JobRailRow): string {
+  if (!row.enabled) return '已停用'
+  if (!row.nextRunAt) return row.dayText === '仅手动' ? '仅手动' : '—'
+  return relativeDayTime(row.nextRunAt) || '—'
 }
 </script>
 
@@ -89,37 +108,37 @@ function shortTime(raw?: string): string {
       </Select>
     </div>
     <Command :model-value="selectedId ?? undefined" class="jobs-command" :selection-follows-focus="false">
-    <CommandList class="jobs-list" aria-label="任务列表">
-      <CommandItem
-        v-for="row in rows"
-        :key="row.id"
-        :value="row.id"
-        :text-value="row.title"
-        class="job-card"
-        :class="{ 'is-active': row.id === selectedId, 'is-off': !row.enabled, [`is-${row.health}`]: true }"
-        :aria-label="`${row.title} · ${row.healthText}`"
-        @select="pick(row.id)"
-      >
-        <span class="job-card__dot" :title="row.healthText" aria-hidden="true" />
-        <div class="job-card__body">
-          <div class="job-card__top">
-            <strong class="job-card__title">{{ row.title }}</strong>
-            <UiBadge :variant="row.bound ? 'info' : 'secondary'" class="job-card__origin">{{ row.originText }}</UiBadge>
-          </div>
-          <div class="job-card__meta">
-            <span class="job-card__sched">
-              <Clock3 aria-hidden="true" />
-              {{ row.cronText || row.kindText }}
+      <CommandList class="jobs-list" aria-label="任务列表">
+        <CommandItem
+          v-for="row in rows"
+          :key="row.id"
+          :value="row.id"
+          :text-value="row.title"
+          class="job-row"
+          :class="{ 'is-active': row.id === selectedId, 'is-off': !row.enabled, [`is-${row.health}`]: true }"
+          :aria-label="`${row.title} · ${row.healthText}`"
+          @select="pick(row.id)"
+        >
+          <span class="job-row__dot" :title="row.healthText" aria-hidden="true" />
+          <span class="job-row__main">
+            <span class="job-row__title">
+              <strong>{{ row.title }}</strong>
+              <span v-if="row.bound" class="job-row__origin">{{ row.originText }}</span>
             </span>
-            <span v-if="!row.enabled" class="job-card__off">已停用</span>
-            <span v-else class="job-card__health" :class="`job-card__health--${row.health}`">
-              {{ row.healthText }}<template v-if="row.lastRunAt"> · {{ shortTime(row.lastRunAt) }}</template>
+            <span class="job-row__sched" :title="row.cronText">
+              <span v-if="row.dayText" class="job-row__day">{{ row.dayText }}</span>
+              <span class="job-row__body">{{ row.bodyText || row.kindText }}</span>
             </span>
-          </div>
-        </div>
-      </CommandItem>
-      <EmptyState v-if="!rows.length" compact description="没有匹配的任务" reason="调整类型或结果筛选" />
-    </CommandList>
+          </span>
+          <span class="job-row__side">
+            <span class="job-row__next" :class="{ 'is-muted': !row.enabled || !row.nextRunAt }">{{ nextLabel(row) }}</span>
+            <span class="job-row__last" :class="`is-${row.health}`" :title="row.healthText">
+              <i aria-hidden="true">{{ HEALTH_GLYPH[row.health] }}</i>{{ shortTime(row.lastRunAt) || row.healthText }}
+            </span>
+          </span>
+        </CommandItem>
+        <EmptyState v-if="!rows.length" compact description="没有匹配的任务" />
+      </CommandList>
     </Command>
   </aside>
 </template>
@@ -128,203 +147,216 @@ function shortTime(raw?: string): string {
 .jobs-rail {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-2);
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
 }
 
 .jobs-filters {
   display: grid;
   flex-shrink: 0;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--gap-2);
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .jobs-filter {
   width: 100%;
   min-width: 0;
+  border-color: transparent;
+  background: var(--surface-sunken);
+  box-shadow: none;
 }
 
-.jobs-command { flex: 1; min-height: 0; background: transparent; }
+.jobs-command {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+
 .jobs-list {
-  max-height: none;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: var(--gap-2);
+  max-height: none;
   min-height: 0;
+  padding: 4px;
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  padding: 2px;
 }
 
-.jobs-list :deep([role="presentation"]) { display: flex; flex-direction: column; gap: var(--gap-2); }
-
-.job-card {
+.jobs-list :deep([role='presentation']) {
   display: flex;
-  align-items: flex-start;
-  gap: var(--gap-2);
+  flex-direction: column;
+  gap: 1px;
+}
+
+.job-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
-  padding: var(--gap-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-xs);
+  padding: 9px 10px 9px 12px;
+  border-radius: var(--radius);
   cursor: pointer;
-  transition:
-    border-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease),
-    background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease);
 }
 
-.job-card:hover {
-  border-color: var(--border-default);
-  box-shadow: var(--shadow-sm);
+.job-row:hover,
+.job-row[data-highlighted] {
+  background: var(--surface-hover);
 }
 
-.job-card[data-highlighted] {
+.job-row[data-highlighted] {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
-.job-card.is-active {
-  border-color: var(--seal-border);
-  background: color-mix(in oklab, var(--seal-soft) 60%, var(--surface));
-  box-shadow: 0 0 0 1px var(--seal-border);
+.job-row.is-active {
+  background: color-mix(in oklab, var(--seal-soft) 70%, var(--surface));
 }
 
-.job-card.is-off {
-  opacity: 0.72;
+.job-row.is-active::before {
+  content: '';
+  position: absolute;
+  inset-block: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--seal);
 }
 
-.job-card__dot {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  margin-top: 6px;
+.job-row.is-off .job-row__main,
+.job-row.is-off .job-row__side {
+  opacity: 0.55;
+}
+
+.job-row__dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--border-strong);
 }
 
-.job-card.is-ok .job-card__dot {
-  background: var(--ok);
-  box-shadow: 0 0 0 3px var(--ok-soft);
-}
+.job-row.is-ok .job-row__dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.job-row.is-failed .job-row__dot { background: var(--stamp); box-shadow: 0 0 0 3px var(--stamp-soft); }
+.job-row.is-skipped .job-row__dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.job-row.is-running .job-row__dot { background: var(--info); animation: job-pulse 1.4s ease-in-out infinite; }
+.job-row.is-never .job-row__dot { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); }
 
-.job-card.is-failed .job-card__dot {
-  background: var(--stamp);
-  box-shadow: 0 0 0 3px var(--stamp-soft);
-}
-
-.job-card.is-skipped .job-card__dot {
-  background: var(--warn);
-  box-shadow: 0 0 0 3px var(--warn-soft);
-}
-
-.job-card.is-running .job-card__dot {
-  background: var(--info);
-  box-shadow: 0 0 0 3px var(--info-soft);
-  animation: job-pulse 1.4s ease-in-out infinite;
-}
-
-/* 从未跑过是空心圈：它不是「好」，也不是「坏」，是「还没有过」。 */
-.job-card.is-never .job-card__dot {
-  background: transparent;
-  border: 1.5px solid var(--border-strong);
-}
-
-.job-card__body {
+.job-row__main {
   display: flex;
-  flex: 1 1 auto;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 
-.job-card__top {
+.job-row__title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-2);
+  gap: 6px;
   min-width: 0;
 }
 
-.job-card__title {
-  flex: 1 1 auto;
+.job-row__title strong {
   min-width: 0;
   overflow: hidden;
   color: var(--text-primary);
   font-size: var(--fs-ui);
   font-weight: 600;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.job-card__origin {
-  flex: 0 0 auto;
+.job-row__origin {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: var(--seal-soft);
+  color: var(--seal-ink);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  line-height: 16px;
 }
 
-.job-card__meta {
+.job-row__sched {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px var(--gap-2);
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
   color: var(--text-tertiary);
   font-size: var(--fs-aux);
 }
 
-.job-card__sched {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
+.job-row__day {
+  flex: none;
   color: var(--text-secondary);
+}
+
+.job-row__body {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--mono);
+  font-size: var(--fs-kicker);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-row__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  min-width: 0;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.job-card__sched :deep(svg) {
-  width: 12px;
-  height: 12px;
-  color: var(--text-tertiary);
-}
-
-.job-card__health {
-  font-variant-numeric: tabular-nums;
-}
-
-.job-card__health--failed {
-  color: var(--stamp);
+.job-row__next {
+  color: var(--text-primary);
+  font-size: var(--fs-aux);
   font-weight: 600;
 }
 
-.job-card__health--skipped {
-  color: var(--warn-ink);
-}
-
-.job-card__health--ok {
-  color: var(--ok);
-}
-
-.job-card__off {
+.job-row__next.is-muted {
   color: var(--text-tertiary);
+  font-family: var(--font);
+  font-weight: 500;
 }
+
+.job-row__last {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+}
+
+.job-row__last i {
+  font-style: normal;
+  font-weight: 700;
+}
+
+.job-row__last.is-ok i { color: var(--ok); }
+.job-row__last.is-failed { color: var(--stamp); }
+.job-row__last.is-skipped i { color: var(--warn); }
+.job-row__last.is-running i { color: var(--info); }
 
 @keyframes job-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 3px var(--info-soft);
-  }
-  50% {
-    box-shadow: 0 0 0 6px transparent;
-  }
+  0%, 100% { box-shadow: 0 0 0 3px var(--info-soft); }
+  50% { box-shadow: 0 0 0 6px transparent; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .job-card.is-running .job-card__dot {
-    animation: none;
-  }
+  .job-row.is-running .job-row__dot { animation: none; }
 }
 </style>

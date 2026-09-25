@@ -206,6 +206,8 @@ class ScreenSkillGenerateRequest(QuantModel):
     dialect: ScreenDialect | None = None
     entrypoint: str | None = Field(default=None, max_length=240)
     references: list[ScreenSkillReferenceModel] = Field(default_factory=list, max_length=100)
+    # 用户原话（不含前端拼的草稿上下文）。没有外部资料时，它就是逻辑唯一可引用的来源。
+    brief: str | None = Field(default=None, max_length=4000)
     provider: str | None = Field(default=None, max_length=64)
     model: str | None = Field(default=None, max_length=120)
     thinking: str | None = Field(default=None, max_length=16)
@@ -213,12 +215,10 @@ class ScreenSkillGenerateRequest(QuantModel):
     @model_validator(mode="after")
     def _validate_source(self) -> ScreenSkillGenerateRequest:
         if self.source_type == "description":
-            if len(self.source.strip()) < 10:
-                raise ValueError("自然语言描述至少 10 个字符")
+            if len((self.brief or self.source).strip()) < 4:
+                raise ValueError("自然语言描述至少 4 个字符")
             if not (self.provider or "").strip():
                 raise ValueError("自然语言生成必须指定 provider")
-            if not self.references:
-                raise ValueError("自然语言生成必须至少提供一条可定位资料来源")
         return self
 
 

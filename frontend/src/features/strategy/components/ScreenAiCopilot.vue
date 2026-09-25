@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { Spinner } from '@/shared/components/ui/spinner'
-import { computed } from 'vue'
-import { Sparkles } from '@lucide/vue'
+/**
+ * AI 编写：一句话描述选股思路 → 生成完整策稿（公式、参数、逻辑脉络、数据字段）。
+ * 已有草稿时同一个入口就是「改写」。⌘/Ctrl + Enter 直接生成。
+ */
+import { computed, nextTick, ref } from 'vue'
+import { ArrowUp, BookOpen, MessageCircle, Sparkles } from '@lucide/vue'
 
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { THINKING_OPTIONS, type LlmModelOption } from '@/shared/lib/llm'
 import type { LlmProvider } from '@/shared/types/quant'
@@ -19,11 +22,15 @@ const props = withDefaults(
     thinking: string
     providers: LlmProvider[]
     providerModels: LlmModelOption[]
+    /** 资料来源没有半填的错行（可以为空：为空时以需求原话为来源） */
     referencesReady: boolean
+    referenceCount?: number
     busy?: boolean
     compact?: boolean
+    /** 当前是空白 / 起手草稿：生成即新建，否则是改写 */
+    fresh?: boolean
   }>(),
-  { busy: false, compact: false },
+  { busy: false, compact: false, fresh: false, referenceCount: 0 },
 )
 
 const emit = defineEmits<{
@@ -36,66 +43,125 @@ const emit = defineEmits<{
   'manage-references': []
 }>()
 
-const canGenerate = computed(() => Boolean(props.instruction.trim() && props.provider && props.referencesReady))
+const FRESH_IDEAS = [
+  '放量突破 20 日均线，换手率 3%–15%',
+  '均线多头排列 5>10>20>60，回踩 10 日线不破',
+  'MACD 零轴上方金叉且当日收阳',
+  '60 日新低后连续 3 天收阳放量',
+  '涨停后缩量回调到 5 日线附近',
+  '布林带收口后放量突破上轨',
+]
 
-/** 「不启思考」的空串在 Select 里是一个合法选项值会与「未选择」撞车，用 off 哨兵代一层。 */
+const REVISE_IDEAS = [
+  '加入换手率 3%–15% 过滤',
+  '只保留成交额大于 2 亿的股票',
+  '收紧为连续 2 天满足条件',
+  '参数 N 改成可调的 10–60',
+]
+
+const ideas = computed(() => (props.fresh ? FRESH_IDEAS : REVISE_IDEAS))
+const field = ref<InstanceType<typeof Textarea> | null>(null)
+const canGenerate = computed(() =>
+  Boolean(props.instruction.trim().length >= 4 && props.provider && props.referencesReady),
+)
+
+/** 「不启思考」的空串在 Select 里会与「未选择」撞车，用 off 哨兵代一层。 */
 const thinkingModel = computed({
   get: () => props.thinking || 'off',
   set: (value: string) => emit('update:thinking', value === 'off' ? '' : value),
 })
 
-/**
- * 模型既要能选（目录里启用的），也要能自己写（目录没登记的新模型），
- * shadcn 的 `Select` 只有固定选项，所以这里用原生 `datalist` 承载「可搜 + 可造」。
- */
+const providerModel = computed({
+  get: () => props.provider,
+  set: (value: string) => emit('update:provider', String(value || '')),
+})
+
 const modelListId = 'screen-ai-copilot-models'
+
+function useIdea(text: string): void {
+  const current = props.instruction.trim()
+  emit('update:instruction', current ? `${current}；${text}` : text)
+  void nextTick(() => {
+    const el = (field.value as unknown as { $el?: HTMLElement } | null)?.$el
+    const target = el instanceof HTMLTextAreaElement ? el : el?.querySelector?.('textarea')
+    target?.focus()
+  })
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return
+  event.preventDefault()
+  if (canGenerate.value && !props.busy) emit('generate')
+}
 </script>
 
 <template>
-  <section class="flex h-full min-w-0 flex-col gap-2" :class="{ 'gap-1.5': compact }" aria-label="AI 策略助手">
-    <!--
-      compact（策稿台侧栏）里不再印「改公式」：外层侧栏头上已经写着「助手」，
-      两行说的是同一件事。这一行现在只留真正有信息量的来源状态 tag —— 它决定
-      能不能点「生成」，以前反而只在 compact 里被藏掉了。
-    -->
-    <div class="flex items-start justify-between gap-2">
-      <strong v-if="!compact" class="text-title font-bold">生成或修改中文策略脉络</strong>
-      <UiBadge :variant="referencesReady ? 'ok' : 'warn'">
-        {{ referencesReady ? '来源已完整' : '待补来源' }}
-      </UiBadge>
-    </div>
+  <section class="ai" :class="{ 'is-busy': busy }" aria-label="AI 编写">
+    <header class="ai__head">
+      <span class="ai__mark" aria-hidden="true"><Sparkles /></span>
+      <strong class="ai__title">AI 编写</strong>
+      <span class="ai__mode">{{ fresh ? '新建' : '改写' }}</span>
+    </header>
 
-    <div class="copilot__instruction">
+    <div class="ai__box">
       <Textarea
+        ref="field"
         :model-value="instruction"
-        :rows="compact ? 5 : 4"
+        :rows="compact ? 6 : 5"
         maxlength="1200"
-        placeholder="用中文描述要改的逻辑…"
-        aria-label="给 AI 的当前草稿修改指令"
+        :placeholder="fresh ? '描述选股思路…' : '描述要改的地方…'"
+        aria-label="给 AI 的编写要求"
+        class="ai__input"
+        :disabled="busy"
         @update:model-value="(value) => emit('update:instruction', String(value))"
+        @keydown="onKeydown"
       />
-      <span class="copilot__count">{{ instruction.length }}/1200</span>
+      <div class="ai__bar">
+        <Select v-model="providerModel">
+          <SelectTrigger size="sm" class="ai__provider" aria-label="AI 供应商">
+            <SelectValue placeholder="供应商" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="item in providers" :key="item.name" :value="item.name">
+              {{ item.name }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Select v-model="thinkingModel">
+          <SelectTrigger size="sm" class="ai__thinking" aria-label="思考程度">
+            <SelectValue placeholder="思考" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem
+              v-for="item in THINKING_OPTIONS"
+              :key="item.value || 'off'"
+              :value="item.value || 'off'"
+            >
+              {{ item.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <span class="ai__count">{{ instruction.length }}/1200</span>
+        <Button
+          size="icon-sm"
+          class="ai__send"
+          :disabled="!canGenerate || busy"
+          :aria-label="fresh ? '生成策稿' : '按要求改写'"
+          @click="emit('generate')"
+        >
+          <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+          <ArrowUp v-else aria-hidden="true" />
+        </Button>
+      </div>
     </div>
 
-    <div v-if="!compact" class="copilot__fields">
-      <Select :model-value="provider" @update:model-value="(value) => emit('update:provider', String(value || ''))">
-        <SelectTrigger class="w-full" aria-label="AI 供应商">
-          <SelectValue placeholder="选择供应商" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem
-            v-for="item in providers"
-            :key="item.name"
-            :value="item.name"
-          >
-            {{ item.is_default ? `${item.name}（默认）` : item.name }}
-          </SelectItem>
-        </SelectContent>
-      </Select>
+    <details v-if="!compact || providerModels.length" class="ai__model">
+      <summary>模型</summary>
       <Input
         :model-value="model"
         :list="modelListId"
-        placeholder="供应商默认模型"
+        size="sm"
+        placeholder="供应商默认"
         aria-label="AI 模型"
         @update:model-value="(value) => emit('update:model', String(value || ''))"
       />
@@ -104,96 +170,236 @@ const modelListId = 'screen-ai-copilot-models'
           {{ item.label }}
         </option>
       </datalist>
-      <Select v-model="thinkingModel">
-        <SelectTrigger class="w-full" aria-label="思考程度">
-          <SelectValue placeholder="思考程度" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem
-            v-for="item in THINKING_OPTIONS"
-            :key="item.value || 'off'"
-            :value="item.value || 'off'"
-          >
-            {{ item.label }}
-          </SelectItem>
-        </SelectContent>
-      </Select>
+    </details>
+
+    <div class="ai__ideas" role="list" aria-label="思路">
+      <button
+        v-for="idea in ideas"
+        :key="idea"
+        type="button"
+        role="listitem"
+        class="ai__idea"
+        :disabled="busy"
+        @click="useIdea(idea)"
+      >
+        {{ idea }}
+      </button>
     </div>
 
-    <div class="copilot__foot">
-      <Button
-        :disabled="!canGenerate || busy"
-        @click="emit('generate')"
-      >
-        <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
-        <Sparkles v-else />
-        {{ compact ? '生成并应用' : '应用 AI 建议' }}
+    <footer class="ai__foot">
+      <Button variant="ghost" size="xs" :class="{ 'is-warn': !referencesReady }" @click="emit('manage-references')">
+        <BookOpen aria-hidden="true" />
+        资料 {{ referenceCount }}
       </Button>
-      <Button v-if="!referencesReady" variant="link" @click="emit('manage-references')">
-        管理资料来源
-      </Button>
-      <Button v-if="compact" variant="link" @click="emit('open-assistant')">
+      <Button variant="ghost" size="xs" @click="emit('open-assistant')">
+        <MessageCircle aria-hidden="true" />
         在助手中继续
       </Button>
-    </div>
-    <p v-if="compact && !referencesReady" class="copilot__tip">补齐资料来源后才能生成。</p>
+    </footer>
   </section>
 </template>
 
 <style scoped>
-.copilot {
+.ai {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  gap: 12px;
   min-width: 0;
   height: 100%;
+  padding: 14px;
+  background:
+    radial-gradient(120% 60% at 100% 0%, color-mix(in oklab, var(--seal) 9%, transparent), transparent 70%),
+    var(--surface);
 }
 
-.copilot__head {
+.ai__head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.65rem;
+  align-items: center;
+  gap: 8px;
 }
 
-.copilot__head strong {
-  font-size: 0.92rem;
+.ai__mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, color-mix(in oklab, var(--seal) 88%, white), var(--seal-active));
+  color: var(--on-primary);
+  box-shadow: var(--shadow-inset-highlight), 0 6px 16px -8px color-mix(in oklab, var(--seal) 70%, transparent);
 }
 
-.copilot__instruction {
-  position: relative;
+.ai__mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ai.is-busy .ai__mark {
+  animation: ai-breathe 1.6s ease-in-out infinite;
+}
+
+.ai__title {
+  color: var(--text-primary);
+  font-size: var(--fs-title);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.ai__mode {
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.ai__box {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
-.copilot__count {
-  position: absolute;
-  right: 0.45rem;
-  bottom: 0.25rem;
-  color: var(--mist);
+.ai__box:focus-within {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px var(--focus-halo), var(--shadow-sm);
+}
+
+.ai__input {
+  min-height: 112px;
+  padding: 12px 14px 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  resize: none;
+}
+
+.ai__input:focus-visible {
+  box-shadow: none;
+  outline: none;
+}
+
+.ai__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+
+.ai__provider {
+  width: auto;
+  min-width: 0;
+  max-width: 9rem;
+  border-color: transparent;
+  background: var(--surface-sunken);
+  box-shadow: none;
+}
+
+.ai__thinking {
+  width: auto;
+  min-width: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ai__count {
+  margin-left: auto;
+  color: var(--text-disabled);
   font: var(--fs-micro) / 1 var(--mono);
 }
 
-.copilot__fields {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.4rem;
+.ai__send {
+  border-radius: var(--radius-pill);
 }
 
-.copilot__foot {
+.ai__model {
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+.ai__model summary {
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ai__model summary::before {
+  content: '＋ ';
+}
+
+.ai__model[open] summary::before {
+  content: '－ ';
+}
+
+.ai__model > :not(summary) {
+  margin-top: 6px;
+}
+
+.ai__ideas {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: center;
+  gap: 6px;
 }
 
-.copilot__tip {
-  margin: 0;
-  color: var(--mist);
-  font-size: 0.76rem;
+.ai__idea {
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 
-.copilot--compact .copilot__foot {
-  flex-direction: column;
-  align-items: stretch;
+.ai__idea:hover:not(:disabled) {
+  border-color: var(--seal-border);
+  background: var(--seal-soft);
+  color: var(--seal-ink);
+}
+
+.ai__idea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.ai__idea:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ai__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ai__foot :deep(.is-warn) {
+  color: var(--warn-ink);
+}
+
+@keyframes ai-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.9); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai.is-busy .ai__mark { animation: none; }
 }
 </style>

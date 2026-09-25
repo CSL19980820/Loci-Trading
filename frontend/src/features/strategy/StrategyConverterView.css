@@ -151,3 +151,73 @@
 .workbench-editor-pane > .workbench-editor, .workbench-result-pane > .workbench-side { flex: 1; min-width: 0; }
 .workbench-shell--narrow > .workbench-editor-pane, .workbench-shell--narrow > .workbench-result-pane { flex: 1 1 100% !important; }
 .workbench-resize-handle { width: 4px; touch-action: none; }
+
+/* ─── 页头：AI 编写入口 + 草稿读数 ─── */
+.workbench-ai-btn {
+  border-color: var(--seal-border);
+  color: var(--seal-ink);
+  background:
+    linear-gradient(135deg, color-mix(in oklab, var(--seal) 10%, transparent), transparent 70%),
+    var(--surface);
+}
+
+.workbench-ai-btn:hover,
+.workbench-ai-btn.is-on {
+  border-color: var(--seal);
+  background: var(--seal-soft);
+  color: var(--seal-ink);
+}
+
+.workbench-actions-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--border-default);
+}
+
+.workbench-stat {
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+  white-space: nowrap;
+}
+
+.workbench-stat b {
+  color: var(--text-secondary);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.workbench-trial {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.workbench-trial i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.workbench-trial.is-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.workbench-trial.is-ok i {
+  background: var(--ok);
+}
+
+.copilot-pane {
+  height: 100%;
+  gap: 0;
+}

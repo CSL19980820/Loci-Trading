@@ -29,6 +29,18 @@ export function activeScreenSkillSource(draft: ScreenSkillDraftModel): string {
   return draft.runtime === 'python' ? draft.code : draft.formula
 }
 
+function bodySignature(source: string): string {
+  return source.replace(/\{[^}]*\}/g, '').replace(/#.*$/gm, '').replace(/\s+/g, '')
+}
+
+/** 执行源还是空白或起手模板：AI 生成即新建，而不是在模板上改写 */
+export function isStarterScreenSkillBody(draft: ScreenSkillDraftModel): boolean {
+  const body = bodySignature(activeScreenSkillSource(draft))
+  if (!body) return true
+  const template = createEmptyScreenSkillDraft(draft.runtime === 'python' ? 'python' : 'blank')
+  return body === bodySignature(activeScreenSkillSource(template))
+}
+
 export function buildAiRevisionInstruction(
   draft: ScreenSkillDraftModel,
   instruction: string,

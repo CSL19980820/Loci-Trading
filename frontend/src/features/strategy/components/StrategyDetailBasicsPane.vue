@@ -1,144 +1,230 @@
 <script setup lang="ts">
-import { vBusy } from '@/shared/directives/busy'
-import { DetailList, DetailItem, StatusBadge } from '@/shared/components/ui/app/presentation'
-import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
-
+/** 战法概览：说明 → 买入说明 → 默认参数 → 所需字段 → 回测口径。 */
 import { computed } from 'vue'
-import type { StrategyInfo, StrategyVersion } from '@/shared/types/quant'
+
+import type { StrategyInfo } from '@/shared/types/quant'
 import {
-  formatBacktestConfig,
-  formatPercent,
-  formatProfitFactor,
-  isActiveVersion,
-  strategyEntryLabel,
+  backtestConfigEntries,
   strategyFieldRows,
-  strategyRevisionLabel,
-  strategySourceLabel,
+  strategyParamRows,
 } from './strategyDetailFormat'
 
 const props = defineProps<{
   strategy: StrategyInfo | null
-  loadingVersions: boolean
-  versionRows: StrategyVersion[]
-  canManageVersions: boolean
-  versionActing: string
 }>()
 
-const emit = defineEmits<{
-  rollback: [version: string]
-  'remove-version': [version: string]
-}>()
-
-const sourceLabel = computed(() => strategySourceLabel(props.strategy))
-const entryLabel = computed(() => strategyEntryLabel(props.strategy))
-const revisionLabel = computed(() => strategyRevisionLabel(props.strategy))
+const paramRows = computed(() => strategyParamRows(props.strategy))
 const fieldRows = computed(() => strategyFieldRows(props.strategy))
-const backtestMetrics = computed(() => props.strategy?.backtest_metrics ?? null)
-const backtestConfigLabel = computed(() => formatBacktestConfig(props.strategy?.backtest_config))
-
-function versionKey(version: string): string {
-  return version
-}
-
-function activeVersion(row: StrategyVersion): boolean {
-  return isActiveVersion(row, props.strategy?.version)
-}
+const backtestRows = computed(() => backtestConfigEntries(props.strategy?.backtest_config))
 </script>
 
 <template>
+  <div class="ov">
+    <p class="ov__desc" :class="{ 'is-empty': !strategy?.description }">{{ strategy?.description || '—' }}</p>
 
-  <DetailList :column="2" border size="small" class="detail-desc">
-    <DetailItem label="来源">{{ sourceLabel }}</DetailItem>
-    <DetailItem label="入场">{{ entryLabel }}</DetailItem>
-    <DetailItem label="最少 K 线">{{ strategy?.min_bars }}</DetailItem>
-    <DetailItem label="修订">{{ revisionLabel }}</DetailItem>
-    <DetailItem label="当前版本">{{ strategy?.version || '—' }}</DetailItem>
-    <DetailItem label="回测交易数">{{ backtestMetrics?.trades ?? '—' }}</DetailItem>
-    <DetailItem label="回测胜率">{{ formatPercent(backtestMetrics?.win_rate) }}</DetailItem>
-    <DetailItem label="平均净收益">{{ formatPercent(backtestMetrics?.avg_net_return) }}</DetailItem>
-    <DetailItem label="PF">{{ formatProfitFactor(backtestMetrics?.profit_factor) }}</DetailItem>
-  </DetailList>
+    <section v-if="strategy?.entry_instructions" class="ov__callout" aria-label="买入说明">
+      <span class="ov__kicker">买入</span>
+      <p>{{ strategy.entry_instructions }}</p>
+    </section>
 
-  <!-- margin-top:-1px：两张表的边框各 1px，叠在一起才是一条线，不是两条 -->
-  <DetailList :column="1" border size="small" class="detail-desc detail-desc--prose">
-    <DetailItem label="回测口径">
-      <div class="desc-text mono-text">{{ backtestConfigLabel }}</div>
-    </DetailItem>
-    <DetailItem v-if="strategy?.entry_instructions" label="买入说明">
-      <div class="desc-text">{{ strategy.entry_instructions }}</div>
-    </DetailItem>
-    <DetailItem label="说明">
-      <div class="desc-text">{{ strategy?.description || '—' }}</div>
-    </DetailItem>
-    <DetailItem label="所需字段">
-      <div v-if="fieldRows.length" class="field-tags">
-        <StatusBadge
-          v-for="row in fieldRows"
-          :key="row.key"
-          size="small"
-          effect="plain"
-          tone="info"
-        >
-          {{ row.label }}
-          <span class="field-key">{{ row.key }}</span>
-        </StatusBadge>
-      </div>
-      <span v-else class="dim">—</span>
-    </DetailItem>
-  </DetailList>
-  <div class="version-history" v-busy="loadingVersions">
-    <div class="version-history__title">历史版本</div>
-    <div v-if="versionRows.length" class="version-list">
-      <div v-for="row in versionRows" :key="row.id || row.version" class="version-row">
-        <div class="version-row__meta">
-          <strong class="mono">{{ row.version }}</strong>
-          <StatusBadge v-if="activeVersion(row)" size="small" tone="success">当前</StatusBadge>
-          <StatusBadge v-else-if="row.status" size="small" effect="plain">{{ row.status }}</StatusBadge>
-          <span class="dim">{{ row.created_at || '—' }}</span>
+    <section v-if="paramRows.length" class="ov__block" aria-label="默认参数">
+      <h4 class="ov__title">默认参数<span>{{ paramRows.length }}</span></h4>
+      <dl class="ov__params">
+        <div v-for="row in paramRows" :key="row.key" class="ov__param">
+          <dt :title="row.key">{{ row.label }}</dt>
+          <dd>{{ row.value }}</dd>
         </div>
-        <div v-if="canManageVersions && !activeVersion(row)" class="version-row__actions">
-          <ActionButton
-            variant="link"
-            tone="primary"
-            :busy="versionActing === versionKey(row.version)"
-            @click="emit('rollback', row.version)"
-          >
-            回滚
-          </ActionButton>
-          <ActionButton
-            variant="link"
-            tone="danger"
-            :disabled="Boolean(versionActing)"
-            @click="emit('remove-version', row.version)"
-          >
-            删除
-          </ActionButton>
+      </dl>
+    </section>
+
+    <section v-if="fieldRows.length" class="ov__block" aria-label="所需字段">
+      <h4 class="ov__title">所需字段<span>{{ fieldRows.length }}</span></h4>
+      <ul class="ov__chips">
+        <li v-for="row in fieldRows" :key="row.key" class="ov__chip">
+          {{ row.label }}<code>{{ row.key }}</code>
+        </li>
+      </ul>
+    </section>
+
+    <section v-if="backtestRows.length" class="ov__block" aria-label="回测口径">
+      <h4 class="ov__title">回测口径</h4>
+      <dl class="ov__bt">
+        <div v-for="row in backtestRows" :key="row.key">
+          <dt>{{ row.label }}</dt>
+          <dd>{{ row.value }}</dd>
         </div>
-      </div>
-    </div>
-    <span v-else class="dim">暂无历史版本</span>
+      </dl>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.detail-desc { width: 100%; }
-.detail-desc :deep(.detail-list) { table-layout: fixed; }
-.detail-desc :deep(.detail-item__label) { color: var(--mist); width: 6.5rem; text-align: right; }
-/* 断行只在「一个词真的放不下」时发生：不再逐字断，中文与百分数才不会竖排 */
-.detail-desc :deep(.detail-item__content) { min-width: 0; word-break: normal; overflow-wrap: break-word; }
-/* 长文本块紧贴上一张表：两张表各带 1px 边框，-1px 才收成一条线 */
-.detail-desc--prose { margin-top: -1px; }
-.desc-text { line-height: 1.5; font-size: var(--fs-aux); white-space: pre-wrap; overflow-wrap: break-word; }
-.mono-text { font-family: var(--mono); font-size: 0.76rem; color: var(--ink); }
-.field-tags, .version-row__meta, .version-row__actions { display: flex; flex-wrap: wrap; align-items: center; }
-.field-tags { gap: 0.35rem; }
-.field-key { margin-left: 0.35rem; color: var(--mist); font-family: var(--mono); font-size: var(--fs-kicker); }
-.version-list { display: flex; flex-direction: column; gap: 0.15rem; }
-.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.version-history { margin-top: 1rem; }
-.version-history__title { margin-bottom: 0.35rem; font-size: 0.86rem; font-weight: 600; }
-.version-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid var(--rule); }
-.version-row__meta { gap: 0.35rem; min-width: 0; }
-.version-row__actions { gap: 0.15rem; flex-shrink: 0; }
-.dim { color: var(--mist); font-size: var(--fs-aux); }
+.ov {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.ov__desc {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ov__desc.is-empty {
+  color: var(--text-tertiary);
+}
+
+.ov__callout {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--seal) 6%, var(--surface-sunken));
+}
+
+.ov__callout p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-ui);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ov__kicker {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  background: var(--seal);
+  color: var(--on-primary);
+  font-size: var(--fs-kicker);
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.ov__block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ov__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.ov__title span {
+  color: var(--text-tertiary);
+  font: 500 var(--fs-kicker) / 1 var(--mono);
+}
+
+.ov__params {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.ov__param {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.ov__param dt {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov__param dd {
+  margin: 0;
+  color: var(--text-primary);
+  font: 600 var(--fs-title) / 1.2 var(--mono);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ov__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ov__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  font-size: var(--fs-aux);
+}
+
+.ov__chip code {
+  color: var(--text-tertiary);
+  font: var(--fs-kicker) / 1 var(--mono);
+}
+
+.ov__bt {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0;
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.ov__bt > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ov__bt > div:nth-child(odd) {
+  padding-right: 16px;
+}
+
+.ov__bt dt {
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+.ov__bt dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-primary);
+  font: var(--fs-aux) / 1.4 var(--mono);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
 </style>

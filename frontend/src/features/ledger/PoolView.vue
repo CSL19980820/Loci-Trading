@@ -158,12 +158,12 @@ watch(queryError, (err) => {
 
 const columns = ref<BasicTableColumn[]>([
   { type: 'selection', width: 40, fixed: 'left' },
-  { prop: 'code', label: '标的', minWidth: 168, align: 'center', headerAlign: 'center', slotName: 'stock' },
-  { prop: 'rule_version', label: '战法', minWidth: 168, align: 'center', headerAlign: 'center', slotName: 'strategy' },
-  { prop: 'date', label: '选出日', width: 108, align: 'center', headerAlign: 'center', slotName: 'date' },
+  { prop: 'code', label: '标的', minWidth: 168, align: 'left', headerAlign: 'left', slotName: 'stock' },
+  { prop: 'rule_version', label: '战法', minWidth: 168, align: 'left', headerAlign: 'left', slotName: 'strategy' },
+  { prop: 'date', label: '选出日', width: 112, align: 'center', headerAlign: 'center', slotName: 'date' },
   { prop: 'decision', label: '裁决', width: 84, align: 'center', headerAlign: 'center', slotName: 'decision' },
-  { prop: 'score', label: '评分', width: 72, align: 'center', headerAlign: 'center', slotName: 'score' },
-  { prop: 'reason', label: '理由', minWidth: 180, align: 'center', headerAlign: 'center', slotName: 'reason' },
+  { prop: 'score', label: '评分', width: 120, align: 'left', headerAlign: 'left', slotName: 'score' },
+  { prop: 'reason', label: '理由', minWidth: 200, align: 'left', headerAlign: 'left', slotName: 'reason' },
   { prop: 'actions', label: '', width: 44, align: 'center', headerAlign: 'center', slotName: 'actions' },
 ])
 
@@ -177,6 +177,22 @@ function decisionVariant(decision: string): 'info' | 'warn' | 'secondary' {
   if (label === '精选') return 'info'
   if (label === '观察') return 'warn'
   return 'secondary'
+}
+
+/** 评分条以当前筛选下的最高分为满格：只做相对比较，不暗示绝对量纲 */
+const scoreMax = computed(() => {
+  let max = 0
+  for (const row of rows.value) {
+    const n = Number(row.score)
+    if (Number.isFinite(n) && n > max) max = n
+  }
+  return max
+})
+
+function scoreWidth(value: unknown): string {
+  const n = Number(value)
+  if (value == null || value === '' || !Number.isFinite(n) || scoreMax.value <= 0) return '0%'
+  return `${Math.max(4, Math.min(100, (n / scoreMax.value) * 100)).toFixed(1)}%`
 }
 
 function fmtScore(value: unknown): string {
@@ -245,7 +261,7 @@ function openDetail(row: Record<string, unknown>): void {
   detailOpen.value = true
 }
 
-function goArchive(): void {
+function goArchive(targetDate?: string): void {
   if (!detail.value) return
   detailOpen.value = false
   const seen = new Set<string>()
@@ -263,7 +279,7 @@ function goArchive(): void {
       items: toBatchItems(uniq.map((row) => ({ code: row.code, name: row.name }))),
     })
   }
-  const date = String(detail.value.date || '').trim()
+  const date = String(targetDate || detail.value.date || '').trim()
   void router.push({
     path: `/archive/${detail.value.code}`,
     query: /^\d{4}-\d{2}-\d{2}$/.test(date) ? { date } : undefined,
@@ -544,7 +560,10 @@ onMounted(async () => {
               </UiBadge>
             </template>
             <template #score="{ row }">
-              <span class="pool-num pool-score">{{ fmtScore(row.score) }}</span>
+              <span class="pool-scorecell">
+                <span class="pool-scorebar" aria-hidden="true"><i :class="`is-${decisionVariant(String(row.decision ?? ''))}`" :style="{ width: scoreWidth(row.score) }" /></span>
+                <span class="pool-num pool-score">{{ fmtScore(row.score) }}</span>
+              </span>
             </template>
             <template #reason="{ row }">
               <Tooltip :disabled="!row.reason" :delay-duration="150">
@@ -713,7 +732,7 @@ onMounted(async () => {
 .pool-cell-inline {
   display: inline-flex;
   align-items: baseline;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
@@ -754,10 +773,44 @@ onMounted(async () => {
   color: var(--text-primary);
 }
 
+.pool-scorecell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.pool-scorebar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 4px;
+  min-width: 36px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+}
+
+.pool-scorebar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--border-strong);
+}
+
+.pool-scorebar > i.is-info { background: var(--seal); }
+.pool-scorebar > i.is-warn { background: var(--warn); }
+
+.pool-scorecell .pool-score {
+  flex: none;
+  min-width: 2.5em;
+  text-align: right;
+}
+
 /* 理由单行截断：全文进 tooltip 气泡（气泡限宽在下面全局层） */
 .pool-reason-text {
   display: inline-block;
   max-width: 100%;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

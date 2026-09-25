@@ -166,7 +166,6 @@ const panelId = `guardian-research-panel-${useId()}`
         <div v-else class="guardian-pool-empty">
           <div class="guardian-empty-mark"><span /><span /><span /></div>
           <strong>{{ filter === 'holding' ? '暂无持仓股' : '暂无自选股' }}</strong>
-          <p>{{ filter === 'holding' ? '成交后的实际持仓显示在这里' : '近3个已结束交易日的量化候选与模型保留的观察股统一展示' }}</p>
         </div>
 
       </section>
@@ -224,7 +223,7 @@ const panelId = `guardian-research-panel-${useId()}`
             </Badge>
           </div>
           <Pager v-if="historyMode" :current-page="page" :page-size="range.limit" :total="total" layout="total, prev, pager, next" :disabled="listLoading" @current-change="changePage" />
-          <span v-else-if="total > range.limit" class="run-label">当前展示最近 {{ range.limit }} 次，其余可在历史中查询</span>
+          <span v-else-if="total > range.limit" class="run-label">最近 {{ range.limit }} / {{ total }}</span>
         </div>
 
         <SkeletonBlock v-if="detailLoading" :rows="4" animated />
@@ -310,8 +309,7 @@ const panelId = `guardian-research-panel-${useId()}`
 
         <div v-else class="guardian-report-empty">
           <IconBox><Document /></IconBox>
-          <strong>所选日期暂无研判</strong>
-          <p>可调整日期范围查询历史研判</p>
+          <strong>暂无研判</strong>
 
         </div>
 

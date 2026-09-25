@@ -1,8 +1,10 @@
 """Screen Skill 草稿生成与方言原稿归一。"""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from typing import Any
 
 from src.strategy.api.screen_skill_schemas import ScreenSkillDraftModel, ScreenSkillGenerateRequest
 from src.ops import ScreenPackageError
@@ -36,6 +38,34 @@ def build_generated_draft(
     return _generate_description_draft(payload, ops_db=ops_db)
 
 
+BRIEF_REFERENCE_ID = "brief"
+
+_DRAFT_KEYS = {
+    "slug", "name", "description", "version", "enabled", "runtime", "dialect",
+    "code", "formula", "entrypoint", "manifest", "ui",
+}
+_MANIFEST_KEYS = {
+    "schema_version", "entry_timing", "min_bars", "params", "output",
+    "factors", "logic", "references", "data",
+}
+_LOGIC_KEYS = {"id", "title", "expression", "explanation", "citations"}
+_ENTRY_TIMINGS = {"open", "close", "next_open", "next_dip"}
+_SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
+
+
+def _generation_references(
+    payload: ScreenSkillGenerateRequest,
+) -> tuple[list[dict[str, Any]], bool]:
+    """用户给了资料就只用资料；没给时，用户的原话就是逻辑唯一可追溯的来源。"""
+    supplied = [item.model_dump(exclude_none=True) for item in payload.references]
+    if supplied:
+        return supplied, False
+    brief = (payload.brief or payload.source).strip()[:4000]
+    return [
+        {"id": BRIEF_REFERENCE_ID, "title": "需求描述", "kind": "brief", "quote": brief}
+    ], True
+
+
 def _generate_description_draft(
     payload: ScreenSkillGenerateRequest,
     *,
@@ -44,6 +74,7 @@ def _generate_description_draft(
     from src.ai import ChatMessage, chat, resolve_config
     from src.shared.api_deps import ops_store
 
+    references, synthesized = _generation_references(payload)
     with ops_store(ops_db) as store:
         provider = resolve_config(
             store,
@@ -52,28 +83,190 @@ def _generate_description_draft(
         )
     response = chat(
         provider,
-        [ChatMessage(role="user", content=_build_generate_prompt(payload))],
-        max_tokens=4000,
+        [
+            ChatMessage(
+                role="user",
+                content=_build_generate_prompt(payload, references, synthesized),
+            )
+        ],
+        max_tokens=6000,
         temperature=0.2,
         thinking=str(payload.thinking or ""),
     )
-    raw = _strip_code_fence(response.text.strip())
+    raw = _extract_json_object(response.text.strip())
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ScreenPackageError(f"AI 草稿不是合法 JSON：{exc}") from exc
-    manifest = data.get("manifest") if isinstance(data, dict) else None
-    if isinstance(manifest, dict):
-        # 引用内容以用户提交的资料为准，避免模型改写摘录或补造来源。
-        manifest["references"] = [
-            item.model_dump(exclude_none=True) for item in payload.references
-        ]
+    if not isinstance(data, dict):
+        raise ScreenPackageError("AI 草稿不是 JSON 对象")
+    data = _normalize_generated_draft(data, payload, references, synthesized)
     try:
         return ScreenSkillDraftModel.model_validate(
             data, context={"require_provenance": True}
         )
     except Exception as exc:
         raise ScreenPackageError(f"AI 草稿缺少 provenance：{exc}") from exc
+
+
+def _normalize_generated_draft(
+    data: dict[str, Any],
+    payload: ScreenSkillGenerateRequest,
+    references: list[dict[str, Any]],
+    synthesized: bool,
+) -> dict[str, Any]:
+    """把模型输出收进草稿契约：丢掉多余键、补齐标识、引用以用户资料为准。
+
+    只做形状层面的收口，不改写公式与逻辑内容；公式能不能编译仍由试跑诊断说话。
+    """
+    draft = {key: value for key, value in data.items() if key in _DRAFT_KEYS}
+    runtime = draft.get("runtime")
+    if runtime not in ("formula", "python"):
+        runtime = payload.runtime or "formula"
+    draft["runtime"] = runtime
+    if runtime == "python":
+        draft["dialect"] = "python"
+    elif draft.get("dialect") not in ("loci", "tdx", "ths"):
+        draft["dialect"] = payload.dialect if payload.dialect in ("loci", "tdx", "ths") else "loci"
+
+    code = str(draft.get("code") or draft.get("formula") or "").strip()
+    if code:
+        draft["code"] = code + "\n"
+        draft["formula"] = code + "\n" if runtime == "formula" else None
+    if runtime == "python":
+        draft.pop("formula", None)
+
+    draft["slug"] = _generated_slug(draft.get("slug"), payload)
+    name = str(draft.get("name") or payload.name or "").strip()[:80] or "AI 草稿战法"
+    draft["name"] = name
+    draft["description"] = (
+        str(draft.get("description") or payload.description or name).strip()[:240] or name
+    )
+    draft["version"] = str(draft.get("version") or "0.1.0")[:32]
+    draft["enabled"] = draft.get("enabled") is not False
+    if not isinstance(draft.get("ui"), dict):
+        draft.pop("ui", None)
+
+    raw_manifest = draft.get("manifest")
+    manifest = {
+        key: value
+        for key, value in (raw_manifest.items() if isinstance(raw_manifest, dict) else [])
+        if key in _MANIFEST_KEYS
+    }
+    manifest["schema_version"] = 2
+    if manifest.get("entry_timing") not in _ENTRY_TIMINGS:
+        manifest["entry_timing"] = payload.entry_timing
+    try:
+        manifest["min_bars"] = max(1, min(5000, int(manifest.get("min_bars") or 120)))
+    except (TypeError, ValueError):
+        manifest["min_bars"] = 120
+    manifest["params"] = _normalized_params(manifest.get("params"))
+    output = manifest.get("output")
+    signal = str(output.get("signal") or "") if isinstance(output, dict) else ""
+    manifest["output"] = {"signal": (signal or _detect_signal_name(code))[:64]}
+    factors = manifest.get("factors")
+    manifest["factors"] = (
+        [str(item)[:64] for item in factors if str(item).strip()][:100]
+        if isinstance(factors, list)
+        else _detect_factor_names(code)
+    )
+    manifest["references"] = references
+    manifest["logic"] = _normalized_logic(manifest.get("logic"), references, synthesized)
+    data_block = manifest.get("data")
+    data_block = dict(data_block) if isinstance(data_block, dict) else {}
+    fields = data_block.get("fields")
+    if not isinstance(fields, list) or not fields:
+        fields = _detect_python_fields(code) if runtime == "python" else _detect_formula_fields(code)
+    adjust = str(data_block.get("adjust") or "qfq")
+    universe = data_block.get("universe")
+    manifest["data"] = {
+        "fields": [str(item) for item in fields if str(item).strip()],
+        "adjust": adjust if adjust in ("qfq", "hfq", "none") else "qfq",
+        "universe": universe if isinstance(universe, dict) else {"preset": "default_a_share"},
+    }
+    draft["manifest"] = manifest
+    return draft
+
+
+def _generated_slug(raw: Any, payload: ScreenSkillGenerateRequest) -> str:
+    if payload.slug:
+        return payload.slug
+    text = re.sub(r"[^a-z0-9._-]+", "-", str(raw or "").strip().lower()).strip("-._")[:64]
+    if _SLUG_PATTERN.match(text):
+        return text
+    digest = hashlib.sha1((payload.brief or payload.source).encode("utf-8")).hexdigest()[:8]
+    return f"ai-{digest}"
+
+
+def _normalized_params(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    params: dict[str, Any] = {}
+    for name, spec in list(raw.items())[:100]:
+        if not isinstance(spec, dict):
+            continue
+        kind = spec.get("type")
+        default = spec.get("default")
+        if kind == "bool" and isinstance(default, bool):
+            value: int | float | bool = default
+        elif kind in ("int", "float") and isinstance(default, (int, float)) and not isinstance(default, bool):
+            value = int(default) if kind == "int" else float(default)
+        else:
+            continue
+        row: dict[str, Any] = {"type": kind, "default": value}
+        for bound in ("min", "max"):
+            limit = spec.get(bound)
+            if isinstance(limit, (int, float)) and not isinstance(limit, bool):
+                row[bound] = limit
+        label = str(spec.get("label") or "").strip()[:40]
+        if label:
+            row["label"] = label
+        params[str(name)[:64]] = row
+    return params
+
+
+def _normalized_logic(
+    raw: Any,
+    references: list[dict[str, Any]],
+    synthesized: bool,
+) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    known = {str(item.get("id")) for item in references}
+    rows: list[dict[str, Any]] = []
+    for index, item in enumerate(raw[:100]):
+        if not isinstance(item, dict):
+            continue
+        row = {key: value for key, value in item.items() if key in _LOGIC_KEYS}
+        title = str(row.get("title") or "").strip()[:120]
+        expression = str(row.get("expression") or "").strip()[:4000]
+        explanation = str(row.get("explanation") or "").strip()[:2000]
+        if not (title and expression and explanation):
+            continue
+        citations = [str(c) for c in row.get("citations") or [] if str(c) in known]
+        if not citations and synthesized:
+            citations = [BRIEF_REFERENCE_ID]
+        rows.append(
+            {
+                "id": str(row.get("id") or f"rule-{index + 1}")[:64],
+                "title": title,
+                "expression": expression,
+                "explanation": explanation,
+                "citations": citations,
+            }
+        )
+    return rows
+
+
+def _extract_json_object(text: str) -> str:
+    stripped = _strip_code_fence(text).strip()
+    if stripped.startswith("{"):
+        return stripped
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start >= 0 and end > start:
+        return stripped[start : end + 1]
+    return stripped
 
 
 def _build_formula_draft(payload: ScreenSkillGenerateRequest) -> ScreenSkillDraftModel:
@@ -150,26 +343,67 @@ def _build_python_draft(payload: ScreenSkillGenerateRequest) -> ScreenSkillDraft
     return ScreenSkillDraftModel.model_validate(draft)
 
 
-def _build_generate_prompt(payload: ScreenSkillGenerateRequest) -> str:
-    supplied = [item.model_dump(exclude_none=True) for item in payload.references]
+def _formula_syntax_guide() -> str:
+    from src.formula import formula_functions_catalog
+
+    signatures = "、".join(
+        f"{row['signature']}={row['summary']}" for row in formula_functions_catalog()
+    )
+    return (
+        "Loci 公式语法：每条语句以分号结尾；`名称:=表达式;` 定义中间因子，"
+        "`PICK: 布尔表达式;` 输出唯一主信号（output.signal 与它同名）。\n"
+        "行情字段：OPEN HIGH LOW CLOSE VOL AMOUNT HSL（换手率，百分比口径）。\n"
+        "运算：+ - * /，比较 > >= < <= = <>，逻辑 AND OR NOT；注释写在 {} 里。\n"
+        "manifest.params 里定义的参数名可直接当常量使用（如 N）。\n"
+        f"只允许使用这些函数：{signatures}。\n"
+        "示例：\nBASE:=MA(CLOSE,N);\nVOLR:=VOL/MA(VOL,5);\nPICK: CLOSE>BASE AND VOLR>=1.5;\n"
+    )
+
+
+def _build_generate_prompt(
+    payload: ScreenSkillGenerateRequest,
+    references: list[dict[str, Any]] | None = None,
+    synthesized: bool = False,
+) -> str:
+    supplied = (
+        references
+        if references is not None
+        else [item.model_dump(exclude_none=True) for item in payload.references]
+    )
     desired_runtime = payload.runtime or "formula"
     desired_dialect = payload.dialect or ("python" if desired_runtime == "python" else "loci")
+    citation_rule = (
+        f"没有外部资料：每条 logic 的 citations 只写 [\"{BRIEF_REFERENCE_ID}\"]（即用户需求原话），"
+        "不得编造论文、网址或书目。\n"
+        if synthesized
+        else "不得虚构资料。优先原样使用用户提供的 references，并在逻辑中准确引用。\n"
+    )
+    syntax = _formula_syntax_guide() if desired_runtime == "formula" else (
+        "Python 策略：entrypoint 指向 strategy.py:compute(panels, params)，"
+        "panels 是字段名到 DataFrame（日期 × 代码）的映射；返回 {'signals': 布尔 DataFrame, "
+        "'factors': {名称: DataFrame}}。只能使用当日及以前的数据，禁止前视。\n"
+    )
     return (
         "你是 A 股 Screen Skill 生成助手。只输出一个 JSON 对象，不要 markdown 代码块。\n"
         "字段必须只有 slug、name、description、version、enabled、runtime、dialect、"
         "code、formula、entrypoint、manifest、ui。\n"
+        "slug 只用小写字母、数字与连字符；name 为简洁中文战法名（不超过 16 字）；"
+        "description 一句话概括选股逻辑（不超过 80 字）。\n"
         "runtime 只能是 formula 或 python；dialect 只能是 loci/tdx/ths/python。\n"
         "manifest 必须包含 schema_version=2、entry_timing、min_bars、params、"
         "output.signal、factors、logic、references、data。\n"
+        "params 每项形如 {\"type\":\"int|float|bool\",\"default\":值,\"min\":下限,\"max\":上限,\"label\":\"中文名\"}。\n"
         "logic 每项必须有 id/title/expression/explanation/citations；每个 citation 必须"
-        "引用 references 中存在的 id。references 必须有可定位的 url/path/section/quote。\n"
-        "data.fields 列出行情字段，adjust 为 qfq/hfq/none，universe 给股票池对象。\n"
-        "不得虚构资料。优先原样使用用户提供的 references，并在逻辑中准确引用。\n"
-        f"目标 runtime={desired_runtime}，dialect={desired_dialect}，"
+        "引用 references 中存在的 id；title 与 explanation 用中文。\n"
+        "data.fields 列出行情字段（open/high/low/close/volume/amount/turnover），"
+        "adjust 为 qfq/hfq/none，universe 给股票池对象。\n"
+        + citation_rule
+        + syntax
+        + f"目标 runtime={desired_runtime}，dialect={desired_dialect}，"
         f"entrypoint={payload.entrypoint or 'strategy.py:compute'}。\n"
         f"给定 entry_timing={payload.entry_timing}。\n"
         f"如提供 slug={payload.slug or ''}、name={payload.name or ''}，请优先沿用。\n"
-        f"用户提供的 references={json.dumps(supplied, ensure_ascii=False)}\n\n"
+        f"references={json.dumps(supplied, ensure_ascii=False)}\n\n"
         f"需求：{payload.source.strip()}"
     )
 
