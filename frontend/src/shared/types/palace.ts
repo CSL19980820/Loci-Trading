@@ -8,7 +8,11 @@ export interface Candidate {
   decision: string
   timing: string
   reason: string
+  /** 展示用战法名：内置战法会被后端归一成中文名 */
   rule_version: string
+  /** 精确的战法 slug（与 `screen:{slug}` 定时任务同一个键） */
+  strategy_slug?: string
+  /** `slim` 列表不返回 */
   evidence: Record<string, string>
   source: string
   created_at: string

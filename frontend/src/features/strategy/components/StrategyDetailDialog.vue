@@ -38,6 +38,7 @@ import {
   formatProfitFactor,
   pad,
   strategyEntryLabel,
+  strategyRevisionLabel,
   strategySourceLabel,
   type BoardId,
   type ScheduleMode,
@@ -127,6 +128,12 @@ const versionText = computed(() => {
   const raw = String(displayedStrategy.value?.version || '').trim()
   if (!raw) return ''
   return raw.toLowerCase().startsWith('v') ? raw : `v${raw}`
+})
+
+/** 修订指纹：内置战法显示「内置」不重复，公式战法给前 8 位 */
+const revisionText = computed(() => {
+  const text = strategyRevisionLabel(displayedStrategy.value)
+  return text === '—' || text === strategySourceLabel(displayedStrategy.value) ? '' : text
 })
 
 const scheduleSummary = computed(() => {
@@ -379,6 +386,7 @@ async function save(): Promise<void> {
           <span v-if="versionText" class="sd__ver">{{ versionText }}</span>
           <span>{{ strategyEntryLabel(displayedStrategy) }}</span>
           <span v-if="displayedStrategy?.min_bars">{{ displayedStrategy.min_bars }} 根</span>
+          <span v-if="revisionText" class="sd__ver" :title="displayedStrategy?.strategy_revision">{{ revisionText }}</span>
         </div>
         <div class="sd__title-row">
           <DialogTitle class="sd__title">{{ title }}</DialogTitle>

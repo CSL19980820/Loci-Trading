@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from typing import Any
 
@@ -49,7 +50,6 @@ _MANIFEST_KEYS = {
     "factors", "logic", "references", "data",
 }
 _LOGIC_KEYS = {"id", "title", "expression", "explanation", "citations"}
-_ENTRY_TIMINGS = {"open", "close", "next_open", "next_dip"}
 _SLUG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
@@ -120,14 +120,19 @@ def _normalize_generated_draft(
     只做形状层面的收口，不改写公式与逻辑内容；公式能不能编译仍由试跑诊断说话。
     """
     draft = {key: value for key, value in data.items() if key in _DRAFT_KEYS}
-    runtime = draft.get("runtime")
+    # 请求里写明的运行时 / 方言 / 入场时点 / 名称是用户的选择，模型只能填空，不能改写。
+    runtime = payload.runtime or draft.get("runtime")
     if runtime not in ("formula", "python"):
-        runtime = payload.runtime or "formula"
+        runtime = "formula"
     draft["runtime"] = runtime
     if runtime == "python":
         draft["dialect"] = "python"
-    elif draft.get("dialect") not in ("loci", "tdx", "ths"):
-        draft["dialect"] = payload.dialect if payload.dialect in ("loci", "tdx", "ths") else "loci"
+        entrypoint = str(payload.entrypoint or draft.get("entrypoint") or "").strip()
+        draft["entrypoint"] = entrypoint if ":" in entrypoint else "strategy.py:compute"
+    else:
+        dialect = payload.dialect if payload.dialect in ("loci", "tdx", "ths") else draft.get("dialect")
+        draft["dialect"] = dialect if dialect in ("loci", "tdx", "ths") else "loci"
+        draft.pop("entrypoint", None)
 
     code = str(draft.get("code") or draft.get("formula") or "").strip()
     if code:
@@ -137,7 +142,7 @@ def _normalize_generated_draft(
         draft.pop("formula", None)
 
     draft["slug"] = _generated_slug(draft.get("slug"), payload)
-    name = str(draft.get("name") or payload.name or "").strip()[:80] or "AI 草稿战法"
+    name = str(payload.name or draft.get("name") or "").strip()[:80] or "AI 草稿战法"
     draft["name"] = name
     draft["description"] = (
         str(draft.get("description") or payload.description or name).strip()[:240] or name
@@ -154,12 +159,11 @@ def _normalize_generated_draft(
         if key in _MANIFEST_KEYS
     }
     manifest["schema_version"] = 2
-    if manifest.get("entry_timing") not in _ENTRY_TIMINGS:
-        manifest["entry_timing"] = payload.entry_timing
-    try:
-        manifest["min_bars"] = max(1, min(5000, int(manifest.get("min_bars") or 120)))
-    except (TypeError, ValueError):
-        manifest["min_bars"] = 120
+    manifest["entry_timing"] = payload.entry_timing
+    min_bars = manifest.get("min_bars")
+    manifest["min_bars"] = (
+        max(1, min(5000, int(min_bars))) if _is_finite_number(min_bars) else 120
+    )
     manifest["params"] = _normalized_params(manifest.get("params"))
     output = manifest.get("output")
     signal = str(output.get("signal") or "") if isinstance(output, dict) else ""
@@ -198,6 +202,15 @@ def _generated_slug(raw: Any, payload: ScreenSkillGenerateRequest) -> str:
     return f"ai-{digest}"
 
 
+def _is_finite_number(value: Any) -> bool:
+    """JSON 能解析出 Infinity / NaN；它们既不能进 int()，也不该落进 manifest。"""
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+
+
 def _normalized_params(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
@@ -209,14 +222,14 @@ def _normalized_params(raw: Any) -> dict[str, Any]:
         default = spec.get("default")
         if kind == "bool" and isinstance(default, bool):
             value: int | float | bool = default
-        elif kind in ("int", "float") and isinstance(default, (int, float)) and not isinstance(default, bool):
+        elif kind in ("int", "float") and _is_finite_number(default):
             value = int(default) if kind == "int" else float(default)
         else:
             continue
         row: dict[str, Any] = {"type": kind, "default": value}
         for bound in ("min", "max"):
             limit = spec.get(bound)
-            if isinstance(limit, (int, float)) and not isinstance(limit, bool):
+            if _is_finite_number(limit):
                 row[bound] = limit
         label = str(spec.get("label") or "").strip()[:40]
         if label:
@@ -243,7 +256,12 @@ def _normalized_logic(
         explanation = str(row.get("explanation") or "").strip()[:2000]
         if not (title and expression and explanation):
             continue
-        citations = [str(c) for c in row.get("citations") or [] if str(c) in known]
+        raw_citations = row.get("citations")
+        citations = (
+            [str(c) for c in raw_citations if isinstance(c, (str, int)) and str(c) in known]
+            if isinstance(raw_citations, list)
+            else []
+        )
         if not citations and synthesized:
             citations = [BRIEF_REFERENCE_ID]
         rows.append(
@@ -259,14 +277,12 @@ def _normalized_logic(
 
 
 def _extract_json_object(text: str) -> str:
-    stripped = _strip_code_fence(text).strip()
-    if stripped.startswith("{"):
-        return stripped
-    start = stripped.find("{")
-    end = stripped.rfind("}")
+    """取回复里第一个 `{` 到最后一个 `}`：前后的说明文字与代码围栏都丢掉。"""
+    start = text.find("{")
+    end = text.rfind("}")
     if start >= 0 and end > start:
-        return stripped[start : end + 1]
-    return stripped
+        return text[start : end + 1]
+    return _strip_code_fence(text).strip()
 
 
 def _build_formula_draft(payload: ScreenSkillGenerateRequest) -> ScreenSkillDraftModel:

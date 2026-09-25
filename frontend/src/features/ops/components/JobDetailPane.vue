@@ -104,7 +104,18 @@ const avgDuration = computed(() => {
   return formatRunDuration(total / rows.length)
 })
 
-const lastLabel = computed(() => jobHealthLabel(health.value).replace('上次', ''))
+const LAST_STATUS_TEXT: Record<string, string> = {
+  success: '成功',
+  failed: '失败',
+  timed_out: '超时',
+  skipped: '跳过',
+  cancelled: '已取消',
+  running: '运行中',
+}
+const lastLabel = computed(() => {
+  const status = String(props.job.last_status || '').trim().toLowerCase()
+  return LAST_STATUS_TEXT[status] ?? jobHealthLabel(health.value).replace('上次', '')
+})
 const lastWhen = computed(() => relativeDayTime(String(props.job.last_run_at || ''), now.value))
 
 async function reloadRuns(): Promise<void> {

@@ -64,7 +64,7 @@ import {
   applyCatalogSnippet,
   applyImportedSource,
   buildAiRevisionInstruction,
-  isStarterScreenSkillBody,
+  isPristineScreenSkillDraft,
   SCREEN_FALLBACK_FIELDS,
   switchScreenSkillRuntime,
 } from './screenSkillWorkbench'
@@ -123,7 +123,10 @@ export function useScreenSkillWorkbenchPage() {
   /** 没有半填的错行即可生成；一条资料都没有时，后端以需求原话作为逻辑来源 */
   const referencesReady = computed(() => referenceBuild.value.errors.length === 0)
   const referenceCount = computed(() => referenceBuild.value.references.length)
-  const freshDraft = computed(() => !currentSlug.value && isStarterScreenSkillBody(draft))
+  /** 试跑会给新稿补一个临时 slug，所以「新建」看路由与包修订号，而不是 draft.slug */
+  const freshDraft = computed(
+    () => !isEditing.value && !draft.packageRevision && isPristineScreenSkillDraft(draft),
+  )
   const fieldOptions = computed(() => {
     if (!catalog.value?.fields.length) return SCREEN_FALLBACK_FIELDS
     return catalog.value.fields.map((item) => ({
@@ -355,6 +358,8 @@ export function useScreenSkillWorkbenchPage() {
   }
 
   async function handleGenerate(): Promise<void> {
+    // guard 共用一个 busy：保存 / 导入还在路上时生成，先回来的会把 busy 清掉，结果互相覆盖
+    if (busy.value || generating.value) return
     const brief = generationForm.source.trim()
     if (brief.length < 4) {
       error.value = '先写下选股思路。'

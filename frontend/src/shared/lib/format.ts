@@ -77,6 +77,16 @@ export function entityLabel(type: string): string {
 }
 
 /** 裁决口径统一成中文展示。 */
+/** 裁决三档色调：精选 / 观察 / 其余（落选）。点、条、药片共用这一处映射。 */
+export type DecisionTone = 'pick' | 'watch' | 'drop'
+
+export function decisionTone(decision: string | null | undefined): DecisionTone {
+  const label = decisionLabel(decision)
+  if (label === '精选') return 'pick'
+  if (label === '观察') return 'watch'
+  return 'drop'
+}
+
 export function decisionLabel(decision: string | null | undefined): string {
   if (!decision) return '—'
   const raw = decision.trim()

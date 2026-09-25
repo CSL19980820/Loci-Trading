@@ -37,9 +37,14 @@ const filter = ref<'all' | 'failed'>('all')
 const errorOpen = ref(false)
 const activeRun = ref<JobRun | null>(null)
 
-const failedCount = computed(() => runs.value.filter((run) => run.status === 'failed').length)
+/** 超时与失败同为「没跑成」：计数、筛选、跳转与红色一个口径 */
+function isFailure(run: JobRun): boolean {
+  return toneOf(String(run.status ?? '')) === 'stamp'
+}
+
+const failedCount = computed(() => runs.value.filter(isFailure).length)
 const visibleRuns = computed(() =>
-  filter.value === 'failed' ? runs.value.filter((run) => run.status === 'failed') : runs.value,
+  filter.value === 'failed' ? runs.value.filter(isFailure) : runs.value,
 )
 const filterItems = computed<PageTabItem[]>(() => [
   { name: 'all', label: '全部', badge: runs.value.length || undefined },
@@ -94,7 +99,7 @@ function openError(run: JobRun): void {
 /** 回执上的「上次失败 N」点进来就落在这里：直接摊开最近一条失败全文。 */
 async function focusLatestFailure(): Promise<void> {
   await reload()
-  const hit = runs.value.find((run) => run.status === 'failed')
+  const hit = runs.value.find(isFailure)
   if (!hit) return
   filter.value = 'failed'
   activeRun.value = hit

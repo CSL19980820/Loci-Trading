@@ -22,7 +22,7 @@ import {
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { formatDateTime } from '@/shared/lib/dateTime'
-import { decisionLabel, timingLabel } from '@/shared/lib/format'
+import { decisionLabel, decisionTone, timingLabel } from '@/shared/lib/format'
 import type { OpenBatchInput } from '@/shared/stores/batchBrowse'
 import type { Candidate } from '@/shared/types/palace'
 
@@ -54,12 +54,7 @@ const { quote, isPending: quotePending } = useQuotesQuery(liveCode, () => ({
 
 const footprints = useStrategyFootprints(liveCode)
 
-const tone = computed<'pick' | 'watch' | 'drop'>(() => {
-  const label = decisionLabel(props.candidate?.decision ?? '')
-  if (label === '精选') return 'pick'
-  if (label === '观察') return 'watch'
-  return 'drop'
-})
+const tone = computed(() => decisionTone(props.candidate?.decision))
 
 const scoreValue = computed(() => {
   const raw = props.candidate?.score

@@ -45,7 +45,7 @@ import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { toBatchItems } from '@/shared/lib/batchBrowse'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
-import { decisionLabel } from '@/shared/lib/format'
+import { decisionLabel, decisionTone } from '@/shared/lib/format'
 import { useUserStore } from '@/shared/stores/user'
 import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
 import type { Candidate } from '@/shared/types/palace'
@@ -172,11 +172,10 @@ const visibleColumns = computed({
   set: (next: BasicTableColumn[]) => { if (userStore.canWrite) columns.value = next },
 })
 
+const DECISION_VARIANT = { pick: 'info', watch: 'warn', drop: 'secondary' } as const
+
 function decisionVariant(decision: string): 'info' | 'warn' | 'secondary' {
-  const label = decisionLabel(decision)
-  if (label === '精选') return 'info'
-  if (label === '观察') return 'warn'
-  return 'secondary'
+  return DECISION_VARIANT[decisionTone(decision)]
 }
 
 /** 评分条以当前筛选下的最高分为满格：只做相对比较，不暗示绝对量纲 */

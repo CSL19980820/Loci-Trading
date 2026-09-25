@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/shared/components/ui/spinner'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { THINKING_OPTIONS, type LlmModelOption } from '@/shared/lib/llm'
+import { useUserStore } from '@/shared/stores/user'
 import type { LlmProvider } from '@/shared/types/quant'
 
 const props = withDefaults(
@@ -25,12 +26,15 @@ const props = withDefaults(
     /** 资料来源没有半填的错行（可以为空：为空时以需求原话为来源） */
     referencesReady: boolean
     referenceCount?: number
+    /** 页面有写操作在途（保存 / 导入 / 生成）：禁止再发起生成 */
     busy?: boolean
+    /** 正在生成：只有这时才转圈 */
+    generating?: boolean
     compact?: boolean
     /** 当前是空白 / 起手草稿：生成即新建，否则是改写 */
     fresh?: boolean
   }>(),
-  { busy: false, compact: false, fresh: false, referenceCount: 0 },
+  { busy: false, generating: false, compact: false, fresh: false, referenceCount: 0 },
 )
 
 const emit = defineEmits<{
@@ -60,6 +64,7 @@ const REVISE_IDEAS = [
 ]
 
 const ideas = computed(() => (props.fresh ? FRESH_IDEAS : REVISE_IDEAS))
+const userStore = useUserStore()
 const field = ref<InstanceType<typeof Textarea> | null>(null)
 const canGenerate = computed(() =>
   Boolean(props.instruction.trim().length >= 4 && props.provider && props.referencesReady),
@@ -96,7 +101,7 @@ function onKeydown(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <section class="ai" :class="{ 'is-busy': busy }" aria-label="AI 编写">
+  <section class="ai" :class="{ 'is-busy': generating }" aria-label="AI 编写">
     <header class="ai__head">
       <span class="ai__mark" aria-hidden="true"><Sparkles /></span>
       <strong class="ai__title">AI 编写</strong>
@@ -117,7 +122,13 @@ function onKeydown(event: KeyboardEvent): void {
         @keydown="onKeydown"
       />
       <div class="ai__bar">
-        <Select v-model="providerModel">
+        <template v-if="!providers.length">
+          <Button v-if="userStore.isAdmin" access="read" as-child variant="ghost" size="sm" class="ai__setup">
+            <RouterLink :to="{ path: '/ops', query: { tab: 'llm' } }">配置模型</RouterLink>
+          </Button>
+          <span v-else class="ai__none">未配置模型</span>
+        </template>
+        <Select v-else v-model="providerModel">
           <SelectTrigger size="sm" class="ai__provider" aria-label="AI 供应商">
             <SelectValue placeholder="供应商" />
           </SelectTrigger>
@@ -127,7 +138,7 @@ function onKeydown(event: KeyboardEvent): void {
             </SelectItem>
           </SelectContent>
         </Select>
-        <Select v-model="thinkingModel">
+        <Select v-if="providers.length" v-model="thinkingModel">
           <SelectTrigger size="sm" class="ai__thinking" aria-label="思考程度">
             <SelectValue placeholder="思考" />
           </SelectTrigger>
@@ -149,7 +160,7 @@ function onKeydown(event: KeyboardEvent): void {
           :aria-label="fresh ? '生成策稿' : '按要求改写'"
           @click="emit('generate')"
         >
-          <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="generating" class="size-4 animate-spin" aria-hidden="true" />
           <ArrowUp v-else aria-hidden="true" />
         </Button>
       </div>
@@ -310,6 +321,16 @@ function onKeydown(event: KeyboardEvent): void {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
+}
+
+.ai__setup {
+  color: var(--seal-ink);
+}
+
+.ai__none {
+  padding: 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
 }
 
 .ai__count {
