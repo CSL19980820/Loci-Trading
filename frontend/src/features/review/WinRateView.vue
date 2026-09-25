@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 /**
  * 胜率统计（路由 `/winrate`）。
  *
@@ -12,7 +13,7 @@
  *   战法：证据面板（自带 bento）→ 分周期卡
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CircleAlert, Info, LoaderCircle, RotateCw, X } from '@lucide/vue'
+import { CircleAlert, Info, RotateCw, X } from '@lucide/vue'
 
 import {
   CapabilityUnavailableError,
@@ -331,7 +332,7 @@ onUnmounted(() => {
           <PopoverContent side="bottom" align="end" class="wr-caliber" aria-label="胜率统计口径">{{ CALIBER_HINT }}</PopoverContent>
         </Popover>
         <Button access="read" size="sm" :disabled="busy" @click="reload">
-          <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
           <RotateCw v-else class="size-4" aria-hidden="true" />
           刷新
         </Button>

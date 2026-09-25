@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, toRef, type Ref } from 'vue'
-import { ChartLine, CircleAlert, Copy, Info, LoaderCircle, Play, Square, X } from '@lucide/vue'
+import { ChartLine, CircleAlert, Copy, Info, Play, Square, X } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
@@ -175,7 +176,7 @@ function toneOf(value: number | null | undefined): 'up' | 'down' | '' {
         </div>
         <div class="bt-actions">
           <Button type="submit" :disabled="busy || !strategies.length">
-            <LoaderCircle v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
             <Play v-else aria-hidden="true" />
             跑回测
           </Button>
@@ -276,7 +277,7 @@ function toneOf(value: number | null | undefined): 'up' | 'down' | '' {
 
     <!-- 进度不能遮住操作区；stop 只取消客户端等待，不宣称已终止服务端任务。 -->
     <div v-if="busy" class="bt-progress" role="status" aria-live="polite">
-      <LoaderCircle class="bt-progress__spin animate-spin motion-reduce:animate-none" aria-hidden="true" />
+      <Spinner class="bt-progress__spin animate-spin motion-reduce:animate-none" aria-hidden="true" />
       <span>正在回测<span class="bt-progress__time">已等待 {{ elapsedSec }}s</span></span>
       <span class="bt-progress__hint">{{ expectedHint }}</span>
     </div>

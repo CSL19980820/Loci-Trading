@@ -49,7 +49,7 @@ import type { Job, JobKind, JobQuota, LlmProvider, Skill, StrategyInfo } from '@
 
 import CodeEditor from './CodeEditor.vue'
 import { isReservedStrategyJobName } from '../composables/jobOwnership'
-import { cnStrategyName } from '../composables/opsLabels'
+import { cnStrategyName, traderJobName } from '../composables/opsLabels'
 import {
   TENANT_CRON_FLOOR_SECONDS,
   cronIntervalSeconds,
@@ -329,7 +329,8 @@ function onSubmit(): void {
         <form class="job-editor-form" @submit.prevent="onSubmit">
           <div class="job-field">
             <Label for="job-name" class="job-field__label">名称</Label>
-            <Input id="job-name" v-model.trim="form.name" :disabled="isEdit" placeholder="例如：日终同步" />
+            <Input v-if="isEdit" id="job-name" :model-value="traderJobName(form.kind, form.name)" disabled />
+            <Input v-else id="job-name" v-model.trim="form.name" placeholder="例如：日终同步" />
           </div>
           <div class="job-field">
             <Label for="job-kind" class="job-field__label">类型</Label>

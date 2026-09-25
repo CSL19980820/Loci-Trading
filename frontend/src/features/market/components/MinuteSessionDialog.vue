@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 /**
  * 日 K 双击打开的分时会话：实时拉取、不落库。
  * 签名动效：加载时「走带」沿交易时段横扫，避免空白干等。
@@ -12,7 +13,6 @@ import {
   TooltipComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LoaderCircle } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getMinuteBars, type MinuteBar } from '@/shared/api/quant_market'
@@ -242,7 +242,7 @@ onBeforeUnmount(() => {
           <div v-else-if="error" class="minute-error-wrap">
             <EmptyState description="暂无分时数据" :reason="error">
               <Button access="read" size="sm" :disabled="busy" @click="load">
-                <LoaderCircle v-if="busy" class="size-3.5 animate-spin" aria-hidden="true" />
+                <Spinner v-if="busy" class="size-3.5 animate-spin" aria-hidden="true" />
                 重新拉取
               </Button>
             </EmptyState>

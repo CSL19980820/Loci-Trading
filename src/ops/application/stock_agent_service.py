@@ -35,7 +35,7 @@ def validate_agent_config(store, config: StockAgentConfig) -> dict:
 
 
 def stock_agent_templates(store) -> dict:
-    """只继承自主交易员的模型选择，不继承战法、提示词、账户或交易结论。"""
+    """只继承天才交易员的模型选择，不继承战法、提示词、账户或交易结论。"""
     from src.ops.application.guardian_config import get_config
     guardian = get_config(store)
     model = {"provider": guardian.get("provider") or "", "model": guardian.get("model") or "",

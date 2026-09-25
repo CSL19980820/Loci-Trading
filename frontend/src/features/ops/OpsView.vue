@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { CircleAlert, CircleCheck, RefreshCw, X } from '@lucide/vue'
 
@@ -32,6 +33,7 @@ type SystemTabExpose = TabLoadable & {
 
 const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'retention'])
 const mobile = useMobileLayout()
+const compactNavigation = useMediaQuery('(max-width: 980px)')
 
 const SYSTEM_LEGACY: Record<string, string> = {
   'data-dir': 'sys-sync',
@@ -248,9 +250,10 @@ onMounted(() => {
       </div>
     </Alert>
 
-    <div class="ops-mobile-tabs">
+    <div v-if="compactNavigation" class="ops-mobile-tabs">
       <PageTabs
         v-model="activeTab"
+        panel-id="ops-main-panel"
         :items="mobileTabs"
         variant="pill"
         dense
@@ -261,7 +264,9 @@ onMounted(() => {
 
     <div class="ops-layout">
       <SettingsRail
+        v-if="!compactNavigation"
         v-model="activeTab"
+        panel-id="ops-main-panel"
         class="ops-rail"
         :groups="railGroups"
         :active-anchor="activeAnchor"
@@ -269,8 +274,11 @@ onMounted(() => {
       />
 
       <div
+        id="ops-main-panel"
         class="ops-content"
         role="tabpanel"
+        tabindex="0"
+        :aria-labelledby="`ops-main-panel-tab-${activeTab}`"
         :aria-label="activeLabel"
       >
         <PageBusy overlay :busy="busy" label="加载设置…" />

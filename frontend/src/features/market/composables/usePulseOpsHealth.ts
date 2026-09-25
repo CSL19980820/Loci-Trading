@@ -78,7 +78,12 @@ export function usePulseOpsHealth(): PulseOpsHealth {
       )
 
       if (runsResult.status === 'fulfilled') {
-        lastFailedRun.value = runsResult.value[0] ?? null
+        const failed = runsResult.value[0] ?? null
+        // 历史运行保留当时的任务快照；界面使用同一 ID 当前的展示名。
+        const currentName = failed && jobs.find((job) => job.id === failed.job_id)?.name
+        lastFailedRun.value = failed && currentName
+          ? { ...failed, job_name: currentName }
+          : failed
       } else {
         lastFailedRun.value = null
         failures.push(toErrorMessage(runsResult.reason, '失败运行记录读取失败'))

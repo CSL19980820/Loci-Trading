@@ -2,8 +2,7 @@
 import { Button } from '@/shared/components/ui/button'
 import { computed, nextTick, ref, useAttrs, watch, type Component, type StyleValue, type CSSProperties } from 'vue'
 import { Eye, EyeOff, X } from '@lucide/vue'
-import { Input } from '../input'
-import { Textarea } from '../textarea'
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupTextarea } from '../input-group'
 import { useFieldControl } from './context'
 
 defineOptions({ inheritAttrs: false })
@@ -61,26 +60,23 @@ defineExpose({
 
 <template>
   <div :class="['text-field', attrs.class]" :style="attrs.style as StyleValue">
-    <div v-if="$slots.prepend" class="text-field__addon"><slot name="prepend" /></div>
-    <div class="text-field__body">
-      <span v-if="prefixIcon || $slots.prefix" class="text-field__prefix">
-        <slot name="prefix"><component :is="prefixIcon" class="size-4" /></slot>
-      </span>
-      <Textarea v-if="type === 'textarea'" ref="inputRef" v-bind="controlAttrs" :model-value="text"
+    <InputGroup class="text-field__group" :class="{ 'text-field__group--textarea': type === 'textarea' }" :data-disabled="disabled || field.disabled.value || undefined">
+      <InputGroupAddon v-if="$slots.prepend" class="text-field__addon"><slot name="prepend" /></InputGroupAddon>
+      <InputGroupAddon v-if="prefixIcon || $slots.prefix" class="text-field__prefix"><slot name="prefix"><component :is="prefixIcon" class="size-4" /></slot></InputGroupAddon>
+      <InputGroupTextarea v-if="type === 'textarea'" ref="inputRef" v-bind="controlAttrs" :model-value="text"
         :rows="Number(rows || 3)" :maxlength="maxlength" :disabled="disabled || field.disabled.value"
         class="text-field__control" :style="resize ? { resize } : undefined"
         @update:model-value="update" @change="change" @blur="field.validate" />
-      <Input v-else ref="inputRef" v-bind="controlAttrs" :model-value="text" :type="inputType"
+      <InputGroupInput v-else ref="inputRef" v-bind="controlAttrs" :model-value="text" :type="inputType"
         :maxlength="maxlength" :disabled="disabled || field.disabled.value" class="text-field__control"
-        :class="{ 'has-prefix': prefixIcon || $slots.prefix, 'has-suffix': clearable || showPassword || suffixIcon || $slots.suffix }"
         @update:model-value="update" @change="change" @blur="field.validate" />
-      <span v-if="type !== 'textarea' && (clearable || showPassword || suffixIcon || $slots.suffix)" class="text-field__suffix">
+      <InputGroupAddon v-if="type !== 'textarea' && (clearable || showPassword || suffixIcon || $slots.suffix)" align="inline-end" class="text-field__suffix">
         <Button access="read" variant="ghost" v-if="clearable && text && !disabled && !field.disabled.value" type="button" aria-label="清空输入" class="field-icon-button" @click="clear"><X class="size-3.5" /></Button>
         <Button access="read" variant="ghost" v-if="showPassword" type="button" :disabled="disabled || field.disabled.value" :aria-label="revealed ? '隐藏密码' : '显示密码'" :aria-pressed="revealed" class="field-icon-button" @click="revealed = !revealed"><component :is="revealed ? EyeOff : Eye" class="size-4" /></Button>
         <slot name="suffix"><component :is="suffixIcon" v-if="suffixIcon" class="size-4" /></slot>
-      </span>
-      <span v-if="showWordLimit && maxlength" class="text-field__count">{{ text.length }} / {{ maxlength }}</span>
-    </div>
-    <div v-if="$slots.append" class="text-field__addon"><slot name="append" /></div>
+      </InputGroupAddon>
+      <InputGroupAddon v-if="$slots.append" align="inline-end" class="text-field__addon"><slot name="append" /></InputGroupAddon>
+    </InputGroup>
+    <span v-if="showWordLimit && maxlength" class="text-field__count">{{ text.length }} / {{ maxlength }}</span>
   </div>
 </template>

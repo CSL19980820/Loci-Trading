@@ -7,7 +7,7 @@ import type { ResearchProfile, ResearchQualitySnapshot, ResearchRun } from '@/sh
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card, CardAction, CardHeader, CardTitle } from '@/shared/components/ui/card'
 
 const props = defineProps<{
   profile: ResearchProfile
@@ -58,16 +58,16 @@ const evidenceColumns: BasicTableColumn[] = [
 </script>
 
 <template>
-  <UiCard class="research-surface" aria-label="证据与风险透视">
-    <UiCardHeader>
+  <Card class="research-surface" aria-label="证据与风险透视">
+    <CardHeader>
       <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行 -->
-      <UiCardTitle><Link class="size-4" aria-hidden="true" />证据与风险透视</UiCardTitle>
-      <template #action>
-        <UiBadge :variant="quality.blocked ? 'stamp' : 'ok'">
+      <CardTitle><Link class="size-4" aria-hidden="true" />证据与风险透视</CardTitle>
+      <CardAction>
+        <Badge :variant="quality.blocked ? 'destructive' : 'ok'">
           {{ quality.blocked ? '已阻断' : '可查看' }}
-        </UiBadge>
-      </template>
-    </UiCardHeader>
+        </Badge>
+      </CardAction>
+    </CardHeader>
     <div v-if="riskItems.length" class="border-line grid grid-cols-[repeat(auto-fit,minmax(min(100%,200px),1fr))] gap-px border-b bg-[var(--rule)]">
       <div v-for="item in riskItems" :key="item.key" class="bg-surface min-w-0 px-3 py-2">
         <span class="text-aux text-mist block">{{ item.label }}</span>
@@ -91,7 +91,7 @@ const evidenceColumns: BasicTableColumn[] = [
       empty-reason=""
     >
       <template #severity="{ row }">
-        <UiBadge :variant="row.severity === 'critical' ? 'stamp' : row.severity === 'warning' ? 'warn' : 'info'">{{ row.severity }}</UiBadge>
+        <Badge :variant="row.severity === 'critical' ? 'destructive' : row.severity === 'warning' ? 'warn' : 'info'">{{ row.severity }}</Badge>
       </template>
     </BasicTable>
     <div class="border-line text-aux text-mist flex justify-between gap-3 border-t px-[var(--pad-sheet-x)] pt-2 pb-1"><span>来源证据 · {{ evidence.length }}</span><span v-if="props.run">run {{ props.run.id }}</span></div>
@@ -119,11 +119,11 @@ const evidenceColumns: BasicTableColumn[] = [
         <code v-else :title="String(row.payload_sha256 || '')">{{ row.payload_sha256 || '无 hash' }}</code>
       </template>
     </BasicTable>
-  </UiCard>
+  </Card>
 </template>
 
 <style scoped>
-/* 皮肤已上移到 UiCard + 工具类；code 等宽保留 */
+/* 皮肤已上移到 Card + 工具类；code 等宽保留 */
 .health-item code, code { font-family: var(--mono); font-size: var(--fs-aux); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 </style>
 <style scoped src="./ResearchSurfaces.css"></style>

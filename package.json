@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@aliou/pi-guardrails": "^0.17.1",
+    "pi-hermes-memory": "^0.9.7"
+  },
+  "devDependencies": {
+    "shadcn-vue": "^2.8.2"
+  }
+}

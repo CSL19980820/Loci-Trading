@@ -4,7 +4,9 @@ import { StatusBadge } from '@/shared/components/ui/app/presentation'
 import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
 import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
 
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, useId, watch } from 'vue'
+import { RadioGroup, RadioGroupItem } from '@/shared/components/ui/radio-group'
+import { FieldSet, FieldLegend, FieldLabel, FieldError } from '@/shared/components/ui/field'
 
 import {
   formatAskAnswers,
@@ -32,9 +34,15 @@ const interactionHint = computed(() => {
   if (props.fallback && !props.ask?.prompt) return '助手已暂停。点选项或按数字键直接继续，也可在输入框回复 / 取消本轮。'
   return '点选项或按 1–9 即提交；也可在输入框改写后发送。'
 })
+const fieldId = useId()
 const answers = reactive<Record<string, string>>({})
 const focusedId = ref<string>('')
 const submitError = ref('')
+const root = ref<HTMLElement | null>(null)
+const attempted = ref(false)
+const answeredCount = computed(() => questions.value.filter(question => (answers[question.id] || '').trim()).length)
+const missingIds = computed(() => attempted.value ? missingRequiredAnswers(questions.value, answers) : [])
+
 
 watch(
   questions,
@@ -49,6 +57,7 @@ watch(
       focusedId.value = rows[0]?.id || ''
     }
     submitError.value = ''
+    attempted.value = false
   },
   { immediate: true, deep: true },
 )
@@ -66,10 +75,13 @@ function setAnswer(questionId: string, value: string): void {
 }
 
 function submitAll(): void {
+  attempted.value = true
   const missing = missingRequiredAnswers(questions.value, answers)
   if (missing.length) {
-    submitError.value = `请先回答：${missing.join('、')}`
+    submitError.value = `请先回答：${questions.value.filter(question => missing.includes(question.id)).map(question => question.prompt).join('、')}`
     focusedId.value = missing[0] || focusedId.value
+    const index = questions.value.findIndex(question => question.id === missing[0])
+    void nextTick(() => root.value?.querySelectorAll('fieldset')[index]?.querySelector<HTMLElement>('[role="radio"], textarea')?.focus())
     return
   }
   emit('reply', formatAskAnswers(questions.value, answers))
@@ -84,7 +96,7 @@ function targetQuestionForDigit(): AiHitlQuestion | undefined {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
+  if (event.repeat || event.isComposing || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
   const target = event.target as HTMLElement | null
   const tag = target?.tagName?.toLowerCase()
   if (tag === 'input' || tag === 'textarea' || target?.isContentEditable) return
@@ -118,6 +130,7 @@ onUnmounted(() => {
 
 <template>
   <section
+    ref="root"
     class="assistant-ask"
     data-testid="assistant-confirm"
     role="group"
@@ -136,35 +149,51 @@ onUnmounted(() => {
     </header>
 
     <div v-if="multi" class="assistant-ask__questions" data-testid="assistant-confirm-questions">
-      <article
+      <p class="assistant-ask__summary" role="status" aria-live="polite">已回答 {{ answeredCount }}/{{ questions.length }} · 全部必答，确认后一次提交</p>
+      <FieldSet
         v-for="(question, qIndex) in questions"
         :key="question.id"
         class="assistant-ask__question"
         :data-focused="focusedId === question.id ? '1' : '0'"
+        :data-invalid="missingIds.includes(question.id) || undefined"
         @click="focusedId = question.id"
+        @focusin="focusedId = question.id"
       >
-        <p class="assistant-ask__q-prompt">
+        <FieldLegend variant="label" class="assistant-ask__q-prompt">
           <span class="assistant-ask__q-idx">{{ qIndex + 1 }}</span>
           {{ question.prompt }}
-        </p>
-        <div v-if="question.options?.length" class="assistant-ask__rail">
-          <ActionButton
+          <span class="assistant-ask__required">必答</span>
+        </FieldLegend>
+        <RadioGroup
+          v-if="question.options?.length"
+          class="assistant-ask__rail"
+          :model-value="answers[question.id]"
+          :aria-label="question.prompt"
+          :aria-required="!question.allow_free_text || undefined"
+          :aria-invalid="missingIds.includes(question.id) || undefined"
+          :aria-describedby="missingIds.includes(question.id) ? `${fieldId}-${qIndex}-error` : undefined"
+          @update:model-value="setAnswer(question.id, String($event))"
+        >
+          <FieldLabel
             v-for="(option, index) in question.options"
             :key="`${question.id}-${index}-${option}`"
-            class="assistant-ask__chip"
-            size="small"
-            :tone="answers[question.id] === option ? 'primary' : 'default'"
-            :aria-pressed="answers[question.id] === option"
-            @click="setAnswer(question.id, option)"
+            :for="`${fieldId}-${qIndex}-${index}`"
+            class="assistant-ask__chip assistant-ask__choice"
+            :data-selected="answers[question.id] === option"
           >
+            <RadioGroupItem :id="`${fieldId}-${qIndex}-${index}`" :value="option" />
             <span class="assistant-ask__chip-idx" aria-hidden="true">{{ index + 1 }}</span>
             {{ option }}
-          </ActionButton>
-        </div>
+          </FieldLabel>
+        </RadioGroup>
         <TextField
           v-if="question.allow_free_text || !question.options?.length"
-          v-model="answers[question.id]"
+          :model-value="answers[question.id]"
+          @update:model-value="setAnswer(question.id, String($event))"
           :aria-label="question.prompt"
+          :aria-required="!question.options?.length || undefined"
+          :aria-invalid="missingIds.includes(question.id) || undefined"
+          :aria-describedby="missingIds.includes(question.id) ? `${fieldId}-${qIndex}-error` : undefined"
           class="assistant-ask__free"
           size="small"
           type="textarea"
@@ -172,10 +201,11 @@ onUnmounted(() => {
           :placeholder="question.options?.length ? '或填写补充说明' : '请输入回答'"
           @focus="focusedId = question.id"
         />
-      </article>
-      <p v-if="submitError" class="assistant-ask__error" data-testid="assistant-confirm-error" role="alert">
+        <FieldError v-if="missingIds.includes(question.id)" :id="`${fieldId}-${qIndex}-error`">请选择或填写本题答案</FieldError>
+      </FieldSet>
+      <FieldError v-if="submitError" class="assistant-ask__error" data-testid="assistant-confirm-error" role="alert">
         {{ submitError }}
-      </p>
+      </FieldError>
       <div class="assistant-ask__actions">
         <ActionButton tone="primary" data-testid="assistant-confirm-submit" @click="submitAll">
           提交全部
@@ -206,7 +236,7 @@ onUnmounted(() => {
 .assistant-ask__prompt { flex: 1; min-width: 0; margin: 0; font-size: var(--ai-fs-prose); font-weight: 600; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
 .assistant-ask__risk { flex: 0 0 auto; }
 .assistant-ask__questions { display: flex; flex-direction: column; gap: var(--gap-3); margin-top: var(--gap-3); }
-.assistant-ask__question { padding: var(--gap-2); border-radius: var(--ai-r-chip); border: 1px solid var(--rule); background: var(--surface-sunken); }
+.assistant-ask__question { gap: 0; min-width: 0; padding: var(--gap-2); border-radius: var(--ai-r-chip); border: 1px solid var(--rule); background: var(--surface-sunken); }
 .assistant-ask__question[data-focused='1'] { border-color: var(--seal-border); }
 .assistant-ask__q-prompt { margin: 0 0 var(--gap-2); font-size: var(--ai-fs-body); font-weight: 600; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
 .assistant-ask__q-idx { display: inline-grid; place-items: center; min-width: var(--gap-4); margin-right: var(--gap-1); font: var(--ai-fs-meta) var(--mono); color: var(--mist); }
@@ -215,7 +245,11 @@ onUnmounted(() => {
 .assistant-ask__chip { height: auto; min-height: var(--ctl-h); margin: 0; padding: var(--gap-2); max-width: 100%; white-space: normal; text-align: left; }
 .assistant-ask__chip :deep(> span) { line-height: 1.5; overflow-wrap: anywhere; }
 .assistant-ask__chip-idx { flex-shrink: 0; display: inline-grid; place-items: center; min-width: var(--gap-4); margin-right: var(--gap-2); font: var(--ai-fs-meta) var(--mono); color: var(--mist); }
+.assistant-ask__choice { display: inline-flex; align-items: center; border: 1px solid var(--rule); border-radius: var(--ai-r-chip); cursor: pointer; }
+.assistant-ask__choice[data-selected="true"] { border-color: var(--seal-border); background: var(--seal-soft); }
 .assistant-ask__free { margin-top: var(--gap-2); }
 .assistant-ask__error { margin: 0; color: var(--warn-ink); font-size: var(--ai-fs-body); }
 .assistant-ask__actions { display: flex; justify-content: flex-end; }
+.assistant-ask__summary { margin: 0; color: var(--mist); font-size: var(--ai-fs-aux); }
+.assistant-ask__required { margin-left: var(--gap-2); color: var(--mist); font-size: var(--ai-fs-meta); font-weight: 400; }
 </style>

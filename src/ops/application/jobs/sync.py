@@ -291,7 +291,8 @@ def _finalize_today_with_authoritative(
     代价：通达信本地二进制近窗 20 根，全市场约 2 分钟（ADR-013 实测增量
     43.1 票/秒）。排在 spot 之后，不影响 15:30 选股吃当日快照。
 
-    严格限定通达信且重新取数；失败进入任务 failed，不能把回退成功称为定稿。
+    通达信优先重新取数；仅在其失败且扶摇返回当日未复权日 K 时允许兜底定稿，
+    两者均失败进入任务 failed，不能把陈旧数据称为定稿。
     """
     from src.market import MarketStore, sync_quotes
 

@@ -67,7 +67,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearTimeout(timer) })
   <p v-if="error && !open" role="alert" class="storage-error">{{ error }}</p>
   <Dialog v-model:open="open">
     <DialogContent class="sm:max-w-lg" :dismissable="!busy" :show-close-button="!busy">
-      <DialogHeader class="text-left"><DialogTitle>自主交易员 · 日记保留策略</DialogTitle></DialogHeader>
+      <DialogHeader class="text-left"><DialogTitle>天才交易员 · 日记保留策略</DialogTitle></DialogHeader>
       <Alert v-if="error" variant="destructive"><AlertTitle class="line-clamp-none">{{ error }}</AlertTitle></Alert>
       <form class="retention-form" @submit.prevent="save">
         <div class="retention-field"><Label for="guardian-retention-days">完整日记保留天数（0为关闭天数限制）</Label><NumberField v-model="draft.days" :min="0" :max="3650"><NumberFieldContent><NumberFieldInput id="guardian-retention-days" class="text-left" /><NumberFieldIncrement /><NumberFieldDecrement /></NumberFieldContent></NumberField></div>

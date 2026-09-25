@@ -533,3 +533,5 @@
     padding-inline: var(--gap-3);
   }
 }
+
+.studio-tab-panel { display: flex; flex-direction: column; gap: inherit; min-width: 0; min-height: 0; }

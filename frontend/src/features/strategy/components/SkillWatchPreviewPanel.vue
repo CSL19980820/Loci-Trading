@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 /**
  * 战法监测预览：用实时数据试跑一次确定性扫描。
  *
@@ -6,7 +7,7 @@
  * 悟道 MCP 未装配时整块置灰，不发请求也不消耗配额。
  */
 import { computed, ref, type Component } from 'vue'
-import { Info, LoaderCircle, TriangleAlert } from '@lucide/vue'
+import { Info, TriangleAlert } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 
 import { getLeaderRoles, previewSkillWatch } from '@/shared/api/quant_ops'
@@ -228,7 +229,7 @@ async function runPreview(): Promise<void> {
       <Tooltip>
         <TooltipTrigger as-child>
           <Button :disabled="!available" @click="runPreview">
-            <LoaderCircle v-if="running" class="size-4 animate-spin" aria-hidden="true" />
+            <Spinner v-if="running" class="size-4 animate-spin" aria-hidden="true" />
             立即预览
           </Button>
         </TooltipTrigger>

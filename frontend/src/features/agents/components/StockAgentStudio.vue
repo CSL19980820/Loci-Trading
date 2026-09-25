@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Item } from '@/shared/components/ui/item'
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -6,7 +7,7 @@ import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import MobilePageHeader from '@/shared/components/layout/MobilePageHeader.vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import GuardianMobileSummary from '@/features/ops/components/GuardianMobileSummary.vue'
-import { Archive, ArrowLeft, ChevronDown, Clock, Cpu, Ellipsis, Flag, LoaderCircle, Pause, Play, Plus, RefreshCw, Settings, Trash2 } from '@lucide/vue'
+import { Archive, ArrowLeft, ChevronDown, Clock, Cpu, Ellipsis, Flag, Pause, Play, Plus, RefreshCw, Settings, Trash2 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
 import { Button } from '@/shared/components/ui/button'
@@ -239,6 +240,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
       :title="data?.config.name || '智能体'"
       :description="data ? (data.config.description || '独立的股票研究与模拟交易工作室') : undefined"
       :tabs="data ? TABS : undefined"
+      panel-id="stock-agent-panel"
       v-model:tab="tab"
     >
       <template #leading>
@@ -254,14 +256,14 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
           </span>
           <span class="studio-title__text">{{ data?.config.name || '智能体' }}</span>
           <UiBadge v-if="data" :variant="stateVariant" :dot="!data.running" class="studio-state">
-            <LoaderCircle v-if="data.running" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            <Spinner v-if="data.running" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
             {{ stateLabel }}
           </UiBadge>
         </span>
       </template>
       <template v-if="data" #actions>
         <Button access="read" variant="ghost" size="icon-sm" :disabled="loading || busy" aria-label="刷新智能体" @click="load(true)">
-          <LoaderCircle v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <RefreshCw v-else aria-hidden="true" />
         </Button>
         <Button variant="outline" size="sm" :disabled="busy || !!data.archived" @click="configure">
@@ -269,7 +271,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
           设置
         </Button>
         <Button :variant="data.config.enabled ? 'outline' : 'default'" size="sm" :disabled="busy || !!data.archived" @click="toggle">
-          <LoaderCircle v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <Pause v-else-if="data.config.enabled" aria-hidden="true" />
           <Play v-else aria-hidden="true" />
           {{ data.config.enabled ? '暂停' : '启用智能体' }}
@@ -315,7 +317,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
         </span>
       </template>
     </PageHeader>
-    <PageTabs v-if="isMobile && data" :model-value="tab" :items="TABS" variant="pill" :sticky="false" class="studio-phone-tabs" aria-label="智能体工作区" @update:model-value="value => tab = parseTab(value)" />
+    <PageTabs v-if="isMobile && data" panel-id="stock-agent-panel" :model-value="tab" :items="TABS" variant="pill" :sticky="false" class="studio-phone-tabs" aria-label="智能体工作区" @update:model-value="value => tab = parseTab(value)" />
 
     <Alert v-if="(error || readError) && !settingsOpen" variant="destructive" class="studio-error">
       <AlertTitle class="line-clamp-none">{{ error || readError }}</AlertTitle>
@@ -375,6 +377,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
         <AlertTitle class="line-clamp-none">部分持仓沿用最后有效报价，当前估值不是实时成交价</AlertTitle>
       </Alert>
 
+      <div id="stock-agent-panel" class="studio-tab-panel" role="tabpanel" tabindex="0" :aria-labelledby="`stock-agent-panel-tab-${tab}`">
       <!-- 账户与持仓 -->
       <template v-if="tab === 'account'">
         <Card class="studio-positions">
@@ -560,6 +563,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
         <AgentHistoryPanel :id="id" :kind="historyKind" :refresh-key="snapshotKey" />
       </template>
 
+      </div>
       <footer class="studio-footer">
         模拟成交不连接券商；按实际报价校验费用、T+1 及数量约束，未模拟盘口排队与分红送转。
       </footer>
@@ -604,7 +608,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
           <DialogFooter>
             <Button access="read" variant="outline" :disabled="busy" @click="fundingOpen = false">取消</Button>
             <Button :disabled="busy" @click="deposit">
-              <LoaderCircle v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               {{ pendingFunding ? '重试同笔追加' : '确认追加' }}
             </Button>
           </DialogFooter>

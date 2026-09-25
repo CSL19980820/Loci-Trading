@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ArrowDownRight, ArrowUpRight, Minus } from '@lucide/vue'
 import { computed } from 'vue'
+import { Skeleton } from './skeleton'
+import { Card } from './card'
 
 /** A compact readout: label and value share a line; only real context gets a second line. */
 const props = withDefaults(defineProps<{
@@ -33,13 +35,13 @@ const DeltaIcon = computed(() => deltaNumber.value == null || deltaNumber.value 
 </script>
 
 <template>
-  <div class="stat-card" :class="[`stat-card--${layout}`, { 'stat-card--loading': loading }]" :aria-busy="loading || undefined">
+  <Card class="stat-card" :class="[`stat-card--${layout}`, { 'stat-card--loading': loading }]" :aria-busy="loading || undefined">
     <div class="stat-card__main">
       <div class="stat-card__head">
         <span class="stat-card__label">{{ label }}</span>
         <span v-if="$slots.icon" class="stat-card__icon"><slot name="icon" /></span>
       </div>
-      <span v-if="loading" class="stat-card__skeleton" aria-hidden="true" />
+      <Skeleton v-if="loading" class="stat-card__skeleton" aria-hidden="true" />
       <span v-else class="stat-card__value" :class="toneClass"><slot>{{ value ?? '—' }}</slot></span>
     </div>
     <div v-if="!loading && (deltaText || hint || $slots.hint)" class="stat-card__foot">
@@ -49,7 +51,7 @@ const DeltaIcon = computed(() => deltaNumber.value == null || deltaNumber.value 
       <span v-if="deltaLabel && deltaText" class="stat-card__delta-label">{{ deltaLabel }}</span>
       <span v-if="hint || $slots.hint" class="stat-card__hint"><slot name="hint"><span v-for="(part, index) in hint?.split(' · ')" :key="index" class="stat-card__hint-part"><span v-if="index" aria-hidden="true">· </span>{{ part }}</span></slot></span>
     </div>
-  </div>
+  </Card>
 </template>
 
 <style scoped>
@@ -101,7 +103,7 @@ const DeltaIcon = computed(() => deltaNumber.value == null || deltaNumber.value 
 .stat-card__hint, .stat-card__delta-label { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .stat-card__delta { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; font-family: var(--mono); font-weight: 500; font-variant-numeric: tabular-nums; }
 .stat-card__delta-icon { width: 12px; height: 12px; }
-.stat-card__skeleton { display: block; width: 5rem; max-width: 55%; height: 26px; border-radius: var(--radius-sm); background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--surface-hover) 50%, var(--surface-sunken) 75%); background-size: 200% 100%; animation: stat-shimmer 1.4s ease-in-out infinite; }
+.stat-card__skeleton { display: block; width: 5rem; max-width: 55%; height: 26px; border-radius: var(--radius-sm); }
 .stat-card--row { flex-direction: row; align-items: center; gap: 8px; padding: 8px 10px; }
 .stat-card--row .stat-card__main { flex: 1; flex-wrap: nowrap; align-items: center; }
 .stat-card--row .stat-card__foot { flex: none; flex-wrap: nowrap; }
@@ -110,7 +112,6 @@ const DeltaIcon = computed(() => deltaNumber.value == null || deltaNumber.value 
 .is-up { color: var(--up); }
 .is-down { color: var(--down); }
 .is-flat { color: var(--text-tertiary); }
-@keyframes stat-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .stat-card__skeleton { animation: none; } }
 @media (max-width: 640px) {
   .stat-card { padding: 8px 10px; }

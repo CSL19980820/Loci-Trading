@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, nextTick, ref } from 'vue'
-import { LoaderCircle } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
 import { APP_RELEASED_AT, APP_VERSION } from '@/shared/lib/release'
@@ -186,7 +186,7 @@ defineExpose({
       <span class="foot-status" role="status" :class="{ 'is-dirty': dirty }">{{ footStatus() }}</span>
       <Button variant="outline" :disabled="busy || !dirty" @click="revertAll">全部还原</Button>
       <Button :disabled="busy || !dirty" @click="saveAll">
-        <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+        <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
         保存全部
       </Button>
     </template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/shared/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/components/ui/tabs'
 /**
  * 设置左栏（Raycast / Linear Settings 一路）。
  *
@@ -33,6 +34,7 @@ export type SettingsRailGroup = {
 
 defineProps<{
   modelValue: string
+  panelId: string
   groups: SettingsRailGroup[]
   /** 当前落在哪个锚点段（父层从路由 hash 传进来） */
   activeAnchor?: string
@@ -43,30 +45,11 @@ const emit = defineEmits<{
   'select-anchor': [anchor: string]
 }>()
 
-function pick(name: string): void {
-  emit('update:modelValue', name)
-}
-
-function onKeydown(event: KeyboardEvent, flat: string[]): void {
-  const idx = flat.indexOf(
-    (event.currentTarget as HTMLElement | null)?.dataset.name ?? '',
-  )
-  if (idx < 0) return
-  let next = idx
-  if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = Math.min(flat.length - 1, idx + 1)
-  else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = Math.max(0, idx - 1)
-  else if (event.key === 'Home') next = 0
-  else if (event.key === 'End') next = flat.length - 1
-  else return
-  event.preventDefault()
-  pick(flat[next]!)
-  const el = document.querySelector<HTMLElement>(`[data-settings-rail="${flat[next]}"]`)
-  el?.focus()
-}
 </script>
 
 <template>
-  <nav class="settings-rail" aria-label="设置分区">
+  <Tabs as="nav" :model-value="modelValue" orientation="vertical" class="settings-rail" aria-label="设置分区" @update:model-value="value => emit('update:modelValue', String(value))">
+    <TabsList class="settings-rail__groups" aria-label="设置分区">
     <div
       v-for="group in groups"
       :key="group.title"
@@ -74,25 +57,18 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
       role="presentation"
     >
       <h3 class="settings-rail__group-title">{{ group.title }}</h3>
-      <div
-        role="tablist"
-        aria-orientation="vertical"
-        :aria-label="group.title"
-        class="settings-rail__list"
-      >
+      <div class="settings-rail__list">
         <template v-for="item in group.items" :key="item.name">
+          <TabsTrigger :value="item.name" as-child>
           <Button access="read" variant="ghost"
+            :id="`${panelId}-tab-${item.name}`"
+            :aria-controls="panelId"
             type="button"
-            role="tab"
             class="settings-rail__item"
             :class="{ 'is-active': modelValue === item.name }"
-            :aria-selected="modelValue === item.name"
-            :tabindex="modelValue === item.name ? 0 : -1"
             :title="[item.label, item.tail].filter(Boolean).join(' · ')"
             :data-name="item.name"
             :data-settings-rail="item.name"
-            @click="pick(item.name)"
-            @keydown="onKeydown($event, groups.flatMap((g) => g.items.map((i) => i.name)))"
           >
             <span
               class="settings-rail__mark"
@@ -106,6 +82,7 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
               :class="{ 'is-bad': item.state === 'bad' }"
             >{{ item.tail }}</span>
           </Button>
+          </TabsTrigger>
           <div
             v-if="item.children?.length"
             class="settings-rail__anchors"
@@ -128,10 +105,13 @@ function onKeydown(event: KeyboardEvent, flat: string[]): void {
         </template>
       </div>
     </div>
-  </nav>
+    </TabsList>
+  </Tabs>
 </template>
 
 <style scoped>
+.settings-rail__groups { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: var(--gap-4); width: 100%; height: auto; padding: 0; background: transparent; }
+
 .settings-rail {
   display: flex;
   flex-direction: column;

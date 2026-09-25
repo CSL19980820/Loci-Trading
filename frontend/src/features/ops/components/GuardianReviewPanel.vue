@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { toast } from 'vue-sonner'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/shared/components/ui/dropdown-menu'
 import { Button } from '@/shared/components/ui/button'
 import { Badge } from '@/shared/components/ui/badge'
-import { Sparkles, LoaderCircle, ChevronDown } from '@lucide/vue'
+import { Sparkles, ChevronDown } from '@lucide/vue'
 import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
 import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
 import { default as Pager } from '@/shared/components/ui/app/Pager.vue'
@@ -101,7 +102,7 @@ async function generate(period: GuardianReviewPeriod): Promise<void> {
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
           <Button variant="outline" size="sm" class="review-generate" :disabled="!props.enabled || busy">
-            <LoaderCircle v-if="busy" class="animate-spin" aria-hidden="true" />
+            <Spinner v-if="busy" class="animate-spin" aria-hidden="true" />
             <Sparkles v-else aria-hidden="true" />
             {{ busy && pendingPeriod ? `生成${labels[pendingPeriod]}中` : '生成报告' }}
             <ChevronDown aria-hidden="true" />
@@ -123,7 +124,7 @@ async function generate(period: GuardianReviewPeriod): Promise<void> {
     <template v-else-if="detail">
       <Notice v-if="detail.status === 'failed'" :title="detail.result.error || '本次报告未完成，后续自动补跑或手动重试'" tone="warning" :closable="false" show-icon />
       <p v-else-if="detail.status === 'running'" class="review-note">正在核对账本、行情和交易计划，结果将自动更新…</p>
-      <GuardianReportDocument v-if="detail.result.sections?.length" :sections="detail.result.sections" :period="detail.period" :title="labels[detail.period]" :metadata="`${detail.trade_date} · 自主交易员 · 第${detail.result.revision ?? 1}版`" />
+      <GuardianReportDocument v-if="detail.result.sections?.length" :sections="detail.result.sections" :period="detail.period" :title="labels[detail.period]" :metadata="`${detail.trade_date} · 天才交易员 · 第${detail.result.revision ?? 1}版`" />
       <pre v-else-if="detail.result.body" class="review-body">{{ detail.result.body }}</pre>
       <footer v-if="detail.status === 'success'">{{ detail.result.notify?.success ? '通知已送达' : detail.result.notify?.skipped ? '通知按策略跳过' : '报告已保存，通知状态待确认' }}</footer>
     </template>

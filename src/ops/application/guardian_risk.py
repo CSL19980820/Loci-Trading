@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.ledger import guardian_quantity_error
+from src.ledger import guardian_quantity_error, guardian_available_quantity
 from src.ops.application.guardian_contract import ExecutionTerms, execution_error
 from src.ops.application.guardian_quotes import SHANGHAI, quote_error
 
@@ -174,6 +174,15 @@ def evaluate_risk_plans(
         for row, plan in sorted(valid, key=lambda item: item[1].action != "stop_loss"):
             triggered = price <= plan.trigger_price if plan.action == "stop_loss" else price >= plan.trigger_price
             if not triggered:
+                continue
+            available = guardian_available_quantity(position, now.date().isoformat())
+            problem = (f'可卖不足（T+1）：可卖{available}股，合同{plan.quantity}股'
+                       if plan.quantity > available else execution_error(plan.execution, price, now, required=True)[1])
+            if problem:
+                events.append(_event(position, row, 'execution_blocked', now, reason=problem,
+                                     trigger_price=plan.trigger_price, observed_price=price,
+                                     available_quantity=available))
+                # 保留授权，不擅自缩量或放宽价格；受阻合同不抢占本轮模型研究。
                 continue
             order = {"code": code, "action": plan.action, "quantity": plan.quantity,
                      "reason": plan.reason, "execution": _execution(plan, price)}

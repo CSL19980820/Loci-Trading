@@ -26,6 +26,7 @@ import {
   formatLlmMeta,
   formatRunDuration,
   statusLabel,
+  traderJobName,
   triggerLabel,
 } from '../composables/opsLabels'
 import { useJobRunsQuery } from '../composables/useJobRunsQuery'
@@ -56,11 +57,11 @@ const tableRows = computed(() => runs.value as unknown as Record<string, unknown
  * 历史表的 `job_name` 是后端原样字段：战法/技能绑定任务叫 `screen:sanyuan-tail-v1`，
  * 直接摆进单元格就是把英文 slug 甩给用户。统一过 cnStrategyName（含拼音词根兜底）。
  */
-function runJobLabel(raw: unknown): string {
+function runJobLabel(raw: unknown, kind: unknown): string {
   const name = String(raw ?? '').trim()
   if (!name) return '—'
   const bound = /^(?:screen|skill):(.+)$/.exec(name)
-  return bound ? cnStrategyName('', bound[1]) : name
+  return bound ? cnStrategyName('', bound[1]) : traderJobName(String(kind ?? ''), name)
 }
 
 const columns = ref<BasicTableColumn[]>([
@@ -73,7 +74,7 @@ const columns = ref<BasicTableColumn[]>([
     headerAlign: 'center',
     showOverflowTooltip: true,
     fixed: 'left',
-    formatter: (row) => runJobLabel(row.job_name),
+    formatter: (row) => runJobLabel(row.job_name, row.kind),
   },
   {
     prop: 'started_at',

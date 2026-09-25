@@ -65,9 +65,6 @@ class DeadlineStreamClient:
                 return await awaitable
         except TimeoutError as exc:
             self.status("first_response_timeout" if first else "request_deadline")
-            if self.config.grpc_endpoint:
-                from src.ai.infrastructure.client import LLMGenerationInterrupted
-                raise LLMGenerationInterrupted("gRPC等待超时；已取消本次请求") from None
             if first:
                 raise FirstResponseTimeout("no semantic stream response before deadline") from None
             raise TimeoutError("agent request deadline exceeded") from exc
@@ -83,6 +80,10 @@ class DeadlineStreamClient:
     @contextmanager
     def stream(self, *args, **kwargs):
         kwargs.setdefault("timeout", self.config.timeout)
+        if self.deadline is not None:
+            # HTTP read timeout measures inactivity; an RPC deadline covers the
+            # entire stream. Carry the run deadline separately across the adapter.
+            kwargs["extensions"] = {**kwargs.get("extensions", {}), "loci_deadline": self.deadline}
         async def open_response():
             for attempt in range(3):
                 try:

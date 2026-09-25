@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { LoaderCircle, Mail } from '@lucide/vue'
+import { Spinner } from '@/shared/components/ui/spinner'
+import { Mail } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
@@ -38,7 +39,7 @@ const emit = defineEmits<{
       </div>
 
       <Button type="submit" :disabled="submitting" class="login-submit">
-        <LoaderCircle v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        <Spinner v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
         {{ submitting ? '发送中' : '发送重置验证码' }}
       </Button>
     </form>

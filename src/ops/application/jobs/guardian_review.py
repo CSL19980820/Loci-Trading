@@ -30,7 +30,7 @@ def _notify(ledger: Any, store: Any, cfg: dict, period: str, day: str, result: d
     if not ledger.claim_report_notification(period, day):
         return
     suffix = " · 更正" if result.get("revision", 1) > 1 else ""
-    title = f"自主交易员 · {PERIOD_LABELS[period]}{suffix} · {day}"
+    title = f"天才交易员 · {PERIOD_LABELS[period]}{suffix} · {day}"
     from src.ops.application.guardian_report_share import publish_report_share
     share_error = ""
     try:
@@ -40,7 +40,9 @@ def _notify(ledger: Any, store: Any, cfg: dict, period: str, day: str, result: d
     # Always rebuild the presentation from complete stored analysis, including old
     # revisions. The legacy body/notification_body may both contain long reports.
     budget = min(DIGEST_MAX_BYTES, 2048 - len(f'【{title}】\n'.encode('utf-8')))
-    body = notification_digest(result['facts'], result['analysis'], share_url=share_url, limit_bytes=budget)
+    body = notification_digest(result['facts'], result['analysis'], share_url=share_url,
+                               observed_at=result.get('created_at', ''),
+                               revision=int(result.get('revision', 1)), limit_bytes=budget)
     chunks = [body]
     digest = sha256(body.encode('utf-8')).hexdigest()
     previous = (ledger.report(period, day) or {}).get('result', {}).get('notify', {})
@@ -79,7 +81,7 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
         raise JobError("缺少运维库")
     cfg = get_config(store)
     if not cfg["enabled"]:
-        raise JobSkipped("自主交易员未开启")
+        raise JobSkipped("天才交易员未开启")
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     day = str(config.get("date") or now.date().isoformat())
     period = str(config.get("period") or "daily")
@@ -121,7 +123,9 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
                     facts["reference_pool_usage"] = "本次读取的参考池供后续计划，不用于重建日内时点信号；日内操作以cycles和trades为准。"
                     facts["evidence_ids"].extend(f"reference:{r['code']}" for r in reference)
             context.check_cancelled()
-            analysis, usage, sources = generate_review(store, cfg, facts, check_cancelled=context.check_cancelled, palace_path=context.palace_db)
+            analysis, usage, sources = generate_review(store, cfg, facts, check_cancelled=context.check_cancelled, palace_path=context.palace_db,
+                resume_checkpoint=(existing or {}).get('result', {}).get('_research_checkpoint'),
+                save_checkpoint=lambda value: ledger.save_report_checkpoint(period, day, token, value))
             codes = list(dict.fromkeys(p['code'] for p in [*analysis.get('plans', []), *analysis.get('stock_reviews', []), *analysis.get('watchlist_updates', [])]))
             if codes:
                 with context.market() as market:
@@ -135,7 +139,10 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
             result = {"status": "success", "facts": facts, "analysis": analysis, "usage": usage,
                       "revision": (existing or {}).get("result", {}).get("next_revision", 1),
                       "tool_evidence": sources, "created_at": finished.isoformat(),
-                      "body": report_body(facts, analysis), "notification_body": notification_digest(facts, analysis)}
+                      "body": report_body(facts, analysis),
+                      "notification_body": notification_digest(facts, analysis,
+                          observed_at=finished.isoformat(),
+                          revision=int((existing or {}).get("result", {}).get("next_revision", 1)))}
             ledger.finish_report(period, day, token, result)
         except Exception as exc:
             failure = {"status": "failed", "error": str(exc), "created_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
@@ -146,7 +153,7 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
             if cfg["notify"] and not failure["failure_notified"]:
                 try:
                     body = render_positions(ledger.state()) + f"\n\n{day} {PERIOD_LABELS[period]}尚未完成：{exc}\n后续触发会重试。"
-                    receipt = dispatch_text(store, title=f"自主交易员 · {PERIOD_LABELS[period]}异常", body=split_text_for_wecom(body, max_chunks=1)[0])
+                    receipt = dispatch_text(store, title=f"天才交易员 · {PERIOD_LABELS[period]}异常", body=split_text_for_wecom(body, max_chunks=1)[0])
                     failure["failure_notify"] = receipt
                     failure["failure_notified"] = bool(receipt.get("success"))
                 except Exception:

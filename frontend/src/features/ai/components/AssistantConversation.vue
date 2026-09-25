@@ -10,12 +10,14 @@ import type { AiMessage, AiAgentProgress } from '@/shared/types/ai_assistant'
 import AssistantConfirmCard from './AssistantConfirmCard.vue'
 import AssistantTurnTimeline from './AssistantTurnTimeline.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   messages: AiMessage[]
   busy?: boolean
   waitingUser?: boolean
   agents?: AiAgentProgress[]
-}>()
+  assistantLabel?: string
+  allowRerun?: boolean
+}>(), { assistantLabel: 'Loci', allowRerun: true })
 const emit = defineEmits<{
   'confirm-reply': [text: string]
   'open-agent': [agentId: string]
@@ -26,7 +28,7 @@ const emit = defineEmits<{
 const actionsDisabled = computed(() => Boolean(props.busy || props.waitingUser))
 
 function onRerun(message: AiMessage): void {
-  if (actionsDisabled.value) return
+  if (!props.allowRerun || actionsDisabled.value) return
   const source = message.role === 'user'
     ? message
     : previousUserMessage(props.messages, message.id)
@@ -78,6 +80,8 @@ const showGlobalConfirm = computed(() => {
           <MessageScrollerItem v-for="message in messages" :key="message.id" :message-id="message.id" :scroll-anchor="message.role === 'user'">
     <AssistantTurnTimeline
       :message="message"
+      :assistant-label="assistantLabel"
+      :allow-rerun="allowRerun"
       :show-confirm="showConfirmFor(message)"
       :agents="message.id === lastAssistantId && (busy || waitingUser) && agents?.length ? agents : undefined"
       :show-activity="message.id === lastAssistantId || Boolean(message.agents?.length)"
@@ -87,13 +91,14 @@ const showGlobalConfirm = computed(() => {
       @copy="emit('copy', $event)"
       @rerun="onRerun(message)"
     />
+    <slot name="after-message" :message="message" />
           </MessageScrollerItem>
     <AssistantConfirmCard
       v-if="showGlobalConfirm"
       fallback
       @reply="emit('confirm-reply', $event)"
     />
-    <p v-else-if="busy && !waitingUser" class="assistant-conversation__status" aria-live="polite">
+    <p v-else-if="busy && !waitingUser && !messages.some(message => message.status === 'streaming')" class="assistant-conversation__status" aria-live="polite">
       正在接收运行事件…
     </p>
         </MessageScrollerContent>
@@ -106,7 +111,7 @@ const showGlobalConfirm = computed(() => {
 <style scoped>
 .assistant-conversation { flex:1 1 0%; height:auto; min-height:0; width:100%; }
 .assistant-conversation__viewport { padding:var(--gap-4) 0 var(--gap-3); overflow-x:hidden; scrollbar-width:thin; }
-.assistant-conversation__content { width:100%; max-width:none; margin:0 auto; gap:var(--gap-5); }
+.assistant-conversation__content { width:100%; max-width:860px; margin:0 auto; gap:var(--gap-5); }
 .assistant-conversation__status { margin:var(--gap-1) 0 0; color:var(--mist); font-size:var(--ai-fs-aux); }
 .assistant-conversation__viewport:focus-visible { outline:2px solid var(--seal); outline-offset:-2px; }
 </style>

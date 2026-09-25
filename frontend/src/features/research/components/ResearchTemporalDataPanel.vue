@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Clock, RefreshCw as RefreshRight, Upload } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { IconBox, Notice, StatusBadge, ActionLink } from '@/shared/components/ui/app/presentation'
@@ -24,10 +25,6 @@ import type {
 } from '@/shared/types/quant-research'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
-import UiCard from '@/shared/components/ui/UiCard.vue'
-import UiCardContent from '@/shared/components/ui/UiCardContent.vue'
-import UiCardHeader from '@/shared/components/ui/UiCardHeader.vue'
-import UiCardTitle from '@/shared/components/ui/UiCardTitle.vue'
 
 import ResearchTemporalImportDialog, { type ResearchTemporalImportKind } from './ResearchTemporalImportDialog.vue'
 
@@ -238,12 +235,12 @@ defineExpose({ loadMemberships, loadFacts })
 </script>
 
 <template>
-  <UiCard class="research-surface" aria-label="历史研究数据">
+  <Card class="research-surface" aria-label="历史研究数据">
     <!-- 英文 kicker 删除：它和下一行中文标题说的是同一件事，白占一行 -->
-    <UiCardHeader>
-      <UiCardTitle><IconBox aria-hidden="true"><Clock /></IconBox>历史数据</UiCardTitle>
-    </UiCardHeader>
-    <UiCardContent :padded="true">
+    <CardHeader>
+      <CardTitle><IconBox aria-hidden="true"><Clock /></IconBox>历史数据</CardTitle>
+    </CardHeader>
+    <CardContent>
 
     <section class="temporal-section" aria-label="历史股票池快照">
       <div class="subhead">
@@ -345,8 +342,8 @@ defineExpose({ loadMemberships, loadFacts })
       :kind="importKind"
       @imported="refreshImported"
     />
-    </UiCardContent>
-  </UiCard>
+    </CardContent>
+  </Card>
 </template>
 
 <style scoped>

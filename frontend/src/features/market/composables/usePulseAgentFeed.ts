@@ -46,7 +46,7 @@ export function usePulseAgentFeed() {
       if (token !== generation) return
       if (activity.status === 'fulfilled') {
         items.push(...guardianRunRows(activity.value.runs ?? []), ...guardianReportRows(activity.value.reports ?? []))
-      } else failures.push(`自主交易员各阶段研判：${toErrorMessage(activity.reason, '读取失败')}`)
+      } else failures.push(`天才交易员各阶段研判：${toErrorMessage(activity.reason, '读取失败')}`)
       if (agents.status === 'rejected') failures.push(`智能体列表：${toErrorMessage(agents.reason, '读取失败')}`)
       const pending = agents.status === 'fulfilled' ? [...(agents.value.items ?? [])].sort((a,b) => feedEpoch(b.latest_at) - feedEpoch(a.latest_at)) : []
       let cursor = 0

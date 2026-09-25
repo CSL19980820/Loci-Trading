@@ -62,7 +62,7 @@ def _loads(raw: str | None) -> Any:
         return {}
 
 
-def _user_filters(keyword: str = "", status: str = "") -> tuple[str, list[Any]]:
+def _user_filters(keyword: str = "", status: str = "", role: str = "") -> tuple[str, list[Any]]:
     """用户列表/计数共用的 WHERE 条件（不含 ``WHERE`` 关键字，恒非空）。
 
     ``status <> 'deleted'`` 是基线：软删的账号不该出现在任何后台列表里，也不该
@@ -83,6 +83,9 @@ def _user_filters(keyword: str = "", status: str = "") -> tuple[str, list[Any]]:
     if status:
         clauses.append("status = ?")
         params.append(status)
+    if role:
+        clauses.append("role = ?")
+        params.append(role)
     return " AND ".join(clauses), params
 
 
@@ -253,22 +256,22 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
         return self.get_user(user_id)
 
     def list_users(
-        self, *, limit: int = 50, offset: int = 0, keyword: str = "", status: str = ""
+        self, *, limit: int = 50, offset: int = 0, keyword: str = "", status: str = "", role: str = ""
     ) -> list[User]:
-        where, params = _user_filters(keyword, status)
+        where, params = _user_filters(keyword, status, role)
         rows = self.conn.execute(
-            f"SELECT * FROM users WHERE {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM users WHERE {where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
             (*params, limit, offset),
         ).fetchall()
         return [user for user in (self._user(row) for row in rows) if user is not None]
 
-    def count_users(self, *, keyword: str = "", status: str = "") -> int:
+    def count_users(self, *, keyword: str = "", status: str = "", role: str = "") -> int:
         """匹配 ``list_users`` 同一份过滤条件的总数。
 
         **无参调用的语义不变**：仍是「未软删的账号总数」——``platform_overview``
         与首启种子（``tenant = PRIMARY_TENANT if not store.count_users()``）都靠它。
         """
-        where, params = _user_filters(keyword, status)
+        where, params = _user_filters(keyword, status, role)
         row = self.conn.execute(f"SELECT COUNT(*) AS n FROM users WHERE {where}", params).fetchone()
         return int(row["n"]) if row else 0
 

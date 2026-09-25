@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="T = string | string[] | null">
-import { computed, nextTick, ref, shallowRef, useAttrs, watch, type StyleValue } from 'vue'
+import { computed, nextTick, ref, shallowRef, useId, useAttrs, watch, type StyleValue } from 'vue'
 import type { DateValue } from '@internationalized/date'
 import type { DateRange } from 'reka-ui'
 import { useMediaQuery } from '@vueuse/core'
@@ -8,6 +8,7 @@ import { Calendar } from '../calendar'
 import RangeCalendar from '../range-calendar/RangeCalendar.vue'
 import { Button } from '../button'
 import { Input } from '../input'
+import { Label } from '../label'
 import { Popover, PopoverTrigger, PopoverContent } from '../popover'
 import { useFieldControl } from './context'
 import { nativeDate, readDate, readTime, validTime, writeDate } from './date-value'
@@ -21,6 +22,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ 'update:modelValue': [value: T]; change: [value: T]; clear: [] }>()
 const attrs = useAttrs()
 const field = useFieldControl()
+const timeFieldsId = useId()
 const root = ref<HTMLElement>()
 const open = ref(false)
 const draft = shallowRef<DateRange>({ start: undefined, end: undefined })
@@ -106,7 +108,7 @@ function controlAttrs() { return { ...field.bindings.value, ...Object.fromEntrie
         <div v-if="datetime" class="date-field__times">
           <Label v-for="index in (range ? 2 : 1)" :key="index">
             <span>{{ range ? index === 1 ? '开始时间' : '结束时间' : '时间' }}</span>
-            <Input v-model="times[index - 1]" type="text" placeholder="HH:mm" maxlength="5" :aria-invalid="!validTime(times[index - 1])" class="h-8 w-20 text-center font-mono" />
+            <Input :id="`${timeFieldsId}-time-${index}`" v-model="times[index - 1]" type="text" placeholder="HH:mm" maxlength="5" :aria-invalid="!validTime(times[index - 1])" class="h-8 w-20 text-center font-mono" />
           </Label>
         </div>
         <p v-if="invalid" class="date-field__error" role="alert">{{ invalid }}</p>

@@ -66,6 +66,7 @@ function close(): void {
       :width="320"
       trigger="click"
       popper-class="ctx-usage-popper"
+      content-label="上下文用量"
     >
       <template #reference>
         <ActionButton
@@ -105,7 +106,7 @@ function close(): void {
         </ActionButton>
       </template>
 
-      <div class="ctx-usage__panel" role="dialog" aria-label="上下文用量">
+      <div class="ctx-usage__panel">
         <header class="ctx-usage__head">
           <h3 class="ctx-usage__title">{{ title }}</h3>
           <HintTooltip content="粗估喂模上下文（汉字≈1、其它≈4字/token），非供应商计费账单" placement="top">

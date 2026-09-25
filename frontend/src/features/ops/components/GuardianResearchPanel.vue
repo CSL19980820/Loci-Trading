@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { toast } from 'vue-sonner'
-import { FileText as Document, History, LoaderCircle, Play, RefreshCw } from '@lucide/vue'
+import { FileText as Document, History, Play, RefreshCw } from '@lucide/vue'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/shared/components/ui/dialog'
@@ -14,7 +15,7 @@ import { default as Pager } from '@/shared/components/ui/app/Pager.vue'
 import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
 import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
 
-import { computed, onActivated, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { computed, onActivated, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 
 
 import { getGuardianResearch, getGuardianRuns, getGuardianRun, scanGuardian } from '@/shared/api/guardian'
@@ -90,16 +91,30 @@ const decisionByCode = computed(() => {
 function actionLabel(item: GuardianDecision) { return GUARDIAN_ACTION_LABELS[item.action] }
 function stockName(code: string) { return pool.value.find(p => p.code === code)?.name ?? code }
 function plan(raw: unknown) { const row = raw as GuardianWatch; return row.position?.holding_plan || row.watch?.entry_condition || row.watch?.reason || decisionByCode.value.get(row.code)?.holding_plan || row.position?.last_review?.reason || decisionByCode.value.get(row.code)?.reason || (row.position ? '持有周期由模型管理' : '等待模型研判') }
-function since(raw: unknown) { const row = raw as GuardianWatch; return row.position?.entry_context?.opened_at?.slice(0, 10) || row.watch?.added_at?.slice(0, 10) || row.signals.at(-1)?.date || '—' }
+function since(raw: unknown) {
+  const row = raw as GuardianWatch
+  if (row.watch?.added_at && filter.value !== 'holding') return formatDateTime(row.watch.added_at).slice(0, 16)
+  const recordedAt = filter.value === 'holding' ? row.position?.entry_context?.opened_at : row.signals.at(-1)?.created_at
+  if (recordedAt) {
+    const formatted = formatDateTime(recordedAt)
+    if (formatted !== '—') return formatted.slice(0, 16)
+  }
+  return row.position?.entry_context?.opened_at?.slice(0, 10) || row.signals.at(-1)?.date || '—'
+}
+function sinceLabel(raw: unknown) {
+  const row = raw as GuardianWatch
+  return row.watch && filter.value !== 'holding' ? '加入观察时间' : filter.value === 'holding' ? '建仓时间' : '候选记录时间'
+}
 onActivated(() => { if (!props.historyMode) void loadResearch() })
 watch(() => props.account, () => { if (!props.historyMode) void loadResearch() })
 onUnmounted(() => { disposed = true; controller?.abort(); researchController?.abort() })
+const panelId = `guardian-research-panel-${useId()}`
 </script>
 <template>
   <section class="research-workspace" :class="{ 'research-workspace--history': historyMode }" aria-label="观察">
-    <PageTabs v-if="mobile && !historyMode" v-model="mobilePane" :items="[{name:'analysis',label:'今日研判'},{name:'pool',label:'股票池'}]" variant="pill" :sticky="false" class="research-mobile-tabs" aria-label="研判视图" />
+    <PageTabs v-if="mobile && !historyMode" :panel-id="panelId" v-model="mobilePane" :items="[{name:'analysis',label:'今日研判'},{name:'pool',label:'股票池'}]" variant="pill" :sticky="false" class="research-mobile-tabs" aria-label="研判视图" />
     <Notice v-if="listError || error" :title="listError || error" tone="error" :closable="false"><ActionButton access="read" variant="link" @click="load(); loadResearch(); loadDetail()">重试</ActionButton></Notice>
-    <div class="guardian-body">
+    <div :id="panelId" class="guardian-body" :role="mobile && !historyMode ? 'tabpanel' : undefined" :tabindex="mobile && !historyMode ? 0 : undefined" :aria-labelledby="mobile && !historyMode ? `${panelId}-tab-${mobilePane}` : undefined">
       <!-- 左栏：股票池 -->
       <section v-if="!historyMode" v-show="!mobile || mobilePane === 'pool'" class="guardian-pool" aria-label="股票池">
         <div class="guardian-section-head">
@@ -116,7 +131,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); researchController?.ab
           <article v-for="row in rows" :key="row.code" class="research-mobile-stock">
             <div><span role="button" tabindex="0" class="stock-detail-link" :aria-label="`查看 ${row.name} 交易参考`" @click="openStock(row)" @keydown.enter.prevent="openStock(row)" @keydown.space.prevent="openStock(row)">{{ row.name }} <small>{{ row.code }}</small></span><span class="research-mobile-state">{{ row.position ? '持仓中' : '观察中' }}</span></div>
             <p>{{ plan(row) }}</p>
-            <footer><time>{{ since(row) }}</time><span v-if="row.position">{{ row.position.quantity.toLocaleString() }} 股 · 成本 {{ price(row.position.average_cost) }}元</span><span v-else>{{ row.strategies.map(tag => strategyLabel(tag)).join(' / ') }}</span></footer>
+            <footer><time>{{ sinceLabel(row) }} {{ since(row) }}</time><span v-if="row.position">{{ row.position.quantity.toLocaleString() }} 股 · 成本 {{ price(row.position.average_cost) }}元</span><span v-else>{{ row.strategies.map(tag => strategyLabel(tag)).join(' / ') }}</span></footer>
           </article>
         </div>
         <DataGrid v-else-if="rows.length" :data="rows" row-key="code" class="guardian-stock-table" @row-click="openStock">
@@ -127,7 +142,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); researchController?.ab
               </div>
             </template>
           </DataColumn>
-          <DataColumn label="日期" width="120"><template #default="{ row }"><span class="font-mono">{{ since(row) }}</span></template></DataColumn>
+          <DataColumn label="记录时间" width="180"><template #default="{ row }"><span class="font-mono" :title="sinceLabel(row)">{{ since(row) }}</span></template></DataColumn>
           <DataColumn label="状态" width="90">
             <template #default="{ row }">
               <span class="guardian-stock-state" :class="{ held: row.position }">
@@ -172,7 +187,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); researchController?.ab
             :disabled="busy || !enabled"
             @click="scan"
           >
-            <LoaderCircle v-if="busy" class="size-3 animate-spin" aria-hidden="true" />
+            <Spinner v-if="busy" class="size-3 animate-spin" aria-hidden="true" />
             <Play v-else class="size-3 text-seal" aria-hidden="true" />
             <span>立即研判</span>
           </Button>
@@ -205,7 +220,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); researchController?.ab
                   'bg-mist': latest?.status === 'success' && latest.result.outcome === 'no_action',
                 }"
               />
-              {{ detailLoading ? '加载中' : latest?.status === 'running' ? '研判中' : latest?.status === 'failed' ? '异常' : latest?.status === 'success' ? latest.result.outcome === 'no_action' ? '无动作' : '已完成' : '已中断' }}
+              {{ detailLoading ? '加载中' : latest?.status === 'running' ? '研判中' : latest?.status === 'failed' ? '异常' : latest?.status === 'success' ? latest.result.outcome === 'no_action' ? '无动作' : latest.result.outcome === 'observation_changed' ? '观察已变更' : '已完成' : '已中断' }}
             </Badge>
           </div>
           <Pager v-if="historyMode" :current-page="page" :page-size="range.limit" :total="total" layout="total, prev, pager, next" :disabled="listLoading" @current-change="changePage" />
@@ -310,7 +325,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); researchController?.ab
       <DialogContent class="sm:max-w-3xl max-h-[85dvh] overflow-y-auto stock-detail-dialog">
         <DialogHeader v-if="selectedStock" class="text-left">
           <DialogTitle class="flex items-center gap-3">{{ selectedStock.name }} <span class="font-mono text-base text-muted-foreground">{{ selectedStock.code }}</span><Badge variant="secondary">{{ selectedStock.position ? '持仓股' : '自选股' }}</Badge></DialogTitle>
-          <DialogDescription>参考日期 {{ since(selectedStock) }} · 交易参考详情</DialogDescription>
+          <DialogDescription>{{ sinceLabel(selectedStock) }} {{ since(selectedStock) }} · 交易参考详情</DialogDescription>
         </DialogHeader>
         <div v-if="selectedStock">
           <div v-if="selectedStock.position" class="stock-detail-metrics"><div><span>持仓股数</span><b>{{ selectedStock.position.quantity }} 股</b></div><div><span>参考成本</span><b>{{ price(selectedStock.position.average_cost) }} 元</b></div><div><span>可卖股数</span><b>{{ selectedStock.position.available_quantity }} 股</b></div></div>
@@ -326,6 +341,8 @@ onUnmounted(() => { disposed = true; controller?.abort(); researchController?.ab
                   <p>{{ selectedStock.position.stop_loss_plan }}</p>
                 </template>
                 <template v-if="selectedStock.watch">
+                  <span>加入观察时间</span>
+                  <p>{{ formatDateTime(selectedStock.watch.added_at) }}</p>
                   <span>观察依据</span>
                   <p>{{ selectedStock.watch.reason }}</p>
                   <span>入场 / 撤出观察条件</span>

@@ -14,6 +14,7 @@ from src.market.infrastructure.adapters.base import (
 from src.market.infrastructure.adapters.baostock_adapter import BaostockAdapter
 from src.market.infrastructure.adapters.eastmoney_adapter import EastmoneyAdapter
 from src.market.infrastructure.adapters.exchange_list_adapter import ExchangeListAdapter
+from src.market.infrastructure.adapters.hithink_adapter import HithinkAdapter
 from src.market.infrastructure.adapters.registry import (
     adapters_for_lane,
     all_adapters,
@@ -75,6 +76,7 @@ __all__ = [
     "LANE_BROKEN_LIMIT_UP",
     "EastmoneyAdapter",
     "ExchangeListAdapter",
+    "HithinkAdapter",
     "LANE_ADJUST_FACTOR",
     "LANE_CAPITAL_FLOW",
     "LANE_HIST_DAILY",

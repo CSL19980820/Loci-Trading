@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { TagsInput, TagsInputItem, TagsInputItemText, TagsInputItemDelete, TagsInputInput } from '@/shared/components/ui/tags-input'
+import { parseListText } from '../composables/screenSkillDraft'
 import { default as FormField } from '@/shared/components/ui/app/FormField.vue'
 import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
 import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch.vue'
@@ -90,12 +92,13 @@ function logicErr(index: number, id: string, part: string): string {
     </FormField>
 
     <FormField label="因子清单" required :error="err('factorsText')">
-      <TextField
-        v-model="props.draft.factorsText"
-        type="textarea"
-        :rows="2"
-        placeholder="用逗号或换行分隔，例如 均线、量比、突破"
-      />
+      <TagsInput :model-value="props.draft.factorsText.split(/[\n,]/).map(value => value.trim()).filter(Boolean)" :delimiter="/[\n,，]/" add-on-paste add-on-blur add-on-tab @update:model-value="props.draft.factorsText = $event.map(String).join(', ')">
+        <TagsInputItem v-for="(factor, index) in props.draft.factorsText.split(/[\n,]/).map(value => value.trim()).filter(Boolean)" :key="`${index}-${factor}`" :value="factor">
+          <TagsInputItemText />
+          <TagsInputItemDelete :aria-label="`移除因子 ${factor}`" />
+        </TagsInputItem>
+        <TagsInputInput aria-label="因子清单" placeholder="输入因子后按回车" />
+      </TagsInput>
     </FormField>
 
     <div class="section-head">
@@ -145,12 +148,13 @@ function logicErr(index: number, id: string, part: string): string {
           />
         </FormField>
         <FormField label="引用编号" :error="logicErr(index, row.id, 'citationsText')">
-          <TextField
-            v-model="row.citationsText"
-            type="textarea"
-            :rows="2"
-            placeholder="逗号或换行分隔，填资料页里的编号"
-          />
+          <TagsInput :model-value="parseListText(row.citationsText)" :delimiter="/[\n,，;\s]/" add-on-paste add-on-blur add-on-tab @update:model-value="row.citationsText = $event.map(String).join(', ')">
+            <TagsInputItem v-for="citation in parseListText(row.citationsText)" :key="citation" :value="citation">
+              <TagsInputItemText />
+              <TagsInputItemDelete :aria-label="`移除引用 ${citation}`" />
+            </TagsInputItem>
+            <TagsInputInput aria-label="引用编号" placeholder="输入资料编号后按回车" />
+          </TagsInput>
         </FormField>
       </SurfaceCard>
     </div>

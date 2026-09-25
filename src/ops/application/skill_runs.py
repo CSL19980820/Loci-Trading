@@ -3,14 +3,17 @@ from __future__ import annotations
 
 from src.shared.clock import utc_now as _now
 import json
+import os
 from pathlib import Path
 import threading
 from typing import Any
 import uuid
+from collections import OrderedDict
 
 from src.shared.paths import skill_runs_dir
 
 _lock = threading.Lock()
+_event_indexes: OrderedDict[str, tuple[int, int, list[int], int]] = OrderedDict()
 
 
 def new_run_id() -> str:
@@ -83,26 +86,63 @@ def claim_user_reply(run_id: str, reply: str) -> dict[str, Any] | None:
         return state
 
 
-def list_events(run_id: str, *, after: int = 0) -> list[dict[str, Any]]:
+def read_events(run_id: str, *, after: int = 0, limit: int = 200) -> tuple[list[dict[str, Any]], int]:
+    """Read complete physical lines, preserving cursors across corrupt/partial writes.
+
+    An LRU byte-offset index makes repeated tail polling independent of history size.
+    A first read after restart builds the index once; incomplete final lines are retried.
+    Replacement/truncation starts a new physical-line generation and resets its cursor.
+    """
     path = _events_path(run_id)
     if not path.is_file():
-        return []
+        return [], after
     rows: list[dict[str, Any]] = []
+    after = max(0, after)
+    limit = max(1, min(limit, 1000))
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        with _lock, path.open('rb') as handle:
+            # The pathname may rotate after open; metadata must describe this handle.
+            stat = os.fstat(handle.fileno())
+            key = str(path.resolve())
+            cached = _event_indexes.pop(key, None)
+            replaced = cached is not None and (
+                cached[0] != stat.st_ino or cached[1] > stat.st_size
+                or (cached[1] == stat.st_size and cached[3] != stat.st_mtime_ns)
+            )
+            offsets = cached[2] if cached and not replaced else [0]
+            if replaced:
+                after = 0
+            handle.seek(offsets[-1])
+            while True:
+                line = handle.readline()
+                if not line or not line.endswith(b'\n'):
+                    break
+                offsets.append(handle.tell())
+            _event_indexes[key] = (stat.st_ino, stat.st_size, offsets, stat.st_mtime_ns)
+            while len(_event_indexes) > 128:
+                _event_indexes.popitem(last=False)
+            if after > len(offsets) - 1:
+                after = 0
+            cursor = after
+            handle.seek(offsets[cursor])
+            stop = min(len(offsets) - 1, cursor + limit)
+            while cursor < stop:
+                line = handle.readline()
+                try:
+                    item = json.loads(line)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    item = None
+                if isinstance(item, dict):
+                    item['_seq'] = cursor
+                    rows.append(item)
+                cursor += 1
+            return rows, max(after, cursor)
     except OSError:
-        return []
-    for index, line in enumerate(lines):
-        if index < after:
-            continue
-        try:
-            item = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(item, dict):
-            item["_seq"] = index
-            rows.append(item)
-    return rows
+        return [], after
+
+
+def list_events(run_id: str, *, after: int = 0, limit: int = 200) -> list[dict[str, Any]]:
+    return read_events(run_id, after=after, limit=limit)[0]
 
 
 def create_run(*, skill: str, provider: str, config: dict[str, Any] | None = None) -> dict[str, Any]:

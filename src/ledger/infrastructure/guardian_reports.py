@@ -80,8 +80,40 @@ class GuardianReportsMixin:
                               (key, period, day, "running", token, time.time(), "{}"))
             return token
 
+    def save_report_checkpoint(self, period: str, day: str, token: str, checkpoint: dict) -> None:
+        with self.conn:
+            self.conn.execute('BEGIN IMMEDIATE')
+            row = self.conn.execute("SELECT result_json FROM guardian_reports WHERE report_key=? AND token=? AND status='running'",
+                                    (f'{period}:{day}', token)).fetchone()
+            if row is None:
+                raise RuntimeError('报告租约已过期，拒绝保存研究阶段')
+            result = json.loads(row[0])
+            result['_research_checkpoint'] = checkpoint
+            self.conn.execute('UPDATE guardian_reports SET result_json=? WHERE report_key=? AND token=?',
+                              (json.dumps(result, ensure_ascii=False), f'{period}:{day}', token))
+
     def finish_report(self, period: str, day: str, token: str, result: dict[str, Any]) -> None:
         with self.conn:
+            if result['status'] == 'success' and int(result.get('revision', 1)) > 1:
+                key = f'{period}:{day}'
+                pending = self.conn.execute(
+                    "SELECT result_json FROM guardian_reports WHERE report_key=? AND token=? AND status='running'",
+                    (key, token)).fetchone()
+                saved = json.loads(pending[0]) if pending else {}
+                revision = int(result['revision'])
+                archived = self.conn.execute(
+                    'SELECT 1 FROM guardian_report_revisions WHERE report_key=? AND revision=?',
+                    (key, revision - 1)).fetchone()
+                reason = result.get('facts', {}).get('correction_reason')
+                if (not archived or saved.get('next_revision') != revision
+                        or not reason or reason != saved.get('correction_reason')):
+                    raise ValueError('更正报告缺少已归档前版或更正租约，拒绝跳过观察动作')
+            if result['status'] != 'success':
+                row = self.conn.execute('SELECT result_json FROM guardian_reports WHERE report_key=? AND token=?',
+                                        (f'{period}:{day}', token)).fetchone()
+                saved = json.loads(row[0]) if row else {}
+                if '_research_checkpoint' in saved:
+                    result = {**result, '_research_checkpoint': saved['_research_checkpoint']}
             cursor = self.conn.execute("UPDATE guardian_reports SET status=?,result_json=? WHERE report_key=? AND token=? AND status='running'",
                 (result["status"], json.dumps(result, ensure_ascii=False), f"{period}:{day}", token))
             if cursor.rowcount != 1:
@@ -90,7 +122,9 @@ class GuardianReportsMixin:
                 updates = (result.get('analysis') or {}).get('watchlist_updates', [])
                 if len({u['code'] for u in updates}) != len(updates):
                     raise ValueError('同一股票只能有一个观察名单决定')
-                if updates:
+                # A correction revises the historical document and experience; it must not
+                # replay old watch/unwatch decisions against today's live watchlist.
+                if updates and int(result.get('revision', 1)) == 1:
                     state = self.state()
                     from src.ledger.domain.guardian_watchlist import update_watchlist
                     names = result.get('facts', {}).get('stock_names', {})

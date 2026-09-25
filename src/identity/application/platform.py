@@ -124,11 +124,14 @@ def seed_default_admin(
 
 def list_users(store: IdentityStore, **filters: Any) -> list[dict[str, Any]]:
     users = store.list_users(**filters)
+    user_ids = [user.id for user in users]
+    quotas = store.quotas_for_users(user_ids)
+    usage = store.usage_for_users(user_ids, period=utc_now().strftime("%Y-%m"))
     out: list[dict[str, Any]] = []
     for user in users:
         row = user.self_dict()
-        row["quota"] = store.get_quota(user.id)
-        row["usage"] = store.usage_overview(user.id, period=utc_now().strftime("%Y-%m"))
+        row["quota"] = quotas[user.id]
+        row["usage"] = usage[user.id]
         out.append(row)
     return out
 

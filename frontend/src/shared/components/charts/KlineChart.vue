@@ -51,6 +51,8 @@ const props = withDefaults(
     maPeriods?: number[]
     /** 默认可见根数（数据更长时 dataZoom 只展示最近 N 根） */
     visibleBars?: number
+    /** 嵌入消息流时保留自然滚动，仅用底部滑块调整区间。 */
+    scrollThrough?: boolean
     title?: string
     /** 涨跌停判定用 */
     stockCode?: string
@@ -67,6 +69,7 @@ const props = withDefaults(
     indicator: 'macd',
     maPeriods: () => [...DEFAULT_MA_PERIODS],
     visibleBars: 60,
+    scrollThrough: false,
     title: '',
     stockCode: '',
     stockName: '',
@@ -160,6 +163,7 @@ function buildOption(prep: ChartPrepResult) {
     showBarLabels: shouldShowBarLabels(prep.dates.length),
     zoomStart,
     zoomEnd,
+    scrollThrough: props.scrollThrough,
     stockCode: props.stockCode,
     stockName: props.stockName,
     strategySignals: props.strategySignals,
@@ -363,6 +367,7 @@ watch(
       props.indicator,
       props.maPeriods,
       props.visibleBars,
+      props.scrollThrough,
       props.focusDate,
       props.strategySignals,
       // canvas 颜色是 setOption 时的快照，主题变了必须重绘，否则深色下仍是浅色档轴线

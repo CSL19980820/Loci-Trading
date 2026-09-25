@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Item } from '@/shared/components/ui/item'
 import { computed, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
-import { ChevronDown, Cpu, Flag, LoaderCircle } from '@lucide/vue'
+import { ChevronDown, Cpu, Flag } from '@lucide/vue'
 import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -354,7 +355,7 @@ defineExpose({ isDirty:() => open.value && dirty.value })
       <SheetFooter class="flex-row justify-end gap-2 border-t border-line px-4 py-3">
         <Button access="read" variant="outline" :disabled="busy" @click="close()">取消</Button>
         <Button :disabled="busy" @click="save">
-          <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
           {{ creating ? '创建智能体' : '保存配置' }}
         </Button>
       </SheetFooter>

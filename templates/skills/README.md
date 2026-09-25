@@ -40,7 +40,7 @@ python -c "from src.ops.application.skills import sync_skills_from_templates; pr
 打包/便携版从包内 `templates/skills` 解析（与 `PROJECT_ROOT` 一致）。
 
 `yixian-auction`（一线定乾坤·首板次日）已退役。模板源码仍保留作历史研究，但安装、
-导入、活动目录、托管任务和自主交易员研究入口都会拒绝该 slug。
+导入、活动目录、托管任务和天才交易员研究入口都会拒绝该 slug。
 
 部署产物必须带上 `templates/`：容器镜像的 `COPY templates`、发布包的
 `Copy-Tree templates`、PyInstaller 的 `loci.spec` 三处都已包含，别在瘦身时删掉。

@@ -261,7 +261,7 @@ async function onFormSubmit(payload: {
       ),
     )
     if (!saved) return captureFormError()
-    notice.value = `已更新任务 ${saved.name}`
+    notice.value = `已更新任务 ${displayName(saved)}`
     formOpen.value = false
     await load()
     return
@@ -340,8 +340,8 @@ async function saveSchedule(
 
 async function confirmDrop(job: Job): Promise<void> {
   if (isBoundManagedJob(job)) return
-  if (!(await confirmDangerous(`确定删除定时任务「${job.name}」？`, '确认删除', '删除'))) return
-  await guard(() => deleteJob(job.id), `已删除 ${job.name}`)
+  if (!(await confirmDangerous(`确定删除定时任务「${displayName(job)}」？`, '确认删除', '删除'))) return
+  await guard(() => deleteJob(job.id), `已删除 ${displayName(job)}`)
   await load()
 }
 

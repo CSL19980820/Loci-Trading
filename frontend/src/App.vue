@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Progress } from '@/shared/components/ui/progress'
 import { computed, defineAsyncComponent, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -178,7 +179,7 @@ function openSidebarDialog(which: 'themeOpen'): void {
       <AppSidebar ref="sidebarRef" />
       <section class="workspace">
         <!-- 加载进度：2px 细线，绝对定位吸在主区顶边，不参与排版 -->
-        <div v-if="store.loading || navigationPending" class="load-line" role="progressbar" aria-label="正在加载本页数据" />
+        <Progress v-if="store.loading || navigationPending" :model-value="null" class="load-line" aria-label="正在加载本页数据" />
 
         <main id="main-content" tabindex="-1" class="main-content">
           <div class="page-host" :aria-busy="navigationPending" :inert="navigationPending">
@@ -225,32 +226,4 @@ function openSidebarDialog(which: 'themeOpen'): void {
   pointer-events: none;
 }
 
-.load-line::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 28%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--seal), var(--seal));
-  animation: load-line-slide 1.1s linear infinite;
-}
-
-@keyframes load-line-slide {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(460%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .load-line::after {
-    width: 100%;
-    animation: none;
-    opacity: 0.55;
-  }
-}
 </style>

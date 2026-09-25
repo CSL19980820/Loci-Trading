@@ -38,6 +38,7 @@ ADAPTER_LANE_CONCURRENCY: dict[str, int] = {LANE_HIST_DAILY: 4}
 ADAPTER_SOURCE_CONCURRENCY: dict[tuple[str, str], int] = {
     (LANE_HIST_DAILY, "tdx"): 8,
     (LANE_SPOT_BATCH, "tdx"): 8,
+    (LANE_HIST_DAILY, "hithink"): 2,
 }
 #: 各 lane 的**权威源**：只要它还在启用名单里，就永远排在合并优先序第一位。
 #:

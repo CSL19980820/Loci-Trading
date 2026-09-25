@@ -22,6 +22,7 @@ from src.ops.application.guardian_quotes import executable_quote, validated_quot
 from src.ops.application.guardian_contract import ExecutionTerms, execution_error
 from src.ops.application.guardian_order_repair import repair_preflight
 from src.ops.application.guardian_delivery import deliver_pending
+from src.ops.application.guardian_cycle_notice import observation_changes, observation_notice, publish_cycle_report
 from src.ops.application.guardian_notification import (
     load_notification_day, with_notification_facts, render_failure_notice,
 )
@@ -41,7 +42,7 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
         raise JobError("缺少运维库")
     cfg = get_config(store)
     if not cfg["enabled"]:
-        raise JobSkipped("自主交易员未开启")
+        raise JobSkipped("天才交易员未开启")
     now = datetime.now(ZoneInfo("Asia/Shanghai"))
     try:
         if not calendar_trading_day(now.date().isoformat()):
@@ -202,10 +203,13 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             rejects.extend(risk_rejections(saved_risk_events))
             meta = {key: value for key, value in meta.items() if not key.startswith("_")}
             blocked = rejects + withdrawn + missed_orders(deferred, now)
+            watch_changes = observation_changes(state, updated, finished.isoformat(), references=candidates)
             day_facts = load_notification_day(ledger, finished,
                 market_factory=None if risk_only else context.market)
             notice_state = with_notification_facts(updated, day_facts, fills, slot=slot)
             body = render_digest(decision.summary, fills, blocked, notice_state)
+            if watch_changes:
+                body += "\n\n观察变更\n" + observation_notice(watch_changes)
             lifecycle = [event for event in saved_risk_events if event.get("status") in {"adjusted", "expired", "invalidated"}]
             if fills and lifecycle:
                 body += "\n\n" + "\n".join(f"风险保护 · {event['code']}：{event['reason']}" for event in lifecycle)
@@ -217,7 +221,9 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
                       "decisions": [item.model_dump() for item in decision.orders], "fills": fills, "rejects": rejects,
                       "deferred": deferred, "analysis_only": not can_execute,
                       "initial_rejects": initial_rejects, "withdrawn": withdrawn, "blocked": blocked,
-                      "outcome": ("partial_execution" if fills else "rejected") if blocked else ("traded" if fills else "no_action"),
+                      "outcome": ("partial_execution" if fills else "rejected") if blocked else ("traded" if fills else "observation_changed" if watch_changes else "no_action"),
+                      "observation_changes": watch_changes,
+                      "stock_names": {item['code']: item['name'] for item in watch_changes},
                       "original_decision": original_decision, "timings": timings,
                       "risk_events": saved_risk_events, "risk_only": risk_only,
                       "holding_quote_evidence": holding_quote_evidence,
@@ -234,12 +240,20 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             if blocked:
                 result.update(status="failed", error="存在未执行意图，详见拒单原因；已成交部分已独立核账。")
             notice = None
-            if cfg["notify"] and (fills or blocked):
-                title = "自主交易员 · 执行受阻" if blocked else "自主交易员 · 模拟账户"
+            if cfg["notify"] and (fills or blocked or watch_changes):
+                title = "天才交易员 · 执行受阻" if blocked else "天才交易员 · 五分钟动作"
                 notice = {"title": title, "body": result["body"]}
             elif cfg["notify"] and is_opening_review(now):
-                notice = {"title": "自主交易员 · 09:25操作预案",
+                notice = {"title": "天才交易员 · 09:25操作预案",
                           "body": opening_notice(decision, result['opening_plans'], now)}
+            if notice:
+                try:
+                    share_url = publish_cycle_report(slot, result)
+                    if share_url:
+                        notice['body'] += f"\n\n查看本轮简报（免登录）：\n{share_url}"
+                        result['share_url'] = share_url
+                except Exception as exc:
+                    result['share_error'] = str(exc)
             def commit_check() -> None:
                 context.check_cancelled()
                 if get_config(store) != cfg:
@@ -291,7 +305,7 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
                       "holding_quote_evidence": holding_quote_evidence,
                       "holding_quote_attempts": holding_quote_attempts,
                       "usage": {k: v for k, v in getattr(exc, "usage", meta).items() if not k.startswith("_")}, "timings": timings}
-            notice = {"title": "自主交易员 · 异常", "body": error_body} if cfg["notify"] and not isinstance(exc, JobCancelled) else None
+            notice = {"title": "天才交易员 · 异常", "body": error_body} if cfg["notify"] and not isinstance(exc, JobCancelled) else None
             try:
                 ledger.finish(slot, result, run_id=context.run_id or "", notice=notice)
             except RuntimeError:
@@ -323,7 +337,7 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
         elif notice:
             result["notify"] = {"success": False, "pending": True}
         else:
-            receipt = {'success': False, 'skipped': 'no_action' if not fills and not blocked else 'disabled'}
+            receipt = {'success': False, 'skipped': 'no_action' if not fills and not blocked and not watch_changes else 'disabled'}
             ledger.notification(slot, receipt)
             result['notify'] = receipt
         return result

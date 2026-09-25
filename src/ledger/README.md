@@ -5,7 +5,7 @@
 `GuardianStore` 提供每租户独立的20万元现金模拟账户，股数为整数、金额按分记账。
 `guardian_account.py` 处理费用、T+1、含费平均成本和盈亏；轮次、成交、现金与持仓同事务提交，按流水复核每笔资金与股数变化。
 旧层数账户归档到 `guardian_legacy_accounts`，不伪造成现金成交。新流水存 `guardian_trades`，可分页查询及按股票汇总，清仓后保留。
-它是自主交易员独立账户，不恢复已下线的券商导入与通用实盘接口。规则和费率见[守护规则](../../docs/guardian.md)，轮次、风险合同和通知边界见[执行契约](../../docs/guardian-execution.md)。
+它是天才交易员独立账户，不恢复已下线的券商导入与通用实盘接口。规则和费率见[守护规则](../../docs/guardian.md)，轮次、风险合同和通知边界见[执行契约](../../docs/guardian-execution.md)。
 
 `GuardianStore.claim/finish`按五分钟槽位和`owner_run_id`防重，成功与失败收口均拒绝错误owner或已终态轮次。落账前回调再次核验取消、配置、时钟、报价和意图有效期；账户、fills、轮次及待发通知原子提交，失败不留下半套现金/股数变更。
 `risk_plans`在ops的状态副本内按动作后持仓安装，再随账户提交；null保留、[]撤回，绑定持仓数量及开仓批次，实际成交才消费。ledger不解释自然语言止损计划，也不以风险触发事件代替成交流水。
@@ -102,7 +102,7 @@
 `guardian_quantity_error`为计划与成交共用的股数申报校验：普通A股不得从整手拆出零股，已有零股可一次卖出；报告在发布前核验。覆盖`tests/ops/test_guardian_plan_quantity.py`。
 `tests/ledger/`、`tests/app/test_palace_api.py`
 
-自主交易员（原智能守护）：新增止盈/止损动作、持股计划与持久自主观察池；策略外观察不产生交易，现金与T+1规则不变。名称迁移沿用原任务ID及账户。详见 docs/guardian.md。
+天才交易员支持止盈/止损动作、持股计划与持久自主观察池；策略外观察不产生交易，现金与 T+1 规则不变。详见 docs/guardian.md。
 
 交易员常态和收盘最多4只、盘中临时最多8只，不要求逐只绑定换仓。临时超额时由模型通过close_keep_codes选择当日收盘留仓并持久化；14:50起按最后有效名单退出其他持仓，14:55续跑，真实报价失败保留已成交结果并标明收敛异常。T+1锁定股票最多4只且必须保留，新增/加仓不能破坏收盘可执行性。成功和异常通知优先展示含费持仓成本。测试 tests/ledger/test_guardian_position_limit.py、tests/ops/test_guardian_close.py。
 

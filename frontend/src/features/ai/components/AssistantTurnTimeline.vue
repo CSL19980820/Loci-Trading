@@ -6,7 +6,9 @@ import { Bubble, BubbleContent } from '@/shared/components/ui/bubble'
 import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar'
 import { Attachment, AttachmentMedia, AttachmentTrigger } from '@/shared/components/ui/attachment'
 import RecordDetailsDialog from '@/shared/components/ui/RecordDetailsDialog.vue'
-import { TriangleAlert } from '@lucide/vue'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
+import { Button } from '@/shared/components/ui/button'
+import { TriangleAlert, ChartNoAxesCombined, ChevronDown } from '@lucide/vue'
 
 import { messagePlainText } from '../assistantMessageActions'
 import { renderAssistantMarkdown } from '../assistantMarkdown'
@@ -19,14 +21,17 @@ import AssistantMessageActions from './AssistantMessageActions.vue'
 import AssistantThinkingBlock from './AssistantThinkingBlock.vue'
 import AssistantToolReceiptList from './AssistantToolReceiptList.vue'
 
-const props = defineProps<{
+const artifactsOpen = ref(false)
+const props = withDefaults(defineProps<{
   message: AiMessage
   showConfirm?: boolean
   agents?: AiAgentProgress[]
   showActivity?: boolean
   /** 忙态禁用重跑 / 重新生成 */
   actionsDisabled?: boolean
-}>()
+  assistantLabel?: string
+  allowRerun?: boolean
+}>(), { assistantLabel: 'Loci', allowRerun: true })
 
 const emit = defineEmits<{
   'confirm-reply': [text: string]
@@ -36,6 +41,7 @@ const emit = defineEmits<{
 }>()
 
 const isUser = computed(() => props.message.role === 'user')
+const initials = computed(() => props.assistantLabel === 'Loci' ? 'LC' : props.assistantLabel.slice(0, /^[a-z]/i.test(props.assistantLabel) ? 2 : 1))
 const streaming = computed(() => props.message.status === 'streaming')
 const tools = computed(() => props.message.tool_receipts ?? [])
 const artifactRows = computed(() => props.message.artifacts)
@@ -61,7 +67,8 @@ const answerPlain = computed(() => {
   if (answerHtml.value) return ''
   const content = props.message.content ?? ''
   if (content) return content
-  if (streaming.value) return '正在生成…'
+  // The execution status belongs above the answer, not in a fabricated answer paragraph.
+  if (streaming.value) return ''
   if (props.message.status === 'done' && props.message.role === 'assistant' && !artifacts.value.length) return '本轮未返回文字回复。'
   return ''
 })
@@ -71,11 +78,24 @@ const showAnswer = computed(() => Boolean(answerHtml.value || answerPlain.value)
 /** 仍在「纯思考」阶段：有 think 增量且尚未进入工具/产物/正文。 */
 const thinkingLive = computed(() => {
   if (!streaming.value) return false
+  if (props.message.progress) return props.message.progress.phase === 'thinking'
   if (props.message.content?.trim()) return false
   if (toolsRunning.value) return false
   if (artifacts.value.length > 0) return false
   if (activityAgents.value.length > 0) return false
   return Boolean(props.message.thinking?.trim())
+})
+
+const pendingThinking = computed(() => streaming.value && !props.message.content?.trim()
+  && !props.message.thinking?.trim() && !toolsRunning.value && !activityAgents.value.length)
+const thinkingLabel = computed(() => {
+  if (props.message.status === 'error') return '思考已中断'
+  if (props.message.status === 'cancelled') return '思考已停止'
+  if (!pendingThinking.value) return undefined
+  return props.message.progress?.label || ({
+    queued: '等待研究开始', preparing: '正在准备上下文', thinking: '正在思考',
+    tools: '正在查询证据', answering: '正在整理回答', done: '研究完成', error: '研究已中断',
+  }[props.message.progress?.phase || 'preparing'])
 })
 
 /** 思考一结束（出工具/正文/收口）就收起，把视口留给最新块。 */
@@ -98,7 +118,7 @@ function onCopy(): void {
 }
 
 function onRerun(): void {
-  if (props.actionsDisabled) return
+  if (!props.allowRerun || props.actionsDisabled) return
   emit('rerun')
 }
 </script>
@@ -108,11 +128,11 @@ function onRerun(): void {
     class="assistant-turn"
     :class="[`is-${message.role}`, { 'is-streaming': streaming }]"
     data-testid="assistant-turn"
-    :aria-label="isUser ? '你的消息' : '助手消息'"
+    :aria-label="isUser ? '你的消息' : `${assistantLabel === 'Loci' ? '助手' : assistantLabel}消息`"
   >
     <MessageContent v-if="isUser" class="assistant-user-content">
       <header class="assistant-turn__identity sr-only">你</header>
-      <Bubble align="end" class="assistant-turn__bubble"><BubbleContent>
+      <Bubble align="end" variant="secondary" class="assistant-turn__bubble"><BubbleContent class="assistant-user-bubble">
         <div v-if="message.images?.length" class="assistant-turn__images">
           <Attachment v-for="(src,index) in message.images" :key="`${message.id}-img-${index}`" orientation="vertical" class="assistant-image-attachment">
             <AttachmentMedia class="assistant-image-media"><img :src="src" alt="用户附图" class="assistant-turn__image" /></AttachmentMedia>
@@ -124,7 +144,7 @@ function onRerun(): void {
       <AssistantMessageActions
         v-if="showActions"
         :rerun-label="rerunLabel"
-        show-rerun
+        :show-rerun="allowRerun"
         :disabled="actionsDisabled"
         class="assistant-turn__actions"
         @copy="onCopy"
@@ -133,14 +153,16 @@ function onRerun(): void {
     </MessageContent>
 
     <template v-else>
-      <MessageAvatar class="assistant-message-avatar"><Avatar class="size-8"><AvatarFallback class="assistant-avatar-fallback">LC</AvatarFallback></Avatar></MessageAvatar>
       <MessageContent class="assistant-turn__flow">
-        <MessageHeader class="assistant-turn__identity">Loci</MessageHeader>
-        <!-- TurnTimeline: Thinking → Activity → Tool → Artifact* → Answer → Actions -->
+        <MessageHeader class="assistant-turn__identity"><MessageAvatar class="assistant-message-avatar"><Avatar class="size-6"><AvatarFallback class="assistant-avatar-fallback">{{ initials }}</AvatarFallback></Avatar></MessageAvatar><span>{{ assistantLabel }}</span><span v-if="message.meta" class="assistant-turn__meta">{{ message.meta }}</span></MessageHeader>
+        <!-- Keep the answer readable; chart evidence is available without pushing it below several screens. -->
         <AssistantThinkingBlock
           :content="message.thinking ?? ''"
           :streaming="thinkingLive"
           :auto-collapse="collapseThinking"
+          :pending="pendingThinking"
+          :label="thinkingLabel"
+          :interrupted="message.status === 'error' || message.status === 'cancelled'"
         />
         <AssistantActivityStrip
           v-if="activityAgents.length"
@@ -149,12 +171,7 @@ function onRerun(): void {
           @open="emit('open-agent', $event)"
         />
         <AssistantToolReceiptList :tools="tools" :has-activity="activityAgents.length > 0" />
-        <AssistantArtifactHost
-          v-for="artifact in artifacts"
-          :key="artifact.id"
-          :artifact="artifact"
-          :active="streaming"
-        />
+
         <div v-if="showAnswer" class="assistant-turn__answer">
           <div
             v-if="answerHtml"
@@ -169,10 +186,16 @@ function onRerun(): void {
           />
           <span v-if="streaming && message.content" class="assistant-turn__caret" aria-hidden="true" />
         </div>
+        <Collapsible v-if="artifacts.length" v-model:open="artifactsOpen" class="assistant-turn__evidence">
+          <CollapsibleTrigger as-child><Button access="read" variant="ghost" class="assistant-turn__evidence-trigger"><ChartNoAxesCombined aria-hidden="true" /><span>图表与数据 · {{ artifacts.length }} 项</span><ChevronDown class="assistant-evidence-chevron" :class="{ 'is-open': artifactsOpen }" aria-hidden="true" /></Button></CollapsibleTrigger>
+          <CollapsibleContent class="assistant-turn__evidence-content">
+            <AssistantArtifactHost v-for="artifact in artifacts" :key="artifact.id" :artifact="artifact" :active="streaming" />
+          </CollapsibleContent>
+        </Collapsible>
         <AssistantMessageActions
           v-if="showActions"
           :rerun-label="rerunLabel"
-          show-rerun
+          :show-rerun="allowRerun"
           :disabled="actionsDisabled"
           class="assistant-turn__actions"
           @copy="onCopy"
@@ -217,9 +240,8 @@ function onRerun(): void {
 .assistant-turn.is-user .assistant-turn__bubble {
   max-width: min(85%, 42rem);
   min-width: 0;
-  padding: 10px 14px;
-  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-xs) var(--radius-xl);
-  background: var(--seal-soft);
+  padding: 0;
+  background: transparent;
   color: var(--text-primary);
   box-sizing: border-box;
 }
@@ -252,11 +274,17 @@ function onRerun(): void {
 }
 
 .assistant-turn__identity {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--text-secondary);
   font-size: var(--fs-aux);
   font-weight: 600;
   line-height: 1.4;
 }
+
+.assistant-turn__meta { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-tertiary); font-size:var(--fs-kicker); font-weight:400; }
 
 .assistant-turn__answer {
   position: relative;
@@ -360,6 +388,9 @@ function onRerun(): void {
   margin: 0.3em 0 0.7em;
   padding-left: 1.4em;
 }
+
+.assistant-turn__content.is-markdown :deep(ul) { list-style:disc; }
+.assistant-turn__content.is-markdown :deep(ol) { list-style:decimal; }
 
 .assistant-turn__content.is-markdown :deep(li) {
   margin: 0.15em 0;
@@ -518,12 +549,19 @@ function onRerun(): void {
 
 
 .assistant-turn { flex-direction:row; }
+.assistant-user-bubble { border-radius:16px 16px 4px 16px; padding:10px 14px; }
+.assistant-turn__bubble :deep([data-slot="bubble-content"]) { background:var(--surface-sunken); color:var(--text-primary); }
+.assistant-turn__evidence { border:1px solid var(--border-subtle); border-radius:var(--radius-lg); overflow:hidden; }
+.assistant-turn__evidence-trigger { width:100%; height:auto; min-height:40px; padding:10px 12px; justify-content:flex-start; gap:8px; font-size:var(--fs-aux); color:var(--text-secondary); }
+.assistant-evidence-chevron { margin-left:auto; transition:transform .15s; }.assistant-evidence-chevron.is-open { transform:rotate(180deg); }
+.assistant-turn__evidence-content { display:flex; flex-direction:column; gap:12px; padding:0 8px 8px; }
 .assistant-user-content { align-items:flex-end; }
-.assistant-message-avatar { align-self:flex-start; margin-top:2px; transform:none; translate:none; background:transparent; }
-.assistant-avatar-fallback { background:var(--seal); color:var(--primary-foreground); font:600 10px var(--mono); }
+.assistant-message-avatar { min-width:0; width:24px; flex:0 0 auto; align-self:center; margin-top:0; transform:none; translate:none; background:transparent; }
+.assistant-avatar-fallback { background:var(--seal); color:var(--on-primary); font:600 10px var(--mono); }
 .assistant-image-attachment { width:auto; padding:0; min-width:0; border:0; background:transparent; }
 .assistant-image-media { width:auto; height:auto; background:transparent; }
 .assistant-full-image { display:block; max-width:100%; max-height:72dvh; margin:auto; object-fit:contain; }
-.assistant-turn.is-user .assistant-turn__bubble { padding:0; max-width:min(85%,52rem); }
+.assistant-turn.is-user .assistant-turn__bubble { padding:0; max-width:min(88%,42rem); }
+@media(max-width:640px) { .assistant-turn.is-user .assistant-turn__bubble { max-width:92%; } }
 .assistant-turn__image { object-fit:contain; max-height:180px; }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFieldControl } from '../app/context'
 import type { RadioGroupRootEmits, RadioGroupRootProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
@@ -11,6 +12,7 @@ const emits = defineEmits<RadioGroupRootEmits>()
 const delegatedProps = reactiveOmit(props, "class")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const field = useFieldControl()
 </script>
 
 <template>
@@ -18,7 +20,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     v-slot="slotProps"
     data-slot="radio-group"
     :class="cn('grid gap-3', props.class)"
-    v-bind="forwarded"
+    v-bind="{ ...field.bindings.value, ...forwarded }"
   >
     <slot v-bind="slotProps" />
   </RadioGroupRoot>

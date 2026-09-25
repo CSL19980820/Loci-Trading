@@ -108,7 +108,7 @@ def build_guardian_router(*, write_dependency, scheduler_getter=None) -> APIRout
         from src.ops.application.guardian_review_data import report_window
         with OpsStore(None) as store:
             if not get_config(store)["enabled"]:
-                raise HTTPException(409, "请先启动自主交易员")
+                raise HTTPException(409, "请先启动天才交易员")
         now = datetime.now(ZoneInfo("Asia/Shanghai"))
         try:
             from src.market import calendar_trading_day
@@ -147,7 +147,7 @@ def build_guardian_router(*, write_dependency, scheduler_getter=None) -> APIRout
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
         if not in_review_window(datetime.now(ZoneInfo('Asia/Shanghai'))):
-            raise HTTPException(status_code=409, detail="当前非交易时段，自主交易员将在开市后继续")
+            raise HTTPException(status_code=409, detail="当前非交易时段，天才交易员将在开市后继续")
         background.add_task(run_guardian_once, current_tenant())
         return {"status": "accepted"}
 

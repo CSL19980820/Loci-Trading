@@ -136,6 +136,19 @@ class PlatformMixin:
         self.conn.commit()
         return current
 
+    def quotas_for_users(self, user_ids: list[str]) -> dict[str, dict[str, int]]:
+        """批量读取当前页配额；未配置的账号保持单用户查询的默认值。"""
+        quotas = {user_id: dict(DEFAULT_QUOTAS) for user_id in user_ids}
+        if not user_ids:
+            return quotas
+        placeholders = ",".join("?" for _ in user_ids)
+        rows = self.conn.execute(
+            f"SELECT * FROM user_quotas WHERE user_id IN ({placeholders})", user_ids
+        ).fetchall()
+        for row in rows:
+            quotas[row["user_id"]] = {key: int(row[key]) for key in DEFAULT_QUOTAS}
+        return quotas
+
     # ---- usage ----------------------------------------------------------
 
     def bump_usage(self, user_id: str, *, period: str, metric: str, delta: int = 1) -> int:
@@ -164,6 +177,20 @@ class PlatformMixin:
             (user_id, period),
         ).fetchall()
         return {row["metric"]: int(row["value"]) for row in rows}
+
+    def usage_for_users(self, user_ids: list[str], *, period: str) -> dict[str, dict[str, int]]:
+        """计数器已按用户/月/指标唯一聚合，只读取当前页用户的当月记录。"""
+        usage: dict[str, dict[str, int]] = {user_id: {} for user_id in user_ids}
+        if not user_ids:
+            return usage
+        placeholders = ",".join("?" for _ in user_ids)
+        rows = self.conn.execute(
+            f"SELECT user_id, metric, value FROM usage_counters WHERE period = ? AND user_id IN ({placeholders})",
+            (period, *user_ids),
+        ).fetchall()
+        for row in rows:
+            usage[row["user_id"]][row["metric"]] = int(row["value"])
+        return usage
 
     def top_usage(self, *, period: str, metric: str, limit: int = 20) -> list[dict[str, Any]]:
         rows = self.conn.execute(

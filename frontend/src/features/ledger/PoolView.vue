@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 /** 候选池：筛选、分页与档案浏览；没有额外统计区。 */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -8,7 +9,6 @@ import {
   ChevronRight,
   CircleAlert,
   Layers,
-  LoaderCircle,
   Plus,
   RefreshCw,
   Search,
@@ -402,7 +402,7 @@ onMounted(async () => {
         <template #actions>
           <template v-if="!isMobile">
           <Button access="read" :disabled="!!busy" @click="handleSubmit">
-            <LoaderCircle v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
             <Search v-else aria-hidden="true" />
             查询
           </Button>
@@ -421,7 +421,7 @@ onMounted(async () => {
           删除已选 {{ selectedIds.length }}
         </Button>
         <Button access="read" variant="outline" size="sm" :disabled="!!busy" aria-label="刷新候选" @click="load">
-          <LoaderCircle v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <RefreshCw v-else aria-hidden="true" />
           刷新
         </Button>

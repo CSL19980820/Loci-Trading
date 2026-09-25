@@ -32,7 +32,14 @@ const delegatedProps = reactiveOmit(props, "class")
     <ProgressIndicator
       data-slot="progress-indicator"
       class="bg-primary h-full w-full flex-1 transition-all"
-      :style="`transform: translateX(-${100 - (props.modelValue ?? 0)}%);`"
+      :class="{ 'progress-indeterminate motion-reduce:animate-none': props.modelValue === null }"
+      :style="props.modelValue === null ? undefined : `transform: translateX(-${100 - Math.max(0, Math.min(100, props.modelValue ?? 0))}%);`"
     />
   </ProgressRoot>
 </template>
+
+<style scoped>
+.progress-indeterminate { width:28%; animation:progress-slide 1.1s linear infinite; }
+@keyframes progress-slide { from { transform:translateX(-100%); } to { transform:translateX(460%); } }
+@media(prefers-reduced-motion:reduce) { .progress-indeterminate { width:100%; animation:none; opacity:.55; } }
+</style>

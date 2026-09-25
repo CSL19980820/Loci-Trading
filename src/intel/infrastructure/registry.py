@@ -15,6 +15,12 @@ from src.intel.infrastructure.builtin_wudao_mcp import (
     is_resident_wudao_server,
     resident_wudao_record,
 )
+from src.intel.infrastructure.builtin_hithink_mcp import (
+    HITHINK_A_SHARE,
+    HITHINK_ENDPOINTS,
+    hithink_api_key,
+    hithink_server_record,
+)
 from src.intel.infrastructure.mcp import McpClient, McpError, McpTool, validate_mcp_url
 from src.intel.infrastructure.mcp_config import (
     McpConfigError,
@@ -97,6 +103,47 @@ def save_wudao_resident(
     return _public(resident_wudao_record(saved))
 
 
+def save_hithink_resident(
+    *, token: str | None = None, expires_at: str | None = None,
+    note: str | None = None, disabled: bool | None = None, verify: bool = True,
+) -> dict[str, Any]:
+    """一处保存同花顺 Key，供行情 REST 和六个托管 MCP 服务共用。"""
+    try:
+        existing = get_mcp_server_from_json(HITHINK_A_SHARE)
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
+    headers = (existing or {}).get("headers") if isinstance((existing or {}).get("headers"), dict) else {}
+    previous = str((existing or {}).get("token") or "") or next(
+        (str(value) for key, value in headers.items() if str(key).casefold() == "x-api-key"), "")
+    plaintext = token.strip() if token is not None else previous.strip()
+    discovered: dict[str, list[dict[str, Any]]] = {}
+    if verify and plaintext and disabled is not True:
+        for name, url in HITHINK_ENDPOINTS.items():
+            try:
+                tools = McpClient(name=name, url=url, headers={"X-api-key": plaintext}).list_tools()
+            except McpError as exc:
+                raise OpsError(f"同花顺 {name} MCP 连接校验失败，未保存") from exc
+            discovered[name] = [
+                {"name": tool.name, "description": tool.description, "input_schema": tool.input_schema}
+                for tool in tools
+            ]
+    saved: dict[str, Any] | None = None
+    try:
+        for name, url in HITHINK_ENDPOINTS.items():
+            row = upsert_mcp_server_json(
+                name=name, url=url, token=token if name == HITHINK_A_SHARE else "",
+                expires_at=expires_at, note=note if name == HITHINK_A_SHARE else None,
+                disabled=disabled,
+                tools=discovered.get(name, [] if token is not None else None),
+                tools_synced_at=_now() if name in discovered else "",
+            )
+            if name == HITHINK_A_SHARE:
+                saved = row
+    except McpConfigError as exc:
+        raise OpsError(str(exc)) from exc
+    return hithink_server_record(saved)
+
+
 def patch_wudao_settings(payload: dict[str, Any]) -> dict[str, Any]:
     allowed = {"hist_daily_primary", "note", "quota"}
     updates = {k: payload[k] for k in allowed if k in payload}
@@ -130,6 +177,8 @@ def save_server(
         raise OpsError(f"{BUILTIN_MCP_NAME} 为内置 server，不可通过 mcp.json 注册或覆盖")
     if is_resident_wudao_server(name):
         raise OpsError(f"{BUILTIN_WUDAO_NAME} 为内置常驻 server，请用 PATCH /api/mcp/wudao 配置")
+    if name in HITHINK_ENDPOINTS:
+        raise OpsError("同花顺为内置常驻 server，请用 PUT /api/mcp/hithink 配置")
     try:
         url = validate_mcp_url(url)
     except McpError as exc:
@@ -192,6 +241,11 @@ def _public(record: dict[str, Any]) -> dict[str, Any]:
 def build_client(name_or_id: str, *, allow_inactive: bool = False) -> McpClient | InProcessMcpClient:
     if is_builtin_mcp_server(name_or_id):
         return InProcessMcpClient()
+    if name_or_id in HITHINK_ENDPOINTS:
+        key = hithink_api_key()
+        if not key:
+            raise OpsError("同花顺 MCP 未配置有效 API Key 或已停用")
+        return McpClient(name=name_or_id, url=HITHINK_ENDPOINTS[name_or_id], headers={"X-api-key": key})
     if is_resident_wudao_server(name_or_id):
         name_or_id = BUILTIN_WUDAO_NAME
     try:
@@ -324,6 +378,8 @@ def set_server_active(name: str, active: bool) -> dict[str, Any]:
         raise OpsError(f"内置 MCP server {BUILTIN_MCP_NAME} 不可停用")
     if is_resident_wudao_server(name):
         name = BUILTIN_WUDAO_NAME
+    if name in HITHINK_ENDPOINTS:
+        raise OpsError("同花顺六个服务共用启停状态，请用 PUT /api/mcp/hithink 配置")
     try:
         return _public(set_mcp_server_active_json(name, active))
     except (KeyError, McpConfigError) as exc:
@@ -335,6 +391,8 @@ def delete_server(name: str) -> bool:
         raise OpsError(f"内置 MCP server {BUILTIN_MCP_NAME} 不可删除")
     if is_resident_wudao_server(name):
         raise OpsError(f"内置常驻 {BUILTIN_WUDAO_NAME} 不可删除，可在配置中停用")
+    if name in HITHINK_ENDPOINTS:
+        raise OpsError("同花顺为内置常驻服务，不可删除，可在配置中停用")
     try:
         return delete_mcp_server_json(name)
     except McpConfigError as exc:
@@ -360,15 +418,35 @@ def list_effective_mcp_servers(*, active_only: bool = True) -> list[dict[str, An
         rows = [
             row
             for row in rows
-            if row.get("is_active", True) and row.get("is_usable", True)
+            if row.get("name") in HITHINK_ENDPOINTS
+            or (row.get("is_active", True) and row.get("is_usable", True))
         ]
     wudao = _public(resident_wudao_record(wudao_row))
     merged: list[dict[str, Any]] = [_public(builtin_server_record())]
     show_wudao = (not active_only) or (wudao.get("is_active") and wudao.get("is_usable"))
     if show_wudao:
         merged.append(wudao)
-    merged.extend(rows)
-    return sorted(merged, key=lambda item: (0 if item.get("builtin") else 1, str(item["name"])))
+    canonical = next((row for row in rows if row.get("name") == HITHINK_A_SHARE), None)
+    hithink = hithink_server_record(canonical)
+    if not active_only or (hithink["is_active"] and hithink["is_usable"]):
+        merged.append(hithink)
+    for row in rows:
+        name = str(row.get("name") or "")
+        if name == HITHINK_A_SHARE:
+            continue
+        if name in HITHINK_ENDPOINTS:
+            row = {**row, "id": f"BUILTIN-{name}", "builtin": True, "resident": True,
+                   "has_token": hithink["has_token"], "token_last4": hithink["token_last4"],
+                   "is_active": hithink["is_active"], "is_usable": hithink["is_usable"],
+                   "skip_reason": hithink["skip_reason"]}
+            if active_only and not (row["is_active"] and row["is_usable"]):
+                continue
+        merged.append(row)
+    # 系统助手有既定 MCP 挂载上限，新增同花顺不能挤掉原有内置工具。
+    return sorted(merged, key=lambda item: (
+        1 if str(item["name"]) in HITHINK_ENDPOINTS else 0 if item.get("builtin") else 2,
+        str(item["name"]),
+    ))
 
 
 def collect_tools(

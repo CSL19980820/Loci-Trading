@@ -13,6 +13,7 @@ import {
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { Button } from '@/shared/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/shared/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 import UiBadge from '@/shared/components/ui/UiBadge.vue'
 
@@ -42,8 +43,8 @@ import type {
  *
  * 壳：桌面默认是**贴右侧浮起的 520px 面板**（四角 16px、大投影、透明遮罩点外即关），
  * 可一键展开成占满视口的工作台（左会话列表 / 中对话 / 右任务侧栏三栏）；
- * ≤640 直接铺满整屏。不再借 DialogPanel：它的居中卡片 + 90% 宽在 1440 上留两条空白边，
- * 在手机上又要靠 !important 抠边距。
+ * ≤640 直接铺满整屏。Dialog 只提供焦点与弹层生命周期，unstyled 内容保留工作台布局；
+ * unmountOnHide=false 保活会话草稿，同时关闭时释放焦点、页面可访问性与指针限制。
  *
  * 侧栏：宽屏工作台里两栏内联；贴右 / 窄屏时它们是**从面板边缘滑出的抽屉**，
  * 由页头按钮开关，同一时刻只开一侧。
@@ -185,11 +186,29 @@ const latestAssistant = computed(() => {
 const liveAgents = computed(() => props.agents.filter((agent) => agent.status === 'running' || agent.status === 'queued').length)
 const activeModelLabel = computed(() => props.model || '')
 
+let returnFocus: HTMLElement | null = null
+function onOpenAutoFocus(event: Event): void {
+  event.preventDefault()
+  // On a phone, opening history is a reading action, not a request for the keyboard.
+  if (window.matchMedia('(max-width: 640px)').matches || !props.providerReady || !senderDock.value) {
+    if (event.target instanceof HTMLElement) event.target.focus({ preventScroll: true })
+    return
+  }
+  senderDock.value.focus()
+}
+function onCloseAutoFocus(event: Event): void {
+  event.preventDefault()
+  if (returnFocus?.isConnected) returnFocus.focus()
+}
+
 watch(() => props.open, async (open) => {
-  if (!open || !props.providerReady) return
+  if (open && document.activeElement instanceof HTMLElement) returnFocus = document.activeElement
   await nextTick()
-  senderDock.value?.focus()
-})
+  if (props.open !== open) return
+  if (!open) {
+    if (returnFocus?.isConnected) returnFocus.focus()
+  } else if (props.providerReady && !window.matchMedia('(max-width: 640px)').matches) senderDock.value?.focus()
+}, { flush: 'sync' })
 
 watch(() => props.agents.length, (count) => {
   // 窄屏别自动铺开 300px 侧栏：正文区会被挤没，折叠态的 live dot 已经能提示有任务在跑
@@ -322,21 +341,24 @@ function onCreateSession(): void {
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="assistant-fade">
-      <div
-        v-show="open"
+  <Dialog :open="open" :unmount-on-hide="false" @update:open="!$event && emit('close')">
+      <DialogContent
+        unstyled
+        :show-overlay="false"
+        :show-close-button="false"
+        :aria-describedby="undefined"
+        aria-modal="true"
         class="assistant-overlay"
         :class="{ 'is-wide': workspaceWide }"
         data-testid="assistant-overlay"
         @click.self="onOverlayClick"
+        @open-auto-focus="onOpenAutoFocus"
+        @close-auto-focus="onCloseAutoFocus"
       >
+        <DialogTitle class="sr-only">落点助手</DialogTitle>
         <section
           class="assistant-panel"
           :class="{ 'is-wide': workspaceWide, 'has-rail': historyOpen, 'has-task': taskSidebarOpen }"
-          role="dialog"
-          aria-modal="true"
-          aria-label="落点助手"
           data-testid="assistant-dialog"
         >
           <header class="assistant-panel__head">
@@ -529,9 +551,8 @@ function onCreateSession(): void {
         </section>
 
         <AssistantAgentThread v-model:open="threadOpen" :agent="threadAgent" />
-      </div>
-    </Transition>
-  </Teleport>
+      </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped src="./AssistantPanel.css"></style>

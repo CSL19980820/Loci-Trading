@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -80,6 +80,7 @@ def build_admin_router(*, auth_dependency: Any, identity_db: str | None = None) 
     def list_users(
         keyword: str = Query(default="", max_length=64),
         status: str = Query(default="", max_length=16),
+        role: Literal["", "admin", "visitor"] = Query(default=""),
         limit: int = Query(default=50, ge=1, le=200),
         offset: int = Query(default=0, ge=0),
         context: AuthContext = Auth,
@@ -87,11 +88,11 @@ def build_admin_router(*, auth_dependency: Any, identity_db: str | None = None) 
         _admin(context)
         with _store() as store:
             items = platform.list_users(
-                store, keyword=keyword, status=status, limit=limit, offset=offset
+                store, keyword=keyword, status=status, role=role, limit=limit, offset=offset
             )
             # total 必须跟着同一套过滤条件走，否则筛出 3 条却显示「共 128 条」，
             # 分页器会画出 7 个翻不动的空页。
-            return {"items": items, "total": store.count_users(keyword=keyword, status=status)}
+            return {"items": items, "total": store.count_users(keyword=keyword, status=status, role=role)}
 
     @router.post("/users", status_code=201)
     def create_user(

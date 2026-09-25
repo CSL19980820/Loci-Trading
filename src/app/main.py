@@ -262,6 +262,15 @@ def create_app(
                 _ensure_managed_jobs()
             except Exception as jobs_exc:  # noqa: BLE001
                 logger.debug("托管任务预写跳过：%s", jobs_exc)
+        from src.research.infrastructure.backtest_jobs import recover_research_jobs
+        from src.research.api.backtest_router import _BACKTEST_EXECUTOR
+        from src.research.api.factor_router import _FACTOR_EXECUTOR
+        from src.ops.api.guardian_consult import _CONSULT_EXECUTOR
+        from fastapi.concurrency import run_in_threadpool
+        executors = (_BACKTEST_EXECUTOR, _FACTOR_EXECUTOR, _CONSULT_EXECUTOR)
+        await run_in_threadpool(recover_research_jobs)
+        for executor in executors:
+            executor.start()
         gateway = None
         if os.getenv("LOCI_GRPC_LISTEN"):
             from src.ai.infrastructure.grpc_gateway import start_from_env
@@ -269,6 +278,8 @@ def create_app(
         try:
             yield
         finally:
+            for executor in executors:
+                await run_in_threadpool(executor.shutdown)
             if gateway is not None:
                 await gateway.stop(5)
             scheduler = scheduler_box.get("instance")

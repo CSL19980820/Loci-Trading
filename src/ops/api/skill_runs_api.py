@@ -227,8 +227,8 @@ def register_skill_run_routes(
             raise HTTPException(status_code=404, detail=f"找不到 run：{run_id}")
 
         if not stream:
-            events = skill_runs.list_events(run_id, after=after)
-            return {"run_id": run_id, "events": events, "next_after": after + len(events)}
+            events, cursor = skill_runs.read_events(run_id, after=after)
+            return {"run_id": run_id, "events": events, "next_after": cursor}
 
         from fastapi.concurrency import run_in_threadpool
         from fastapi.responses import StreamingResponse
@@ -247,21 +247,28 @@ def register_skill_run_routes(
             cursor = after
             idle = 0
             while idle < 120:  # ~2 分钟无新事件则结束(前端可重连)
-                batch = await run_in_threadpool(skill_runs.list_events, run_id, after=cursor)
+                previous_cursor = cursor
+                batch, next_cursor = await run_in_threadpool(skill_runs.read_events, run_id, after=cursor)
                 if batch:
                     idle = 0
                     for event in batch:
                         cursor = int(event.get("_seq", cursor)) + 1
                         yield f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
+                    cursor = next_cursor
                     state = await run_in_threadpool(skill_runs.load_run, run_id) or {}
-                    if state.get("status") in {"done", "error", "waiting_user"}:
+                    if state.get("status") in {"done", "error", "waiting_user"} and next_cursor - previous_cursor < 200:
                         payload = _json.dumps(
                             {"type": "status", "status": state.get("status")}, ensure_ascii=False
                         )
                         yield f"data: {payload}\n\n"
-                        if state.get("status") in {"done", "error"}:
+                        if state.get("status") in {"done", "error"} and next_cursor - previous_cursor < 200:
                             break
                 else:
+                    cursor = next_cursor
+                    state = await run_in_threadpool(skill_runs.load_run, run_id) or {}
+                    if state.get("status") in {"done", "error"}:
+                        yield f'data: {_json.dumps({"type": "status", "status": state["status"]})}\n\n'
+                        break
                     idle += 1
                     yield ": ping\n\n"
                     await asyncio.sleep(1)
@@ -271,5 +278,4 @@ def register_skill_run_routes(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
-
 

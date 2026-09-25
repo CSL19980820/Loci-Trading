@@ -29,18 +29,40 @@ import type { AiSessionSummary } from '@/shared/types/ai_assistant'
  * 抽屉方式摆放，收起即整块不渲染。
  */
 type SessionContextCommand = 'archive' | 'restore' | 'delete'
+type SessionRailItem = Pick<AiSessionSummary, 'id' | 'title'> & Partial<Pick<AiSessionSummary, 'updated_at' | 'model' | 'status'>>
 
-const props = defineProps<{
-  sessions: AiSessionSummary[]
-  archivedSessions: AiSessionSummary[]
+const props = withDefaults(defineProps<{
+  sessions: SessionRailItem[]
+  archivedSessions?: SessionRailItem[]
   activeId?: string
   loading?: boolean
   disabled?: boolean
-  railTab: 'active' | 'archived'
+  railTab?: 'active' | 'archived'
+  archiveEnabled?: boolean
+  batchEnabled?: boolean
+  settingsEnabled?: boolean
+  title?: string
+  createLabel?: string
+  searchPlaceholder?: string
+  brandLabel?: string
+  emptyDescription?: string
+  emptyReason?: string
   collapsed?: boolean
   /** 抽屉模式：父级贴右 / 窄屏时传 true，收起态不渲染图标条 */
   drawer?: boolean
-}>()
+}>(), {
+  archivedSessions: () => [],
+  railTab: 'active',
+  archiveEnabled: true,
+  batchEnabled: true,
+  settingsEnabled: true,
+  title: '历史对话',
+  createLabel: '新建对话',
+  searchPlaceholder: '搜索对话',
+  brandLabel: 'Loci 助手',
+  emptyDescription: '还没有对话',
+  emptyReason: '新建对话开始提问',
+})
 
 const emit = defineEmits<{
   select: [id: string]
@@ -58,7 +80,8 @@ const keyword = ref('')
 const selecting = ref(false)
 const selected = ref<string[]>([])
 
-const source = computed(() => (props.railTab === 'archived' ? props.archivedSessions : props.sessions))
+const activeTab = computed(() => props.archiveEnabled ? props.railTab : 'active')
+const source = computed(() => (activeTab.value === 'archived' ? props.archivedSessions : props.sessions))
 const visibleSessions = computed(() => {
   const needle = keyword.value.trim().toLowerCase()
   return needle ? source.value.filter((session) => session.title.toLowerCase().includes(needle)) : source.value
@@ -70,11 +93,11 @@ const tabItems = computed(() => [
 ])
 
 const railTabModel = computed({
-  get: () => props.railTab,
+  get: () => activeTab.value,
   set: (next: string) => emit('update:railTab', next === 'archived' ? 'archived' : 'active'),
 })
 
-watch(() => props.railTab, () => {
+watch(() => [activeTab.value, props.batchEnabled], () => {
   selecting.value = false
   selected.value = []
 })
@@ -84,7 +107,8 @@ function toggleSelect(id: string, checked: boolean): void {
 }
 
 function runBatch(action: 'archive' | 'unarchive' | 'delete'): void {
-  if (!selected.value.length) return
+  if (!props.batchEnabled || props.disabled || visitor.value || !selected.value.length) return
+  if (action !== 'delete' && !props.archiveEnabled) return
   emit('batch', { action, ids: [...selected.value] })
   selected.value = []
   selecting.value = false
@@ -93,14 +117,15 @@ function runBatch(action: 'archive' | 'unarchive' | 'delete'): void {
 function onContextCommand(sessionId: string, command: SessionContextCommand | string): void {
   if (visitor.value) return
   if (props.disabled) return
+  if (command !== 'delete' && !props.archiveEnabled) return
   if (command === 'archive') emit('archive', sessionId)
   else if (command === 'restore') emit('restore', sessionId)
   else if (command === 'delete') emit('remove', sessionId)
 }
 
-function metaOf(session: AiSessionSummary): string {
+function metaOf(session: SessionRailItem): string {
   const when = (session.updated_at || '').replace('T', ' ').slice(5, 16)
-  return [session.model, when].filter(Boolean).join(' · ') || session.status
+  return [session.model, when].filter(Boolean).join(' · ') || session.status || ''
 }
 </script>
 
@@ -108,7 +133,7 @@ function metaOf(session: AiSessionSummary): string {
   <Sidebar collapsible="none" role="complementary"
     class="assistant-session-rail"
     :class="{ 'is-collapsed': collapsed, 'is-drawer': drawer }"
-    aria-label="历史对话"
+    :aria-label="title"
     data-testid="assistant-session-rail"
   >
     <template v-if="collapsed">
@@ -118,7 +143,7 @@ function metaOf(session: AiSessionSummary): string {
             <Button
               variant="ghost"
               size="icon-sm"
-              access="read" aria-label="展开历史对话"
+              access="read" :aria-label="`展开${title}`"
               data-testid="session-rail-expand"
               @click="emit('update:collapsed', false)"
             >
@@ -127,16 +152,16 @@ function metaOf(session: AiSessionSummary): string {
           </TooltipTrigger>
           <TooltipContent side="right">展开历史</TooltipContent>
         </Tooltip>
-        <Tooltip v-if="railTab === 'active'">
+        <Tooltip v-if="activeTab === 'active'">
           <TooltipTrigger as-child>
-            <Button variant="ghost" size="icon-sm" aria-label="新建对话" :disabled="disabled" @click="emit('create')">
+            <Button variant="ghost" size="icon-sm" :aria-label="createLabel" :disabled="disabled" @click="emit('create')">
               <Plus />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">新建对话</TooltipContent>
+          <TooltipContent side="right">{{ createLabel }}</TooltipContent>
         </Tooltip>
         <span class="assistant-session-rail__spacer" />
-        <Tooltip>
+        <Tooltip v-if="settingsEnabled">
           <TooltipTrigger as-child>
             <Button variant="ghost" size="icon-sm" aria-label="助手设置" data-testid="assistant-icon-settings" @click="emit('settings')">
               <Settings2 />
@@ -150,21 +175,21 @@ function metaOf(session: AiSessionSummary): string {
     <template v-else>
       <SidebarHeader class="assistant-session-rail__top flex-row">
         <Button
-          v-if="railTab === 'active'"
+          v-if="activeTab === 'active'"
           variant="outline"
           class="assistant-session-rail__new"
           :disabled="disabled"
           @click="emit('create')"
         >
           <Plus />
-          新建对话
+          {{ createLabel }}
         </Button>
         <Tooltip v-if="!drawer">
           <TooltipTrigger as-child>
             <Button
               variant="ghost"
               size="icon"
-              access="read" aria-label="收起历史对话"
+              access="read" :aria-label="`收起${title}`"
               data-testid="session-rail-collapse"
               @click="emit('update:collapsed', true)"
             >
@@ -180,13 +205,14 @@ function metaOf(session: AiSessionSummary): string {
           v-model="keyword"
           size="sm"
           class="assistant-session-rail__search-input"
-          placeholder="搜索对话"
-          aria-label="搜索历史对话"
+          :placeholder="searchPlaceholder"
+          :aria-label="`搜索${title}`"
         />
       </div>
       <div class="assistant-session-rail__tabs">
-        <PageTabs v-model="railTabModel" :items="tabItems" variant="pill" dense :sticky="false" aria-label="对话分组" />
-        <Tooltip>
+        <span v-if="!archiveEnabled" class="assistant-session-rail__title">{{ title }}</span>
+        <PageTabs v-if="archiveEnabled" v-model="railTabModel" :items="tabItems" variant="pill" dense :sticky="false" aria-label="对话分组" />
+        <Tooltip v-if="batchEnabled">
           <TooltipTrigger as-child>
             <Button
               variant="ghost"
@@ -203,18 +229,18 @@ function metaOf(session: AiSessionSummary): string {
           <TooltipContent>{{ selecting ? '取消选择' : '多选' }}</TooltipContent>
         </Tooltip>
       </div>
-      <div v-if="selecting && !visitor" class="assistant-session-rail__batch" data-testid="session-rail-batch">
+      <div v-if="batchEnabled && selecting && !visitor" class="assistant-session-rail__batch" data-testid="session-rail-batch">
         <span>已选 {{ selected.length }}</span>
-        <Button v-if="railTab === 'active'" size="xs" variant="outline" :disabled="!selected.length || disabled" @click="runBatch('archive')">归档</Button>
-        <Button v-else size="xs" variant="outline" :disabled="!selected.length || disabled" @click="runBatch('unarchive')">恢复</Button>
+        <Button v-if="archiveEnabled && activeTab === 'active'" size="xs" variant="outline" :disabled="!selected.length || disabled" @click="runBatch('archive')">归档</Button>
+        <Button v-else-if="archiveEnabled" size="xs" variant="outline" :disabled="!selected.length || disabled" @click="runBatch('unarchive')">恢复</Button>
         <Button size="xs" variant="soft-destructive" :disabled="!selected.length || disabled" @click="runBatch('delete')">删除</Button>
       </div>
       <SidebarContent v-busy="loading" class="assistant-session-rail__list">
         <EmptyState
           v-if="!loading && !visibleSessions.length"
           compact
-          :description="keyword ? '未找到对话' : railTab === 'archived' ? '没有归档对话' : '还没有对话'"
-          :reason="keyword ? '换个关键词试试' : railTab === 'archived' ? '恢复后回到对话列表' : '新建对话开始提问'"
+          :description="keyword ? '未找到对话' : activeTab === 'archived' ? '没有归档对话' : emptyDescription"
+          :reason="keyword ? '换个关键词试试' : activeTab === 'archived' ? '恢复后回到对话列表' : emptyReason"
         />
         <SidebarMenu><SidebarMenuItem
           v-for="session in visibleSessions"
@@ -223,7 +249,7 @@ function metaOf(session: AiSessionSummary): string {
           :class="{ 'is-active': session.id === activeId }"
         >
           <Checkbox
-            v-if="selecting"
+            v-if="batchEnabled && selecting"
             :aria-label="`选择对话 ${session.title || '新对话'}`"
             :model-value="selected.includes(session.id)"
             :disabled="disabled"
@@ -238,7 +264,7 @@ function metaOf(session: AiSessionSummary): string {
             @click="emit('select', session.id)"
           >
             <span class="assistant-session-row__title">{{ session.title || '新对话' }}</span>
-            <small class="assistant-session-row__meta">{{ metaOf(session) }}</small>
+            <small v-if="metaOf(session)" class="assistant-session-row__meta">{{ metaOf(session) }}</small>
           </SidebarMenuButton>
           <DropdownMenu v-if="!selecting && !visitor">
             <DropdownMenuTrigger as-child>
@@ -254,20 +280,20 @@ function metaOf(session: AiSessionSummary): string {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem v-if="railTab === 'active'" @select="onContextCommand(session.id, 'archive')"><Archive />归档</DropdownMenuItem>
-              <DropdownMenuItem v-else @select="onContextCommand(session.id, 'restore')"><ArchiveRestore />恢复</DropdownMenuItem>
-              <DropdownMenuSeparator />
+              <DropdownMenuItem v-if="archiveEnabled && activeTab === 'active'" @select="onContextCommand(session.id, 'archive')"><Archive />归档</DropdownMenuItem>
+              <DropdownMenuItem v-else-if="archiveEnabled" @select="onContextCommand(session.id, 'restore')"><ArchiveRestore />恢复</DropdownMenuItem>
+              <DropdownMenuSeparator v-if="archiveEnabled" />
               <DropdownMenuItem variant="destructive" @select="onContextCommand(session.id, 'delete')"><Trash2 />删除</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarMenuItem></SidebarMenu>
       </SidebarContent>
       <SidebarFooter class="assistant-session-rail__foot flex-row">
-        <span class="assistant-session-rail__brand" aria-label="Loci">
+        <span class="assistant-session-rail__brand" :aria-label="brandLabel">
           <span class="assistant-session-rail__glyph" aria-hidden="true">LC</span>
-          <span class="assistant-session-rail__brand-text">Loci 助手</span>
+          <span class="assistant-session-rail__brand-text">{{ brandLabel }}</span>
         </span>
-        <Tooltip>
+        <Tooltip v-if="settingsEnabled">
           <TooltipTrigger as-child>
             <Button variant="ghost" size="icon-sm" aria-label="助手设置" data-testid="assistant-icon-settings" @click="emit('settings')">
               <Settings2 />
@@ -361,6 +387,12 @@ function metaOf(session: AiSessionSummary): string {
 .assistant-session-rail__tabs :deep(.is-on) {
   background: var(--surface-active);
   color: var(--text-primary);
+}
+
+.assistant-session-rail__title {
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+  font-weight: 500;
 }
 
 .assistant-session-rail__batch {

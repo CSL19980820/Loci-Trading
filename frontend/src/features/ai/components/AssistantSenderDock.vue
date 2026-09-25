@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ArrowUp, ImagePlus, Sparkles, Square, X } from '@lucide/vue'
 import { toast } from 'vue-sonner'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, useId, watch } from 'vue'
 
 import { Button } from '@/shared/components/ui/button'
+import { Command, CommandItem, CommandList } from '@/shared/components/ui/command'
 import { InputGroup, InputGroupAddon } from '@/shared/components/ui/input-group'
-import { Attachment, AttachmentMedia } from '@/shared/components/ui/attachment'
+import { Attachment, AttachmentMedia, AttachmentAction, AttachmentActions, AttachmentGroup } from '@/shared/components/ui/attachment'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
@@ -79,6 +80,7 @@ const skills = ref<SlashSkillItem[]>([])
 const slashMatch = ref<SlashMatch | null>(null)
 const activeSkill = ref<SlashSkillItem | null>(null)
 const slashIndex = ref(0)
+const slashId = useId()
 
 const slashItems = computed(() => {
   const merged = [...BUILTIN_SLASH_COMMANDS, ...skills.value]
@@ -215,7 +217,7 @@ function pickSkill(item: SlashSkillItem): void {
 }
 
 function onSlashKeydown(event: KeyboardEvent): void {
-  if (!slashMatch.value || !slashItems.value.length) return
+  if (event.isComposing || !slashMatch.value || !slashItems.value.length) return
   if (event.key === 'ArrowDown') {
     event.preventDefault()
     slashIndex.value = (slashIndex.value + 1) % slashItems.value.length
@@ -229,6 +231,8 @@ function onSlashKeydown(event: KeyboardEvent): void {
     event.stopPropagation()
     pickSkill(item)
   } else if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
     slashMatch.value = null
   }
 }
@@ -356,31 +360,33 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
     data-testid="assistant-sender"
     @keydown="onSlashKeydown"
   >
-    <div
+    <Command
       v-if="slashMatch && slashItems.length"
-      class="assistant-sender__slash"
+      class="assistant-sender__slash h-auto"
       data-testid="assistant-slash-menu"
-      role="listbox"
-      aria-label="技能"
+      :model-value="slashItems[slashIndex]?.slug"
     >
-      <Button variant="ghost"
-        v-for="(item, index) in slashItems"
-        :key="item.slug"
-        type="button"
-        class="assistant-sender__slash-item"
-        :class="{ 'is-active': index === slashIndex }"
-        role="option"
-        :aria-selected="index === slashIndex"
-        @mousedown.prevent
-        @click="pickSkill(item)"
-      >
-        <span class="assistant-sender__slash-slug">/{{ item.slug }}</span>
-        <span class="assistant-sender__slash-copy">
-          <span>{{ item.name }}</span>
-          <small v-if="item.description">{{ item.description }}</small>
-        </span>
-      </Button>
-    </div>
+      <CommandList :id="slashId" aria-label="技能">
+        <CommandItem
+          v-for="(item, index) in slashItems"
+          :id="`${slashId}-${index}`"
+          :key="item.slug"
+          :value="item.slug"
+          :text-value="`${item.slug} ${item.name} ${item.description}`"
+          class="assistant-sender__slash-item"
+          :class="{ 'is-active': index === slashIndex }"
+          @mousedown.prevent
+          @pointermove="slashIndex = index"
+          @select="pickSkill(item)"
+        >
+          <span class="assistant-sender__slash-slug">/{{ item.slug }}</span>
+          <span class="assistant-sender__slash-copy">
+            <span>{{ item.name }}</span>
+            <small v-if="item.description">{{ item.description }}</small>
+          </span>
+        </CommandItem>
+      </CommandList>
+    </Command>
 
     <InputGroup class="assistant-sender__box">
       <div v-if="activeSkill || pendingImages.length" class="assistant-sender__chips">
@@ -396,23 +402,25 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
             <X aria-hidden="true" />
           </Button>
         </span>
-        <div v-if="pendingImages.length" class="assistant-sender__previews" data-testid="assistant-image-previews">
+        <AttachmentGroup v-if="pendingImages.length" class="assistant-sender__previews" data-testid="assistant-image-previews">
           <Attachment
             v-for="(src, index) in pendingImages"
             :key="`${index}-${src.slice(0, 32)}`"
             class="assistant-sender__preview"
+            orientation="vertical"
+            size="xs"
           >
-            <AttachmentMedia><img :src="src" alt="待发送图片" /></AttachmentMedia>
-            <Button variant="ghost"
+            <AttachmentMedia variant="image" class="assistant-sender__preview-media"><img :src="src" alt="待发送图片" /></AttachmentMedia>
+            <AttachmentActions class="assistant-sender__preview-actions"><AttachmentAction variant="ghost"
               type="button"
               class="assistant-sender__preview-remove"
               :aria-label="`移除第 ${index + 1} 张图片`"
               @click="removeImage(index)"
             >
               <X aria-hidden="true" />
-            </Button>
+            </AttachmentAction></AttachmentActions>
           </Attachment>
-        </div>
+        </AttachmentGroup>
       </div>
       <Textarea
         data-slot="input-group-control" ref="inputRef"
@@ -420,6 +428,10 @@ defineExpose({ clear, focus, setText, getText: () => pendingText.value || readTe
         class="assistant-sender__input"
         :placeholder="placeholder"
         aria-label="消息内容"
+        :aria-controls="slashMatch && slashItems.length ? slashId : undefined"
+        :aria-expanded="Boolean(slashMatch && slashItems.length)"
+        :aria-activedescendant="slashMatch && slashItems.length ? `${slashId}-${slashIndex}` : undefined"
+        aria-autocomplete="list"
         :disabled="busy || !providerReady"
         :maxlength="MAX_TEXT_LENGTH"
         :rows="1"

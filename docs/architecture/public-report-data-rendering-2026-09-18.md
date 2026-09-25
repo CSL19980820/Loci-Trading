@@ -6,7 +6,7 @@
 
 公共入口 `GET/HEAD /shared/reports?token=...` 与兼容入口 `GET/HEAD /shared/reports/{token}` 调用同一读取和渲染函数。URL 只负责定位公开内容；生成 HTTP 响应时组装页面，不在磁盘生成 HTML 文件，也不为每份报告创建 JSON 文件。
 
-`data_dir()/report_shares.db` 是一份全局分享索引。自主交易员报告的描述符只有数据库定位、周期、日期、报告版本、生成时间；完整 facts/analysis 沿用租户 palace.db 里的 guardian_reports 与 guardian_report_revisions，不再复制。小型测试样例的描述符序列化后小于 1 KiB；这不是对所有业务内容或 SQLite 实际占用的上限承诺。
+`data_dir()/report_shares.db` 是一份全局分享索引。天才交易员报告的描述符只有数据库定位、周期、日期、报告版本、生成时间；完整 facts/analysis 沿用租户 palace.db 里的 guardian_reports 与 guardian_report_revisions，不再复制。小型测试样例的描述符序列化后小于 1 KiB；这不是对所有业务内容或 SQLite 实际占用的上限承诺。
 
 独立智能体的原始运行日记有保留期。为不让已分享内容随日记清理消失，分享库仅保存其公开可读文档模型：标题、归属名、生成时间和文本章节。没有 HTML/CSS、工具原文、调用用量、账户状态或配置副本。这与日周报告重用现有历史数据的路径不同，但使用同一个公开入口和按类型复用的模板。
 

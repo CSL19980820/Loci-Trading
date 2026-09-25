@@ -34,7 +34,7 @@ import {
   skillSlugFromBoundJob,
   strategySlugFromBoundJob,
 } from './jobOwnership'
-import { cnStrategyName } from './opsLabels'
+import { cnStrategyName, traderJobName } from './opsLabels'
 import { useJobsQuery } from './useJobsQuery'
 import { useVisitorMode } from '@/shared/composables/useAccess'
 
@@ -119,7 +119,7 @@ export function useJobsCatalog() {
       const slug = skillSlugFromBoundJob(job)
       return slug ? (skillNames.value.get(slug) ?? cnStrategyName('', slug)) : job.name
     }
-    return job.name
+    return traderJobName(job.kind, job.name)
   }
 
   function selectedStrategyText(job: Job): string {

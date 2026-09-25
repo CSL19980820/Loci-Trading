@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useVisitorMode } from '@/shared/composables/useAccess'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, useId, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CircleAlert, RefreshCw, Upload, X } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -185,12 +185,13 @@ onMounted(() => {
 })
 
 defineExpose({ load })
+const panelId = `market-shelf-panel-${useId()}`
 </script>
 
 <template>
   <div class="market-panel flex min-h-0 min-w-0 flex-1 flex-col" :class="{ 'page-fill': !embedded }">
     <div class="market-subhead">
-      <PageTabs class="market-shelf-tabs" v-model="shelfTab" :items="tabItems" :sticky="false" variant="pill" dense aria-label="市场货架分区" />
+      <PageTabs :panel-id="panelId" class="market-shelf-tabs" v-model="shelfTab" :items="tabItems" :sticky="false" variant="pill" dense aria-label="市场货架分区" />
       <div class="market-actions">
         <Button access="read" variant="ghost" size="sm" :disabled="loading" @click="load">
           <RefreshCw :class="{ 'animate-spin motion-reduce:animate-none': loading }" aria-hidden="true" />
@@ -213,7 +214,7 @@ defineExpose({ load })
       </div>
     </Alert>
 
-    <div class="market-body">
+    <div :id="panelId" class="market-body" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${shelfTab}`">
       <template v-if="shelfTab !== 'publish'">
         <div class="market-toolbar">
           <PageTabs

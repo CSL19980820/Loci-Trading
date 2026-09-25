@@ -205,15 +205,18 @@ def _read_response_text(response: Any, *, server: str) -> str:
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 
-def _redact_detail(text: str) -> str:
-    """日志保留有限诊断，但不能把上游回显的凭据写出去。"""
+def _redact_detail(text: str, *, secrets: tuple[str, ...] = ()) -> str:
+    """保留有限诊断；先脱敏再限长，避免凭据出现在日志或模型输入中。"""
+    for secret in sorted((s for s in secrets if s), key=len, reverse=True):
+        text = text.replace(secret, "***")
+    text = re.sub(r"https?://[^\s\"'<>]+", "[URL已隐藏]", text, flags=re.I)
     value = re.sub(
         r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+|bearer\s+)[^\s,;]+",
         r"\1***",
         text,
     )
     value = re.sub(
-        r"(?i)(api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+",
+        r'''(?i)["']?(api[_-]?key|(?:(?:access|refresh)[_-]?)?token|secret|password|cookie|authorization)["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)''',
         r"\1=***",
         value,
     )
@@ -378,6 +381,7 @@ class McpClient:
         session = response.headers.get("mcp-session-id")
         if session:
             self._session_id = session
+        secrets = (self.token, self._session_id, *self.extra_headers.values())
 
         if response.status_code >= 400:
             hint = {401: "（token 无效）", 403: "（无权限或配额用尽）", 429: "（触发限流）"}.get(
@@ -387,24 +391,37 @@ class McpClient:
                 "%s MCP 返回 HTTP %s：%s",
                 self.name,
                 response.status_code,
-                _redact_detail(response.text),
+                _redact_detail(response.text, secrets=secrets),
             )
             raise McpError(f"{self.name} 返回 {response.status_code}{hint}")
 
         try:
             payload = _parse_response(response)
         except McpError:
-            logger.warning("%s MCP 响应无效：%s", self.name, _redact_detail(response.text))
+            logger.warning("%s MCP 响应无效：%s", self.name, _redact_detail(response.text, secrets=secrets))
             raise
         if "error" in payload:
-            error = payload["error"] or {}
+            error = payload["error"] if isinstance(payload["error"], dict) else {}
+            code = error.get("code")
+            code = code if type(code) is int else "unknown"
+            detail = _redact_detail(str(error.get("message") or "未提供原因"), secrets=secrets)
+            # 仅透传可用于恢复的字段，不把上游任意 data（可能含凭据）交给模型。
+            data = error.get("data")
+            hints = []
+            if isinstance(data, dict):
+                if type(data.get("retryable")) is bool:
+                    hints.append("可重试" if data["retryable"] else "不可直接重试")
+                delay = data.get("retryAfterMs")
+                if type(delay) is int and delay >= 0:
+                    hints.append(f"建议等待 {delay} 毫秒")
+            recovery = "；" + "；".join(hints) if hints else ""
             logger.warning(
                 "%s MCP JSON-RPC 报错 %s：%s",
                 self.name,
-                error.get("code"),
-                _redact_detail(str(error.get("message") or "")),
+                code,
+                detail,
             )
-            raise McpError(f"{self.name} 返回 MCP 协议错误")
+            raise McpError(f"{self.name} 返回 MCP 协议错误（{code}）：{detail}{recovery}")
         return payload.get("result") or {}
 
     def _notify(self, method: str, params: dict[str, Any] | None = None) -> None:

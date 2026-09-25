@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, onMounted, ref } from 'vue'
-import { LoaderCircle, RefreshCw, UserRound } from '@lucide/vue'
+import { RefreshCw, UserRound } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { getAuthMe, patchProfile } from '@/shared/api/auth'
 import { useUserStore } from '@/shared/stores/user'
@@ -87,9 +88,9 @@ onMounted(() => { void loadAccountData() })
       <span class="acct-handle">@{{ user?.username || '—' }}</span>
       <template #actions><Button access="read" variant="outline" size="sm" :disabled="loading" @click="loadAccountData"><RefreshCw :class="{ 'animate-spin': loading }" />刷新</Button></template>
     </PageHeader>
-    <PageTabs v-if="mobile" v-model="mobileSection" :items="[{ name:'profile', label:'个人资料' }, { name:'security', label:'密码与绑定' }, { name:'sessions', label:'登录设备' }]" variant="pill" :sticky="false" class="account-mobile-tabs" aria-label="账户设置分区" />
+    <PageTabs v-if="mobile" panel-id="account-mobile-panel" v-model="mobileSection" :items="[{ name:'profile', label:'个人资料' }, { name:'security', label:'密码与绑定' }, { name:'sessions', label:'登录设备' }]" variant="pill" :sticky="false" class="account-mobile-tabs" aria-label="账户设置分区" />
     <Alert v-if="loadError" variant="destructive" class="acct-error"><AlertTitle>{{ loadError }}</AlertTitle></Alert>
-    <div class="acct-body" :aria-busy="loading">
+    <div id="account-mobile-panel" class="acct-body" :aria-busy="loading" :role="mobile ? 'tabpanel' : undefined" :tabindex="mobile ? 0 : undefined" :aria-labelledby="mobile ? `account-mobile-panel-tab-${mobileSection}` : undefined">
       <PageBusy overlay :busy="loading" label="读取账号…" />
       <AccountSecurityPane :mobile-section="mobile ? mobileSection : undefined" :user="user" :identities="identities" :sessions="sessions" :disabled="loading || Boolean(loadError)" @refresh="loadAccountData" @password-changed="passwordChanged">
         <template #profile>
@@ -102,7 +103,7 @@ onMounted(() => { void loadAccountData() })
                 <UiField label="头像地址"><Input v-model="profile.avatar_url" aria-label="头像地址" inputmode="url" placeholder="https://…" :disabled="loading || Boolean(loadError)" /></UiField>
                 <UiField label="个人简介"><Textarea v-model="profile.bio" aria-label="个人简介" rows="2" maxlength="500" placeholder="个人简介" :disabled="loading || Boolean(loadError)" /></UiField>
               </CardContent>
-              <CardFooter class="acct-foot"><Button type="submit" size="sm" :disabled="saving || loading || Boolean(loadError)"><LoaderCircle v-if="saving" class="animate-spin" />保存资料</Button></CardFooter>
+              <CardFooter class="acct-foot"><Button type="submit" size="sm" :disabled="saving || loading || Boolean(loadError)"><Spinner v-if="saving" class="animate-spin" />保存资料</Button></CardFooter>
             </form>
           </Card>
         </template>

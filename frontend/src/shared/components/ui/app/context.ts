@@ -20,7 +20,7 @@ export interface FormContext {
   validateField: (name: string) => Promise<boolean>
 }
 export const formContextKey: InjectionKey<FormContext> = Symbol('form')
-export const fieldContextKey: InjectionKey<{ id: string; name: ComputedRef<string>; error: ComputedRef<string>; required: ComputedRef<boolean> }> = Symbol('field')
+export const fieldContextKey: InjectionKey<{ id: string; name: ComputedRef<string>; error: ComputedRef<string>; required: ComputedRef<boolean>; describedBy?: ComputedRef<string | undefined> }> = Symbol('field')
 export function useFieldControl() {
   const form = inject(formContextKey, undefined)
   const field = inject(fieldContextKey, undefined)
@@ -29,7 +29,7 @@ export function useFieldControl() {
     id: field?.id,
     name: field?.name.value || undefined,
     'aria-invalid': field?.error.value ? true : undefined,
-    'aria-describedby': field?.error.value ? `${field.id}-error` : undefined,
+    'aria-describedby': field?.error.value ? `${field.id}-error` : field?.describedBy?.value,
     'aria-required': field?.required.value || undefined,
   }))
   function validate() {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Check, LoaderCircle, RefreshCw, X } from '@lucide/vue'
+import { Check, RefreshCw, X } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 
 import {
@@ -192,7 +193,7 @@ watch(() => props.provider.name, () => {
   <div class="qr-panel" :aria-busy="starting || claiming">
     <div class="qr-box-wrap">
       <div v-if="starting" class="qr-loading" role="status">
-        <LoaderCircle class="size-7 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        <Spinner class="size-7 animate-spin motion-reduce:animate-none" aria-hidden="true" />
         <span class="qr-tip">生成二维码…</span>
       </div>
 
@@ -251,7 +252,7 @@ watch(() => props.provider.name, () => {
           :disabled="confirmingMock || (qrStatus !== 'scanned' && qrStatus !== 'pending')"
           @click="onMockConfirm"
         >
-          <LoaderCircle v-if="confirmingMock" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="confirmingMock" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           2. 模拟手机确认
         </Button>
       </div>

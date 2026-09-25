@@ -16,7 +16,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from src.shared.bounded_executor import BoundedExecutor, QueueFull
+from src.research.infrastructure.backtest_jobs import DuplicateResearchJob
 import hashlib
 from pathlib import Path
 from typing import Any
@@ -50,7 +51,7 @@ from src.research.infrastructure import (
     RunCardNotFoundError,
     WorkflowStorageError,
 )
-from src.shared.tenancy import submit_with_tenant
+
 from src.strategy import StrategyError, get as get_strategy
 
 #: 进程级单线程池；与 factor_router._FACTOR_EXECUTOR 同一条纪律：
@@ -58,7 +59,7 @@ from src.strategy import StrategyError, get as get_strategy
 #: execute_job 里的 ResearchBacktestJobStore / RunCardStore 都挂在
 #: research_runs_dir()（租户私有目录）下，裸 .submit(...) 会把 B 的回测产物
 #: 与 job 状态写进管理员目录，B 只会看到一条永远 queued 的任务。
-_BACKTEST_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="research-backtest")
+_BACKTEST_EXECUTOR = BoundedExecutor("research-backtest")
 
 
 def build_research_backtest_router(
@@ -95,7 +96,8 @@ def build_research_backtest_router(
     def _memberships() -> MembershipSnapshotStore:
         return membership_store_factory() if membership_store_factory else MembershipSnapshotStore()
 
-    _jobs().recover_interrupted()
+    if backtest_job_store_factory:
+        _jobs().recover_interrupted()
 
     def _execute_backtest(request: ResearchBacktestRequest) -> str:
         split = TrainOOSSplit(**request.split.model_dump()) if request.split else None
@@ -137,30 +139,37 @@ def build_research_backtest_router(
         return str(outcome.run_card.run_id)
 
     def _submit_backtest_job(request: ResearchBacktestRequest) -> dict[str, Any]:
-        job_store = _jobs()
-        job = job_store.create(request.model_dump(mode="json"))
-
-        def execute_job() -> None:
-            try:
-                job_store.update(job["id"], status="running")
-                run_id = _execute_backtest(request)
-                job_store.update(
-                    job["id"],
-                    status="completed",
-                    run_id=run_id,
-                )
-            except Exception as exc:
-                job_store.update(
-                    job["id"], status="failed", error=f"{type(exc).__name__}: {exc}"
-                )
-
         try:
-            # 见 _BACKTEST_EXECUTOR 上方注释；别改回 _BACKTEST_EXECUTOR.submit(...)。
-            submit_with_tenant(_BACKTEST_EXECUTOR, execute_job)
-        except Exception as exc:
-            job_store.update(job["id"], status="failed", error=f"submit_failed: {exc}")
-            raise ResearchBacktestError("研究回测后台任务提交失败") from exc
-        return job
+            with _BACKTEST_EXECUTOR.reserve() as submit:
+                job_store = _jobs()
+                job = job_store.create(request.model_dump(mode="json"))
+
+                def execute_job() -> None:
+                    try:
+                        job_store.update(job["id"], status="running")
+                        run_id = _execute_backtest(request)
+                        job_store.update(
+                            job["id"],
+                            status="completed",
+                            run_id=run_id,
+                        )
+                    except Exception as exc:
+                        job_store.update(
+                            job["id"], status="failed", error=f"{type(exc).__name__}: {exc}"
+                        )
+
+                try:
+                    # 见 _BACKTEST_EXECUTOR 上方注释；别改回 _BACKTEST_EXECUTOR.submit(...)。
+                    submit(execute_job, on_cancel=lambda: job_store.update(job["id"], status="failed", error="interrupted: 服务关闭取消排队任务"))
+                except Exception as exc:
+                    job_store.update(job["id"], status="failed", error=f"submit_failed: {exc}")
+                    raise ResearchBacktestError("研究回测后台任务提交失败") from exc
+                return job
+        except DuplicateResearchJob as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except QueueFull as exc:
+            raise HTTPException(429, str(exc), headers={"Retry-After": "5"}) from exc
+
 
     def _current_market_revision() -> str | None:
         try:

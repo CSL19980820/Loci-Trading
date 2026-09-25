@@ -21,12 +21,17 @@
   .main-content { padding-inline:max(12px,env(safe-area-inset-left,0px)) max(12px,env(safe-area-inset-right,0px)); }
   .archive-overlay { top:var(--mobile-viewport-top,0px); bottom:auto; height:var(--mobile-viewport-height,100dvh); }
   html[data-mobile-keyboard] .app-shell--with-mobile-nav { padding-bottom:0; }
-  html [data-slot='dialog-content'],
+  html [data-slot='dialog-content']:not([data-unstyled='true']),
   html [data-slot='alert-dialog-content'],
   html [data-slot='sheet-content'],
   html [data-slot='drawer-content'] {
     top:calc(var(--mobile-viewport-top,0px) + var(--mobile-viewport-height,100dvh) * .05);
     max-height:calc(var(--mobile-viewport-height,100dvh) * .9);
+  }
+  /* Bottom drawers size to their content; setting both top and bottom stretches a short menu. */
+  html [data-slot='drawer-content'][data-swipe-direction='down'] {
+    top:auto;
+    bottom:0;
   }
   [data-slot='dialog-header'],[data-slot='sheet-header'],[data-slot='drawer-header'] { text-align:left; }
   [data-slot='dialog-title'],[data-slot='sheet-title'],[data-slot='drawer-title'] { padding-right:28px; }

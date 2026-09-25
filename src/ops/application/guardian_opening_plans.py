@@ -102,7 +102,9 @@ def opening_notice(decision, plans, now):
         plan = amounts.get(str(index))
         if plan and plan['planned_amount_cents'] is not None:
             text += f" · 计划金额 {plan['planned_amount_cents'] / 100:,.2f}元（按{ {'reference_price':'参考价','max_price':'价格上限','min_price':'价格下限'}[plan['amount_basis']]}估算，不含费）"
-        lines.extend([text, order.reason])
+        lines.append(text)
+        if order.action not in {'watch', 'unwatch'}:
+            lines.append(order.reason)
         if order.execution:
             terms = order.execution
             lines.append(f'计划价格条件：下限{terms.min_price if terms.min_price is not None else "未设"}，上限{terms.max_price if terms.max_price is not None else "未设"}；开盘后重新授权。')

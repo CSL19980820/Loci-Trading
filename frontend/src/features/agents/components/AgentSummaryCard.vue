@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { Progress } from '@/shared/components/ui/progress'
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowUpRight, BookOpen, Compass, Cpu, Flag, LoaderCircle, Receipt } from '@lucide/vue'
+import { ArrowUpRight, BookOpen, Compass, Cpu, Flag, Receipt } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
 import { Card } from '@/shared/components/ui/card'
@@ -94,7 +96,7 @@ function open(query?: Record<string, string>): void {
           <p class="agent-card__subtitle" :title="card.subtitle">{{ card.subtitle }}</p>
         </div>
         <UiBadge :variant="statusVariant" :dot="!card.running" class="agent-card__status">
-          <LoaderCircle v-if="card.running" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="card.running" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           {{ card.status }}
         </UiBadge>
       </header>
@@ -116,12 +118,9 @@ function open(query?: Record<string, string>): void {
 
       <div
         class="agent-card__alloc"
-        role="img"
         :aria-label="allocation != null ? `仓位 ${Math.round(allocation)}%` : '仓位未知'"
       >
-        <span class="agent-card__alloc-track">
-          <span class="agent-card__alloc-fill" :style="{ width: `${allocation ?? 0}%` }" />
-        </span>
+        <Progress v-if="allocation != null" class="agent-card__alloc-track" :model-value="Math.max(0, Math.min(100, allocation))" aria-label="仓位占比" />
         <span class="agent-card__alloc-caption">
           <template v-if="allocation != null">仓位 {{ Math.round(allocation) }}% · </template>
           持仓 {{ card.positions }} 只
@@ -338,12 +337,12 @@ function open(query?: Record<string, string>): void {
   background: var(--surface-sunken);
 }
 
-.agent-card__alloc-fill {
+.agent-card__alloc-track :deep([data-slot=progress-indicator]) {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--seal), color-mix(in oklab, var(--seal) 70%, var(--info)));
-  transition: width var(--dur) var(--ease);
+  transition: transform var(--dur) var(--ease);
 }
 
 .agent-card__alloc-caption {

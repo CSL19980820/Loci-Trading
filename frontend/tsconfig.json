@@ -34,5 +34,8 @@
     "src/**/*.tsx",
     "src/**/*.vue",
     "vite.config.ts"
-  ]
+  ],
+  "vueCompilerOptions": {
+    "checkUnknownComponents": true
+  }
 }

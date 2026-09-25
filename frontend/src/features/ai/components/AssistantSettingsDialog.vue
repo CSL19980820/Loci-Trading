@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Progress } from '@/shared/components/ui/progress'
 import { Label } from '@/shared/components/ui/label'
 import { Trash2 as Delete, Plus } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -253,7 +254,7 @@ onMounted(() => { if (props.open) void load() })
                 用户画像
                 <small>{{ userDoc.length }}/{{ MEMORY_QUOTAS.user }}</small>
               </span>
-              <span class="assistant-settings__cap-bar" aria-hidden="true"><i :style="{ width: `${userPct}%` }" /></span>
+              <Progress class="assistant-settings__cap-bar" :model-value="userPct" aria-label="用户记忆容量" />
               <TextField
                 v-model="userDoc"
                 aria-label="用户画像文档"
@@ -270,7 +271,7 @@ onMounted(() => { if (props.open) void load() })
                 工作记忆
                 <small>{{ workDoc.length }}/{{ MEMORY_QUOTAS.memory }}</small>
               </span>
-              <span class="assistant-settings__cap-bar" aria-hidden="true"><i :style="{ width: `${workPct}%` }" /></span>
+              <Progress class="assistant-settings__cap-bar" :model-value="workPct" aria-label="工作记忆容量" />
               <TextField
                 v-model="workDoc"
                 aria-label="工作记忆文档"
@@ -305,7 +306,7 @@ onMounted(() => { if (props.open) void load() })
 .assistant-settings__label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--gap-2); font-size: var(--ai-fs-body); font-weight: 600; color: var(--ink); }
 .assistant-settings__label small { font: var(--ai-fs-meta) var(--mono); font-variant-numeric: tabular-nums; color: var(--mist); }
 .assistant-settings__cap-bar { display: block; height: var(--gap-1); border-radius: var(--ai-r-pill); background: var(--rule); overflow: hidden; }
-.assistant-settings__cap-bar i { display: block; height: 100%; border-radius: inherit; background: var(--seal); }
+.assistant-settings__cap-bar :deep([data-slot=progress-indicator]) { display: block; height: 100%; border-radius: inherit; background: var(--seal); }
 .assistant-settings__stack { display: flex; flex-direction: column; gap: var(--gap-2); }
 .assistant-settings__line { display: flex; align-items: center; gap: var(--gap-2); padding: var(--gap-2); border: 1px solid var(--rule); border-radius: var(--ai-r-chip); background: var(--surface-sunken); }
 .assistant-settings__line > span { flex: 1; min-width: 0; font-size: var(--ai-fs-body); line-height: 1.5; overflow-wrap: anywhere; }

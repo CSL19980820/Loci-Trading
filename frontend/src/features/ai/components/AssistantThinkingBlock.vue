@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ChevronDown, CircleCheck, Lightbulb, Sparkles } from '@lucide/vue'
+import { ChevronDown, CircleCheck, CircleAlert, Lightbulb, Sparkles } from '@lucide/vue'
 import { computed, nextTick, ref, watch } from 'vue'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
+import { Button } from '@/shared/components/ui/button'
 
 /** 思考阶段的状态；本地实现自带，不再依赖第三方 Thinking 类型包。 */
 type ThinkingStatus = 'start' | 'thinking' | 'end' | 'error' | 'cancel'
@@ -12,18 +13,24 @@ const props = defineProps<{
   streaming?: boolean
   /** Collapse when thinking phase ends (tools / answer / settled). */
   autoCollapse?: boolean
+  /** A real execution phase exists, but the provider has not emitted reasoning. */
+  pending?: boolean
+  label?: string
+  interrupted?: boolean
 }>()
 
 const expanded = ref(true)
 const rootRef = ref<HTMLElement | null>(null)
 
 const status = computed<ThinkingStatus>(() => {
+  if (props.interrupted) return 'error'
   if (!props.content.trim()) return 'start'
   return props.streaming ? 'thinking' : 'end'
 })
 
 /** 与旧 Thinking 的默认文案一致：开始思考 / 思考中... / 思考完成 */
 const label = computed(() => {
+  if (props.label) return props.label
   if (status.value === 'thinking') return '思考中...'
   if (status.value === 'end') return '思考完成'
   return '开始思考'
@@ -58,7 +65,7 @@ watch(
 
 <template>
   <div
-    v-if="content.trim()"
+    v-if="content.trim() || pending"
     ref="rootRef"
     class="assistant-thinking"
     data-testid="assistant-thinking"
@@ -67,21 +74,23 @@ watch(
     aria-label="思考过程"
   >
     <Collapsible v-model:open="expanded" class="assistant-thinking__box" :class="{ 'is-live': status === 'thinking' }">
-      <CollapsibleTrigger class="assistant-thinking__trigger">
+      <CollapsibleTrigger as-child><Button access="read" variant="ghost" class="assistant-thinking__trigger" :disabled="!content.trim()">
         <span class="assistant-thinking__icon" aria-hidden="true">
-          <Sparkles v-if="status === 'thinking'" class="assistant-thinking__spark" />
+          <Sparkles v-if="status === 'thinking' || pending" class="assistant-thinking__spark" />
+          <CircleAlert v-else-if="interrupted" />
           <CircleCheck v-else-if="status === 'end'" />
           <Lightbulb v-else />
         </span>
         <span class="assistant-thinking__label" :class="{ 'is-shimmer': status === 'thinking' }">{{ label }}</span>
         <span v-if="status === 'end'" class="assistant-thinking__hint">{{ expanded ? '收起' : '展开' }}</span>
         <ChevronDown
+          v-if="content.trim()"
           class="assistant-thinking__arrow"
           :class="{ 'is-expanded': expanded }"
           aria-hidden="true"
         />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
+      </Button></CollapsibleTrigger>
+      <CollapsibleContent v-if="content.trim()">
         <pre class="assistant-thinking__content">{{ content }}</pre>
       </CollapsibleContent>
     </Collapsible>
@@ -97,11 +106,16 @@ watch(
 .assistant-thinking__box {
   width: 100%;
   min-width: 0;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
-  background: var(--surface-sunken);
+  background: transparent;
   overflow: hidden;
   transition: border-color var(--dur-fast) var(--ease);
+}
+
+.assistant-thinking__box[data-state='open'] {
+  border-color: var(--border-subtle);
+  background: var(--surface-sunken);
 }
 
 .assistant-thinking__box.is-live {
@@ -114,8 +128,10 @@ watch(
   gap: var(--gap-2);
   width: 100%;
   min-width: 0;
-  min-height: 36px;
-  padding: 0 var(--gap-3);
+  height: auto;
+  min-height: 32px;
+  padding: 6px 8px;
+  justify-content: flex-start;
   border: 0;
   background: transparent;
   color: var(--text-secondary);
@@ -128,6 +144,8 @@ watch(
 .assistant-thinking__trigger:hover {
   color: var(--text-primary);
 }
+
+.assistant-thinking__trigger:disabled { opacity:1; cursor:default; }
 
 .assistant-thinking__trigger:focus-visible {
   outline: 2px solid var(--focus-ring);

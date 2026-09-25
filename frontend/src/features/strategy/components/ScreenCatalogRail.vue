@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Item } from '@/shared/components/ui/item'
+import { Command, CommandList, CommandItem } from '@/shared/components/ui/command'
 import { computed, ref } from 'vue'
 import { Cpu, Search, SlidersHorizontal, X } from '@lucide/vue'
 
@@ -103,20 +103,22 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
       :description="query ? '没有匹配项' : '暂无战法或技能'"
       :reason="query ? '清空搜索后重试' : '前往工坊创建'"
     />
-    <ul v-else class="catalog-rail__list" role="listbox" aria-label="战法与技能">
-      <li
+    <Command v-else :model-value="selectedId" class="catalog-rail__command" :selection-follows-focus="false">
+    <CommandList class="catalog-rail__list" aria-label="战法与技能">
+      <CommandItem
         v-for="row in visible"
         :key="row.id"
-        role="option"
-        :aria-selected="row.id === selectedId"
+        :value="row.id"
+        :text-value="row.name"
+        class="p-0"
+        @select="emit('select', row.id)"
         :class="{ 'is-selected': row.id === selectedId, 'is-disabled': row.kind === 'skill' && !row.enabled }"
       >
-        <Item as="button"
-          type="button"
+        <div
           class="catalog-row"
           :title="`${row.name} · ${row.sample || 0} 样本`"
           :aria-label="`${row.name}，${row.kind === 'engine' ? '战法' : '技能'}${row.kind === 'skill' && !row.enabled ? '，已停用' : ''}`"
-          @click="emit('select', row.id)"
+
         >
           <span class="catalog-row__icon" :class="row.kind" aria-hidden="true">
             <component :is="row.kind === 'engine' ? SlidersHorizontal : Cpu" />
@@ -134,9 +136,10 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
             <small>{{ fmtPct(row.avgReturn) }}</small>
           </span>
           <span v-else class="catalog-row__stat is-empty"><b>—</b></span>
-        </Item>
-      </li>
-    </ul>
+        </div>
+      </CommandItem>
+    </CommandList>
+    </Command>
   </div>
 </template>
 
@@ -200,7 +203,9 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
   padding: 0 var(--gap-1);
 }
 
+.catalog-rail__command { flex: 1; min-height: 0; background: transparent; }
 .catalog-rail__list {
+  max-height: none;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -234,7 +239,7 @@ function hasCredibleStats(row: ScreenCatalogItem): boolean {
   background: var(--surface-hover);
 }
 
-.catalog-row:focus-visible {
+.catalog-rail__list :deep([data-highlighted]) .catalog-row {
   outline: 2px solid var(--focus-ring, var(--seal));
   outline-offset: -2px;
 }

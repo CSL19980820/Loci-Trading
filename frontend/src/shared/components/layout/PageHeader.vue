@@ -9,6 +9,7 @@ const props = withDefaults(defineProps<{
   eyebrow?: string
   tabs?: PageTabItem[]
   tab?: string
+  panelId?: string
   compact?: boolean
   sticky?: boolean
   seamless?: boolean
@@ -24,7 +25,7 @@ const tabValue = computed({ get: () => props.tab ?? '', set: (value: string) => 
         <div v-if="$slots.leading" class="page-header__leading"><slot name="leading" /></div>
         <h1 v-if="title || $slots.title" class="page-header__title" :class="{ 'sr-only': tabs?.length && !$slots.title }"><slot name="title">{{ title }}</slot></h1>
         <div v-if="$slots.default" class="page-header__meta"><slot /></div>
-        <PageTabs v-if="tabs?.length" v-model="tabValue" :items="tabs" :sticky="false" class="page-header__tabs" />
+        <PageTabs v-if="tabs?.length" v-model="tabValue" :items="tabs" :panel-id="panelId" :sticky="false" class="page-header__tabs" />
       </div>
       <div v-if="$slots.actions" class="page-header__actions"><slot name="actions" /></div>
     </div>

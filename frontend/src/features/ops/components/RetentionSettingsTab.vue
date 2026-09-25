@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Label } from '@/shared/components/ui/label'
 import { computed, onMounted, ref } from 'vue'
-import { Archive, LoaderCircle, RefreshCw, Save } from '@lucide/vue'
+import { Archive, RefreshCw, Save } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 import { quantRequest } from '@/shared/api/quant_client'
 import { getStockAgents, getStockAgent, saveStockAgent, cleanAgentDiary } from '@/shared/api/stock_agents'
@@ -102,7 +103,7 @@ defineExpose({ load, isDirty })
     <div class="retention-toolbar">
       <Label class="retention-toggle"><Switch :model-value="draft.enabled" :disabled="!snapshot || loading || busy" @update:model-value="draft.enabled = $event" />定期保留策略</Label>
       <span class="retention-caption">天数 0 表示不按时间清理；任务条数上限独立生效</span>
-      <div class="retention-actions"><Button access="read" variant="outline" size="sm" :disabled="loading || busy || isDirty()" @click="load"><RefreshCw />刷新</Button><Button size="sm" :disabled="!canSave" @click="save"><LoaderCircle v-if="busy" class="animate-spin" /><Save v-else />保存</Button></div>
+      <div class="retention-actions"><Button access="read" variant="outline" size="sm" :disabled="loading || busy || isDirty()" @click="load"><RefreshCw />刷新</Button><Button size="sm" :disabled="!canSave" @click="save"><Spinner v-if="busy" class="animate-spin" /><Save v-else />保存</Button></div>
     </div>
     <Alert v-if="error" variant="destructive"><AlertTitle>{{ error }}</AlertTitle></Alert>
     <WorkspaceLoading v-if="loading && !snapshot" label="读取日志保留策略…" />
@@ -112,7 +113,7 @@ defineExpose({ load, isDirty })
       <div class="retention-jobs"><div v-for="job in snapshot.jobs" :key="job.id" class="retention-job"><span>{{ jobDisplayName(job.name) }}</span><code>{{ job.cron }}</code><small>{{ job.enabled ? '定时启用' : '定时已停用' }}</small><Button variant="outline" size="xs" :disabled="busy || isDirty() || !snapshot.policy.enabled" @click="runMaintenance(job)"><Archive />立即清理</Button></div><Button access="read" as-child size="xs" variant="ghost"><RouterLink to="/quant?tab=jobs">执行记录</RouterLink></Button></div>
       <p class="retention-caption">保存不立即删除数据。正在运行的任务、财务账本、持仓、成交和策略源文件不作为日志清理；智能体日记使用下面各自的策略。</p>
     </template>
-    <section class="retention-agent-section"><h3>自主交易员</h3><GuardianStoragePanel expanded /></section>
+    <section class="retention-agent-section"><h3>天才交易员</h3><GuardianStoragePanel expanded /></section>
     <Alert v-if="agentError" variant="destructive"><AlertTitle>{{ agentError }}</AlertTitle></Alert>
     <section v-if="agents.length" class="retention-agent-section"><h3>股票智能体</h3><div v-for="agent in agents" :key="agent.id" class="retention-job"><span>{{ agent.config.name }}</span><div class="retention-actions"><Button variant="outline" size="sm" :disabled="busy" @click="configureAgent(agent.id)">保留策略</Button><Button variant="outline" size="sm" :disabled="busy" @click="cleanupDiary(agent.id)">清理过期详情</Button></div></div></section>
     <Dialog v-model:open="agentOpen"><DialogContent class="sm:max-w-lg"><DialogHeader><DialogTitle>{{ selected?.config.name }} · 日记保留</DialogTitle></DialogHeader><Alert v-if="agentError" variant="destructive"><AlertTitle>{{ agentError }}</AlertTitle></Alert><Label v-for="[key,label,max] in [['days','保留天数',3650],['max_entries','条数上限',100000],['cleanup_hours','清理间隔（小时）',168]]" :key="String(key)" class="retention-field"><span>{{ label }}</span><Input type="number" :min="key === 'cleanup_hours' ? 1 : 0" :max="Number(max)" :model-value="diary[key as keyof typeof diary]" :disabled="busy" @update:model-value="diary[key as keyof typeof diary] = Number($event)" /></Label><p class="retention-caption">天数和条数 0 关闭对应限制；非零条数至少 20。清理不会删除财务账本。</p><DialogFooter><Button access="read" variant="outline" :disabled="busy" @click="agentOpen = false">取消</Button><Button :disabled="busy" @click="saveDiary">保存</Button></DialogFooter></DialogContent></Dialog>

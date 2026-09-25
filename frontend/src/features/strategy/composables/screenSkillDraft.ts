@@ -185,7 +185,7 @@ function formatParamValue(type: ScreenSkillParamType, value: number | boolean | 
 function formatListText(values: string[] | null | undefined): string {
   return (values ?? []).join('\n')
 }
-function parseListText(raw: string): string[] {
+export function parseListText(raw: string): string[] {
   const seen = new Set<string>()
   const items: string[] = []
   for (const value of raw.split(/[\n,，;\s]+/)) {

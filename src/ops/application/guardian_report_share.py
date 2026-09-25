@@ -62,6 +62,11 @@ def load_guardian_reference(reference: dict, token: str, *, root: Path) -> dict 
         if old:
             result = json.loads(old[0])
             if matches(result):
+                # Keep the exact historical snapshot readable, but make its correction visible.
+                replacement = json.loads(current[0]) if current else {}
+                token = replacement.get('share_token') if replacement.get('revision', 0) > reference['revision'] else ''
+                result['_superseded_by'] = f'/shared/reports/{token}' if token else ''
+                result['_superseded'] = True
                 return result
     return None
 

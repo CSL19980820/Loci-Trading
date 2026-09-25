@@ -1,4 +1,5 @@
-import type { ObjectDirective } from 'vue'
+import { h, render, type ObjectDirective } from 'vue'
+import { Spinner } from '@/shared/components/ui/spinner'
 
 interface BusyState { overlay?: HTMLElement; position: string; aria: string | null }
 const states = new WeakMap<HTMLElement, BusyState>()
@@ -7,7 +8,7 @@ function update(el: HTMLElement, value: unknown) {
   let state = states.get(el)
   if (!value) {
     if (!state) return
-    state.overlay?.remove()
+    if (state.overlay) { render(null, state.overlay); state.overlay.remove() }
     el.style.position = state.position
     if (state.aria === null) el.removeAttribute('aria-busy')
     else el.setAttribute('aria-busy', state.aria)
@@ -22,10 +23,7 @@ function update(el: HTMLElement, value: unknown) {
   overlay.className = 'busy-overlay'
   overlay.setAttribute('role', 'status')
   overlay.setAttribute('aria-label', '加载中')
-  const spinner = document.createElement('span')
-  spinner.className = 'busy-overlay__spinner'
-  spinner.setAttribute('aria-hidden', 'true')
-  overlay.append(spinner)
+  render(h(Spinner, { class: 'busy-overlay__spinner', 'aria-hidden': 'true' }), overlay)
   el.append(overlay)
   el.setAttribute('aria-busy', 'true')
   el.classList.add('is-busy')

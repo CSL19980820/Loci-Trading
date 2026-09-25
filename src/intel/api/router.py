@@ -96,6 +96,22 @@ def build_intel_router(
         except OpsError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @router.put("/api/mcp/hithink", tags=["mcp"])
+    def save_hithink_mcp(payload: dict[str, Any], _write: None = write_guard) -> dict[str, Any]:
+        from src.intel.infrastructure.registry import save_hithink_resident
+        from src.ops import OpsError
+
+        try:
+            return save_hithink_resident(
+                token=payload.get("token"),
+                expires_at=payload.get("expires_at"),
+                note=payload.get("note"),
+                disabled=not bool(payload["is_active"]) if "is_active" in payload else None,
+                verify=bool(payload.get("verify", True)),
+            )
+        except OpsError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     @router.post("/api/mcp", tags=["mcp"], status_code=201)
     def save_mcp_server(payload: McpServerCreate, _write: None = write_guard) -> dict[str, Any]:
         try:

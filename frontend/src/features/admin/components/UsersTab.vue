@@ -7,7 +7,7 @@
 import { Ellipsis, Plus, RefreshCw, Search } from '@lucide/vue'
 import { useMediaQuery } from '@vueuse/core'
 
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
 import { listAdminUsers, setUserRole, setUserStatus } from '@/shared/api/admin'
@@ -129,26 +129,29 @@ const columns = ref<BasicTableColumn[]>([
   },
 ])
 
-/**
- * 角色维度后端没有查询参数，只能在**当前页内**过滤；分页总数仍报后端口径，
- * 不假装「角色也参与了分页」。真要按角色分页需要后端加参数，不在本轮范围。
- */
+function requestUsers(offset: number, limit: number, signal: AbortSignal) {
+  return listAdminUsers({
+    keyword: filters.value.keyword.trim() || undefined,
+    status: filters.value.status || undefined,
+    role: (filters.value.role || undefined) as Role | undefined,
+    limit,
+    offset,
+  }, signal)
+}
+
+let desktopController: AbortController | undefined
 async function loadUsers(params: {
   currentPage: number
   pageSize: number
 }): Promise<{ list: Record<string, unknown>[]; total: number }> {
+  desktopController?.abort()
+  const controller = new AbortController()
+  desktopController = controller
   try {
-    const role = String(filters.value.role || '')
-    const res = await listAdminUsers({
-      keyword: String(filters.value.keyword || '').trim() || undefined,
-      status: String(filters.value.status || '') || undefined,
-      limit: params.pageSize,
-      offset: (params.currentPage - 1) * params.pageSize,
-    })
-    const items = role ? res.items.filter((item) => item.role === role) : res.items
-    return { list: items as unknown as Record<string, unknown>[], total: res.total }
+    const res = await requestUsers((params.currentPage - 1) * params.pageSize, params.pageSize, controller.signal)
+    return { list: res.items as unknown as Record<string, unknown>[], total: res.total }
   } catch (caught: unknown) {
-    toast.error(toErrorMessage(caught, '加载用户列表失败'))
+    if (!controller.signal.aborted) toast.error(toErrorMessage(caught, '加载用户列表失败'))
     return { list: [], total: 0 }
   }
 }
@@ -157,24 +160,60 @@ async function loadUsers(params: {
 const mobileRows = ref<AdminUserItem[]>([])
 const mobileTotal = ref(0)
 const mobileLoading = ref(false)
+let mobileOffset = 0
+let mobileGeneration = 0
+let mobileController: AbortController | undefined
+
+function invalidateMobile(): void {
+  mobileGeneration += 1
+  mobileController?.abort()
+  mobileLoading.value = false
+}
 
 async function loadMobile(append = false): Promise<void> {
+  if (append && (mobileLoading.value || mobileOffset >= mobileTotal.value)) return
+  invalidateMobile()
+  const generation = mobileGeneration
+  const controller = new AbortController()
+  mobileController = controller
+  if (!append) {
+    mobileRows.value = []
+    mobileTotal.value = 0
+    mobileOffset = 0
+  }
   mobileLoading.value = true
-  const offset = append ? mobileRows.value.length : 0
-  const page = await loadUsers({ currentPage: Math.floor(offset / MOBILE_PAGE) + 1, pageSize: MOBILE_PAGE })
-  const items = page.list as unknown as AdminUserItem[]
-  mobileRows.value = append ? [...mobileRows.value, ...items] : items
-  mobileTotal.value = page.total
-  mobileLoading.value = false
+  const offset = mobileOffset
+  try {
+    const page = await requestUsers(offset, MOBILE_PAGE, controller.signal)
+    if (generation !== mobileGeneration) return
+    // 游标跟随服务端返回的行数，不能从本地展示行数或角色过滤结果反推页码。
+    mobileOffset = offset + page.items.length
+    mobileRows.value = append ? [...mobileRows.value, ...page.items] : page.items
+    mobileTotal.value = page.total
+  } catch (caught: unknown) {
+    if (generation === mobileGeneration && !controller.signal.aborted) {
+      toast.error(toErrorMessage(caught, '加载用户列表失败'))
+    }
+  } finally {
+    if (generation === mobileGeneration) mobileLoading.value = false
+  }
 }
 
 watch(
   isMobile,
   (mobile) => {
-    if (mobile && !mobileRows.value.length) void loadMobile()
+    desktopController?.abort()
+    invalidateMobile()
+    if (mobile) void loadMobile()
   },
   { immediate: true },
 )
+
+watch(filters, reload, { deep: true })
+onBeforeUnmount(() => {
+  desktopController?.abort()
+  invalidateMobile()
+})
 
 function reload(): void {
   if (isMobile.value) {
@@ -185,8 +224,11 @@ function reload(): void {
 }
 
 function onReset(): void {
+  if (!filters.value.keyword && !filters.value.status && !filters.value.role) {
+    reload()
+    return
+  }
   filters.value = { keyword: '', status: '', role: '' }
-  reload()
 }
 
 function openResetPwdDialog(row: AdminUserItem): void {

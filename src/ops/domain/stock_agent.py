@@ -1,4 +1,4 @@
-"""独立股票智能体配置。内置自主交易员不使用这些规则或默认提示词。"""
+"""独立股票智能体配置。内置天才交易员不使用这些规则或默认提示词。"""
 from __future__ import annotations
 
 from typing import Literal

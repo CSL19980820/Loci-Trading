@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import json
 from datetime import datetime
 from typing import Any, Literal
 
@@ -13,6 +12,7 @@ from src.ledger import settle_guardian_order, mark_guardian_account
 from src.ops.application.guardian_contract import ExecutionTerms, execution_error, execution_cage, rejection_code
 from src.ops.application.guardian_quotes import executable_quote, quote_error, validated_quotes
 from src.ops.application.guardian_risk import RiskPlan, install_risk_plans
+from src.ops.application.guardian_output import load_json_response
 
 TRADE_ACTIONS = frozenset({"buy", "add", "reduce", "sell", "take_profit", "stop_loss"})
 ACTION_LABELS = {"buy": "买入", "add": "加仓", "reduce": "减仓", "sell": "卖出",
@@ -65,10 +65,7 @@ class GuardianDecision(BaseModel):
 
 def parse_decision(text: str, *, require_execution_terms: bool = False,
                    decision_type: type[GuardianDecision] = GuardianDecision) -> GuardianDecision:
-    raw = text.strip()
-    if raw.startswith("```json\n") and raw.endswith("```"):
-        raw = raw[8:-3].strip()
-    decision = decision_type.model_validate(json.loads(raw))
+    decision = decision_type.model_validate(load_json_response(text))
     if require_execution_terms:
         missing = [o.code for o in decision.orders if o.action in TRADE_ACTIONS and o.execution is None]
         if missing:
@@ -133,6 +130,13 @@ def simulate(state: dict[str, Any], decision: GuardianDecision, candidates: list
         quote = quotes.get(item.code) or {}
         error_code = "quote_unavailable"
         try:
+            if guardian_policy:
+                from src.ledger.domain.guardian_account import guardian_buy_error
+                error_code = "board_not_allowed"
+                problem = guardian_buy_error(item.code, item.action)
+                if problem:
+                    raise ValueError(problem)
+            error_code = "quote_unavailable"
             problem = quote_error(item.code, quote, now)
             if problem:
                 raise ValueError(problem)

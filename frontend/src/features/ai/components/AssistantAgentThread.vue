@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Progress } from '@/shared/components/ui/progress'
 import { X as Close } from '@lucide/vue'
 import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
 import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
@@ -93,20 +94,13 @@ function close(): void {
     </template>
 
     <template v-if="agent">
-      <div
+      <Progress
         v-if="agent.progress != null"
         class="assistant-agent-thread__meter"
-        role="progressbar"
-        :aria-valuenow="agent.progress"
-        aria-valuemin="0"
-        aria-valuemax="100"
-      >
-        <i
-          class="assistant-agent-thread__meter-fill"
-          :class="{ 'is-error': agent.status === 'error', 'is-done': agent.status === 'done' }"
-          :style="{ width: `${agent.progress}%` }"
-        />
-      </div>
+        :class="{ 'is-error': agent.status === 'error', 'is-done': agent.status === 'done' }"
+        :model-value="Math.max(0, Math.min(100, agent.progress))"
+        aria-label="智能体执行进度"
+      />
 
       <p v-if="detailLive" class="assistant-agent-thread__detail">{{ detailLive }}</p>
 
@@ -225,15 +219,15 @@ function close(): void {
   background: color-mix(in oklab, var(--ink) 8%, transparent);
   margin-bottom: .75rem;
 }
-.assistant-agent-thread__meter-fill {
+.assistant-agent-thread__meter :deep([data-slot=progress-indicator]) {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--ok);
-  transition: width .25s ease;
+  transition: transform .25s ease;
 }
-.assistant-agent-thread__meter-fill.is-done { background: var(--ok); }
-.assistant-agent-thread__meter-fill.is-error { background: var(--warn); }
+.assistant-agent-thread__meter.is-done :deep([data-slot=progress-indicator]) { background: var(--ok); }
+.assistant-agent-thread__meter.is-error :deep([data-slot=progress-indicator]) { background: var(--warn); }
 .assistant-agent-thread__detail {
   margin: 0 0 .75rem;
   padding: .55rem .65rem;
@@ -341,7 +335,7 @@ function close(): void {
 }
 @media (prefers-reduced-motion: reduce) {
   .assistant-agent-thread__header.is-live .assistant-agent-thread__dot,
-  .assistant-agent-thread__meter-fill { animation: none; transition: none; }
+  .assistant-agent-thread__meter :deep([data-slot=progress-indicator]) { animation: none; transition: none; }
 }
 </style>
 

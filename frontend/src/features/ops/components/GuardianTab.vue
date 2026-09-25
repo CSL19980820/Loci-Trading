@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, KeepAlive, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { Spinner } from '@/shared/components/ui/spinner'
+import { computed, defineAsyncComponent, KeepAlive, onMounted, onUnmounted, ref, shallowRef, useId, watch } from 'vue'
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import GuardianMobileSummary from './GuardianMobileSummary.vue'
 import { toast } from 'vue-sonner'
-import { Archive, Ellipsis, Info, Cpu, LoaderCircle, Pause, Play, RefreshCw, Settings, TriangleAlert } from '@lucide/vue'
+import { Archive, Ellipsis, Info, Cpu, Pause, Play, RefreshCw, Settings, TriangleAlert } from '@lucide/vue'
 import { getGuardian, saveGuardian } from '@/shared/api/guardian'
 import { getProviders } from '@/shared/api/quant'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
@@ -116,31 +117,32 @@ defineExpose({ load, isDirty: () => settings.value?.isDirty() ?? false })
 function onSectionChange(value: unknown): void {
   section.value = String(value)
 }
+const panelId = `guardian-workspace-panel-${useId()}`
 </script>
 
 <template>
-  <div class="guardian-workspace" aria-label="自主交易员">
+  <div class="guardian-workspace" aria-label="天才交易员">
     <header class="guardian-header">
       <div class="guardian-identity">
         <slot name="leading" />
-        <h1>自主交易员</h1>
+        <h1>天才交易员</h1>
         <Badge variant="outline" class="guardian-state" :class="{ 'is-running': enabled && configured }">
-          <LoaderCircle v-if="data?.runs[0]?.status === 'running'" class="size-3 animate-spin" aria-hidden="true" />
+          <Spinner v-if="data?.runs[0]?.status === 'running'" class="size-3 animate-spin" aria-hidden="true" />
           <span v-else class="guardian-state__dot" aria-hidden="true" />
           {{ stateLabel }}
         </Badge>
       </div>
-      <PageTabs :model-value="section" :items="workspaceTabs" variant="pill" :sticky="false" aria-label="交易员工作区" @update:model-value="onSectionChange" class="guardian-inline-tabs" />
+      <PageTabs :panel-id="panelId" :model-value="section" :items="workspaceTabs" variant="pill" :sticky="false" aria-label="交易员工作区" @update:model-value="onSectionChange" class="guardian-inline-tabs" />
       <span class="guardian-history-summary" :title="storage?.summary">{{ storage?.summary }}</span>
       <div class="guardian-actions">
         <Button v-if="!mobile" class="guardian-storage-action" variant="outline" size="sm" :disabled="storage?.busy" @click="storage?.configure()"><Settings aria-hidden="true" />保留策略</Button>
         <Button v-if="!mobile" class="guardian-storage-action" variant="outline" size="sm" :disabled="storage?.busy" @click="storage?.cleanup()"><Archive aria-hidden="true" />清理过期详情</Button>
         <Button access="read" variant="outline" :size="mobile ? 'icon-sm' : 'sm'" aria-label="刷新交易员" :disabled="busy || loading" @click="load">
-          <LoaderCircle v-if="loading" class="animate-spin" aria-hidden="true" /><RefreshCw v-else aria-hidden="true" /><span v-if="!mobile">刷新</span>
+          <Spinner v-if="loading" class="animate-spin" aria-hidden="true" /><RefreshCw v-else aria-hidden="true" /><span v-if="!mobile">刷新</span>
         </Button>
         <Button v-if="!mobile" variant="outline" size="sm" :disabled="!data || busy" @click="configure()"><Settings aria-hidden="true" />设置</Button>
         <Button v-if="!mobile" :variant="enabled ? 'outline' : 'default'" size="sm" :disabled="busy || !data" @click="toggle">
-          <LoaderCircle v-if="busy" class="animate-spin" aria-hidden="true" /><Pause v-else-if="enabled" aria-hidden="true" /><Play v-else aria-hidden="true" />
+          <Spinner v-if="busy" class="animate-spin" aria-hidden="true" /><Pause v-else-if="enabled" aria-hidden="true" /><Play v-else aria-hidden="true" />
           {{ enabled ? '暂停' : configured ? '启动' : '配置开启' }}
         </Button>
         <DropdownMenu>
@@ -165,8 +167,10 @@ function onSectionChange(value: unknown): void {
       </div>
     </Alert>
 
-    <div v-if="loading && !data" class="guardian-loading" aria-hidden="true">
-      <Skeleton v-for="n in 5" :key="n" class="guardian-loading__row" />
+    <div v-if="!data" :id="panelId" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${section}`" :aria-busy="loading">
+      <div v-if="loading" class="guardian-loading" aria-hidden="true">
+        <Skeleton v-for="n in 5" :key="n" class="guardian-loading__row" />
+      </div>
     </div>
 
     <template v-if="data">
@@ -187,7 +191,7 @@ function onSectionChange(value: unknown): void {
 
 
       <!-- 视图内容 -->
-      <div class="guardian-content-area">
+      <div :id="panelId" class="guardian-content-area" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${section}`">
         <KeepAlive v-if="active">
           <GuardianAccountPanel v-if="section === 'account'" :account="data.state" :experience="data.experience" @review="section = 'research'" @section-change="value => accountSection = value" />
           <GuardianResearchPanel v-else-if="section === 'research'" :account="data.state" :enabled="enabled" :notify="data.config.notify" @changed="load" />

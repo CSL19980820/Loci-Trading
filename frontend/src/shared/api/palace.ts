@@ -16,8 +16,10 @@ const REQUEST_TIMEOUT_MS = 20_000
 const TIMEOUT_REASON = 'loci-request-timeout'
 
 export interface ApiRequestInit extends RequestInit {
-  /** 等待首响应的期限；普通请求仍为20秒。 */
+  /** 单次请求期限，包含响应体读取；默认20秒。 */
   timeoutMs?: number
+  /** 所有尝试及退避的总期限，默认等于 timeoutMs。 */
+  totalTimeoutMs?: number
 }
 
 export interface SessionStatus {
@@ -45,87 +47,82 @@ export interface TodayAlert {
   note: string
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms)
+function timeoutError(ms: number): Error & { retryable: boolean } {
+  return Object.assign(new Error(`请求超时（${ms / 1000} 秒内未完成）`), { name: 'TimeoutError', retryable: true })
+}
+
+function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return }
+    const onAbort = () => { window.clearTimeout(timer); reject(signal?.reason) }
+    const timer = window.setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve() }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 
 async function requestOnce<T>(path: string, options?: ApiRequestInit): Promise<T> {
-  const { timeoutMs = REQUEST_TIMEOUT_MS, ...init } = options ?? {}
-  const headers = new Headers(init?.headers)
-  // FormData 必须让浏览器自己设 Content-Type——它要在里面带 multipart
-  // 的 boundary，手工设会让后端解析不出文件。
-  const isFormData = init?.body instanceof FormData
-  if (!headers.has('Content-Type') && init?.body && !isFormData) {
+  const { timeoutMs = REQUEST_TIMEOUT_MS, totalTimeoutMs: _totalTimeoutMs, ...init } = options ?? {}
+  const headers = new Headers(init.headers)
+  if (!headers.has('Content-Type') && init.body && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
-  // 单次尝试的墙钟上限。没有它时后端挂住就是无限等，再叠上 GET 的 4 次重试，
-  // 界面会僵在加载态且没有任何交代。超时按可重试处理（等价于 504），
-  // 调用方主动取消则原样上抛、不重试。
   const timer = new AbortController()
   const timeout = window.setTimeout(() => timer.abort(TIMEOUT_REASON), timeoutMs)
-  const caller = init?.signal
-  if (caller) {
-    if (caller.aborted) timer.abort(caller.reason)
-    else caller.addEventListener('abort', () => timer.abort(caller.reason), { once: true })
-  }
-  let response: Response
+  const caller = init.signal
+  const onAbort = () => timer.abort(caller?.reason)
+  if (caller?.aborted) onAbort()
+  else caller?.addEventListener('abort', onAbort, { once: true })
   try {
-    response = await fetch(`${API_ROOT}${path}`, {
-      ...init,
-      headers,
-      credentials: 'same-origin',
-      signal: timer.signal,
+    const response = await fetch(`${API_ROOT}${path}`, {
+      ...init, headers, credentials: 'same-origin', signal: timer.signal,
     })
-  } catch (caught: unknown) {
-    if (timer.signal.reason === TIMEOUT_REASON) {
-      const error = new Error(`请求超时（${timeoutMs / 1000} 秒未响应）`) as Error & {
-        retryable?: boolean
-      }
-      error.retryable = true
-      throw error
+    if (!response.ok) {
+      if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('loci:session-expired'))
+      const body: unknown = await response.json().catch((error: unknown) => {
+        // A cancelled body is not an empty error response.
+        if (timer.signal.aborted) throw error
+        return null
+      })
+      const rawDetail = typeof body === 'object' && body !== null && 'detail' in body ? body.detail : null
+      throw Object.assign(new Error(formatApiDetail(rawDetail, response.status)), {
+        status: response.status, retryable: RETRYABLE_STATUS.has(response.status),
+        reason: response.headers.get('x-loci-reason') ?? '',
+      })
     }
+    // Keep cancellation alive until the body is consumed, not just until headers arrive.
+    const body = await response.json() as T
+    timer.signal.throwIfAborted()
+    return body
+  } catch (caught: unknown) {
+    if (timer.signal.reason === TIMEOUT_REASON) throw timeoutError(timeoutMs)
     throw caught
   } finally {
     window.clearTimeout(timeout)
+    caller?.removeEventListener('abort', onAbort)
   }
-  if (!response.ok) {
-    if (response.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('loci:session-expired'))
-    const body: unknown = await response.json().catch(() => null)
-    const rawDetail =
-      typeof body === 'object' && body !== null && 'detail' in body
-        ? (body as { detail: unknown }).detail
-        : null
-    const detail = formatApiDetail(rawDetail, response.status)
-    const error = new Error(detail) as Error & {
-      status?: number
-      retryable?: boolean
-      reason?: string
-    }
-    error.status = response.status
-    error.retryable = RETRYABLE_STATUS.has(response.status)
-    // 503 同时表示「缺依赖」和「库繁忙」，只有前者带这个头；调用方据此分流引导。
-    error.reason = response.headers.get('x-loci-reason') ?? ''
-    throw error
-  }
-  return response.json() as Promise<T>
 }
 
-/** 读接口遇 5xx/繁忙时自动退避重试；写接口不重试，避免重复记账。 */
+/** Reads may retry transient failures within one deadline; writes never retry. */
 async function request<T>(path: string, init?: ApiRequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase()
   const canRetry = method === 'GET' || method === 'HEAD'
+  const timeoutMs = init?.timeoutMs ?? REQUEST_TIMEOUT_MS
+  const totalTimeoutMs = init?.totalTimeoutMs ?? timeoutMs
+  const deadline = Date.now() + totalTimeoutMs
   let attempt = 0
   for (;;) {
+    init?.signal?.throwIfAborted()
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw timeoutError(totalTimeoutMs)
     try {
-      return await requestOnce<T>(path, init)
+      return await requestOnce<T>(path, { ...init, timeoutMs: Math.min(timeoutMs, remaining) })
     } catch (caught: unknown) {
-      const err = caught as Error & { retryable?: boolean }
-      const retryable = Boolean(err.retryable) || (caught instanceof TypeError)
+      if (init?.signal?.aborted) throw caught
+      const retryable = Boolean((caught as { retryable?: boolean } | null)?.retryable) || caught instanceof TypeError
       if (!canRetry || !retryable || attempt >= MAX_GET_RETRIES) throw caught
-      attempt += 1
-      await sleep(200 * attempt)
+      const backoff = 200 * ++attempt
+      if (deadline - Date.now() <= backoff) throw caught
+      await sleep(backoff, init?.signal)
     }
   }
 }

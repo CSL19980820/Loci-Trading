@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 
 import { Tabs, TabsList, TabsTrigger } from '@/shared/components/ui/tabs'
+import { Button } from '@/shared/components/ui/button'
+import { ToggleGroup, ToggleGroupItem } from '@/shared/components/ui/toggle-group'
 
 export type PageTabItem = {
   name: string
@@ -20,6 +22,8 @@ const props = withDefaults(
     dense?: boolean
     /** pill = 药片分段（用于面板内二级切换）；默认 underline = 下划线（页级分区） */
     variant?: 'underline' | 'pill'
+    /** A real content section pairs this id with role=tabpanel and its active trigger. */
+    panelId?: string
     ariaLabel?: string
   }>(),
   {
@@ -34,10 +38,7 @@ const emit = defineEmits<{
   'update:modelValue': [string]
 }>()
 
-/**
- * 分区只切「值」，不渲染面板：面板由父级用 `v-show` 编排（切 Tab 不重建表格、不丢滚动位置）。
- * 只保留 reka `Tabs` 的 tablist / tab 语义与方向键导航，刻意不挂 `TabsContent`。
- */
+/** Content sections use Tabs; value filters use ToggleGroup without a phantom panel. */
 const value = computed({
   get: () => props.modelValue,
   set: (next: string | number) => {
@@ -58,20 +59,28 @@ const value = computed({
     ]"
   >
     <div class="page-tabs__row">
-      <Tabs v-model="value" class="page-tabs__tabs">
+      <Tabs v-if="panelId" v-model="value" class="page-tabs__tabs">
         <TabsList class="page-tabs__list" :aria-label="ariaLabel">
           <TabsTrigger
             v-for="item in items"
             :key="item.name"
             :value="item.name"
+            as-child
             :disabled="item.disabled"
             class="page-tabs__item"
           >
-            <span class="page-tabs__label">{{ item.label }}</span>
-            <span v-if="item.badge != null && item.badge !== ''" class="page-tabs__badge">{{ item.badge }}</span>
+            <Button access="read" variant="ghost" type="button" :id="`${panelId}-tab-${item.name}`" :aria-controls="panelId" :disabled="item.disabled" class="page-tabs__item">
+              <span class="page-tabs__label">{{ item.label }}</span>
+              <span v-if="item.badge != null && item.badge !== ''" class="page-tabs__badge">{{ item.badge }}</span>
+            </Button>
           </TabsTrigger>
         </TabsList>
       </Tabs>
+      <ToggleGroup v-else type="single" :model-value="value" :aria-label="ariaLabel" class="page-tabs__list page-tabs__tabs" @update:model-value="next => { if (typeof next === 'string' || typeof next === 'number') value = String(next) }">
+        <ToggleGroupItem v-for="item in items" :key="item.name" :value="item.name" :disabled="item.disabled" class="page-tabs__item">
+          <span class="page-tabs__label">{{ item.label }}</span><span v-if="item.badge != null && item.badge !== ''" class="page-tabs__badge">{{ item.badge }}</span>
+        </ToggleGroupItem>
+      </ToggleGroup>
       <div v-if="$slots.trailing" class="page-tabs__trailing">
         <slot name="trailing" />
       </div>
@@ -196,14 +205,14 @@ const value = computed({
   left: 10px;
 }
 
-.page-tabs--underline .page-tabs__item[data-state='active'] {
+.page-tabs--underline .page-tabs__item:is([data-state='active'], [data-state='on']) {
   background: transparent;
   box-shadow: none;
   color: var(--text-primary);
   font-weight: 600;
 }
 
-.page-tabs--underline .page-tabs__item[data-state='active']::after {
+.page-tabs--underline .page-tabs__item:is([data-state='active'], [data-state='on'])::after {
   opacity: 1;
   transform: scaleX(1);
 }
@@ -237,7 +246,7 @@ const value = computed({
   color: var(--text-primary);
 }
 
-.page-tabs--pill .page-tabs__item[data-state='active'] {
+.page-tabs--pill .page-tabs__item:is([data-state='active'], [data-state='on']) {
   background: var(--surface);
   color: var(--text-primary);
   font-weight: 600;
@@ -272,7 +281,7 @@ const value = computed({
   transition: all var(--dur-fast) var(--ease);
 }
 
-.page-tabs__item[data-state='active'] .page-tabs__badge {
+.page-tabs__item:is([data-state='active'], [data-state='on']) .page-tabs__badge {
   background: var(--seal-soft);
   color: var(--seal-ink);
 }

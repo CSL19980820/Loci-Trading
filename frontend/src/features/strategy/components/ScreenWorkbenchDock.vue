@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useId } from 'vue'
+const dockPanelId = useId()
 import { computed } from 'vue'
 import { X as Close } from '@lucide/vue'
 
@@ -81,13 +83,13 @@ function onDiagClick(line?: number | null): void {
     aria-label="结果坞"
   >
     <header class="side-dock__bar">
-      <PageTabs v-model="tabModel" :items="tabs" variant="pill" dense :sticky="false" aria-label="结果坞分区" class="side-dock__tabs" />
+      <PageTabs :panel-id="dockPanelId" v-model="tabModel" :items="tabs" variant="pill" dense :sticky="false" aria-label="结果坞分区" class="side-dock__tabs" />
       <Button access="read" variant="ghost" size="icon-xs" aria-label="收起结果面板" @click="emit('close')">
         <Close aria-hidden="true" />
       </Button>
     </header>
 
-    <div v-busy="screenBusy" class="side-dock__body">
+    <div v-busy="screenBusy" class="side-dock__body" :id="dockPanelId" role="tabpanel" tabindex="0" :aria-labelledby="`${dockPanelId}-tab-${activeTab}`">
       <div v-if="assistSlot" v-show="activeTab === 'assist'" class="dock-pane dock-pane--assist">
         <slot name="assist" />
       </div>

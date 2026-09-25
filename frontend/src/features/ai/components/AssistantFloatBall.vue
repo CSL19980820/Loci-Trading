@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { MessageCircle as ChatDotRound, X as Close } from '@lucide/vue'
+import { Button } from '@/shared/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -114,7 +115,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 <template>
   <Tooltip>
     <TooltipTrigger as-child>
-      <button
+      <Button access="read" variant="ghost"
         type="button"
         class="assistant-float-ball"
         :class="{ 'is-busy': busy, 'is-open': open, 'is-unavailable': unavailable, 'is-dragging': dragging }"
@@ -133,7 +134,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
           <ChatDotRound v-else />
         </span>
         <span v-if="busy && !open" class="assistant-float-ball__pulse" aria-hidden="true" />
-      </button>
+      </Button>
     </TooltipTrigger>
     <TooltipContent side="left">
       {{ unavailable ? '请先在设置里配置模型' : open ? '关闭 Loci 助手 · Esc' : '打开 Loci 助手 · Ctrl+/' }}

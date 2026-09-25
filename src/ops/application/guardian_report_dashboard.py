@@ -267,5 +267,7 @@ def render_guardian_dashboard(period: str, day: str, result: dict) -> str:
         raise ValueError('报告类型或日期与快照不一致')
     date_label = f'{facts.get("start_date", day)} — {day}' if period == 'weekly' else day
     return render_shared_document(report_sections(facts, analysis),
-        title=f'{date_label} · {PERIOD_LABELS[period]}', owner='自主交易员',
-        created_at=result.get('created_at', ''), revision=int(result.get('revision', 1)))
+        title=f'{date_label} · {PERIOD_LABELS[period]}', owner='天才交易员',
+        created_at=result.get('created_at', ''), revision=int(result.get('revision', 1)),
+        superseded=bool(result.get('_superseded')),
+        replacement_url=str(result.get('_superseded_by') or ''))

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
 import { StatusBadge } from '@/shared/components/ui/app/presentation'
 
@@ -7,7 +8,7 @@ import { StatusBadge } from '@/shared/components/ui/app/presentation'
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { LoaderCircle, RefreshCw, Search } from '@lucide/vue'
+import { RefreshCw, Search } from '@lucide/vue'
 
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
@@ -241,7 +242,7 @@ function onToolbarRefresh(): void {
       />
       <div class="history-panel__actions">
         <Button access="read" :disabled="loading" @click="handleSearch">
-          <LoaderCircle v-if="loading" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="loading" class="size-4 animate-spin" aria-hidden="true" />
           <Search v-else class="size-4" aria-hidden="true" />
           查询
         </Button>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { ref } from 'vue'
-import { Eye, EyeOff, LoaderCircle, Lock, User } from '@lucide/vue'
+import { Eye, EyeOff, Lock, User } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
@@ -86,7 +87,7 @@ const revealed = ref<boolean>(false)
       </div>
 
       <Button type="submit" :disabled="submitting" class="login-submit">
-        <LoaderCircle v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        <Spinner v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
         {{ submitting ? '登录中' : '登录' }}
       </Button>
     </form>

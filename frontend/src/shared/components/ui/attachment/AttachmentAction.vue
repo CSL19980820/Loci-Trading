@@ -21,6 +21,9 @@ const props = withDefaults(defineProps<Props>(), {
     data-slot="attachment-action"
     :variant="variant"
     :size="size"
+    :class="props.class"
+    :as="as"
+    :as-child="asChild"
   >
     <slot />
   </Button>

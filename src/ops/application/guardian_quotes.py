@@ -40,7 +40,7 @@ def validated_quotes(quotes: dict[str, dict[str, Any]], now: datetime) -> dict[s
 
 def executable_quote(code: str, action: str, quantity: int, quote: dict[str, Any], now: datetime,
                      *, used_quantity: int = 0, paper: bool = False) -> dict[str, Any]:
-    """自主交易员仅按有效行情价模拟；其他调用方保留严格盘口撮合。"""
+    """天才交易员仅按有效行情价模拟；其他调用方保留严格盘口撮合。"""
     if paper:
         problem = quote_error(code, quote, now)
         if problem:

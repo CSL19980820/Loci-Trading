@@ -83,6 +83,52 @@ def previous_day(market: Any, day: str) -> str:
     return previous
 
 
+def _recover_closing_quote(market: Any, code: str, day: str, closed_at: datetime) -> None:
+    """持仓缺少定稿日线时定向补数；证券目录可能尚未收录新票。"""
+    if datetime.now(TZ) < closed_at:
+        raise ValueError(f"{code} {day} 尚未收盘，不能补取收盘日线")
+
+    from src.market.infrastructure.adapters.tdx_adapter import TdxAdapter
+    from src.market.infrastructure.adapters.wudao_adapter import WudaoAdapter, wudao_adapter_enabled
+
+    def bar_for_day(frame: Any) -> dict[str, Any] | None:
+        if frame is None or frame.empty:
+            return None
+        for row in reversed(frame.to_dict("records")):
+            if str(row.get("date") or "")[:10].replace("-", "") != day.replace("-", ""):
+                continue
+            try:
+                prices = {field: float(row[field]) for field in ("open", "high", "low", "close")}
+            except (KeyError, TypeError, ValueError):
+                return None
+            if (not all(math.isfinite(value) and value > 0 for value in prices.values())
+                    or prices["high"] < max(prices.values())
+                    or prices["low"] > min(prices.values())):
+                return None
+            return {"date": day, **prices, "volume": row.get("volume"), "amount": row.get("amount")}
+        return None
+
+    wudao = None
+    if wudao_adapter_enabled():
+        try:
+            # MCP 的收盘态缓存会拒绝复用盘中半截 K 线；只取本日原始 OHLC。
+            wudao = bar_for_day(WudaoAdapter().fetch_daily_many([code], bars=150).get(code))
+        except Exception:
+            pass
+    tdx = None
+    try:
+        tdx = bar_for_day(TdxAdapter().fetch_daily_window(code, bars=150))
+    except Exception:
+        pass
+    if wudao and tdx and abs(wudao["close"] - tdx["close"]) > 0.011:
+        raise ValueError(f"{code} {day} 悟道与通达信收盘价不一致，拒绝日结")
+    if tdx:
+        market.upsert_quote_bars([{"code": code, **tdx}], source="tdx")
+    elif wudao:
+        # 悟道 volume 为手，而本地日线约定为股；日结只需价格，避免污染量额。
+        market.upsert_quote_bars([{"code": code, **wudao, "volume": None, "amount": None}], source="wudao")
+
+
 def closing_account(market: Any, trades: list[dict], day: str, initial: int) -> dict[str, Any]:
     state = guardian_account_at(trades, day, initial_cents=initial)
     closed_at = datetime.combine(date.fromisoformat(day), time(15), TZ)
@@ -90,13 +136,26 @@ def closing_account(market: Any, trades: list[dict], day: str, initial: int) -> 
     sources = []
     for p in state["positions"]:
         frame = market.history(p["code"], start=day, end=day, adjust="none")
+        needs_recovery = frame.empty
+        if not needs_recovery:
+            candidate = frame.iloc[-1]
+            needs_recovery = str(candidate.get("source")) not in {"tdx", "tdx_daily", "wudao"}
+            try:
+                fetched = datetime.fromisoformat(str(candidate.get("fetched_at") or ""))
+                fetched = fetched.replace(tzinfo=fetched.tzinfo or timezone.utc)
+                needs_recovery = needs_recovery or fetched < closed_at
+            except ValueError:
+                needs_recovery = True
+        if needs_recovery:
+            _recover_closing_quote(market, p["code"], day, closed_at)
+            frame = market.history(p["code"], start=day, end=day, adjust="none")
         if frame.empty:
             raise ValueError(f"{p['code']} 缺少 {day} 收盘日线，等待行情落库")
         row = frame.iloc[-1].to_dict()
         close = row.get("close")
         if str(row.get("trade_date")) != day or not isinstance(close, (int, float)) or not math.isfinite(close) or close <= 0:
             raise ValueError(f"{p['code']} 收盘价格无效")
-        if row.get("source") not in {"tdx", "tdx_daily"}:
+        if row.get("source") not in {"tdx", "tdx_daily", "wudao"}:
             raise ValueError(f"{p['code']} 尚无权威收盘日线，当前来源 {row.get('source')}")
         try:
             fetched = datetime.fromisoformat(str(row.get("fetched_at") or ""))
@@ -114,6 +173,65 @@ def closing_account(market: Any, trades: list[dict], day: str, initial: int) -> 
     result["valuation_date"] = day
     result["closing_sources"] = sources
     return result
+
+
+def prior_auction_evidence(ledger: Any, day: str) -> list[dict[str, Any]]:
+    """给跨日竞价归因提供原始轮次摘要，不以旧日报观点代替回执。"""
+    target = date.fromisoformat(day)
+    start = (target - timedelta(days=7)).isoformat()
+    end = (target - timedelta(days=1)).isoformat()
+    days = scheduled_trading_days(start, end)[-2:]
+    if not days:
+        return []
+    prior_cycles = ledger.cycles_between(days[0], days[-1])
+    cycles_by_slot = {str(c.get('slot') or ''): c for c in prior_cycles}
+    rows = []
+    for cycle in prior_cycles:
+        slot = str(cycle.get("slot") or "")
+        if slot[:10] not in days or slot[11:16] not in {"09:25", "09:30"}:
+            continue
+        result = cycle.get("result") or {}
+        rows.append({
+            "id": f"cycle:{slot}", "slot": slot, "status": cycle.get("status"),
+            "analysis_only": bool(result.get("analysis_only")),
+            "risk_only": bool(result.get("risk_only")),
+            "decisions": len(result.get("decisions") or []),
+            "deferred": len(result.get("deferred") or []),
+            "opening_plans": len(result.get("opening_plans") or []),
+            "fills": len(result.get("fills") or []),
+            "rejects": [{"code": r.get("code"), "reject_code": r.get("reject_code")}
+                        for r in result.get("rejects") or []],
+            "error": result.get("error"),
+        })
+    for row in rows:
+        if row['slot'][11:16] != '09:25':
+            continue
+        archived = {'available': False, 'items': []}
+        report = ledger.report('daily', row['slot'][:10]) if hasattr(ledger, 'report') else None
+        if report and report.get('status') == 'success':
+            plans = (report.get('result', {}).get('facts') or {}).get('opening_plan_reconciliation')
+            if isinstance(plans, list):
+                source = cycles_by_slot[row['slot']].get('result') or {}
+                source_ids = {p.get('id') for p in source.get('opening_plans') or []}
+                verified = []
+                for plan in plans:
+                    if not isinstance(plan, dict) or plan.get('source_slot') != row['slot'] or plan.get('id') not in source_ids:
+                        continue
+                    reviewed_slot = str(plan.get('last_review_slot') or '')
+                    reviewed = cycles_by_slot.get(reviewed_slot)
+                    if reviewed_slot[:10] != row['slot'][:10] or reviewed is None:
+                        continue
+                    updates = (reviewed.get('result') or {}).get('opening_plan_updates') or []
+                    if not any(u.get('plan_id') == plan['id'] and u.get('status') == plan.get('status') for u in updates):
+                        continue
+                    verified.append({'id': plan['id'], 'code': (plan.get('order') or {}).get('code'),
+                                     'source_slot': row['slot'], 'last_review_slot': reviewed_slot,
+                                     'status': plan['status'], 'filled_quantity': plan.get('filled_quantity', 0)})
+                archived = {'available': True, 'items': verified,
+                            'unverified_count': len(plans) - len(verified),
+                            'source': 'archived_daily_facts_checked_against_cycles'}
+        row['archived_opening_plan_followup'] = archived
+    return rows
 
 
 def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: datetime) -> dict[str, Any]:
@@ -181,6 +299,7 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
     from src.ops.application.guardian_evidence import cycle_evidence
     cycle_rows = [{k: v for k, v in cycle_evidence(c).items() if k not in {"input_candidates", "account_before"}}
                   for c in cycles]
+    prior_auction = prior_auction_evidence(ledger, day) if period != "premarket" else []
     earlier = [r for r in ledger.reports(30) if _report_available_as_of(r, memory_cutoff) and r["trade_date"] <= day
                and (r["period"], r["trade_date"]) != (period, day)]
     if period == "weekly":
@@ -228,6 +347,7 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
             "close_drawdown_pct": round(drawdown, 4), "equity_points": points,
             "allocation_points": allocation_points,
             "trades": period_trades, "stock_performance": list(by_code.values()), "cycles": cycle_rows,
+            "prior_auction_cycles": prior_auction,
             "next_trade_date": next_trade_date,
             "planning_trade_date": day if period == "premarket" else next_trade_date,
             "planning_sellable": [{"code": p["code"], "quantity": p["available_quantity"] if period == "premarket" else p["quantity"]} for p in account["positions"]],
@@ -235,4 +355,4 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
             "current_plans": [{k: p.get(k) for k in ("code", "holding_plan", "take_profit_plan", "stop_loss_plan", "exit_today_plan")} for p in current["positions"]] if day == now.date().isoformat() else [],
             "previous_reviews_as_of": memory_cutoff.isoformat(),
             "previous_reviews": [{"id": r["report_key"], "date": r["trade_date"], "analysis": r["result"].get("analysis")} for r in earlier[:5]],
-            "evidence_ids": [f"experience:{experience['revision']}:{item['id']}" for item in experience['items']] + [r['report_key'] for r in daily_learning] + [f"trade:{t['id']}" for t in period_trades] + [c["id"] for c in cycle_rows] + [f"close:{p['code']}:{account['valuation_at'][:10]}" for p in account["positions"]] + [r["report_key"] for r in earlier[:5]]}
+            "evidence_ids": [f"experience:{experience['revision']}:{item['id']}" for item in experience['items']] + [r['report_key'] for r in daily_learning] + [f"trade:{t['id']}" for t in period_trades] + [c["id"] for c in cycle_rows] + [c["id"] for c in prior_auction] + [f"close:{p['code']}:{account['valuation_at'][:10]}" for p in account["positions"]] + [r["report_key"] for r in earlier[:5]]}

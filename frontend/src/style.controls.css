@@ -10,19 +10,13 @@
 .action-button[data-tone='warning'] { color:var(--warn); }
 
 /* ─── 文本框 ─── */
-.text-field { display:flex; width:100%; min-width:0; align-items:stretch; }
-.text-field__body { position:relative; min-width:0; width:100%; flex:1; }
-.text-field__control { width:100%; min-width:0; font:inherit; background:var(--surface); }
-.text-field__control.has-prefix { padding-left:2.1rem; }
-.text-field__control.has-suffix { padding-right:2.4rem; }
-.text-field__prefix, .text-field__suffix { position:absolute; top:0; bottom:0; display:flex; gap:.25rem; align-items:center; color:var(--text-tertiary); }
-.text-field__prefix { left:.65rem; pointer-events:none; }
-.text-field__suffix { right:.5rem; }
-.text-field__addon { display:flex; align-items:center; padding:0 .65rem; border:1px solid var(--border-default); background:var(--surface-sunken); color:var(--text-tertiary); font-size:var(--fs-aux); }
-.text-field__addon:first-child { border-right:0; border-radius:var(--radius) 0 0 var(--radius); }
-.text-field__addon:last-child { border-left:0; border-radius:0 var(--radius) var(--radius) 0; }
-.text-field:has(> .text-field__addon:first-child) .text-field__control { border-top-left-radius:0; border-bottom-left-radius:0; }
-.text-field:has(> .text-field__addon:last-child) .text-field__control { border-top-right-radius:0; border-bottom-right-radius:0; }
+.text-field { display:flex; flex-direction:column; width:100%; min-width:0; }
+.text-field__group { min-width:0; height:var(--ctl-h); box-shadow:none; background:var(--surface); }
+.text-field__group--textarea { height:auto; }
+.text-field__control { width:100%; min-width:0; font:inherit; background:transparent; }
+.text-field__group > .text-field__control { border:0; box-shadow:none; }
+.text-field__prefix, .text-field__suffix { position:static; display:flex; gap:.25rem; align-items:center; color:var(--text-tertiary); padding-block:0; }
+.text-field__addon { display:flex; align-items:center; padding:0 .65rem; background:var(--surface-sunken); color:var(--text-tertiary); font-size:var(--fs-aux); align-self:stretch; }
 .text-field__count { display:block; text-align:right; color:var(--text-tertiary); font-size:var(--fs-kicker); font-family:var(--mono); padding:.2rem .15rem; }
 .number-input { display:inline-block; width:100%; min-width:0; }
 .number-input input { font-variant-numeric:tabular-nums; font-family:var(--mono); background:var(--surface); }
@@ -235,7 +229,7 @@
 
 /* ─── 忙碌遮罩 ─── */
 .busy-overlay { position:absolute; inset:0; z-index:8; display:flex; align-items:center; justify-content:center; background:color-mix(in oklab, var(--surface) 70%, transparent); backdrop-filter:blur(1px); cursor:progress; }
-.busy-overlay__spinner { width:1.5rem; height:1.5rem; border:2px solid color-mix(in oklab, var(--seal) 20%, transparent); border-top-color:var(--seal); border-radius:50%; animation:busy-spin .7s linear infinite; }
+.busy-overlay__spinner { width:1.5rem; height:1.5rem; color:var(--seal); }
 @keyframes busy-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion:reduce) { .busy-overlay__spinner { animation-duration:1.8s; } .nav-group__chevron { transition:none; } }
 @media (min-width:640px) { .grid-column { grid-column:span var(--span-sm,var(--span,24)); } }

@@ -6,6 +6,8 @@ submission, including an error before the first response header or SSE delta.
 from __future__ import annotations
 
 import logging
+import asyncio
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -54,6 +56,12 @@ def request_metadata(config):
 
 
 def request_timeout(request, config):
+    deadline = request.extensions.get("loci_deadline")
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("model RPC deadline exceeded")
+        return remaining
     values = [v for v in request.extensions.get("timeout", {}).values() if isinstance(v, (int, float)) and v > 0]
     return min(values) if values else config.timeout
 
@@ -117,7 +125,7 @@ class GrpcTransport(httpx2.BaseTransport):
                 return self.fallback.handle_request(request)
             raise fail(exc) from None
         call = self.stub.Exchange(wire.ModelRequest(provider=provider(self.config), json_body=request.read()),
-                                  timeout=timeout, metadata=metadata)
+                                  timeout=request_timeout(request, self.config), metadata=metadata)
         try:
             return response_from(next(call), _SyncBody(call))
         except (grpc.RpcError, StopIteration) as exc:
@@ -133,18 +141,23 @@ class GrpcTransport(httpx2.BaseTransport):
 
 
 class _AsyncBody(httpx2.AsyncByteStream):
-    def __init__(self, call):
+    def __init__(self, call, read_timeout=None):
         self.call = call
+        self.read_timeout = read_timeout
 
     async def __aiter__(self):
         try:
             while True:
-                frame = await self.call.read()
+                async with asyncio.timeout(self.read_timeout):
+                    frame = await self.call.read()
                 if frame is grpc.aio.EOF:
                     return
                 if frame.WhichOneof("payload") != "body":
                     raise LLMNoReplayError("gRPC流返回了重复响应头")
                 yield frame.body
+        except TimeoutError:
+            self.call.cancel()
+            raise httpx2.ReadTimeout("gRPC stream inactive beyond read timeout") from None
         except grpc.RpcError as exc:
             raise fail(exc) from None
 
@@ -174,12 +187,12 @@ class AsyncGrpcTransport(httpx2.AsyncBaseTransport):
                 return await self.fallback.handle_async_request(request)
             raise fail(exc) from None
         call = self.stub.Exchange(wire.ModelRequest(provider=provider(self.config), json_body=await request.aread()),
-                                  timeout=timeout, metadata=metadata)
+                                  timeout=request_timeout(request, self.config), metadata=metadata)
         try:
             first = await call.read()
             if first is grpc.aio.EOF:
                 raise LLMNoReplayError("gRPC响应为空；未重放请求")
-            return response_from(first, _AsyncBody(call))
+            return response_from(first, _AsyncBody(call, request.extensions.get("timeout", {}).get("read")))
         except grpc.RpcError as exc:
             call.cancel()
             raise fail(exc) from None

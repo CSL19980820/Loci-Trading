@@ -22,7 +22,7 @@ import {
 import { copyText } from '@/shared/lib/clipboard'
 import type { JobRun } from '@/shared/types/quant'
 
-import { cnStrategyName, formatRunDuration, statusLabel, triggerLabel } from '../composables/opsLabels'
+import { cnStrategyName, formatRunDuration, statusLabel, traderJobName, triggerLabel } from '../composables/opsLabels'
 
 const props = defineProps<{
   modelValue: boolean
@@ -50,7 +50,7 @@ const jobLabel = computed(() => {
   const name = String(run?.job_name || '').trim()
   if (!name) return String(run?.job_id || '—')
   const bound = /^(?:screen|skill):(.+)$/.exec(name)
-  return bound ? cnStrategyName('', bound[1]) : name
+  return bound ? cnStrategyName('', bound[1]) : traderJobName(run?.kind || '', name)
 })
 
 /** 复制时连同时间与任务名一起给出：贴到群里问人时，光有堆栈没人知道是哪条。 */

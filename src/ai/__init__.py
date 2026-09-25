@@ -6,6 +6,7 @@ from src.ai.application.quota import (
     record_llm_usage,
 )
 from src.ai.application.retention import purge_ai_retention
+from src.ai.infrastructure.assistant_store_util import redact as redact_assistant_payload
 from src.ai.infrastructure.chat_retry import chat_text_with_thinking_fallback
 from src.ai.infrastructure.client import (
     PROTOCOLS,
@@ -48,6 +49,7 @@ __all__ = [
     "migrate_encrypted_llm_keys",
   "purge_ai_retention",
     "record_llm_usage",
+    "redact_assistant_payload",
     "refresh_models",
     "resolve_config",
     "save_provider",

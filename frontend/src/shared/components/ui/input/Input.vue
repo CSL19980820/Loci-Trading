@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFieldControl } from '../app/context'
 import type { HTMLAttributes } from "vue"
 import { useVModel } from "@vueuse/core"
 import { cn } from '@/shared/lib/utils'
@@ -22,10 +23,12 @@ const modelValue = useVModel(props, "modelValue", emits, {
   passive: true,
   defaultValue: props.defaultValue,
 })
+const field = useFieldControl()
 </script>
 
 <template>
   <input
+    v-bind="field.bindings.value"
     v-model="modelValue"
     data-slot="input"
     :data-size="size ?? 'default'"

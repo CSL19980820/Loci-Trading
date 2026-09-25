@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, useAttrs, type Component } from 'vue'
-import { LoaderCircle } from '@lucide/vue'
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Button, type ButtonVariants } from '../button'
 import { useFieldControl } from './context'
 defineOptions({ inheritAttrs: false })
@@ -20,7 +20,7 @@ const size = computed<ButtonVariants['size']>(() => {
 <template>
   <Button v-bind="attrs" class="action-button" :variant="variant" :size="size" :type="type"
     :disabled="disabled || busy || field.disabled.value" :aria-busy="busy || undefined" :data-tone="tone">
-    <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+    <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
     <component :is="icon" v-else-if="icon" class="size-4" aria-hidden="true" />
     <slot />
   </Button>

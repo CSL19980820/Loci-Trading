@@ -41,7 +41,7 @@ export function guardianCard(value: GuardianSummary | GuardianCard): AgentCardDa
     ? value.position_count
     : Array.isArray(state.positions) ? state.positions.length : 0
   return {
-    id: 'guardian', name: '自主交易员', kind: 'guardian', subtitle: '工坊战法 · 持仓管理',
+    id: 'guardian', name: '天才交易员', kind: 'guardian', subtitle: '工坊战法 · 持仓管理',
     enabled: value.config.enabled, running, failed,
     status: running ? '正在研究' : failed ? '运行异常' : value.config.enabled ? '运行中' : '已暂停',
     model: value.config.model || '', summary: run?.result.error || run?.result.analysis || '等待首次工作',

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, type Component } from 'vue'
-import { Download, LoaderCircle, Plus, Trash2, Upload } from '@lucide/vue'
+import { Download, Plus, Trash2, Upload } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
 
@@ -74,7 +75,7 @@ function variantOf(kind: Preset['kind']) {
       class="m-0"
       @click="action.onClick()"
     >
-      <LoaderCircle v-if="action.loading" class="animate-spin" aria-hidden="true" />
+      <Spinner v-if="action.loading" class="animate-spin" aria-hidden="true" />
       <component :is="action.icon" v-else aria-hidden="true" />
       {{ action.label }}
     </Button>

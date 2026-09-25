@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoaderCircle } from '@lucide/vue'
+import { Spinner } from '@/shared/components/ui/spinner'
 
 import { Button } from '@/shared/components/ui/button'
 import { Input } from '@/shared/components/ui/input'
@@ -50,13 +50,13 @@ const emit = defineEmits<{
           :disabled="resendCountdown > 0 || resending"
           @click="emit('resend')"
         >
-          <LoaderCircle v-if="resending" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="resending" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           {{ resendCountdown > 0 ? `${resendCountdown}s 后重发` : '重新发送' }}
         </Button>
       </div>
 
       <Button type="submit" :disabled="submitting" class="login-submit">
-        <LoaderCircle v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        <Spinner v-if="submitting" class="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
         {{ submitting ? '验证中' : '完成验证并进入' }}
       </Button>
     </form>

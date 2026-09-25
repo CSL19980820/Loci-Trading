@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 /**
  * 战法监测调参：每段流水线可启停，每档阈值可改。
  *
@@ -6,7 +7,7 @@
  * 不会出现「代码里能调、界面上看不到」。值域同样由后端钳边界。
  */
 import { computed, ref, watch } from 'vue'
-import { LoaderCircle, TriangleAlert } from '@lucide/vue'
+import { TriangleAlert } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 
 import { getWatchTuning, resetWatchTuning, saveWatchTuning } from '@/shared/api/quant_ops'
@@ -194,11 +195,11 @@ defineExpose({ load })
 
       <div class="bar">
         <Button :disabled="!available || saving" @click="save">
-          <LoaderCircle v-if="saving" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="saving" class="size-4 animate-spin" aria-hidden="true" />
           保存调参
         </Button>
         <Button variant="outline" :disabled="!available || saving" @click="reset">
-          <LoaderCircle v-if="saving" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="saving" class="size-4 animate-spin" aria-hidden="true" />
           恢复默认
         </Button>
         <span class="dim">越界值会被后端钳到合法区间</span>

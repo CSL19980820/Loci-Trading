@@ -1,5 +1,5 @@
 /* ─── 遮罩：桌面透明点外即关；宽屏工作台加一层淡墨 + 模糊 ─── */
-.assistant-overlay {
+:global(.assistant-overlay) {
   position: fixed;
   inset: 0;
   z-index: var(--z-popup);
@@ -8,7 +8,7 @@
   background: color-mix(in oklab, var(--n-12) 10%, transparent);
 }
 
-.assistant-overlay.is-wide {
+:global(.assistant-overlay.is-wide) {
   background: color-mix(in oklab, var(--n-12) 28%, transparent);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
@@ -304,7 +304,7 @@
 
 /* ─── 手机：铺满整屏，安全区留白 ─── */
 @media (max-width: 640px) {
-  .assistant-overlay {
+  :global(.assistant-overlay) {
     background: transparent;
   }
 

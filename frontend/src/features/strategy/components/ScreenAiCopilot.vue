@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed } from 'vue'
-import { LoaderCircle, Sparkles } from '@lucide/vue'
+import { Sparkles } from '@lucide/vue'
 
 import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { Button } from '@/shared/components/ui/button'
@@ -124,7 +125,7 @@ const modelListId = 'screen-ai-copilot-models'
         :disabled="!canGenerate || busy"
         @click="emit('generate')"
       >
-        <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+        <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
         <Sparkles v-else />
         {{ compact ? '生成并应用' : '应用 AI 建议' }}
       </Button>

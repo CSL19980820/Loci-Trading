@@ -28,6 +28,45 @@ _SECRET_VALUE = re.compile(r"(?:sk-|Bearer\s+)[A-Za-z0-9._-]+", re.I)
 _URL = re.compile(r"https?://[^\s'\"]+", re.I)
 
 
+def _redact_urls(text: str) -> str:
+    """Hide destinations without consuming the Markdown that encloses them.
+
+    Simply excluding ')' from the URL regex would expose the rest of URLs that
+    contain balanced parentheses (including query parameters). Identify the outer
+    closing delimiter instead, and keep processing subsequent URLs in the suffix.
+    """
+    parts: list[str] = []
+    cursor = 0
+    while match := _URL.search(text, cursor):
+        start, end = match.span()
+        prefix = text[max(0, start - 256):start]
+        value = match.group()
+        if re.search(r"\]\(\s*$", prefix):
+            depth, escaped = 0, False
+            for index, char in enumerate(value):
+                if escaped:
+                    escaped = False
+                elif char == '\\':
+                    escaped = True
+                elif char == '(':
+                    depth += 1
+                elif char == ')':
+                    if depth == 0:
+                        end = start + index
+                        break
+                    depth -= 1
+        elif prefix.endswith('<') and '>' in value:
+            end = start + value.index('>')
+        else:
+            emphasis = re.search(r"(\*\*|__|~~|\*|_|`)$", prefix)
+            if emphasis and value.endswith(emphasis.group()):
+                end -= len(emphasis.group())
+        parts.extend((text[cursor:start], '[URL]'))
+        cursor = end
+    parts.append(text[cursor:])
+    return ''.join(parts)
+
+
 def redact(value: Any) -> Any:
     """用于持久化和事件的最小脱敏，不改变内存中的实际执行参数。"""
     if isinstance(value, dict):
@@ -38,7 +77,7 @@ def redact(value: Any) -> Any:
         # 附图 data URL 需完整保留给多模态；普通文本仍截断防日志膨胀
         if value.startswith("data:image/"):
             return value[:5_000_000]
-        return _URL.sub("[URL]", _SECRET_VALUE.sub("[REDACTED]", value))[:8000]
+        return _redact_urls(_SECRET_VALUE.sub("[REDACTED]", value))[:8000]
     return value
 
 

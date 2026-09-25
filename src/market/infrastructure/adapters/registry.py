@@ -10,6 +10,10 @@ from src.market.infrastructure.adapters.base import MarketAdapter
 from src.market.infrastructure.adapters.baostock_adapter import BaostockAdapter
 from src.market.infrastructure.adapters.eastmoney_adapter import EastmoneyAdapter
 from src.market.infrastructure.adapters.exchange_list_adapter import ExchangeListAdapter
+from src.market.infrastructure.adapters.hithink_adapter import (
+    HithinkAdapter,
+    hithink_adapter_enabled,
+)
 from src.market.infrastructure.adapters.sina_adapter import SinaAdapter
 from src.market.infrastructure.adapters.tdx_adapter import TdxAdapter
 from src.market.infrastructure.adapters.tencent_adapter import TencentAdapter
@@ -19,6 +23,7 @@ from src.market.infrastructure.adapters.wudao_adapter import WudaoAdapter, wudao
 def _build_default() -> list[MarketAdapter]:
     adapters: list[MarketAdapter] = [
         TdxAdapter(),
+        HithinkAdapter(),
         WudaoAdapter(),
     ]
     adapters.extend(
@@ -37,6 +42,8 @@ def _runtime_enabled(adapter: MarketAdapter) -> bool:
     """运行时可选源判定；配置变化无需重启进程或重建注册表。"""
     if adapter.meta.id == WudaoAdapter.meta.id:
         return wudao_adapter_enabled()
+    if adapter.meta.id == HithinkAdapter.meta.id:
+        return hithink_adapter_enabled()
     return True
 
 

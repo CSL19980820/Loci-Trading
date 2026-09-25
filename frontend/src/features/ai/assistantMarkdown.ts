@@ -1,7 +1,40 @@
 import createDOMPurify from 'dompurify'
-import { marked } from 'marked'
+import { Marked } from 'marked'
 
-marked.setOptions({ breaks: true, gfm: true })
+/**
+ * Older stored messages replaced the URL and its adjacent Markdown delimiters
+ * with [URL]. Only degrade that exact placeholder in ordinary text tokens:
+ * the original destination/emphasis cannot be recovered from history.
+ */
+function readableRedactedText(text: string): string {
+  return text.split('\n').map((line) => {
+    const damagedLink = /\[([^\]\n]+)\]\(\[URL\](?!\))/g
+    if (!damagedLink.test(line)) return line
+    // A parsed strong token is already valid. This lone leading marker belongs
+    // to the plain-text fallback of the old, unterminated emphasis.
+    const plain = /^\s*\*\*/.test(line) && (line.match(/\*\*/g)?.length ?? 0) === 1
+      ? line.replace(/^(\s*)\*\*/, '$1')
+      : line
+    return plain.replace(damagedLink, '$1（链接已隐藏）')
+  }).join('\n')
+}
+
+const markdown = new Marked({
+  breaks: true,
+  gfm: true,
+  walkTokens(token) {
+    if (token.type === 'text' && !token.tokens && typeof token.text === 'string') {
+      token.text = readableRedactedText(token.text)
+    }
+  },
+  renderer: {
+    link({ href, tokens }) {
+      // A retained delimiter still does not turn a redaction marker into a URL.
+      if (href === '[URL]') return `${this.parser.parseInline(tokens)}（链接已隐藏）`
+      return false
+    },
+  },
+})
 
 const SAFE_URI = /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
 
@@ -26,7 +59,7 @@ function stripDangerousHtml(html: string): string {
 export function renderAssistantMarkdown(source: string): string {
   const text = source.trim()
   if (!text) return ''
-  const html = marked.parse(text, { async: false }) as string
+  const html = markdown.parse(text, { async: false }) as string
   const instance = getPurify()
   const cleaned = instance
     ? instance.sanitize(html, {

@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
+import { Button } from '@/shared/components/ui/button'
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { ChevronRight, CircleCheck, CircleX, LoaderCircle } from '@lucide/vue'
+import { ChevronRight, CircleCheck, CircleX } from '@lucide/vue'
 
 import { toolLabel } from '../toolLabel'
 import { formatToolPreview } from '../toolPreview'
@@ -98,13 +100,13 @@ const argsText = computed(() => {
     }"
     data-testid="assistant-receipt-row"
   >
-    <CollapsibleTrigger
+    <CollapsibleTrigger as-child><Button access="read" variant="ghost"
       type="button"
       class="assistant-receipt-row__head"
       :aria-expanded="open"
     >
       <span class="assistant-receipt-row__status" aria-hidden="true">
-        <LoaderCircle v-if="tool.status === 'running'" class="assistant-receipt-row__spin" />
+        <Spinner v-if="tool.status === 'running'" class="assistant-receipt-row__spin" />
         <CircleX v-else-if="tool.status === 'error'" />
         <CircleCheck v-else />
       </span>
@@ -113,7 +115,7 @@ const argsText = computed(() => {
       <span class="sr-only">{{ statusText }}</span>
       <small v-if="elapsedText" class="assistant-receipt-row__ms">{{ elapsedText }}</small>
       <ChevronRight class="assistant-receipt-row__chevron" :class="{ 'is-open': open }" aria-hidden="true" />
-    </CollapsibleTrigger>
+    </Button></CollapsibleTrigger>
     <CollapsibleContent class="assistant-receipt-row__body">
       <p v-if="tool.risk" class="assistant-receipt-row__meta">
         <UiBadge variant="warn">风险：{{ tool.risk }}</UiBadge>
@@ -142,6 +144,8 @@ const argsText = computed(() => {
   align-items: center;
   gap: var(--gap-2);
   width: 100%;
+  height: auto;
+  justify-content: flex-start;
   min-height: 34px;
   padding: 0 var(--gap-3);
   border: 0;

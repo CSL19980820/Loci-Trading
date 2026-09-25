@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { LoaderCircle, TriangleAlert } from '@lucide/vue'
+import { Spinner } from '@/shared/components/ui/spinner'
+import { TriangleAlert } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 
 import { createCandidate, createPlan, createReview } from '@/shared/api/palace'
@@ -358,7 +359,7 @@ async function submit(): Promise<void> {
       <DialogFooter class="record-dialog__footer">
         <Button access="read" type="button" variant="outline" @click="close">取消</Button>
         <Button type="button" :disabled="submitting" @click="submit">
-          <LoaderCircle v-if="submitting" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="submitting" class="size-4 animate-spin" aria-hidden="true" />
           {{ schema.submitLabel }}
         </Button>
       </DialogFooter>

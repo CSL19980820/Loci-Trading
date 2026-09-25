@@ -215,7 +215,7 @@ def render_guardian_reader(sections: list[dict], *, facts: dict, analysis: dict,
     chart = _equity_figure(facts) if period == 'weekly' else _contribution_figure(facts)
     tracker = f'<span class="exposure-track" aria-hidden="true"><i style="width:{max(0, min(100, exposure)):.3f}%"></i></span>' if exposure is not None else ''
     cover = f'''<section class="cover" id="overview" aria-labelledby="report-title">
-<div class="cover-title"><div><p class="eyebrow">自主交易员 · 模拟账户</p><h1 id="report-title">{label}</h1></div>
+<div class="cover-title"><div><p class="eyebrow">天才交易员 · 模拟账户</p><h1 id="report-title">{label}</h1></div>
 <div class="cover-date"><strong>{span}</strong><span>{_text(day[:4])} 年 / {"每周回顾" if period == "weekly" else "交易日记录"}</span><span class="revision">{update}</span></div></div>
 <div class="hero"><div class="hero-lead"><div class="metric-label">{metric}</div><div class="pnl {_tone(pnl)}">{amount}<span class="unit">元</span></div>
 <div class="rate">{rate_html}</div><p class="receipt">{_text(receipt)}</p>{short_html}{exception_note}
@@ -292,10 +292,10 @@ def render_guardian_reader(sections: list[dict], *, facts: dict, analysis: dict,
                '<span class="paper-description">判断、下一步、研究与核验记录，按需阅读。</span></span>'
                '<span class="paper-cta"><span class="open-text">阅读全文</span><span class="close-text">收起全文</span>'
                '<span class="fold-icon" aria-hidden="true"></span></span></summary><div class="paper-body" id="full-report-content">' + full + '</div></details>')
-    title = f'{day} · {label} · 自主交易员 · Loci'
+    title = f'{day} · {label} · 天才交易员 · Loci'
     return f'''<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer"><title>{_text(title)}</title><style>{STYLE}</style></head>
-<body id="top"><a class="skip" href="#overview">跳到报告正文</a><header class="shell"><div class="brandbar"><div class="brand"><span class="logotype">loci<b>.</b></span><span class="byline">交易手记</span></div><span class="edition">自主交易员 / 只读报告</span></div></header>
+<body id="top"><a class="skip" href="#overview">跳到报告正文</a><header class="shell"><div class="brandbar"><div class="brand"><span class="logotype">loci<b>.</b></span><span class="byline">交易手记</span></div><span class="edition">天才交易员 / 只读报告</span></div></header>
 <div class="nav-wrap"><nav class="reader-nav" aria-label="阅读目录"><a href="#overview">账户结果</a><a href="#portfolio">持仓与计划</a><a href="#full-report-content">完整复盘</a><span class="nav-date">{_date(day, full=True)}</span></nav></div>
 <main class="shell">{cover}{portfolio}{reference_html}{article}<footer class="page-end"><p>模拟账户 · 计划不代表成交，成交以回执为准。<br>持有链接可阅读此报告，请谨慎转发。</p><a href="#top">回到顶部 ↑</a></footer></main></body></html>'''

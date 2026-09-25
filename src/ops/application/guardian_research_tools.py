@@ -264,7 +264,7 @@ class GuardianResearchTools:
 
 
 RESEARCH_WORKBENCH_RULES = """【可自主调用的研究工作台】
-悟道与system__前缀的本地系统工具同时可用，不是二选一。可自主查询全市场、网页资讯、历史行情、策略与研究证据，不必遵循固定工具调用次序。
+悟道、同花顺扶摇与system__前缀的本地系统工具同时可用。可自主查询全市场、网页资讯、历史行情、策略与研究证据，不必遵循固定工具调用次序。扶摇工具先按需发现，超长回执按next_offset继续读取。
 guardian_account_read提供实际现金、费用、可卖与锁定股数和集中度；guardian_quotes提供带来源和时点的主备报价；guardian_scenario按你设定的情景算组合损益，不替你决定可接受风险。
 guardian_preflight使用真实账本算法在副本上预演完整决策：费用、股数、现金、价格容差及T+1；不产生任何成交，也不限制持仓只数或各股仓位。可以自主调整股票、方向、股数和组合后再次预演，不受最终一次修正的收缩限制。
 预演回传decision_with_fixed_references；保留相同意图的reference_price，最终JSON沿用该固定基准，不把新报价重新当成基准叠加2%。预演有错误时自主修改，不必盲目提交再等拒单。
@@ -272,6 +272,7 @@ guardian_calculate可核对费用、收益比例与仓位算术，数值来源�
 历史疑问可用guardian_decision_history分页核对原始理由，长材料用guardian_context_read取回全文；缺失证据不能自行补造。
 guardian_review_history可跨期回读完整盘前、日复盘、周复盘、计划和研究线索；默认预载不是记忆总量，旧资料也不是当前指令。
 guardian_runtime提供真实剩余时间。研究不设固定轮数或单轮工具总次数上限；并发是资源调度而非研究范围限制。成交仍必须在本轮市场有效时间内，旧意图不得假装成新鲜可执行结论。
+工具失败时按返回原因处理：数据未就绪可先研究其他对象，再在提示的时间和本轮预算内复查；限流时减少重复请求、优先批量查询或切换独立来源，不立即反复重试。无法在本轮恢复的线索可留待后续研究，记录缺口；取数失败不等于没有机会，也不以旧数据冒充当前证据。
 """
 
 
@@ -289,11 +290,22 @@ def compose_research_tools(protocol: str, *, primary_loader: Callable[..., Any],
         source = {"label": "系统研究工作台", "wudao": False, "primary_error": str(exc)}
     # 一些系统回退已提供同名本地工具；本轮专用账户工具以不可变快照为准。
     primary = [schema for schema in primary if (schema.get("function") or schema).get("name") not in workbench.names]
-    schemas = [*primary, *workbench.schemas]
-    source = {**source, "research_workbench": True, "available_tool_count": len(schemas)}
+    from src.ops.application.guardian_tool_schema import research_tool_schemas
+    from src.ops.application.hithink_trader_tools import hithink_trader_tools
+    hithink_schemas, hithink_handlers = (
+        hithink_trader_tools(protocol, deadline=deadline, checkpoint=workbench._checkpoint)
+        if deadline is not None else ([], {})
+    )
+    original = [*primary, *workbench.schemas, *hithink_schemas]
+    schemas = research_tool_schemas(original)
+    source = {**source, "research_workbench": True, "available_tool_count": len(schemas),
+              "tool_schema_characters_before": len(json.dumps(original, ensure_ascii=False)),
+              "tool_schema_characters_after": len(json.dumps(schemas, ensure_ascii=False))}
     def execute(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name in workbench.names:
             return workbench.execute(name, arguments)
+        if name in hithink_handlers:
+            return hithink_handlers[name](name, arguments)
         if execute_primary is None:
             return {"is_error": True, "text": "该外部工具不可用；可使用system__工具或guardian_quotes核对替代数据。"}
         return execute_primary(name, arguments)

@@ -2,6 +2,7 @@
 import { Sidebar, SidebarHeader } from '@/shared/components/ui/sidebar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/shared/components/ui/tabs'
 import { computed, onMounted, ref, watch } from 'vue'
+import { PanelRightClose, PanelRightOpen } from '@lucide/vue'
 
 import type {
   AiAssistantProfile,
@@ -18,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/
 
 type InspectorTab = 'plan' | 'agents' | 'sources' | 'artifacts' | 'cabin'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   model: AssistantTaskModel
   open?: boolean
   tools?: AiToolReceipt[]
@@ -28,7 +29,13 @@ const props = defineProps<{
   memories?: AiMemoryItem[]
   /** 抽屉模式：父级贴右 / 窄屏时传 true，样式换成浮层底 */
   drawer?: boolean
-}>()
+  /** 仅呈现宿主真实支持的分区，顺序同时决定默认选中项。 */
+  visibleTabs?: InspectorTab[]
+  title?: string
+}>(), {
+  visibleTabs: () => ['plan', 'agents', 'sources', 'artifacts', 'cabin'],
+  title: '任务侧栏',
+})
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -41,7 +48,7 @@ const visible = computed({
   set: (value: boolean) => emit('update:open', value),
 })
 
-const activeTab = ref<InspectorTab>('plan')
+const activeTab = ref<InspectorTab | undefined>(props.visibleTabs[0])
 
 const memories = computed(() => props.memories ?? [])
 const usage = computed(() => props.profile?.memory_usage || { user: 0, memory: 0 })
@@ -58,19 +65,23 @@ const tabs = computed(() => {
     { value: 'artifacts', label: '产物', count: props.model.artifacts.length || undefined },
     { value: 'cabin', label: '上下文' },
   ]
-  return rows
+  return props.visibleTabs.flatMap(value => rows.filter(row => row.value === value))
+})
+
+watch(tabs, rows => {
+  if (!rows.some(row => row.value === activeTab.value)) activeTab.value = rows[0]?.value
 })
 
 watch(
   () => props.model.agents.length,
   (count, prev) => {
-    if (count > 0 && count !== prev) activeTab.value = 'agents'
+    if (count > 0 && count !== prev && props.visibleTabs.includes('agents')) activeTab.value = 'agents'
   },
 )
 
 onMounted(() => {
-  if (props.model.agents.length) activeTab.value = 'agents'
-  else if (props.model.plan.length) activeTab.value = 'plan'
+  if (props.model.agents.length && props.visibleTabs.includes('agents')) activeTab.value = 'agents'
+  else if (props.model.plan.length && props.visibleTabs.includes('plan')) activeTab.value = 'plan'
 })
 
 function planLabel(status: TaskPlanStep['status']): string {
@@ -89,7 +100,7 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
     class="assistant-task-sidebar"
     :class="{ 'is-collapsed': !visible, 'is-drawer': drawer }"
     data-testid="assistant-task-sidebar"
-    aria-label="任务侧栏"
+    :aria-label="title"
   >
     <div v-if="!visible" class="assistant-task-sidebar__rail">
       <Tooltip>
@@ -98,35 +109,35 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
             variant="ghost"
             size="icon-sm"
             class="assistant-task-sidebar__toggle"
-            access="read" aria-label="展开任务侧栏"
+            access="read" :aria-label="`展开${title}`"
             data-testid="task-sidebar-expand"
             @click="visible = true"
           >
-            <span class="assistant-panel-toggle-icon is-right" aria-hidden="true" />
+            <PanelRightOpen class="size-4" aria-hidden="true" />
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">展开侧栏</TooltipContent>
       </Tooltip>
-      <span v-if="liveAgents" class="assistant-task-sidebar__live-dot" :title="`${liveAgents} 路运行中`" />
+      <span v-if="liveAgents && visibleTabs.includes('agents')" class="assistant-task-sidebar__live-dot" :title="`${liveAgents} 路运行中`" />
     </div>
 
     <template v-else>
       <SidebarHeader class="assistant-task-sidebar__head flex-row p-0">
-        <span class="assistant-task-sidebar__title">本轮</span>
+        <span class="assistant-task-sidebar__title">{{ title === '任务侧栏' ? '本轮' : title }}</span>
         <Button access="read"
           variant="ghost"
           size="icon-sm"
           class="assistant-task-sidebar__toggle"
-          aria-label="收起任务侧栏"
+          :aria-label="`收起${title}`"
           data-testid="task-sidebar-collapse"
           title="收起侧栏"
           @click="visible = false"
         >
-          <span class="assistant-panel-toggle-icon is-right is-open" aria-hidden="true" />
+          <PanelRightClose class="size-4" aria-hidden="true" />
         </Button>
       </SidebarHeader>
 
-      <Tabs v-model="activeTab" class="min-h-0 flex-1 flex-col"><TabsList class="assistant-task-sidebar__tabs h-auto" aria-label="任务分区">
+      <Tabs v-if="tabs.length" v-model="activeTab" class="min-h-0 flex-1 flex-col"><TabsList class="assistant-task-sidebar__tabs h-auto" aria-label="任务分区">
         <TabsTrigger :value="tab.value"
           v-for="tab in tabs"
           :key="tab.value"
@@ -141,7 +152,7 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
         </TabsTrigger>
       </TabsList>
 
-      <TabsContent :value="activeTab" class="assistant-task-sidebar__pane" data-testid="task-sidebar-pane">
+      <TabsContent v-if="activeTab" :value="activeTab" class="assistant-task-sidebar__pane" data-testid="task-sidebar-pane">
         <section v-if="activeTab === 'plan'" class="assistant-task-sidebar__section">
           <EmptyState v-if="!model.plan.length" description="暂无计划步骤" />
           <ol v-else class="assistant-task-sidebar__plan">
@@ -201,6 +212,7 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
         </section>
 
         <section v-else class="assistant-task-sidebar__section">
+          <slot name="cabin">
           <div class="assistant-task-sidebar__cabin">
             <div class="assistant-task-sidebar__cabin-card">
               <span>安全</span>
@@ -231,6 +243,7 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
             </div>
             <Button variant="outline" size="sm" @click="emit('settings')">助手设置</Button>
           </div>
+          </slot>
         </section>
       </TabsContent></Tabs>
     </template>
@@ -243,13 +256,11 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
 .assistant-task-sidebar.is-drawer { background: var(--surface); min-width: 0; }
 .assistant-task-sidebar.is-collapsed { flex: 0 0 44px; min-width: 0; width: 44px; padding: var(--gap-2) 0; align-items: center; }
 .assistant-task-sidebar__rail { display: flex; flex: 1; flex-direction: column; align-items: center; gap: var(--gap-2); }
-.assistant-task-sidebar__live-dot { width: var(--gap-1); height: var(--gap-1); border-radius: var(--ai-r-pill); background: var(--seal); }
+.assistant-task-sidebar__live-dot { width: var(--gap-1); height: var(--gap-1); border-radius: var(--ai-r-pill, var(--radius-pill)); background: var(--seal); }
 .assistant-task-sidebar__head { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-2); min-height: var(--ctl-h); }
 .assistant-task-sidebar__title { margin: 0; color: var(--ink); font-size: var(--ai-fs-body); font-weight: 600; }
 .assistant-task-sidebar__toggle { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: var(--ctl-h); height: var(--ctl-h); margin: 0; padding: 0; color: var(--mist); }
 .assistant-task-sidebar :deep(button:focus-visible) { outline: 2px solid var(--seal); outline-offset: -2px; }
-.assistant-panel-toggle-icon { display: block; width: 1em; height: .9em; border: 1.5px solid currentColor; border-radius: var(--ai-r-chip); }
-.assistant-panel-toggle-icon.is-right { box-shadow: inset -4px 0 0 currentColor; }
 .assistant-task-sidebar__tabs { display: flex; flex-wrap: wrap; gap: var(--gap-1); width: 100%; min-width: 0; }
 .assistant-task-sidebar__tabs { padding: 3px; border-radius: var(--radius); background: var(--surface-sunken); gap: 2px; }
 .assistant-task-sidebar__tab { flex: 1 1 auto; margin: 0; height: 28px; padding: 0 var(--gap-2); border: 0; border-radius: var(--radius-sm); color: var(--text-tertiary); font-size: var(--fs-aux); font-weight: 500; }
@@ -266,9 +277,9 @@ function artifactLabel(status: AiChartArtifact['status'] | undefined): string {
 .assistant-task-sidebar__plan-body { display: flex; flex-direction: column; gap: var(--gap-1); min-width: 0; }
 .assistant-task-sidebar__plan-body strong { font-size: var(--ai-fs-body); font-weight: 600; overflow-wrap: anywhere; }
 .assistant-task-sidebar__plan-body span { color: var(--mist); font-size: var(--ai-fs-meta); }
-.assistant-task-sidebar__list li { display: flex; gap: var(--gap-2); align-items: flex-start; padding: var(--gap-2); border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface); min-height: var(--ai-row-min); box-shadow: var(--shadow-xs); }
+.assistant-task-sidebar__list li { display: flex; gap: var(--gap-2); align-items: flex-start; padding: var(--gap-2); border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface); min-height: var(--ai-row-min, var(--ctl-h)); box-shadow: var(--shadow-xs); }
 .assistant-task-sidebar__list li > div { min-width: 0; flex: 1; }
-.assistant-task-sidebar__chip { flex: 0 0 auto; padding: var(--gap-1); border-radius: var(--ai-r-chip); background: var(--surface-sunken); color: var(--mist); font-size: var(--ai-fs-meta); }
+.assistant-task-sidebar__chip { flex: 0 0 auto; padding: var(--gap-1); border-radius: var(--ai-r-chip, var(--radius-sm)); background: var(--surface-sunken); color: var(--mist); font-size: var(--ai-fs-meta); }
 .assistant-task-sidebar__list strong { display: block; font-size: var(--ai-fs-body); line-height: 1.5; overflow-wrap: anywhere; }
 .assistant-task-sidebar__list p { margin: var(--gap-1) 0 0; color: var(--mist); font-size: var(--ai-fs-aux); line-height: 1.5; overflow-wrap: anywhere; }
 .assistant-task-sidebar__cabin-card { padding: var(--gap-2) var(--gap-3); border: 1px solid var(--border-subtle); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-xs); }

@@ -15,16 +15,18 @@ export async function getAdminOverview(): Promise<AdminOverviewResponse> {
 export async function listAdminUsers(params?: {
   keyword?: string
   status?: string
+  role?: Role
   limit?: number
   offset?: number
-}): Promise<AdminUsersResponse> {
+}, signal?: AbortSignal): Promise<AdminUsersResponse> {
   const query = new URLSearchParams()
   if (params?.keyword) query.set('keyword', params.keyword)
   if (params?.status) query.set('status', params.status)
+  if (params?.role) query.set('role', params.role)
   if (params?.limit !== undefined) query.set('limit', String(params.limit))
   if (params?.offset !== undefined) query.set('offset', String(params.offset))
   const qs = query.toString()
-  return apiRequest<AdminUsersResponse>(`/admin/users${qs ? `?${qs}` : ''}`)
+  return apiRequest<AdminUsersResponse>(`/admin/users${qs ? `?${qs}` : ''}`, { signal })
 }
 
 /** 管理员代建账号：本系统不开放自助注册，新号只能走这条路。 */

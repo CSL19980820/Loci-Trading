@@ -231,6 +231,8 @@ function goBack(): void {
   void router.push('/')
 }
 
+defineExpose({ close: goBack })
+
 function goBatchStep(delta: number): void {
   const nextCode = batch.step(delta)
   if (!nextCode) return

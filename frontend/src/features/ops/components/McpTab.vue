@@ -28,6 +28,7 @@ import type { McpQuotaSnapshot, McpServer } from '@/shared/types/quant'
 import McpServerRow from './McpServerRow.vue'
 import McpToolsDialog from './McpToolsDialog.vue'
 import WudaoMcpDialog from './WudaoMcpDialog.vue'
+import HithinkMcpDialog from './HithinkMcpDialog.vue'
 import type { ReceiptPair } from './SettingsPanel.vue'
 import SettingsPanel from './SettingsPanel.vue'
 import { useOpsFeedback } from '../composables/useOpsFeedback'
@@ -40,6 +41,7 @@ const mcpServers = ref<McpServer[]>([])
 const quotaSnap = ref<McpQuotaSnapshot | null>(null)
 const mcpFormOpen = ref(false)
 const wudaoOpen = ref(false)
+const hithinkOpen = ref(false)
 
 const mcpForm = reactive({
   name: '',
@@ -68,8 +70,11 @@ const externalServers = computed(() => mcpServers.value.filter((s) => !s.builtin
 const wudaoServer = computed(
   () =>
     mcpServers.value.find(
-      (s) => s.resident || s.name === 'wudao' || s.name === 'wudao-a-stock',
+      (s) => s.name === 'wudao' || s.name === 'wudao-a-stock',
     ) ?? null,
+)
+const hithinkServer = computed(() =>
+  mcpServers.value.find((s) => s.name === 'hithink-finance-a-share') ?? null,
 )
 
 const inactiveCount = computed(() => mcpServers.value.filter((s) => !s.is_active).length)
@@ -134,6 +139,11 @@ async function refreshAfterExternalWrite(): Promise<boolean> {
 
 function openWudaoConfig(): void {
   wudaoOpen.value = true
+}
+
+function openResidentConfig(server: McpServer): void {
+  if (server.name.startsWith('hithink-finance-')) hithinkOpen.value = true
+  else openWudaoConfig()
 }
 
 async function submitMcp(): Promise<void> {
@@ -208,6 +218,10 @@ onUnmounted(() => {
         <Plug />
         配置悟道
       </Button>
+      <Button v-if="hithinkServer" variant="outline" size="sm" :disabled="busy" @click="hithinkOpen = true">
+        <Plug />
+        配置同花顺
+      </Button>
       <Button size="sm" :disabled="busy" @click="mcpFormOpen = true">
         <Plus />
         添加外部 MCP
@@ -238,7 +252,7 @@ onUnmounted(() => {
           :busy="busy"
           :resident="isResident(row)"
           @detail="openDetail(row)"
-          @configure="openWudaoConfig"
+          @configure="openResidentConfig(row)"
           @toggle="toggleMcp(row)"
           @remove="confirmDropMcp(row.name)"
         />
@@ -333,6 +347,7 @@ onUnmounted(() => {
 
   <McpToolsDialog v-model="detailOpen" :server="detailServer" @refreshed="onDetailRefreshed" />
   <WudaoMcpDialog v-model="wudaoOpen" :server="wudaoServer" @saved="() => writeAndRefresh(async () => true)" />
+  <HithinkMcpDialog v-model="hithinkOpen" :server="hithinkServer" @saved="() => writeAndRefresh(async () => true)" />
 </template>
 
 <style scoped>

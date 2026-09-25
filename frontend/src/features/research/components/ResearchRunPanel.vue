@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, ref } from 'vue'
-import { Download, LoaderCircle, RefreshCw, Search } from '@lucide/vue'
+import { Download, RefreshCw, Search } from '@lucide/vue'
 
 import BasicTable, { type BasicTableColumn } from '@/shared/components/ui/BasicTable.vue'
 import { Badge } from '@/shared/components/ui/badge'
@@ -85,7 +86,7 @@ function submit(): void {
           placeholder="粘贴 run id"
         />
         <Button access="read" type="button" size="sm" @click="submit">
-          <LoaderCircle v-if="props.loading" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="props.loading" class="size-4 animate-spin" aria-hidden="true" />
           <Search v-else class="size-4" aria-hidden="true" />
           读取
         </Button>

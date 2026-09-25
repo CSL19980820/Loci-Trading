@@ -57,11 +57,18 @@ export function kindLabel(kind: string): string {
       alert_scan: '价格提醒扫描',
       strategy_monitor: '纸面盯盘',
       paper_eod: '纸面日终',
-      guardian: '自主交易员',
-      guardian_review: '交易员复盘与计划',
+      guardian: '天才交易员',
+      guardian_review: '天才交易员复盘与计划',
+      guardian_delivery: '天才交易员通知补发',
       exchange_calendar: '交易所日历更新',
     }[kind] ?? kind
   )
+}
+
+export function traderJobName(kind: string, name: string): string {
+  if (!kind.startsWith('guardian')) return name
+  const suffix = name.indexOf(' · ')
+  return suffix < 0 ? '天才交易员' : `天才交易员${name.slice(suffix)}`
 }
 
 export function statusLabel(status: string): string {

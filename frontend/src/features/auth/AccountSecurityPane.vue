@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, reactive, ref } from 'vue'
-import { Eye, EyeOff, Link2, LoaderCircle, MonitorSmartphone, Smartphone } from '@lucide/vue'
+import { Eye, EyeOff, Link2, MonitorSmartphone, Smartphone } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 
 import { changePassword, revokeOtherSessions, unbindIdentity } from '@/shared/api/auth'
@@ -226,7 +227,7 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
           </CardContent>
           <CardFooter class="sec-card__foot">
             <Button type="submit" :disabled="savingPassword || disabled">
-              <LoaderCircle v-if="savingPassword" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              <Spinner v-if="savingPassword" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               更新密码
             </Button>
           </CardFooter>
@@ -248,7 +249,7 @@ async function handleUnbind(identity: AuthIdentity): Promise<void> {
               :disabled="revokingSessions || !otherSessions"
               @click="handleRevokeOtherSessions"
             >
-              <LoaderCircle v-if="revokingSessions" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              <Spinner v-if="revokingSessions" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               下线其他会话
             </Button>
           </CardAction>

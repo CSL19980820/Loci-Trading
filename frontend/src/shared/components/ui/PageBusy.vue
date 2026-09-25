@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoaderCircle } from '@lucide/vue'
+import { Spinner } from '@/shared/components/ui/spinner'
 
 /**
  * 加载态。
@@ -25,7 +25,7 @@ withDefaults(
 <template>
   <div v-if="busy" class="page-busy" :class="{ 'page-busy--overlay': overlay }" role="status">
     <span class="page-busy__card">
-      <LoaderCircle class="page-busy-spin" aria-hidden="true" />
+      <Spinner class="page-busy-spin" aria-hidden="true" />
       <span class="page-busy-label">{{ label }}</span>
     </span>
   </div>

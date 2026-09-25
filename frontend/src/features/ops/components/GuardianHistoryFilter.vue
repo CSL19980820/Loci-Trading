@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, ref, useId, watch } from 'vue'
-import { LoaderCircle, Search, RotateCcw } from '@lucide/vue'
+import { Search, RotateCcw } from '@lucide/vue'
 import { Button } from '@/shared/components/ui/button'
 import { Field, FieldLabel } from '@/shared/components/ui/field'
 import { Input } from '@/shared/components/ui/input'
@@ -63,7 +64,7 @@ function onSizeChange(value: unknown): void {
       <SelectContent><SelectItem v-for="n in [20,50,100,200]" :key="n" :value="n">{{ n }}条 / 页</SelectItem></SelectContent>
     </Select>
     <div class="history-actions">
-      <Button access="read" type="submit" size="sm" :disabled="loading || !valid"><LoaderCircle v-if="loading" class="animate-spin" aria-hidden="true" /><Search v-else aria-hidden="true" />查询</Button>
+      <Button access="read" type="submit" size="sm" :disabled="loading || !valid"><Spinner v-if="loading" class="animate-spin" aria-hidden="true" /><Search v-else aria-hidden="true" />查询</Button>
       <Button access="read" type="button" size="sm" variant="outline" :disabled="loading" @click="reset"><RotateCcw aria-hidden="true" />重置</Button>
     </div>
   </form>

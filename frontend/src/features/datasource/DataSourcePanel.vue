@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { Database, LoaderCircle, RefreshCw, TriangleAlert, Wrench, X } from '@lucide/vue'
+import { Spinner } from '@/shared/components/ui/spinner'
+import { computed, onMounted, ref, useId, watch } from 'vue'
+import { Database, RefreshCw, TriangleAlert, Wrench, X } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
@@ -153,6 +154,7 @@ onMounted(() => {
 function setAkshareBatchOpen(open: boolean): void {
   akshareBatchOpen.value = open
 }
+const panelId = `datasource-panel-${useId()}`
 </script>
 
 <template>
@@ -161,6 +163,7 @@ function setAkshareBatchOpen(open: boolean): void {
       <div class="ds-head__lead">
         <PageTabs
           v-model="viewTab"
+          :panel-id="panelId"
           class="ds-views"
           :items="viewItems"
           variant="pill"
@@ -204,7 +207,7 @@ function setAkshareBatchOpen(open: boolean): void {
           <Tooltip>
             <TooltipTrigger as-child>
               <Button size="sm" :disabled="busyKey === 'all'" @click="probeAll()">
-                <LoaderCircle v-if="busyKey === 'all'" class="size-4 animate-spin" aria-hidden="true" />
+                <Spinner v-if="busyKey === 'all'" class="size-4 animate-spin" aria-hidden="true" />
                 探测线路
               </Button>
             </TooltipTrigger>
@@ -248,7 +251,7 @@ function setAkshareBatchOpen(open: boolean): void {
       </div>
     </Alert>
 
-    <div class="ds-body">
+    <div :id="panelId" class="ds-body" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${viewTab}`">
       <AkshareToolTable
         v-if="view === 'interfaces'"
         :catalog="akshareCatalog"

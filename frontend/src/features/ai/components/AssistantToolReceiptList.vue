@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
+import { Button } from '@/shared/components/ui/button'
 import { computed, ref, watch } from 'vue'
 import { ChevronDown, Wrench } from '@lucide/vue'
 
@@ -81,7 +82,7 @@ const railClass = computed(() => ({
     aria-label="本机回执"
     data-testid="assistant-receipts"
   >
-    <CollapsibleTrigger
+    <CollapsibleTrigger as-child><Button access="read" variant="ghost"
       type="button"
       class="assistant-receipts__toggle"
       :aria-expanded="expanded"
@@ -91,7 +92,7 @@ const railClass = computed(() => ({
       <strong class="assistant-receipts__overview" :title="overview">{{ overview }}</strong>
       <small v-if="overviewMs" class="assistant-receipts__ms">{{ overviewMs }}</small>
       <ChevronDown class="assistant-receipts__chevron" :class="{ 'is-open': expanded }" aria-hidden="true" />
-    </CollapsibleTrigger>
+    </Button></CollapsibleTrigger>
     <CollapsibleContent class="assistant-receipts__list">
       <AssistantToolReceiptRow
         v-for="tool in tools"
@@ -109,12 +110,14 @@ const railClass = computed(() => ({
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: transparent;
   overflow: hidden;
   transition: border-color var(--dur-fast) var(--ease);
 }
+
+.assistant-receipts.is-open { border-color:var(--border-subtle); background:var(--surface); }
 
 .assistant-receipts.is-running {
   border-color: var(--seal-border);
@@ -130,8 +133,10 @@ const railClass = computed(() => ({
   gap: var(--gap-2);
   width: 100%;
   max-width: 100%;
-  min-height: 36px;
-  padding: 0 var(--gap-3);
+  height: auto;
+  min-height: 32px;
+  padding: 6px 8px;
+  justify-content: flex-start;
   border: 0;
   background: transparent;
   color: var(--text-secondary);

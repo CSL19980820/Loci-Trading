@@ -1,4 +1,5 @@
 from copy import deepcopy
+import pytest
 from src.ops.application import guardian_review_agent as agent
 from src.ops.application.guardian_review_prompts import review_system
 from src.ops.application.guardian_config import DEFAULTS
@@ -41,3 +42,37 @@ def test_planning_contract_allows_no_buy_and_requires_own_basis():
     prompt=review_system(DEFAULTS,'daily',schema,stage='planning')
     assert '全部研究工具' in prompt
     assert '候选只是来源' in prompt
+
+
+@pytest.mark.parametrize('period', ['daily', 'weekly'])
+def test_new_research_reaches_independent_planning_with_original_evidence(monkeypatch, period):
+    review = {'research_notes': ['催化尚待核验'], 'lessons': [{'hypothesis': '旧经验出现反例'}],
+              'experience': [], 'operational_notes': ['数据缺口'], 'stock_reviews': [{'action': 'sell'}]}
+    sources = [{'id': 'tool:1', 'result': '原始证据', 'is_error': False}]
+    original = deepcopy((review, sources))
+
+    def run(_store, _cfg, facts, *, stage, **kwargs):
+        if stage == 'retrospective':
+            return deepcopy(review), {}, sources
+        handoff = facts['current_review']
+        assert handoff['research_notes'] == review['research_notes']
+        assert handoff['experience'] == []  # 本轮撤回全部经验也不能丢失。
+        assert handoff['tool_evidence'] == sources
+        assert 'stock_reviews' not in handoff and 'plans' not in handoff
+        handoff['tool_evidence'][0]['result'] = '规划阶段独立副本'
+        return {'plans': [], 'next_steps': ['重新核验'], 'watchlist_updates': []}, {}, []
+
+    monkeypatch.setattr(agent, '_generate_review', run)
+    result, _, saved_sources = agent.generate_review(None, {}, {'period': period, 'account': {}})
+    assert result['next_steps'] == ['重新核验']
+    assert (review, sources) == original
+    assert saved_sources == sources
+
+
+def test_weekly_planning_has_week_horizon_without_changing_daily_contract():
+    schema = agent.ForwardPlan.model_json_schema()
+    weekly = review_system(DEFAULTS, 'weekly', schema, stage='planning')
+    daily = review_system(DEFAULTS, 'daily', schema, stage='planning')
+    assert '下周的研究重点' in weekly and 'next_steps面向整周' in weekly
+    assert 'planning_trade_date为首次核验日' in weekly
+    assert '下一交易日的研究' in daily and 'next_steps面向整周' not in daily

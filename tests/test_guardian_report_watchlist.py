@@ -8,9 +8,11 @@ def test_three_completed_exchange_days_and_explicit_watch_survives_window():
     assert days == ['2026-09-17', '2026-09-18', '2026-09-21']
     class Palace:
         def candidates_payload(self, day):
-            return [{'code':'600001','name':'近期','date':day,'strategy_slug':'quant','decision':'精选'}]
+            return [{'code':'600001','name':'近期','date':day,'created_at':f'{day}T15:05:00+08:00',
+                     'strategy_slug':'quant','decision':'精选'}]
     rows = observe(Palace(), days, {'positions': [], 'watchlist':[{'code':'600000','name':'主动保留'}]}, [])
     assert {s['date'] for r in rows for s in r['signals']} == set(days)
+    assert {s['created_at'] for r in rows for s in r['signals']} == {f'{day}T15:05:00+08:00' for day in days}
     assert next(r for r in rows if r['code']=='600000')['watch']['name'] == '主动保留'
 
 

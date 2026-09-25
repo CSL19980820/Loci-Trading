@@ -267,7 +267,15 @@ def fetch_daily_best(
     preferred = [adapter.meta.id for adapter in resolved]
     errors: list[str] = []
     adapters: list[MarketAdapter] = []
+    # 扶摇是通达信备源；抽样交叉校验也不应在 TDX 成功时消耗其远端请求。
+    hithink_fallback = (
+        next((adapter for adapter in resolved if adapter.meta.id == "hithink"), None)
+        if cross_check and preferred[0] == "tdx"
+        else None
+    )
     for adapter in resolved:
+        if adapter is hithink_fallback:
+            continue
         if circuit.acquire(LANE_HIST_DAILY, adapter.meta.id):
             adapters.append(adapter)
             continue
@@ -277,7 +285,7 @@ def fetch_daily_best(
         _record_receipt(
             receipt, source_id=adapter.meta.id, state="skipped", error=message
         )
-    if not adapters:
+    if not adapters and hithink_fallback is None:
         raise AdapterError(
             f"{code} 所有 hist_daily 来源都在熔断冷却中 -> " + " | ".join(errors[-6:])
         )
@@ -341,6 +349,45 @@ def fetch_daily_best(
             successes.append((source_id, frame))
     finally:
         pool.shutdown(wait=True, cancel_futures=False)
+
+    if hithink_fallback is not None:
+        aid = hithink_fallback.meta.id
+        if any(source_id == "tdx" for source_id, _frame in successes):
+            _record_receipt(
+                receipt, source_id=aid, state="skipped", error="通达信命中，扶摇备源未请求"
+            )
+        elif not circuit.acquire(LANE_HIST_DAILY, aid):
+            cooldown = circuit.cooldown_remaining(LANE_HIST_DAILY, aid)
+            message = f"来源连续失败已熔断，{int(cooldown)}s 后自动重试"
+            errors.append(f"{aid}: {message}")
+            _record_receipt(
+                receipt,
+                source_id=aid,
+                state="skipped",
+                error=message,
+            )
+        else:
+            _record_receipt(receipt, source_id=aid, state="attempted")
+            source_id, frame, error, kind = _fetch_daily_queued(
+                hithink_fallback,
+                code,
+                instrument_type,
+                max(0.0, claim_wait_sec),
+                recent_bars,
+            )
+            if kind == "ok" and frame is not None and not frame.empty:
+                circuit.record_success(LANE_HIST_DAILY, aid)
+                successes.append((source_id, frame))
+            else:
+                if kind != "empty":
+                    circuit.record_failure(LANE_HIST_DAILY, aid)
+                errors.append(f"{aid}: {error or '空数据'}")
+                _record_receipt(
+                    receipt,
+                    source_id=aid,
+                    state="empty" if kind == "empty" else "failed",
+                    error=error or "空数据",
+                )
 
     if not successes:
         raise AdapterError(

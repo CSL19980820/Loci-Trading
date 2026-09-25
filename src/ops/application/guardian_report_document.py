@@ -47,7 +47,8 @@ def _section_html(section: dict, index: int) -> str:
     return f'<section class="report-section {css}" id="s{index}" aria-labelledby="h{index}"><div class="section-heading"><h2 id="h{index}">{escape(str(section.get("heading", "")))}</h2>{stamp}</div>'+('<dl class="stats">'+stats+'</dl>' if stats else '')+paragraphs+table+'</section>'
 
 
-def render_shared_document(sections: list[dict], *, title: str, owner: str, created_at: str, revision: int = 1) -> str:
+def render_shared_document(sections: list[dict], *, title: str, owner: str, created_at: str,
+                           revision: int = 1, superseded: bool = False, replacement_url: str = '') -> str:
     items = [dict(section) for section in sections if section.get('paragraphs') or section.get('stats') or section.get('plans')]
     lesson_text = '\n'.join(str(p) for s in items if s.get('kind') == 'lessons' for p in s.get('paragraphs', []))
     items = [s for s in items if not (s.get('kind') == 'insight' and s.get('paragraphs') and all(str(p) in lesson_text for p in s['paragraphs']))]
@@ -64,11 +65,18 @@ def render_shared_document(sections: list[dict], *, title: str, owner: str, crea
         created = str(created_at or '生成时间未记录')
     title, owner, created = escape(str(title)), escape(str(owner)), escape(created)
     version = f'更正 · 第 {int(revision)} 版' if int(revision) > 1 else '第 1 版'
+    correction = ''
+    if superseded:
+        link = (f' <a href="{escape(replacement_url, quote=True)}">查看更正版</a>'
+                if replacement_url.startswith('/shared/reports/') else '')
+        correction = ('<aside role="status" style="margin:1rem 0;padding:1rem;border:1px solid #d99230;'
+                      'border-radius:.75rem;background:#fff8e8;color:#5c3b10">'
+                      '此为已归档的旧版报告，部分结论已有更正。请以更正版为准。' + link + '</aside>')
     return f'''<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">
 <title>{title} · {owner} · Loci</title><style>{STYLE}</style></head>
 <body id="top"><a class="skip" href="#report-content">跳到报告正文</a>
 <header class="topbar"><div><b class="brand">Loci</b><span class="readonly">模拟账户 · 只读分享</span></div></header>
-<main class="sheet" id="report-content"><header class="heading"><div class="owner">{owner}</div><h1>{title}</h1><div class="metadata"><span>生成于 {created}</span><span>{version}</span></div></header>{content}</main>
+<main class="sheet" id="report-content"><header class="heading"><div class="owner">{owner}</div><h1>{title}</h1><div class="metadata"><span>生成于 {created}</span><span>{version}</span></div></header>{correction}{content}</main>
 <footer class="page-note">条件计划不等于成交；此页只读取对应报告。持有链接即可阅读，请谨慎转发。<a href="#top">返回顶部</a></footer></body></html>'''

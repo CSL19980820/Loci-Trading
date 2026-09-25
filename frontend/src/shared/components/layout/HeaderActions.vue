@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ArrowDown, LoaderCircle } from '@lucide/vue'
+import { Spinner } from '@/shared/components/ui/spinner'
+import { ArrowDown } from '@lucide/vue'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -77,7 +78,7 @@ function variantOf(kind: HeaderAction['kind']): 'default' | 'outline' {
       :disabled="action.disabled || action.loading"
       @click="run(action)"
     >
-      <LoaderCircle v-if="action.loading" class="animate-spin" aria-hidden="true" />
+      <Spinner v-if="action.loading" class="animate-spin" aria-hidden="true" />
       {{ action.label }}
     </Button>
 
@@ -109,7 +110,7 @@ function variantOf(kind: HeaderAction['kind']): 'default' | 'outline' {
       :disabled="action.disabled || action.loading"
       @click="run(action)"
     >
-      <LoaderCircle v-if="action.loading" class="animate-spin" aria-hidden="true" />
+      <Spinner v-if="action.loading" class="animate-spin" aria-hidden="true" />
       {{ action.label }}
     </Button>
   </div>

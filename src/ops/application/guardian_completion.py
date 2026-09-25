@@ -8,6 +8,7 @@ from typing import Any
 from src.ops.application.guardian_contract import completion_error
 from src.ops.application.guardian_decision import GuardianDecision, parse_decision
 from src.ops.application.guardian_research_context import evidence_snapshot
+from src.ops.application.guardian_output import JSON_OUTPUT_RULES, failed_response
 
 
 def _record_agent_call(provider: Any, store: Any, usage: dict, delta: dict) -> None:
@@ -83,6 +84,7 @@ def complete_decision(provider: Any, store: Any, *, system: str, payload: dict, 
     safe_names |= PARALLEL_RESEARCH_TOOLS
     names = available_tool_names or [(s.get("function") or s).get("name", "") for s in schemas]
     parallel = {name for name in names if name.split("__")[-1] in safe_names}
+    system += '\n' + JSON_OUTPUT_RULES
     arguments = dict(system=system, user_prompt=json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":")),
                      tool_schemas=schemas, tool_executor=execute,
                      max_rounds=None, max_calls_per_round=None,
@@ -112,6 +114,7 @@ def complete_decision(provider: Any, store: Any, *, system: str, payload: dict, 
                 return decision, usage
             except ValueError as exc:
                 diagnostic["error"] = str(exc)[:1500]
+                failed_response(diagnostic, result.text)
                 if attempt or result.stopped_reason != "completed" or result.finish_reason not in {"", "stop", "end_turn", "length", "max_tokens"}:
                     raise
                 messages = messages_from_json(result.messages)
@@ -119,7 +122,7 @@ def complete_decision(provider: Any, store: Any, *, system: str, payload: dict, 
                     messages = [ChatMessage(role="user", content=json.dumps(payload, ensure_ascii=False, default=str))]
                 if messages[-1].role != "assistant" or messages[-1].content != result.text:
                     messages.append(ChatMessage(role="assistant", content=result.text))
-                messages.append(ChatMessage(role="user", content=f"上次完整性/JSON契约校验失败：{diagnostic['error']}。基于已取得事实输出完整合法决策，不拼接残片。仍可按需调用本轮全部工具补查证据，不必重复已完成研究。买卖必须明确execution；无法确认条件则hold/watch。"))
+                messages.append(ChatMessage(role="user", content=f"上次完整性/JSON契约校验失败：{diagnostic['error']}。修复格式时保留原判断、方向、数量及条件，不因重新输出而另换一套决策；若证据或执行校验要求改变意图，明确说明原因。基于已取得事实输出完整合法决策，不拼接残片。仍可按需调用本轮全部工具补查证据，不必重复已完成研究。买卖必须明确execution；无法确认条件则hold/watch。"))
                 arguments = {key: value for key, value in arguments.items() if key != "user_prompt"}
                 arguments.update(messages=messages, temperature=0)
     except BaseException as exc:

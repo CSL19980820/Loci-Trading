@@ -14,7 +14,8 @@ import {
   Brush,
   ChartColumn,
   Cpu,
-  Folder,
+  BriefcaseBusiness,
+  Globe2,
   Gauge,
   LayoutDashboard,
   Search,
@@ -35,7 +36,7 @@ const navGroups: NavGroup[] = [
   {
     id: 'market',
     label: '市场',
-    icon: Gauge,
+    icon: Globe2,
     items: [
       navMenuItem('pulse', Gauge),
       navMenuItem('data-query', LayoutDashboard),
@@ -44,7 +45,7 @@ const navGroups: NavGroup[] = [
   {
     id: 'mine',
     label: '我的',
-    icon: Folder,
+    icon: BriefcaseBusiness,
     items: [
       navMenuItem('pool', Target),
       navMenuItem('screen-history', Search),

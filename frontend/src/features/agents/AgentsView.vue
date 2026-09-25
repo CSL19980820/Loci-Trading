@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
-import { Activity, Bot, CircleAlert, LoaderCircle, Plus, RefreshCw, Search, Wallet, X } from '@lucide/vue'
+import { Activity, Bot, CircleAlert, Plus, RefreshCw, Search, Wallet, X } from '@lucide/vue'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
 import { Button } from '@/shared/components/ui/button'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
@@ -43,7 +44,7 @@ const FILTERS = [
   { name: 'paused', label: '已暂停' },
 ]
 
-/** 卡片数据：自主交易员排第一，其后按后端顺序 */
+/** 卡片数据：天才交易员排第一，其后按后端顺序 */
 const cards = computed<AgentCardData[]>(() => {
   const list: AgentCardData[] = []
   if (guardian.value) {
@@ -121,12 +122,12 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearTimeout(timer) })
     >
       <template #actions>
         <Button size="sm" :disabled="busy" @click="configure('custom')">
-          <LoaderCircle v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <Plus v-else aria-hidden="true" />
           新建智能体
         </Button>
         <Button access="read" variant="outline" size="sm" :disabled="loading" aria-label="刷新智能体列表" @click="load">
-          <LoaderCircle v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <RefreshCw v-else aria-hidden="true" />
           刷新
         </Button>
@@ -204,7 +205,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearTimeout(timer) })
         v-else
         :icon="Search"
         :description="cards.length ? '没有匹配的智能体' : '还没有智能体'"
-        :reason="cards.length ? '换个关键字或切换状态筛选' : '新建一个智能体，或等待自主交易员首次加载'"
+        :reason="cards.length ? '换个关键字或切换状态筛选' : '新建一个智能体，或等待天才交易员首次加载'"
         class="agents-empty"
       >
         <Button access="read" v-if="query || filter !== 'all'" variant="outline" size="sm" @click="query = ''; filter = 'all'">清除筛选</Button>

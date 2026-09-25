@@ -5,7 +5,7 @@ import { computed } from 'vue'
 import ThemeDialog from '@/shared/components/dialogs/ThemeDialog.vue'
 import { Button } from '@/shared/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '@/shared/components/ui/sidebar'
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarTrigger, useSidebar } from '@/shared/components/ui/sidebar'
 import { BRAND_NAME, BRAND_TAGLINE } from '@/shared/lib/brand'
 import { openCommandPalette, paletteHotkeyLabel } from '@/shared/lib/commandPalette'
 import UserAvatarMenu from './UserAvatarMenu.vue'
@@ -38,16 +38,18 @@ defineExpose({ themeOpen })
       <nav aria-label="功能导航">
         <Collapsible v-for="group in navGroups" :key="group.id" :open="collapsed || defaultOpeneds.includes(group.id)" @update:open="setGroupOpen(group.id, $event)">
           <SidebarGroup class="nav-group">
-            <CollapsibleTrigger v-if="!collapsed" class="nav-group-trigger" :aria-label="group.label">
+            <CollapsibleTrigger v-if="!collapsed" as-child>
+              <SidebarGroupLabel as-child class="nav-group-trigger"><button type="button" :aria-label="group.label">
               <component :is="group.icon" aria-hidden="true" /><span>{{ group.label }}</span><ChevronRight class="nav-caret" aria-hidden="true" />
+              </button></SidebarGroupLabel>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <SidebarGroupContent>
+              <SidebarGroupContent class="nav-group-content">
                 <SidebarMenu>
                   <SidebarMenuItem v-for="item in group.items" :key="item.path">
                     <SidebarMenuButton as-child :is-active="active === item.path" :tooltip="item.label" class="nav-item">
                       <RouterLink :to="item.path" :aria-label="item.label" :aria-current="active === item.path ? 'page' : undefined" @pointerenter="prefetch(item.path)" @focus="prefetch(item.path)" @click="setOpenMobile(false)">
-                        <component :is="item.icon" aria-hidden="true" /><span>{{ item.label }}</span>
+                        <span class="nav-item-icon" aria-hidden="true"><component :is="item.icon" /></span><span class="nav-item-label">{{ item.label }}</span>
                       </RouterLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

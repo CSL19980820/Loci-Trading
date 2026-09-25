@@ -81,8 +81,8 @@ def ensure_tenant_jobs(store: Any) -> None:
         # 价格提醒扫描：用户已经建了启用中的规则才挂，避免给没用这个功能的
         # 安装每天塞 48 条空 run（见 ensure_alert_scan_job 模块注释）。
         ("托管价格提醒扫描", lambda: ensure_managed_alert_scan_job(store)),
-        ("自主交易员复盘与计划", lambda: ensure_guardian_review_jobs(store)),
-        ("自主交易员通知补发", lambda: ensure_guardian_delivery_job(store)),
+        ("天才交易员复盘与计划", lambda: ensure_guardian_review_jobs(store)),
+        ("天才交易员通知补发", lambda: ensure_guardian_delivery_job(store)),
         ("股票智能体日程", lambda: ensure_stock_agent_jobs(store)),
     # 租户库清理。系统级 prune 在 SYSTEM_JOB_KINDS 里，子租户一条都不装载，
         # 于是子租户的 ops.db 从建库那天起没人清过（job_runs 粗算 580 MB/年/人，

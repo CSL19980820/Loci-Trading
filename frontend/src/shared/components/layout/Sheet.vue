@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Badge } from '@/shared/components/ui/badge'
 /**
  * Sheet —— 区块壳。去卡片化：无阴影、1px hairline、圆角 3px（皮肤在 style.components.css）。
  * 头部一行：左标题（14px/700/字距 .03em）+ chip，右侧 actions；`meta` 槽放 12px 弱色口径。
@@ -45,7 +46,7 @@ withDefaults(
       <slot name="header">
         <h2 class="m-0 flex min-w-0 flex-wrap items-center gap-2 font-sans text-title leading-tight font-bold">
           {{ title }}
-          <span v-if="chip != null && chip !== ''" class="chip bg-seal-soft text-seal-ink inline-flex items-center rounded px-1 font-mono text-aux leading-normal font-semibold tabular-nums" :class="{ 'muted-chip bg-sunken text-mist font-medium': mutedChip }">{{ chip }}</span>
+          <Badge :variant="mutedChip ? 'secondary' : 'soft'" v-if="chip != null && chip !== ''" class="chip bg-seal-soft text-seal-ink inline-flex items-center rounded px-1 font-mono text-aux leading-normal font-semibold tabular-nums" :class="{ 'muted-chip bg-sunken text-mist font-medium': mutedChip }">{{ chip }}</Badge>
         </h2>
       </slot>
       <div v-if="$slots.meta || $slots.actions" class="flex min-w-0 flex-wrap items-center gap-2">

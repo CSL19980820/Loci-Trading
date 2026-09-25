@@ -266,25 +266,20 @@ def _parse_expires_at(raw: Any) -> date | None:
 
 def _has_configured_token(name: str, cfg: dict[str, Any], *, decrypt_secrets: bool = False) -> bool:
     _ = name, decrypt_secrets
-    plain = _extract_legacy_token(cfg).strip()
-    if plain and not _ENV_PATTERN.fullmatch(plain):
+    plain = _expand_env(_extract_legacy_token(cfg)).strip()
+    if plain and not _ENV_PATTERN.search(plain):
         return True
     headers = cfg.get("headers") if isinstance(cfg.get("headers"), dict) else {}
-    auth = next(
-        (
-            str(value)
-            for key, value in headers.items()
-            if str(key).casefold() == "authorization"
-        ),
-        "",
-    ).strip()
-    if not auth:
-        return False
-    expanded = _expand_env(auth)
-    if expanded.strip():
-        return True
-    for match in _ENV_PATTERN.finditer(auth):
-        if os.environ.get(match.group(1), "").strip():
+    for key, value in headers.items():
+        kind = str(key).casefold()
+        if kind not in {"authorization", "x-api-key"}:
+            continue
+        expanded = _expand_env(str(value)).strip()
+        if kind == "authorization" and expanded.casefold().startswith("bearer "):
+            expanded = expanded[7:].strip()
+        if kind == "authorization" and expanded.casefold() in {"bearer", "basic"}:
+            continue
+        if expanded and not _ENV_PATTERN.search(expanded):
             return True
     return False
 
@@ -322,7 +317,9 @@ def _set_token(cfg: dict[str, Any], name: str, token: str) -> None:
     _ = name
     headers = dict(cfg.get("headers") or {}) if isinstance(cfg.get("headers"), dict) else {}
     for key, value in list(headers.items()):
-        if str(key).casefold() == "authorization" and str(value).casefold().startswith("bearer "):
+        if (str(key).casefold() == "authorization" and str(value).casefold().startswith("bearer ")) or (
+            name == "hithink-finance-a-share" and str(key).casefold() == "x-api-key"
+        ):
             headers.pop(key)
     if headers:
         cfg["headers"] = headers
@@ -343,6 +340,8 @@ def _row_from_cfg(
     url = str(cfg.get("url") or cfg.get("serverUrl") or "").strip().rstrip("/")
     token = _extract_token(name, cfg, decrypt_secrets=decrypt_secrets)
     headers = cfg.get("headers") if isinstance(cfg.get("headers"), dict) else {}
+    header_key = next((str(value) for key, value in headers.items()
+                       if str(key).casefold() == "x-api-key"), "")
     expires_at = str(cfg.get("expires_at") or "").strip()
     usability = assess_server_usability(name, cfg, decrypt_secrets=decrypt_secrets)
     return {
@@ -350,7 +349,7 @@ def _row_from_cfg(
         "name": str(name),
         "url": url,
         "token": token,
-        "token_last4": str(cfg.get("token_last4") or _mask_token(token)),
+        "token_last4": str(cfg.get("token_last4") or _mask_token(token or header_key)),
         "has_token": _has_configured_token(name, cfg, decrypt_secrets=decrypt_secrets),
         "expires_at": expires_at,
         "is_usable": bool(usability["usable"]),

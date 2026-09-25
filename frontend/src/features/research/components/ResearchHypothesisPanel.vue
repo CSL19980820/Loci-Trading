@@ -14,7 +14,7 @@ import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices
 import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
 import { default as DateField } from '@/shared/components/ui/app/DateField.vue'
 
-import { computed, ref } from 'vue'
+import { useId, computed, ref } from 'vue'
 
 
 
@@ -35,6 +35,7 @@ import UiField from '@/shared/components/ui/UiField.vue'
 
 const hypotheses = ref<ResearchHypothesis[]>([])
 const selectedId = ref('')
+const metricOperatorId = useId()
 const loading = ref(false)
 const creating = ref(false)
 const transitioning = ref(false)
@@ -240,7 +241,7 @@ defineExpose({ load })
         <TextField v-model="createForm.metricName" placeholder="后端实际指标名" />
       </FormField>
       <FormField label="阈值" required class="metric-threshold">
-        <ChoiceField v-model="createForm.metricOperator" class="metric-threshold__op" aria-label="比较符">
+        <ChoiceField :id="metricOperatorId" v-model="createForm.metricOperator" class="metric-threshold__op" aria-label="比较符">
           <ChoiceOption v-for="operator in ['>=', '>', '<=', '<', '==']" :key="operator" :value="operator" />
         </ChoiceField>
         <NumberInput v-model="createForm.metricThreshold" controls-position="right" class="metric-threshold__value" />

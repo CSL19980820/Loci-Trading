@@ -1,9 +1,14 @@
 """交易员报告任务，仅为已配置交易员的租户挂载，保留用户开关和cron。"""
 from typing import Any
 
-MANAGED_GUARDIAN_PREMARKET = "自主交易员 · 盘前计划"
-MANAGED_GUARDIAN_DAILY = "自主交易员 · 日复盘"
-MANAGED_GUARDIAN_WEEKLY = "自主交易员 · 周复盘"
+MANAGED_GUARDIAN_PREMARKET = "天才交易员 · 盘前计划"
+MANAGED_GUARDIAN_DAILY = "天才交易员 · 日复盘"
+MANAGED_GUARDIAN_WEEKLY = "天才交易员 · 周复盘"
+_PREVIOUS_REVIEW_NAMES = {
+    "premarket": "自主交易员 · 盘前计划",
+    "daily": "自主交易员 · 日复盘",
+    "weekly": "自主交易员 · 周复盘",
+}
 MANAGED_EXCHANGE_CALENDAR = "交易所休市日历更新"
 
 
@@ -18,13 +23,19 @@ REVIEW_JOBS = {
 
 
 def ensure_guardian_review_jobs(store: Any) -> dict[str, list[str]]:
-    from src.ops.application.guardian_config import get_job
+    from src.ops.application.guardian_config import get_job, managed_guardian_job
     owner = get_job(store)
+    existing_jobs = {
+        period: managed_guardian_job(store, name=name,
+                                     previous_name=_PREVIOUS_REVIEW_NAMES[period],
+                                     kind="guardian_review")
+        for period, (name, _cron) in REVIEW_JOBS.items()
+    }
     if owner is None or not owner["enabled"]:
         return {"created": []}
     created = []
     for period, (name, cron) in REVIEW_JOBS.items():
-        existing = store.get_job_by_name(name)
+        existing = existing_jobs[period]
         if existing is None:
             store.create_job(name=name, kind="guardian_review", cron=cron,
                              config={"period": period}, enabled=owner["enabled"])

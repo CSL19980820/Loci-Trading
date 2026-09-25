@@ -411,6 +411,7 @@ onMounted(async () => {
         <PageTabs
           v-if="mode === 'signin' && hasProviders"
           v-model="loginTabModel"
+          panel-id="login-method-panel"
           :items="loginTabs"
           variant="pill"
           :sticky="false"
@@ -428,6 +429,7 @@ onMounted(async () => {
           class="auth-form__alert"
         />
 
+        <div id="login-method-panel" :role="mode === 'signin' && hasProviders ? 'tabpanel' : undefined" :tabindex="mode === 'signin' && hasProviders ? 0 : undefined" :aria-labelledby="mode === 'signin' && hasProviders ? `login-method-panel-tab-${loginTabModel}` : undefined">
         <template v-if="showQr && activeQrProvider">
           <div v-if="providers.length > 1" class="auth-providers" role="group" aria-label="选择登录通道">
             <Button
@@ -507,6 +509,7 @@ onMounted(async () => {
             @submit="handleReset"
             @backSignin="switchMode('signin')"
           />
+        </div>
         </div>
       </div>
 

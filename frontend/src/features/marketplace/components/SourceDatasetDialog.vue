@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
-import { Download, LoaderCircle, Play, TriangleAlert, Upload } from '@lucide/vue'
+import { Download, Play, TriangleAlert, Upload } from '@lucide/vue'
 
 import { probeAkshareCatalog } from '@/shared/api/quant'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
@@ -198,7 +199,7 @@ watch(
           <div class="block-head">
             <span class="block-title"><Download aria-hidden="true" />出参</span>
             <Button variant="outline" size="sm" :disabled="probing" @click="runProbe">
-              <LoaderCircle
+              <Spinner
                 v-if="probing"
                 class="animate-spin motion-reduce:animate-none"
                 aria-hidden="true"

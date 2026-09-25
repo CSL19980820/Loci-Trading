@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 /**
  * 异常条：正常时父级不渲染它，出错也只占一行——左侧琥珀色条 + 一句话 + 详情/重试。
  */
 import { computed } from 'vue'
-import { LoaderCircle, TriangleAlert } from '@lucide/vue'
+import { TriangleAlert } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/shared/components/ui/popover'
@@ -52,7 +53,7 @@ const headline = computed(() => {
         </PopoverContent>
       </Popover>
       <Button access="read" variant="outline" size="xs" class="pulse-issues__action" :disabled="busy" @click="emit('retry')">
-        <LoaderCircle v-if="busy" class="size-3 animate-spin" aria-hidden="true" />
+        <Spinner v-if="busy" class="size-3 animate-spin" aria-hidden="true" />
         重试
       </Button>
     </span>

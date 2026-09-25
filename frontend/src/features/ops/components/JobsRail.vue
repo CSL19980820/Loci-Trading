@@ -6,6 +6,7 @@
  * 本组件**只负责显示与选中**：过滤后的数据、名字解析、cron 换算都在 JobsTab 里算好传进来。
  * 点卡除了改选中项还会 emit `pick`，父级在手机端用它打开详情 Sheet。
  */
+import { Command, CommandList, CommandItem } from '@/shared/components/ui/command'
 import { Clock3 } from '@lucide/vue'
 
 import type { JobHealth } from '../composables/opsLabels'
@@ -87,19 +88,17 @@ function shortTime(raw?: string): string {
         </SelectContent>
       </Select>
     </div>
-    <div class="jobs-list" role="listbox" aria-label="任务列表">
-      <article
+    <Command :model-value="selectedId ?? undefined" class="jobs-command" :selection-follows-focus="false">
+    <CommandList class="jobs-list" aria-label="任务列表">
+      <CommandItem
         v-for="row in rows"
         :key="row.id"
-        role="option"
-        tabindex="0"
+        :value="row.id"
+        :text-value="row.title"
         class="job-card"
         :class="{ 'is-active': row.id === selectedId, 'is-off': !row.enabled, [`is-${row.health}`]: true }"
-        :aria-selected="row.id === selectedId"
         :aria-label="`${row.title} · ${row.healthText}`"
-        @click="pick(row.id)"
-        @keydown.enter.prevent="pick(row.id)"
-        @keydown.space.prevent="pick(row.id)"
+        @select="pick(row.id)"
       >
         <span class="job-card__dot" :title="row.healthText" aria-hidden="true" />
         <div class="job-card__body">
@@ -118,9 +117,10 @@ function shortTime(raw?: string): string {
             </span>
           </div>
         </div>
-      </article>
+      </CommandItem>
       <EmptyState v-if="!rows.length" compact description="没有匹配的任务" reason="调整类型或结果筛选" />
-    </div>
+    </CommandList>
+    </Command>
   </aside>
 </template>
 
@@ -145,7 +145,9 @@ function shortTime(raw?: string): string {
   min-width: 0;
 }
 
+.jobs-command { flex: 1; min-height: 0; background: transparent; }
 .jobs-list {
+  max-height: none;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -156,6 +158,8 @@ function shortTime(raw?: string): string {
   scrollbar-width: thin;
   padding: 2px;
 }
+
+.jobs-list :deep([role="presentation"]) { display: flex; flex-direction: column; gap: var(--gap-2); }
 
 .job-card {
   display: flex;
@@ -179,7 +183,7 @@ function shortTime(raw?: string): string {
   box-shadow: var(--shadow-sm);
 }
 
-.job-card:focus-visible {
+.job-card[data-highlighted] {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }

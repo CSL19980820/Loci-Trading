@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useId } from 'vue'
+const researchPanelId = useId()
 import { CircleCheck, CircleX as CircleClose, FileCheck as DocumentChecked, RefreshCw as RefreshRight, Search, TriangleAlert as WarningFilled } from '@lucide/vue'
 import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
 import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
@@ -278,8 +280,8 @@ onMounted(() => {
       @close="error = ''"
     />
 
-    <PageTabs v-model="section" :items="sectionTabs" :sticky="false" dense aria-label="研究分区" />
-    <div class="research-content">
+    <PageTabs :panel-id="researchPanelId" v-model="section" :items="sectionTabs" :sticky="false" dense aria-label="研究分区" />
+    <div class="research-content" :id="researchPanelId" role="tabpanel" tabindex="0" :aria-labelledby="`${researchPanelId}-tab-${section}`">
     <div v-show="section === 'profile'" class="research-section">
     <ResearchRunPanel
       :runs="runs"

@@ -4,20 +4,23 @@ from __future__ import annotations
 from typing import Any
 
 from src.ledger import GuardianStore
-from src.ops.application.guardian_config import get_config
+from src.ops.application.guardian_config import get_config, managed_guardian_job
 from src.ops.application.guardian_delivery import deliver_pending
 from src.ops.application.jobs.context import JobContext, JobError, JobSkipped
 from src.ops.application.notify_calendar import notification_silence_reason
 from src.ops.application.notify_dispatch import dispatch_text
 
-MANAGED_GUARDIAN_DELIVERY = "自主交易员 · 通知补发"
+MANAGED_GUARDIAN_DELIVERY = "天才交易员 · 通知补发"
+_PREVIOUS_GUARDIAN_DELIVERY = "自主交易员 · 通知补发"
 
 
 def ensure_guardian_delivery_job(store: Any) -> dict[str, list[str]]:
     cfg = get_config(store)
+    job = managed_guardian_job(store, name=MANAGED_GUARDIAN_DELIVERY,
+                               previous_name=_PREVIOUS_GUARDIAN_DELIVERY,
+                               kind="guardian_delivery")
     if not cfg["enabled"]:
         return {"created": []}
-    job = store.get_job_by_name(MANAGED_GUARDIAN_DELIVERY)
     if job is not None:
         if job["kind"] != "guardian_delivery":
             raise ValueError("交易员通知补发任务名被其他任务占用")

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Label } from '@/shared/components/ui/label'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -8,7 +9,7 @@ import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/components/ui/dropdown-menu'
 import { Ellipsis, SlidersHorizontal } from '@lucide/vue'
 import { DialogDescription, DialogFooter } from '@/shared/components/ui/dialog'
-import { CircleAlert, Clock, Info, ListFilter, LoaderCircle, Play, RefreshCw, X } from '@lucide/vue'
+import { CircleAlert, Clock, Info, ListFilter, Play, RefreshCw, X } from '@lucide/vue'
 import { toast } from 'vue-sonner'
 
 import { getMarketSession, getProviders } from '@/shared/api/quant'
@@ -473,7 +474,7 @@ onMounted(() => {
   <div class="screen-workspace page-fill flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <header v-if="isMobile" class="screen-phone-header"><h1>选股</h1><div><Button access="read" variant="ghost" size="icon" aria-label="选股条件" @click="conditionsOpen = true"><SlidersHorizontal /></Button><DropdownMenu><DropdownMenuTrigger as-child><Button access="read" variant="ghost" size="icon" aria-label="选股操作"><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem access="read" :disabled="detailDisabled" @select="openDetail"><Info />{{ detailLabel }}</DropdownMenuItem><DropdownMenuItem access="read" :disabled="!selected" @select="openHistory"><Clock />入库历史</DropdownMenuItem><DropdownMenuItem access="read" :disabled="catalogLoading" @select="refreshAll"><RefreshCw />刷新目录</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></header>
     <h1 v-else class="sr-only">选股</h1>
-    <div v-if="isMobile" class="screen-phone-choice"><Button access="read" variant="outline" class="screen-phone-catalog" aria-haspopup="dialog" @click="catalogOpen = true"><ListFilter /><span>{{ selected?.name || '选择战法或技能' }}</span></Button><Button v-if="userStore.canWrite" :disabled="primaryDisabled" class="screen-phone-run" @click="runPrimary"><LoaderCircle v-if="engineRunning || skillBusy" class="animate-spin" /><Play v-else />{{ primaryLabel }}</Button></div>
+    <div v-if="isMobile" class="screen-phone-choice"><Button access="read" variant="outline" class="screen-phone-catalog" aria-haspopup="dialog" @click="catalogOpen = true"><ListFilter /><span>{{ selected?.name || '选择战法或技能' }}</span></Button><Button v-if="userStore.canWrite" :disabled="primaryDisabled" class="screen-phone-run" @click="runPrimary"><Spinner v-if="engineRunning || skillBusy" class="animate-spin" /><Play v-else />{{ primaryLabel }}</Button></div>
     <div v-if="isMobile" class="screen-phone-scope"><span>{{ dateRange ? `${dateRange[0]} — ${dateRange[1]}` : '默认交易日' }}</span><span v-if="userStore.canWrite">{{ recordCandidates && selected?.kind !== 'skill' ? '入库候选' : '不自动入库' }}</span></div>
 
     <PageToolbar v-if="!isMobile" dense class="screen-primary-toolbar">
@@ -510,7 +511,7 @@ onMounted(() => {
           {{ selected ? selected.name : '选目录' }}
         </Button>
         <Button access="read" variant="ghost" size="icon-sm" aria-label="刷新目录" :disabled="catalogLoading" @click="refreshAll">
-          <LoaderCircle v-if="catalogLoading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="catalogLoading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <RefreshCw v-else aria-hidden="true" />
         </Button>
         <Button access="read" variant="outline" size="sm" :disabled="!selected" @click="openHistory">
@@ -520,7 +521,7 @@ onMounted(() => {
         <Tooltip v-if="userStore.canWrite" :disabled="Boolean(selected)">
           <TooltipTrigger as-child>
             <Button class="screen-run-primary" size="sm" :disabled="primaryDisabled" @click="runPrimary">
-              <LoaderCircle
+              <Spinner
                 v-if="selected?.kind === 'skill' && skillBusy"
                 class="animate-spin motion-reduce:animate-none"
                 aria-hidden="true"

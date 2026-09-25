@@ -120,6 +120,7 @@ export {
   deleteMcpServer,
   getMcpQuota,
   saveWudaoMcp,
+  saveHithinkMcp,
   patchWudaoSettings,
   type SkillRunAsk,
   type SkillRun,

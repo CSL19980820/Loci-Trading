@@ -7,7 +7,7 @@ const hint = computed(() => [props.reason,props.eta ? `预计 ${props.eta}` : ''
 </script>
 <template>
   <Empty class="empty-state" :class="{ 'empty-state--compact':compact }">
-    <EmptyHeader class="empty-state__header"><EmptyMedia variant="icon" class="empty-state__icon"><component :is="icon ?? Inbox" aria-hidden="true" /></EmptyMedia><EmptyTitle class="empty-state__title">{{ description }}</EmptyTitle><EmptyDescription v-if="hint" :title="hint" class="empty-state__hint">{{ hint }}</EmptyDescription></EmptyHeader>
+    <EmptyHeader class="empty-state__header"><EmptyMedia variant="icon" class="empty-state__icon"><slot name="image"><component :is="icon ?? Inbox" aria-hidden="true" /></slot></EmptyMedia><EmptyTitle class="empty-state__title"><slot name="description">{{ description }}</slot></EmptyTitle><EmptyDescription v-if="hint" :title="hint" class="empty-state__hint">{{ hint }}</EmptyDescription></EmptyHeader>
     <EmptyContent v-if="$slots.default" class="empty-state__actions"><slot /></EmptyContent>
   </Empty>
 </template>

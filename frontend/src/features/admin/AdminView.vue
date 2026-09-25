@@ -2,6 +2,7 @@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
 import { SidebarGroup, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/shared/components/ui/sidebar' 
 import { computed, ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronRight, FileCheck, Gauge, KeyRound, Logs, ShieldCheck, Users } from '@lucide/vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
@@ -19,6 +20,7 @@ const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const mobile = useMobileLayout()
+const compactNavigation = useMediaQuery('(max-width: 980px)')
 const groups = [
   { name: 'platform', label: '用量', icon: Gauge, items: [{ name: 'overview', label: '大模型用量', icon: Gauge }] },
   { name: 'accounts', label: '账号', icon: Users, items: [{ name: 'users', label: '账号管理', icon: Users }] },
@@ -38,9 +40,9 @@ function toggle(name: string): void { collapsed.value = collapsed.value.includes
     <h1 v-else class="sr-only">管理后台</h1>
     <EmptyState v-if="!userStore.isAdmin" description="仅管理员可访问" :icon="ShieldCheck"><Button access="read" as-child variant="outline"><RouterLink to="/">返回首页</RouterLink></Button></EmptyState>
     <template v-else>
-      <PageTabs v-model="active" :items="items" variant="pill" :sticky="false" class="admin-mobile-tabs" aria-label="管理分区" />
+      <PageTabs v-if="compactNavigation" panel-id="admin-main-panel" v-model="active" :items="items" variant="pill" :sticky="false" class="admin-mobile-tabs" aria-label="管理分区" />
       <div class="admin-layout">
-        <nav class="admin-rail" aria-label="管理后台导航">
+        <nav v-if="!compactNavigation" class="admin-rail" aria-label="管理后台导航">
           <Collapsible v-for="group in groups" :key="group.name" :open="!collapsed.includes(group.name)" @update:open="toggle(group.name)">
             <SidebarGroup class="admin-group">
               <CollapsibleTrigger class="admin-group__trigger"><component :is="group.icon" /><span>{{ group.label }}</span><ChevronRight class="admin-group__caret" :class="{ 'is-open': !collapsed.includes(group.name) }" /></CollapsibleTrigger>
@@ -48,7 +50,7 @@ function toggle(name: string): void { collapsed.value = collapsed.value.includes
             </SidebarGroup>
           </Collapsible>
         </nav>
-        <main class="admin-content" :aria-label="items.find(item => item.name === active)?.label">
+        <main id="admin-main-panel" class="admin-content" :role="compactNavigation ? 'tabpanel' : undefined" :tabindex="compactNavigation ? 0 : undefined" :aria-labelledby="compactNavigation ? `admin-main-panel-tab-${active}` : undefined" :aria-label="items.find(item => item.name === active)?.label">
           <OverviewTab v-if="active === 'overview'" />
           <UsersTab v-else-if="active === 'users'" />
           <LoginsTab v-else-if="active === 'logins'" />

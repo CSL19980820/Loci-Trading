@@ -77,6 +77,10 @@ export interface AiMessage {
   status?: 'streaming' | 'done' | 'cancelled' | 'error'
   /** Native provider reasoning; empty when supplier has none. */
   thinking?: string
+  /** Optional persisted execution phase; never a substitute for provider reasoning. */
+  progress?: { phase: 'queued' | 'preparing' | 'thinking' | 'tools' | 'answering' | 'done' | 'error'; label?: string }
+  /** Host-provided model/time caption for embedded conversations. */
+  meta?: string
   /** User-attached data URLs (vision). */
   images?: string[]
   tool_receipts?: AiToolReceipt[]

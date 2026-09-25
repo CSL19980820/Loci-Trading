@@ -94,14 +94,14 @@ function openTheme(): void {
 .more-user-menu :deep(.user-avatar) { width: 36px; height: 36px; }
 .more-search { justify-content: flex-start; width: 100%; height: 44px; color: var(--text-tertiary); font-weight: 400; }
 .more-drawer-body { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0)); }
-.more-link { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 6px 0; border-radius: var(--radius-lg); color: var(--text-secondary); font-size: var(--fs-aux); text-decoration: none; }
-.more-link__icon-wrap { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface); transition: background-color var(--dur-fast) var(--ease); }
+.more-link { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 8px; height: auto; min-width: 0; min-height: 44px; padding: 6px 0; border-radius: var(--radius-lg); color: var(--text-secondary); font-size: var(--fs-aux); text-decoration: none; }
+.more-link__icon-wrap { flex-shrink: 0; display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface); transition: background-color var(--dur-fast) var(--ease); }
 .more-link__icon { width: 21px; height: 21px; stroke-width: 1.8; }
 .more-link.active { color: var(--seal-ink); }
 .more-link.active .more-link__icon-wrap { background: var(--seal-soft); border-color: var(--seal-border); }
 .more-link--assistant { border:0; background:transparent; cursor:pointer; }
 .more-link:active .more-link__icon-wrap { background: var(--surface-hover); }
-.more-link__label { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.more-link__label { flex-shrink: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 /* Keep the whole selector global: scoped CSS drops anything after :global(...). */
 :global(html[data-mobile-keyboard] .mobile-bottom-nav) { display:none; }
 @media (prefers-reduced-motion: reduce) { .nav-tab, .nav-tab__icon-wrap, .more-link__icon-wrap { transition: none; } }

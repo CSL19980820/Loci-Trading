@@ -10,11 +10,12 @@ import { default as ToggleSwitch } from '@/shared/components/ui/app/ToggleSwitch
  *
  * 自带 useNotifyPolicy，面板不替它转发任何数据。
  */
-import { onMounted } from 'vue'
+import { onMounted, useId } from 'vue'
 
 import SettingsPanel from './SettingsPanel.vue'
 import { useNotifyPolicy } from '../composables/useNotifyPolicy'
 
+const barkFieldsId = useId()
 const { quietHours, barkEnabled, barkKey, barkServer, loadNotify, saveNotify, testNotify } =
   useNotifyPolicy()
 
@@ -38,6 +39,7 @@ onMounted(() => {
           <ToggleSwitch v-model="barkEnabled" aria-label="启用 Bark 推送" />
           <TextField
             v-model="barkKey"
+            :id="`${barkFieldsId}-key`"
             class="notify-field"
             aria-label="Bark 设备密钥"
             placeholder="设备密钥"
@@ -45,6 +47,7 @@ onMounted(() => {
           />
           <TextField
             v-model="barkServer"
+            :id="`${barkFieldsId}-server`"
             class="notify-field"
             aria-label="Bark 服务地址"
             placeholder="服务地址，可选"

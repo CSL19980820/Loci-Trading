@@ -64,7 +64,7 @@ onBeforeUnmount(() => controller?.abort())
           <div><dt>开盘 / 元</dt><dd>{{ price(current?.open) }}</dd></div><div><dt>最高 / 元</dt><dd>{{ price(current?.high) }}</dd></div><div><dt>最低 / 元</dt><dd>{{ price(current?.low) }}</dd></div><div><dt>成交额</dt><dd>{{ amount(current?.amount) }}</dd></div>
         </dl>
         <div class="kline-ma" aria-label="均线读数"><span v-for="(ma,index) in hover?.ma" :key="ma.period" :style="{ color: tokens.maPalette[index] }">MA{{ ma.period }} <b>{{ price(ma.value) }}</b></span></div>
-        <div ref="plotElement" class="kline-plot"><KlineChart :bars="bars" period="day" :indicator="indicator" :ma-periods="maPeriods" :visible-bars="visibleBars" :stock-code="identity.code" :stock-name="name" @hover="hover = $event" /></div>
+        <div ref="plotElement" class="kline-plot"><KlineChart scroll-through :bars="bars" period="day" :indicator="indicator" :ma-periods="maPeriods" :visible-bars="visibleBars" :stock-code="identity.code" :stock-name="name" @hover="hover = $event" /></div>
       </template>
       <EmptyState v-else compact description="该区间暂无有效K线数据" />
     </CardContent>

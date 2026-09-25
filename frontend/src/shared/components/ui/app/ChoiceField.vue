@@ -1,6 +1,7 @@
 <script setup lang="ts" generic="T = string">
 import { computed, nextTick, ref, useAttrs, useSlots, watch, type StyleValue } from 'vue'
-import { Check, ChevronsUpDown, LoaderCircle, X } from '@lucide/vue'
+import { Check, ChevronsUpDown, X } from '@lucide/vue'
+import { Spinner } from '../spinner'
 import { Button } from '../button'
 import { Popover, PopoverContent, PopoverTrigger } from '../popover'
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '../command'
@@ -57,7 +58,7 @@ watch(disabled, value => { if (value) open.value = false })
           <span v-if="multiple && selections.length" class="choice-field__values">{{ selections.map(labelOf).join('、') }}</span>
           <span v-else-if="!multiple && selections.length" class="choice-field__value">{{ labelOf(selections[0]) || placeholder }}</span>
           <span v-else class="text-muted-foreground">{{ placeholder }}</span>
-          <LoaderCircle v-if="busy" class="size-4 shrink-0 animate-spin" aria-hidden="true" />
+          <Spinner v-if="busy" class="size-4 shrink-0 animate-spin" aria-hidden="true" />
           <ChevronsUpDown v-else class="size-4 shrink-0 opacity-60" aria-hidden="true" />
         </Button>
       </PopoverTrigger>

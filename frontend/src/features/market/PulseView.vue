@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 /**
  * 盘面：开盘 5 秒内回答三件事——大盘怎么走 / 我的池子今天怎么样 / 系统有没有坏。
  *
@@ -14,7 +15,7 @@ import MobilePageFrame from '@/shared/components/layout/MobilePageFrame.vue'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import { useRouter } from 'vue-router'
-import { LoaderCircle, RotateCw } from '@lucide/vue'
+import { RotateCw } from '@lucide/vue'
 
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import UiBadge from '@/shared/components/ui/UiBadge.vue'
@@ -139,10 +140,12 @@ const mobileSection = ref('tracking')
     <div class="pulse-mobile__status"><span>{{ sessionRemain }}</span><time v-if="boardClock">{{ boardClock }} 更新</time><PulseHealthDot :loading="healthLoading" :error="healthError" :last-failed-run="lastFailedRun" :has-enabled-screen-job="hasEnabledScreenJob" :next-screen-run-at="nextScreenRunAt" /></div>
     <PulseStatusBar :issues="issues" :busy="loading" @retry="refreshAll" />
     <PulseIndexStrip :indices="indices" />
-    <PageTabs v-model="mobileSection" :items="[{name:'tracking',label:'近选跟踪',badge:trackRows.length},{name:'analysis',label:'智能体研判'},{name:'intel',label:'情报'}]" variant="pill" :sticky="false" class="pulse-mobile__tabs" aria-label="盘面内容" />
+    <PageTabs panel-id="pulse-mobile-panel" v-model="mobileSection" :items="[{name:'tracking',label:'近选跟踪',badge:trackRows.length},{name:'analysis',label:'智能体研判'},{name:'intel',label:'情报'}]" variant="pill" :sticky="false" class="pulse-mobile__tabs" aria-label="盘面内容" />
+    <div id="pulse-mobile-panel" role="tabpanel" tabindex="0" :aria-labelledby="`pulse-mobile-panel-tab-${mobileSection}`">
     <PulseTrackTable v-if="mobileSection === 'tracking'" compact title="近选跟踪" :note="trackMeta" :hint="trackHint" :rows="trackRows" :empty="trackEmpty" :empty-hint="trackEmptyHint" />
     <template v-else-if="mobileSection === 'analysis'"><p v-if="agentPartialError" class="pulse-mobile__partial">{{ agentPartialError }}</p><PulseAgentFeed compact :rows="agentRows" :loading="agentLoading" :error="agentError" :partial-error="agentPartialError" @retry="refreshAll" /></template>
     <PulseWatchRail v-else :brief="brief" :brief-loading="briefLoading" :brief-error="briefError" />
+    </div>
   </MobilePageFrame>
   <div v-else class="page-fill pulse-home relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
     <PageBusy overlay :busy="loading" label="加载盘面…" />
@@ -166,7 +169,7 @@ const mobileSection = ref('tracking')
         <Tooltip>
           <TooltipTrigger as-child>
             <Button access="read" size="sm" :disabled="busy" aria-label="同步现价并刷新本页" @click="refreshAll">
-              <LoaderCircle v-if="busy" class="animate-spin" aria-hidden="true" />
+              <Spinner v-if="busy" class="animate-spin" aria-hidden="true" />
               <RotateCw v-else aria-hidden="true" />
               刷新
             </Button>

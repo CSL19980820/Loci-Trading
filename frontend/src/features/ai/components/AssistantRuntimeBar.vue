@@ -72,7 +72,7 @@ watch(() => props.disabled, disabled => { if (disabled) { modelOpen.value = fals
     <Popover v-model:open="thinkingOpen">
       <PopoverTrigger as-child>
         <Button access="read" class="assistant-runtime__thinking" variant="ghost" role="combobox" :aria-expanded="thinkingOpen" :aria-controls="thinkingId" :aria-label="`思考强度：${thinkingLabel}`" :disabled="disabled">
-          <span>思考 {{ thinkingLabel }}</span><ChevronDown aria-hidden="true" />
+          <span>推理：{{ thinkingLabel }}</span><ChevronDown aria-hidden="true" />
         </Button>
       </PopoverTrigger>
       <PopoverContent :id="thinkingId" class="assistant-runtime-picker assistant-thinking-picker" side="top" align="end" :collision-padding="12" :side-offset="8" tabindex="-1" aria-label="思考强度" @open-auto-focus="onOpenAutoFocus">

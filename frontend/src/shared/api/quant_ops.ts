@@ -566,6 +566,16 @@ export function saveWudaoMcp(payload: {
   return quantRequest('/mcp/wudao', { method: 'PUT', body: JSON.stringify(payload) })
 }
 
+export function saveHithinkMcp(payload: {
+  token?: string
+  expires_at?: string
+  note?: string
+  is_active?: boolean
+  verify?: boolean
+}): Promise<McpServer> {
+  return quantRequest('/mcp/hithink', { method: 'PUT', body: JSON.stringify(payload) })
+}
+
 export function patchWudaoSettings(payload: {
   hist_daily_primary?: boolean
   note?: string

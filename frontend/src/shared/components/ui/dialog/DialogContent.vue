@@ -26,6 +26,8 @@ const props = withDefaults(defineProps<DialogContentProps & {
   showCloseButton?: boolean
   showOverlay?: boolean
   fullscreenMobile?: boolean
+  /** Full-screen workspaces own layout while retaining dialog focus and dismissal. */
+  unstyled?: boolean
 }>(), {
   showCloseButton: true,
   showOverlay: true,
@@ -33,23 +35,24 @@ const props = withDefaults(defineProps<DialogContentProps & {
 })
 const emits = defineEmits<DialogContentEmits>()
 
-const delegatedProps = reactiveOmit(props, "class", "showCloseButton", "showOverlay", "fullscreenMobile")
+const delegatedProps = reactiveOmit(props, "class", "showCloseButton", "showOverlay", "fullscreenMobile", "unstyled")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <DialogPortal>
+  <DialogPortal :force-mount="props.forceMount">
     <DialogOverlay v-if="showOverlay" />
     <DialogContent
       data-slot="dialog-content"
+      :data-unstyled="unstyled || undefined"
       :data-mobile="fullscreenMobile ? 'full' : 'sheet'"
       v-bind="{ ...$attrs, ...forwarded }"
       :class="
         cn(
-          'ui-dialog bg-raised text-ink fixed z-[var(--z-popup)] grid w-full gap-4 border border-line shadow-lg outline-none duration-200',
-   'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          'top-[5dvh] left-1/2 max-w-[calc(100vw-24px)] max-h-[90dvh] -translate-x-1/2 rounded-xl p-4 overflow-y-auto sm:max-w-lg sm:p-6',
+          !unstyled && 'ui-dialog bg-raised text-ink fixed z-[var(--z-popup)] grid w-full gap-4 border border-line shadow-lg outline-none duration-200',
+   !unstyled && 'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+          !unstyled && 'top-[5dvh] left-1/2 max-w-[calc(100vw-24px)] max-h-[90dvh] -translate-x-1/2 rounded-xl p-4 overflow-y-auto sm:max-w-lg sm:p-6',
           props.class,
         )"
     >

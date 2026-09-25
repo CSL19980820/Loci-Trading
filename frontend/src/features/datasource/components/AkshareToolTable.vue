@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { useVisitorMode } from '@/shared/composables/useAccess'
 const visitor = useVisitorMode()
 import { computed, ref, watch } from 'vue'
-import { LoaderCircle, X } from '@lucide/vue'
+import { X } from '@lucide/vue'
 
 import Sheet from '@/shared/components/layout/Sheet.vue'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
@@ -295,7 +296,7 @@ watch(filtered, () => {
 
     <template #actions>
       <Button size="sm" :disabled="busy" @click="emit('probe-all')">
-        <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+        <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
         一键全测
       </Button>
       <Button size="sm" variant="outline" :disabled="!busy" @click="emit('stop-batch')">
@@ -303,7 +304,7 @@ watch(filtered, () => {
         停止
       </Button>
       <Button size="sm" variant="outline" :disabled="busy" @click="emit('check-version')">
-        <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+        <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
         检查版本更新
       </Button>
       <span v-if="versionInfo?.update_available" class="version-hint">
@@ -487,7 +488,7 @@ watch(filtered, () => {
       <DialogFooter class="gap-2">
         <Button access="read" variant="outline" @click="visible = false">关闭</Button>
         <Button :disabled="busy || !selected" @click="submitProbe">
-          <LoaderCircle v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
+          <Spinner v-if="busy" class="size-4 animate-spin" aria-hidden="true" />
           执行试跑
         </Button>
       </DialogFooter>

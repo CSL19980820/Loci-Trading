@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { useId } from 'vue'
+const strategyPanelId = useId()
+const strategyPaneId = useId()
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/shared/components/ui/resizable'
+import { Spinner } from '@/shared/components/ui/spinner'
 import { useVisitorMode } from '@/shared/composables/useAccess'
 const visitor = useVisitorMode()
 import {
@@ -9,7 +14,6 @@ import {
   FileCheck,
   FolderOpen,
   Library,
-  LoaderCircle,
   MessageCircle,
   PanelRight,
   Play,
@@ -205,7 +209,7 @@ function closeSide(): void {
     <header v-if="mobile" class="formula-phone-header">
       <Button access="read" as-child variant="ghost" size="icon"><RouterLink to="/quant" aria-label="返回工坊"><ArrowLeft /></RouterLink></Button>
       <Input v-model="draft.name" :readonly="visitor" maxlength="64" placeholder="未命名公式" aria-label="公式名称" />
-      <Button variant="ghost" size="icon" aria-label="试跑" :disabled="!hasBody || previewBusy" @click="handleTrial"><LoaderCircle v-if="previewBusy" class="animate-spin" /><Play v-else /></Button>
+      <Button variant="ghost" size="icon" aria-label="试跑" :disabled="!hasBody || previewBusy" @click="handleTrial"><Spinner v-if="previewBusy" class="animate-spin" /><Play v-else /></Button>
       <Button size="sm" aria-label="保存" :disabled="busy" @click="handleSave">保存</Button>
       <DropdownMenu><DropdownMenuTrigger as-child><Button access="read" variant="ghost" size="icon" aria-label="策稿操作"><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
         <DropdownMenuItem :disabled="!trialPassed || screenBusy" @select="selectOpen = true"><Search />选股</DropdownMenuItem>
@@ -216,8 +220,8 @@ function closeSide(): void {
         <DropdownMenuItem v-if="isEditing && draft.packageRevision" variant="destructive" @select="handleDelete"><Trash2 />删除公式</DropdownMenuItem>
       </DropdownMenuContent></DropdownMenu>
     </header>
-    <div v-if="mobile" class="formula-phone-navigation"><Select v-model="workbenchTab"><SelectTrigger aria-label="策稿分区"><SelectValue /></SelectTrigger><SelectContent><SelectItem v-for="item in workbenchTabs" :key="item.name" :value="item.name">{{ item.label }}</SelectItem></SelectContent></Select><PageTabs v-if="workbenchTab === 'formula'" v-model="paneModel" :items="paneItems" variant="pill" :sticky="false" aria-label="编辑器与结果切换" /><span v-else>{{ paramCount }} 参数 · {{ fieldCount }} 字段</span></div>
-    <PageHeader v-else compact :tabs="workbenchTabs" v-model:tab="workbenchTab">
+    <div v-if="mobile" class="formula-phone-navigation"><Select v-model="workbenchTab"><SelectTrigger aria-label="策稿分区"><SelectValue /></SelectTrigger><SelectContent><SelectItem v-for="item in workbenchTabs" :key="item.name" :value="item.name">{{ item.label }}</SelectItem></SelectContent></Select><PageTabs :panel-id="strategyPaneId" v-if="workbenchTab === 'formula'" v-model="paneModel" :items="paneItems" variant="pill" :sticky="false" aria-label="编辑器与结果切换" /><span v-else>{{ paramCount }} 参数 · {{ fieldCount }} 字段</span></div>
+    <PageHeader v-else compact :panel-id="strategyPanelId" :tabs="workbenchTabs" v-model:tab="workbenchTab">
       <template #leading><Button access="read" as-child variant="ghost" size="icon-sm"><RouterLink to="/quant" aria-label="返回工坊"><ArrowLeft aria-hidden="true" /></RouterLink></Button></template>
       <template #title>
         <span class="sr-only">策稿台 · {{ draft.name || '未命名公式' }}</span>
@@ -234,7 +238,7 @@ function closeSide(): void {
         <Tooltip :disabled="hasBody">
           <TooltipTrigger as-child>
             <Button variant="outline" size="sm" :disabled="!hasBody || previewBusy" aria-label="试跑" @click="handleTrial">
-              <LoaderCircle v-if="previewBusy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              <Spinner v-if="previewBusy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
               <Play v-else aria-hidden="true" />
               试跑
             </Button>
@@ -251,7 +255,7 @@ function closeSide(): void {
           <TooltipContent v-if="!trialPassed" side="bottom">先试跑通过再选股</TooltipContent>
         </Tooltip>
         <Button size="sm" aria-label="保存" :disabled="busy" @click="handleSave">
-          <LoaderCircle v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <FileCheck v-else aria-hidden="true" />
           保存
         </Button>
@@ -328,7 +332,9 @@ function closeSide(): void {
       </Alert>
     </div>
 
+    <div :id="strategyPanelId" :role="!mobile ? 'tabpanel' : undefined" tabindex="0" :aria-labelledby="!mobile ? `${strategyPanelId}-tab-${workbenchTab}` : undefined" class="flex min-h-0 flex-1 flex-col">
     <PageTabs
+      :panel-id="strategyPaneId"
       v-if="!mobile && narrow && workbenchTab === 'formula'"
       v-model="paneModel"
       :items="paneItems"
@@ -339,13 +345,20 @@ function closeSide(): void {
       class="workbench-pane-switch"
     />
 
-    <main
+    <ResizablePanelGroup
+      as="main"
+      :id="strategyPaneId"
+      :role="narrow ? 'tabpanel' : undefined"
+      :tabindex="narrow ? 0 : undefined"
+      :aria-labelledby="narrow ? `${strategyPaneId}-tab-${paneModel}` : undefined"
+      direction="horizontal"
+      :auto-save-id="narrow ? null : 'loci-strategy-workbench-v1'"
       v-show="workbenchTab === 'formula'"
       class="workbench-shell"
       :class="{ 'workbench-shell--side': sideVisible, 'workbench-shell--narrow': narrow, 'workbench-shell--bt': sideVisible && sideTab === 'bt' }"
     >
+      <ResizablePanel id="strategy-editor" :order="0" :default-size="62" :min-size="30" v-show="!narrow || mobilePane === 'editor'" class="workbench-editor-pane">
       <ScreenWorkbenchEditor
-        v-show="!narrow || mobilePane === 'editor'"
         ref="editor"
         class="workbench-editor"
         :draft="draft"
@@ -354,6 +367,9 @@ function closeSide(): void {
         :status-tone="statusTone"
       />
 
+      </ResizablePanel>
+      <ResizableHandle v-if="sideVisible && !narrow" aria-label="调整编辑器与结果区宽度" class="workbench-resize-handle" />
+      <ResizablePanel v-if="sideVisible" id="strategy-results" :order="1" :default-size="38" :min-size="30" class="workbench-result-pane">
       <ScreenWorkbenchDock
         v-model:active-tab="sideTab"
         class="workbench-side"
@@ -393,7 +409,8 @@ function closeSide(): void {
           />
         </template>
       </ScreenWorkbenchDock>
-    </main>
+      </ResizablePanel>
+    </ResizablePanelGroup>
 
     <fieldset :disabled="visitor" v-show="workbenchTab !== 'formula'" class="page-scroll workbench-settings">
       <ScreenSkillLogicPanel
@@ -443,6 +460,7 @@ function closeSide(): void {
         "
       />
     </fieldset>
+    </div>
 
     <PageBusy overlay :busy="loading" label="加载量化技能…" />
 

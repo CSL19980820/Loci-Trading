@@ -3,7 +3,7 @@
 跨上下文只从这里导入；不要深掏 ``src.intel.infrastructure.*``。
 """
 from src.intel.application.brief import build_intel_brief
-from src.intel.application.arg_clamp import clamp_mcp_arguments
+from src.intel.application.arg_clamp import clamp_mcp_arguments, clamp_mcp_arguments_with_notes
 from src.intel.application.fetch import (
     call_mcp_tool,
     guarded_client_call,
@@ -11,6 +11,7 @@ from src.intel.application.fetch import (
 )
 from src.intel.application.kline_payload import kline_payload_frames, kline_payload_to_frame
 from src.intel.infrastructure.builtin_market_mcp import BUILTIN_MCP_NAME
+from src.intel.infrastructure.builtin_hithink_mcp import HITHINK_ENDPOINTS, hithink_api_key
 from src.intel.infrastructure.builtin_wudao_mcp import (
     BUILTIN_WUDAO_NAME,
     ensure_resident_wudao,
@@ -19,6 +20,7 @@ from src.intel.infrastructure.builtin_wudao_mcp import (
     wudao_availability,
 )
 from src.intel.infrastructure.mcp import McpClient, McpError, McpTool
+from src.intel.infrastructure.mcp_deadline import deadline_scope
 from src.intel.infrastructure.mcp_config import (
     get_mcp_server_from_json,
     list_mcp_servers_from_json,
@@ -43,6 +45,7 @@ from src.intel.infrastructure.wudao_settings import wudao_hist_daily_primary
 __all__ = [
     "BUILTIN_MCP_NAME",
     "BUILTIN_WUDAO_NAME",
+    "HITHINK_ENDPOINTS",
     "McpClient",
     "McpError",
     "McpQuotaError",
@@ -51,11 +54,14 @@ __all__ = [
     "build_intel_brief",
     "call_mcp_tool",
     "clamp_mcp_arguments",
+    "clamp_mcp_arguments_with_notes",
     "collect_tools",
     "delete_server",
+    "deadline_scope",
     "ensure_resident_wudao",
     "get_mcp_server_from_json",
     "guarded_client_call",
+    "hithink_api_key",
     "is_resident_wudao_server",
     "kline_payload_frames",
     "kline_payload_to_frame",

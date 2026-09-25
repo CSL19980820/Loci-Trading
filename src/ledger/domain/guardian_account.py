@@ -8,6 +8,16 @@ from typing import Any
 INITIAL_CENTS = 20_000_000
 FEE_POLICY = {"commission_rate": "0.00025", "minimum_commission_cents": 0,
               "stamp_tax_sell_rate": "0.0005", "transfer_rate": "0.00001"}
+GUARDIAN_BUY_PREFIXES = ("600", "601", "603", "605", "000", "001", "002", "003", "300", "301")
+
+
+def guardian_buy_error(code: str, action: str) -> str:
+    """当前用户的买入权限；历史持仓仍可按原数量规则减仓退出。"""
+    if action in {"buy", "add"} and not (
+        len(code) == 6 and code.isascii() and code.isdigit() and code.startswith(GUARDIAN_BUY_PREFIXES)
+    ):
+        return "账户仅允许买入沪深主板和创业板；科创板（688/689）、北交所及其他品种不可买入或加仓"
+    return ""
 
 
 def rounded(value: Decimal) -> int:
@@ -53,7 +63,10 @@ def guardian_position_policy(state: dict[str, Any], now: datetime) -> dict[str, 
     locked = [p["code"] for p in state.get("positions", [])
               if available_quantity(p, now.date().isoformat()) < p["quantity"]]
     return {"position_count": len(state.get("positions", [])),
-            "locked_codes": locked, "locked_count": len(locked)}
+            "locked_codes": locked, "locked_count": len(locked),
+            "buyable_boards": ["沪深主板", "创业板"],
+            "buyable_code_prefixes": list(GUARDIAN_BUY_PREFIXES),
+            "legacy_positions_sellable": True}
 
 
 def guardian_quantity_error(code: str, quantity: int, selling: bool, available: int) -> str:
@@ -88,6 +101,10 @@ def settle_guardian_order(state: dict[str, Any], order: dict[str, Any], quote: d
     if action not in ("buy", "add", "sell", "reduce", "take_profit", "stop_loss"):
         raise ValueError("不是可记账的交易动作")
     selling = action in ("sell", "reduce", "take_profit", "stop_loss")
+    if guardian_policy:
+        error = guardian_buy_error(code, action)
+        if error:
+            raise ValueError(error)
     before = next((p for p in state["positions"] if p["code"] == code), None)
     if action == "add" and before is None:
         raise ValueError("没有持仓，首次建仓请使用买入")

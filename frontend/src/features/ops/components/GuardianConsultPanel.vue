@@ -1,23 +1,28 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Button } from '@/shared/components/ui/button'
-import { MessageScroller, MessageScrollerProvider, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from '@/shared/components/ui/message-scroller'
 import { Badge } from '@/shared/components/ui/badge'
-import { Plus, LoaderCircle, Trash2 } from '@lucide/vue'
-import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
-import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
-import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
-import { Notice } from '@/shared/components/ui/app/presentation'
-import { default as Disclosure } from '@/shared/components/ui/app/Disclosure.vue'
-import { default as DisclosurePanel } from '@/shared/components/ui/app/DisclosurePanel.vue'
-import { default as TextField } from '@/shared/components/ui/app/TextField.vue'
+import { ArrowUp, MessageSquare, PanelLeftOpen, PanelRightOpen } from '@lucide/vue'
+import { Alert, AlertDescription } from '@/shared/components/ui/alert'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/shared/components/ui/empty'
+import { SidebarProvider } from '@/shared/components/ui/sidebar'
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/shared/components/ui/sheet'
+import { useElementSize } from '@vueuse/core'
+import AssistantSessionRail from '@/features/ai/components/AssistantSessionRail.vue'
+import AssistantConversation from '@/features/ai/components/AssistantConversation.vue'
+import { copyTextToClipboard } from '@/features/ai/assistantMessageActions'
+import { guardianMessages, guardianPendingLabel } from '../guardianConsultAdapter'
+import { InputGroup, InputGroupAddon, InputGroupTextarea } from '@/shared/components/ui/input-group'
+import AssistantTaskSidebar from '@/features/ai/components/AssistantTaskSidebar.vue'
+import { buildTaskModel } from '@/features/ai/assistantTaskModel'
+import GuardianConsultContext from './GuardianConsultContext.vue'
 
-import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { askGuardian, deleteGuardianConversation, getGuardianConversation, getGuardianConversations, streamGuardianConsultation } from '@/shared/api/guardian'
-import { renderAssistantMarkdown } from '@/features/ai/assistantMarkdown'
 import { confirmAction } from '@/shared/lib/confirm'
 import { createUuid } from '@/shared/lib/uuid'
 import type { GuardianConversation, GuardianConsultTurn } from '@/shared/types/guardian'
-defineProps<{ model: string }>()
+const props = defineProps<{ model: string }>()
 const conversations = ref<GuardianConversation[]>([])
 const selected = ref('')
 const turns = ref<GuardianConsultTurn[]>([])
@@ -27,15 +32,43 @@ const error = ref('')
 const sending = ref(false)
 const deleting = ref(false)
 const loading = ref(false)
+const questionInput = ref<InstanceType<typeof InputGroupTextarea> | null>(null)
+const canSend = computed(() => Boolean(props.model && selected.value && question.value.trim()) && !sending.value && !pending.value && !loading.value && !deleting.value)
 const pending = computed(() => turns.value.some(t => ['queued', 'running'].includes(t.status)))
-const renderedAnswers = computed(() => Object.fromEntries(turns.value.map(t => [t.id, ['queued', 'running'].includes(t.status) ? '' : renderAssistantMarkdown(t.result.answer || '')])))
+const failedQuestions = computed(() => Object.fromEntries(turns.value.filter(turn => turn.status === 'failed').map(turn => [`${turn.id}:assistant`, turn.question])))
+const messages = computed(() => guardianMessages(turns.value))
+const pendingLabel = computed(() => guardianPendingLabel(turns.value.find(t => ['queued', 'running'].includes(t.status))))
+const panelRoot = ref<InstanceType<typeof SidebarProvider> | null>(null)
+const { width: panelWidth } = useElementSize(() => {
+  const element = panelRoot.value?.$el
+  return element instanceof HTMLElement ? element : undefined
+})
+const smallScreen = computed(() => panelWidth.value <= 700)
+const historyOpen = ref(false)
+const detailDrawer = computed(() => panelWidth.value < 1100)
+const detailsOpen = ref(false)
+const desktopDetailsOpen = ref(true)
+const taskModel = computed(() => buildTaskModel({ messages: messages.value, agents: [], busy: pending.value }))
+const taskProps = computed(() => ({ model: taskModel.value, title: '咨询详情', visibleTabs: ['sources', 'cabin'] as ('sources' | 'cabin')[] }))
+const collapsed = ref(false)
+const currentTitle = computed(() => conversations.value.find(item => item.id === selected.value)?.title || '新话题')
+const sessions = computed(() => conversations.value.map(item => ({ id: item.id, title: item.title, updated_at: new Date(item.updated * 1000).toISOString() })))
+const railProps = computed(() => ({ sessions: sessions.value, activeId: selected.value, disabled: sending.value || deleting.value, archiveEnabled: false, batchEnabled: false, settingsEnabled: false, title: '咨询话题', createLabel: '新话题', searchPlaceholder: '搜索咨询话题', brandLabel: '交易员咨询', emptyDescription: '还没有咨询话题', emptyReason: '从实际持仓或执行偏差开始讨论' }))
+async function selectTopic(id: string): Promise<void> {
+  if (sending.value || deleting.value || selected.value === id) return
+  selected.value = id; turns.value = []; question.value = ''; notes.value = ''; retryPayload = null; historyOpen.value = false
+  await load(id, true)
+}
+async function copyAnswer(text: string): Promise<void> {
+  if (!await copyTextToClipboard(text)) error.value = '复制失败，请重试'
+}
 let controller: AbortController | undefined
 let streamController: AbortController | undefined
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 let suspended = false
 let retryPayload: Parameters<typeof askGuardian>[0] | null = null
-function newTopic() { controller?.abort(); streamController?.abort(); clearTimeout(timer); selected.value = createUuid(); turns.value = []; question.value = ''; notes.value = ''; error.value = ''; retryPayload = null }
+function newTopic() { controller?.abort(); streamController?.abort(); clearTimeout(timer); selected.value = createUuid(); turns.value = []; question.value = ''; notes.value = ''; error.value = ''; retryPayload = null; loading.value = false; historyOpen.value = false }
 async function follow(id: string, requestId: string) {
   streamController?.abort()
   const request = new AbortController(); streamController = request
@@ -53,13 +86,12 @@ async function follow(id: string, requestId: string) {
     }
   }
 }
-async function deleteTopic() {
-  if (sending.value || pending.value || deleting.value || !conversations.value.some(item => item.id === selected.value)) return
-  const id = selected.value
+async function deleteTopic(id: string) {
+  if (sending.value || (pending.value && id === selected.value) || deleting.value || !conversations.value.some(item => item.id === id)) return
   deleting.value = true
   try {
-    if (!await confirmAction({ title: '删除当前话题', message: '删除此话题的全部提问、回答和实际持仓背景，其他话题不受影响。', confirmText: '删除话题', cancelText: '取消', danger: true })) return
-    controller?.abort(); clearTimeout(timer)
+    if (!await confirmAction({ title: '删除咨询话题', message: '删除此话题的全部提问、回答和实际持仓背景，其他话题不受影响。', confirmText: '删除话题', cancelText: '取消', danger: true })) return
+    if (selected.value === id) { controller?.abort(); streamController?.abort(); clearTimeout(timer) }
     await deleteGuardianConversation(id)
     conversations.value = (await getGuardianConversations()).conversations
     if (selected.value === id) {
@@ -93,7 +125,7 @@ async function load(id: string, restoreNotes = false) {
   } finally { if (controller === request) loading.value = false }
 }
 async function send() {
-  if (!question.value.trim() || sending.value || pending.value || deleting.value) return
+  if (!canSend.value) return
   sending.value = true; error.value = ''
   const message = question.value.trim()
   try {
@@ -106,6 +138,24 @@ async function send() {
   } catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { sending.value = false }
 }
+function focusQuestion(): void {
+  const input = questionInput.value?.$el
+  if (input instanceof HTMLTextAreaElement) input.focus()
+}
+function editAgain(value: string): void { question.value = value; void nextTick(focusQuestion) }
+function onQuestionKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Enter' || !event.ctrlKey || event.isComposing) return
+  event.preventDefault()
+  void send()
+}
+watch(question, async () => {
+  await nextTick()
+  const input = questionInput.value?.$el
+  if (!(input instanceof HTMLTextAreaElement)) return
+  input.style.height = 'auto'
+  const line = Number.parseFloat(getComputedStyle(input).lineHeight) || 22
+  input.style.height = `${Math.max(line * 3 + 20, Math.min(input.scrollHeight, line * 7 + 20))}px`
+}, { flush: 'post' })
 onMounted(async () => {
   try {
     const result = await getGuardianConversations()
@@ -125,256 +175,82 @@ onUnmounted(() => { disposed = true; controller?.abort(); streamController?.abor
 </script>
 
 <template>
-  <section class="consult-panel" aria-label="与交易员沟通">
-    <header class="consult-header">
-      <div class="consult-tools">
-        <Button variant="outline" size="sm" :disabled="sending || deleting" @click="newTopic"><Plus class="size-3" />新话题</Button>
-        <ChoiceField v-if="conversations.length" v-model="selected" placeholder="选择话题" aria-label="咨询话题" :disabled="sending || deleting" class="consult-topic-select" @change="load(selected, true)">
-          <ChoiceOption v-for="item in conversations" :key="item.id" :value="item.id" :label="item.title" />
-        </ChoiceField>
-        <Badge v-if="!model" variant="outline">请先配置模型</Badge>
-        <Button variant="ghost" size="icon-sm" class="consult-delete" aria-label="删除当前话题" title="删除当前话题全部内容" :disabled="sending || pending || deleting || !conversations.some(item => item.id === selected)" @click="deleteTopic"><Trash2 class="size-4" /></Button>
-      </div>
-    </header>
-    <MessageScrollerProvider :key="selected" default-scroll-position="end" :auto-scroll="true" :scroll-edge-threshold="80">
-    <MessageScroller class="consult-scroller">
-    <MessageScrollerViewport class="consult-history" aria-label="咨询消息">
-    <MessageScrollerContent class="consult-transcript" aria-live="polite" :aria-busy="loading">
-      <div v-if="!turns.length" class="consult-empty"><h4>把你的真实情况告诉交易员</h4><p>例如：“我跟着买了，但买贵了 3%，现在要不要调整？”</p><p>它会结合你的描述和当前证据讨论，不会把模拟仓当成你的实盘，也不会通过对话下单。</p></div>
-      <MessageScrollerItem v-for="turn in turns" :key="turn.id" :message-id="turn.id" scroll-anchor class="consult-turn">
-        <div class="consult-question" aria-label="你的消息">{{ turn.question }}</div>
-        <div class="consult-answer" aria-label="交易员的回复">
-          <div class="consult-answer-meta">
-            <span class="consult-identity">交易员</span>
-            <span v-if="turn.result.model" class="consult-model">{{ turn.result.model }}</span>
-            <time v-if="turn.result.as_of">{{ turn.result.as_of.slice(0, 16).replace('T', ' ') }}</time>
-            <span v-if="['queued', 'running'].includes(turn.status)" class="consult-progress"><LoaderCircle class="size-3 animate-spin" />{{ turn.result.answer ? '正在回复' : '正在研究' }}</span>
-          </div>
-          <div v-if="turn.result.answer && ['queued', 'running'].includes(turn.status)" class="consult-streaming">{{ turn.result.answer }}</div>
-          <div v-else-if="turn.result.answer" class="consult-rich" v-html="renderedAnswers[turn.id]" />
-          <Notice v-if="turn.status === 'failed'" :title="turn.result.error || '咨询未完成，请重新提问'" tone="warning" :closable="false" />
-          <p v-else-if="!turn.result.answer" class="consult-pending">正在读取账户、查询证据…</p>
-          <ActionButton v-if="turn.status === 'failed'" variant="link" @click="question = turn.question">重新编辑提问</ActionButton>
-        </div>
-      </MessageScrollerItem>
-    </MessageScrollerContent>
-    </MessageScrollerViewport>
-    <MessageScrollerButton access="read" aria-label="回到最新咨询" />
-    </MessageScroller>
-    </MessageScrollerProvider>
-    <Notice v-if="error" :title="error" tone="error" :closable="false" show-icon />
+  <SidebarProvider ref="panelRoot" :persist="false" :keyboard-shortcut="false" class="consult-panel" aria-label="与交易员沟通">
+    <AssistantSessionRail v-if="!smallScreen" v-bind="railProps" v-model:collapsed="collapsed" class="consult-rail" @select="selectTopic" @create="newTopic" @remove="deleteTopic" />
+    <Sheet v-else v-model:open="historyOpen">
+      <SheetContent side="left" class="consult-history-sheet">
+        <SheetTitle class="sr-only">咨询话题</SheetTitle><SheetDescription class="sr-only">搜索、打开或管理与交易员的咨询话题</SheetDescription>
+        <AssistantSessionRail v-bind="railProps" drawer @select="selectTopic" @create="newTopic" @remove="deleteTopic" @update:collapsed="historyOpen = false" />
+      </SheetContent>
+    </Sheet>
+    <section class="consult-main">
+      <header class="consult-header">
+        <Button v-if="smallScreen" access="read" variant="ghost" size="icon-sm" aria-label="打开咨询历史" @click="historyOpen = true"><PanelLeftOpen class="size-4" /></Button>
+        <div class="consult-heading"><h3>{{ currentTitle }}</h3><span>交易员 · {{ model || '请先配置模型' }}</span></div>
+        <Badge v-if="pending" variant="info"><Spinner class="size-3" />{{ pendingLabel }}</Badge>
+        <Spinner v-else-if="loading" class="size-4" aria-label="加载咨询" />
+        <Button v-if="detailDrawer" access="read" variant="ghost" size="icon-sm" aria-label="打开咨询详情" @click="detailsOpen = true"><PanelRightOpen class="size-4" /></Button>
+      </header>
+      <Empty v-if="!turns.length && !loading" class="consult-empty">
+        <EmptyHeader><EmptyMedia variant="icon"><MessageSquare /></EmptyMedia><EmptyTitle>把你的真实情况告诉交易员</EmptyTitle><EmptyDescription>例如：“我跟着买了，但买贵了 3%，现在要不要调整？”</EmptyDescription></EmptyHeader>
+        <EmptyDescription>结合你的描述和当前证据讨论，不会把模拟仓当成你的实盘，也不会通过对话下单。</EmptyDescription>
+      </Empty>
+      <AssistantConversation v-else :key="selected" :messages="messages" :busy="pending" assistant-label="交易员" :allow-rerun="false" class="consult-conversation" @copy="copyAnswer">
+        <template #after-message="{ message }"><Button v-if="failedQuestions[message.id]" access="read" variant="link" size="sm" class="consult-retry" @click="editAgain(failedQuestions[message.id]!)">重新编辑提问</Button></template>
+      </AssistantConversation>
+    <Alert v-if="error" variant="destructive"><AlertDescription>{{ error }}</AlertDescription></Alert>
     <div class="consult-composer">
-    <Disclosure class="consult-context"><DisclosurePanel title="我的实际持仓 / 执行偏差（选填，随话题保存）" name="notes"><TextField v-model="notes" :disabled="deleting" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" maxlength="12000" placeholder="写明股票名称或代码、实际股数、成本、买入日期、可用现金，以及和模拟操作有哪些不同。这里只保存咨询背景，不会修改模拟账户。" /></DisclosurePanel></Disclosure>
-    <TextField v-model="question" type="textarea" :autosize="{ minRows: 3, maxRows: 7 }" maxlength="6000" aria-label="咨询问题" placeholder="说说你担心什么，或继续追问上一条建议…" :disabled="sending || deleting" @keydown.ctrl.enter.prevent="send" />
-    <footer class="consult-footer">
-      <span>咨询不执行交易<span class="consult-shortcut"> · Ctrl + Enter 发送</span></span>
-      <Button
-        size="sm"
-        class="h-7 text-xs px-3 font-medium"
-        :disabled="!model || !selected || !question.trim() || pending || loading || deleting"
-        @click="send"
-      >
-        <LoaderCircle v-if="sending || pending" class="size-3 animate-spin mr-1" />
-        <span>{{ pending ? '正在研究' : '发送问题' }}</span>
-      </Button>
-    </footer>
+
+    <InputGroup class="consult-input" aria-label="向交易员提问">
+      <InputGroupTextarea ref="questionInput" v-model="question" :rows="3" maxlength="6000" aria-label="咨询问题" placeholder="说说你担心什么，或继续追问上一条建议…" :disabled="sending || deleting" class="consult-question-input" @keydown="onQuestionKeydown" />
+      <InputGroupAddon align="block-end" class="consult-footer">
+        <span>咨询不执行交易<span class="consult-shortcut"> · Ctrl + Enter 发送</span></span>
+        <Button size="sm" class="consult-send" :disabled="!canSend" :aria-busy="sending || pending" @click="send">
+          <Spinner v-if="sending || pending" class="size-3" aria-hidden="true" /><ArrowUp v-else class="size-3.5" aria-hidden="true" />
+          {{ pending ? '正在研究' : sending ? '正在发送' : '发送问题' }}
+        </Button>
+      </InputGroupAddon>
+    </InputGroup>
     </div>
-  </section>
+    </section>
+    <AssistantTaskSidebar v-if="!detailDrawer" v-bind="taskProps" v-model:open="desktopDetailsOpen" class="consult-detail">
+      <template #cabin><GuardianConsultContext v-model="notes" :disabled="deleting" /></template>
+    </AssistantTaskSidebar>
+    <Sheet v-else v-model:open="detailsOpen">
+      <SheetContent class="consult-history-sheet">
+        <SheetTitle class="sr-only">咨询详情</SheetTitle><SheetDescription class="sr-only">查看研究来源与编辑本话题持仓背景</SheetDescription>
+        <AssistantTaskSidebar v-bind="taskProps" :open="true" drawer @update:open="detailsOpen = $event">
+          <template #cabin><GuardianConsultContext v-model="notes" :disabled="deleting" /></template>
+        </AssistantTaskSidebar>
+      </SheetContent>
+    </Sheet>
+  </SidebarProvider>
 </template>
 
 <style scoped>
-.consult-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-2);
-  padding: 14px 16px;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 0%;
-  overflow: hidden;
-  color: var(--ink);
-}
-
-.consult-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--gap-2);
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--rule-soft);
-  flex-shrink: 0;
-}
-
-.consult-title-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.consult-title-group h3 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--ink);
-  letter-spacing: -0.01em;
-}
-
-.consult-sub {
-  font-size: var(--fs-micro);
-  color: var(--muted);
-}
-
-.consult-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.consult-scroller { flex:1 1 0%; height:auto; min-height:0; }
-.consult-transcript { gap:0; }
-.consult-history {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  /* 正文到达边界后继续滚动外层页面，避免鼠标停在对话区时被困住。 */
-  overscroll-behavior-y: auto;
-  padding: 16px 2px;
-  scrollbar-width: thin;
-}
-
-.consult-empty {
-  text-align: center;
-  padding: var(--gap-4) var(--gap-3);
-  color: var(--muted);
-  line-height: 1.9;
-}
-
-.consult-empty h4 {
-  color: var(--ink);
-  font-weight: 500;
-}
-
-.consult-turn {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: min(100%, 960px);
-  margin: 0 auto 28px;
-  font-size: var(--fs-body);
-  line-height: 1.75;
-}
-
-.consult-turn p {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin: var(--gap-2) 0 0;
-}
-
-.consult-rich :deep(p) {
-  margin: var(--gap-2) 0;
-  white-space: normal;
-}
-
-.consult-rich :deep(ul), .consult-rich :deep(ol) {
-  padding-left: 1.5em;
-  margin: var(--gap-2) 0;
-}
-
-.consult-rich :deep(ul) { list-style: disc; }
-.consult-rich :deep(ol) { list-style: decimal; }
-.consult-rich :deep(a) { color: var(--seal-ink); text-decoration: underline; overflow-wrap: anywhere; }
-
-.consult-question {
-  align-self: flex-end;
-  max-width: min(85%, 42rem);
-  background: var(--seal-soft);
-  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-xs) var(--radius-xl);
-  padding: 10px 14px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.consult-answer {
-  min-width: 0;
-}
-
-.consult-answer-meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-bottom: 8px;
-  font-size: var(--fs-aux);
-  color: var(--muted);
-}
-.consult-identity { color: var(--ink); font-weight: 600; }
-.consult-model { overflow-wrap: anywhere; }
-.consult-progress { display: inline-flex; align-items: center; gap: 5px; color: var(--seal-ink); }
-.consult-streaming { white-space: pre-wrap; overflow-wrap: anywhere; }
-.consult-rich { overflow-wrap: anywhere; }
-.consult-rich :deep(> :first-child) { margin-top: 0; }
-.consult-rich :deep(h1), .consult-rich :deep(h2), .consult-rich :deep(h3) { margin: 1em 0 .4em; font-size: 1.12em; font-weight: 600; line-height: 1.4; }
-.consult-rich :deep(th), .consult-rich :deep(td) { padding: 6px 10px; border-bottom: 1px solid var(--rule-soft); text-align: left; }
-.consult-rich :deep(blockquote) { margin: .5em 0; padding-left: 12px; border-left: 2px solid var(--rule); color: var(--muted); }
-.consult-composer { flex-shrink: 0; align-self: center; width: min(100%, 960px); display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--rule-soft); }
-
-.consult-pending {
-  color: var(--muted);
-}
-
-.consult-context :deep([data-slot='accordion-trigger']) {
-  font-size: var(--fs-aux);
-  color: var(--muted);
-}
-
-.consult-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: var(--gap-2);
-  padding-top: var(--gap-1);
-  flex-shrink: 0;
-}
-
-.consult-footer span {
-  font-size: var(--fs-micro);
-  color: var(--muted);
-}
-
-.consult-context {
-  flex-shrink: 0;
-}
-
-.consult-rich :deep(pre) {
-  max-width: 100%;
-  overflow: auto;
-}
-
-.consult-rich :deep(table) {
-  display: block;
-  max-width: 100%;
-  overflow: auto;
-}
-
-@media(max-width: 650px) {
-  .consult-question { max-width: 92%; }
-  .consult-shortcut { display: none; }
-  .consult-panel { padding: var(--gap-3); }
-}
-</style>
-
-<style scoped>
-.consult-tools { width:100%; min-width:0; flex-wrap:nowrap; }
-.consult-tools > button { flex-shrink:0; }
-.consult-topic-select { flex:0 1 480px; min-width:0; }
-.consult-topic-select :deep(.choice-field__value) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-.consult-topic-select :deep(.choice-field__trigger) { width:100%; min-width:0; }
-.consult-delete { margin-left:auto; color:var(--destructive); }
-.consult-delete:hover { color:var(--destructive); background:var(--stamp-soft); }
+.consult-panel { --ai-fs-title:var(--fs-title); --ai-fs-prose:var(--fs-body); --ai-fs-body:var(--fs-ui); --ai-fs-aux:var(--fs-aux); --ai-fs-meta:var(--fs-kicker); display:flex; flex:1 1 0%; min-width:0; min-height:0; height:100%; overflow:hidden; color:var(--ink); background:transparent; }
+.consult-rail { width:240px; flex:0 0 240px; border-right:1px solid var(--rule-soft); }
+.consult-rail.is-collapsed { width:48px; flex-basis:48px; }
+.consult-detail { width:260px; flex:0 0 260px; min-width:0; }
+.consult-detail.is-collapsed { width:44px; flex-basis:44px; }
+.consult-main { display:flex; flex-direction:column; flex:1 1 0%; min-width:0; min-height:0; overflow:hidden; padding:0 20px 14px; gap:8px; }
+.consult-header { display:flex; align-items:center; gap:10px; min-height:60px; flex-shrink:0; border-bottom:1px solid var(--rule-soft); }
+.consult-heading { flex:1; min-width:0; }
+.consult-heading h3 { margin:0; font-size:var(--fs-body); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.consult-heading > span { color:var(--muted); font-size:var(--fs-micro); }
+.consult-header :deep([data-slot=badge]) { flex-shrink:0; gap:5px; }
+.consult-empty { flex:1; line-height:1.8; }
+.consult-conversation :deep(.assistant-conversation__viewport) { overscroll-behavior-y:auto; }
+.consult-retry { align-self:flex-start; flex-shrink:0; }
+.consult-composer { flex-shrink:0; align-self:center; width:min(100%,860px); display:flex; flex-direction:column; gap:6px; padding-top:4px; }
+.consult-context :deep([data-slot=accordion-trigger]) { font-size:var(--fs-aux); color:var(--muted); padding:8px 0; }
+.consult-footer { display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap; gap:8px; padding:4px 10px 10px; }
+.consult-footer > span { font-size:var(--fs-micro); color:var(--muted); }
+.consult-input { background:var(--surface); border-radius:var(--radius-lg); }
+.consult-question-input { min-height:86px; max-height:12rem; line-height:1.6; overflow-y:auto; }
+.consult-send { flex-shrink:0; margin-left:auto; }
+:global(.consult-history-sheet) { --ai-fs-title:var(--fs-title); --ai-fs-prose:var(--fs-body); --ai-fs-body:var(--fs-ui); --ai-fs-aux:var(--fs-aux); --ai-fs-meta:var(--fs-kicker); padding:38px 0 0; gap:0; overflow:hidden; }
+:global(.consult-history-sheet .assistant-task-sidebar) { flex:1; min-height:0; width:100%; border:0; }
+:global(.consult-history-sheet .assistant-session-rail) { flex:1; width:100%; min-height:0; }
+@media(max-width:700px) { .consult-main { padding:0 12px 10px; } .consult-shortcut { display:none; } .consult-header { min-height:56px; } }
 </style>

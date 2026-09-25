@@ -35,6 +35,8 @@ export function buildKlineOption(opts: {
   stockCode: string
   stockName: string
   strategySignals?: StrategySignalMark[]
+  /** 嵌入滚动内容时由宿主接收滚轮/触摸；区间仍可通过底部滑块调整。 */
+  scrollThrough?: boolean
   /** 主题 token 快照；不传则即时读取（宿主需把它加进 watch 才能随主题重绘） */
   tokens?: ChartTokens
 }): Record<string, unknown> {
@@ -321,15 +323,16 @@ export function buildKlineOption(opts: {
     dataZoom: [
       {
         type: 'inside',
+        disabled: opts.scrollThrough ?? false,
         xAxisIndex: [0, 1, 2],
         // 禁止 filter：默认 filter 会裁掉窗口外点，使 dataIndex 变成相对下标，
         // 双击分时会错指到更早的 K 线（如点 2026 却打开 2025）。
         filterMode: 'none',
         start: zoomStart,
         end: zoomEnd,
-        zoomOnMouseWheel: true,
-        moveOnMouseMove: true,
-        preventDefaultMouseMove: true,
+        zoomOnMouseWheel: !opts.scrollThrough,
+        moveOnMouseMove: !opts.scrollThrough,
+        preventDefaultMouseMove: !opts.scrollThrough,
       },
       {
         type: 'slider',

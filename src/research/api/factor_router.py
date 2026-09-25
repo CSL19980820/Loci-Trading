@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from src.shared.bounded_executor import BoundedExecutor, QueueFull
+from src.research.infrastructure.backtest_jobs import DuplicateResearchJob
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,7 +23,7 @@ from src.research.infrastructure import (
     ResearchWorkflowStore,
 )
 from src.shared.paths import research_runs_dir
-from src.shared.tenancy import submit_with_tenant
+
 
 
 #: 进程级单线程池：PTH252 实验一次跑满 CPU，串行是有意的。
@@ -31,7 +32,7 @@ from src.shared.tenancy import submit_with_tenant
 #: 无关。投递一律走 submit_with_tenant（见下方 _submit），别写 .submit(...)：
 #: execute_job 里 _jobs() / _cards() / _workflows() 全部基于 research_runs_dir()，
 #: 那是**租户私有**目录，丢了上下文就会把 B 的因子实验产物写进管理员的目录。
-_FACTOR_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="research-factor")
+_FACTOR_EXECUTOR = BoundedExecutor("research-factor")
 
 
 def build_research_factor_router(
@@ -66,7 +67,8 @@ def build_research_factor_router(
             return backtest_job_store_factory()
         return ResearchBacktestJobStore(research_runs_dir() / "factor_jobs.json")
 
-    _jobs().recover_interrupted()
+    if backtest_job_store_factory:
+        _jobs().recover_interrupted()
 
     def _execute(request: Pth252FactorJobRequest) -> Any:
         split = TrainOOSSplit(**request.split.model_dump())
@@ -84,41 +86,48 @@ def build_research_factor_router(
             )
 
     def _submit(request: Pth252FactorJobRequest) -> dict[str, Any]:
-        jobs = _jobs()
-        job = jobs.create(request.model_dump(mode="json"))
-
-        def execute_job() -> None:
-            try:
-                jobs.update(job["id"], status="running")
-                outcome = _execute(request)
-                jobs.update(
-                    job["id"],
-                    status="completed",
-                    run_id=outcome.run_card.run_id,
-                    error="",
-                )
-            except Pth252FactorExperimentError as exc:
-                jobs.update(
-                    job["id"],
-                    status="failed",
-                    run_id=exc.run_id,
-                    error=str(exc),
-                )
-            except Exception as exc:
-                jobs.update(
-                    job["id"],
-                    status="failed",
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-
         try:
-            # 见 _FACTOR_EXECUTOR 上方注释：这里改成裸 submit 会让 job 状态与 run card
-            # 落到主租户的 research_runs 目录，发起人轮询到的永远是 queued。
-            submit_with_tenant(_FACTOR_EXECUTOR, execute_job)
-        except Exception as exc:
-            jobs.update(job["id"], status="failed", error=f"submit_failed: {exc}")
-            raise Pth252FactorExperimentError("PTH252 后台任务提交失败") from exc
-        return job
+            with _FACTOR_EXECUTOR.reserve() as submit:
+                jobs = _jobs()
+                job = jobs.create(request.model_dump(mode="json"))
+
+                def execute_job() -> None:
+                    try:
+                        jobs.update(job["id"], status="running")
+                        outcome = _execute(request)
+                        jobs.update(
+                            job["id"],
+                            status="completed",
+                            run_id=outcome.run_card.run_id,
+                            error="",
+                        )
+                    except Pth252FactorExperimentError as exc:
+                        jobs.update(
+                            job["id"],
+                            status="failed",
+                            run_id=exc.run_id,
+                            error=str(exc),
+                        )
+                    except Exception as exc:
+                        jobs.update(
+                            job["id"],
+                            status="failed",
+                            error=f"{type(exc).__name__}: {exc}",
+                        )
+
+                try:
+                    # 见 _FACTOR_EXECUTOR 上方注释：这里改成裸 submit 会让 job 状态与 run card
+                    # 落到主租户的 research_runs 目录，发起人轮询到的永远是 queued。
+                    submit(execute_job, on_cancel=lambda: jobs.update(job["id"], status="failed", error="interrupted: 服务关闭取消排队任务"))
+                except Exception as exc:
+                    jobs.update(job["id"], status="failed", error=f"submit_failed: {exc}")
+                    raise Pth252FactorExperimentError("PTH252 后台任务提交失败") from exc
+                return job
+        except DuplicateResearchJob as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except QueueFull as exc:
+            raise HTTPException(429, str(exc), headers={"Retry-After": "5"}) from exc
+
 
     @router.post("/api/research/factor-jobs", tags=["research"], status_code=202)
     def submit_factor_job(

@@ -52,7 +52,7 @@ export interface GuardianWatch {
   code: string
   name: string
   strategies: string[]
-  signals: Array<{ date?: string; reason?: string; rule_version?: string }>
+  signals: Array<{ date?: string; created_at?: string; reason?: string; rule_version?: string }>
   watch?: { code: string; name: string; reason: string; entry_condition: string; exit_condition: string; added_at: string; updated_at: string }
   position?: GuardianPosition
 }
@@ -70,7 +70,8 @@ export interface GuardianRun {
     body?: string
     analysis?: string
     analysis_only?: boolean
-    outcome?: 'traded' | 'no_action'
+    outcome?: 'traded' | 'no_action' | 'observation_changed' | 'partial_execution' | 'rejected'
+    observation_changes?: Array<{ action: 'watch' | 'unwatch' | 'update'; code: string; name: string; at: string }>
     deferred?: GuardianDecision[]
     decisions?: GuardianDecision[]
     fills?: Array<Partial<GuardianTrade> & { code: string; before_layers?: number; after_layers?: number; price?: number }>
@@ -123,7 +124,7 @@ export interface GuardianExperience {
 }
 
 export interface GuardianConversation { id: string; title: string; notes: string; created: number; updated: number }
-export interface GuardianConsultTurn { id: string; question: string; status: string; created: number; result: { answer?: string; error?: string; model?: string; as_of?: string; tools?: { name: string; ok: boolean }[] } }
+export interface GuardianConsultTurn { id: string; question: string; status: string; created: number; result: { answer?: string; error?: string; model?: string; as_of?: string; tools?: { name: string; ok: boolean }[]; thinking?: string; phase?: 'preparing' | 'thinking' | 'tools' | 'answering' | 'done' | 'error'; tool_receipts?: { call_id: string; name: string; status: 'running' | 'done' | 'error'; elapsed_ms?: number; summary?: string }[] } }
 export interface GuardianConversationDetail extends GuardianConversation { turns: GuardianConsultTurn[] }
 
 export interface GuardianAccount {

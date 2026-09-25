@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { Item } from '@/shared/components/ui/item'
 import { onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
-import { ChevronRight, LoaderCircle, RefreshCw } from '@lucide/vue'
+import { ChevronRight, RefreshCw } from '@lucide/vue'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
@@ -84,7 +85,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
       
       <CardAction>
         <Button access="read" variant="outline" size="icon-sm" :disabled="loading" aria-label="刷新当前历史页" @click="load">
-          <LoaderCircle v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <RefreshCw v-else aria-hidden="true" />
         </Button>
       </CardAction>
@@ -116,7 +117,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
           <div class="diary-meta">
             <strong>{{ phaseName(row.phase) }}</strong>
             <UiBadge :variant="statusVariant(row.status)" :dot="row.status !== 'running'">
-              <LoaderCircle v-if="row.status === 'running'" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              <Spinner v-if="row.status === 'running'" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
               {{ statusName(row.status) }}
             </UiBadge>
             <time>{{ agentTime(row.started_at) }}</time>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { LoaderCircle } from '@lucide/vue'
+
 
 import {
   getMarketBootstrap,
@@ -384,7 +385,7 @@ onUnmounted(() => {
             稍后再说
           </Button>
           <Button :disabled="starting" @click="start">
-            <LoaderCircle v-if="starting" class="animate-spin" aria-hidden="true" />
+            <Spinner v-if="starting" class="animate-spin" aria-hidden="true" />
             {{ isCatchup ? (error ? '重新补齐' : '开始补齐') : '开始初始化' }}
           </Button>
         </template>

@@ -22,7 +22,7 @@ class ToolSearch(BaseModel):
 class ResearchToolCatalog:
     """The agent keeps this schema list by reference; discovery extends the next request."""
 
-    def __init__(self, protocol: str, schemas: list[dict], checkpoint: Any) -> None:
+    def __init__(self, protocol: str, schemas: list[dict], checkpoint: Any, *, opening_auction: bool = False) -> None:
         from src.ai.application.tool_schema import tool_schema
 
         self.tenant = current_tenant()
@@ -31,11 +31,15 @@ class ResearchToolCatalog:
         essential = {"guardian_quotes", "guardian_runtime", "guardian_account_read", "guardian_calculate", "guardian_preflight"}
         # 每轮高频的盘面/资金查询保留入口，避免为几百字schema多付一轮模型延迟。
         market_core = {"market_overview", "intraday_main_flow", "theme_intraday_capital"}
-        self.loaded = {name for name in self.catalog if name in essential or name.split("__")[-1] in market_core}
+        # 09:25 只有五分钟可形成竞价预案；实际回执使用这些工具，首轮就提供完整参数。
+        auction_core = {"auction_theme_strength", "auction_opening_snapshot", "auction_data",
+                        "auction_market_scan", "kline"} if opening_auction else set()
+        self.loaded = {name for name in self.catalog
+                       if name in essential or name.split("__")[-1] in market_core | auction_core}
         self.schemas = [self.catalog[name] for name in sorted(self.loaded)]
         self.schemas.append(tool_schema(protocol, "guardian_tools_search",
             "按中英文关键词或完整names发现并加载工具，下一次模型请求即可直接调用。空query分页浏览全部工具；"
-            "支持MCP行情、资金、新闻、全市场筛选、网页、历史决策、策略、预演等，未加载不代表不可用。",
+            "支持同花顺扶摇MCP按需查询，也支持MCP行情、资金、新闻、全市场筛选、网页、历史决策、策略、预演等；未加载不代表不可用。",
             ToolSearch.model_json_schema()))
 
     def search(self, arguments: dict[str, Any]) -> dict[str, Any]:

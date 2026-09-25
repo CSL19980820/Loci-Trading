@@ -37,7 +37,7 @@ export const feedPhase = (phase?: string): string => ({
 
 export function guardianRunRows(runs: GuardianRun[]): AgentFeedRow[] {
   return runs.map(run => ({
-    key:`guardian:run:${run.slot}`, agentId:'guardian', agentName:'自主交易员',
+    key:`guardian:run:${run.slot}`, agentId:'guardian', agentName:'天才交易员',
     to:'/agents/guardian?tab=research', at:at(run.started, run.result?.as_of),
     phaseLabel:'盘中研判', statusLabel:run.status === 'running' ? '研判中' : statusName(run.status),
     summary:(run.result?.error || run.result?.analysis || run.result?.body || run.result?.sections?.flatMap(s => s.paragraphs).join('\n') || '').trim(),
@@ -47,7 +47,7 @@ export function guardianRunRows(runs: GuardianRun[]): AgentFeedRow[] {
 export function guardianReportRows(reports: GuardianReviewSummary[]): AgentFeedRow[] {
   return reports.map(report => ({
     key:`guardian:report:${report.report_key || `${report.period}:${report.trade_date}`}`,
-    agentId:'guardian', agentName:'自主交易员', to:'/agents/guardian?tab=reviews',
+    agentId:'guardian', agentName:'天才交易员', to:'/agents/guardian?tab=reviews',
     at:at(report.started, report.created_at), phaseLabel:feedPhase(report.period),
     statusLabel:report.status === 'running' ? '研判中' : statusName(report.status),
     summary:(report.error || report.summary || '').trim(),

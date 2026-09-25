@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { useId } from 'vue'
+const workshopPanelId = useId()
+import { Spinner } from '@/shared/components/ui/spinner'
 import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
-import { ChevronDown, CircleAlert, Database, LoaderCircle, Plus, Upload, X } from '@lucide/vue'
+import { ChevronDown, CircleAlert, Database, Plus, Upload, X } from '@lucide/vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 
@@ -259,6 +262,7 @@ onMounted(() => {
     <PageHeader
       title="工坊"
       :tabs="workshopTabs"
+      :panel-id="workshopPanelId"
       v-model:tab="activeTab"
     >
       <template #actions>
@@ -269,7 +273,7 @@ onMounted(() => {
           :disabled="syncBusy"
           @click="bootstrapMarket"
         >
-          <LoaderCircle v-if="syncBusy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Spinner v-if="syncBusy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <Database v-else aria-hidden="true" />
           同步行情
         </Button>
@@ -308,7 +312,7 @@ onMounted(() => {
             :disabled="syncBusy"
             @click="bootstrapMarket"
           >
-            <LoaderCircle v-if="syncBusy" class="size-4 animate-spin" aria-hidden="true" />
+            <Spinner v-if="syncBusy" class="size-4 animate-spin" aria-hidden="true" />
             同步行情
           </Button>
         </div>
@@ -324,7 +328,7 @@ onMounted(() => {
       </div>
     </Alert>
 
-    <div class="workshop-body">
+    <div class="workshop-body" :id="workshopPanelId" role="tabpanel" tabindex="0" :aria-labelledby="`${workshopPanelId}-tab-${activeTab}`">
 
       <!-- v-if 只管「进过没」，v-show 才是当前 Tab：见 mountedTabs 的注释 -->
       <div

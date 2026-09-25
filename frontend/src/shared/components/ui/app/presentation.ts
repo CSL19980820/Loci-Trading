@@ -1,5 +1,5 @@
 import { computed, defineComponent, h, inject, provide, ref, type Component, type CSSProperties, type PropType } from 'vue'
-import { AlertCircle, CheckCircle, Info, Inbox, TriangleAlert, X } from '@lucide/vue'
+import { AlertCircle, CheckCircle, Info, TriangleAlert, X } from '@lucide/vue'
 import { Alert, AlertDescription, AlertTitle } from '../alert'
 import { Badge } from '../badge'
 import { Button } from '../button'
@@ -9,6 +9,7 @@ import { Progress } from '../progress'
 import { Separator } from '../separator'
 import { Skeleton } from '../skeleton'
 import { cssLength } from './context'
+import EmptyState from '../EmptyState.vue'
 
 export const Notice = defineComponent({
   name: 'Notice',
@@ -21,7 +22,7 @@ export const Notice = defineComponent({
       props.showIcon ? h(icons[props.tone] ?? Info, { class: 'size-4', 'aria-hidden': true }) : null,
       props.title || slots.title ? h(AlertTitle, {}, slots.title ?? (() => props.title)) : null,
       slots.default || props.description ? h(AlertDescription, {}, slots.default ?? (() => props.description)) : null,
-      props.closable ? h('button', { type: 'button', class: 'notice__close field-icon-button', 'aria-label': '关闭提示', onClick: () => { visible.value = false; emit('close') } }, [h(X, { class: 'size-4' })]) : null,
+      props.closable ? h(Button, { access: 'read', variant: 'ghost', type: 'button', class: 'notice__close field-icon-button', 'aria-label': '关闭提示', onClick: () => { visible.value = false; emit('close') } }, [h(X, { class: 'size-4' })]) : null,
     ]) : null
   },
 })
@@ -31,17 +32,14 @@ export const StatusBadge = defineComponent({
   props: { tone: String, closable: Boolean, size: String, effect: String },
   emits: ['close'],
   setup: (props, { slots, emit }) => () => h(Badge, { class: 'status-badge', 'data-tone': props.tone, variant: props.effect === 'dark' ? 'default' : 'outline' }, () => [
-    slots.default?.(), props.closable ? h('button', { type: 'button', class: 'field-icon-button', 'aria-label': '移除', onClick: (event: MouseEvent) => { event.stopPropagation(); emit('close', event) } }, [h(X, { class: 'size-3' })]) : null,
+    slots.default?.(), props.closable ? h(Button, { access: 'read', variant: 'ghost', type: 'button', class: 'field-icon-button', 'aria-label': '移除', onClick: (event: MouseEvent) => { event.stopPropagation(); emit('close', event) } }, [h(X, { class: 'size-3' })]) : null,
   ]),
 })
 
 export const EmptyBlock = defineComponent({
   name: 'EmptyBlock',
   props: { description: { type: String, default: '暂无数据' }, imageSize: [String, Number] },
-  setup: (props, { slots }) => () => h('div', { class: 'empty-block', role: 'status' }, [
-    slots.image?.() ?? h(Inbox, { class: 'empty-block__icon', 'aria-hidden': true }),
-    h('p', { class: 'empty-block__description' }, slots.description?.() ?? props.description), slots.default?.(),
-  ]),
+  setup: (props, { slots }) => () => h(EmptyState, { description: props.description, imageSize: typeof props.imageSize === 'number' ? props.imageSize : undefined, compact: true }, slots),
 })
 
 export const IconBox = defineComponent({
@@ -88,17 +86,6 @@ export const UserAvatar = defineComponent({
     props.src ? h(AvatarImage, { src: props.src, alt: props.alt ?? '' }) : null, h(AvatarFallback, {}, slots.default ?? (() => props.alt?.slice(0, 1) || '我')),
   ]),
 })
-export const ButtonGroup = defineComponent({ name: 'ButtonGroup', setup: (_props, { slots }) => () => h('div', { role: 'group', class: 'button-group' }, slots.default?.()) })
-
-export const ScrollContainer = defineComponent({
-  name: 'ScrollContainer', props: { height: [String, Number], maxHeight: [String, Number] },
-  setup(props, { slots, expose }) {
-    const viewport = ref<HTMLElement>()
-    expose({ wrapRef: viewport, scrollTo: (options: ScrollToOptions) => viewport.value?.scrollTo(options), setScrollTop: (value: number) => { if (viewport.value) viewport.value.scrollTop = value }, update: () => undefined })
-    return () => h('div', { ref: viewport, class: 'scroll-container', style: { height: cssLength(props.height), maxHeight: cssLength(props.maxHeight) } }, slots.default?.())
-  },
-})
-
 export const GridRow = defineComponent({
   name: 'GridRow', props: { gutter: Number },
   setup: (props, { slots }) => () => h('div', { class: 'grid-row', style: { gap: cssLength(props.gutter, '1rem') } }, slots.default?.()),
