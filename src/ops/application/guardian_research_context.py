@@ -168,6 +168,9 @@ class ResearchContext:
                                      "fields": list(value) if isinstance(value, dict) else [],
                                      "count": len(value) if isinstance(value, list) else None}
                     if field == "preopen_plan" and isinstance(value, dict):
+                        # 盘前定下的结论与重点方向直接可见，盘中各轮沿用同一基调；逐股完整条件仍按需读取。
+                        result[field]["summary"] = value.get("summary", "")
+                        result[field]["next_steps"] = value.get("next_steps", [])
                         result[field]["plans_index"] = [{k: plan[k] for k in ("code", "action", "quantity_status") if k in plan}
                                                          for plan in value.get("plans", [])]
                     if field == "review_memory" and isinstance(value, list):
