@@ -237,13 +237,16 @@ def apply_today_spot(
 
 
 def _is_current_trading_day(store: MarketStore) -> bool:
+    """今天是否开市：行情库日历里有今天，或交易所公告日程判定开市（节假日不再按工作日刷现价）。"""
+    from src.market.infrastructure.exchange_calendar import exchange_is_open
+
     today = date.today().isoformat()
     days = store.trading_days()
     if today in days:
         return True
-    if not days:
-        return date.today().weekday() < 5
-    return today > max(days) and date.today().weekday() < 5
+    if days and today <= max(days):
+        return False
+    return exchange_is_open(today)
 
 
 def _spot_refresh_key(

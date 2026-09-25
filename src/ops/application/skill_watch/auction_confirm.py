@@ -45,12 +45,18 @@ STANCE_LABEL: dict[str, str] = {
 
 
 def in_auction_window(now: datetime | None = None) -> bool:
-    """09:15–09:30 之间才有竞价可确认；其余时间这一段自动跳过。"""
+    """交易日 09:15–09:30 之间才有竞价可确认；其余时间（含节假日）这一段自动跳过。
+
+    节假日没有竞价：旧逻辑只排除周末，中秋、国庆会拿上一交易日的陈旧竞价数据
+    “确认/放弃”龙头角色。
+    """
     current = (now or datetime.now(_TZ)).astimezone(_TZ)
-    if current.weekday() >= 5:
-        return False
     clock = current.timetz().replace(tzinfo=None)
-    return time(9, 15) <= clock < time(9, 30)
+    if not time(9, 15) <= clock < time(9, 30):
+        return False
+    from src.market import exchange_is_open
+
+    return exchange_is_open(current.date().isoformat())
 
 
 def _auction_rows(payload: Any, *, limit: int = 400) -> dict[str, dict[str, Any]]:

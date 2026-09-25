@@ -354,8 +354,10 @@ def check_market_health(
 def _wall_clock_data_lag(last_date: str, days: list[str], *, now: datetime | None = None) -> int:
     """仓内最新日相对「今天应覆盖的交易日」落后多少个交易日。
 
-    日历只含已入库日时，若末日已落后墙钟，用工作日差粗估（不计 A 股节假日）。
+    日历只含已入库日时，若末日已落后墙钟，按交易所公告休市日程数交易日（节假日不计）。
     """
+    from src.market.infrastructure.exchange_calendar import exchange_is_open, exchange_open_days
+
     clock = now or datetime.now()
     today = clock.date()
     today_s = today.isoformat()
@@ -376,15 +378,12 @@ def _wall_clock_data_lag(last_date: str, days: list[str], *, now: datetime | Non
             return 0
         return days.index(expected) - days.index(last_date)
 
-    # 日历尚无今日（周末或日历过期）：按 Mon–Fri 粗估
-    end = today if after_close or today.weekday() >= 5 else today - timedelta(days=1)
-    lag = 0
-    cursor = last + timedelta(days=1)
-    while cursor <= end:
-        if cursor.weekday() < 5:
-            lag += 1
-        cursor += timedelta(days=1)
-    return lag
+    # 日历尚无今日（非交易日或日历过期）：按交易所日程数 (last, end] 内的交易日
+    end = today if after_close or not exchange_is_open(today_s) else today - timedelta(days=1)
+    if end <= last:
+        return 0
+    scheduled = exchange_open_days((last + timedelta(days=1)).isoformat(), end.isoformat())
+    return len(set(scheduled) | {d for d in days if last_date < d <= end.isoformat()})
 
 
 def _check_staleness(

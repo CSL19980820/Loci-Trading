@@ -229,10 +229,12 @@ def resolve_trading_day_gate(
     )
 
     if calendar_days:
-        calendar_source = "market_db"
+        # 行情库日历只含已入库日；今天不在其中时由交易所公告休市日程判定（见 session）。
+        calendar_source = "market_db" if day_s in calendar_days else "exchange_schedule"
         buy_allowed = is_trading
         if is_trading:
-            note = f"{day_s} 为交易日（market.db 日历）"
+            label = "market.db 日历" if day_s in calendar_days else "交易所休市日程"
+            note = f"{day_s} 为交易日（{label}）"
         else:
             note = f"{day_s} 非交易日（周末/法定假日），跳过开仓与监测落单"
     else:
@@ -244,7 +246,7 @@ def resolve_trading_day_gate(
                 "监测可纠偏但不落买入成交"
             )
         else:
-            note = f"{day_s} 非交易日（周末），跳过开仓与监测落单"
+            note = f"{day_s} 非交易日（周末/法定假日），跳过开仓与监测落单"
 
     return {
         "trade_date": day_s,

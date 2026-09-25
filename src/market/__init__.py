@@ -209,11 +209,17 @@ from src.market.application.watchlist import (
     resolve_preset,
 )
 
-from src.market.infrastructure.exchange_calendar import scheduled_trading_days, calendar_trading_day, refresh_exchange_calendar
+from src.market.infrastructure.exchange_calendar import (
+    calendar_trading_day,
+    exchange_is_open,
+    exchange_open_days,
+    refresh_exchange_calendar,
+    scheduled_trading_days,
+)
 
 __all__ = [
     "scheduled_trading_days",
-    "calendar_trading_day", "refresh_exchange_calendar",
+    "calendar_trading_day", "refresh_exchange_calendar", "exchange_is_open", "exchange_open_days",
     "QualityThresholds",
     "inspect_market_data",
     "ALL_PRESETS",

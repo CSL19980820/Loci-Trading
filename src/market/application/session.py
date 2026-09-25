@@ -1,12 +1,41 @@
 """A 股交易时段与行情新鲜度判定（供 API / 前端轮询闸门）。"""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
+from src.market.infrastructure.exchange_calendar import (
+    exchange_is_open,
+    exchange_open_days,
+)
 
-def _weekday_fallback_is_trading(d: date) -> bool:
-    return d.weekday() < 5
+#: 回看多少个自然日找最近开市日；春节休市加两头周末最长约 12 天。
+_OPEN_DAY_LOOKBACK = 20
+
+
+def _open_days_between(after: str, through: str, days: list[str]) -> list[str]:
+    """(after, through] 内的交易日：行情库日历 ∪ 交易所公告日程。
+
+    行情库日历只有已入库的日子，缺口日恰恰不在里面；交易所日程补上它们，
+    同时排除节假日。两者取并集，任何一边说开市都算，避免漏补。
+    """
+    if not after or not through or after >= through:
+        return []
+    try:
+        first = (date.fromisoformat(after) + timedelta(days=1)).isoformat()
+        scheduled = exchange_open_days(first, through)
+    except ValueError:
+        scheduled = []
+    return sorted({d for d in days if after < d <= through} | set(scheduled))
+
+
+def _latest_open_day(limit: date, days: list[str]) -> str | None:
+    """不晚于 ``limit`` 的最近交易日：行情库日历与交易所日程取较晚者。"""
+    limit_s = limit.isoformat()
+    known = [d for d in days if d <= limit_s]
+    scheduled = exchange_open_days((limit - timedelta(days=_OPEN_DAY_LOOKBACK)).isoformat(), limit_s)
+    candidates = [*known[-1:], *scheduled[-1:]]
+    return max(candidates) if candidates else None
 
 
 def _backfill_window(
@@ -22,37 +51,10 @@ def _backfill_window(
         return None, None
     if empty or not last_date:
         return None, expected
-    if last_date >= expected:
+    missing = _open_days_between(last_date, expected, days)
+    if not missing:
         return None, None
-    if days:
-        missing = [d for d in days if last_date < d <= expected]
-        if missing:
-            return missing[0], missing[-1]
-    # 日历过期或不含缺口：用库日次日 → 目标日
-    try:
-        nxt = date.fromisoformat(last_date).toordinal() + 1
-        return date.fromordinal(nxt).isoformat(), expected
-    except ValueError:
-        return None, expected
-
-
-def _prev_closed_trading_day(
-    *,
-    today: str,
-    days: list[str],
-    now_date: date,
-) -> str | None:
-    """上一已收盘交易日（严格早于 today）。收盘前日 K 只要求覆盖到这一天。"""
-    if days:
-        prior = [d for d in days if d < today]
-        if prior:
-            return prior[-1]
-    d = now_date
-    for _ in range(10):
-        d = date.fromordinal(d.toordinal() - 1)
-        if _weekday_fallback_is_trading(d):
-            return d.isoformat()
-    return None
+    return missing[0], missing[-1]
 
 
 def _resolve_trading_day(
@@ -63,41 +65,12 @@ def _resolve_trading_day(
 ) -> tuple[bool, str | None]:
     """判定今日是否交易日，并给出「截至今天」的最近交易日（含今日若今日交易）。
 
-    交易日历来自行情库重建：若日历最大日落后于「今天」，说明日历过期，
-    此时不能把「今天不在日历里」当成休市——否则工作日会被误标「非交易日」。
+    行情库日历由已入库日 K 重建，只能说明“哪些日子有数据”，覆盖不到今天也不知道
+    节假日。今天不在其中时按交易所公告休市日程判断——旧逻辑按周一至周五粗判，
+    会把中秋、国庆等工作日休市当成交易日，收盘后催补一根根本不存在的日 K。
     """
-    if not days:
-        is_trading = _weekday_fallback_is_trading(now_date)
-        last_trading_day = today if is_trading else None
-        if not is_trading:
-            d = now_date
-            for _ in range(10):
-                d = date.fromordinal(d.toordinal() - 1)
-                if _weekday_fallback_is_trading(d):
-                    last_trading_day = d.isoformat()
-                    break
-        return is_trading, last_trading_day
-
-    day_set = set(days)
-    max_cal = max(days)
-    if today in day_set:
-        is_trading = True
-    elif today > max_cal:
-        # 日历未覆盖到今天：按工作日粗判，避免误报休市
-        is_trading = _weekday_fallback_is_trading(now_date)
-    else:
-        # 日历已覆盖今天及之后，但今天不在其中 → 真节假日/休市
-        is_trading = False
-
-    prior = [d for d in days if d <= today]
-    if is_trading and today > max_cal:
-        last_trading_day = today
-    elif prior:
-        last_trading_day = prior[-1]
-    elif is_trading:
-        last_trading_day = today
-    else:
-        last_trading_day = days[-1]
+    is_trading = today in set(days) or exchange_is_open(today)
+    last_trading_day = today if is_trading else _latest_open_day(now_date, days)
     return is_trading, last_trading_day
 
 
@@ -109,10 +82,10 @@ def build_session_status(
 ) -> dict[str, Any]:
     """统一会话状态。
 
-    - 非交易日：不自动拉实时
+    - 非交易日（周末与交易所公告的节假日）：不自动拉实时、不催补当天
     - 交易日 15:00 前：日 K 只要求覆盖到上一已收盘交易日（不催补「今日」未定稿日线）
     - 交易日 15:00 后：若库内 last_date 已是今日，停实时轮询；否则可补今日
-    - last_date 落后于应覆盖日：needs_backfill（周末打开等场景）
+    - last_date 落后于应覆盖日：needs_backfill，落后数与补数区间只数交易日
     """
     now = now or datetime.now()
     today = now.date().isoformat()
@@ -120,7 +93,7 @@ def build_session_status(
     after_close = mins >= 15 * 60
     in_live_clock = (9 * 60 + 15) <= mins < (15 * 60)  # [09:15, 15:00)
 
-    days = list(trading_days or [])
+    days = sorted(trading_days or [])
     cov = coverage or {}
     rows = int(cov.get("rows") or 0)
     last_date = str(cov.get("last_date") or "") or None
@@ -136,44 +109,17 @@ def build_session_status(
     if is_trading and after_close:
         expected = today
     elif is_trading:
-        expected = _prev_closed_trading_day(
-            today=today, days=days, now_date=now.date()
-        )
+        expected = _latest_open_day(now.date() - timedelta(days=1), days)
     else:
         expected = last_trading_day
     db_is_current = bool(last_date and expected and last_date >= expected)
 
-    lag_trading_days = 0
-    if expected and last_date and days:
-        try:
-            i_exp = days.index(expected) if expected in days else -1
-            i_last = days.index(last_date) if last_date in days else -1
-            if i_exp >= 0 and i_last >= 0:
-                lag_trading_days = max(0, i_exp - i_last)
-            elif i_exp >= 0 and i_last < 0:
-                lag_trading_days = max(1, i_exp)  # 库日期不在日历上，至少算落后
-            elif i_exp < 0 and expected > max(days):
-                # 日历过期：用自然日差粗估落后
-                try:
-                    lag_trading_days = max(
-                        1,
-                        (date.fromisoformat(expected) - date.fromisoformat(last_date)).days,
-                    )
-                except ValueError:
-                    lag_trading_days = 1
-        except ValueError:
-            lag_trading_days = 0
-    elif expected and not last_date:
+    if expected and last_date:
+        lag_trading_days = len(_open_days_between(last_date, expected, days))
+    elif expected:
         lag_trading_days = 99 if rows == 0 else 1
-    elif expected and last_date and last_date < expected:
-        # 无完整日历时用自然日差粗估
-        try:
-            lag_trading_days = max(
-                1,
-                (date.fromisoformat(expected) - date.fromisoformat(last_date)).days,
-            )
-        except ValueError:
-            lag_trading_days = 1
+    else:
+        lag_trading_days = 0
 
     empty = rows == 0
     needs_backfill = empty or lag_trading_days >= 1
