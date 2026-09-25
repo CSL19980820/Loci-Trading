@@ -225,3 +225,42 @@ class CandidateMixin:
                 (key, key, f"{key}@%"),
             )
             return int(cursor.rowcount)
+
+    def candidate_scoring_rows(
+        self, strategy_slug: str, *, since: str | None = None, until: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """某战法已入库候选的评分相关字段（按日期、代码排序），供按新口径重算评分。"""
+        key = str(strategy_slug or "").strip()
+        if not key:
+            return []
+        sql = ("SELECT id, occurred_on, pool_id, code, name, score, decision, reason, evidence_json, source"
+               " FROM candidate_reviews WHERE strategy_slug = ?")
+        params: list[Any] = [key]
+        if since:
+            sql += " AND occurred_on >= ?"
+            params.append(normalize_date(since))
+        if until:
+            sql += " AND occurred_on <= ?"
+            params.append(normalize_date(until))
+        rows = self.conn.execute(sql + " ORDER BY occurred_on, code", params).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_candidate_scoring(
+        self, updates: list[tuple[str, float | None, str, dict[str, Any]]],
+    ) -> int:
+        """只改 score / reason / evidence（全部成功或全部回滚）。
+
+        不动 ``created_at``、``source`` 与裁决：盘后真选口径依赖它们，重算评分不能把真选改判成回填。
+        """
+        changed = 0
+        with self._transaction() as cursor:
+            for candidate_id, score, reason, evidence in updates:
+                reason_value = _normalize_reason_text(str(reason).strip())
+                if not reason_value:
+                    raise PalaceError("候选记录必须有理由")
+                cursor.execute(
+                    "UPDATE candidate_reviews SET score = ?, reason = ?, evidence_json = ? WHERE id = ?",
+                    (score, reason_value, _dumps(evidence), str(candidate_id)),
+                )
+                changed += cursor.rowcount
+        return changed

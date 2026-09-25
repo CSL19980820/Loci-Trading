@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.shared.evidence_compact import compact_job_result
+from src.strategy.application.score_percentile import SCORE_PERCENTILE
 
 #: 盘后/当日真选写入源（首页「昨选今涨 / 今日选股」只认这些）
 LIVE_SCREEN_SOURCES: frozenset[str] = frozenset(
@@ -62,7 +63,14 @@ def factor_reason(slug: str, factors: dict[str, Any]) -> str:
 
 
 def score_from_factors(factors: dict[str, Any]) -> float | None:
-    """把排序因子映射到候选池 score（0–100），便于列表按分降序。"""
+    """把排序因子映射到候选池 score（0–100），便于列表按分降序。
+
+    战法自带的 0–100 评分（``评分百分位``）优先。三源的原始横截面评分量纲约 1–3，
+    不能当 0–100 分直接夹值入库（最好的一只也只显示 1.x 分）。
+    """
+    percentile = factors.get(SCORE_PERCENTILE)
+    if isinstance(percentile, (int, float)) and not isinstance(percentile, bool):
+        return round(max(0.0, min(100.0, float(percentile))), 4)
     closeness = factors.get("白线贴近度")
     if isinstance(closeness, (int, float)) and not isinstance(closeness, bool):
         # 辰星线/CLOSE：越贴近白线分越高，与选股降序一致。
@@ -71,7 +79,7 @@ def score_from_factors(factors: dict[str, Any]) -> float | None:
     if isinstance(roc, (int, float)) and not isinstance(roc, bool):
         # ROC5=CLOSE/REF(CLOSE,5) → 五日涨跌幅%，夹到 [0, 100]
         return round(max(0.0, min(100.0, (float(roc) - 1.0) * 100.0)), 4)
-    for key in ("score", "横截面评分"):
+    for key in ("score",):
         value = factors.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return round(max(0.0, min(100.0, float(value))), 4)

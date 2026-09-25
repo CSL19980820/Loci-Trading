@@ -14,12 +14,15 @@ from typing import Any
 import pandas as pd
 
 from src.formula import CROSS, EMA, MA, REF
+from src.strategy.application.score_percentile import SCORE_PERCENTILE, pooled_percentile
 from src.strategy.domain.base import SignalResult, merge_params, register
 
 #: 市场宽度低于该阈值时整日空仓（组合收益优化：避开极弱市日）。
 WEAK_BREADTH_SKIP = 0.40
 #: 未复权收盘价低于该阈值不入选、不进观察（仙股流动性差）。
 PRICE_MIN = 6.0
+#: 候选池 0–100 评分的参照期：近 60 个交易日（含当日）三源候选的横截面评分分布。
+SCORE_POOL_DAYS = 60
 
 
 def _once_schedule(hour: int, minute: int) -> dict[str, Any]:
@@ -254,11 +257,18 @@ class SanyuanTailResonance:
             signals=selected,
             watch_signals=watch_selected,
             factors={
+                # 前几项是候选池“理由”列展示的内容：先放可读的评分与成分，再放 0/1 闸门标记。
+                SCORE_PERCENTILE: pooled_percentile(score, candidates, window=SCORE_POOL_DAYS),
+                "横截面评分": score,
+                "1日涨幅%": r1 * 100.0,
+                "5日涨幅%": r5 * 100.0,
+                "20日涨幅%": r20 * 100.0,
+                "收盘位置CLV": clv,
+                "量比(20日)": volume_ratio,
                 "A_MA25突破": branch_a,
                 "B_双阴反包": branch_b,
                 "C_双子K": branch_c,
                 "三源候选": candidates,
-                "横截面评分": score,
                 "原始每日前二": raw_top2,
                 "市场上涨家数占比": breadth_panel,
                 "闸门_双阴反包": gate_branch_b,
