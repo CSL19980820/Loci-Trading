@@ -264,6 +264,8 @@ export function listCandidates(options: {
   limit?: number
   /** 默认排除回填；审计时传 true */
   include_backfill?: boolean
+  /** 只要时间轴：不回 evidence / effective_params */
+  slim?: boolean
 } = {}): Promise<Candidate[]> {
   const params = new URLSearchParams()
   if (options.code) params.set('code', options.code)
@@ -273,6 +275,7 @@ export function listCandidates(options: {
   if (options.end) params.set('end', options.end)
   if (options.limit) params.set('limit', String(options.limit))
   if (options.include_backfill) params.set('include_backfill', 'true')
+  if (options.slim) params.set('slim', 'true')
   const query = params.toString()
   return request<Candidate[]>(`/candidates/list${query ? `?${query}` : ''}`)
 }

@@ -6,6 +6,7 @@ import type {
 
 import {
   createEmptyScreenSkillDraft,
+  isUsedReferenceRow,
   paramRowsFromManifest,
   type ScreenSkillDraftModel,
 } from './screenSkillDraft'
@@ -29,16 +30,42 @@ export function activeScreenSkillSource(draft: ScreenSkillDraftModel): string {
   return draft.runtime === 'python' ? draft.code : draft.formula
 }
 
-function bodySignature(source: string): string {
-  return source.replace(/\{[^}]*\}/g, '').replace(/#.*$/gm, '').replace(/\s+/g, '')
+/** 去掉注释与空白后的执行源指纹：公式注释写在 `{}` 里，Python 注释是 `#`（花括号是字典，不能删） */
+function bodySignature(source: string, runtime: ScreenSkillRuntime): string {
+  const stripped = runtime === 'python'
+    ? source.replace(/#.*$/gm, '')
+    : source.replace(/\{[^}]*\}/g, '')
+  return stripped.replace(/\s+/g, '')
 }
 
-/** 执行源还是空白或起手模板：AI 生成即新建，而不是在模板上改写 */
-export function isStarterScreenSkillBody(draft: ScreenSkillDraftModel): boolean {
-  const body = bodySignature(activeScreenSkillSource(draft))
-  if (!body) return true
+function logicSignature(rows: ScreenSkillDraftModel['logic']): string {
+  return rows
+    .map((row) => [row.title, row.expression, row.explanation, row.citationsText].map((v) => v.trim()).join('|'))
+    .filter((line) => line !== '|||')
+    .join('\n')
+}
+
+function paramSignature(rows: ScreenSkillDraftModel['params']): string {
+  return rows
+    .filter((row) => row.key.trim())
+    .map((row) => [row.key, row.type, row.defaultValue, row.min, row.max, row.label].map((v) => String(v).trim()).join('|'))
+    .join('\n')
+}
+
+/**
+ * 草稿还是起手状态：执行源、策略脉络、参数都与模板一致，说明与资料为空。
+ * 这时 AI 生成即新建；用户动过任何一处，都按「改写」把现有内容带给模型。
+ */
+export function isPristineScreenSkillDraft(draft: ScreenSkillDraftModel): boolean {
   const template = createEmptyScreenSkillDraft(draft.runtime === 'python' ? 'python' : 'blank')
-  return body === bodySignature(activeScreenSkillSource(template))
+  const body = bodySignature(activeScreenSkillSource(draft), draft.runtime)
+  if (body && body !== bodySignature(activeScreenSkillSource(template), draft.runtime)) return false
+  if (draft.description.trim()) return false
+  if (draft.references.some(isUsedReferenceRow)) return false
+  const logic = logicSignature(draft.logic)
+  if (logic && logic !== logicSignature(template.logic)) return false
+  const params = paramSignature(draft.params)
+  return !params || params === paramSignature(template.params)
 }
 
 export function buildAiRevisionInstruction(

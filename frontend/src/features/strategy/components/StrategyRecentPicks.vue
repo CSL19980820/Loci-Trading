@@ -1,22 +1,22 @@
 <script setup lang="ts">
 /**
  * 战法近期选出：按选出日分组，每天一行股票药片（色点 = 裁决）。
- * 只读账本候选，不含回填；点股票进档案。
+ * 读 `/screen/history`（战法精确匹配、默认只含实盘真选），点股票进档案。
  */
 import { computed, ref, watch } from 'vue'
 
-import { listCandidates } from '@/shared/api/palace'
+import { getScreenHistory } from '@/shared/api/quant'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import StockLink from '@/shared/components/ui/StockLink.vue'
-import { decisionLabel } from '@/shared/lib/format'
-import type { Candidate } from '@/shared/types/palace'
+import { decisionTone, type DecisionTone } from '@/shared/lib/format'
+import type { ScreenCandidate } from '@/shared/types/quant'
 
 const props = defineProps<{ slug: string }>()
 
 const emit = defineEmits<{ count: [value: number] }>()
 
-const rows = ref<Candidate[]>([])
+const rows = ref<ScreenCandidate[]>([])
 const loading = ref(false)
 const failed = ref(false)
 let seq = 0
@@ -30,9 +30,9 @@ async function load(slug: string): Promise<void> {
   loading.value = true
   failed.value = false
   try {
-    const list = await listCandidates({ strategy: slug, limit: 120 })
+    const history = await getScreenHistory({ strategy: slug, limit: 120 })
     if (request !== seq) return
-    rows.value = list
+    rows.value = history.dates.flatMap((date) => history.by_date[date] ?? [])
   } catch {
     if (request !== seq) return
     rows.value = []
@@ -44,29 +44,23 @@ async function load(slug: string): Promise<void> {
 
 watch(() => props.slug, (slug) => void load(slug), { immediate: true })
 
-function toneOf(decision: string): 'pick' | 'watch' | 'drop' {
-  const label = decisionLabel(decision)
-  if (label === '精选') return 'pick'
-  if (label === '观察') return 'watch'
-  return 'drop'
-}
+const TONE_ORDER: Record<DecisionTone, number> = { pick: 0, watch: 1, drop: 2 }
 
 const days = computed(() => {
-  const map = new Map<string, Candidate[]>()
+  const map = new Map<string, ScreenCandidate[]>()
   for (const row of rows.value) {
     const list = map.get(row.date) ?? []
     list.push(row)
     map.set(row.date, list)
   }
-  const order = { pick: 0, watch: 1, drop: 2 }
   return [...map.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([date, list]) => ({
       date,
-      picks: list.filter((row) => toneOf(row.decision) === 'pick').length,
+      picks: list.filter((row) => decisionTone(row.decision) === 'pick').length,
       items: [...list].sort(
         (a, b) =>
-          order[toneOf(a.decision)] - order[toneOf(b.decision)]
+          TONE_ORDER[decisionTone(a.decision)] - TONE_ORDER[decisionTone(b.decision)]
           || Number(b.score ?? 0) - Number(a.score ?? 0),
       ),
     }))
@@ -94,7 +88,7 @@ function weekday(date: string): string {
           <span>{{ weekday(day.date) }}</span>
         </div>
         <ul class="picks__items">
-          <li v-for="item in day.items" :key="item.id" class="picks__item" :class="`is-${toneOf(item.decision)}`">
+          <li v-for="item in day.items" :key="item.id" class="picks__item" :class="`is-${decisionTone(item.decision)}`">
             <i aria-hidden="true" />
             <StockLink :code="item.code" :name="item.name" :date="item.date" :show-code="false" class="picks__name" />
             <span class="picks__code">{{ item.code }}</span>

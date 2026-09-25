@@ -61,9 +61,13 @@ def build_ledger_router(
             default=False,
             description="true 时含区间回填；默认排除",
         ),
+        slim: bool = Query(
+            default=False,
+            description="true 时不回 evidence / effective_params，给只画时间轴的调用方",
+        ),
     ) -> list[dict[str, Any]]:
         """跨日期候选列表。按战法/裁决/股票代码过滤，点进详情看单条。"""
-        return store.candidates_list_payload(
+        rows = store.candidates_list_payload(
             code=code,
             strategy=strategy,
             decision=decision,
@@ -72,6 +76,11 @@ def build_ledger_router(
             limit=limit,
             include_backfill=include_backfill,
         )
+        if slim:
+            for row in rows:
+                row.pop("evidence", None)
+                row.pop("effective_params", None)
+        return rows
 
     @router.get("/api/plans", tags=["plans"])
     def plans(store: Store, status: str = "active") -> list[dict[str, Any]]:

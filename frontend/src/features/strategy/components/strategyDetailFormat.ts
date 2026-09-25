@@ -83,18 +83,6 @@ export function backtestConfigEntries(
     .map(([key, value]) => ({ key, label: BACKTEST_LABELS[key] || key, value: formatBacktestValue(key, value) }))
 }
 
-export function formatBacktestConfig(config: Record<string, unknown> | null | undefined): string {
-  if (!config) return '—'
-  const labels: Record<string, string> = {
-    start: '起始', end: '结束', hold_days: '持有', stop_loss_pct: '止损',
-    take_profit_pct: '止盈', benchmark: '基准', entry_timing: '入场', mode: '模式', universe: '股票池',
-  }
-  const values = Object.entries(config).filter(([, value]) => value != null && value !== '')
-  return values.length
-    ? values.map(([key, value]) => `${labels[key] || key}=${formatBacktestValue(key, value)}`).join('，')
-    : '—'
-}
-
 export function buildPreview(
   mode: 'once' | 'interval',
   hour: number,

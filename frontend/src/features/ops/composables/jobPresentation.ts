@@ -54,7 +54,20 @@ function parseHours(field: string): HourSpan[] | null {
   return spans
 }
 
-type CronLine = { day: string; times: string[]; spans: string[]; step: number | null; intraday: boolean }
+/** 一段连续触发窗口，单位为「当日第几分钟」 */
+type CronWindow = { start: number; end: number }
+
+type CronLine = {
+  day: string
+  times: string[]
+  spans: string[]
+  step: number | null
+  windows: CronWindow[]
+}
+
+function clock(minuteOfDay: number): string {
+  return `${pad(Math.floor(minuteOfDay / 60))}:${pad(minuteOfDay % 60)}`
+}
 
 function parseLine(line: string): CronLine | null {
   const fields = line.trim().split(/\s+/)
@@ -64,10 +77,21 @@ function parseLine(line: string): CronLine | null {
   const day = dayText(dow)
   const hours = parseHours(hour)
   if (!day || !hours) return null
-  const step = /^(?:\*|\d{1,2}-\d{1,2})\/(\d{1,2})$/.exec(minute)
+  const step = /^(?:\*|(\d{1,2})-(\d{1,2}))\/(\d{1,2})$/.exec(minute)
   if (step) {
-    const intraday = hours.every(([start, end]) => start >= 9 && end <= 15)
-    return { day, times: [], spans: [], step: Number(step[1]), intraday }
+    const every = Number(step[3])
+    const first = step[1] === undefined ? 0 : Number(step[1])
+    const bound = step[2] === undefined ? 59 : Number(step[2])
+    if (!every || first > bound || bound > 59) return null
+    const last = first + Math.floor((bound - first) / every) * every
+    // 分钟段铺满整点（如 */5）时跨小时连续；否则每个小时各是一小段
+    const wholeHour = first < every && last + every >= 60
+    const windows: CronWindow[] = []
+    for (const [start, end] of hours) {
+      if (wholeHour) windows.push({ start: start * 60 + first, end: end * 60 + last })
+      else for (let h = start; h <= end; h += 1) windows.push({ start: h * 60 + first, end: h * 60 + last })
+    }
+    return { day, times: [], spans: [], step: every, windows }
   }
   if (!/^\d{1,2}$/.test(minute)) return null
   const m = Number(minute)
@@ -77,12 +101,23 @@ function parseLine(line: string): CronLine | null {
     if (start === end) times.push(`${pad(start)}:${pad(m)}`)
     else spans.push(`${pad(start)}:${pad(m)}–${pad(end)}:${pad(m)} 每小时`)
   }
-  return { day, times, spans, step: null, intraday: false }
+  return { day, times, spans, step: null, windows: [] }
 }
 
-// cron → 一句人话。多条表达式（分号或换行分隔）按星期合并，例如盘中三段每 5 分钟
-// 加一个 15:00 定点 → 「工作日 盘中每 5 分钟 · 15:00」。任一条看不懂就返回 null，
-// 由调用方回落到原文。
+/** 同一步长的窗口按时间排好，首尾相接（间隔不超过一步）就并成一段 */
+function mergeWindows(windows: CronWindow[], step: number): CronWindow[] {
+  const merged: CronWindow[] = []
+  for (const window of [...windows].sort((a, b) => a.start - b.start)) {
+    const tail = merged.at(-1)
+    if (tail && window.start - tail.end <= step) tail.end = Math.max(tail.end, window.end)
+    else merged.push({ ...window })
+  }
+  return merged
+}
+
+// cron → 一句人话。多条表达式（分号或换行分隔）按星期合并，间隔段写出真实时段，
+// 例如盘中三段每 5 分钟加一个 15:00 定点 → 「工作日 每 5 分钟 09:25–11:30、13:00–14:55 · 15:00」。
+// 任一条看不懂就返回 null，由调用方回落到原文。
 export function humanizeCron(cron: string): { day: string; body: string } | null {
   const lines = splitCronExpressions(cron)
   if (!lines.length) return null
@@ -91,13 +126,13 @@ export function humanizeCron(cron: string): { day: string; body: string } | null
   const rows = parsed as CronLine[]
   const day = rows[0]!.day
   if (rows.some((row) => row.day !== day)) return null
-  const steps = [...new Set(rows.map((row) => row.step).filter((n): n is number => n !== null))]
+  const steps = [...new Set(rows.map((row) => row.step).filter((n): n is number => n !== null))].sort((a, b) => a - b)
   const times = [...new Set(rows.flatMap((row) => row.times))].sort()
   const spans = rows.flatMap((row) => row.spans)
   const parts: string[] = []
-  if (steps.length) {
-    const intraday = rows.every((row) => row.step === null || row.intraday)
-    parts.push(`${intraday ? '盘中' : ''}每 ${steps.sort((a, b) => a - b).join('/')} 分钟`)
+  for (const step of steps) {
+    const windows = mergeWindows(rows.filter((row) => row.step === step).flatMap((row) => row.windows), step)
+    parts.push(`每 ${step} 分钟 ${windows.map((w) => `${clock(w.start)}–${clock(w.end)}`).join('、')}`)
   }
   parts.push(...spans)
   if (times.length > 3) parts.push(`${times[0]} 起 ${times.length} 个时点`)

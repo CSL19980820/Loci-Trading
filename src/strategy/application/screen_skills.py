@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -307,6 +308,12 @@ def generate_screen_skill_draft(
     ops_db: str | None = None,
 ) -> dict[str, Any]:
     draft = build_generated_draft(payload, ops_db=ops_db)
+    if not payload.slug:
+        # 新建稿的 slug 由模型起名或按需求摘要派生，常见思路会撞名；这里就地避让，
+        # 免得保存时才收到 slug_conflict。
+        free_slug = _available_draft_slug(draft.slug)
+        if free_slug != draft.slug:
+            draft = draft.model_copy(update={"slug": free_slug})
     preview = preview_screen_skill(ScreenSkillPreviewRequest(**draft.model_dump()))
     return {
         "ok": bool(preview["ok"]),
@@ -522,6 +529,24 @@ def _validate_engine(engine: ScreenEngine) -> None:
             )
             if report.failed:
                 raise ScreenPackageError(f"前视审计未通过：{report.reason()}")
+
+
+def _slug_taken(slug: str) -> bool:
+    return (
+        is_retired_strategy_slug(slug)
+        or is_builtin_registered(slug)
+        or get_screen_package(slug) is not None
+    )
+
+
+def _available_draft_slug(slug: str) -> str:
+    if not _slug_taken(slug):
+        return slug
+    for _ in range(20):
+        candidate = f"{slug[:56]}-{secrets.token_hex(3)}"
+        if not _slug_taken(candidate):
+            return candidate
+    return f"{slug[:48]}-{secrets.token_hex(7)}"
 
 
 def _ensure_formula_slug_available(slug: str, *, allow_existing_formula: bool) -> None:
