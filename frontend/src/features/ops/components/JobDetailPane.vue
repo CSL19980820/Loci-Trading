@@ -369,7 +369,9 @@ defineExpose({ reloadRuns, focusLatestFailure })
 }
 
 .jd__sched {
-  border-left: 1px solid var(--border-subtle);
+  margin: 8px;
+  border-radius: var(--radius);
+  background: color-mix(in oklab, var(--surface-sunken) 75%, transparent);
 }
 
 .jd__label {
@@ -451,11 +453,8 @@ defineExpose({ reloadRuns, focusLatestFailure })
   display: grid;
   flex-shrink: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   margin: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
 }
 
 .jd__stat {
@@ -465,10 +464,10 @@ defineExpose({ reloadRuns, focusLatestFailure })
   gap: 6px;
   min-width: 0;
   padding: 12px 16px;
-}
-
-.jd__stat + .jd__stat {
-  border-left: 1px solid var(--border-subtle);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
 }
 
 .jd__stat dt {
@@ -554,21 +553,13 @@ defineExpose({ reloadRuns, focusLatestFailure })
   }
 
   .jd__sched {
-    border-top: 1px solid var(--border-subtle);
-    border-left: 0;
+    margin-top: 0;
   }
 
   .jd__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .jd__stat:nth-child(3) {
-    border-left: 0;
-  }
-
-  .jd__stat:nth-child(n + 3) {
-    border-top: 1px solid var(--border-subtle);
-  }
 }
 
 @media (max-width: 640px) {

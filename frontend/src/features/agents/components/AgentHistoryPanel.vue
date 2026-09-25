@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { Spinner } from '@/shared/components/ui/spinner'
-import { Item } from '@/shared/components/ui/item'
 import { onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import { ChevronRight, RefreshCw } from '@lucide/vue'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
 import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
+import { Card } from '@/shared/components/ui/card'
 import TradingReportDocument from '@/shared/components/TradingReportDocument.vue'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import DateField from '@/shared/components/ui/app/DateField.vue'
@@ -42,10 +41,10 @@ let detailController:AbortController | undefined
 let version = 0
 let disposed = false
 const TITLES: Record<AgentHistoryKind, string> = { runs: '工作日记', trades: '实际模拟成交', funding: '资金流水' }
-const NOTES: Record<AgentHistoryKind, string> = {
-  runs: '按时间查看判断与结果。',
-  trades: '只包含已经记入账本的模拟成交，不包含观察及被拒绝的意图。',
-  funding: '初始资金与追加资金独立记账，不混入交易盈亏。',
+/** 「09/24 15:10」拆成日期与时刻两行 */
+function stampParts(value?: string | null): { day: string; time: string } {
+  const [day = '', time = ''] = agentTime(value).split(/\s+/)
+  return { day, time }
 }
 function statusVariant(status?: string) {
   if (status === 'running') return 'info' as const
@@ -78,19 +77,6 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
 </script>
 <template>
   <Card class="agent-history" :aria-label="TITLES[kind]">
-    <CardHeader class="border-b">
-      <CardTitle class="flex flex-wrap items-center gap-2" :title="NOTES[kind]">
-        <UiBadge variant="secondary">{{ rows.total.toLocaleString() }} 条</UiBadge>
-      </CardTitle>
-      
-      <CardAction>
-        <Button access="read" variant="outline" size="icon-sm" :disabled="loading" aria-label="刷新当前历史页" @click="load">
-          <Spinner v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
-          <RefreshCw v-else aria-hidden="true" />
-        </Button>
-      </CardAction>
-    </CardHeader>
-
     <div class="history-filter">
       <DateField
         v-model="dates"
@@ -101,7 +87,11 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
         class="history-filter__dates"
         @change="dateChanged"
       />
-      <span class="history-filter__note">北京时间 · 每页 20 条</span>
+      <span class="history-filter__count">{{ rows.total.toLocaleString() }} 条</span>
+      <Button access="read" variant="ghost" size="icon-sm" :disabled="loading" aria-label="刷新当前历史页" @click="load">
+        <Spinner v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+        <RefreshCw v-else aria-hidden="true" />
+      </Button>
     </div>
 
     <Alert v-if="error" variant="destructive" class="mx-4 mb-3"><AlertTitle class="line-clamp-none">{{ error }}</AlertTitle></Alert>
@@ -110,21 +100,30 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
       <Skeleton v-for="n in 6" :key="n" class="h-9 w-full" />
     </div>
 
-    <!-- 工作日记：时间线列表 -->
+    <!-- 工作日记 -->
     <ol v-else-if="kind === 'runs' && rows.items.length" class="diary-list">
-      <li v-for="row in rows.items" :key="row.id" class="diary-row">
-        <Item as="button" type="button" class="diary-row__main" @click="inspect(row)">
-          <div class="diary-meta">
-            <strong>{{ phaseName(row.phase) }}</strong>
-            <UiBadge :variant="statusVariant(row.status)" :dot="row.status !== 'running'">
-              <Spinner v-if="row.status === 'running'" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-              {{ statusName(row.status) }}
-            </UiBadge>
-            <time>{{ agentTime(row.started_at) }}</time>
-          </div>
-          <p class="diary-summary">{{ row.summary || (row.status === 'running' ? '正在研究市场与账户，完成后显示结果。' : '本轮没有文字摘要') }}</p>
-        </Item>
-        <ChevronRight class="diary-row__chevron" aria-hidden="true" />
+      <li v-for="row in rows.items" :key="row.id">
+        <button type="button" class="diary-row" @click="inspect(row)">
+          <time class="diary-row__when" :datetime="row.started_at">
+            <b>{{ stampParts(row.started_at).day }}</b>
+            <span>{{ stampParts(row.started_at).time }}</span>
+          </time>
+          <span class="diary-row__main">
+            <span class="diary-meta">
+              <strong>{{ phaseName(row.phase) }}</strong>
+              <UiBadge :variant="statusVariant(row.status)" :dot="row.status !== 'running'">
+                <Spinner v-if="row.status === 'running'" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                {{ statusName(row.status) }}
+              </UiBadge>
+            </span>
+            <span class="diary-summary" :class="{ 'is-empty': !row.summary }">{{ row.summary || (row.status === 'running' ? '研究中…' : '—') }}</span>
+            <span v-if="row.actions?.length" class="diary-actions">
+              <span v-for="(action, i) in row.actions.slice(0, 4)" :key="i" class="diary-action">{{ actionName(action.action) }} {{ action.name || action.code }}</span>
+              <span v-if="row.actions.length > 4" class="diary-action is-more">+{{ row.actions.length - 4 }}</span>
+            </span>
+          </span>
+          <ChevronRight class="diary-row__chevron" aria-hidden="true" />
+        </button>
       </li>
     </ol>
 
@@ -160,49 +159,49 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
     <Table v-else-if="kind !== 'runs' && rows.items.length" class="ledger-table">
       <TableHeader>
         <TableRow>
-          <TableHead class="min-w-[120px] text-center">时间</TableHead>
+          <TableHead class="min-w-[120px]">时间</TableHead>
           <template v-if="kind === 'trades'">
-            <TableHead class="min-w-[140px] text-center">股票 · 编码</TableHead>
-            <TableHead class="min-w-[80px] text-center">操作</TableHead>
-            <TableHead class="text-center">股数</TableHead>
-            <TableHead class="text-center">价格</TableHead>
-            <TableHead class="text-center">成交金额</TableHead>
-            <TableHead class="text-center">费用</TableHead>
+            <TableHead class="min-w-[140px]">股票 · 编码</TableHead>
+            <TableHead class="min-w-[80px]">操作</TableHead>
+            <TableHead class="num">股数</TableHead>
+            <TableHead class="num">价格</TableHead>
+            <TableHead class="num">成交金额</TableHead>
+            <TableHead class="num">费用</TableHead>
           </template>
           <template v-else>
-            <TableHead class="min-w-[160px] text-center">类型</TableHead>
-            <TableHead class="text-center">金额（元）</TableHead>
+            <TableHead class="min-w-[160px]">类型</TableHead>
+            <TableHead class="num">金额</TableHead>
           </template>
         </TableRow>
       </TableHeader>
       <TableBody>
         <TableRow v-for="row in rows.items" :key="row.id">
-          <TableCell class="num text-center text-ink-2">{{ agentTime(row.at) }}</TableCell>
+          <TableCell class="mono text-ink-2">{{ agentTime(row.at) }}</TableCell>
           <template v-if="kind === 'trades'">
-            <TableCell class="text-center">
+            <TableCell>
               <span class="stock-cell-inline" :title="`${row.name || '名称待核对'} ${row.code}`">
                 <strong>{{ row.name || '名称待核对' }}</strong>
                 <small>{{ row.code }}</small>
               </span>
             </TableCell>
-            <TableCell class="text-center">
+            <TableCell>
               <UiBadge :variant="['sell','reduce','take_profit','stop_loss'].includes(String(row.action || row.side)) ? 'down' : 'up'">{{ actionName(row.action || row.side) }}</UiBadge>
             </TableCell>
-            <TableCell class="num text-center">{{ row.quantity }}</TableCell>
-            <TableCell class="num text-center">{{ agentMoney(row.price_cents) }}</TableCell>
-            <TableCell class="num text-center font-medium">{{ agentMoney(row.gross_cents) }}</TableCell>
-            <TableCell class="num text-center text-mist">{{ agentMoney(row.fees_cents) }}</TableCell>
+            <TableCell class="num">{{ row.quantity }}</TableCell>
+            <TableCell class="num">{{ agentMoney(row.price_cents) }}</TableCell>
+            <TableCell class="num font-medium">{{ agentMoney(row.gross_cents) }}</TableCell>
+            <TableCell class="num text-mist">{{ agentMoney(row.fees_cents) }}</TableCell>
           </template>
           <template v-else>
-            <TableCell class="text-center">{{ row.kind === 'initial' ? '初始模拟资金' : '追加模拟资金' }}</TableCell>
-            <TableCell class="num text-center font-medium">+{{ agentMoney(row.amount_cents) }}</TableCell>
+            <TableCell>{{ row.kind === 'initial' ? '初始模拟资金' : '追加模拟资金' }}</TableCell>
+            <TableCell class="num font-medium">+{{ agentMoney(row.amount_cents) }}</TableCell>
           </template>
         </TableRow>
       </TableBody>
     </Table>
 
     <div v-else class="history-empty">
-      <EmptyState :description="dates ? '这个日期范围内没有记录' : '尚无记录'" :reason="dates ? '放宽日期范围再试' : '智能体完成工作后会出现在这里'" />
+      <EmptyState :description="dates ? '该日期范围无记录' : '暂无记录'" compact />
     </div>
 
     <div class="history-pagination">
@@ -229,7 +228,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
           <article v-else-if="detail" class="diary-detail">
             <div class="detail-meta"><Badge>{{ phaseName(detail.phase) }}</Badge><span>{{ statusName(detail.status) }}</span><time>{{ agentTime(detail.started_at) }}</time></div>
             <p class="summary">{{ detail.detail.summary || detail.summary }}</p>
-            <Alert v-if="detail.detail.analysis_only"><AlertTitle class="line-clamp-none">本阶段只做研判，不执行模拟交易</AlertTitle></Alert>
+            <Alert v-if="detail.detail.analysis_only"><AlertTitle class="line-clamp-none">仅研判，未交易</AlertTitle></Alert>
             <h4 v-if="detail.detail.decisions?.length">本轮决策</h4>
             <section v-for="(decision,i) in detail.detail.decisions" :key="i" class="decision">
               <header><b>{{ actionName(decision.action) }} · {{ decision.name || decision.code }}</b><span v-if="decision.quantity">{{ decision.quantity }} 股</span></header>
@@ -261,15 +260,18 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-2) var(--gap-3);
-  padding: var(--gap-3) var(--gap-4) var(--gap-2);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .history-filter__dates {
   width: 260px;
   max-width: 100%;
 }
-.history-filter__note {
+.history-filter__count {
+  margin-left: auto;
   color: var(--text-tertiary);
-  font-size: var(--fs-aux);
+  font: var(--fs-aux) / 1 var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 .history-skeleton {
   display: flex;
@@ -279,72 +281,106 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
 }
 /* 工作日记 */
 .diary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   margin: 0;
-  padding: 0;
+  padding: 6px;
   list-style: none;
 }
 .diary-row {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-2);
-  padding-right: var(--gap-3);
-  border-top: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 10px 12px 12px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease);
 }
 .diary-row:hover {
   background: var(--surface-hover);
 }
-.diary-row__main {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: var(--gap-3) var(--gap-4);
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.diary-row__main:focus-visible {
+.diary-row:focus-visible {
   outline: 2px solid var(--focus-ring, var(--seal));
   outline-offset: -2px;
-  border-radius: var(--radius-sm);
+}
+.diary-row__when {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.diary-row__when b {
+  color: var(--text-primary);
+  font: 600 var(--fs-aux) / 1.1 var(--mono);
+}
+.diary-row__when span {
+  color: var(--text-tertiary);
+  font: var(--fs-kicker) / 1.1 var(--mono);
+}
+.diary-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 .diary-row__chevron {
+  align-self: center;
   flex-shrink: 0;
   width: 16px;
   height: 16px;
   color: var(--text-tertiary);
+  opacity: 0.6;
+}
+.diary-row:hover .diary-row__chevron {
+  opacity: 1;
 }
 .diary-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-2);
-  color: var(--text-tertiary);
-  font-size: var(--fs-aux);
 }
 .diary-meta strong {
   color: var(--text-primary);
   font-size: var(--fs-ui);
   font-weight: 600;
 }
-.diary-meta time {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-}
 .diary-summary {
   display: -webkit-box;
-  margin: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: var(--fs-ui);
-  line-height: 1.55;
+  font-size: var(--fs-aux);
+  line-height: 1.65;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow-wrap: anywhere;
+}
+.diary-summary.is-empty {
+  color: var(--text-tertiary);
+}
+.diary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.diary-action {
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-secondary);
+  font-size: var(--fs-micro);
+  line-height: 20px;
+}
+.diary-action.is-more {
+  color: var(--text-tertiary);
 }
 /* 手机成交卡 */
 .ledger-cards {
@@ -399,12 +435,12 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
   font-size: var(--fs-aux);
   font-weight: 500;
   white-space: nowrap;
-  text-align: center;
+  text-align: left;
 }
 .ledger-table :deep(td) {
   height: 44px;
   font-size: var(--fs-ui);
-  text-align: center;
+  text-align: left;
   white-space: nowrap;
 }
 .ledger-table :deep(th:first-child),
@@ -415,8 +451,9 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
 .ledger-table :deep(td:last-child) {
   padding-right: var(--gap-4);
 }
+.ledger-table :deep(.num),
 .num {
-  text-align: center;
+  text-align: right;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -441,7 +478,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
 .stock-cell-inline {
   display: inline-flex;
   align-items: baseline;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   max-width: 100%;
   white-space: nowrap;
@@ -546,8 +583,9 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
   .history-filter__dates {
     width: 100%;
   }
-  .diary-row__main {
-    padding: var(--gap-3);
+  .diary-row {
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 10px;
   }
   .history-pagination {
     justify-content: flex-start;

@@ -9,8 +9,6 @@ import { Notice, SkeletonBlock, IconBox } from '@/shared/components/ui/app/prese
 import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
 import { default as RadioChoices } from '@/shared/components/ui/app/RadioChoices.vue'
 import { default as RadioButton } from '@/shared/components/ui/app/RadioButton.vue'
-import { default as DataGrid } from '@/shared/components/ui/app/DataGrid.vue'
-import { default as DataColumn } from '@/shared/components/ui/app/DataColumn.vue'
 import { default as Pager } from '@/shared/components/ui/app/Pager.vue'
 import { default as ChoiceField } from '@/shared/components/ui/app/ChoiceField.vue'
 import { default as ChoiceOption } from '@/shared/components/ui/app/ChoiceOption.vue'
@@ -43,7 +41,7 @@ const busy = ref(false)
 const researchLoading = ref(false)
 const filter = ref('watching')
 const selectedStock = shallowRef<GuardianWatch | null>(null)
-function openStock(row: unknown) { selectedStock.value = row as GuardianWatch }
+function openStock(row: GuardianWatch) { selectedStock.value = row }
 let controller: AbortController | undefined
 let researchController: AbortController | undefined
 let disposed = false
@@ -88,6 +86,13 @@ const decisionByCode = computed(() => {
   for (const run of (latest.value ? [latest.value] : [])) for (const item of run.result.decisions ?? []) if (!map.has(item.code)) map.set(item.code, item)
   return map
 })
+const notifyText = computed(() => {
+  const state = latest.value?.result.notify
+  if (!state) return props.notify ? '推送 · 每轮合并' : '推送已关'
+  if (state.success) return '已推送'
+  if (state.skipped) return state.skipped === 'no_action' ? '无成交 · 静默' : '推送跳过'
+  return '推送未达'
+})
 function actionLabel(item: GuardianDecision) { return GUARDIAN_ACTION_LABELS[item.action] }
 function stockName(code: string) { return pool.value.find(p => p.code === code)?.name ?? code }
 function plan(raw: unknown) { const row = raw as GuardianWatch; return row.position?.holding_plan || row.watch?.entry_condition || row.watch?.reason || decisionByCode.value.get(row.code)?.holding_plan || row.position?.last_review?.reason || decisionByCode.value.get(row.code)?.reason || (row.position ? '持有周期由模型管理' : '等待模型研判') }
@@ -100,6 +105,10 @@ function since(raw: unknown) {
     if (formatted !== '—') return formatted.slice(0, 16)
   }
   return row.position?.entry_context?.opened_at?.slice(0, 10) || row.signals.at(-1)?.date || '—'
+}
+function sinceShort(row: GuardianWatch) {
+  const text = since(row)
+  return /^\d{4}-/.test(text) ? text.slice(5) : text
 }
 function sinceLabel(raw: unknown) {
   const row = raw as GuardianWatch
@@ -124,47 +133,31 @@ const panelId = `guardian-research-panel-${useId()}`
               <RadioButton value="watching">自选股 · {{ watchRows.length }}</RadioButton><RadioButton value="holding">持仓股 · {{ holdingRows.length }}</RadioButton>
             </RadioChoices>
           </div>
-          <div class="flex items-center gap-2"><span class="guardian-count">{{ rows.length }} 只</span><Button access="read" variant="ghost" size="xs" :disabled="researchLoading" @click="loadResearch"><RefreshCw class="size-3" />刷新</Button></div>
+          <Button access="read" variant="ghost" size="icon-sm" aria-label="刷新股票池" :disabled="researchLoading" @click="loadResearch"><Spinner v-if="researchLoading" class="size-3.5 animate-spin" aria-hidden="true" /><RefreshCw v-else class="size-3.5" aria-hidden="true" /></Button>
         </div>
 
-        <div v-if="mobile && rows.length" class="research-mobile-stocks">
-          <article v-for="row in rows" :key="row.code" class="research-mobile-stock">
-            <div><span role="button" tabindex="0" class="stock-detail-link" :aria-label="`查看 ${row.name} 交易参考`" @click="openStock(row)" @keydown.enter.prevent="openStock(row)" @keydown.space.prevent="openStock(row)">{{ row.name }} <small>{{ row.code }}</small></span><span class="research-mobile-state">{{ row.position ? '持仓中' : '观察中' }}</span></div>
-            <p>{{ plan(row) }}</p>
-            <footer><time>{{ sinceLabel(row) }} {{ since(row) }}</time><span v-if="row.position">{{ row.position.quantity.toLocaleString() }} 股 · 成本 {{ price(row.position.average_cost) }}元</span><span v-else>{{ row.strategies.map(tag => strategyLabel(tag)).join(' / ') }}</span></footer>
-          </article>
-        </div>
-        <DataGrid v-else-if="rows.length" :data="rows" row-key="code" class="guardian-stock-table" @row-click="openStock">
-          <DataColumn label="股票" min-width="190">
-            <template #default="{ row }">
-              <div class="guardian-stock-name">
-                <span role="button" tabindex="0" class="stock-detail-link" :aria-label="`查看 ${row.name} 交易参考`" @click.stop="openStock(row)" @keydown.enter.stop.prevent="openStock(row)" @keydown.space.stop.prevent="openStock(row)">{{ row.name }}（{{ row.code }}）</span>
-              </div>
-            </template>
-          </DataColumn>
-          <DataColumn label="记录时间" width="180"><template #default="{ row }"><span class="font-mono" :title="sinceLabel(row)">{{ since(row) }}</span></template></DataColumn>
-          <DataColumn label="状态" width="90">
-            <template #default="{ row }">
-              <span class="guardian-stock-state" :class="{ held: row.position }">
-                {{ row.position ? '持仓中' : '观察中' }}
+        <ul v-if="rows.length" class="pool-list">
+          <li v-for="row in rows" :key="row.code">
+            <button type="button" class="pool-row" :class="{ 'is-held': row.position }" :aria-label="`查看 ${row.name} 交易参考`" @click="openStock(row)">
+              <span class="pool-row__head">
+                <b class="pool-row__name">{{ row.name }}</b>
+                <span class="pool-row__code">{{ row.code }}</span>
+                <span class="pool-row__state">{{ row.position ? '持仓' : '观察' }}</span>
+                <time class="pool-row__since" :title="`${sinceLabel(row)} ${since(row)}`">{{ sinceShort(row) }}</time>
               </span>
-            </template>
-          </DataColumn>
-          <DataColumn label="持仓股数" width="90" align="right">
-            <template #default="{ row }">{{ row.position ? `${row.position.quantity} 股` : '—' }}</template>
-          </DataColumn>
-          <DataColumn label="参考成本" width="86" align="right">
-            <template #default="{ row }">{{ price(row.position?.average_cost) }}</template>
-          </DataColumn>
-          <DataColumn label="模型管理计划" min-width="160">
-            <template #default="{ row }">
-              <span class="guardian-plan" :title="plan(row)">{{ plan(row) }}</span>
-            </template>
-          </DataColumn>
-        </DataGrid>
+              <span class="pool-row__plan">{{ plan(row) }}</span>
+              <span v-if="row.position || row.strategies.length" class="pool-row__meta">
+                <template v-if="row.position">
+                  <span class="pool-row__fact"><em>股数</em>{{ row.position.quantity.toLocaleString() }}</span>
+                  <span class="pool-row__fact"><em>成本</em>{{ price(row.position.average_cost) }}</span>
+                </template>
+                <span v-for="tag in row.strategies.slice(0, 3)" :key="tag" class="pool-row__tag">{{ strategyLabel(tag) }}</span>
+              </span>
+            </button>
+          </li>
+        </ul>
 
         <div v-else class="guardian-pool-empty">
-          <div class="guardian-empty-mark"><span /><span /><span /></div>
           <strong>{{ filter === 'holding' ? '暂无持仓股' : '暂无自选股' }}</strong>
         </div>
 
@@ -224,15 +217,16 @@ const panelId = `guardian-research-panel-${useId()}`
           </div>
           <Pager v-if="historyMode" :current-page="page" :page-size="range.limit" :total="total" layout="total, prev, pager, next" :disabled="listLoading" @current-change="changePage" />
           <span v-else-if="total > range.limit" class="run-label">最近 {{ range.limit }} / {{ total }}</span>
+          <span v-if="!historyMode" class="notify-state" :class="{ 'is-off': !notify && !latest?.result.notify }">{{ notifyText }}</span>
         </div>
 
         <SkeletonBlock v-if="detailLoading" :rows="4" animated />
         <TradingReportDocument v-else-if="latest?.result.sections?.length" :sections="latest.result.sections" title="研判记录" :metadata="`${formatDateTime(latest.result.as_of || latest.slot)} · 模拟账户`" />
         <div v-else-if="latest" class="guardian-report-content">
           <div v-if="latest.result.analysis_only || latest.status === 'running' || latest.status === 'expired' || latest.result.error || latest.result.analysis || latest.result.body" class="guardian-analysis guardian-analysis-box">
-            <p v-if="latest.result.analysis_only" class="guardian-analysis-text">本轮仅研判，未执行买卖。预案会在下一可交易轮次结合新行情重新核验。</p>
-            <p v-else-if="latest.status === 'running'" class="guardian-analysis-text">正在读取材料并形成判断…</p>
-            <p v-else-if="latest.status === 'expired'" class="guardian-analysis-text">上轮运行中断，未写入模拟成交。</p>
+            <p v-if="latest.result.analysis_only" class="guardian-analysis-text">本轮仅研判，未下单</p>
+            <p v-else-if="latest.status === 'running'" class="guardian-analysis-text">研判中…</p>
+            <p v-else-if="latest.status === 'expired'" class="guardian-analysis-text">运行中断，未成交</p>
             <p v-else class="guardian-analysis-text" :class="{ failed: latest.status === 'failed' }">{{ latest.result.error || latest.result.analysis || latest.result.body }}</p>
           </div>
 
@@ -262,11 +256,11 @@ const panelId = `guardian-research-panel-${useId()}`
                 <!-- 止盈 / 止损 双列展示 -->
                 <div v-if="item.take_profit_plan || item.stop_loss_plan" class="plan-targets-grid">
                   <div v-if="item.take_profit_plan" class="target-col target-tp">
-                    <span class="target-title text-gain">🎯 止盈</span>
+                    <span class="target-title text-gain">止盈</span>
                     <span class="target-text" :title="item.take_profit_plan">{{ item.take_profit_plan }}</span>
                   </div>
                   <div v-if="item.stop_loss_plan" class="target-col target-sl">
-                    <span class="target-title text-loss">🛡️ 止损</span>
+                    <span class="target-title text-loss">止损</span>
                     <span class="target-text" :title="item.stop_loss_plan">{{ item.stop_loss_plan }}</span>
                   </div>
                 </div>
@@ -274,11 +268,11 @@ const panelId = `guardian-research-panel-${useId()}`
                 <!-- 等待入场 / 撤出观察 双列展示 -->
                 <div v-if="item.entry_condition || item.exit_condition" class="plan-targets-grid">
                   <div v-if="item.entry_condition" class="target-col target-entry">
-                    <span class="target-title text-seal">等待入场：</span>
+                    <span class="target-title text-seal">入场</span>
                     <span class="target-text" :title="item.entry_condition">{{ item.entry_condition }}</span>
                   </div>
                   <div v-if="item.exit_condition" class="target-col target-exit">
-                    <span class="target-title text-mist">撤出观察：</span>
+                    <span class="target-title text-mist">撤出</span>
                     <span class="target-text" :title="item.exit_condition">{{ item.exit_condition }}</span>
                   </div>
                 </div>
@@ -310,13 +304,9 @@ const panelId = `guardian-research-panel-${useId()}`
         <div v-else class="guardian-report-empty">
           <IconBox><Document /></IconBox>
           <strong>暂无研判</strong>
-
+          <Button v-if="!historyMode && enabled" variant="outline" size="sm" :disabled="busy" @click="scan"><Play class="size-3.5 text-seal" aria-hidden="true" />立即研判</Button>
         </div>
 
-        <footer class="guardian-report-foot">
-          <span>{{ latest?.result.notify ? latest.result.notify.success ? '本轮通知已送达' : latest.result.notify.skipped ? latest.result.notify.skipped === 'no_action' ? '无成交，已静默留存' : '本轮通知已跳过' : '本轮通知未送达' : notify ? '每轮合并推送' : '推送已关闭' }}</span>
-
-        </footer>
       </aside>
     </div>
     <Dialog :open="Boolean(selectedStock)" @update:open="value => { if (!value) selectedStock = null }">
@@ -381,8 +371,25 @@ const panelId = `guardian-research-panel-${useId()}`
 </style>
 
 <style scoped>
-.stock-detail-link { cursor:pointer; font-weight:600; text-align:left; color:var(--ink); border:0; background:transparent; box-shadow:none; text-decoration:none; }
-.stock-detail-link:hover, .stock-detail-link:focus, .stock-detail-link:focus-visible { color:var(--seal); text-decoration:none; outline:none; border:0; box-shadow:none; }
+.pool-list { display:flex; flex-direction:column; gap:2px; margin:0; padding:6px; list-style:none; }
+.pool-row { display:flex; flex-direction:column; gap:6px; width:100%; min-width:0; padding:10px 12px; border:0; border-radius:var(--radius); background:transparent; color:inherit; text-align:left; cursor:pointer; transition:background var(--dur-fast) var(--ease); }
+.pool-row:hover { background:var(--surface-hover); }
+.pool-row:focus-visible { outline:2px solid var(--focus-ring); outline-offset:-2px; }
+.pool-row__head { display:flex; align-items:center; gap:8px; min-width:0; }
+.pool-row__name { overflow:hidden; color:var(--text-primary); font-size:var(--fs-ui); font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+.pool-row__code { flex:none; color:var(--text-tertiary); font:var(--fs-kicker) / 1 var(--mono); }
+.pool-row__state { flex:none; padding:0 7px; border-radius:var(--radius-pill); background:var(--surface-sunken); color:var(--text-secondary); font-size:var(--fs-micro); font-weight:600; line-height:18px; }
+.pool-row.is-held .pool-row__state { background:var(--seal-soft); color:var(--seal-ink); }
+.pool-row__since { flex:none; margin-left:auto; color:var(--text-tertiary); font:var(--fs-kicker) / 1 var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.pool-row__plan { display:-webkit-box; overflow:hidden; color:var(--text-secondary); font-size:var(--fs-aux); line-height:1.6; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
+.pool-row__meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; min-width:0; }
+.pool-row__fact { color:var(--text-primary); font:500 var(--fs-kicker) / 1.4 var(--mono); font-variant-numeric:tabular-nums; }
+.pool-row__fact em { margin-right:5px; color:var(--text-tertiary); font-family:var(--font-sans, inherit); font-style:normal; }
+.pool-row__tag { padding:0 6px; border:1px solid var(--border-subtle); border-radius:var(--radius-pill); color:var(--text-tertiary); font-size:var(--fs-micro); line-height:18px; }
+.notify-state { flex:none; margin-left:auto; padding:0 8px; border-radius:var(--radius-pill); background:var(--surface); color:var(--text-tertiary); font-size:var(--fs-micro); line-height:22px; white-space:nowrap; box-shadow:inset 0 0 0 1px var(--border-subtle); }
+.notify-state.is-off { opacity:.7; }
+.guardian-report-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:220px; padding:32px 16px; color:var(--text-tertiary); }
+.guardian-report-empty strong { color:var(--text-secondary); font-size:var(--fs-ui); font-weight:550; }
 .pool-title-and-scope { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; }
 .pool-title-and-scope h3 { flex:none; }
 .guardian-history-dialog { height:90dvh; display:flex; flex-direction:column; overflow:hidden; }
@@ -402,15 +409,8 @@ const panelId = `guardian-research-panel-${useId()}`
   .guardian-pool,.guardian-report { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
   .guardian-section-head { flex-shrink:0; position:sticky; top:0; z-index:2; }
   .guardian-pool { overflow:hidden; }
-  .guardian-stock-table { flex:1 1 0%; min-height:0; }
-  .guardian-stock-table :deep([data-slot="table-container"]) { height:100%; }
-  .guardian-stock-table :deep(table) { height:100%; }
-  .guardian-stock-table :deep(thead) { height:44px; }
-  .guardian-stock-table :deep(td) { height:48px; font-size:15px; padding:10px 12px; }
-  .guardian-stock-table :deep(th) { font-size:14px; }
-  .guardian-stock-name > .stock-detail-link { font:600 15px/1.5 var(--font-sans, sans-serif); color:var(--ink); }
-  .guardian-stock-state,.guardian-plan { font-size:15px; }
-  .guardian-pool-empty { flex:1; }
+  .pool-list { flex:1 1 0%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+  .guardian-pool-empty,.guardian-report-empty { flex:1; }
 }
 </style>
 

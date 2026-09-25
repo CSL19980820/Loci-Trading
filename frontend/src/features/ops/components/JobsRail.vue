@@ -220,17 +220,8 @@ function nextLabel(row: JobRailRow): string {
 }
 
 .job-row.is-active {
-  background: color-mix(in oklab, var(--seal-soft) 70%, var(--surface));
-}
-
-.job-row.is-active::before {
-  content: '';
-  position: absolute;
-  inset-block: 10px;
-  left: 0;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--seal);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--seal-border), var(--shadow-xs);
 }
 
 .job-row.is-off .job-row__main,

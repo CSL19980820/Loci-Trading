@@ -300,33 +300,22 @@ defineExpose({ reload, focusLatestFailure })
   position: relative;
   display: flex;
   gap: 12px;
-  padding: 6px 0;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.run::before {
-  content: '';
-  position: absolute;
-  top: 24px;
-  bottom: -8px;
-  left: 4px;
-  width: 1px;
-  background: var(--border-subtle);
-}
-
-.run:last-child::before {
-  display: none;
+.run:last-child {
+  border-bottom: 0;
 }
 
 .run__dot {
   position: relative;
-  z-index: 1;
   flex: none;
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   margin-top: 9px;
   border-radius: 50%;
   background: var(--border-strong);
-  box-shadow: 0 0 0 3px var(--surface);
 }
 
 .run.is-ok .run__dot { background: var(--ok); }
@@ -414,8 +403,8 @@ defineExpose({ reload, focusLatestFailure })
 }
 
 @keyframes run-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px var(--surface); }
-  50% { box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--info-soft); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--info-soft); }
+  50% { box-shadow: 0 0 0 4px var(--info-soft); }
 }
 
 @media (prefers-reduced-motion: reduce) {
