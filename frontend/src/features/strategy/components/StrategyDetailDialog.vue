@@ -528,11 +528,8 @@ async function save(): Promise<void> {
   display: grid;
   flex-shrink: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
   margin: 0 24px;
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--surface-canvas);
 }
 
 .sd__metric {
@@ -541,10 +538,9 @@ async function save(): Promise<void> {
   gap: 4px;
   min-width: 0;
   padding: 12px 16px;
-}
-
-.sd__metric + .sd__metric {
-  border-left: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-canvas);
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
 }
 
 .sd__metric dt {
@@ -614,13 +610,6 @@ async function save(): Promise<void> {
     margin: 0 16px;
   }
 
-  .sd__metric:nth-child(3) {
-    border-left: 0;
-  }
-
-  .sd__metric:nth-child(n + 3) {
-    border-top: 1px solid var(--border-subtle);
-  }
 
   .sd__tabs {
     padding: 0 6px;

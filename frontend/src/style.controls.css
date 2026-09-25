@@ -99,12 +99,12 @@
 .action-menu { min-width:10rem; max-width:calc(100vw - 2rem); }
 .action-menu [data-slot='dropdown-menu-item'] { cursor:pointer; }
 
-/* ─── 提示条（notice）：左侧 3px 色条 + 浅底 ─── */
-.notice { position:relative; margin:.5rem 0; padding-left:1rem; border:1px solid var(--border-subtle); border-left-width:3px; border-radius:var(--radius); background:var(--surface); color:var(--text-primary); }
-.notice[data-tone='info'] { border-left-color:var(--info); background:color-mix(in oklab, var(--info) 5%, var(--surface)); }
-.notice[data-tone='success'] { border-left-color:var(--ok); background:color-mix(in oklab, var(--ok) 5%, var(--surface)); }
-.notice[data-tone='warning'] { border-left-color:var(--warn); background:color-mix(in oklab, var(--warn) 6%, var(--surface)); }
-.notice[data-tone='error'], .notice[data-tone='danger'] { border-left-color:var(--stamp); background:color-mix(in oklab, var(--stamp) 6%, var(--surface)); }
+/* ─── 提示条（notice）：整圈细边 + 色调浅底 ─── */
+.notice { position:relative; margin:.5rem 0; padding-left:1rem; border:1px solid var(--border-subtle); border-radius:var(--radius); background:var(--surface); color:var(--text-primary); }
+.notice[data-tone='info'] { border-color:color-mix(in oklab, var(--info) 30%, var(--border-subtle)); background:color-mix(in oklab, var(--info) 5%, var(--surface)); }
+.notice[data-tone='success'] { border-color:color-mix(in oklab, var(--ok) 30%, var(--border-subtle)); background:color-mix(in oklab, var(--ok) 5%, var(--surface)); }
+.notice[data-tone='warning'] { border-color:color-mix(in oklab, var(--warn) 32%, var(--border-subtle)); background:color-mix(in oklab, var(--warn) 6%, var(--surface)); }
+.notice[data-tone='error'], .notice[data-tone='danger'] { border-color:color-mix(in oklab, var(--stamp) 32%, var(--border-subtle)); background:color-mix(in oklab, var(--stamp) 6%, var(--surface)); }
 .notice [data-slot='alert-title'] { font-size:var(--fs-ui); font-weight:600; }
 .notice [data-slot='alert-title'], .notice [data-slot='alert-description'] { padding-right:1.2rem; line-height:1.6; overflow-wrap:anywhere; }
 .notice [data-slot='alert-description'] { font-size:var(--fs-aux); color:var(--text-secondary); }

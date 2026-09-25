@@ -414,8 +414,9 @@ async function saveJob(): Promise<void> {
 }
 .md-quote {
   margin: 0 0 0.7rem;
-  padding-left: 0.7rem;
-  border-left: 2px solid var(--rule);
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
   color: var(--muted);
 }
 .md-code {

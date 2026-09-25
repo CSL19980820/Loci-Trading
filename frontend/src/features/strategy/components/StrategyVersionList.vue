@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 版本时间线：当前版本置顶高亮，其余可回滚 / 删除；回测读数跟着版本走。 */
+/** 版本列表：当前版本置顶高亮，其余可回滚 / 删除；回测读数跟着版本走。 */
 import { Spinner } from '@/shared/components/ui/spinner'
 import { Button } from '@/shared/components/ui/button'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
@@ -39,7 +39,6 @@ function stamp(raw?: string): string {
     <EmptyState v-else-if="!rows.length" compact description="暂无历史版本" />
     <ol v-else class="vl__list">
       <li v-for="row in rows" :key="row.id || row.version" class="vl__row" :class="{ 'is-active': active(row) }">
-        <span class="vl__node" aria-hidden="true" />
         <div class="vl__main">
           <div class="vl__head">
             <strong class="vl__ver">{{ row.version }}</strong>
@@ -81,43 +80,25 @@ function stamp(raw?: string): string {
 }
 
 .vl__row {
-  position: relative;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 12px;
-  padding: 10px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
 }
 
-.vl__row::before {
-  content: '';
-  position: absolute;
-  top: 26px;
-  bottom: -10px;
-  left: 6px;
-  width: 1px;
-  background: var(--border-subtle);
+.vl__row + .vl__row {
+  margin-top: 2px;
 }
 
-.vl__row:last-child::before {
-  display: none;
+.vl__row:hover {
+  background: var(--surface-hover);
 }
 
-.vl__node {
-  position: relative;
-  z-index: 1;
-  width: 13px;
-  height: 13px;
-  margin-top: 3px;
-  border: 2px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--surface);
-}
-
-.vl__row.is-active .vl__node {
-  border-color: var(--seal);
-  background: var(--seal);
-  box-shadow: 0 0 0 4px var(--seal-soft);
+.vl__row.is-active {
+  background: color-mix(in oklab, var(--seal) 7%, var(--surface));
+  box-shadow: inset 0 0 0 1px var(--seal-border);
 }
 
 .vl__main {

@@ -29,9 +29,7 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from '@/shared/components/ui/number-field'
-import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import { Skeleton } from '@/shared/components/ui/skeleton'
-import StatCard from '@/shared/components/ui/StatCard.vue'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table'
 import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { confirmAction } from '@/shared/lib/confirm'
@@ -105,20 +103,17 @@ const returnPct = computed(() => {
   if (!state?.initial_capital_cents) return null
   return state.total_pnl_cents / state.initial_capital_cents * 100
 })
-const pnlTone = computed(() => {
-  const pnl = data.value?.state.total_pnl_cents ?? 0
-  return pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'neutral'
-})
 const profitClass = (value:number) => value>0 ? 'gain' : value<0 ? 'loss' : ''
 const signed = (cents:number) => `${cents > 0 ? '+' : cents < 0 ? '−' : ''}${agentMoney(Math.abs(cents))}`
-function scheduleNote(slot: AgentProfile['schedules'][number]): string {
-  if (!slot.enabled) return '未启用'
-  if (slot.phase === 'closeout') return '执行已保存的收盘名单，不调用模型'
-  if (slot.phase === 'intraday') return '持仓管理与模拟交易'
-  if (slot.phase === 'auction') return '判断参与条件，不即时成交'
-  if (slot.phase === 'premarket') return '核实隔夜变化，制定计划'
-  return '回顾执行，为下一交易日准备'
-}
+const tabItems = computed(() => TABS.map((item) => {
+  const profile = data.value
+  const badge = !profile ? undefined
+    : item.name === 'account' ? profile.state.positions.length || undefined
+      : item.name === 'runs' ? profile.total_runs || undefined
+        : item.name === 'trades' ? profile.total_trades || undefined
+          : undefined
+  return { ...item, badge }
+}))
 function toggleExpand(code:string) { const next = new Set(expanded.value); if (next.has(code)) next.delete(code); else next.add(code); expanded.value = next }
 async function load(force = false) {
   if (disposed || busy.value || (loading.value && !force)) return
@@ -234,34 +229,30 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
         </DropdownMenuContent></DropdownMenu>
       </template>
     </MobilePageHeader>
-    <PageHeader v-else
-      compact
-      sticky
-      :title="data?.config.name || '智能体'"
-      :description="data ? (data.config.description || '独立的股票研究与模拟交易工作室') : undefined"
-      :tabs="data ? TABS : undefined"
-      panel-id="stock-agent-panel"
-      v-model:tab="tab"
-    >
-      <template #leading>
+    <header v-else class="studio-head">
+      <div class="studio-head__id">
         <Button access="read" variant="ghost" size="icon-sm" as-child>
           <RouterLink to="/agents" aria-label="返回智能体"><ArrowLeft aria-hidden="true" /></RouterLink>
         </Button>
-      </template>
-      <template #title>
-        <span class="studio-title">
-          <span class="studio-avatar" :class="{ 'is-leader': data?.config.kind === 'leader' }" aria-hidden="true">
-            <Flag v-if="data?.config.kind === 'leader'" />
-            <Cpu v-else />
-          </span>
-          <span class="studio-title__text">{{ data?.config.name || '智能体' }}</span>
-          <UiBadge v-if="data" :variant="stateVariant" :dot="!data.running" class="studio-state">
-            <Spinner v-if="data.running" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-            {{ stateLabel }}
-          </UiBadge>
+        <span class="studio-avatar" :class="{ 'is-leader': data?.config.kind === 'leader', 'is-live': data?.config.enabled && !data?.archived }" aria-hidden="true">
+          <Flag v-if="data?.config.kind === 'leader'" />
+          <Cpu v-else />
         </span>
-      </template>
-      <template v-if="data" #actions>
+        <div class="studio-head__text">
+          <div class="studio-head__name">
+            <h1>{{ data?.config.name || '智能体' }}</h1>
+            <UiBadge v-if="data" :variant="stateVariant" :dot="!data.running" class="studio-state">
+              <Spinner v-if="data.running" class="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              {{ stateLabel }}
+            </UiBadge>
+          </div>
+          <div v-if="data" class="studio-head__meta">
+            <span :title="data.config.model"><Cpu aria-hidden="true" />{{ data.config.model || '模型未配置' }}</span>
+            <span><Clock aria-hidden="true" />{{ agentTime(data.latest_at) }}</span>
+          </div>
+        </div>
+      </div>
+      <div v-if="data" class="studio-head__actions">
         <Button access="read" variant="ghost" size="icon-sm" :disabled="loading || busy" aria-label="刷新智能体" @click="load(true)">
           <Spinner v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <RefreshCw v-else aria-hidden="true" />
@@ -274,11 +265,11 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
           <Spinner v-if="busy" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
           <Pause v-else-if="data.config.enabled" aria-hidden="true" />
           <Play v-else aria-hidden="true" />
-          {{ data.config.enabled ? '暂停' : '启用智能体' }}
+          {{ data.config.enabled ? '暂停' : '启用' }}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
-            <Button variant="outline" size="icon-sm" aria-label="更多操作" :disabled="busy">
+            <Button variant="ghost" size="icon-sm" aria-label="更多操作" :disabled="busy">
               <Ellipsis aria-hidden="true" />
             </Button>
           </DropdownMenuTrigger>
@@ -302,22 +293,9 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </template>
-      <template v-if="data" #default>
-        <span class="studio-meta">
-          <Cpu class="size-3.5" aria-hidden="true" />
-          <b>{{ data.config.model || '尚未配置模型' }}</b>
-        </span>
-        <span class="studio-meta">
-          <Clock class="size-3.5" aria-hidden="true" />
-          上次工作 {{ agentTime(data.latest_at) }}
-        </span>
-        <span class="studio-meta">
-          累计 <b>{{ data.total_runs }}</b> 次工作 · <b>{{ data.total_actions }}</b> 条操作 · <b>{{ data.total_trades }}</b> 笔成交
-        </span>
-      </template>
-    </PageHeader>
-    <PageTabs v-if="isMobile && data" panel-id="stock-agent-panel" :model-value="tab" :items="TABS" variant="pill" :sticky="false" class="studio-phone-tabs" aria-label="智能体工作区" @update:model-value="value => tab = parseTab(value)" />
+      </div>
+    </header>
+    <PageTabs v-if="isMobile && data" panel-id="stock-agent-panel" :model-value="tab" :items="tabItems" variant="pill" :sticky="false" class="studio-phone-tabs" aria-label="智能体工作区" @update:model-value="value => tab = parseTab(value)" />
 
     <Alert v-if="(error || readError) && !settingsOpen" variant="destructive" class="studio-error">
       <AlertTitle class="line-clamp-none">{{ error || readError }}</AlertTitle>
@@ -325,9 +303,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
     </Alert>
 
     <div v-if="loading && !data" class="studio-skeleton" aria-hidden="true">
-      <div class="stat-strip cols-4 studio-kpis">
-        <Skeleton v-for="n in 4" :key="n" class="h-[66px] rounded-md" />
-      </div>
+      <Skeleton class="h-[104px] rounded-lg" />
       <Skeleton class="h-[260px] rounded-lg" />
       <Skeleton class="h-[180px] rounded-lg" />
     </div>
@@ -335,46 +311,42 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
     <template v-if="data">
       <!-- Primary balances and secondary accounting facts are each shown once. -->
       <GuardianMobileSummary v-if="isMobile && tab === 'account'" :data="{ state:data.state, config:data.config, observation_count:data.state.watchlist?.length }" />
-      <section v-if="!isMobile" class="stat-strip cols-4 studio-kpis" aria-label="模拟账户概览">
-        <StatCard
-          label="模拟净资产 / 元"
-        >
-          {{ agentMoney(data.state.equity_cents) }}
-        </StatCard>
-        <StatCard
-          label="累计盈亏 / 元"
-          :tone="pnlTone"
-        >
-          {{ signed(data.state.total_pnl_cents) }}
-        </StatCard>
-        <StatCard label="可用现金 / 元">
-          {{ agentMoney(data.state.cash_cents) }}
-        </StatCard>
-        <StatCard label="投入本金 / 元" >
-          <template #icon>
-            <Button
-              variant="ghost"
-              size="xs"
-              class="-my-1 text-seal-ink"
-              :disabled="busy || !!data.archived"
-              @click="fundingOpen = true"
-            >
-              <Plus aria-hidden="true" />
-              追加
-            </Button>
-          </template>
-          {{ agentMoney(data.state.initial_capital_cents) }}
-        </StatCard>
+      <section v-if="!isMobile" class="studio-ledger" aria-label="模拟账户，单位元">
+        <div class="studio-ledger__hero">
+          <span class="studio-ledger__label">模拟净资产</span>
+          <strong class="studio-ledger__equity">{{ agentMoney(data.state.equity_cents) }}</strong>
+          <span class="studio-ledger__pnl" :class="profitClass(data.state.total_pnl_cents)">
+            {{ signed(data.state.total_pnl_cents) }}<em v-if="returnPct != null">{{ returnPct > 0 ? '+' : '' }}{{ returnPct.toFixed(2) }}%</em>
+          </span>
+        </div>
+        <dl class="studio-ledger__facts">
+          <div><dt>可用现金</dt><dd>{{ agentMoney(data.state.cash_cents) }}</dd></div>
+          <div><dt>持仓市值</dt><dd>{{ agentMoney(data.state.market_value_cents) }}</dd></div>
+          <div><dt>已实现</dt><dd :class="profitClass(data.state.realized_pnl_cents)">{{ signed(data.state.realized_pnl_cents) }}</dd></div>
+          <div>
+            <dt>
+              投入本金
+              <Button variant="ghost" size="xs" class="studio-ledger__fund" :disabled="busy || !!data.archived" @click="fundingOpen = true">
+                <Plus aria-hidden="true" />追加
+              </Button>
+            </dt>
+            <dd>{{ agentMoney(data.state.initial_capital_cents) }}</dd>
+          </div>
+        </dl>
+        <div class="studio-ledger__alloc">
+          <div class="studio-ledger__alloc-row">
+            <span class="studio-ledger__label">仓位</span>
+            <strong>{{ allocationPct ?? 0 }}%</strong>
+          </div>
+          <span class="studio-ledger__bar" aria-hidden="true"><i :style="{ width: `${Math.min(100, Math.max(0, allocationPct ?? 0))}%` }" /></span>
+          <span class="studio-ledger__runs">工作 {{ data.total_runs }} · 操作 {{ data.total_actions }} · 成交 {{ data.total_trades }}</span>
+        </div>
       </section>
-      <dl v-if="!isMobile" class="studio-account-context" aria-label="账户补充读数">
-        <div><dt>持仓市值</dt><dd>{{ agentMoney(data.state.market_value_cents) }} 元</dd></div>
-        <div v-if="allocationPct != null"><dt>仓位</dt><dd>{{ allocationPct }}%</dd></div>
-        <div v-if="returnPct != null"><dt>收益率</dt><dd :class="pnlTone === 'up' ? 'text-up' : pnlTone === 'down' ? 'text-down' : ''">{{ returnPct > 0 ? '+' : '' }}{{ returnPct.toFixed(2) }}%</dd></div>
-        <div><dt>已实现</dt><dd>{{ signed(data.state.realized_pnl_cents) }} 元</dd></div>
-      </dl>
+
+      <PageTabs v-if="!isMobile" panel-id="stock-agent-panel" :model-value="tab" :items="tabItems" :sticky="false" class="studio-tabs" aria-label="智能体工作区" @update:model-value="value => tab = parseTab(value)" />
 
       <Alert v-if="data.state.stale_codes?.length" class="studio-stale">
-        <AlertTitle class="line-clamp-none">部分持仓沿用最后有效报价，当前估值不是实时成交价</AlertTitle>
+        <AlertTitle class="line-clamp-none">部分持仓估值沿用最后有效报价</AlertTitle>
       </Alert>
 
       <div id="stock-agent-panel" class="studio-tab-panel" role="tabpanel" tabindex="0" :aria-labelledby="`stock-agent-panel-tab-${tab}`">
@@ -384,10 +356,10 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
           <CardHeader class="border-b">
             <CardTitle class="flex flex-wrap items-center gap-2">
               当前持仓
-              <UiBadge variant="secondary">{{ data.state.positions.length }} / {{ data.config.position_limit }} 只</UiBadge>
+              <UiBadge variant="secondary">{{ data.state.positions.length }} / {{ data.config.position_limit }}</UiBadge>
               <UiBadge v-if="data.config.temporary_position_limit" variant="default">临时上限 {{ data.config.temporary_position_limit }}</UiBadge>
             </CardTitle>
-            <CardDescription>累计交易规费 {{ agentMoney(data.state.fees_cents) }} 元</CardDescription>
+            <CardDescription>规费 {{ agentMoney(data.state.fees_cents) }}</CardDescription>
           </CardHeader>
 
           <div v-if="!data.state.positions.length" class="studio-positions__empty">
@@ -414,9 +386,9 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
                 <span>现价 {{ agentMoney(row.mark_price_cents) }}</span>
               </div>
               <div v-if="expanded.has(row.code)" class="position-plans position-plans--card">
-                <div class="plan-item"><b>持有计划</b><p>{{ row.holding_plan || '等待下一轮研究' }}</p></div>
-                <div class="plan-item"><b>止盈条件</b><p>{{ row.take_profit_plan || '尚无文字计划' }}</p></div>
-                <div class="plan-item"><b>止损条件</b><p>{{ row.stop_loss_plan || '尚无文字计划' }}</p></div>
+                <div class="plan-item"><b>持有计划</b><p>{{ row.holding_plan || '—' }}</p></div>
+                <div class="plan-item"><b>止盈条件</b><p>{{ row.take_profit_plan || '—' }}</p></div>
+                <div class="plan-item"><b>止损条件</b><p>{{ row.stop_loss_plan || '—' }}</p></div>
                 <div class="plan-item"><b>报价时间</b><time>{{ agentTime(row.mark_at) }}</time></div>
               </div>
             </li>
@@ -427,12 +399,12 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
             <TableHeader>
               <TableRow>
                 <TableHead class="w-9"><span class="sr-only">展开持有计划</span></TableHead>
-                <TableHead class="text-center">标的 · 编码</TableHead>
-                <TableHead class="text-center">持仓 / 可卖</TableHead>
-                <TableHead class="text-center">含费成本</TableHead>
-                <TableHead class="text-center">参考现价</TableHead>
-                <TableHead class="text-center">持仓市值</TableHead>
-                <TableHead class="text-center">浮动盈亏</TableHead>
+                <TableHead>股票</TableHead>
+                <TableHead class="num">持仓 / 可卖</TableHead>
+                <TableHead class="num">含费成本</TableHead>
+                <TableHead class="num">参考现价</TableHead>
+                <TableHead class="num">持仓市值</TableHead>
+                <TableHead class="num">浮动盈亏</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -443,26 +415,26 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
                       <ChevronDown :class="['size-3.5 transition-transform', expanded.has(row.code) ? 'rotate-180' : '']" aria-hidden="true" />
                     </Button>
                   </TableCell>
-                  <TableCell class="text-center">
+                  <TableCell>
                     <span class="stock-cell-inline" :title="`${row.name} ${row.code}`">
                       <strong class="stock-name">{{ row.name }}</strong>
                       <small class="stock-code">{{ row.code }}</small>
                     </span>
                   </TableCell>
-                  <TableCell class="num text-center">{{ row.quantity }} / {{ row.available_quantity }}</TableCell>
-                  <TableCell class="num text-center">{{ Number(row.average_cost).toFixed(3) }}</TableCell>
-                  <TableCell class="num text-center">{{ agentMoney(row.mark_price_cents) }}</TableCell>
-                  <TableCell class="num text-center font-medium">{{ agentMoney(row.market_value_cents) }}</TableCell>
-                  <TableCell class="num text-center font-medium">
+                  <TableCell class="num">{{ row.quantity }} / {{ row.available_quantity }}</TableCell>
+                  <TableCell class="num">{{ Number(row.average_cost).toFixed(3) }}</TableCell>
+                  <TableCell class="num">{{ agentMoney(row.mark_price_cents) }}</TableCell>
+                  <TableCell class="num font-medium">{{ agentMoney(row.market_value_cents) }}</TableCell>
+                  <TableCell class="num font-medium">
                     <span :class="profitClass(row.unrealized_pnl_cents)">{{ signed(row.unrealized_pnl_cents) }}</span>
                   </TableCell>
                 </TableRow>
                 <TableRow v-if="expanded.has(row.code)" class="plan-row">
                   <TableCell :colspan="7" class="p-0">
                     <div class="position-plans">
-                      <div class="plan-item"><b>持有计划</b><p>{{ row.holding_plan || '等待下一轮研究' }}</p></div>
-                      <div class="plan-item"><b>止盈条件</b><p>{{ row.take_profit_plan || '尚无文字计划' }}</p></div>
-                      <div class="plan-item"><b>止损条件</b><p>{{ row.stop_loss_plan || '尚无文字计划' }}</p></div>
+                      <div class="plan-item"><b>持有计划</b><p>{{ row.holding_plan || '—' }}</p></div>
+                      <div class="plan-item"><b>止盈条件</b><p>{{ row.take_profit_plan || '—' }}</p></div>
+                      <div class="plan-item"><b>止损条件</b><p>{{ row.stop_loss_plan || '—' }}</p></div>
                       <div class="plan-item"><b>报价时间</b><time>{{ agentTime(row.mark_at) }}</time></div>
                     </div>
                   </TableCell>
@@ -477,16 +449,14 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
 
           <Card class="studio-schedule">
             <CardHeader class="border-b">
-              <CardTitle>工作日程 <span class="text-xs font-normal text-muted-foreground">北京时间</span></CardTitle>
+              <CardTitle>工作日程</CardTitle>
             </CardHeader>
             <CardContent class="studio-schedule__body">
               <ol class="schedule-list">
                 <li v-for="slot in data.schedules" :key="slot.phase" class="schedule-slot" :class="{ 'is-off': !slot.enabled }">
                   <time class="schedule-slot__time">{{ slot.time }}</time>
-                  <div class="schedule-slot__detail">
-                    <strong>{{ slot.label }}</strong>
-                    <span>{{ scheduleNote(slot) }}</span>
-                  </div>
+                  <strong class="schedule-slot__label">{{ slot.label }}</strong>
+                  <span class="schedule-slot__state">{{ slot.enabled ? '启用' : '关闭' }}</span>
                 </li>
               </ol>
               <Button
@@ -519,7 +489,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
                     <strong class="stock-name">{{ stock.name || stock.code }}</strong>
                     <small class="stock-code">{{ stock.code }}</small>
                   </span>
-                  <p class="watch-reason">{{ stock.reason || '等待进一步研究' }}</p>
+                  <p v-if="stock.reason" class="watch-reason">{{ stock.reason }}</p>
                 </li>
               </ul>
               <EmptyState v-else description="尚无观察标的" compact />
@@ -532,14 +502,14 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
               <CardDescription>{{ data.latest_phase ? phaseName(data.latest_phase) : '最近动态' }} · {{ agentTime(data.latest_at) }}</CardDescription>
             </CardHeader>
             <CardContent class="latest-work">
-              <p class="work-summary">{{ data.latest_summary || '完成配置后，启用智能体开始第一次研究。' }}</p>
+              <p class="work-summary">{{ data.latest_summary || '—' }}</p>
               <div v-if="data.latest_actions.length" class="latest-actions">
                 <span v-for="(action,i) in data.latest_actions.slice(0,5)" :key="i" class="action-tag">
                   {{ actionName(action.action) }} {{ action.name || action.code }} · {{ statusName(action.status) }}
                 </span>
               </div>
               <Button access="read" variant="link" size="xs" class="mt-auto self-start px-0" @click="tab = 'runs'">
-                查看全部工作日记 →
+                全部日记
               </Button>
             </CardContent>
           </Card>
@@ -549,12 +519,14 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
       <!-- 历史：工作日记 / 成交记录 / 资金流水 -->
       <template v-else>
         <div v-if="tab === 'runs'" class="storage-toolbar">
-          <span class="storage-toolbar__text">
-            累计 <b>{{ data.total_runs }}</b> 次 · 当前保留 <b>{{ data.history_kept }}</b> 条 · 已清理 <b>{{ data.cleaned_runs }}</b> 条
-          </span>
+          <dl class="storage-toolbar__text">
+            <div><dt>累计</dt><dd>{{ data.total_runs }}</dd></div>
+            <div><dt>保留</dt><dd>{{ data.history_kept }}</dd></div>
+            <div><dt>已清理</dt><dd>{{ data.cleaned_runs }}</dd></div>
+          </dl>
           <div class="storage-toolbar__actions">
-            <Button variant="outline" size="xs" @click="configure">保留策略</Button>
-            <Button variant="outline" size="xs" class="text-stamp" :disabled="busy" @click="cleanup">
+            <Button variant="ghost" size="xs" @click="configure">保留策略</Button>
+            <Button variant="ghost" size="xs" class="text-stamp" :disabled="busy" @click="cleanup">
               <Trash2 aria-hidden="true" />
               清理旧日记
             </Button>
@@ -564,9 +536,6 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
       </template>
 
       </div>
-      <footer class="studio-footer">
-        模拟成交不连接券商；按实际报价校验费用、T+1 及数量约束，未模拟盘口排队与分红送转。
-      </footer>
 
       <AgentConfigDrawer
         v-if="options"
@@ -583,7 +552,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); clearTimeou
         <DialogContent class="sm:max-w-md" :show-close-button="!busy" @interact-outside.prevent @escape-key-down="(event) => { if (busy) event.preventDefault() }">
           <DialogHeader class="text-left">
             <DialogTitle>追加模拟资金</DialogTitle>
-            <DialogDescription>本次追加计入投入本金与可用现金，不计为盈利。正在研究的旧结果会失效，防止覆盖新资金余额。</DialogDescription>
+            <DialogDescription class="sr-only">追加模拟资金</DialogDescription>
           </DialogHeader>
           <Alert v-if="fundingError" variant="destructive">
             <AlertTitle class="line-clamp-none">{{ fundingError }}</AlertTitle>

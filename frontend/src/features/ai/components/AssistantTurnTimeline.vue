@@ -415,8 +415,9 @@ function onRerun(): void {
 
 .assistant-turn__content.is-markdown :deep(blockquote) {
   margin: 0.5em 0 0.7em;
-  padding: 0.2em 0 0.2em 0.9em;
-  border-left: 2px solid var(--border-strong);
+  padding: 0.55em 0.85em;
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
   color: var(--text-secondary);
 }
 

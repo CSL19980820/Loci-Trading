@@ -272,15 +272,6 @@ function close(): void {
   position: relative;
   padding: 0 0 .55rem;
 }
-.assistant-agent-thread__steps li:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  left: .55rem;
-  top: 1.2rem;
-  bottom: 0;
-  width: 1px;
-  background: color-mix(in oklab, var(--rule) 85%, var(--ink) 8%);
-}
 .assistant-agent-thread__step-index {
   display: grid;
   place-items: center;

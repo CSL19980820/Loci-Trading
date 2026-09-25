@@ -13,6 +13,7 @@
  .guardian-section-head { flex:none; padding:6px 10px; gap:6px; background:var(--surface); }
  .guardian-report > .guardian-section-head { display:flex; align-items:center; justify-content:space-between; gap:6px; }
  .section-title-group h3 { display:none; }.section-title-group .run-label { font-size:11px; white-space:nowrap; color:var(--text-tertiary); }
+ .pool-list { padding:4px 2px; }.pool-row { padding:10px; }
  .research-actions { gap:3px; }.research-actions button { height:36px; font-size:12px; padding-inline:8px; }
  .research-control-bar { display:flex; flex-wrap:wrap; gap:7px; width:100%; padding:7px 10px; border-bottom:1px solid var(--border-subtle); }
  .run-selector-inline { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; flex:1 1 100%; width:100%; gap:7px; }
@@ -22,15 +23,6 @@
  .guardian-report :deep(.report-header h3) { font-size:16px; }.guardian-report :deep(.report-metadata) { font-size:11px; line-height:1.6; }
  .guardian-report-content { width:100%; padding:12px; }.guardian-decisions-grid { grid-template-columns:minmax(0,1fr); }
  .decision-reason,.target-text { display:block; -webkit-line-clamp:unset; }.plan-desc { white-space:normal; overflow-wrap:anywhere; }.execution-item { flex-wrap:wrap; }
- .guardian-report-foot { padding:8px 12px; font-size:11px; }
  .guardian-history-dialog { padding:14px 12px; gap:10px; }
  .pool-title-and-scope { min-width:0; }.pool-title-and-scope :deep(button) { font-size:11px; padding-inline:6px; min-height:34px; }
- .guardian-count { display:none; }
- .research-mobile-stocks { display:flex; flex-direction:column; }
- .research-mobile-stock { padding:6px 12px 12px; border-bottom:1px solid var(--border-subtle); min-width:0; }
- .research-mobile-stock>div { display:flex; align-items:center; justify-content:space-between; gap:8px; }
- .research-mobile-stock .stock-detail-link { display:inline-flex; align-items:baseline; flex-wrap:wrap; gap:5px; font-size:14px; padding:9px 0; min-height:40px; }
- .research-mobile-stock small { font:11px var(--mono); color:var(--text-tertiary); }.research-mobile-state { font-size:11px; color:var(--text-secondary); flex:none; }
- .research-mobile-stock p { margin:0 0 8px; color:var(--text-secondary); font-size:13px; line-height:1.75; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
- .research-mobile-stock footer { display:flex; justify-content:space-between; gap:8px; color:var(--text-tertiary); font-size:11px; }.research-mobile-stock time { white-space:nowrap; }
 }

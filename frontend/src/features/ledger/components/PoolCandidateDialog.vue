@@ -160,12 +160,10 @@ const facts = computed(() => {
   const c = props.candidate
   if (!c) return []
   return [
-    { key: '选出日', value: c.date, mono: true },
     { key: '时点', value: timingLabel(c.timing) },
-    { key: '池', value: props.poolText },
     { key: '来源', value: props.sourceText },
     { key: '写入', value: formatDateTime(c.created_at), mono: true },
-  ]
+  ].filter((fact) => fact.value)
 })
 
 const evidence = computed(() =>
@@ -178,7 +176,7 @@ const evidence = computed(() =>
 
 <template>
   <Dialog v-model:open="open">
-    <DialogContent class="cand flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]">
+    <DialogContent class="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]">
       <DialogHeader class="cand__hero text-left" :class="`is-${tone}`">
         <div class="cand__id">
           <div v-if="candidate" class="cand__kicker">
@@ -200,7 +198,13 @@ const evidence = computed(() =>
             </template>
             <template v-else>候选详情</template>
           </DialogTitle>
-          <DialogDescription class="sr-only">候选详情</DialogDescription>
+          <dl v-if="facts.length" class="cand__meta">
+            <div v-for="fact in facts" :key="fact.key">
+              <dt>{{ fact.key }}</dt>
+              <dd :class="{ 'is-mono': fact.mono }">{{ fact.value }}</dd>
+            </div>
+          </dl>
+          <DialogDescription class="sr-only">{{ poolText || '候选详情' }}</DialogDescription>
         </div>
         <div v-if="candidate" class="cand__score" :aria-label="`评分 ${scoreText}`">
           <svg v-if="scoreRing" viewBox="0 0 52 52" class="cand__ring" aria-hidden="true">
@@ -255,13 +259,6 @@ const evidence = computed(() =>
           {{ candidate.reason || '—' }}
         </blockquote>
 
-        <dl class="cand__facts">
-          <div v-for="fact in facts" :key="fact.key" class="cand__fact">
-            <dt>{{ fact.key }}</dt>
-            <dd :class="{ 'is-mono': fact.mono }" :title="fact.value">{{ fact.value || '—' }}</dd>
-          </div>
-        </dl>
-
         <StrategyFootprint
           compact
           :lanes="footprints.lanes.value"
@@ -310,13 +307,6 @@ const evidence = computed(() =>
 </template>
 
 <style scoped>
-.cand {
-  display: flex;
-  flex-direction: column;
-  max-height: 90dvh;
-  overflow: hidden;
-}
-
 /* ─── 头：裁决色一抹渐变，名称大字，右侧评分环 ─── */
 .cand__hero {
   --cand-accent: var(--text-tertiary);
@@ -559,8 +549,9 @@ const evidence = computed(() =>
 
 .cand__reason {
   margin: 0;
-  padding: 2px 0 2px 14px;
-  border-left: 2px solid var(--seal-border);
+  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
   color: var(--text-primary);
   font-size: var(--fs-body);
   line-height: 1.75;
@@ -570,48 +561,30 @@ const evidence = computed(() =>
 
 .cand__reason.is-empty {
   color: var(--text-tertiary);
-  border-left-color: var(--border-subtle);
 }
 
-.cand__facts {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  margin: 0;
-  border-block: 1px solid var(--border-subtle);
-}
-
-.cand__fact {
+.cand__meta {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 10px 12px;
-}
-
-.cand__fact + .cand__fact {
-  border-left: 1px solid var(--border-subtle);
-}
-
-.cand__fact:first-child {
-  padding-left: 0;
-}
-
-.cand__fact dt {
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 2px 0 0;
   color: var(--text-tertiary);
-  font-size: var(--fs-kicker);
-}
-
-.cand__fact dd {
-  margin: 0;
-  overflow: hidden;
-  color: var(--text-primary);
   font-size: var(--fs-aux);
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.cand__fact dd.is-mono {
+.cand__meta > div {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cand__meta dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.cand__meta dd.is-mono {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
@@ -725,23 +698,6 @@ const evidence = computed(() =>
 
   .cand__perf-nums {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .cand__facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .cand__fact,
-  .cand__fact:first-child {
-    padding: 8px 0;
-  }
-
-  .cand__fact + .cand__fact {
-    border-left: 0;
-  }
-
-  .cand__fact:last-child {
-    grid-column: 1 / -1;
   }
 
   .cand__ev-grid {
