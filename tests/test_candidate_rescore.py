@@ -63,3 +63,27 @@ def test_since_until_filters_dates(tmp_path):
         seed(palace)
         assert [r["code"] for r in palace.candidate_scoring_rows(SLUG, since="2026-09-24")] == ["600000"]
         assert len(palace.candidate_scoring_rows(SLUG, until="2026-09-23")) == 2
+
+
+def test_cli_previews_then_applies_with_backup(tmp_path, monkeypatch, capsys):
+    from cli import market as cli_market
+    from src.strategy.application import screener
+
+    palace_path = tmp_path / "palace.db"
+    with PalaceStore(palace_path) as palace:
+        seed(palace)
+    monkeypatch.setattr(screener, "screen", fake_screen)
+    args = ["--db", str(tmp_path / "market.db"), "rescore", "--strategy", SLUG, "--palace-db", str(palace_path)]
+    assert cli_market.main(args) == 0
+    preview = capsys.readouterr().out
+    assert "300931" in preview and "96.4" in preview and "预览模式" in preview
+    assert not list(tmp_path.glob("palace.db.bak-rescore-*"))
+
+    assert cli_market.main([*args, "--apply"]) == 0
+    assert "已更新 1 行" in capsys.readouterr().out
+    backups = list(tmp_path.glob("palace.db.bak-rescore-*"))
+    assert len(backups) == 1
+    with PalaceStore(backups[0]) as backup:  # 备份是改写前的原样
+        assert {r["code"]: r["score"] for r in backup.candidate_scoring_rows(SLUG)}["300931"] == 2.5
+    with PalaceStore(palace_path) as palace:
+        assert {r["code"]: r["score"] for r in palace.candidate_scoring_rows(SLUG)}["300931"] == 96.4

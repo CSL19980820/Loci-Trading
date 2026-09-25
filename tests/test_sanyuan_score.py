@@ -99,3 +99,36 @@ def test_percentile_factor_does_not_alter_signals():
     last = shorter.signals.index[-1]
     pd.testing.assert_series_equal(result.factors[SCORE_PERCENTILE].loc[last],
                                    shorter.factors[SCORE_PERCENTILE].loc[last])
+
+
+def yangshi_panels(days=70, codes=80, seed=21):
+    rng = np.random.default_rng(seed)
+    panels = synthetic_panels(days=days, codes=codes, seed=seed)
+    index, columns = panels["close"].index, panels["close"].columns
+    panels["close"] = panels["close"] * 0 + 8 * np.exp(np.cumsum(rng.normal(0.004, 0.025, size=(days, codes)), axis=0))
+    panels["high"] = panels["close"] * 1.02
+    panels["low"] = panels["close"] * 0.97
+    panels["amount"] = pd.DataFrame(rng.uniform(4e7, 9e7, size=(days, codes)), index=index, columns=columns)
+    panels["turnover"] = pd.DataFrame(rng.uniform(0.03, 0.08, size=(days, codes)), index=index, columns=columns)
+    panels["outstanding_share"] = pd.DataFrame(1.5e8, index=index, columns=columns)
+    return panels
+
+
+def test_yangshi_scores_on_same_scale_and_keeps_rank_order():
+    from src.strategy.application.yangshi_tail import YangshiTailPickerV1
+
+    engine = YangshiTailPickerV1()
+    result = engine.compute(yangshi_panels())
+    percentile, gain = result.factors[SCORE_PERCENTILE], result.factors["当日涨幅(%)"]
+    days = [d for d in result.signals.index[-30:] if result.signals.loc[d].any() or result.watch_signals.loc[d].any()]
+    assert days, "合成数据应至少出现一次正式或观察信号"
+    for day in days:
+        for code in result.picks_on(day, rank_by="当日涨幅(%)") + result.watch_picks_on(day, rank_by="当日涨幅(%)"):
+            value = percentile.at[day, code]
+            assert 0.0 <= value <= 100.0
+            explained = result.explain(day, code)
+            assert score_from_factors(explained) == pytest.approx(round(value, 4))
+            eligible_gain = gain.loc[day][result.factors["条件候选"].loc[day].astype(bool)]
+            assert all(percentile.at[day, other] >= value for other in eligible_gain[eligible_gain > gain.at[day, code]].index)
+    reason = factor_reason(engine.slug, result.explain(days[-1], (result.picks_on(days[-1]) + result.watch_picks_on(days[-1]))[0]))
+    assert reason.startswith("杨氏尾盘选股（15:30）选中：评分百分位=")

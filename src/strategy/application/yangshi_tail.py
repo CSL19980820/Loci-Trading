@@ -32,11 +32,18 @@ from typing import Any
 import pandas as pd
 
 from src.formula import REF, limit_ratio_panel, limit_up_flags, one_word_flags
+from src.strategy.application.score_percentile import (
+    SCORE_PERCENTILE,
+    pooled_percentile,
+)
 from src.strategy.domain.base import SignalResult, merge_params, register
 
 #: 市场上涨家数占比低于该阈值时整日空仓。网格实测：加这道闸门把 Top1 持 3 日的
 #: 组合回撤从 -46.3% 压到 -32.6%，逐笔均净从 +0.5903% 升到 +0.6955%。
 WEAK_BREADTH_SKIP = 0.40
+#: 候选池 0–100 评分的参照期：近 40 个交易日（含当日）条件候选的当日涨幅分布。
+#: 选股只加载 60 根日 K，40 日窗口在实盘与回测里都完整，两边分数同口径。
+SCORE_POOL_DAYS = 40
 
 
 def _once_schedule(hour: int, minute: int) -> dict[str, Any]:
@@ -252,6 +259,8 @@ class YangshiTailPickerV1:
             signals=selected,
             watch_signals=watch_selected,
             factors={
+                # 排序因子就是当日涨幅：评分百分位 = 它在近期条件候选里的位置，与选股同序。
+                SCORE_PERCENTILE: pooled_percentile(strength, eligible, window=SCORE_POOL_DAYS),
                 "流通股本(亿股)": shares / 1e8,
                 "未复权收盘价": raw_close,
                 "当日涨幅(%)": pct_chg,
