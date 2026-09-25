@@ -11,7 +11,14 @@
 """
 from __future__ import annotations
 
+from concurrent.futures import CancelledError
 import json
+import logging
+import math
+import os
+import sqlite3
+import threading
+import time
 from typing import Any
 
 from src.ai.application.agent import ChatMessage, apply_hitl_tool_result, run_agent
@@ -37,6 +44,99 @@ from src.ai.application.quota import record_llm_usage
 from src.ai.application.system_toolbus import build_system_toolbus
 from src.ai.infrastructure.assistant_store import AssistantStore
 
+logger = logging.getLogger(__name__)
+
+RUN_TIMEOUT_ENV = "LOCI_AI_ASSISTANT_RUN_TIMEOUT_SEC"
+DEFAULT_RUN_TIMEOUT_SECONDS = 1200.0
+_CANCEL_POLL_SECONDS = 1.0
+
+
+def assistant_run_timeout() -> float:
+    """单轮助手 Agent 的墙钟上限（秒）；非法值回落默认，不让配置错误变成无限等待。"""
+    raw = os.getenv(RUN_TIMEOUT_ENV, "").strip()
+    try:
+        value = float(raw) if raw else DEFAULT_RUN_TIMEOUT_SECONDS
+    except ValueError:
+        return DEFAULT_RUN_TIMEOUT_SECONDS
+    return value if math.isfinite(value) and value > 0 else DEFAULT_RUN_TIMEOUT_SECONDS
+
+
+class RunCancelWatch:
+    """把用户的「取消」传进 Agent 环。
+
+    ``cancel_run`` 只在库里标记取消并立即释放会话；原先 worker 里的 Agent 看不到
+    这个标记，会把剩余的模型轮次和工具全部跑完——继续烧 token，还占着进程内仅有的
+    几个助手 worker，后来的用户只能排队干等。这里按节流间隔读一次标记，命中即抛
+    ``CancelledError``（``reraise_stop`` 认得它，会穿透客户端的异常包装）。
+
+    Agent 在每个流式增量上都会调检查点，所以必须便宜：只读一列、复用一条专用
+    只读连接（不走 ``AssistantStore`` 的建表 DDL），且多线程调用时串行。
+    """
+
+    def __init__(self, ops_db: str, run_id: str, *, interval: float = _CANCEL_POLL_SECONDS) -> None:
+        self._ops_db = ops_db
+        self._run_id = run_id
+        self._interval = interval
+        self._lock = threading.Lock()
+        self._conn: sqlite3.Connection | None = None
+        self._last = -math.inf
+        self._cancelled = False
+
+    def __call__(self, *_args: Any) -> None:
+        if self._cancelled:
+            raise CancelledError("AI 运行已取消")
+        with self._lock:
+            now = time.monotonic()
+            if now - self._last < self._interval:
+                return
+            self._last = now
+            try:
+                if self._conn is None:
+                    self._conn = sqlite3.connect(self._ops_db, timeout=5, check_same_thread=False)
+                row = self._conn.execute(
+                    "SELECT status, cancel_requested FROM ai_agent_runs WHERE id = ?", (self._run_id,)
+                ).fetchone()
+            except sqlite3.Error as exc:
+                # 读不到标记不能把正常回答判死；下个间隔再看。
+                logger.debug("读取 AI 运行取消标记失败：%s", exc)
+                return
+        if row is not None and (row[1] or str(row[0]) == "cancelled"):
+            self._cancelled = True
+            raise CancelledError("AI 运行已取消")
+
+    def close(self) -> None:
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+
+
+def _record_exception_usage(store: AssistantStore, config: Any, exc: BaseException) -> None:
+    """异常出口同样计费：已返回的模型响应真实花了钱，漏记会让月度配额系统性偏低。"""
+    usage = getattr(exc, "usage", None)
+    if not isinstance(usage, dict):
+        return
+    tokens_in = int(usage.get("input_tokens") or 0)
+    tokens_out = int(usage.get("output_tokens") or 0)
+    if not tokens_in and not tokens_out:
+        return
+    record_llm_usage(
+        store=store,
+        provider=config.name,
+        model=str(usage.get("model") or config.model),
+        input_tokens=tokens_in,
+        output_tokens=tokens_out,
+    )
+
+
+def _failure_message(exc: BaseException, timeout_seconds: float) -> str:
+    if isinstance(exc, TimeoutError):
+        return (
+            f"本轮 AI 运行超过 {int(timeout_seconds)} 秒上限，已停止继续请求模型和执行工具；"
+            "可缩小问题范围后重试。"
+        )
+    return f"{type(exc).__name__}: {exc}"
+
 
 class AssistantRunExecutorMixin:
     """依赖宿主提供 `ops_db` / `palace_db` / `market_db` / `scheduler_reloader`。"""
@@ -53,6 +153,7 @@ class AssistantRunExecutorMixin:
     ) -> None:
         # 同 run 复用一条 ops 连接写事件，避免每次 flush 开库 + _init_schema。
         event_store = AssistantStore(self.ops_db)
+        cancel_watch = RunCancelWatch(self.ops_db, run_id)
         try:
             self._run_with_event_store(
                 event_store,
@@ -63,8 +164,10 @@ class AssistantRunExecutorMixin:
                 thinking=thinking,
                 skill_block=skill_block,
                 resume_hitl=resume_hitl,
+                cancel_watch=cancel_watch,
             )
         finally:
+            cancel_watch.close()
             event_store.close()
 
     def _run_with_event_store(
@@ -78,7 +181,13 @@ class AssistantRunExecutorMixin:
         thinking: str,
         skill_block: str,
         resume_hitl: bool = False,
+        cancel_watch: RunCancelWatch | None = None,
     ) -> None:
+        timeout_seconds = assistant_run_timeout()
+        # 整轮（证据子 Agent + 主环）共用一个截止点：供应商挂起或模型反复调工具时，
+        # 不能无限占住进程内有限的助手 worker。
+        deadline = time.monotonic() + timeout_seconds
+
         def persist(event_type: str, payload: dict[str, Any]) -> None:
             event_store.append_event(run_id, event_type, payload)
 
@@ -140,7 +249,22 @@ class AssistantRunExecutorMixin:
                     market_db=self.market_db,
                     ops_db=self.ops_db,
                     on_event=event,
+                    check_cancelled=cancel_watch,
+                    deadline=deadline,
                 )
+                # 子 Agent 同样真实调用了模型；此前只记主环，月度配额系统性偏低。
+                with AssistantStore(self.ops_db) as store:
+                    for row in evidence_rows:
+                        if row.get("input_tokens") or row.get("output_tokens"):
+                            record_llm_usage(
+                                store=store,
+                                provider=config.name,
+                                model=str(row.get("model") or config.model),
+                                input_tokens=int(row.get("input_tokens") or 0),
+                                output_tokens=int(row.get("output_tokens") or 0),
+                            )
+                if cancel_watch is not None:
+                    cancel_watch()
                 evidence_brief = format_evidence_briefs(evidence_rows)
                 with AssistantStore(self.ops_db) as store:
                     session_row = store.get_session(session_id) or {}
@@ -188,6 +312,8 @@ class AssistantRunExecutorMixin:
                 emit_terminal_event=False,
                 allow_hitl=True,
                 thinking=thinking,
+                check_cancelled=cancel_watch,
+                deadline=deadline,
             )
             stream_buf.flush()
             with AssistantStore(self.ops_db) as store:
@@ -346,13 +472,17 @@ class AssistantRunExecutorMixin:
                 if consolidate.get("status") == "ok":
                     store.append_event(run_id, "memory_auto", consolidate)
         except Exception as exc:
-            stream_buf.flush()
+            try:
+                stream_buf.flush()
+            except Exception as flush_exc:  # noqa: BLE001 — 收口优先，不能让残片写库失败挡住终态
+                logger.warning("AI 运行收口前刷写流事件失败：%s", flush_exc)
             with AssistantStore(self.ops_db) as store:
+                _record_exception_usage(store, config, exc)
                 run = store.get_run(run_id) or {}
-                if run.get("cancel_requested"):
+                if run.get("cancel_requested") or str(run.get("status") or "") == "cancelled":
                     store.finish_run(run_id, status="cancelled", result={"cancelled_during_failure": True})
                     store.append_event(run_id, "cancelled", {"cancelled": True})
                 else:
-                    error = f"{type(exc).__name__}: {exc}"
+                    error = _failure_message(exc, timeout_seconds)
                     store.append_event(run_id, "error", {"message": error})
                     store.finish_run(run_id, status="failed", error=error)

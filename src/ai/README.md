@@ -5,8 +5,15 @@
 保存供应商仍为离线操作，不自动测试或拉取模型目录。
 
 LLM 请求遇到发送前的连接失败（含 TLS 握手中断）或连接超时时，等待 1 秒、2 秒各重试一次。
+上游明确拒收、尚未开始生成的 429 / 503 / 529 同样最多重放两次：按 `Retry-After`（≤8 秒）或 1 秒、2 秒退避，
+超过上限、剩余期限不够或走 gRPC 网关（可能已执行）时不重放，原样报错。
 仅重试当前请求，保留 Agent 的工具结果；读写/流中断、HTTP 余额或参数错误不在该重试范围内，持续连接失败仍如实报错。
-回归：`tests/ai/test_connection_retry.py`。
+回归：`tests/ai/test_llm_upstream_retry.py`。
+
+助手后台运行：取消经 `RunCancelWatch` 节流读库传进 Agent 环（含证据子 Agent），取消后不再继续请求模型或执行工具、
+尽快释放进程内有限的助手 worker；整轮墙钟上限 `LOCI_AI_ASSISTANT_RUN_TIMEOUT_SEC`（默认 1200 秒），证据子 Agent 另限 180 秒。
+异常/取消出口按已返回响应计费，证据子 Agent 的用量也计入配额。流事件缓冲跨线程串行写库（并行子 Agent / 后台任务回调）。
+回归：`tests/ai/test_assistant_run_robustness.py`。
 
 ## 职责
 通用 LLM 供应商、对话、Agent / toolbus。不发明数字。

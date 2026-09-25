@@ -7,7 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Any
 
-from src.ops.application.guardian_decision import GuardianDecision, parse_decision
+from src.ops.application.guardian_decision import GuardianDecision, OrderPolicyError, parse_decision
 from src.ops.application.guardian_opening_plans import validate_opening_reviews
 from src.ops.application.trading_prompts import trading_prompt
 from src.ops.application.guardian_config import (POSITION_RULES, AUTONOMY_RULES, GUARDIAN_IDENTITY,
@@ -111,11 +111,12 @@ def decide(store: Any, config: dict[str, Any], payload: dict[str, Any], *, check
     def parse_current(text, **kwargs):
         from src.ledger.domain.guardian_account import guardian_buy_error
         decision = parse_decision(text, **kwargs)
-        for order in decision.orders:
-            problem = guardian_buy_error(order.code, order.action)
-            if problem:
-                raise ValueError(f"{order.code}：{problem}；撤回不可买入意图，说明权限原因")
+        # 结构校验先于权限校验：OrderPolicyError 携带的决策必须已是结构完整、可执行的。
         validate_opening_reviews(decision, payload.get('pending_opening_plans', []))
+        problems = [f"{order.code}：{problem}" for order in decision.orders
+                    if (problem := guardian_buy_error(order.code, order.action))]
+        if problems:
+            raise OrderPolicyError("；".join(problems) + "；撤回不可买入意图，说明权限原因", decision)
         return decision
     compact, metrics = archive.compact(payload, on_demand=True)
     compact["research_tools"] = {"available": len(catalog.catalog), "availability": "full_catalog_on_demand",

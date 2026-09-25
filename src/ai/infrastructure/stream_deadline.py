@@ -9,6 +9,7 @@ import time
 import httpx2
 
 from src.ai.infrastructure.client_session import borrow_client
+from src.ai.infrastructure.connection_retry import status_retry_delay
 from src.shared.http_protocol import http_protocol_options, record_http_protocol
 
 
@@ -85,13 +86,26 @@ class DeadlineStreamClient:
             # entire stream. Carry the run deadline separately across the adapter.
             kwargs["extensions"] = {**kwargs.get("extensions", {}), "loci_deadline": self.deadline}
         async def open_response():
-            for attempt in range(3):
+            connect_failures = 0
+            status_retries = 0
+            while True:
                 try:
-                    return await self.client.send(self.client.build_request(*args, **kwargs), stream=True)
+                    response = await self.client.send(self.client.build_request(*args, **kwargs), stream=True)
                 except (httpx2.ConnectError, httpx2.ConnectTimeout):
-                    if attempt == 2:
+                    connect_failures += 1
+                    if connect_failures > 2:
                         raise
-                    await asyncio.sleep(attempt + 1)
+                    await asyncio.sleep(connect_failures)
+                    continue
+                # 429/503/529 表示上游拒收、未开始生成；有限重放，且不把剩余期限睡光。
+                budget = None if self.deadline is None else self.deadline - time.monotonic() - 5
+                delay = status_retry_delay(response, status_retries, budget=budget)
+                if delay is None:
+                    return response
+                status_retries += 1
+                await response.aclose()
+                self.status("upstream_retry", status_code=response.status_code, attempt=status_retries + 1)
+                await asyncio.sleep(delay)
         response = self.runner.run(self.bounded(open_response()))
         try:
             self.status_code = response.status_code

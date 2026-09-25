@@ -184,7 +184,9 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
                 if corrected is not decision:
                     withdrawn = withdrawn_orders(decision, corrected, rejects)
                     decision = corrected
-                    validate_opening_reviews(decision, opening_plans_pending)
+                    # 修正撤回竞价计划的关联订单是程序受阻（opening_plan_updates记blocked），不是整轮失败。
+                    validate_opening_reviews(decision, opening_plans_pending, withdrawn_plan_ids={
+                        item["opening_plan_id"] for item in withdrawn if item.get("opening_plan_id")})
                     failure_stage = "final_quotes"
                     execution_codes = list(dict.fromkeys([p["code"] for p in state["positions"]] + [o.code for o in decision.orders if o.action in TRADE_ACTIONS]))
                     quotes = build_monitor_snapshot(execution_codes, include_minute=False, force_refresh=True,
@@ -192,6 +194,8 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
                     context.check_cancelled()
                     finished = datetime.now(ZoneInfo("Asia/Shanghai"))
                     can_execute = execution_window(now, finished, time.monotonic() - started)
+                    # 已绑定的参考价由修正沿用；首次取价未能绑定的市价意图按本次首个有效报价绑定。
+                    decision = bind_execution_references(decision, quotes, finished)
                     deferred = [o.model_dump(mode="json") for o in decision.orders if o.action in TRADE_ACTIONS] if not can_execute else []
                     executable = decision if can_execute else decision.model_copy(update={"orders": [o for o in decision.orders if o.action not in TRADE_ACTIONS]})
                     failure_stage = "preflight"

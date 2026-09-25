@@ -46,6 +46,30 @@ def validate_correction(original: GuardianDecision, corrected: GuardianDecision)
                 raise ValueError("修正不得提高原价格上限")
 
 
+def inherit_bound_terms(original: GuardianDecision, corrected: GuardianDecision) -> GuardianDecision:
+    """沿用程序绑定到原意图上的参考价与竞价计划编号。
+
+    修正轮模型通常照抄自己最初的输出——那时市价意图还没有 ``reference_price``
+    （程序在首次有效报价时才绑定），也常漏掉 ``opening_plan_id``。原先
+    ``validate_correction`` 会因“移动了参考价”把合法的缩量/撤回整体判失败，
+    竞价计划关联丢失又会让整轮在复核校验处作废。只在模型省略时补回原值：
+    参考价只会收窄执行范围，计划编号按原股票+方向一一对应，都不放宽任何约束。
+    """
+    old = {(o.code, o.action): o for o in original.orders if o.action in TRADE_ACTIONS}
+    orders = []
+    for item in corrected.orders:
+        prior = old.get((item.code, item.action)) if item.action in TRADE_ACTIONS else None
+        if prior is not None:
+            update: dict = {"opening_plan_id": prior.opening_plan_id}
+            if (item.execution is not None and prior.execution is not None
+                    and item.execution.reference_price is None and prior.execution.reference_price is not None):
+                update["execution"] = item.execution.model_copy(
+                    update={"reference_price": prior.execution.reference_price})
+            item = item.model_copy(update=update)
+        orders.append(item)
+    return corrected.model_copy(update={"orders": orders})
+
+
 def repair_preflight(store: Any, cfg: dict, decision: GuardianDecision, meta: dict, state: dict,
                      quotes: dict, rejects: list[dict], *, check_cancelled: Any, deadline: float) -> GuardianDecision:
     allowed = {"quantity", "cash", "position_limit", "t_plus_one", "close_plan", "account_rule"}
@@ -84,12 +108,15 @@ def repair_preflight(store: Any, cfg: dict, decision: GuardianDecision, meta: di
         error = completion_error(result, "订单修正")
         if error:
             raise ValueError(error)
-        corrected = parse_decision(result.text, require_execution_terms=True)
+        corrected = inherit_bound_terms(decision, parse_decision(result.text, require_execution_terms=True))
         validate_correction(decision, corrected)
         check_cancelled()
         diagnostic.update(status="corrected", decision=corrected.model_dump(mode="json"))
-        return corrected.model_copy(update={"orders": [o for o in decision.orders if o.action not in TRADE_ACTIONS]
-                                            + [o for o in corrected.orders if o.action in TRADE_ACTIONS]})
+        # 修正只能缩量或撤回：竞价计划复核沿用原决策；0股交易即撤回，不留空单。
+        return decision.model_copy(update={
+            "summary": corrected.summary,
+            "orders": [o for o in decision.orders if o.action not in TRADE_ACTIONS]
+                      + [o for o in corrected.orders if o.action in TRADE_ACTIONS and o.quantity > 0]})
     except (JobCancelled, JobTimedOut, TimeoutError) as exc:
         exc.usage = meta
         raise

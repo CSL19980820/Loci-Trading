@@ -63,6 +63,19 @@ class GuardianDecision(BaseModel):
 
 
 
+class OrderPolicyError(ValueError):
+    """完整且合契约的决策里，个别订单违反账户买入权限（如科创板/北交所）。
+
+    完整性修复仍先让模型自行替换；修复后仍违规（或修复本身失败）时，决策照样
+    可执行：``simulate`` 只把这些订单按 ``board_not_allowed`` 拒掉并作为受阻意图
+    展示，其余意图（尤其是止损/减仓卖单）照常核价撮合，不再整轮作废。
+    """
+
+    def __init__(self, message: str, decision: GuardianDecision) -> None:
+        super().__init__(message)
+        self.decision = decision
+
+
 def parse_decision(text: str, *, require_execution_terms: bool = False,
                    decision_type: type[GuardianDecision] = GuardianDecision) -> GuardianDecision:
     decision = decision_type.model_validate(load_json_response(text))
