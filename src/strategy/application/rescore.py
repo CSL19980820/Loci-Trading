@@ -28,7 +28,11 @@ def plan_rescore(
     for day, items in groupby(rows, key=lambda row: str(row["occurred_on"])):
         items = list(items)
         try:
-            result = screen_fn(market, strategy_slug, trade_date=day, health_check=False, live_overlay=False)
+            # data_snapshot={}：跳过行情取证快照。screen() 默认为审计装载窗口内每只票的
+            # 来源回执与 attempt（数十万行 Python 对象）——重算评分只要因子，用不上它。
+            # 生产量级实测单日峰值 3.9 GB → 0.5 GB，在 3.7 GB 的机器上原本必 OOM。
+            result = screen_fn(market, strategy_slug, trade_date=day, health_check=False,
+                               live_overlay=False, data_snapshot={})
         except Exception as exc:  # noqa: BLE001 — 单日失败只影响该日，其余日期照常预览
             plan.extend(_keep(item, "error", f"{type(exc).__name__}: {exc}") for item in items)
             continue
