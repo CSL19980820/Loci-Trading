@@ -33,6 +33,11 @@ async function selectCurve(code: string): Promise<void> {
 const money = (cents?: number) => cents == null ? '—' : (cents / 100).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const pnlClass = (value: number) => value > 0 ? 'gain' : value < 0 ? 'loss' : ''
 const cost = (value?: number) => value == null ? '—' : value.toFixed(4)
+const pnlPct = (row: { unrealized_pnl_cents: number; cost_cents: number }) => {
+  if (!row.cost_cents) return ''
+  const pct = row.unrealized_pnl_cents / row.cost_cents * 100
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`
+}
 /** `Tabs` 的 modelValue 是 reka-ui 的 `AcceptableValue`，这里收成本页的 string 档 */
 function onTabChange(value: unknown): void {
   tab.value = String(value)
@@ -44,26 +49,27 @@ function onTabChange(value: unknown): void {
     <Tabs :model-value="tab" class="account-tabs" @update:model-value="onTabChange">
       <div class="account-tabs__navigation">
       <TabsList class="account-tabs__list" aria-label="账户明细">
-        <TabsTrigger value="positions">持仓 · {{ account.positions.length }}</TabsTrigger>
-        <TabsTrigger value="curve" data-curve-tab>持仓曲线</TabsTrigger>
-        <TabsTrigger value="experience">经验沉淀<span v-if="experience?.items.length" class="ml-1 tabular-nums">· {{ experience.items.length }}</span></TabsTrigger>
-        <TabsTrigger value="trades">成交明细</TabsTrigger>
-        <TabsTrigger value="performance">个股盈亏</TabsTrigger>
+        <TabsTrigger value="positions" class="account-tab">持仓<span class="account-tab__count">{{ account.positions.length }}</span></TabsTrigger>
+        <TabsTrigger value="curve" data-curve-tab class="account-tab">持仓曲线</TabsTrigger>
+        <TabsTrigger value="experience" class="account-tab">经验沉淀<span v-if="experience?.items.length" class="account-tab__count">{{ experience.items.length }}</span></TabsTrigger>
+        <TabsTrigger value="trades" class="account-tab">成交明细</TabsTrigger>
+        <TabsTrigger value="performance" class="account-tab">个股盈亏</TabsTrigger>
       </TabsList>
       </div>
       <TabsContent value="positions" class="account-tabs__panel positions-panel">
         <GuardianPositionsMobile v-if="mobile" :account="account" @curve="selectCurve" @detail="positionDetailCode = $event" />
         <div v-else-if="account.positions.length" class="position-cards-grid" aria-label="精确持仓明细">
-          <article v-for="row in account.positions" :key="row.code" class="position-card">
+          <article v-for="row in account.positions" :key="row.code" class="position-card" :class="`is-${pnlClass(row.unrealized_pnl_cents) || 'flat'}`">
             <header class="position-card-head">
               <div class="position-identity">
                 <h4>{{ row.name }}</h4>
-                <span class="font-mono text-xs text-mist">{{ row.code }}</span>
+                <span class="position-code">{{ row.code }}</span>
                 <Button access="read" variant="ghost" size="xs" class="position-curve-link" :aria-label="`查看${row.name}持仓曲线`" @click="selectCurve(row.code)"><ChartNoAxesCombined :size="13" />走势</Button>
               </div>
-              <strong :class="pnlClass(row.unrealized_pnl_cents)" class="font-mono text-sm font-semibold">
-                {{ (row.unrealized_pnl_cents ?? 0) > 0 ? '+' : '' }}{{ money(row.unrealized_pnl_cents) }} 元
-              </strong>
+              <div class="position-pnl" :class="pnlClass(row.unrealized_pnl_cents)">
+                <strong>{{ (row.unrealized_pnl_cents ?? 0) > 0 ? '+' : '' }}{{ money(row.unrealized_pnl_cents) }}</strong>
+                <span v-if="pnlPct(row)">{{ pnlPct(row) }}</span>
+              </div>
             </header>
 
             <div class="position-metrics-strip">
@@ -79,7 +85,7 @@ function onTabChange(value: unknown): void {
             </div>
           </article>
         </div>
-        <EmptyState v-else description="当前空仓" />
+        <EmptyState v-else compact description="当前空仓" />
       </TabsContent>
       <TabsContent value="curve" class="account-tabs__panel curve-panel">
         <GuardianHoldingCurve v-model:selected-code="curveCode" :account="account" @review="emit('review')" />

@@ -11,12 +11,11 @@
  * `cron` 的话，用户改完当场看着是对的，重启一次就被打回去——比不让改更糟。
  * 所以这里同时写回 `cron` 与 `config.schedule`，与战法弹窗保存的是同一份东西。
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { TriangleAlert } from '@lucide/vue'
 
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
 import { Button } from '@/shared/components/ui/button'
-import { Card, CardContent } from '@/shared/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -53,7 +52,7 @@ const emit = defineEmits<{
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const MINUTES = Array.from({ length: 60 }, (_, i) => i)
 
-const open = ref(false)
+const open = defineModel<boolean>('open', { default: false })
 const draft = reactive<TradingSchedule>(defaultTradingSchedule())
 
 const composed = computed(() => composeTradingCron(draft))
@@ -167,206 +166,189 @@ function submit(): void {
   open.value = false
 }
 
-defineExpose({ open })
 </script>
 
 <template>
-  <Card
-    class="shrink-0 min-w-0 gap-0 overflow-hidden rounded-[var(--radius)] border-line bg-surface py-0 shadow-none"
-    aria-label="就地改时点"
-  >
-    <CardContent class="min-w-0 p-[var(--pad-sheet-y)_var(--pad-sheet-x)]">
-      <div class="flex min-w-0 items-center justify-between gap-2">
-        <span class="flex min-w-0 items-baseline gap-1 overflow-hidden">
-          <span class="text-aux text-mist">调度</span>
-          <span class="text-body truncate font-mono tabular-nums">{{ job.cron || '仅手动' }}</span>
-        </span>
-        <Button v-if="!open" variant="outline" size="sm" :disabled="busy" @click="open = true">
-          改时点
-        </Button>
+  <section v-if="open" class="sched" aria-label="改时点">
+    <div class="sched__row">
+      <ToggleGroup v-model="draft.mode" type="single" variant="outline" size="sm" class="sched__modes" aria-label="任务调度方式">
+        <ToggleGroupItem value="off">仅手动</ToggleGroupItem>
+        <ToggleGroupItem value="once">交易日定点</ToggleGroupItem>
+        <ToggleGroupItem value="interval">盘中间隔</ToggleGroupItem>
+      </ToggleGroup>
+
+      <div v-if="draft.mode === 'once'" class="sched__picks">
+        <Select v-model="runHour">
+          <SelectTrigger size="sm" class="sched__pick" aria-label="执行小时">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="h in HOURS" :key="`h${h}`" :value="String(h)">
+              {{ String(h).padStart(2, '0') }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <span class="sched__sep">:</span>
+        <Select v-model="runMinute">
+          <SelectTrigger size="sm" class="sched__pick" aria-label="执行分钟">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="m in MINUTES" :key="`m${m}`" :value="String(m)">
+              {{ String(m).padStart(2, '0') }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-    </CardContent>
-    <CardContent v-if="open" class="min-w-0 p-[var(--pad-sheet-y)_var(--pad-sheet-x)]">
-      <div class="flex min-w-0 flex-col gap-1">
-        <ToggleGroup v-model="draft.mode" type="single" variant="outline" size="sm" class="schedule-modes" aria-label="任务调度方式">
-          <ToggleGroupItem value="off">仅手动</ToggleGroupItem>
-          <ToggleGroupItem value="once">每交易日定点</ToggleGroupItem>
-          <ToggleGroupItem value="interval">盘中间隔</ToggleGroupItem>
-        </ToggleGroup>
 
-        <div v-if="draft.mode === 'once'" class="flex flex-wrap items-center gap-1">
-          <span class="text-aux text-mist">时点</span>
-          <Select v-model="runHour">
-            <SelectTrigger size="sm" class="job-sched__pick" aria-label="执行小时">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="h in HOURS" :key="`h${h}`" :value="String(h)">
-                {{ String(h).padStart(2, '0') }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <span class="text-mist">:</span>
-          <Select v-model="runMinute">
-            <SelectTrigger size="sm" class="job-sched__pick" aria-label="执行分钟">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="m in MINUTES" :key="`m${m}`" :value="String(m)">
-                {{ String(m).padStart(2, '0') }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <span class="text-aux text-mist">只在交易日（周一至周五）触发</span>
-        </div>
-
-        <div v-else-if="draft.mode === 'interval'" class="flex flex-wrap items-center gap-1">
-          <span class="text-aux text-mist">每</span>
-          <Select v-model="intervalMinutes">
-            <SelectTrigger size="sm" class="job-sched__pick" aria-label="执行间隔">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="n in TRADING_INTERVALS" :key="`i${n}`" :value="String(n)">
-                {{ n }} 分钟
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <span class="text-aux text-mist">时段</span>
-          <Select v-model="windowStartHour">
-            <SelectTrigger size="sm" class="job-sched__pick" aria-label="时段开始小时">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="h in HOURS" :key="`ws${h}`" :value="String(h)">
-                {{ String(h).padStart(2, '0') }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <span class="text-mist">—</span>
-          <Select v-model="windowEndHour">
-            <SelectTrigger size="sm" class="job-sched__pick" aria-label="时段结束小时">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="h in HOURS" :key="`we${h}`" :value="String(h)">
-                {{ String(h).padStart(2, '0') }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <span class="text-aux text-mist">点</span>
-        </div>
-
-        <p class="text-aux m-0 flex flex-wrap items-baseline gap-1">
-          <span class="text-mist">cron</span>
-          <span class="truncate font-mono tabular-nums">{{ composed || '（不定时，只能手动跑）' }}</span>
-        </p>
-        <p v-if="composed" class="text-aux m-0 flex flex-wrap items-baseline gap-1">
-          <span class="text-mist">接下来</span>
-          <span v-if="nextRuns && nextRuns.length" class="font-mono tabular-nums">{{ nextRuns.join(' · ') }}</span>
-          <span v-else class="text-warn">无法预览这个表达式</span>
-        </p>
-
-        <Alert v-if="tooFrequent">
-          <TriangleAlert />
-          <AlertTitle class="line-clamp-none">{{ cronTooFrequentTitle(intervalSeconds) }}</AlertTitle>
-        </Alert>
-
-        <div class="flex justify-end gap-1">
-          <Button variant="outline" size="sm" @click="cancel">取消</Button>
-          <Button size="sm" :disabled="busy || !dirty" @click="submit">保存时点</Button>
-        </div>
+      <div v-else-if="draft.mode === 'interval'" class="sched__picks">
+        <Select v-model="intervalMinutes">
+          <SelectTrigger size="sm" class="sched__pick sched__pick--wide" aria-label="执行间隔">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="n in TRADING_INTERVALS" :key="`i${n}`" :value="String(n)">
+              每 {{ n }} 分钟
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Select v-model="windowStartHour">
+          <SelectTrigger size="sm" class="sched__pick" aria-label="时段开始小时">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="h in HOURS" :key="`ws${h}`" :value="String(h)">
+              {{ String(h).padStart(2, '0') }} 时
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <span class="sched__sep">—</span>
+        <Select v-model="windowEndHour">
+          <SelectTrigger size="sm" class="sched__pick" aria-label="时段结束小时">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="h in HOURS" :key="`we${h}`" :value="String(h)">
+              {{ String(h).padStart(2, '0') }} 时
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-    </CardContent>
-  </Card>
+    </div>
+
+    <dl class="sched__preview">
+      <div>
+        <dt>cron</dt>
+        <dd>{{ composed || '仅手动' }}</dd>
+      </div>
+      <div v-if="composed">
+        <dt>接下来</dt>
+        <dd v-if="nextRuns && nextRuns.length">{{ nextRuns.join('  ·  ') }}</dd>
+        <dd v-else class="is-warn">无法预览</dd>
+      </div>
+    </dl>
+
+    <Alert v-if="tooFrequent">
+      <TriangleAlert />
+      <AlertTitle class="line-clamp-none">{{ cronTooFrequentTitle(intervalSeconds) }}</AlertTitle>
+    </Alert>
+
+    <div class="sched__actions">
+      <Button variant="ghost" size="sm" @click="cancel">取消</Button>
+      <Button size="sm" :disabled="busy || !dirty" @click="submit">保存时点</Button>
+    </div>
+  </section>
 </template>
 
 <style scoped>
-.job-sched {
+.sched {
   display: flex;
-  flex-direction: column;
-  gap: var(--gap-1);
-  padding: var(--gap-2);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius);
-  background: var(--sheet-alt);
   flex-shrink: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--seal-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--seal) 4%, var(--surface));
+  animation: sched-in var(--dur) var(--ease);
 }
 
-.job-sched__bar {
+.sched__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-2);
-  min-width: 0;
+  gap: 10px 14px;
 }
 
-.job-sched__now {
+.sched__modes {
+  max-width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.sched__picks {
   display: flex;
-  align-items: baseline;
-  gap: var(--gap-1);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sched__pick {
+  width: 5.5rem;
+}
+
+.sched__pick--wide {
+  width: 8rem;
+}
+
+.sched__sep {
+  color: var(--text-tertiary);
+}
+
+.sched__preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+  font-size: var(--fs-aux);
+}
+
+.sched__preview > div {
+  display: contents;
+}
+
+.sched__preview dt {
+  color: var(--text-tertiary);
+}
+
+.sched__preview dd {
+  margin: 0;
   min-width: 0;
   overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.job-sched__form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-1);
+.sched__preview dd.is-warn {
+  color: var(--warn-ink);
+  font-family: var(--font);
 }
 
-.job-sched__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-1);
-}
-
-.job-sched__pick {
-  width: 6rem;
-}
-
-.job-sched__label {
-  font-size: var(--fs-aux);
-  color: var(--mist);
-}
-
-.job-sched__sep {
-  color: var(--mist);
-}
-
-.job-sched__hint {
-  font-size: var(--fs-aux);
-  color: var(--mist);
-}
-
-.job-sched__preview {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: var(--gap-1);
-  flex-wrap: wrap;
-  font-size: var(--fs-aux);
-}
-
-.job-sched__warn {
-  color: var(--warn);
-  font-size: var(--fs-aux);
-}
-
-.job-sched__actions {
+.sched__actions {
   display: flex;
   justify-content: flex-end;
-  gap: var(--gap-1);
+  gap: 6px;
 }
 
-.mono {
-  font-family: var(--mono);
-  font-size: var(--fs-body);
-  overflow: hidden;
-  text-overflow: ellipsis;
+@keyframes sched-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }
-</style>
-<style scoped>
-.schedule-modes { max-width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sched { animation: none; }
+}
 </style>

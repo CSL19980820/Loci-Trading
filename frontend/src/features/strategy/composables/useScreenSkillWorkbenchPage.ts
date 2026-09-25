@@ -64,6 +64,7 @@ import {
   applyCatalogSnippet,
   applyImportedSource,
   buildAiRevisionInstruction,
+  isStarterScreenSkillBody,
   SCREEN_FALLBACK_FIELDS,
   switchScreenSkillRuntime,
 } from './screenSkillWorkbench'
@@ -105,6 +106,9 @@ export function useScreenSkillWorkbenchPage() {
   const backtestOpen = ref(false)
   let latestSkillLoadToken = 0
 
+  /** 每次 AI 生成成功 +1：页面据此把输出栏从「AI 编写」切到解释 / 诊断 */
+  const generationSeq = ref(0)
+  const generating = ref(false)
   const draft = reactive(createEmptyScreenSkillDraft())
   const generationForm = reactive({ source: '', provider: '', model: '', thinking: '' })
   const isEditing = computed(() => Boolean(route.query.slug))
@@ -116,9 +120,10 @@ export function useScreenSkillWorkbenchPage() {
     enabledModelOptions(providers.value.find((item) => item.name === generationForm.provider)),
   )
   const referenceBuild = computed(() => buildScreenSkillReferences(draft))
-  const referencesReady = computed(
-    () => referenceBuild.value.references.length > 0 && referenceBuild.value.errors.length === 0,
-  )
+  /** 没有半填的错行即可生成；一条资料都没有时，后端以需求原话作为逻辑来源 */
+  const referencesReady = computed(() => referenceBuild.value.errors.length === 0)
+  const referenceCount = computed(() => referenceBuild.value.references.length)
+  const freshDraft = computed(() => !currentSlug.value && isStarterScreenSkillBody(draft))
   const fieldOptions = computed(() => {
     if (!catalog.value?.fields.length) return SCREEN_FALLBACK_FIELDS
     return catalog.value.fields.map((item) => ({
@@ -350,23 +355,24 @@ export function useScreenSkillWorkbenchPage() {
   }
 
   async function handleGenerate(): Promise<void> {
-    if (!generationForm.source.trim()) {
-      error.value = '请先填写要生成或修改的策略要求。'
+    const brief = generationForm.source.trim()
+    if (brief.length < 4) {
+      error.value = '先写下选股思路。'
       return
     }
     if (!referencesReady.value) {
-      const messages = referenceBuild.value.errors.length
-        ? referenceBuild.value.errors
-        : ['AI 编写前至少需要一条可追溯资料来源']
-      applyDraftIssues(messages)
+      applyDraftIssues(referenceBuild.value.errors)
       return
     }
+    const fresh = freshDraft.value
+    const namedByUser = Boolean(draft.name.trim()) && draft.name.trim() !== 'AI 草稿战法'
     const payload: ScreenSkillGenerateRequest = {
       source_type: 'description',
-      source: buildAiRevisionInstruction(draft, generationForm.source),
+      source: fresh ? brief : buildAiRevisionInstruction(draft, brief),
+      brief,
       slug: draft.slug || undefined,
-      name: draft.name || undefined,
-      description: draft.description || undefined,
+      name: namedByUser ? draft.name : undefined,
+      description: fresh ? undefined : draft.description || undefined,
       entry_timing: draft.entryTiming,
       runtime: draft.runtime,
       dialect: draft.runtime === 'formula' ? 'loci' : draft.dialect,
@@ -376,7 +382,10 @@ export function useScreenSkillWorkbenchPage() {
       model: generationForm.model || undefined,
       thinking: generationForm.thinking || undefined,
     }
-    const result = await guard(() => generateScreenSkill(payload))
+    generating.value = true
+    const result = await guard(() => generateScreenSkill(payload)).finally(() => {
+      generating.value = false
+    })
     if (!result) return
     applyDraft(draftFromGeneratedSkill(result, cloneDraft(draft)))
     clearTrial()
@@ -387,7 +396,11 @@ export function useScreenSkillWorkbenchPage() {
       strategy_revision: result.strategy_revision,
     }
     generationForm.source = ''
-    toast.success('AI 建议已应用到当前草稿')
+    workbenchTab.value = 'formula'
+    dockTab.value = result.ok ? 'explain' : 'diag'
+    dockOpen.value = true
+    generationSeq.value += 1
+    toast.success(fresh ? 'AI 已写好策稿' : '已按要求改写')
   }
 
   async function handleSave(): Promise<string | null> {
@@ -547,6 +560,10 @@ export function useScreenSkillWorkbenchPage() {
     hasBody,
     providerModels,
     referencesReady,
+    referenceCount,
+    freshDraft,
+    generationSeq,
+    generating,
     fieldOptions,
     requiredFields,
     statusTone,

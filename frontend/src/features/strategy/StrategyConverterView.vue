@@ -14,15 +14,16 @@ import {
   FileCheck,
   FolderOpen,
   Library,
-  MessageCircle,
   PanelRight,
   Play,
   Search,
+  Sparkles,
   TriangleAlert,
   Trash2,
   X,
 } from '@lucide/vue'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useMediaQuery } from '@vueuse/core'
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
@@ -42,7 +43,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/
 import PageBusy from '@/shared/components/ui/PageBusy.vue'
 import PageHeader from '@/shared/components/layout/PageHeader.vue'
 import PageTabs, { type PageTabItem } from '@/shared/components/ui/PageTabs.vue'
-import UiBadge from '@/shared/components/ui/UiBadge.vue'
 
 import QuantBacktestPanel from './components/QuantBacktestPanel.vue'
 import ScreenAiCopilot from './components/ScreenAiCopilot.vue'
@@ -92,6 +92,10 @@ const {
   hasBody,
   providerModels,
   referencesReady,
+  referenceCount,
+  freshDraft,
+  generationSeq,
+  generating,
   fieldOptions,
   requiredFields,
   statusTone,
@@ -118,6 +122,7 @@ const {
 } = useScreenSkillWorkbenchPage()
 
 const narrow = useMediaQuery('(max-width: 980px)')
+const route = useRoute()
 
 const workbenchTabs = computed<PageTabItem[]>(() => [
   { name: 'formula', label: '公式', badge: tabErrors.value.formula || undefined },
@@ -179,6 +184,23 @@ watch(dockTab, () => {
   if (dockOpen.value) assistOpen.value = false
 })
 
+/* 新建策稿默认把「AI 编写」摆在右栏；从工坊「AI 草稿」进来同理 */
+onMounted(() => {
+  if (visitor.value) return
+  if (route.query.source === 'description' || !route.query.slug) {
+    assistOpen.value = true
+    sideCollapsed.value = false
+    if (route.query.source === 'description') mobilePane.value = 'side'
+  }
+})
+
+/* 生成完成：输出栏切到解释 / 诊断，让结果先被看见 */
+watch(generationSeq, () => {
+  assistOpen.value = false
+  sideCollapsed.value = false
+  mobilePane.value = narrow.value ? 'editor' : 'side'
+})
+
 function toggleAssist(): void {
   if (assistOpen.value) {
     assistOpen.value = false
@@ -213,7 +235,7 @@ function closeSide(): void {
       <Button size="sm" aria-label="保存" :disabled="busy" @click="handleSave">保存</Button>
       <DropdownMenu><DropdownMenuTrigger as-child><Button access="read" variant="ghost" size="icon" aria-label="策稿操作"><Ellipsis /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">
         <DropdownMenuItem :disabled="!trialPassed || screenBusy" @select="selectOpen = true"><Search />选股</DropdownMenuItem>
-        <DropdownMenuItem @select="toggleAssist"><MessageCircle />{{ assistOpen ? '收起助手' : '公式助手' }}</DropdownMenuItem>
+        <DropdownMenuItem @select="toggleAssist"><Sparkles />{{ assistOpen ? '收起 AI 编写' : 'AI 编写' }}</DropdownMenuItem>
         <DropdownMenuItem access="read" @select="catalogOpen = true"><Library />函数词典</DropdownMenuItem>
         <DropdownMenuItem :disabled="!trialPassed && !currentSlug" @select="openBacktest"><ChartLine />回测</DropdownMenuItem>
         <DropdownMenuItem @select="importOpen = true"><FolderOpen />导入</DropdownMenuItem>
@@ -235,6 +257,20 @@ function closeSide(): void {
         />
       </template>
       <template #actions>
+        <Button
+          variant="outline"
+          size="sm"
+          class="workbench-ai-btn"
+          :class="{ 'is-on': assistOpen }"
+          :aria-expanded="assistOpen"
+          aria-controls="strategy-copilot"
+          @click="toggleAssist"
+        >
+          <Spinner v-if="generating" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          <Sparkles v-else aria-hidden="true" />
+          AI 编写
+        </Button>
+        <span class="workbench-actions-sep" aria-hidden="true" />
         <Tooltip :disabled="hasBody">
           <TooltipTrigger as-child>
             <Button variant="outline" size="sm" :disabled="!hasBody || previewBusy" aria-label="试跑" @click="handleTrial">
@@ -259,16 +295,7 @@ function closeSide(): void {
           <FileCheck v-else aria-hidden="true" />
           保存
         </Button>
-        <Button
-          :variant="assistOpen ? 'default' : 'outline'"
-          size="icon-sm"
-          :aria-label="assistOpen ? '收起助手' : '展开助手'"
-          :aria-expanded="assistOpen"
-          aria-controls="strategy-copilot"
-          @click="toggleAssist"
-        >
-          <MessageCircle aria-hidden="true" />
-        </Button>
+
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
             <Button variant="outline" size="icon-sm" aria-label="更多操作">
@@ -303,11 +330,10 @@ function closeSide(): void {
         </DropdownMenu>
       </template>
       <template #default>
-        <UiBadge variant="secondary">{{ editorLineCount }} 行</UiBadge>
-        <UiBadge variant="secondary">{{ fieldCount }} 字段</UiBadge>
-        <UiBadge variant="secondary">{{ paramCount }} 参数</UiBadge>
-        <UiBadge v-if="trialPassed" variant="ok" dot>试跑通过</UiBadge>
-        <UiBadge v-else variant="outline" dot>尚未试跑</UiBadge>
+        <span class="workbench-stat"><b>{{ editorLineCount }}</b> 行</span>
+        <span class="workbench-stat"><b>{{ fieldCount }}</b> 字段</span>
+        <span class="workbench-stat"><b>{{ paramCount }}</b> 参数</span>
+        <span class="workbench-trial" :class="{ 'is-ok': trialPassed }"><i aria-hidden="true" />{{ trialPassed ? '试跑通过' : '未试跑' }}</span>
       </template>
     </PageHeader>
 
@@ -365,6 +391,7 @@ function closeSide(): void {
         :status-left="statusLeft"
         :status-right="statusRight"
         :status-tone="statusTone"
+        :generating="generating"
       />
 
       </ResizablePanel>
@@ -393,7 +420,9 @@ function closeSide(): void {
               :providers="providers"
               :provider-models="providerModels"
               :references-ready="referencesReady"
-              :busy="busy"
+              :reference-count="referenceCount"
+              :fresh="freshDraft"
+              :busy="generating"
               @generate="handleGenerate"
               @manage-references="openSettings('references')"
               @open-assistant="openAssistant"

@@ -66,7 +66,7 @@ function diagnosticType(severity: string): 'danger' | 'warning' | 'info' {
       </StatusBadge>
     </div>
 
-    <EmptyState v-if="!preview" description="还没有策略解释与诊断" reason="编译后在这里查看" />
+    <EmptyState v-if="!preview" compact description="尚未试跑" />
 
     <template v-else>
       <div v-if="preview.explanation" class="report__content">

@@ -34,7 +34,7 @@ import {
   strategySlugFromBoundJob,
 } from '../composables/jobOwnership'
 import { jobHealth, type JobHealth } from '../composables/opsLabels'
-import { cronLabel, nextRunText, railRowsOf } from '../composables/jobPresentation'
+import { cronLabel, nextRunAt, nextRunText, railRowsOf, relativeDayTime } from '../composables/jobPresentation'
 import { useJobsCatalog } from '../composables/useJobsCatalog'
 import { useOpsFeedback } from '../composables/useOpsFeedback'
 
@@ -136,16 +136,15 @@ const receipt = computed((): ReceiptPair[] => {
     {
       key: '上次失败',
       value: String(failed),
-      hint: failed ? '点开最近一条失败的原因全文' : '没有失败记录',
       // 数字不是装饰：点它直接落到那条 run 的失败全文上
       onClick: failed ? jumpToLatestFailure : undefined,
     },
   ]
   if (quotaText.value) {
-    pairs.push({ key: '自建额度', value: quotaText.value, hint: '系统托管任务不占额度' })
+    pairs.push({ key: '自建额度', value: quotaText.value })
   }
   if (nextHits?.[0]) {
-    pairs.push({ key: '下次', value: nextHits[0].replace('T', ' ').slice(0, 16) })
+    pairs.push({ key: '下次', value: relativeDayTime(nextHits[0]) || nextHits[0].replace('T', ' ').slice(0, 16) })
   }
   return pairs
 })
@@ -160,7 +159,7 @@ const filteredJobs = computed(() => {
 })
 
 /** 名册行：名字解析与状态归类都在渲染前算完，左栏只管画。 */
-const railRows = computed(() => railRowsOf(filteredJobs.value, displayName))
+const railRows = computed(() => railRowsOf(filteredJobs.value, displayName, schedule.value))
 
 const selected = computed(() => {
   const id = selectedId.value
@@ -434,6 +433,7 @@ defineExpose({ load, schedule })
           :title="displayName(selected)"
           :cron-text="cronLabel(selected)"
           :next-run-text="nextRunText(selected, schedule)"
+          :next-run-at="nextRunAt(selected, schedule)"
           :strategy-text="selected.kind === 'screen' ? selectedStrategyText(selected) : undefined"
           :skill-text="selected.kind === 'skill' ? selectedSkillText(selected) : undefined"
           @fire="fire(selected)"
@@ -443,7 +443,7 @@ defineExpose({ load, schedule })
           @go-bound="goBoundDetail(selected)"
           @save-schedule="(payload) => saveSchedule(selected!, payload)"
         />
-        <EmptyState v-else description="选择左侧一条任务查看详情" />
+        <EmptyState v-else description="未选择任务" />
       </div>
 
       <Sheet v-else :open="detailOpen && Boolean(selected)" @update:open="detailOpen = $event">
@@ -459,6 +459,7 @@ defineExpose({ load, schedule })
             :title="displayName(selected)"
             :cron-text="cronLabel(selected)"
             :next-run-text="nextRunText(selected, schedule)"
+            :next-run-at="nextRunAt(selected, schedule)"
             :strategy-text="selected.kind === 'screen' ? selectedStrategyText(selected) : undefined"
             :skill-text="selected.kind === 'skill' ? selectedSkillText(selected) : undefined"
             @fire="fire(selected)"
@@ -475,7 +476,6 @@ defineExpose({ load, schedule })
     <EmptyState
       v-else-if="!jobsPending"
       description="还没有定时任务"
-      reason="新建任务或配置推荐同步"
       class="jobs-empty"
     >
       <Button @click="emit('enable-recommended-sync')">配置推荐同步</Button>
@@ -507,8 +507,8 @@ defineExpose({ load, schedule })
 .jobs-layout {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
-  gap: var(--gap-5);
+  grid-template-columns: minmax(268px, 340px) minmax(0, 1fr);
+  gap: var(--gap-4);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -530,7 +530,7 @@ defineExpose({ load, schedule })
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  padding: 2px;
+  padding: 0 2px 2px;
 }
 
 .jobs-empty {

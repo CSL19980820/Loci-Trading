@@ -60,3 +60,6 @@
  .sw-chart { height:620px; flex:none; width:100%; }
  .sw-chart :deep(.tdx-chart-wrap) { min-height:360px; }
 }
+
+.sw-footprint { flex:none; }
+@media(max-width:767px) { .sw-footprint { margin:8px 0; } }

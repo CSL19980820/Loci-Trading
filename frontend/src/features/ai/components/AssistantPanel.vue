@@ -9,6 +9,7 @@ import {
   Maximize2,
   Minimize2,
   Settings2,
+  Sparkles,
   X as Close,
 } from '@lucide/vue'
 import { toast } from 'vue-sonner'
@@ -71,7 +72,7 @@ const PROMPTS: AssistantPromptCard[] = [
   {
     id: 'settle-today',
     title: '记录当日交割',
-    hint: '<价格>买入<数量>股<标的>，多笔用逗号分隔',
+    hint: '<价格>买入<数量>股<标的>',
     prompt: [
       '记录当日交割',
       '<价格>买入<数量>股<标的>，<价格>卖出<数量>股<标的>',
@@ -379,7 +380,7 @@ function onCreateSession(): void {
               </TooltipTrigger>
               <TooltipContent>历史对话</TooltipContent>
             </Tooltip>
-            <span class="assistant-panel__brand" aria-hidden="true">LC</span>
+            <span class="assistant-panel__brand" :class="{ 'is-busy': busy }" aria-hidden="true"><Sparkles /></span>
             <div class="assistant-panel__identity">
               <strong class="assistant-panel__title">{{ title || 'Loci 助手' }}</strong>
               <span v-if="activeModelLabel" class="assistant-panel__model" :title="activeModelLabel">{{ activeModelLabel }}</span>
@@ -460,7 +461,7 @@ function onCreateSession(): void {
             </Button>
           </div>
           <div v-if="!providerReady && !visitor" class="assistant-panel__provider-empty" role="status">
-            <span class="assistant-panel__provider-text">尚未配置可用模型，先接一家供应商再开始对话。</span>
+            <span class="assistant-panel__provider-text">未配置模型</span>
             <Button data-testid="assistant-configure-provider" size="sm" @click="emit('configure')">
               配置模型
             </Button>

@@ -97,21 +97,24 @@ withDefaults(
 .settings-panel__receipt {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--gap-1) var(--gap-4);
+  gap: 6px;
   margin: 0;
   min-width: 0;
 }
 
 .settings-panel__pair {
   display: inline-flex;
-  align-items: baseline;
-  gap: var(--gap-1);
+  align-items: center;
+  gap: 6px;
+  height: 26px;
   min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
   color: var(--text-secondary);
-  font-family: var(--mono);
   font-size: var(--fs-aux);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.4;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -124,8 +127,10 @@ withDefaults(
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 600;
   color: var(--text-primary);
+  font-family: var(--mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .settings-panel__pair-link {
@@ -133,7 +138,7 @@ withDefaults(
   padding: 0;
   font: inherit;
   font-weight: 600;
-  color: var(--seal-ink);
+  color: var(--stamp);
   text-decoration: underline dotted;
   text-underline-offset: 0.2em;
 }
