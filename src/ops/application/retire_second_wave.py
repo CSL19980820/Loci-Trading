@@ -12,7 +12,7 @@
 - 只追加留痕表 `second_wave_signals` 由 `_MIGRATIONS` 里的 `DROP TABLE` 收走
 
 退役理由：2026-08 用户停用。逐笔口径的实测分档留在
-`docs/research/2026-08-dragon-second-wave-live-alert-spec.md`，想重做同类战法先复现那份。
+`docs/research/2026-08-dragon-second-wave-live-alert-spec.md`（已移除，见提交 d05e02d），想重做同类战法先复现那份。
 
 所有安装都启动过一次之后，这个模块可以整体删除。
 """

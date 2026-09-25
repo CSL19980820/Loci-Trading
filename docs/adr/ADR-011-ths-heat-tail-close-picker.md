@@ -2,7 +2,7 @@
 
 **状态**：**部分否决**——第 0 步证伪回测判定为负期望，决策 2–12 描述的选股器**不实施**；决策 1 第 1 步（同花顺口径热度采集）已落地并保留  
 **日期**：2026-08-12  
-**相关**：[`docs/research/2026-08-heat-tail-attention-proxy-backtest.md`](../research/2026-08-heat-tail-attention-proxy-backtest.md)（**第 0 步判定，终态**）、[`docs/research/2026-08-ths-heat-tail-close-picker.md`](../research/2026-08-ths-heat-tail-close-picker.md)（一手调研，495 行）、[`ADR-009`](ADR-009-market-tape-provider-lanes.md)、[`docs/research/2026-08-loci-weipan-overnight-formula.md`](../research/2026-08-loci-weipan-overnight-formula.md)、[`docs/research/2026-08-tail-close-indicator-source-review.md`](../research/2026-08-tail-close-indicator-source-review.md)
+**相关**：[`docs/research/2026-08-heat-tail-attention-proxy-backtest.md`](../research/2026-08-heat-tail-attention-proxy-backtest.md)（**第 0 步判定，终态**）、[`docs/research/2026-08-ths-heat-tail-close-picker.md`](../research/2026-08-ths-heat-tail-close-picker.md)（一手调研，495 行）、[`ADR-009`](ADR-009-market-tape-provider-lanes.md)、`2026-08-loci-weipan-overnight-formula.md`（已移除，见提交 d05e02d）、[`docs/research/2026-08-tail-close-indicator-source-review.md`](../research/2026-08-tail-close-indicator-source-review.md)
 
 ## 背景
 
@@ -106,7 +106,7 @@
 
 12. **两段式出票**：14:45 推「预备名单」一条，14:52 推「最终名单」一条，纸面舱按 14:52 那轮成交。沪深两市 14:57 进收盘集合竞价，最晚有效下单约 14:56，14:52 定稿留约 4 分钟。需把 `DEFAULT_WATCH_SCHEDULE` 的盘中窗口末端从 `14:50` 延到 `14:52` 之后。
 
-    **14:50 信号 ≠ 按收盘价成交**：涨停、封板、停牌、价格笼子拒单、收盘竞价成交概率都要 veto，规则依据见 `2026-08-tail-close-indicator-source-review.md` 收录的交易所规则页。
+    **14:50 信号 ≠ 按收盘价成交**：涨停、封板、停牌、价格笼子拒单、收盘竞价成交概率都要 veto，规则依据见 `2026-08-tail-close-indicator-source-review.md`（已从仓库移除，可在提交 d05e02d 中查看） 收录的交易所规则页。
 
 13. **热度源降级：第一步软跳过，第二步走 tape lane**。
 

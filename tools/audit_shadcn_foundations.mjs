@@ -13,7 +13,7 @@ const require = createRequire(path.join(root, 'frontend/package.json'))
 const { parse: parseSfc } = require('@vue/compiler-sfc')
 const { parse: parseTemplate } = require('@vue/compiler-dom')
 const ts = require('typescript')
-const destination = path.resolve(root, process.argv[2] || 'docs/reviews/2026-09-22-shadcn-system-post-inventory.json')
+const destination = path.resolve(root, process.argv[2] || 'output/shadcn-system-inventory.json')
 const normalize = value => value.split(path.sep).join('/')
 const relative = value => normalize(path.relative(root, value))
 const uiPrefix = 'frontend/src/shared/components/ui/'

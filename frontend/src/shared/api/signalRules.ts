@@ -5,7 +5,7 @@
  * 已作废，两边已对齐，不留回退分支——留着只会让人以为路径还没定下来）。
  *
  * 可调参数的**权威口径来自后端** `param_specs`（键 / 中文名 / 上下限 / 单位 /
- * 是否整数）。后端没给时才退到前端那张静态表（signalRuleMeta.ts）。
+ * 是否整数）。
  */
 import { quantRequest } from '@/shared/api/quant_client'
 

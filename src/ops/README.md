@@ -117,14 +117,14 @@ HTTP：`api/skills.py`（目录/安装/生成）+ `api/skill_runs_api.py`（对�
 - **龙池已退役（2026-08，勿重建）**：引擎、技能包、`监测·龙池` 任务与生命周期状态已整体移除；`application/retire_dragon_pool.py` 在启动时幂等清理存量安装（删任务、卸技能、清 `dragon_pool_state*`、清 `unified_monitor_pool:dragon-pool` 快照，并摘掉其它池里 `candidate_feed=skill_watch:dragon-pool` 的候选）。**只删源码不清库会更糟**：调度器照样按 cron 触发那条任务，执行器找不到引擎就每 5 分钟推一条失败。
   - 退役依据（300 个交易日 / 199 笔成交样本，防前视口径同下）：扣 0.26% 成本后相对**同信号日全市场等权基准**的配对超额 T+3 仅 **+0.53%（t=1.00，95% 区间 [-0.50%, +1.56%] 跨 0）**、T+5 +0.36%、T+10 −0.59%；超额胜率 T+3 只有 43.7%，最赚的 3 笔贡献 38% 盈利；入池分数按三等分无区分度（低 +1.00% / 中 −0.26% / 高 +0.83%）。要把该超额证成显著约需 764 笔 ≈ 46 个月。
   - 同期它还高度顺周期：`ready` 需全市场站上 MA20 ≥50%，而 2026-06-02~08-12 只有 18% 的交易日达标，2026 年 3/6/7 月整月零信号——赚的那点绝对收益基本是 beta。
-  - 明细见 [2026-08-dragon-pool-forward-validation](../../docs/research/2026-08-dragon-pool-forward-validation.md)。想重做这类「曾大涨 + 回撤到位」的战法，请先复现这份对照再动手，别直接把参数抄回来。
+  - 明细见 `2026-08-dragon-pool-forward-validation.md`（已从仓库移除，可在提交 d05e02d 中查看）。想重做这类「曾大涨 + 回撤到位」的战法，请先复现这份对照再动手，别直接把参数抄回来。
   闸门质量警告分硬/软：错日/`tool_error`/必填缺失 → 空仓；tape `degraded` 等软警告 → 最多观察不开仓。
   纸面舱 `_resolve_market_gate` 对同日闸门短 TTL（约 90s）复用，减轻与 `skill_watch` 叠打配额。
   观察池文案/规则在 `observe_format.py`（`observe_alert_records` 结构化预警），粘性合并仍在 `observe_pool.py`；
   `collect_observe_alerts` 禁止解析中文行。
 - **二波监测已退役（2026-08，勿重建）**：引擎 `second_wave`、技能包 `dragon-second-wave`、托管任务 `监测·二波监测`、首页二波监测条、`GET /api/skills/{slug}/second-wave` 与留痕表 `second_wave_signals` 已整体移除；`application/retire_second_wave.py` 在启动时幂等清理存量安装（删任务、卸技能、清 `second_wave_latest` / `watch_tuning:` / `unified_monitor_pool:` 三个键，并摘掉别的池里 `candidate_feed=skill_watch:dragon-second-wave` 的候选），留痕表由 `_MIGRATIONS` 的 `DROP TABLE` 收走。
   - **它是唯一一条系统托管的 `skill_watch`**，所以只删源码最糟：用户 `ops.db` 里那条 `*/5 9-14` 照样触发，执行器找不到技能就每 5 分钟推一条「未安装技能：dragon-second-wave」——2026-08 容器化部署后这条就是这么炸的（镜像没带 `templates/`，新卷里也没有技能包）。
-  - 退役原因是用户停用，不是证伪。当时的规格、阈值与实测分档留在 [2026-08-dragon-second-wave-live-alert-spec](../../docs/research/2026-08-dragon-second-wave-live-alert-spec.md)，想重做同类「曾大涨 + 回踩均线」的战法请先复现那份再动手。
+  - 退役原因是用户停用，不是证伪。当时的规格、阈值与实测分档留在 `2026-08-dragon-second-wave-live-alert-spec.md`（已从仓库移除，可在提交 d05e02d 中查看），想重做同类「曾大涨 + 回踩均线」的战法请先复现那份再动手。
 - **人工单门闩**：`POST .../manual-orders` 默认过情景/竞价/市场闸门；`bypass_gates=true` 仅本地默认可；**`PALACE_ENV=production` 拒绝**，临时开闸需 `LOCI_PAPER_ALLOW_BYPASS_GATES=1`（并打 warning 日志）。
 - **次日日期**：`_next_trade_date` 优先读 `market.db` 交易日历（长假不错位），无日历时退回跳周末。
 - **每段可启停、每档可调**（`application/skill_watch/tuning.py`）：存 ops.db `meta` 键 `watch_tuning:{slug}`。

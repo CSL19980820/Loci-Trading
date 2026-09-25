@@ -2,7 +2,7 @@
 
 > **状态**：设计稿（未开工）  
 > **读者**：后端 / 组合根 / 测试 / 后续 Coding Agent  
-> **对齐**：[`docs/master-plan-2026-07.md`](../master-plan-2026-07.md) §P4、现有 `src/ai`、参考实现 `E:\work_space\qiz-ai-gateway`（AgentLoop + SSE + HITL）  
+> **对齐**：`master-plan-2026-07.md`（已从仓库移除，可在提交 d05e02d 中查看） §P4、现有 `src/ai`、参考实现 `E:\work_space\qiz-ai-gateway`（AgentLoop + SSE + HITL）  
 > **配套前端**：[`ai-assistant-frontend-design.md`](./ai-assistant-frontend-design.md)
 
 ---
