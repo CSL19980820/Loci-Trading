@@ -6,8 +6,7 @@
 
 - 壳：`OpsView.vue` — **左脊索引**（`SettingsRail`）+ 右面板；`?tab=` 路由；按当前 tab 按需 `load`；窄屏折成单条 `PageTabs`
 - 面板壳：`SettingsPanel.vue`（标题 + 回执读数 + 主操作；可用宽度不足时换行，回执可省略；≤900px rail 隐藏，且 `/quant` 的 `JobsTab` 复用同一个壳；`fill` 让 body 吃满剩余高度，MCP / LLM / 定时任务名册用，表单页不要传）；联内壳 `SettingsSection.vue`（左槽联名 + 可读保存状态，窄屏收窄左槽）
-- Tab：`McpTab` · `LlmTab`（供应商**卡片名册** + 分区编辑 `LlmProviderDialog` + `LlmModelCatalogDrawer`）· **`SystemTab`**（四联纵向；标题回执含版本号；页脚「保存全部」）· **`PackTab`**（一键打包 → 加密 zip）
-- `PackTab` **默认出脱敏包**：运维库与 MCP 只带骨架，API Key / Webhook / 纸面交易记录都不进包。勾了「账本」或「包含我的密钥与个人记录」会变红条警告并高亮该行；打包完成的提示会说明是脱敏包还是含个人数据（读响应头 `X-Loci-Sanitized`）
+- Tab：`McpTab` · `LlmTab`（供应商**卡片名册** + 分区编辑 `LlmProviderDialog` + `LlmModelCatalogDrawer`）· **`SystemTab`**（四联纵向；标题回执含版本号；页脚「保存全部」）
 - `LlmModelCatalogDrawer`：宽 `min(64rem, 92vw)`；表体单行（开 / id·徽标 / 展示名 / 上下文·hint / 输出 / 操作）；默认行印泥浅底；表 min-width 960px 可横滚
 - LLM：`LlmProviderCard`（端点条 / 模型芯片 / ⋯ 菜单）；添加与编辑共用宽屏左右分栏 dialog（左身份/接入 · 右目录摘要）；完整目录仍走右侧 drawer
 - 本机 LLM / MCP Key 明文落库（ops.db / mcp.json）；旧密文启动时尽量自动迁明文
