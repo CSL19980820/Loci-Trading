@@ -69,5 +69,3 @@ htmlcov/
 /package.json
 /package-lock.json
 
-# 可重新生成的审计清单
-docs/reviews/*-inventory.json

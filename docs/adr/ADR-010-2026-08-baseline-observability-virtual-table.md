@@ -2,7 +2,7 @@
 
 **状态**：已采纳  
 **日期**：2026-08-08  
-**相关**：[`docs/research/2026-08-github-open-source-technology-radar.md`](../research/2026-08-github-open-source-technology-radar.md)、[`ADR-002`](ADR-002-duckdb-readonly-panel.md)
+**相关**：`2026-08-github-open-source-technology-radar.md`（已从仓库移除，可在提交 d05e02d 中查看）、[`ADR-002`](ADR-002-duckdb-readonly-panel.md)
 
 ## 背景
 

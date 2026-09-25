@@ -1,16 +1,22 @@
 # 文档
 
 ## 职责
-产品说明、ADR、架构约定（Diátaxis）。
+产品说明、ADR、架构约定。实现细节以代码与各模块 README 为准。
 
-## 边界
-实现细节以代码与模块 README 为准。
+## 目录
 
-## 关键入口
-architecture/（含 [助手个性化](architecture/ai-assistant-personalization.md)、[助手富渲染](architecture/ai-assistant-rich-render.md)）· adr/（含 [ADR-002 DuckDB](adr/ADR-002-duckdb-readonly-panel.md)、[ADR-005 归档与记忆](adr/ADR-005-assistant-archive-and-memory.md)、[ADR-006 富渲染与流式](adr/ADR-006-assistant-rich-render-and-streaming.md)、[ADR-008 纸面量化舱](adr/ADR-008-paper-quant-cabin.md)、[ADR-009 盘口情报 lanes](adr/ADR-009-market-tape-provider-lanes.md)、[ADR-017 悟道简报转发与情报扩面](adr/ADR-017-wudao-briefing-relay-and-intel-widening.md)、[ADR-010 基线/观测/虚拟表/Polars](adr/ADR-010-2026-08-baseline-observability-virtual-table.md)、[ADR-011 热度尾盘选股器](adr/ADR-011-ths-heat-tail-close-picker.md)、[ADR-013 通达信主源](adr/ADR-013-tdx-primary-daily-source-and-batch-sync.md)、[ADR-014 盘中留存带与加密滚动窗口（草案）](adr/ADR-014-encrypted-intraday-tape-retention.md)、**[ADR-015 v2 多租户身份/社区/实时大屏](adr/ADR-015-v2-multi-tenant-identity-and-community.md)**、**[ADR-016 v2.1 租户隔离失效面/任务并发/保留期](adr/ADR-016-v2-1-tenant-isolation-concurrency-retention.md)**） · **[v2「群龙」发布说明](release-v2-qunlong.md)**· master-plan · quant-toolkit · **[research/INDEX.md](research/INDEX.md)（75 篇研究文档的导航入口，先读这个）** · **[research/2026-08-mainstream-quant-benchmark.md](research/2026-08-mainstream-quant-benchmark.md)（主流量化体系对标终稿 + 0/30/60/90 天路线图）** · research/2026-08-github-open-source-technology-radar.md
+| 位置 | 内容 |
+|---|---|
+| `adr/` | 架构决策记录（ADR-001 ~ ADR-017）。重大决策追加新 ADR |
+| `architecture/` | 限界上下文、项目结构、AI 助手前后端设计、选股技能与回测方案 |
+| `strategies/` | 在产战法说明（冲高回踩尾盘 v1） |
+| `research/` | 仍被在产代码或 ADR 引用的研究记录，入口见 [research/INDEX.md](research/INDEX.md) |
+| `guardian*.md` | 守护者智能体：说明、执行口径、报告模板 |
+| `quant-toolkit.md` | 量化工具箱 |
+| `portable-desktop.md` | 便携桌面版 |
+| `qianlong-memory-palace.md` | 潜龙记忆宫殿 |
+| `release-v2-qunlong.md` | v2「群龙」发布说明 |
 
-## 如何扩展
-重大决策追加 ADR；结构变更改 architecture。
-
-## 相关测试
-—
+## 历史资料
+2026-07/08 的研究报告、系统审计、交付与验收记录已在 2026-09 精简时移出仓库，
+需要时在提交 `d05e02d` 中查看：`git show d05e02d:docs/<路径>`。
