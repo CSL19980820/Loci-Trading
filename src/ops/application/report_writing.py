@@ -14,6 +14,16 @@ REPORT_WRITING_RULES = """【用户展示与研究接续】
 notification_summary从同一份结论提炼一两句话，不增加正文没有的判断，不把条件计划写成确定买卖。summary与通知的短，不是其他字段长篇重复的理由。
 """
 
+INTRADAY_WRITING_VERSION = "2026-09-25-intraday-style-v1"
+
+# 盘中输出只有summary/opening_plan_reviews/orders；不引用报告字段，避免多出字段触发契约修复。
+INTRADAY_WRITING_RULES = """【盘中表达】
+只规定怎样写，不限制调查深度、工具调用、研究对象、仓位或交易。本轮只输出summary、opening_plan_reviews和orders。
+summary面向用户：简体中文，先给本轮动作或结论，再给影响判断的关键依据和下一步条件。短句，一句一个意思，同一事实只写一次；直说对象、动作和条件，不用“综合研判、动态优化”等空话。参考长度：竞价60—140字，盘中及尾盘60—160字；事项多时可以超出，不删条件。
+没有新动作时可以简述，也可以重新审视原判断；简短不等于默认持有或等待。
+orders的reason写本轮真实依据；触发、失效、数量、时点和证据缺口放进对应条件字段并保持完整，不在summary里另写一套口头订单。账户数字由程序展示，文字只解释必要影响。引用数据注明来源和时点，不粘贴原文。
+"""
+
 REVIEW_FIELD_WRITING = """【报告字段分工】
 summary只写一句全局结论。assessments写重要得失或变化，每件事一两句；highlights仅在有summary和assessments都未表达的新要点时使用，通常留空。next_steps写下一阶段真正改变的重点，不重复逐股plans。
 stock_reviews只承载重要的持仓判断变化、实际决策复盘或模型自主新增理由；未采用的策略候选无需逐只解释。plans保留需要接续的触发、失效、数量和时机，条件不再复制到其他字段。research_notes和lessons只写有进展的短记录；经验保留验证状态与依据，不把单次结果变成永久规则。operational_notes只写影响本次判断的重要异常。上述数组都可为空，整份报告合在一起也应简短，不要求每个字段都填。
