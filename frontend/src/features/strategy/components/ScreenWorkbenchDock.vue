@@ -56,7 +56,7 @@ const watchPicks = computed<Array<Pick & { signalDate: string }>>(() => {
 })
 
 const tabs = computed<PageTabItem[]>(() => [
-  ...(props.assistSlot ? [{ name: 'assist', label: '助手' }] : []),
+  ...(props.assistSlot ? [{ name: 'assist', label: 'AI 编写' }] : []),
   { name: 'diag', label: '诊断', badge: errorCount.value || undefined },
   { name: 'explain', label: '解释' },
   { name: 'picks', label: '选股', badge: picks.value.length || undefined },
@@ -95,7 +95,7 @@ function onDiagClick(line?: number | null): void {
       </div>
 
       <div v-show="activeTab === 'diag'" class="dock-pane">
-        <EmptyState v-if="!diagnostics.length" description="无诊断" reason="试跑后这里列出编译与数据问题，点一条可跳到对应行" />
+        <EmptyState v-if="!diagnostics.length" compact description="无诊断" />
         <ul v-else class="diag-list">
           <li v-for="diag in diagnostics" :key="`${diag.code}-${diag.line}-${diag.message}`">
             <Button access="read" variant="ghost" type="button" class="diag-row" @click="onDiagClick(diag.line)">
@@ -116,15 +116,14 @@ function onDiagClick(line?: number | null): void {
       <div v-show="activeTab === 'picks'" class="dock-pane">
         <EmptyState
           v-if="!screenBusy && !picks.length && !watchPicks.length"
-          description="这个范围没有选出股票"
-          reason="可放宽日期或换股票池后再选股"
+          compact
+          description="没有选出股票"
         />
         <div v-else class="pick-sections">
           <section v-if="picks.length" class="pick-section" aria-label="正式精选">
             <div class="pick-section__title">
               <strong>正式精选</strong>
               <UiBadge variant="default">{{ picks.length }}</UiBadge>
-              <span>沿用原战法胜率口径</span>
             </div>
             <Table class="pick-table">
               <TableHeader>
@@ -144,7 +143,7 @@ function onDiagClick(line?: number | null): void {
           <section v-if="watchPicks.length" class="pick-section" aria-label="低吸观察">
             <div class="pick-section__title">
               <strong>低吸观察</strong>
-              <UiBadge variant="warn">不计正式胜率</UiBadge>
+              <UiBadge variant="warn">{{ watchPicks.length }}</UiBadge>
             </div>
             <Table class="pick-table">
               <TableHeader>
@@ -216,7 +215,7 @@ function onDiagClick(line?: number | null): void {
 }
 
 .dock-pane--assist {
-  padding: var(--gap-3);
+  padding: 0;
 }
 
 .dock-pane--bt {

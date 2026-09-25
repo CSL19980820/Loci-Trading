@@ -4,7 +4,7 @@ import { computed, defineAsyncComponent, KeepAlive, onMounted, onUnmounted, ref,
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import GuardianMobileSummary from './GuardianMobileSummary.vue'
 import { toast } from 'vue-sonner'
-import { Archive, Ellipsis, Info, Cpu, Pause, Play, RefreshCw, Settings, TriangleAlert } from '@lucide/vue'
+import { Archive, Bot, Ellipsis, Info, Cpu, Pause, Play, RefreshCw, Settings, TriangleAlert } from '@lucide/vue'
 import { getGuardian, saveGuardian } from '@/shared/api/guardian'
 import { getProviders } from '@/shared/api/quant'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
@@ -15,7 +15,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/compo
 import GuardianStoragePanel from '@/features/agents/components/GuardianStoragePanel.vue'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import PageTabs from '@/shared/components/ui/PageTabs.vue'
-import StatCard from '@/shared/components/ui/StatCard.vue'
 import type { GuardianStatus, GuardianConfig } from '@/shared/types/guardian'
 import type { LlmProvider } from '@/shared/types/quant'
 import { agentMoney } from '@/features/agents/agentFormat'
@@ -52,10 +51,26 @@ const stateLabel = computed(() => {
   if (data.value?.notification_silence) return '日历待核验'
   return '运行中'
 })
-const workspaceTabs = [
-  { name: 'account', label: '持仓股' }, { name: 'research', label: '自选股' },
-  { name: 'reviews', label: '复盘计划' }, { name: 'consult', label: '对话' },
-]
+const workspaceTabs = computed(() => [
+  { name: 'account', label: '持仓股', badge: data.value?.state.positions.length || undefined },
+  { name: 'research', label: '自选股', badge: data.value?.observation_count || undefined },
+  { name: 'reviews', label: '复盘计划' },
+  { name: 'consult', label: '对话' },
+])
+const pnlTone = (value?: number) => (value ?? 0) > 0 ? 'gain' : (value ?? 0) < 0 ? 'loss' : ''
+const signedMoney = (value?: number) => ((value ?? 0) > 0 ? '+' : '') + agentMoney(value ?? 0)
+const totalPct = computed(() => {
+  const state = data.value?.state
+  if (!state?.initial_capital_cents) return ''
+  const pct = state.total_pnl_cents / state.initial_capital_cents * 100
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`
+})
+const allocationText = computed(() => `${Number(allocation.value.toFixed(1))}%`)
+const valuationText = computed(() => {
+  const state = data.value?.state
+  if (!state?.valuation_date) return ''
+  return `${state.valuation_date} ${state.valuation_kind === 'official_close' ? '收盘估值' : '参考估值'}`
+})
 const emit = defineEmits<{ summary: [value: { tail: string; state: 'ok' | 'idle' | 'bad' }] }>()
 let controller: AbortController | undefined
 let pending: Promise<void> | undefined
@@ -125,20 +140,25 @@ const panelId = `guardian-workspace-panel-${useId()}`
     <header class="guardian-header">
       <div class="guardian-identity">
         <slot name="leading" />
-        <h1>天才交易员</h1>
-        <Badge variant="outline" class="guardian-state" :class="{ 'is-running': enabled && configured }">
-          <Spinner v-if="data?.runs[0]?.status === 'running'" class="size-3 animate-spin" aria-hidden="true" />
-          <span v-else class="guardian-state__dot" aria-hidden="true" />
-          {{ stateLabel }}
-        </Badge>
+        <span class="guardian-avatar" :class="{ 'is-live': enabled && configured }" aria-hidden="true"><Bot /></span>
+        <div class="guardian-id-text">
+          <div class="guardian-id-row">
+            <h1>天才交易员</h1>
+            <Badge variant="outline" class="guardian-state" :class="{ 'is-running': enabled && configured }">
+              <Spinner v-if="data?.runs[0]?.status === 'running'" class="size-3 animate-spin" aria-hidden="true" />
+              <span v-else class="guardian-state__dot" aria-hidden="true" />
+              {{ stateLabel }}
+            </Badge>
+          </div>
+          <span v-if="data" class="guardian-model" :title="data.config.model"><Cpu aria-hidden="true" />{{ data.config.model || '模型未配置' }}</span>
+        </div>
       </div>
-      <PageTabs :panel-id="panelId" :model-value="section" :items="workspaceTabs" variant="pill" :sticky="false" aria-label="交易员工作区" @update:model-value="onSectionChange" class="guardian-inline-tabs" />
-      <span class="guardian-history-summary" :title="storage?.summary">{{ storage?.summary }}</span>
+      <PageTabs v-if="mobile" :panel-id="panelId" :model-value="section" :items="workspaceTabs" variant="pill" :sticky="false" aria-label="交易员工作区" @update:model-value="onSectionChange" class="guardian-inline-tabs" />
       <div class="guardian-actions">
-        <Button v-if="!mobile" class="guardian-storage-action" variant="outline" size="sm" :disabled="storage?.busy" @click="storage?.configure()"><Settings aria-hidden="true" />保留策略</Button>
-        <Button v-if="!mobile" class="guardian-storage-action" variant="outline" size="sm" :disabled="storage?.busy" @click="storage?.cleanup()"><Archive aria-hidden="true" />清理过期详情</Button>
-        <Button access="read" variant="outline" :size="mobile ? 'icon-sm' : 'sm'" aria-label="刷新交易员" :disabled="busy || loading" @click="load">
-          <Spinner v-if="loading" class="animate-spin" aria-hidden="true" /><RefreshCw v-else aria-hidden="true" /><span v-if="!mobile">刷新</span>
+        <Button v-if="!mobile" class="guardian-storage-action" variant="ghost" size="sm" :disabled="storage?.busy" @click="storage?.configure()"><Settings aria-hidden="true" />保留策略</Button>
+        <Button v-if="!mobile" class="guardian-storage-action" variant="ghost" size="sm" :disabled="storage?.busy" @click="storage?.cleanup()"><Archive aria-hidden="true" />清理过期详情</Button>
+        <Button access="read" variant="ghost" size="icon-sm" aria-label="刷新交易员" :disabled="busy || loading" @click="load">
+          <Spinner v-if="loading" class="animate-spin" aria-hidden="true" /><RefreshCw v-else aria-hidden="true" />
         </Button>
         <Button v-if="!mobile" variant="outline" size="sm" :disabled="!data || busy" @click="configure()"><Settings aria-hidden="true" />设置</Button>
         <Button v-if="!mobile" :variant="enabled ? 'outline' : 'default'" size="sm" :disabled="busy || !data" @click="toggle">
@@ -146,7 +166,7 @@ const panelId = `guardian-workspace-panel-${useId()}`
           {{ enabled ? '暂停' : configured ? '启动' : '配置开启' }}
         </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger as-child><Button access="read" variant="outline" size="icon-sm" aria-label="更多交易员操作"><Ellipsis aria-hidden="true" /></Button></DropdownMenuTrigger>
+          <DropdownMenuTrigger as-child><Button access="read" variant="ghost" size="icon-sm" aria-label="更多交易员操作"><Ellipsis aria-hidden="true" /></Button></DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem v-if="mobile" :disabled="!data || busy" @select="configure()"><Settings />交易员设置</DropdownMenuItem>
             <DropdownMenuItem v-if="mobile" :disabled="!data || busy" @select="toggle"><Pause v-if="enabled" /><Play v-else />{{ enabled ? '暂停交易员' : configured ? '启动交易员' : '配置并开启' }}</DropdownMenuItem>
@@ -175,20 +195,37 @@ const panelId = `guardian-workspace-panel-${useId()}`
 
     <template v-if="data">
       <GuardianMobileSummary v-if="mobile && section === 'account' && accountSection === 'positions'" :data="data" />
-      <section v-if="!mobile" class="guardian-metrics-bar" aria-label="模拟账户资产，单位元">
-        <StatCard class="guardian-equity" label="模拟净资产 / 元" :value="agentMoney(data.state.equity_cents)" />
-        <StatCard label="累计盈亏 / 元" :value="((data.state.total_pnl_cents ?? 0) > 0 ? '+' : '') + agentMoney(data.state.total_pnl_cents)" :tone="data.state.total_pnl_cents > 0 ? 'up' : data.state.total_pnl_cents < 0 ? 'down' : 'neutral'" />
-        <StatCard label="可用现金 / 元" :value="agentMoney(data.state.cash_cents)" />
-        <StatCard label="持仓市值 / 元" :value="agentMoney(data.state.market_value_cents)" />
+      <section v-if="!mobile" class="guardian-ledger" aria-label="模拟账户资产，单位元">
+        <div class="guardian-ledger__hero">
+          <span class="guardian-ledger__label">模拟净资产</span>
+          <strong class="guardian-ledger__equity">{{ agentMoney(data.state.equity_cents) }}</strong>
+          <span class="guardian-ledger__pnl" :class="pnlTone(data.state.total_pnl_cents)">
+            {{ signedMoney(data.state.total_pnl_cents) }}<em v-if="totalPct">{{ totalPct }}</em>
+          </span>
+        </div>
+        <dl class="guardian-ledger__facts">
+          <div><dt>可用现金</dt><dd>{{ agentMoney(data.state.cash_cents) }}</dd></div>
+          <div><dt>持仓市值</dt><dd>{{ agentMoney(data.state.market_value_cents) }}</dd></div>
+          <div><dt>已实现</dt><dd :class="pnlTone(data.state.realized_pnl_cents)">{{ signedMoney(data.state.realized_pnl_cents) }}</dd></div>
+          <div><dt>浮动</dt><dd :class="pnlTone(data.state.unrealized_pnl_cents)">{{ signedMoney(data.state.unrealized_pnl_cents) }}</dd></div>
+        </dl>
+        <div class="guardian-ledger__alloc">
+          <div class="guardian-ledger__alloc-row">
+            <span class="guardian-ledger__label">仓位</span>
+            <strong>{{ allocationText }}</strong>
+          </div>
+          <span class="guardian-ledger__bar" aria-hidden="true"><i :style="{ width: `${Math.min(100, Math.max(0, allocation))}%` }" /></span>
+          <span v-if="valuationText" class="guardian-ledger__valuation">{{ valuationText }}</span>
+        </div>
       </section>
-      <div v-if="!mobile" class="guardian-meta" aria-label="研判配置与仓位">
-        <span>已实现 <b :class="data.state.realized_pnl_cents > 0 ? 'gain' : 'loss'">{{ agentMoney(data.state.realized_pnl_cents) }}</b></span>
-        <span>浮动 <b :class="data.state.unrealized_pnl_cents > 0 ? 'gain' : 'loss'">{{ agentMoney(data.state.unrealized_pnl_cents) }}</b></span>
-        <span class="guardian-model" :title="data.config.model"><Cpu aria-hidden="true" />{{ data.config.model || '模型未配置' }}</span>
-        <span>仓位 <b>{{ Number(allocation.toFixed(1)) }}%</b></span>
-        <span v-if="data.state.valuation_date" class="guardian-valuation">{{ data.state.valuation_date }} {{ data.state.valuation_kind === 'official_close' ? '收盘估值' : '参考估值' }}</span>
-      </div>
 
+      <div v-if="!mobile" class="guardian-tabs-row">
+        <PageTabs :panel-id="panelId" :model-value="section" :items="workspaceTabs" :sticky="false" aria-label="交易员工作区" @update:model-value="onSectionChange" class="guardian-tabs">
+          <template #trailing>
+            <span class="guardian-history-summary" :title="storage?.summary">{{ storage?.summary }}</span>
+          </template>
+        </PageTabs>
+      </div>
 
       <!-- 视图内容 -->
       <div :id="panelId" class="guardian-content-area" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${section}`">

@@ -22,6 +22,8 @@ const props = defineProps<{
   statusLeft?: string
   statusRight?: string
   statusTone?: 'neutral' | 'ok' | 'error'
+  /** AI 正在写：编辑区蒙一层流光，避免边写边改 */
+  generating?: boolean
 }>()
 
 const editor = ref<EditorHandle | null>(null)
@@ -53,6 +55,10 @@ defineExpose({ focusLine, insertText })
 <template>
   <section class="editor-stage" aria-label="策略执行源编辑器">
     <div class="editor-stage__body">
+      <div v-if="generating" class="editor-stage__ai" role="status" aria-live="polite">
+        <span class="editor-stage__ai-lines" aria-hidden="true"><i /><i /><i /><i /><i /></span>
+        <span class="editor-stage__ai-label">AI 编写中</span>
+      </div>
       <CodeEditor
         ref="editor"
         v-model="editorContent"
@@ -103,8 +109,65 @@ defineExpose({ focusLine, insertText })
 }
 
 .editor-stage__body {
+  position: relative;
   min-height: 0;
   padding: 0;
+}
+
+.editor-stage__ai {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.editor-stage__ai-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: min(360px, 70%);
+}
+
+.editor-stage__ai-lines i {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--seal) 10%, transparent) 0%,
+    color-mix(in oklab, var(--seal) 38%, transparent) 50%,
+    color-mix(in oklab, var(--seal) 10%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: editor-ai-flow 1.6s linear infinite;
+}
+
+.editor-stage__ai-lines i:nth-child(2) { width: 82%; animation-delay: 0.12s; }
+.editor-stage__ai-lines i:nth-child(3) { width: 94%; animation-delay: 0.24s; }
+.editor-stage__ai-lines i:nth-child(4) { width: 64%; animation-delay: 0.36s; }
+.editor-stage__ai-lines i:nth-child(5) { width: 40%; animation-delay: 0.48s; }
+
+.editor-stage__ai-label {
+  color: var(--seal-ink);
+  font-size: var(--fs-aux);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+@keyframes editor-ai-flow {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-stage__ai-lines i { animation: none; }
 }
 
 .editor-stage__body :deep(.code-editor) {

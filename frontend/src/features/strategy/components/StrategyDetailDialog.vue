@@ -2,12 +2,20 @@
 import { useVisitorMode } from '@/shared/composables/useAccess'
 const visitor = useVisitorMode()
 import { toast } from 'vue-sonner'
-import { default as DialogPanel } from '@/shared/components/ui/app/DialogPanel.vue'
-import { default as TabSet } from '@/shared/components/ui/app/TabSet.vue'
-import { default as TabPage } from '@/shared/components/ui/app/TabPage.vue'
-import { default as ActionButton } from '@/shared/components/ui/app/ActionButton.vue'
 
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, useId, watch } from 'vue'
+
+import { Button } from '@/shared/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/shared/components/ui/dialog'
+import PageTabs, { type PageTabItem } from '@/shared/components/ui/PageTabs.vue'
+import { Spinner } from '@/shared/components/ui/spinner'
 
 import {
   deleteStrategyVersion,
@@ -17,20 +25,25 @@ import {
   upsertStrategyJob,
 } from '@/shared/api/quant_strategy'
 import { confirmDangerous } from '@/shared/lib/confirm'
-import { dialogWidth } from '@/shared/lib/format'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type { StrategyInfo, StrategyJob, StrategyVersion, UniverseSpec } from '@/shared/types/quant'
 import StrategyDetailBasicsPane from './StrategyDetailBasicsPane.vue'
 import StrategyDetailConfigPane, { type StrategyDetailConfigForm } from './StrategyDetailConfigPane.vue'
+import StrategyRecentPicks from './StrategyRecentPicks.vue'
+import StrategyVersionList from './StrategyVersionList.vue'
 import {
   BOARD_OPTIONS,
   buildPreview,
+  formatPercent,
+  formatProfitFactor,
+  pad,
+  strategyEntryLabel,
+  strategySourceLabel,
   type BoardId,
   type ScheduleMode,
-  strategyParamRows,
 } from './strategyDetailFormat'
 
-type DetailTab = 'basics' | 'config'
+type DetailTab = 'basics' | 'config' | 'picks' | 'versions'
 
 const props = defineProps<{
   modelValue: boolean
@@ -77,7 +90,50 @@ const open = computed({
 
 const displayedStrategy = computed(() => strategySnapshot.value ?? props.strategy)
 const title = computed(() => displayedStrategy.value?.name || '战法详情')
-const paramRows = computed(() => strategyParamRows(displayedStrategy.value))
+const panelId = useId()
+const picksCount = ref(0)
+
+const tabModel = computed({
+  get: () => tab.value,
+  set: (value: string) => {
+    tab.value = value === 'config' || value === 'picks' || value === 'versions' ? value : 'basics'
+  },
+})
+
+const tabItems = computed<PageTabItem[]>(() => [
+  { name: 'basics', label: '概览' },
+  { name: 'config', label: '调度与范围' },
+  { name: 'picks', label: '近期选出', badge: picksCount.value || undefined },
+  { name: 'versions', label: '版本', badge: versionHistory.value.length || undefined },
+])
+
+const metrics = computed(() => {
+  const m = displayedStrategy.value?.backtest_metrics ?? null
+  const net = m?.avg_net_return
+  return [
+    { key: 'trades', label: '回测交易', value: m?.trades == null ? '—' : String(m.trades), tone: '' },
+    { key: 'win', label: '胜率', value: formatPercent(m?.win_rate), tone: '' },
+    {
+      key: 'net',
+      label: '平均净收益',
+      value: formatPercent(net),
+      tone: typeof net === 'number' ? (net > 0 ? 'is-up' : net < 0 ? 'is-down' : '') : '',
+    },
+    { key: 'pf', label: '盈亏比 PF', value: formatProfitFactor(m?.profit_factor), tone: '' },
+  ]
+})
+
+const versionText = computed(() => {
+  const raw = String(displayedStrategy.value?.version || '').trim()
+  if (!raw) return ''
+  return raw.toLowerCase().startsWith('v') ? raw : `v${raw}`
+})
+
+const scheduleSummary = computed(() => {
+  if (!configForm.scheduleEnabled) return '未定时'
+  if (configForm.scheduleMode === 'interval') return `盘中每 ${configForm.intervalMinutes} 分钟`
+  return `交易日 ${pad(configForm.runHour)}:${pad(configForm.runMinute)}`
+})
 
 const canManageVersions = computed(() => {
   const strategy = displayedStrategy.value
@@ -315,49 +371,259 @@ async function save(): Promise<void> {
 </script>
 
 <template>
-  <DialogPanel
-    v-model="open"
-    :title="title"
-    :width="dialogWidth()"
-    destroy-on-close
-    class="strategy-detail-dialog"
-  >
-    <template v-if="strategy">
-      <TabSet v-model="tab" class="detail-tabs">
-        <TabPage label="基础信息" name="basics">
-          <StrategyDetailBasicsPane
-            :strategy="displayedStrategy"
-            :loading-versions="loadingVersions"
-            :version-rows="versionHistory"
-            :can-manage-versions="canManageVersions && !visitor"
-            :version-acting="versionActing"
-            @rollback="rollback"
-            @remove-version="removeVersion"
-          />
-        </TabPage>
-        <TabPage label="配置" name="config">
-          <fieldset :disabled="visitor" class="detail-read-config">
-          <StrategyDetailConfigPane
-            :config="configForm"
-            :param-rows="paramRows"
-            :loading-job="loadingJob"
-            :display-runs="displayRuns"
-            @patch-config="patchConfig"
-          />
+  <Dialog v-model:open="open">
+    <DialogContent class="sd flex flex-col gap-0 overflow-hidden p-0 sm:max-w-[880px]">
+      <DialogHeader class="sd__hero text-left">
+        <div class="sd__crumbs">
+          <span class="sd__source">{{ strategySourceLabel(displayedStrategy) }}</span>
+          <span v-if="versionText" class="sd__ver">{{ versionText }}</span>
+          <span>{{ strategyEntryLabel(displayedStrategy) }}</span>
+          <span v-if="displayedStrategy?.min_bars">{{ displayedStrategy.min_bars }} 根</span>
+        </div>
+        <div class="sd__title-row">
+          <DialogTitle class="sd__title">{{ title }}</DialogTitle>
+          <span class="sd__sched" :class="{ 'is-on': configForm.scheduleEnabled }">
+            <i aria-hidden="true" />{{ scheduleSummary }}
+          </span>
+        </div>
+        <DialogDescription class="sr-only">战法详情</DialogDescription>
+      </DialogHeader>
+
+      <template v-if="strategy">
+        <dl class="sd__metrics" aria-label="回测读数">
+          <div v-for="item in metrics" :key="item.key" class="sd__metric">
+            <dt>{{ item.label }}</dt>
+            <dd :class="item.tone">{{ item.value }}</dd>
+          </div>
+        </dl>
+
+        <PageTabs v-model="tabModel" :items="tabItems" :panel-id="panelId" :sticky="false" aria-label="战法详情分区" class="sd__tabs" />
+
+        <div :id="panelId" class="sd__body" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${tab}`">
+          <StrategyDetailBasicsPane v-show="tab === 'basics'" :strategy="displayedStrategy" />
+          <fieldset v-show="tab === 'config'" :disabled="visitor" class="sd__fieldset">
+            <StrategyDetailConfigPane
+              :config="configForm"
+              :loading-job="loadingJob"
+              :display-runs="displayRuns"
+              @patch-config="patchConfig"
+            />
           </fieldset>
-        </TabPage>
-      </TabSet>
-    </template>
-    <template #footer>
-      <ActionButton tone="primary" :busy="saving" :disabled="!strategy" @click="save">
-        保存
-      </ActionButton>
-    </template>
-  </DialogPanel>
+          <StrategyRecentPicks v-show="tab === 'picks'" :slug="strategy.slug" @count="(value) => (picksCount = value)" />
+          <StrategyVersionList
+            v-show="tab === 'versions'"
+            :rows="versionHistory"
+            :current-version="displayedStrategy?.version"
+            :loading="loadingVersions"
+            :can-manage="canManageVersions && !visitor"
+            :acting="versionActing"
+            @rollback="rollback"
+            @remove="removeVersion"
+          />
+        </div>
+      </template>
+
+      <DialogFooter class="sd__foot">
+        <Button access="read" variant="ghost" size="sm" @click="open = false">关闭</Button>
+        <Button v-if="tab === 'config'" size="sm" :disabled="saving || !strategy" @click="save">
+          <Spinner v-if="saving" class="animate-spin" aria-hidden="true" />
+          保存调度
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <style scoped>
-.detail-tabs :deep(.tab-set__list) { margin-bottom: 0.75rem; }
-.detail-read-config { min-width: 0; padding: 0; margin: 0; border: 0; }
-.detail-tabs :deep(.tab-page) { padding-top: 0.25rem; }
+.sd__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 56px 16px 24px;
+  background:
+    radial-gradient(110% 160% at 0% 0%, color-mix(in oklab, var(--seal) 10%, transparent), transparent 64%),
+    var(--surface);
+}
+
+.sd__crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
+}
+
+.sd__crumbs > span + span::before {
+  content: '·';
+  margin-right: 10px;
+  color: var(--text-disabled);
+}
+
+.sd__source {
+  color: var(--seal-ink);
+  font-weight: 600;
+}
+
+.sd__ver {
+  font-family: var(--mono);
+}
+
+.sd__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-width: 0;
+}
+
+.sd__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.sd__sched {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  color: var(--text-tertiary);
+  font: 500 var(--fs-kicker) / 1 var(--mono);
+}
+
+.sd__sched i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.sd__sched.is-on {
+  border-color: var(--ok-border);
+  background: var(--ok-soft);
+  color: var(--text-primary);
+}
+
+.sd__sched.is-on i {
+  background: var(--ok);
+}
+
+.sd__metrics {
+  display: grid;
+  flex-shrink: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 24px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-canvas);
+}
+
+.sd__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 16px;
+}
+
+.sd__metric + .sd__metric {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.sd__metric dt {
+  color: var(--text-tertiary);
+  font-size: var(--fs-kicker);
+}
+
+.sd__metric dd {
+  margin: 0;
+  color: var(--text-primary);
+  font: 650 20px / 1.1 var(--mono);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.sd__metric dd.is-up { color: var(--up); }
+.sd__metric dd.is-down { color: var(--down); }
+
+.sd__tabs {
+  flex-shrink: 0;
+  margin: 12px 0 0;
+  padding: 0 14px;
+}
+
+.sd__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 18px 24px 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.sd__body:focus-visible {
+  outline: none;
+}
+
+.sd__fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sd__foot {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-canvas);
+}
+
+@media (max-width: 640px) {
+  .sd__hero {
+    padding: 16px 48px 12px 16px;
+  }
+
+  .sd__title {
+    font-size: 20px;
+  }
+
+  .sd__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0 16px;
+  }
+
+  .sd__metric:nth-child(3) {
+    border-left: 0;
+  }
+
+  .sd__metric:nth-child(n + 3) {
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .sd__tabs {
+    padding: 0 6px;
+  }
+
+  .sd__body {
+    padding: 14px 16px 18px;
+  }
+
+  .sd__foot {
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0));
+  }
+}
 </style>

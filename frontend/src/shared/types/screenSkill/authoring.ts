@@ -117,6 +117,8 @@ export interface ScreenSkillGenerateRequest {
   dialect?: ScreenSkillDialect
   entrypoint?: string
   references?: ScreenSkillReference[]
+  /** 用户原话；没有资料来源时作为逻辑唯一可引用的来源 */
+  brief?: string
   provider?: string
   model?: string
   thinking?: string

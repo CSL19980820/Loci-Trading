@@ -291,7 +291,7 @@ onMounted(() => {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem @select="openCreate('blank')">空白新建</DropdownMenuItem>
-            <DropdownMenuItem @select="openCreate('description')">AI 草稿</DropdownMenuItem>
+            <DropdownMenuItem @select="openCreate('description')">AI 编写</DropdownMenuItem>
             <DropdownMenuItem @select="openCreate('tdx')">TDX 草稿</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

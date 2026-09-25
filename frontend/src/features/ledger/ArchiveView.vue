@@ -10,10 +10,11 @@ import { ArrowLeft, History } from '@lucide/vue'
 import ArchiveBatchDock from '@/features/ledger/components/ArchiveBatchDock.vue'
 import ArchiveBatchRail from '@/features/ledger/components/ArchiveBatchRail.vue'
 import StockTimeline from '@/features/ledger/components/StockTimeline.vue'
+import StrategyFootprint from '@/features/ledger/components/StrategyFootprint.vue'
+import { candidateStrategySlug, useStrategyFootprints } from '@/features/ledger/composables/useStrategyFootprints'
 import DataQueryDetailPanel from '@/features/market/components/DataQueryDetailPanel.vue'
 import { useQuotesQuery } from '@/features/market/composables/useQuotesQuery'
 import { chgClass, fmtChange, fmtPct } from '@/features/market/composables/dataQueryFormat'
-import { listCandidates } from '@/shared/api/palace'
 import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert'
 import { Button } from '@/shared/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
@@ -48,36 +49,31 @@ const quotesLimit = ref(320)
 const narrow = ref(false)
 const drawerOpen = ref(false)
 const historyOpen = ref(false)
-let signalsRequest = 0
-const strategySignals = ref<StrategySignalMark[]>([])
+const footprints = useStrategyFootprints(code)
+const footprintLanes = footprints.lanes
+const footprintBusy = footprints.loading
+const laneNameBySlug = computed(() => new Map(footprintLanes.value.map((lane) => [lane.slug, lane.name] as const)))
+const strategySignals = computed<StrategySignalMark[]>(() =>
+  footprints.candidates.value.map((item) => {
+    const slug = candidateStrategySlug(item)
+    return {
+      date: item.date,
+      strategyName: laneNameBySlug.value.get(slug) || strategyLabel(slug || '选股'),
+      strategySlug: slug,
+      decision: item.decision,
+      reason: item.reason,
+      score: item.score,
+    }
+  }),
+)
 
-async function loadStrategySignals(targetCode: string): Promise<void> {
-  const request = ++signalsRequest
-  const c = targetCode.trim()
-  if (!c) {
-    strategySignals.value = []
-    return
-  }
-  try {
-    const list = await listCandidates({ code: c, limit: 500, include_backfill: true })
-    if (request !== signalsRequest) return
-    strategySignals.value = list.map((item) => {
-      const rawName = item.rule_version || item.pool_id || '选股'
-      const displayName = strategyLabel(rawName)
-      return {
-        date: item.date,
-        strategyName: displayName,
-        strategySlug: item.pool_id || item.rule_version,
-        decision: item.decision,
-        reason: item.reason,
-        score: item.score,
-      }
-    })
-  } catch {
-    if (request !== signalsRequest) return
-    strategySignals.value = []
-  }
+/** 足迹点 → 锚定 K 线到那一天（与候选池带 ?date= 进档案同一条路） */
+function focusFootprint(date: string): void {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return
+  if (period.value !== 'day') period.value = 'day'
+  void router.replace({ query: { ...route.query, date } })
 }
+
 function quotesLimitFor(p: KPeriod): number {
   if (p === 'week') return Math.max(800, quotesLimit.value)
   if (p === 'month') return Math.max(1500, quotesLimit.value)
@@ -312,12 +308,7 @@ function barHasFocusDate(q: NonNullable<typeof quote.value>, d: string): boolean
 watch(
   () => code.value,
   (c) => {
-    if (c) {
-      batch.syncCode(c)
-      void loadStrategySignals(c)
-    } else {
-      strategySignals.value = []
-    }
+    if (c) batch.syncCode(c)
   },
   { immediate: true },
 )
@@ -466,6 +457,14 @@ onUnmounted(() => {
           />
           <StatCard layout="row" label="换手率" :value="turnoverText" :loading="quoteBusy && !lastBar" />
         </div>
+
+        <StrategyFootprint
+          class="sw-footprint"
+          :lanes="footprintLanes"
+          :loading="footprintBusy"
+          :focus-date="focusDate"
+          @pick="focusFootprint"
+        />
 
         <div class="sw-grid">
           <div class="sw-chart">
