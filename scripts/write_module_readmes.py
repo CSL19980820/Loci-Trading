@@ -119,7 +119,7 @@ docs = {
         title="脚本",
         duty="构建与一次性迁移脚本。",
         boundary="非运行时依赖。",
-        entries="`build-loci.ps1` · migrate_imports.py（历史）",
+        entries="`build-loci.ps1`",
         extend="临时脚本用完可删。",
         tests="—",
     ),

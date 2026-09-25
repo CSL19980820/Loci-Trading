@@ -61,3 +61,13 @@ _regbackup_*/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+
+# 编辑器/Agent 运行状态
+.cursor/hooks/state/
+
+# 根目录 Agent 工具依赖（非项目依赖）
+/package.json
+/package-lock.json
+
+# 可重新生成的审计清单
+docs/reviews/*-inventory.json

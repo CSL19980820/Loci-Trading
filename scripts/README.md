@@ -47,7 +47,7 @@
 - `dev-ui.ps1` — 本地 Vite 联调：prod 经 SSH 隧道连线上 54324，local 直连本机后端；退出即关隧道
 - `sync_boot_splash_index.py` — 把 `src.shared.boot_splash` 同步进 `frontend/index.html`（改启动页后必跑）
 - `upsert_agent_readme_sections.py` — 给模块 README 补 Agent 段落
-- `migrate_imports.py` / `rewrite_frontend_imports.py` / `write_module_readmes.py` — 历史迁移辅助
+- `write_module_readmes.py` — 历史迁移辅助
 - `legacy_strategy_combination_backtest.py` — 海底捞月、筹码峰突破、三外有三老版本的多条件组合回测
 - `qianlong_v1_combination_backtest.py` / `qianlong_v1_backtest_report.py` — 潜龙老版本多条件组合回测
 - `qianlong_structure_backtest.py` / `qianlong_structure_report.py` — 潜龙 v1/v2/v3 粗对比（旧）
