@@ -8,9 +8,11 @@
 
 有持仓且处于连续竞价时，先取持仓报价并检查已保存的结构化风险合同。有可执行触发、过期或失效事件时进入风险执行轮，不依赖新的模型回答；仅有缺价事件时保留风险回执，并继续研究其他机会，避免单股缺价使整个模型失去研究能力。旧自然语言计划不会自动变成风险订单。
 
-[`guardian_completion.py`](../src/ops/application/guardian_completion.py)和[`guardian_contract.py`](../src/ops/application/guardian_contract.py)要求本地`stopped_reason=completed`、上游结束原因`stop`或`end_turn`，且正文通过完整决策schema。`length`/`max_tokens`表示截断；缺失结束原因也不能直接成功，半段JSON恰好可解析不构成完整性证明。
+[`guardian_completion.py`](../src/ops/application/guardian_completion.py)和[`guardian_contract.py`](../src/ops/application/guardian_contract.py)要求本地`stopped_reason=completed`、上游结束原因`stop`或`end_turn`，且正文通过完整决策schema。`length`/`max_tokens`表示截断；缺失结束原因也不能直接成功，半段JSON恰好可解析不构成完整性证明。流已由供应商正常收尾（`[DONE]`/`message_stop`）却不回传结束原因时，直接以不可重放错误说明“供应商未返回结束原因”，不再按瞬时中断重跑两次完整生成；流内`error`事件原样报出真实原因（限流、过载、内容审核、余额等），其中限流/过载/上游超时仍按可恢复中断处理。
 
 首次出现允许修复的完整性或JSON错误时，最多追加一次无工具修复。使用已有输入、消息、工具证据和错误原因，重新输出完整JSON，不拼接残片、不重跑研究或成交。超时、取消、异常结束及轮数耗尽不能借修复绕过；修复后仍须通过同一契约。每次结束原因、输出长度、用量和错误诊断均保留。
+
+买入权限（科创板/北交所等不可买）属于逐笔订单问题，与结构契约分开：决策须先通过完整schema与竞价计划复核，才判权限。修复提示只要求撤回或替换越权买入，其余订单保持原判断。修复后仍越权、或修复输出本身无效时，采用已通过结构校验的决策，越权订单在预检中按`board_not_allowed`拒绝并计入受阻，其余意图（包括止损、减仓卖单）照常核价，不因单笔越权整轮作废。诊断分别记`accepted_with_policy_rejects`或`fallback=policy_rejected_original`。
 
 `thinking_requested`只记录请求的思考档位或`provider_default`，不能证明上游实际采用了相同档位。结束原因、返回的推理字段与请求配置是不同证据，不互相替代。
 
@@ -24,7 +26,7 @@
 | `kind=limit` | 至少一个原始价格边界，按用户授权允许最多2%执行偏离 |
 | `min_price` / `max_price` | 有限正数，拒绝布尔值；同时存在时下限不得超过上限 |
 | `reference_price` | 可选有限正数；另与其上下2%范围求交，后续刷新和最终修正不得移动 |
-| `valid_until` | 明确带时区的ISO时间，到达即失效 |
+| `valid_until` | ISO时间，到达即失效；应写明时区，漏写时按北京时间（+08:00）解释 |
 
 最高买价、最低卖价、突破或回踩区间必须写入价格字段，只写在`reason`中不构成执行约束。执行容差以原始基准计算一次：上限乘1.02、下限乘0.98，包含边界，使用Decimal比较；9.00上限允许9.01和9.18，不允许9.19。此为用户授权的应用执行容差，不冒称交易所申报价格笼子。实际金额按核验成交价记账，不回写为参考价。等待未来确认的机会使用hold/watch，不能把未满足条件写成当前market意图。
 
@@ -32,7 +34,7 @@
 
 ## 3. 共用报价验证与备用源
 
-[`guardian_quotes.py`](../src/ops/application/guardian_quotes.py)统一执行、估值及风险报价校验：对象有效、无源错误，价格为非布尔的有限正数；显式股票代码错配时拒绝。日期和时间合并为北京时间，年龄须在0至180秒内；缺时间、未来或过期报价均无效。
+[`guardian_quotes.py`](../src/ops/application/guardian_quotes.py)统一执行、估值及风险报价校验：对象有效、无源错误，价格为非布尔的有限正数；显式股票代码错配时拒绝。日期和时间合并为北京时间，年龄须在0至180秒内，允许行情时间最多比本机晚60秒（时钟偏差、按结束时刻标注的进行中分钟线）；缺时间、更晚的未来时间或过期报价均无效。
 
 [`guardian_tools.py`](../src/ops/application/guardian_tools.py)在悟道可用时优先取单股`minute_data`，最多四路并行。主源异常、缺报价、价格/代码/时间无效的股票进入系统备用源；主源不可用时直接走系统源。备用结果通过同一验证器，不能以旧价掩盖主源失败。
 
@@ -64,7 +66,9 @@
 
 修正只能降低原股数、撤回意图或调整留仓名单。按原股票和动作匹配，不新增股票、改变方向、重复意图、扩大数量、放宽价限或延长有效期；原limit不得变market。原非交易动作保留，程序不随意取整。收盘自动执行及风险执行轮不走此模型修正。
 
-修正后从同一未落账账户重新模拟，重新取价并校验窗口。`original_decision`、`initial_rejects`和修正诊断保存；成功修正也不擦除原拒单。被撤回的原交易另记`withdrawn`，即使最终零成交也不能改成主动无动作。
+模型修正时常照抄最初输出，省略程序绑定的`reference_price`和`opening_plan_id`；程序按原股票和动作补回原值后再校验（只会保持或收窄约束），不因此把合法缩量判为“移动参考价”。0股交易视为撤回。竞价计划复核沿用原决策；关联订单被撤回的execute计划记为受阻，不使整轮失败。
+
+修正后从同一未落账账户重新模拟，重新取价并校验窗口；首次取价未能绑定参考价的市价意图按本次首个有效报价绑定。`original_decision`、`initial_rejects`和修正诊断保存；成功修正也不擦除原拒单。被撤回的原交易另记`withdrawn`，即使最终零成交也不能改成主动无动作。
 
 最终`rejects`、`withdrawn`和错过窗口的意图合成`blocked`，决定受阻状态及通知。组合留仓预检失败不能留下半套换仓结果；已可独立核账的实际成交与未执行意图分别保留。
 
@@ -147,6 +151,7 @@ DNS解析在只读线程中执行；超期或取消时可放弃等待，但底�
 | 契约 | 回归入口 |
 |---|---|
 | 完整性及用量 | `tests/ops/test_guardian_agent_repair.py`、`test_guardian_usage.py` |
+| 单笔越权不整轮作废、修正沿用绑定 | `tests/test_guardian_repair_resilience.py` |
 | 取消、owner、过期与预检撤回 | `tests/ops/test_guardian_execution_safety.py`、`test_guardian_session.py` |
 | 主备报价和线程会话 | `tests/ops/test_guardian_quotes.py`、`test_guardian_tool_sessions.py`、`test_guardian_tools.py` |
 | 风险合同及账户 | `tests/ops/test_guardian_risk.py`、`tests/ledger/test_guardian_cash_account.py`、`test_guardian_position_limit.py` |

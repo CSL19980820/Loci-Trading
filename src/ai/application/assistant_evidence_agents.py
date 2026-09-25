@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
@@ -19,6 +20,8 @@ EventCallback = Callable[[dict[str, Any]], None]
 RoleName = Literal["market", "qianlong", "web", "research"]
 
 _MAX_ROLES = 3
+#: 并行取证的墙钟上限（秒）；到点后子 Agent 以失败 brief 收场，主环照常回答。
+_EVIDENCE_SECONDS = 180.0
 _BRIEF_PER_AGENT = 800
 _BRIEF_TOTAL = 2400
 
@@ -166,11 +169,21 @@ def run_evidence_agents(
     ops_db: str | None,
     on_event: EventCallback | None = None,
     specs: list[EvidenceRoleSpec] | None = None,
+    check_cancelled: Callable[[], None] | None = None,
+    deadline: float | None = None,
 ) -> list[dict[str, Any]]:
-    """并行跑角色化只读取证；发 plan/subagent_*；返回结果列表供 brief。"""
+    """并行跑角色化只读取证；发 plan/subagent_*；返回结果列表供 brief。
+
+    ``check_cancelled`` / ``deadline`` 透传给每个子 Agent：用户取消或整轮超时后
+    子 Agent 不再继续请求模型。子 Agent 失败只落成失败 brief，不拖垮主回答；
+    每行带 ``input_tokens`` / ``output_tokens`` 供调用方计费。
+    """
     roles = list(specs) if specs is not None else plan_evidence_roles(prompt)
     if not roles:
         return []
+    if deadline is not None:
+        # 取证只是给主环的线索，不能吃掉主回答的全部时间预算。
+        deadline = min(deadline, time.monotonic() + _EVIDENCE_SECONDS)
     if on_event:
         on_event(
             {
@@ -291,6 +304,8 @@ def run_evidence_agents(
                 max_rounds=max(spec.max_rounds, 5),
                 max_tokens=spec.max_tokens,
                 emit_terminal_event=False,
+                check_cancelled=check_cancelled,
+                deadline=deadline,
             )
             ok = result.stopped_reason == "completed"
             text = (result.text or "").strip()[:4000]
@@ -315,9 +330,14 @@ def run_evidence_agents(
                 "role": spec.role,
                 "ok": ok,
                 "text": text,
+                "model": result.model,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
             }
         except Exception as exc:
             detail = f"{type(exc).__name__}: {exc}"
+            usage = getattr(exc, "usage", None)
+            usage = usage if isinstance(usage, dict) else {}
             if on_event:
                 on_event(
                     {
@@ -336,6 +356,9 @@ def run_evidence_agents(
                 "role": spec.role,
                 "ok": False,
                 "text": detail,
+                "model": str(usage.get("model") or ""),
+                "input_tokens": int(usage.get("input_tokens") or 0),
+                "output_tokens": int(usage.get("output_tokens") or 0),
             }
 
     results: list[dict[str, Any]] = []
@@ -348,7 +371,12 @@ def run_evidence_agents(
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ai-evidence") as pool:
         futures = {submit_with_tenant(pool, run_one, spec): spec for spec in roles}
         for future in as_completed(futures):
-            results.append(future.result())
+            spec = futures[future]
+            try:
+                results.append(future.result())
+            except Exception as exc:  # noqa: BLE001 — 取证是线索，不能把主回答一起带崩
+                results.append({"id": spec.id, "name": spec.name, "role": spec.role,
+                                "ok": False, "text": f"{type(exc).__name__}: {exc}"})
     order = {spec.id: i for i, spec in enumerate(roles)}
     results.sort(key=lambda row: order.get(str(row.get("id")), 999))
     return results

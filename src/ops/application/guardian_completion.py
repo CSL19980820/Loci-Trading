@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from src.ops.application.guardian_contract import completion_error
-from src.ops.application.guardian_decision import GuardianDecision, parse_decision
+from src.ops.application.guardian_decision import GuardianDecision, OrderPolicyError, parse_decision
 from src.ops.application.guardian_research_context import evidence_snapshot
 from src.ops.application.guardian_output import JSON_OUTPUT_RULES, failed_response
 
@@ -94,6 +94,16 @@ def complete_decision(provider: Any, store: Any, *, system: str, payload: dict, 
                      retry_stream_failures=True,
                      recover_interrupted_generation=True,
                      max_parallel_tools=int(config.get("parallel_tools", 4)), parallel_tool_names=parallel)
+    def accepted(decision: GuardianDecision, result: Any) -> tuple[GuardianDecision, dict]:
+        usage.update(raw=result.text, elapsed_ms=int((time.monotonic() - started) * 1000),
+                     **evidence_snapshot(archive),
+                     _repair={"messages": result.messages, "system": system, "text": result.text,
+                              "tool_schemas": schemas, "tool_executor": execute, "archive": archive,
+                              "parallel_tool_names": parallel})
+        return decision, usage
+
+    # 首轮完整、合契约但个别订单越权时的原决策；修复不成功就退回它，只拒越权订单。
+    policy_fallback: tuple[GuardianDecision, Any] | None = None
     try:
         for attempt in range(2):
             checkpoint()
@@ -106,23 +116,34 @@ def complete_decision(provider: Any, store: Any, *, system: str, payload: dict, 
                 if error:
                     raise ValueError(error)
                 decision = decision_parser(result.text, require_execution_terms=True)
-                usage.update(raw=result.text, elapsed_ms=int((time.monotonic() - started) * 1000),
-                             **evidence_snapshot(archive),
-                             _repair={"messages": result.messages, "system": system, "text": result.text,
-                                      "tool_schemas": schemas, "tool_executor": execute, "archive": archive,
-                                      "parallel_tool_names": parallel})
-                return decision, usage
+                return accepted(decision, result)
             except ValueError as exc:
                 diagnostic["error"] = str(exc)[:1500]
                 failed_response(diagnostic, result.text)
+                if attempt and isinstance(exc, OrderPolicyError):
+                    # 修复后仍越权：不再整轮作废（那会连同止损卖单一起丢掉），
+                    # 越权订单交给撮合预检按 board_not_allowed 拒绝并保持可见。
+                    diagnostic["accepted_with_policy_rejects"] = True
+                    return accepted(exc.decision, result)
+                if attempt and policy_fallback is not None:
+                    diagnostic["fallback"] = "policy_rejected_original"
+                    return accepted(*policy_fallback)
                 if attempt or result.stopped_reason != "completed" or result.finish_reason not in {"", "stop", "end_turn", "length", "max_tokens"}:
                     raise
+                if isinstance(exc, OrderPolicyError):
+                    policy_fallback = (exc.decision, result)
+                    # 旧提示“保留原判断、方向、数量”与“撤回越权买入”互相矛盾，模型往往原样重交。
+                    instruction = (f"账户权限校验未通过：{diagnostic['error']}。仅撤回或替换这些不可买入/加仓的意图："
+                                   "可改为watch记录，或在沪深主板/创业板范围内自主选择替代标的并按需用工具重新核验；"
+                                   "其余订单的判断、方向、数量及条件保持不变。输出完整合法决策JSON，不拼接残片。")
+                else:
+                    instruction = (f"上次完整性/JSON契约校验失败：{diagnostic['error']}。修复格式时保留原判断、方向、数量及条件，不因重新输出而另换一套决策；若证据或执行校验要求改变意图，明确说明原因。基于已取得事实输出完整合法决策，不拼接残片。仍可按需调用本轮全部工具补查证据，不必重复已完成研究。买卖必须明确execution：原意图缺少时按原判断补全价格授权与有效期；只有你判断条件确实不成立或无法确认时才改为hold/watch，并在reason说明。")
                 messages = messages_from_json(result.messages)
                 if not messages:
                     messages = [ChatMessage(role="user", content=json.dumps(payload, ensure_ascii=False, default=str))]
                 if messages[-1].role != "assistant" or messages[-1].content != result.text:
                     messages.append(ChatMessage(role="assistant", content=result.text))
-                messages.append(ChatMessage(role="user", content=f"上次完整性/JSON契约校验失败：{diagnostic['error']}。修复格式时保留原判断、方向、数量及条件，不因重新输出而另换一套决策；若证据或执行校验要求改变意图，明确说明原因。基于已取得事实输出完整合法决策，不拼接残片。仍可按需调用本轮全部工具补查证据，不必重复已完成研究。买卖必须明确execution：原意图缺少时按原判断补全价格授权与有效期；只有你判断条件确实不成立或无法确认时才改为hold/watch，并在reason说明。"))
+                messages.append(ChatMessage(role="user", content=instruction))
                 arguments = {key: value for key, value in arguments.items() if key != "user_prompt"}
                 arguments.update(messages=messages, temperature=0)
     except BaseException as exc:

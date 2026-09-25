@@ -6,6 +6,10 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+#: 行情时间最多可比本机时钟晚这么多秒：服务器与行情源的时钟偏差，以及按结束时刻标注的
+#: 进行中分钟线（10:02:30 取到的最新一根标 10:03）。零容差会把这些当前报价判成“来自未来”，
+#: 主源整体被弃用、持仓缺价，进而拒单。更晚的时间仍视为无效。
+FUTURE_SKEW_SECONDS = 60
 
 
 def fresh_quote(quote: dict[str, Any], now: datetime, *, max_age_seconds: int = 180) -> bool:
@@ -16,7 +20,7 @@ def fresh_quote(quote: dict[str, Any], now: datetime, *, max_age_seconds: int = 
     except (ValueError, TypeError):
         return False
     current = now.replace(tzinfo=SHANGHAI) if now.tzinfo is None else now
-    return 0 <= (current - stamp).total_seconds() <= max_age_seconds
+    return -FUTURE_SKEW_SECONDS <= (current - stamp).total_seconds() <= max_age_seconds
 
 
 def quote_error(code: str, quote: dict[str, Any], now: datetime) -> str | None:

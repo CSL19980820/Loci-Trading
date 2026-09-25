@@ -49,7 +49,9 @@ def pending_opening_plans(ledger, now):
             for p in fold_opening_plans(ledger.opening_plan_cycles(now.date().isoformat()), now) if p['status'] not in TERMINAL]
 
 
-def validate_opening_reviews(decision, plans):
+def validate_opening_reviews(decision, plans, *, withdrawn_plan_ids=frozenset()):
+    """``withdrawn_plan_ids``：预检修正撤回了关联订单的计划，保留原execute复核，
+    由 ``opening_plan_updates`` 记为受阻（程序撤回），而不是让整轮失败。"""
     by_id = {p['id']: p for p in plans}
     reviews = {r.plan_id: r for r in decision.opening_plan_reviews}
     if len(reviews) != len(decision.opening_plan_reviews) or set(reviews) != set(by_id):
@@ -66,6 +68,8 @@ def validate_opening_reviews(decision, plans):
             raise ValueError('竞价计划关联的股票和买卖方向不匹配')
         linked[order.opening_plan_id] = order
     for plan_id, review in reviews.items():
+        if plan_id in withdrawn_plan_ids and plan_id not in linked:
+            continue
         if (review.decision == 'execute') != (plan_id in linked):
             raise ValueError('执行计划须绑定新订单；观察或放弃计划不得绑定交易订单')
 

@@ -5,8 +5,15 @@
 保存供应商仍为离线操作，不自动测试或拉取模型目录。
 
 LLM 请求遇到发送前的连接失败（含 TLS 握手中断）或连接超时时，等待 1 秒、2 秒各重试一次。
+上游明确拒收、尚未开始生成的 429 / 503 / 529 同样最多重放两次：按 `Retry-After`（≤8 秒）或 1 秒、2 秒退避，
+超过上限、剩余期限不够或走 gRPC 网关（可能已执行）时不重放，原样报错。
 仅重试当前请求，保留 Agent 的工具结果；读写/流中断、HTTP 余额或参数错误不在该重试范围内，持续连接失败仍如实报错。
-回归：`tests/ai/test_connection_retry.py`。
+回归：`tests/ai/test_llm_upstream_retry.py`。
+
+助手后台运行：取消经 `RunCancelWatch` 节流读库传进 Agent 环（含证据子 Agent），取消后不再继续请求模型或执行工具、
+尽快释放进程内有限的助手 worker；整轮墙钟上限 `LOCI_AI_ASSISTANT_RUN_TIMEOUT_SEC`（默认 1200 秒），证据子 Agent 另限 180 秒。
+异常/取消出口按已返回响应计费，证据子 Agent 的用量也计入配额。流事件缓冲跨线程串行写库（并行子 Agent / 后台任务回调）。
+回归：`tests/ai/test_assistant_run_robustness.py`。
 
 ## 职责
 通用 LLM 供应商、对话、Agent / toolbus。不发明数字。
@@ -100,6 +107,8 @@ submit_with_tenant(self._pool, self._run, run_id)    # 取代 self._pool.submit(
 
 流式适配器保留OpenAI `finish_reason`和Anthropic `stop_reason`，AgentResult.finish_reason及to_dict原样带给调用方；stopped_reason仍表示本地工具循环结束原因。结构化报告须区分正常结束与length/max_tokens截断，不能仅凭循环completed保存成功。
 
+OpenAI兼容流里的`{"error": ...}`块与Anthropic `error`事件会原样报出上游原因（限流、过载、内容审核、余额……），不再被当作普通块跳过、最后只剩“流在结束标记前中断”。显式开启完整性核验的调用方（`first_response_timeout`，如交易员/个股智能体）：限流/过载/上游超时为可恢复中断，其余为不可重放错误；流已正常收尾（`[DONE]`/`message_stop`）但缺结束原因时给出明确的不可重放错误，不白跑两次恢复。普通对话仍接受不回传结束原因的供应商。交易员咨询是只读正文：缺结束原因时照常采用（记`finish_reason_missing`），截断仍判失败。回归：`tests/ai/test_llm_upstream_retry.py`。
+
 ### 额度与计费
 
 - `application/quota.py` 是唯一入口：`current_llm_quota()` / `check_llm_quota()` / `record_llm_usage()` / `QuotaExceeded`，包根也导出（`from src.ai import check_llm_quota, record_llm_usage`）。
@@ -138,6 +147,7 @@ submit_with_tenant(self._pool, self._run, run_id)    # 取代 self._pool.submit(
 - 写入由 `AssistantManager` 自动签发绑定本次运行、工具和参数摘要的 `ExecutionGrant`；它提供单次消费、幂等与审计，不要求逐笔匹配用户原话。
 - 同一会话同一时刻只允许一条运行；应用启动会把无法跨进程续跑的遗留 `running` 记录标记为中断失败，并保留事件与错误原因。`waiting_user` 跨重启保留，用户仍可回复后**同 run_id resume**。
 - HITL：仅 `waiting_user` / `ask_user`（无独立「工具回执等待确认」事件）。工具要求用户确认时，run/session 进入 `waiting_user`（不发 `done`）。主环 `allow_hitl=True`；系统工具面内置 `ask_user`（以及 Skill 同名内置）。`ask_user` 支持旧单题 `prompt`+`options`，以及多题 `questions[{id,prompt,options?,allow_free_text?}]`（无 `questions` 时旧参数仍可用；缺 `prompt` 且无 `questions` → `is_error`）。`pending_ask` / 消息 `hitl` 持久化完整 `questions`；暂停时把 agent transcript 写入 `result.agent_messages`。用户再次 `POST .../messages`（正文可为结构化多题答案）走 `resume_waiting_run`：**同一 `run_id` 回到 `running`**，用户正文覆盖末条 HITL tool result 后续 `run_agent`；也可 `POST .../cancel` 直接取消等待。`GET /api/ai/sessions/{id}` 回可选 `active_run`（占用中的 `running` / `waiting_user`，含事件 `cursor` 与 `pending_ask`）；归档/删除在 `running` 或 `waiting_user` 时拒绝。`public_run` 不会把已 `completed` 的 run 因残留 `cancel_requested` 伪装成 `cancelled`。消息 metadata 折叠含 `hitl`。
+- 并发：助手后台 worker 全进程共用，默认 4 个，`LOCI_AI_ASSISTANT_WORKERS` 可调（1–32）。会话标题与自动记忆整理的模型调用同样计入用量。
 - 取消：`cancel_run` 对 `running` / `waiting_user` **立即**落 `cancelled` 并释放会话为 `idle`，以便马上发下一轮；worker 见 `cancel_requested` 后幂等收口（`finish_run` 对已终态 no-op）。助手落库走 `append_assistant_if_run_active`（仅 `running` 且未取消），避免取消后迟到正文插到新 user 之后；`done` 仅在 `finish_run(completed)` 真正生效后发出。
 - 多轮喂模：`list_messages` 最近 **200** 条组历史后，优先读 `session.metadata.context_feed`（手动 `/compact` 或上次自动压缩写入的喂模快照）再拼 `through_seq` 之后新消息；否则全量历史。再按 `context_compact` 对**喂模 messages** 做自动压缩（超可用窗 70% 才压；保留近 6 轮原文；更早轮确定性摘要，可选 LLM summarizer；失败头尾拼接，禁止静默丢光）。**手动** `AssistantManager.compact_session` / `POST .../compact` 以 `force=True` 无视阈值强制压，结果写入 `context_feed`。**不删不改 SQLite 会话原文**；与 `maybe_auto_consolidate_memory` 独立。压缩时发 SSE `context_compacted`（折叠进本轮 `warnings`）；前端用量环与时间线可见「已压缩」。**跳过空正文且无附图的 assistant**（取消/落库竞态残留），避免污染下一轮上下文。
 - 新 run 会在持久化用户消息前过一次**每用户配额**（`application/quota.py`）：月度输入+输出 Token 与当日调用次数都判，用尽直接拒绝本轮。额度取自 `identity.db` 的 `user_quotas`（`llm_monthly_tokens` / `llm_daily_calls`；`0`=用系统默认，负数=不限），身份库不可用或该租户还没建账号时降级回 `LOCI_AI_MONTHLY_TOKEN_BUDGET` / `LOCI_AI_DAILY_CALL_BUDGET`（默认 `1_000_000` / 不限）。`AssistantManager(monthly_token_budget=...)` 显式传值仍然最优先（测试与单机钉额度）。

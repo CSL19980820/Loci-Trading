@@ -20,6 +20,26 @@ from src.ledger.infrastructure.stock_agent_schema import SCHEMA
 from src.shared.paths import palace_db
 
 
+def _exceeds_agent_limits(cfg: dict[str, Any], previous: dict[str, Any], state: dict[str, Any]) -> bool:
+    """本轮使持仓/观察/当日入选数量越过上限并继续变大时拒绝提交。
+
+    下调上限后账户本就越限：卖出、撤观察等不增加数量的收敛动作仍须能落账，
+    否则每轮都在提交处失败，止损也执行不了。
+    """
+    def selected(value: dict[str, Any]) -> tuple[str, int]:
+        today = value.get("selected_today") or {}
+        return str(today.get("date") or ""), len(today.get("codes") or [])
+
+    def grew(limit: Any, before: int, after: int) -> bool:
+        return bool(limit) and after > limit and after > before
+
+    day, chosen = selected(state)
+    previous_day, previous_chosen = selected(previous)
+    return (grew(cfg["temporary_position_limit"], len(previous.get("positions", [])), len(state["positions"]))
+            or grew(cfg["watch_limit"], len(previous.get("watchlist", [])), len(state.get("watchlist", [])))
+            or grew(cfg["daily_selection_limit"], previous_chosen if previous_day == day else 0, chosen))
+
+
 class StockAgentStore(StockAgentHistoryMixin):
     def __init__(self, db_path: str | Path | None = None):
         self.db_path = Path(db_path or palace_db())
@@ -208,9 +228,7 @@ class StockAgentStore(StockAgentHistoryMixin):
                             f.get("side") == "buy" or f.get("code") not in held for f in fills):
                         raise ValueError("龙头选手盘中仅管理已有持仓，禁止修改观察池或提交新增买入")
             state_json = encode_agent_json(state)
-            if ((cfg["temporary_position_limit"] and len(state["positions"]) > cfg["temporary_position_limit"])
-                    or (cfg["watch_limit"] and len(state.get("watchlist", [])) > cfg["watch_limit"])
-                    or (cfg["daily_selection_limit"] and len(state.get("selected_today", {}).get("codes", [])) > cfg["daily_selection_limit"])):
+            if _exceeds_agent_limits(cfg, profile["state"], state):
                 raise ValueError("账户超出智能体数量约束")
             if before_commit:
                 before_commit()

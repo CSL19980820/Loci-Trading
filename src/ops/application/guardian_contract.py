@@ -5,14 +5,17 @@ from datetime import datetime
 from decimal import Decimal
 import math
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class ExecutionTerms(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     kind: Literal["market", "limit"]
-    valid_until: str = Field(description="ISO timestamp with explicit timezone; intent expiry")
+    valid_until: str = Field(description="ISO timestamp with explicit timezone (+08:00); intent expiry")
     min_price: float | None = Field(default=None, gt=0)
     max_price: float | None = Field(default=None, gt=0)
     reference_price: float | None = Field(default=None, gt=0,
@@ -30,7 +33,9 @@ class ExecutionTerms(BaseModel):
     def aware_expiry(cls, value: str) -> str:
         stamp = datetime.fromisoformat(value)
         if stamp.tzinfo is None or stamp.utcoffset() is None:
-            raise ValueError("Intent expiry requires an explicit timezone")
+            # 只交易A股、全程北京时间，输入的execution_deadline也是+08:00：漏写时区没有歧义，
+            # 按北京时间解释，不再因此让整份决策作废。含时区的输入保持原样。
+            stamp = stamp.replace(tzinfo=SHANGHAI)
         return stamp.isoformat()
 
     @model_validator(mode="after")

@@ -184,7 +184,9 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
                 if corrected is not decision:
                     withdrawn = withdrawn_orders(decision, corrected, rejects)
                     decision = corrected
-                    validate_opening_reviews(decision, opening_plans_pending)
+                    # 修正撤回竞价计划的关联订单是程序受阻（opening_plan_updates记blocked），不是整轮失败。
+                    validate_opening_reviews(decision, opening_plans_pending, withdrawn_plan_ids={
+                        item["opening_plan_id"] for item in withdrawn if item.get("opening_plan_id")})
                     failure_stage = "final_quotes"
                     execution_codes = list(dict.fromkeys([p["code"] for p in state["positions"]] + [o.code for o in decision.orders if o.action in TRADE_ACTIONS]))
                     quotes = build_monitor_snapshot(execution_codes, include_minute=False, force_refresh=True,
@@ -192,6 +194,8 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
                     context.check_cancelled()
                     finished = datetime.now(ZoneInfo("Asia/Shanghai"))
                     can_execute = execution_window(now, finished, time.monotonic() - started)
+                    # 已绑定的参考价由修正沿用；首次取价未能绑定的市价意图按本次首个有效报价绑定。
+                    decision = bind_execution_references(decision, quotes, finished)
                     deferred = [o.model_dump(mode="json") for o in decision.orders if o.action in TRADE_ACTIONS] if not can_execute else []
                     executable = decision if can_execute else decision.model_copy(update={"orders": [o for o in decision.orders if o.action not in TRADE_ACTIONS]})
                     failure_stage = "preflight"
@@ -278,15 +282,21 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             if committed:
                 raise
             failed_at = datetime.now(ZoneInfo("Asia/Shanghai"))
-            saved_state = ledger.state()
             try:
-                saved_state = mark_guardian_account(saved_state, {}, failed_at)
-            except (ValueError, KeyError, TypeError) as valuation_exc:
-                saved_state = {**saved_state, "valuation_error": str(valuation_exc)}
-            # Failed preflight fills were rolled back and must never enter daily totals.
-            notice_state = with_notification_facts(saved_state,
-                load_notification_day(ledger, failed_at), [], slot=slot)
-            error_body = render_failure_notice(notice_state, exc, failure_stage)
+                saved_state = ledger.state()
+                try:
+                    saved_state = mark_guardian_account(saved_state, {}, failed_at)
+                except (ValueError, KeyError, TypeError) as valuation_exc:
+                    saved_state = {**saved_state, "valuation_error": str(valuation_exc)}
+                # Failed preflight fills were rolled back and must never enter daily totals.
+                notice_state = with_notification_facts(saved_state,
+                    load_notification_day(ledger, failed_at), [], slot=slot)
+                error_body = render_failure_notice(notice_state, exc, failure_stage)
+            except Exception as notice_exc:
+                # 失败收口本身不能再抛错：否则本轮停在running、原始错误被新异常遮住、也不通知。
+                notice_state = {"notification_day": {}}
+                error_body = (f"本轮未完成 · {failure_stage}\n原因 · {exc}\n本轮无已落账成交；预检结果不计成交。"
+                              f"\n账户概览暂不可用：{type(notice_exc).__name__}: {notice_exc}")
             cancelled = isinstance(exc, JobCancelled)
             orders = decision.model_dump(mode="json")["orders"] if decision is not None else []
             blocked = [{**order, "reject_code": "cancelled" if cancelled else "execution_failed",
