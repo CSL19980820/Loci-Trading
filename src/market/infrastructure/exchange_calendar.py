@@ -3,7 +3,7 @@ import json
 import re
 import time
 import urllib.request
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html import unescape
 from pathlib import Path
 from uuid import uuid4
@@ -93,3 +93,30 @@ def calendar_trading_day(day: str) -> bool:
     if time.time()-snapshot.get('checked_at', 0) > MAX_AGE:
         raise ValueError('交易所日历未就绪或超过72小时未验证，本轮静默暂停，等待盘外更新')
     return bool(scheduled_trading_days(day, day))
+
+
+def exchange_open_days(start: str, end: str) -> list[str]:
+    """[start, end] 内交易所开市的日子：公告休市日程（内置 + 盘外刷新快照）优先，
+    该年度日程尚未公布时按周一至周五兜底。
+
+    行情库 ``trading_calendar`` 由已入库日 K 重建，天然不含“今天及以后”，更不知道
+    节假日。会话闸门、补数和体检凡是遇到行情库日历没覆盖的日子，都用这里判断，
+    不再各自按周一至周五猜——那样会把中秋、国庆等工作日休市当成交易日去补数。
+    与 ``calendar_trading_day`` 不同，这里不要求快照 72 小时内验证过：内置日程本身
+    就来自交易所年度公告，只用于判断“要不要补数/轮询”，不用于放行成交。
+    """
+    first, last = date.fromisoformat(start), date.fromisoformat(end)
+    years = {**HOLIDAYS, **{int(k): v for k, v in read_calendar().get('years', {}).items()}}
+    result = []
+    day = first
+    while day <= last:
+        spans = years.get(day.year)
+        mmdd = day.strftime('%m-%d')
+        if day.weekday() < 5 and not (spans and any(a <= mmdd <= b for a, b in spans)):
+            result.append(day.isoformat())
+        day += timedelta(days=1)
+    return result
+
+
+def exchange_is_open(day: str) -> bool:
+    return bool(exchange_open_days(day, day))

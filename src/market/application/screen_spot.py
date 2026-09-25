@@ -83,9 +83,12 @@ def coverage_ready(
 def _is_trading_day(store: MarketStore, day: date) -> bool:
     """今天是不是交易日。
 
-    交易日历优先；日历缺失或已过期（最大日早于今天）时退回工作日粗判——与
-    ``application/session.py`` 同一策略，避免「日历没更新」被误读成「今天休市」。
+    交易日历优先；日历缺失或已过期（最大日早于今天）时按交易所公告休市日程判断——与
+    ``application/session.py`` 同一策略：既不把「日历没更新」误读成休市，也不把中秋、
+    国庆等工作日休市当成交易日。
     """
+    from src.market.infrastructure.exchange_calendar import exchange_is_open
+
     today = day.isoformat()
     try:
         days = store.trading_days()
@@ -100,7 +103,7 @@ def _is_trading_day(store: MarketStore, day: date) -> bool:
                 return False
         except Exception:
             pass
-    return day.weekday() < 5
+    return exchange_is_open(today)
 
 def in_open_session(store: MarketStore, *, now: datetime | None = None) -> bool:
     """是否「盘中」：今天是交易日，且还没收盘（[09:15, 15:00)）。"""

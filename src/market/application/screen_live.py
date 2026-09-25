@@ -42,17 +42,19 @@ class ScreenLiveError(RuntimeError):
 
 
 def in_live_screen_clock(now: datetime | None = None) -> bool:
-    """工作日 [09:15, 15:00)。节假日粗判：周末必否，交易日交给调用方。"""
+    """交易日 [09:15, 15:00)。周末与交易所公告的节假日一律否。"""
     if now is None:
         current = datetime.now(_TZ)
     elif now.tzinfo is None:
         current = now.replace(tzinfo=_TZ)
     else:
         current = now.astimezone(_TZ)
-    if current.weekday() >= 5:
-        return False
     minutes = current.hour * 60 + current.minute
-    return _OPEN_MIN <= minutes < _CLOSE_MIN
+    if not _OPEN_MIN <= minutes < _CLOSE_MIN:
+        return False
+    from src.market.infrastructure.exchange_calendar import exchange_is_open
+
+    return exchange_is_open(current.date().isoformat())
 
 
 def should_overlay_live(
