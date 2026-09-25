@@ -7,6 +7,7 @@
     python market.py coverage                       看仓库现状
     python market.py strategies                     列出已注册战法
     python market.py screen qianlong-close          跑一次全市场选股
+    python market.py rescore --since 2026-09-01     按当前评分口径重算已入库三源/杨氏候选（默认预览）
     python market.py bench                          面板加载与选股性能实测
 
 设计上刻意让每个子命令都能单独重跑：同步有 watermark 断点，选股是纯函数，
@@ -42,6 +43,7 @@ from cli.market_intraday import (
     cmd_intraday_prune,
  cmd_intraday_status,
 )
+from src.shared.paths import palace_db
 from src.strategy import describe_all, get, screen
 
 DISCLAIMER = "本工具仅用于信息整理与方法论辅助，输出不构成任何投资建议。股市有风险，入市需谨慎。"
@@ -165,6 +167,51 @@ def cmd_screen(args: argparse.Namespace) -> int:
         print("  （当日无标的满足条件）")
     print()
     print(DISCLAIMER)
+    return 0
+
+
+def cmd_rescore(args: argparse.Namespace) -> int:
+    """按战法当前评分口径重算已入库候选（默认只预览；--apply 前先备份账本）。"""
+    import sqlite3
+    from datetime import datetime
+
+    from src.ledger import PalaceStore
+    from src.strategy.application.rescore import apply_rescore, plan_rescore
+
+    palace_path = Path(args.palace_db)
+    if not palace_path.exists():
+        print(f"账本不存在：{palace_path}", file=sys.stderr)
+        return 2
+    slugs = [slug.strip() for slug in args.strategy.split(",") if slug.strip()]
+    with _store(args) as store, PalaceStore(palace_path) as palace:
+        plan = [{**row, "strategy": slug} for slug in slugs
+                for row in plan_rescore(palace, store, slug, since=args.since, until=args.until)]
+        if not plan:
+            print(f"{'、'.join(slugs)} 在所选日期范围内没有已入库候选")
+            return 0
+        print(f"{'战法':<18}{'日期':<12}{'代码':<8}{'名称':<10}{'裁决':<6}{'旧分':>8}{'新分':>8}  状态")
+        for row in plan:
+            old = "—" if row["old_score"] is None else f"{row['old_score']:.1f}"
+            new = "—" if row["new_score"] is None else f"{row['new_score']:.1f}"
+            note = f"  {row['note']}" if row["note"] else ""
+            print(f"{row['strategy']:<18}{row['occurred_on']:<12}{row['code']:<8}{str(row['name'])[:8]:<10}"
+                  f"{row['decision']:<6}{old:>8}{new:>8}  {row['status']}{note}")
+        counts = {status: sum(r["status"] == status for r in plan) for status in {r["status"] for r in plan}}
+        print("汇总：" + "，".join(f"{key} {value}" for key, value in sorted(counts.items())))
+        if not args.apply:
+            print("预览模式，未写入。确认后加 --apply；写入前会先备份账本。")
+            return 0
+        if not counts.get("updated"):
+            print("没有需要更新的行")
+            return 0
+        backup = palace_path.with_name(f"{palace_path.name}.bak-rescore-{datetime.now():%Y%m%d%H%M%S}")
+        target = sqlite3.connect(backup)
+        try:
+            palace.conn.backup(target)
+        finally:
+            target.close()
+        changed = apply_rescore(palace, plan)
+        print(f"已更新 {changed} 行；备份：{backup}（回退：停服后用备份替换账本）")
     return 0
 
 
@@ -442,6 +489,15 @@ def build_parser() -> argparse.ArgumentParser:
     scr.add_argument("--params", default="", help="覆盖参数的 JSON")
     scr.add_argument("--json", action="store_true", help="输出完整 JSON")
     scr.set_defaults(func=cmd_screen)
+
+    rescore = sub.add_parser("rescore", help="按当前评分口径重算已入库候选的评分（默认预览）")
+    rescore.add_argument("--strategy", default="sanyuan-tail-v1,yangshi-tail-v1",
+                         help="逗号分隔的战法 slug（默认三源尾盘共振、杨氏尾盘选股）")
+    rescore.add_argument("--palace-db", default=str(palace_db()), help="账本路径（默认当前数据目录的 palace.db）")
+    rescore.add_argument("--since", default=None, help="起始候选日 YYYY-MM-DD")
+    rescore.add_argument("--until", default=None, help="截止候选日 YYYY-MM-DD")
+    rescore.add_argument("--apply", action="store_true", help="写入账本（先自动备份）；不加只预览")
+    rescore.set_defaults(func=cmd_rescore)
 
     bench = sub.add_parser("bench", help="实测选股性能")
     bench.add_argument("--strategy", default="qianlong-close")
