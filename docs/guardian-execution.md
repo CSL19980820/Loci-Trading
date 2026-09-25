@@ -8,7 +8,7 @@
 
 有持仓且处于连续竞价时，先取持仓报价并检查已保存的结构化风险合同。有可执行触发、过期或失效事件时进入风险执行轮，不依赖新的模型回答；仅有缺价事件时保留风险回执，并继续研究其他机会，避免单股缺价使整个模型失去研究能力。旧自然语言计划不会自动变成风险订单。
 
-[`guardian_completion.py`](../src/ops/application/guardian_completion.py)和[`guardian_contract.py`](../src/ops/application/guardian_contract.py)要求本地`stopped_reason=completed`、上游结束原因`stop`或`end_turn`，且正文通过完整决策schema。`length`/`max_tokens`表示截断；缺失结束原因也不能直接成功，半段JSON恰好可解析不构成完整性证明。
+[`guardian_completion.py`](../src/ops/application/guardian_completion.py)和[`guardian_contract.py`](../src/ops/application/guardian_contract.py)要求本地`stopped_reason=completed`、上游结束原因`stop`或`end_turn`，且正文通过完整决策schema。`length`/`max_tokens`表示截断；缺失结束原因也不能直接成功，半段JSON恰好可解析不构成完整性证明。流已由供应商正常收尾（`[DONE]`/`message_stop`）却不回传结束原因时，直接以不可重放错误说明“供应商未返回结束原因”，不再按瞬时中断重跑两次完整生成；流内`error`事件原样报出真实原因（限流、过载、内容审核、余额等），其中限流/过载/上游超时仍按可恢复中断处理。
 
 首次出现允许修复的完整性或JSON错误时，最多追加一次无工具修复。使用已有输入、消息、工具证据和错误原因，重新输出完整JSON，不拼接残片、不重跑研究或成交。超时、取消、异常结束及轮数耗尽不能借修复绕过；修复后仍须通过同一契约。每次结束原因、输出长度、用量和错误诊断均保留。
 
@@ -26,7 +26,7 @@
 | `kind=limit` | 至少一个原始价格边界，按用户授权允许最多2%执行偏离 |
 | `min_price` / `max_price` | 有限正数，拒绝布尔值；同时存在时下限不得超过上限 |
 | `reference_price` | 可选有限正数；另与其上下2%范围求交，后续刷新和最终修正不得移动 |
-| `valid_until` | 明确带时区的ISO时间，到达即失效 |
+| `valid_until` | ISO时间，到达即失效；应写明时区，漏写时按北京时间（+08:00）解释 |
 
 最高买价、最低卖价、突破或回踩区间必须写入价格字段，只写在`reason`中不构成执行约束。执行容差以原始基准计算一次：上限乘1.02、下限乘0.98，包含边界，使用Decimal比较；9.00上限允许9.01和9.18，不允许9.19。此为用户授权的应用执行容差，不冒称交易所申报价格笼子。实际金额按核验成交价记账，不回写为参考价。等待未来确认的机会使用hold/watch，不能把未满足条件写成当前market意图。
 
@@ -34,7 +34,7 @@
 
 ## 3. 共用报价验证与备用源
 
-[`guardian_quotes.py`](../src/ops/application/guardian_quotes.py)统一执行、估值及风险报价校验：对象有效、无源错误，价格为非布尔的有限正数；显式股票代码错配时拒绝。日期和时间合并为北京时间，年龄须在0至180秒内；缺时间、未来或过期报价均无效。
+[`guardian_quotes.py`](../src/ops/application/guardian_quotes.py)统一执行、估值及风险报价校验：对象有效、无源错误，价格为非布尔的有限正数；显式股票代码错配时拒绝。日期和时间合并为北京时间，年龄须在0至180秒内，允许行情时间最多比本机晚60秒（时钟偏差、按结束时刻标注的进行中分钟线）；缺时间、更晚的未来时间或过期报价均无效。
 
 [`guardian_tools.py`](../src/ops/application/guardian_tools.py)在悟道可用时优先取单股`minute_data`，最多四路并行。主源异常、缺报价、价格/代码/时间无效的股票进入系统备用源；主源不可用时直接走系统源。备用结果通过同一验证器，不能以旧价掩盖主源失败。
 

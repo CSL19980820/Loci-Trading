@@ -173,3 +173,38 @@ def test_evidence_agent_failures_never_break_main_answer(monkeypatch):
     assert rows[0]["ok"] and rows[0]["input_tokens"] == 7
     assert rows[1]["ok"] is False and "OSError" in rows[1]["text"]
     assert calls["n"] == 1
+
+
+def test_worker_pool_size_is_configurable(monkeypatch):
+    from src.ai.application import assistant_manager
+
+    monkeypatch.delenv(assistant_manager.WORKERS_ENV, raising=False)
+    assert assistant_manager._resolve_workers() == assistant_manager.DEFAULT_WORKERS
+    for raw, expected in (("8", 8), ("0", 1), ("999", 32), ("abc", assistant_manager.DEFAULT_WORKERS)):
+        monkeypatch.setenv(assistant_manager.WORKERS_ENV, raw)
+        assert assistant_manager._resolve_workers() == expected
+    assert assistant_manager._resolve_workers(3) == 3
+
+
+def reply(text, tokens_in, tokens_out):
+    from src.ai.infrastructure.client import ChatResponse
+
+    return ChatResponse(text=text, model="fixture-model", input_tokens=tokens_in, output_tokens=tokens_out)
+
+
+def test_title_and_memory_side_calls_are_billed(monkeypatch, run):
+    from src.ai.application import assistant_memory, assistant_session_title
+
+    monkeypatch.setattr(assistant_session_title, "chat", lambda *a, **k: reply("行情复盘", 30, 4))
+    monkeypatch.setattr(assistant_memory, "chat", lambda *a, **k: reply('{"ops":[]}', 50, 6))
+    with AssistantStore(run.ops_db) as store:
+        titled = assistant_session_title.maybe_summarize_session_title(
+            store, run.session_id, CONFIG, user_message="你好", assistant_text="回答")
+        monkeypatch.setattr(store, "get_profile",
+                            lambda: {"memory_enabled": True, "auto_memory_enabled": True, "auto_memory_min_turns": 2})
+        monkeypatch.setattr(store, "count_dialog_messages", lambda _session: 10)
+        memory = assistant_memory.maybe_auto_consolidate_memory(store, session_id=run.session_id, config=CONFIG)
+        usage = store.monthly_token_usage()
+    assert titled and titled["title"] == "行情复盘"
+    assert memory["status"] == "ok"
+    assert usage == 30 + 4 + 50 + 6

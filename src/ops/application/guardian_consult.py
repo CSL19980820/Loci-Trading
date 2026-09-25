@@ -121,6 +121,11 @@ def answer_consultation(store, ledger, turn):
                          deadline=deadline,check_cancelled=progress,thinking=cfg.get("thinking", ""),
                          allow_hitl=False,on_event=progress,temperature=0.2)
         problem = completion_error(result, "咨询")
+        if problem and result.stopped_reason == "completed" and not result.finish_reason:
+            # 部分兼容供应商/中转不回传结束原因。咨询是只读正文、不产生订单，缺这一项时照常
+            # 采用；截断（length/max_tokens）与异常结束仍按失败处理。
+            problem = ""
+            usage["finish_reason_missing"] = True
         if problem or not result.text.strip():
             error = ValueError(problem or "咨询未产出完整正文")
             error.usage = usage

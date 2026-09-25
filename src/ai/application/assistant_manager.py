@@ -65,6 +65,25 @@ def _resolve_monthly_token_budget(value: int | None) -> int:
     return budget
 
 
+WORKERS_ENV = "LOCI_AI_ASSISTANT_WORKERS"
+DEFAULT_WORKERS = 4
+
+
+def _resolve_workers(value: int | None = None) -> int:
+    """助手后台并发数（全进程、跨租户共用）。
+
+    原先写死 2：两个慢回答（或此前取消后仍在跑的 run）就能让所有用户的新消息排队，
+    界面上一直“运行中”却没有任何输出。运行是 I/O 等待为主，默认 4，可用环境变量调整；
+    非法值回落默认，范围 1–32。
+    """
+    raw: Any = value if value is not None else os.getenv(WORKERS_ENV, "")
+    try:
+        workers = int(raw) if str(raw).strip() else DEFAULT_WORKERS
+    except (TypeError, ValueError):
+        return DEFAULT_WORKERS
+    return min(32, max(1, workers))
+
+
 def _resolve_monthly_assistant_run_quota(value: int | None = None) -> int:
     """0 = 不限制；正整数为自然月助手 run 硬顶。"""
     raw = value if value is not None else os.getenv("LOCI_AI_ASSISTANT_RUN_MONTHLY_QUOTA", "0")
@@ -82,7 +101,7 @@ class AssistantManager(AssistantRunExecutorMixin):
 
     def __init__(
         self, *, ops_db: str | None, palace_db: str | None = None, market_db: str | None = None,
-        max_workers: int = 2, scheduler_reloader: Callable[[], None] | None = None,
+        max_workers: int | None = None, scheduler_reloader: Callable[[], None] | None = None,
         monthly_token_budget: int | None = None,
     ) -> None:
         # 只留「显式覆盖」。None = 随当前租户惰性解析（见 ops_db / palace_db 属性）。
@@ -103,7 +122,7 @@ class AssistantManager(AssistantRunExecutorMixin):
         # 与提交任务的那个请求毫无关系。所以任何投递都必须经 submit_with_tenant，
         # 见 start_run 里那段注释——直接 self._pool.submit(...) 会让 self.ops_db
         # 在线程内解析成主租户的库。
-        self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="ai-assistant")
+        self._pool = ThreadPoolExecutor(max_workers=_resolve_workers(max_workers), thread_name_prefix="ai-assistant")
         # 已经收口过遗留 running 的库。key 是**解析后的库路径**（已含租户），
         # 不是租户 id：单机钉库与多租户共用同一套判断。
         self._recovered: set[str] = set()

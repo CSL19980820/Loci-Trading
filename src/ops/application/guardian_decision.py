@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import copy
+import re
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.ledger import settle_guardian_order, mark_guardian_account
 
@@ -15,6 +16,27 @@ from src.ops.application.guardian_risk import RiskPlan, install_risk_plans
 from src.ops.application.guardian_output import load_json_response
 
 TRADE_ACTIONS = frozenset({"buy", "add", "reduce", "sell", "take_profit", "stop_loss"})
+_EXCHANGE_CODE = re.compile(r"^(?:(SH|SZ|BJ)\.?(\d{6})|(\d{6})\.(SH|SS|SZ|BJ|XSHG|XSHE))$", re.IGNORECASE)
+_EXCHANGE_ALIASES = {"SS": "SH", "XSHG": "SH", "XSHE": "SZ"}
+_EXCHANGE_PREFIXES = {"SH": ("5", "6", "900"), "SZ": ("0", "1", "2", "3"), "BJ": ("4", "8", "92")}
+
+
+def normalize_stock_code(value: Any) -> Any:
+    """模型常写 ``SH600519`` / ``600519.SH`` / ``000001.XSHE``；去掉交易所标记只留6位代码。
+
+    仅当交易所与代码段一致时才去掉（如 ``000001.SH`` 是上证指数而非平安银行，原样保留、
+    由契约校验拒绝），不会把一只股票悄悄换成另一只。
+    """
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    match = _EXCHANGE_CODE.match(text)
+    if not match:
+        return text
+    exchange = (match[1] or match[4]).upper()
+    code = match[2] or match[3]
+    exchange = _EXCHANGE_ALIASES.get(exchange, exchange)
+    return code if code.startswith(_EXCHANGE_PREFIXES[exchange]) else value
 ACTION_LABELS = {"buy": "买入", "add": "加仓", "reduce": "减仓", "sell": "卖出",
                  "take_profit": "止盈", "stop_loss": "止损", "hold": "持股", "watch": "观察", "unwatch": "撤出观察"}
 
@@ -37,6 +59,11 @@ class GuardianOrder(BaseModel):
     exit_condition: str = Field(default="", description="什么条件下撤出自主观察")
     exit_today_plan: str = Field(default="", description="已有可卖持仓今天计划完全退出、等待的卖点；仅当确实可卖时用于换仓过渡")
     replacement_for: str = Field(default="", pattern=r"^(|\d{6})$", description="可选换仓备注，记录参考替换股票；不是开仓准入条件")
+
+    @field_validator("code", "replacement_for", mode="before")
+    @classmethod
+    def plain_code(cls, value: Any) -> Any:
+        return normalize_stock_code(value)
 
     @model_validator(mode="after")
     def non_trade_has_no_quantity(self) -> GuardianOrder:

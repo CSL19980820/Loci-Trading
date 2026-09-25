@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from src.ai import ChatMessage, chat
+from src.ai.application.quota import record_llm_usage
 from src.ai.domain.assistant import AssistantError
 from src.ai.infrastructure.assistant_store import AssistantStore
 
@@ -64,6 +65,8 @@ def maybe_auto_consolidate_memory(
             max_tokens=800,
             temperature=0.2,
         )
+        record_llm_usage(store=store, provider=config.name, model=response.model or config.model,
+                         input_tokens=response.input_tokens, output_tokens=response.output_tokens)
         ops = _parse_ops(response.text or "")
         applied = 0
         for op in ops:

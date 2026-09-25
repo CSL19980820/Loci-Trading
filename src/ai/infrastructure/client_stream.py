@@ -116,6 +116,42 @@ def _stream_error(response: Any, config: ProviderConfig) -> None:
     raise error(f"{config.name} 流式返回 {response.status_code}{hint}：{detail}")
 
 
+_BUSY_ERROR_CODES = frozenset({"408", "429", "500", "502", "503", "504", "529"})
+_BUSY_ERROR_WORDS = ("overload", "rate_limit", "rate limit", "too many requests", "timeout",
+                     "temporarily unavailable", "server_error", "api_error")
+
+
+def _stream_payload_error(config: ProviderConfig, error: Any, *, recoverable: bool) -> LLMError:
+    """把流里的 error 事件还原成真实原因（限流、过载、内容审核、余额……）。
+
+    原先 OpenAI 兼容流里的 ``{"error": ...}`` 块被当成无 choices 的普通块跳过，
+    最终只剩一句“模型流在结束标记前中断”，内容审核等真实原因被吞掉，还会被
+    当作瞬时中断白白重跑两次。忙碌类错误（限流/过载/上游超时）仍按可恢复中断
+    交给显式开启恢复的调用方；其余错误重跑结果相同，不重放。
+    """
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("msg") or error.get("error") or error
+        code = " ".join(str(error.get(key) or "") for key in ("code", "status", "type"))
+    else:
+        message, code = error, ""
+    text = f"{config.name} 流式返回错误：{_redact(str(message), config.api_key)}"
+    probe = f"{code} {message}".lower()
+    busy = any(part in _BUSY_ERROR_CODES for part in code.split()) or any(word in probe for word in _BUSY_ERROR_WORDS)
+    if busy:
+        return LLMGenerationInterrupted(text) if recoverable else LLMError(text)
+    return LLMNoReplayError(text)
+
+
+def _missing_finish_reason(config: ProviderConfig, done_marker: bool) -> LLMError:
+    if done_marker:
+        # 流已由供应商正常收尾，只是不回传结束原因：重跑结果一样，不按中断恢复浪费两次完整生成。
+        return LLMNoReplayError(
+            f"{config.name} 流已结束但未返回结束原因（finish_reason/stop_reason），无法证明输出完整、未被截断；"
+            "交易决策不采用。请改用会回传结束原因的供应商或中转。"
+        )
+    return LLMGenerationInterrupted("模型流在结束标记前中断，未采用不完整输出")
+
+
 def _openai_reasoning_delta(delta: dict[str, Any]) -> str:
     """兼容 DeepSeek / OpenRouter / 部分 o 系列的 reasoning 字段名。"""
     raw = delta.get("reasoning_content")
@@ -163,6 +199,7 @@ def _stream_openai(
     input_tokens = output_tokens = 0
     raw_chunks: list[dict[str, Any]] = []
     finish_reason = ""
+    done_marker = False
 
     with transport as client:
         try:
@@ -179,6 +216,7 @@ def _stream_openai(
                 _stream_error(response, config)
                 for payload in payloads:
                     if payload == "[DONE]":
+                        done_marker = True
                         break
                     try:
                         chunk = json.loads(payload)
@@ -188,6 +226,9 @@ def _stream_openai(
                     if not isinstance(chunk, dict):
                         continue
                     raw_chunks.append(chunk)
+                    if chunk.get("error") and not chunk.get("choices"):
+                        raise _stream_payload_error(config, chunk["error"],
+                                                    recoverable=transport.first_deadline is not None)
                     if chunk.get("model"):
                         model = str(chunk["model"])
                     usage = chunk.get("usage") or {}
@@ -238,7 +279,7 @@ def _stream_openai(
             ) from exc
 
     if transport.first_deadline is not None and not finish_reason:
-        raise LLMGenerationInterrupted("模型流在结束标记前中断，未采用不完整输出")
+        raise _missing_finish_reason(config, done_marker)
     calls = [
         ToolCall(
             id=slot["id"],
@@ -290,6 +331,7 @@ def _stream_anthropic(
     input_tokens = output_tokens = 0
     event_count = 0
     finish_reason = ""
+    done_marker = False
 
     with transport as client:
         try:
@@ -351,8 +393,12 @@ def _stream_anthropic(
                         usage = event.get("usage") or {}
                         if usage.get("output_tokens") is not None:
                             output_tokens = int(usage.get("output_tokens") or 0)
+                    elif kind == "message_stop":
+                        done_marker = True
                     elif kind == "error":
                         err = event.get("error") or {}
+                        if transport.first_deadline is not None:
+                            raise _stream_payload_error(config, err or event, recoverable=True)
                         raise LLMError(
                             f"{config.name} 流式错误：{_redact(err.get('message') or event, config.api_key)}"
                         )
@@ -365,7 +411,7 @@ def _stream_anthropic(
             ) from exc
 
     if transport.first_deadline is not None and not finish_reason:
-        raise LLMGenerationInterrupted("模型流在结束标记前中断，未采用不完整输出")
+        raise _missing_finish_reason(config, done_marker)
     calls = [
         ToolCall(
             id=str(slot["id"]),

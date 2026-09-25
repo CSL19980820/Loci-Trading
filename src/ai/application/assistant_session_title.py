@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from src.ai import ChatMessage, chat
+from src.ai.application.quota import record_llm_usage
 from src.ai.domain.assistant import AssistantError
 
 logger = logging.getLogger(__name__)
@@ -83,8 +84,9 @@ def llm_session_title(
     *,
     user_message: str,
     assistant_text: str = "",
+    store: Any = None,
 ) -> str:
-    """用当前会话模型生成短标题；失败回退 provisional。"""
+    """用当前会话模型生成短标题；失败回退 provisional。传入 ``store`` 时这次调用计入用量。"""
     fallback = provisional_title(user_message)
     excerpt = " ".join((assistant_text or "").strip().split())[:400]
     prompt = (
@@ -100,6 +102,9 @@ def llm_session_title(
             max_tokens=48,
             temperature=0.2,
         )
+        if store is not None:
+            record_llm_usage(store=store, provider=config.name, model=response.model or config.model,
+                             input_tokens=response.input_tokens, output_tokens=response.output_tokens)
         return sanitize_llm_title(response.text or "", fallback=fallback)
     except Exception as exc:
         logger.warning("session title llm failed: %s", exc)
@@ -163,7 +168,7 @@ def maybe_summarize_session_title(
     meta = session.get("metadata") if isinstance(session.get("metadata"), dict) else {}
     if not needs_llm_title(session.get("title"), meta):
         return None
-    title = llm_session_title(config, user_message=user_message, assistant_text=assistant_text)
+    title = llm_session_title(config, user_message=user_message, assistant_text=assistant_text, store=store)
     return apply_session_title(store, session_id, title, source="llm")
 
 

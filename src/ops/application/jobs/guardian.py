@@ -282,15 +282,21 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             if committed:
                 raise
             failed_at = datetime.now(ZoneInfo("Asia/Shanghai"))
-            saved_state = ledger.state()
             try:
-                saved_state = mark_guardian_account(saved_state, {}, failed_at)
-            except (ValueError, KeyError, TypeError) as valuation_exc:
-                saved_state = {**saved_state, "valuation_error": str(valuation_exc)}
-            # Failed preflight fills were rolled back and must never enter daily totals.
-            notice_state = with_notification_facts(saved_state,
-                load_notification_day(ledger, failed_at), [], slot=slot)
-            error_body = render_failure_notice(notice_state, exc, failure_stage)
+                saved_state = ledger.state()
+                try:
+                    saved_state = mark_guardian_account(saved_state, {}, failed_at)
+                except (ValueError, KeyError, TypeError) as valuation_exc:
+                    saved_state = {**saved_state, "valuation_error": str(valuation_exc)}
+                # Failed preflight fills were rolled back and must never enter daily totals.
+                notice_state = with_notification_facts(saved_state,
+                    load_notification_day(ledger, failed_at), [], slot=slot)
+                error_body = render_failure_notice(notice_state, exc, failure_stage)
+            except Exception as notice_exc:
+                # 失败收口本身不能再抛错：否则本轮停在running、原始错误被新异常遮住、也不通知。
+                notice_state = {"notification_day": {}}
+                error_body = (f"本轮未完成 · {failure_stage}\n原因 · {exc}\n本轮无已落账成交；预检结果不计成交。"
+                              f"\n账户概览暂不可用：{type(notice_exc).__name__}: {notice_exc}")
             cancelled = isinstance(exc, JobCancelled)
             orders = decision.model_dump(mode="json")["orders"] if decision is not None else []
             blocked = [{**order, "reject_code": "cancelled" if cancelled else "execution_failed",
