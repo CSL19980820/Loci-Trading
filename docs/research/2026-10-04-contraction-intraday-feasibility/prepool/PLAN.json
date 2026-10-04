@@ -1,0 +1,31 @@
+{
+  "created_at": "2026-10-04T17:05:02.458364+08:00",
+  "sources": {
+    "tools/research_contraction_intraday_prepool.py": "2fdb8f0e668decd56425639356069b22d9f72d130fad6562252c7f1d697f0519",
+    "src/strategy/application/contraction_rebreakout.py": "613d676689ff913e566e2a3be92ab4849e0d55b5e5bdef7a3dfd58f52c535121",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "src/market/infrastructure/store_panel.py": "191daeb13e26731dbaade3432faa6b6b1d984ce69dd1d59b757576f266cd1f36",
+    "src/market/domain/universe.py": "343d04424b01a90a0c85be724582421ffbda181df68363c8ceaf2d67f40ad2fb",
+    "src/formula/domain/functions.py": "599dc60d5e564d7e0a553abf153d5ff95116a47b3f8dd140ba5d50ba8be368e1"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "contract_sha256": "2517b022144d711e7af6d92e0ab5b61829600352826747e548fdadaae565006e",
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "no_returns": true,
+  "no_network": true,
+  "no_today_input": true,
+  "scope": "All snapshot STOCK300/301, current catalog identity only; necessary-condition superset, no Top2."
+}

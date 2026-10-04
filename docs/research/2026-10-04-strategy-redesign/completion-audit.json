@@ -1,0 +1,70 @@
+{
+  "verified_at": "2026-10-04T13:59:31.229583+08:00",
+  "status": "passed",
+  "scope": "research_only",
+  "strategy_count": 2,
+  "new_mechanisms": 18,
+  "comparison_rows": 32,
+  "records": {
+    "contraction": {
+      "source_checks": {
+        "tools/research_chinext_payoff_exits.py": true,
+        "tools/strategy_chinext_review.py": true,
+        "src/backtest/application/runner.py": true,
+        "src/backtest/application/engine.py": true,
+        "src/backtest/application/metrics.py": true,
+        "src/backtest/application/execution_contract.py": true,
+        "src/backtest/domain/models.py": true,
+        "src/market/infrastructure/store_panel.py": true,
+        "src/strategy/application/contraction_rebreakout.py": true,
+        "src/strategy/application/impulse_inside_breakout.py": true,
+        "tools/research_contraction_redesign.py": true,
+        "tools/research_chinext_payoff_filters.py": true,
+        "tools/research_impulse_scoring.py": true
+      },
+      "verification": "passed",
+      "plan_sha256": "32bfc571fa006008b0eec90aa0bd9c6ac4ad609103d8e5e9f9939c69b29de369",
+      "verification_sha256": "972343fa1e9a4eee2e3a11a25445ea5a3147798c5a41f66f2598e6d3d8cb22e7",
+      "report_sha256": "6d82ff39efee53d9121ed08d758d45987534c332c6d520de0968b457c6cb9f42"
+    },
+    "double-yin": {
+      "source_checks": {
+        "tools/research_double_yin_redesign.py": true,
+        "tools/research_double_yin_scoring_proxy.py": true,
+        "tools/research_chinext_payoff_exits.py": true,
+        "tools/research_impulse_scoring.py": true,
+        "src/strategy/application/double_yin_low_open.py": true,
+        "src/backtest/application/engine.py": true,
+        "src/backtest/application/execution_contract.py": true,
+        "src/backtest/domain/models.py": true,
+        "src/market/infrastructure/store_panel.py": true
+      },
+      "verification": "passed",
+      "plan_sha256": "cc1d12234271ef117b17dff1466cfad2c497502cfa5697fe63fca5fecda8c653",
+      "verification_sha256": "795f950fa987cf9d7da2f5a2ff3feca59fd5829071bcb12fb7debe75ac8a3fdb",
+      "report_sha256": "4be44e2037b4eba6efb9a0f32cf6c8c51d397e7668885c6bf17819154c2c2a00"
+    }
+  },
+  "required_ruff_F": "passed_for_all_three_new_research_tools",
+  "optional_ruff_I": "Two import-order warnings in frozen double-yin script retained without changing experiment source; no undefined-name or unused-import F failures.",
+  "independent_execution_review": {
+    "contraction_orders": 678,
+    "double_yin_orders": 2433,
+    "metric_groups": 72,
+    "path": "../2026-10-04-strategy-redesign-method-review.md"
+  },
+  "report_links_verified": true,
+  "cleanup": {
+    "retained": "research tools, reports, CSV/JSON, frozen plans, preflight/diagnosis development evidence, existing read-only snapshots",
+    "new_unneeded_temporary_files_remaining": [],
+    "isolated_check_directories": "owners confirmed normal TemporaryDirectory cleanup"
+  },
+  "production_change": "none_by_this_research",
+  "limitations": [
+    "daily_order_proxy",
+    "retrospective_previously_observed_periods",
+    "current_catalog_and_industry_membership",
+    "event_returns_not_portfolio_NAV",
+    "no_validated_profitable_replacement"
+  ]
+}

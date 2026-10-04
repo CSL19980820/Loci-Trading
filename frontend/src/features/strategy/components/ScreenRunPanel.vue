@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronRight, Send } from '@lucide/vue'
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, toRaw, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 
@@ -157,6 +157,9 @@ function onLogScroll(): void {
 
 const picks = computed<Pick[]>(() => props.lastResult?.picks ?? [])
 const watchPicks = computed<Pick[]>(() => props.lastResult?.watch_picks ?? [])
+const hasScores = computed(() =>
+  [...picks.value, ...watchPicks.value].some((row) => scoreValue(row) != null),
+)
 const hasPctChg = computed(() =>
   [...picks.value, ...watchPicks.value].some((row) => typeof row.pct_chg === 'number'),
 )
@@ -178,6 +181,20 @@ const resultTitle = computed(() => {
   return result ? `${base} · ${result.trade_date}` : base
 })
 
+const resultElapsedText = computed(() => {
+  const result = props.lastResult
+  if (!result) return ''
+  const stage = `选股阶段 ${Number(result.elapsed_seconds).toFixed(1)}s`
+  const slot = props.snap
+  // updated_at 在最后一次 done 更新时记录完成时刻；快照读取不改变它。
+  // 页面保留上一次结果供回看，只有当前槽实际承载的结果才能关联这次总耗时。
+  if (slot?.status !== 'done' || toRaw(slot.result) !== toRaw(result)) return stage
+  const started = Number(slot.started_at)
+  const finished = Number(slot.updated_at)
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || started <= 0 || finished < started) return stage
+  return `总用时 ${(finished - started).toFixed(1)}s · ${stage}`
+})
+
 const recordedCount = computed(() => {
   const rec = props.lastResult?.recorded
   if (!rec) return null
@@ -187,6 +204,16 @@ const recordedCount = computed(() => {
 function fmtNum(value: number | null | undefined): string {
   if (value == null) return '—'
   return Number(value).toFixed(2)
+}
+
+function scoreValue(row: Pick): number | null {
+  const score = row.factors?.score
+  return typeof score === 'number' && Number.isFinite(score) ? score : null
+}
+
+function fmtScore(row: Pick): string {
+  const score = scoreValue(row)
+  return score == null ? '—' : `${score.toFixed(2)} / 100`
 }
 
 function fmtPct(value: number | null | undefined): string {
@@ -305,11 +332,11 @@ function toggleLog(): void {
           <UiBadge v-if="recordedCount != null" variant="ok">已入库 {{ recordedCount }}</UiBadge>
         </CardTitle>
         <CardDescription v-if="lastResult" class="run-results__hint">
-          <template v-if="lastResult">全市场 {{ lastResult.universe_size.toLocaleString() }} 只 · 用时 {{ Number(lastResult.elapsed_seconds).toFixed(1) }}s</template>
+          <template v-if="lastResult">全市场 {{ lastResult.universe_size.toLocaleString() }} 只 · {{ resultElapsedText }}</template>
         </CardDescription>
       </CardHeader>
 
-      <div class="run-results__body" :class="{ 'run-results__body--single': !lastResult }">
+      <div class="run-results__body" :class="{ 'run-results__body--single': !lastResult || hasScores }">
         <section class="result-section" aria-label="正式精选">
           <div v-if="lastResult" class="result-section__title">
             <strong>正式精选</strong>
@@ -326,6 +353,7 @@ function toggleLog(): void {
               <span class="pick-card__nums">
                 <b>{{ fmtNum(row.close) }}</b>
                 <small :class="pctTone(row.pct_chg)">{{ hasPctChg ? fmtPct(row.pct_chg) : `开 ${fmtNum(row.open)}` }}</small>
+                <small v-if="scoreValue(row) != null">评分 {{ fmtScore(row) }}</small>
               </span>
             </li>
           </ul>
@@ -334,6 +362,7 @@ function toggleLog(): void {
               <TableRow>
                 <TableHead class="text-center">标的 · 编码</TableHead>
                 <TableHead class="text-center">开 · 收 · 涨跌</TableHead>
+                <TableHead v-if="hasScores" class="text-center">评分（0–100）</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -345,12 +374,13 @@ function toggleLog(): void {
                   </span>
                 </TableCell>
                 <TableCell class="num text-center">{{ fmtNum(row.open) }} · {{ fmtNum(row.close) }}<template v-if="hasPctChg"> · <span :class="pctTone(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</span></template></TableCell>
+                <TableCell v-if="hasScores" class="num text-center">{{ fmtScore(row) }}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </section>
 
-        <section v-if="lastResult" class="result-section" aria-label="低吸观察">
+        <section v-if="lastResult && (!hasScores || watchPicks.length)" class="result-section" aria-label="低吸观察">
           <div class="result-section__title">
             <strong>低吸观察</strong>
             <UiBadge variant="warn">不计正式胜率</UiBadge>
@@ -362,6 +392,7 @@ function toggleLog(): void {
               <span class="pick-card__nums">
                 <b>{{ fmtNum(row.close) }}</b>
                 <small :class="pctTone(row.pct_chg)">{{ hasPctChg ? fmtPct(row.pct_chg) : `开 ${fmtNum(row.open)}` }}</small>
+                <small v-if="scoreValue(row) != null">评分 {{ fmtScore(row) }}</small>
               </span>
             </li>
           </ul>
@@ -370,6 +401,7 @@ function toggleLog(): void {
               <TableRow>
                 <TableHead class="text-center">标的 · 编码</TableHead>
                 <TableHead class="text-center">开 · 收 · 涨跌</TableHead>
+                <TableHead v-if="hasScores" class="text-center">评分（0–100）</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -381,6 +413,7 @@ function toggleLog(): void {
                   </span>
                 </TableCell>
                 <TableCell class="num text-center">{{ fmtNum(row.open) }} · {{ fmtNum(row.close) }}<template v-if="hasPctChg"> · <span :class="pctTone(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</span></template></TableCell>
+                <TableCell v-if="hasScores" class="num text-center">{{ fmtScore(row) }}</TableCell>
               </TableRow>
             </TableBody>
           </Table>

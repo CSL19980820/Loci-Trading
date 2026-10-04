@@ -1,0 +1,84 @@
+{
+  "created_at": "2026-10-04T13:44:01.087963+08:00",
+  "sources": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "f1b78a41f5bf53489bf22733218f650296732afee34e2df154d106c1fcd582c3",
+    "tools/research_contraction_redesign.py": "a39594d9b8d54185923eb99047a7bb7ce4574c9e9da4c1d63235d4d9442101cb",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "period": [
+    "2024-01-01",
+    "2025-06-30"
+  ],
+  "fixed_bins": {
+    "momentum": [
+      "-inf",
+      "5",
+      "10",
+      "20",
+      "30",
+      "inf"
+    ],
+    "extension": [
+      "-inf",
+      "1",
+      "3",
+      "5",
+      "inf"
+    ],
+    "risk": [
+      "-inf",
+      "5",
+      "8",
+      "12",
+      "inf"
+    ],
+    "next_open_gap": [
+      "-inf",
+      "-1",
+      "1",
+      "3",
+      "inf"
+    ],
+    "volume_ratio": [
+      "-inf",
+      "2",
+      "3",
+      "5",
+      "inf"
+    ],
+    "body_efficiency": [
+      "-inf",
+      "0.3",
+      "0.6",
+      "0.8",
+      "inf"
+    ],
+    "range_atr": [
+      "-inf",
+      "1",
+      "1.5",
+      "2",
+      "inf"
+    ],
+    "day_return": [
+      "-inf",
+      "5",
+      "8",
+      "12",
+      "inf"
+    ]
+  },
+  "contract": "Only training prices/returns; original 4-session -6% exit and all shape candidates. Next-open gap is descriptive outcome information, never a signal feature.",
+  "prior_failed_work": "No repeat of exit grid, MA20/index filters, breakout_volume<=3 filter or T+1 close confirmation/T+2 open entry. Current historical observations are not untouched OOS."
+}

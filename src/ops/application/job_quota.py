@@ -56,15 +56,6 @@ _EXTRA_MANAGED_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "src.ops.application.ensure_intel_jobs",
         ("MANAGED_INTEL_OPEN", "MANAGED_INTEL_INTRADAY", "MANAGED_INTEL_CLOSE"),
     ),
-    (
-        "src.ops.application.ensure_intel_brief_jobs",
-        (
-            "MANAGED_BRIEF_OPEN",
-            "MANAGED_BRIEF_MIDDAY",
-            "MANAGED_BRIEF_CLOSE",
-            "MANAGED_BRIEF_EVENING",
-        ),
-    ),
     ("src.ops.application.ensure_alert_scan_job", ("MANAGED_ALERT_SCAN",)),
     (
         "src.ops.application.ensure_intraday_capture_job",

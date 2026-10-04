@@ -1,0 +1,51 @@
+{
+  "code": "300055",
+  "requested_date": "2025-06-13",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-06-13-300055.attempt1.raw.json",
+  "raw_sha256": "0f224f5e3294a81a926fa848533916a0e5d7b8aed44f6de8e80d31988492da3f",
+  "attempts": [
+    {
+      "code": "300055",
+      "requested_date": "2025-06-13",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:42:49.322536+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 206839.0,
+        "sampled_share_sum": 20683900.0,
+        "daily_volume": 20683800.0,
+        "volume_signed_diff": 100.0,
+        "volume_abs_diff": 100.0,
+        "volume_relative_diff": 4.83470155387308e-06,
+        "volume_tolerance": 20683.8,
+        "final_price_signed_diff": 8.881784197001252e-16,
+        "final_price_abs_diff": 8.881784197001252e-16,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 1,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 5.51,
+        "raw_positive_max": 5.72,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-06-13-300055.attempt1.raw.json",
+      "raw_sha256": "0f224f5e3294a81a926fa848533916a0e5d7b8aed44f6de8e80d31988492da3f",
+      "completed_at": "2026-10-04T17:42:49.443435+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:42:49.444500+08:00"
+}

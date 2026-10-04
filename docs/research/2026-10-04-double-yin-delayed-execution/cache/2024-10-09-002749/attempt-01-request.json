@@ -1,0 +1,15 @@
+{
+  "code": "002749",
+  "requested_date": "2024-10-09",
+  "market": 0,
+  "method": "get_history_minute_time_data",
+  "date_argument": 20241009,
+  "server": {
+    "host": "110.41.147.114",
+    "port": 7709
+  },
+  "attempt": 1,
+  "started_at": "2026-10-04T17:29:54.306614+08:00",
+  "tdxpy_version": "0.2.7",
+  "source_timestamp_present": false
+}

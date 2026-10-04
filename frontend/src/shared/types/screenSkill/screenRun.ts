@@ -20,7 +20,9 @@ export interface ScreenRunSlot {
   strategy: string
   trade_date: string
   log: string[]
-  result: ScreenResult | null
+  /** progress 投影省略结果；只有显式 null 才表示当前没有结果。 */
+  result?: ScreenResult | null
+  result_omitted?: boolean
   error: string
   /** 后端权威开跑时刻（epoch 秒，0 = 没开跑）。有它才能说「已跑」而不是「已跟踪」 */
   started_at?: number

@@ -4,8 +4,10 @@
 强制同步 / 导入 / 落库」共用的同一个地板：任何一条取数路径把它当作最早起点，
 落库前再过滤一次，确保旧行情不会重新进入权威库。
 
-线上还在 ``market.db`` 上挂了 ``quotes_daily_floor`` / ``adjust_factors_floor``
-两个 BEFORE INSERT 触发器做最后一道兜底；本模块是代码侧的同一约束，二者口径一致。
+``quotes_daily_floor`` BEFORE INSERT 触发器可作为普通日 K 的最后一道兜底。
+稀疏累计复权因子不受该日 K 地板约束：截断日前最后已知因子仍是后续行情的
+复权锚点，须允许真实来源提供的更早事件入库。存储维护只删除冗余早期因子，
+并在核对完整定义后移除旧部署误加的 ``adjust_factors_floor``；不移除报价地板。
 """
 from __future__ import annotations
 

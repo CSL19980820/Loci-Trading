@@ -22,8 +22,8 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from src.ops.application.skill_watch import payload as pl
-from src.ops.application.paper_policy.auction_gap import classify_low_open_band
-from src.ops.application.paper_policy.stances import (
+from src.ops.application.signal_policy.auction_gap import classify_low_open_band
+from src.ops.application.signal_policy.stances import (
     SCAN_ABANDONED,
     SCAN_CONFIRMED,
     SCAN_DOWNGRADED,

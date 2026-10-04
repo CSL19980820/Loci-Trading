@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-10-04T17:43:11.977330+08:00",
+  "plan_sha256": "1bb85a7b55770df16e9261bf0a4547fd19378c2ce8139506ac565576de02afb9",
+  "artifacts_sha256": {
+    "daily-budget.csv": "610dc9d41f8438579fde2ad27801cf37a24f1a56837f9e37fd7f8836e7364c2a",
+    "day-rank-completeness.csv": "03d070901ff8c4e6d2ca73178d63769957b79a970bf00efff8fc40b41e5ca1b3",
+    "original_eod-orders.csv": "f9175bcec92fa175ad82b24b225a6bf21d42035748fa8993d1eb14d77d5e2a6e",
+    "original_eod-preselected.csv": "a896248676be1b50a2b15aadf1a0a679494e8024d4c295c7bb45dc53da237f9e",
+    "original_eod-trades.csv": "f9175bcec92fa175ad82b24b225a6bf21d42035748fa8993d1eb14d77d5e2a6e",
+    "prepool-decision-records.csv": "a733e0315431591dfb698f86763b59e199cf529de3e71d37da1793d94a6a7cb4",
+    "sampled_early-orders.csv": "384259fce3eafdc564fc476b9d24122a3175673bac49ad3a95ad89c3239ba555",
+    "sampled_early-preselected.csv": "3aad5c5ede21c5a253faa7795deec7b37f4d8bfccb19ef4056cb5f3ad107d8b0",
+    "sampled_early-trades.csv": "6eb7d4a55f028b785ecd3280d5942d441f8081cd44d2857d22376db7a826513e",
+    "sampled_next_open-orders.csv": "8b9ee8c4db24ad8e4e7c7621ce3a8630755184c7d6fd6705f059d6fc243f7f2b",
+    "sampled_next_open-preselected.csv": "3aad5c5ede21c5a253faa7795deec7b37f4d8bfccb19ef4056cb5f3ad107d8b0",
+    "sampled_next_open-trades.csv": "8b9ee8c4db24ad8e4e7c7621ce3a8630755184c7d6fd6705f059d6fc243f7f2b",
+    "selection-receipt.json": "f8174d06b617449e706df8c3a21d9bed37e415212bb3ee1f6857c1391328aba1",
+    "summary.json": "1629b9e6719c9bd7215eb3ac4d71b26536987959b3b860804e86709d0c6c0204"
+  }
+}

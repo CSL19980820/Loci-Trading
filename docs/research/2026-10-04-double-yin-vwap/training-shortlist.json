@@ -1,0 +1,17 @@
+{
+  "created_at": "2026-10-04T16:27:28.274515+08:00",
+  "selected": [
+    "yin_close_and_open_above_vwap"
+  ],
+  "failures": {
+    "yin_close_above_vwap": [
+      "nonpositive_mean",
+      "PF_not_above_one",
+      "combined_stress_nonpositive"
+    ],
+    "yin_close_and_open_above_vwap": []
+  },
+  "status": "qualified_train",
+  "train_sha256": "bc1b6cc0bbd6b11f8ed88573ff4f8f7ed5e0808cf9c2553c398800962076c6de",
+  "plan_sha256": "a22f4980c5772e1d789eb83182d7b39d8141d5ef802edcef0cbeba290c884dd0"
+}

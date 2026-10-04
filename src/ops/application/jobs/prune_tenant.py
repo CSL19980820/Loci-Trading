@@ -55,7 +55,6 @@ from src.ops.application.retention_settings import saved_policy
 #: ``strategy_docs`` / ``strategy_versions`` 是用户作品，一条都不能按天砍。
 AGE_TRUNCATED_TABLES: tuple[tuple[str, str, bool], ...] = (
     # 盯盘运行历史：一天几十条，只用于近期复盘。
-    ("monitor_runs", "started_at", False),
     # 价格提醒命中：*/5 的扫描 + 每票每桶一条，涨得很快。
     ("alert_hits", "trigger_time", False),
     # AI 决策留痕：单条可达几十 KB（prompt + 报价快照 + 原始回复）。
@@ -86,7 +85,7 @@ def _prune_tables(
         run_keep_min, run_keep_max = policy.job_keep_min, policy.job_keep_max
         session_keep = policy.ai_session_keep
     ages = {} if policy is None else {
-        "monitor_runs": policy.monitor_days, "alert_hits": policy.alert_days,
+        "alert_hits": policy.alert_days,
         "ai_decisions": policy.decision_days, "leader_role_snapshots": policy.leader_days,
         "mcp_quota": policy.quota_days,
     }

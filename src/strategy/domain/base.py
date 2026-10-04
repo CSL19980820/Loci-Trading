@@ -206,6 +206,9 @@ def merge_params(engine: StrategyEngine, params: dict[str, Any] | None) -> dict[
     defaults = engine.default_params()
     if not params:
         return dict(defaults)
+    # 旧任务可能仍携带已取消的历史范围参数；兼容读取，但不能重新启用过滤。
+    ignored = set(getattr(engine, "ignored_legacy_params", ()))
+    params = {key: value for key, value in params.items() if key not in ignored}
     unknown = set(params) - set(defaults)
     if unknown:
         raise StrategyError(f"策略 {engine.slug} 不认识的参数：{sorted(unknown)}")

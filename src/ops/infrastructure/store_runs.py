@@ -31,7 +31,6 @@ STALE_RUN_SECONDS_BY_KIND = {
     "sync": 45 * 60,
 "screen": 45 * 60,
     # 日终本身应数分钟内结束;被 market.db 抢锁挂死时不能等满 24h
-    "paper_eod": 45 * 60,
 }
 STALE_RUN_ERROR = "任务运行超时，已按中断回收"
 DEAD_PID_RUN_ERROR = "任务进程已退出，占槽已回收"

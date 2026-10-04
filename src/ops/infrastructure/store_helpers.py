@@ -20,6 +20,7 @@ JOB_KINDS = (
     "exchange_calendar",
     "sync",
     "screen",
+    "screen_prepare",
     "backtest",
     "compare",
     "optimize",
@@ -34,12 +35,9 @@ JOB_KINDS = (
     "data_quality",
     "intel_fetch",
     # 悟道 AI 简报 → 企微（四档，各比悟道出稿晚 10 分钟）
-    "intel_brief",
     "intraday_capture",
     "skill_watch",
     "alert_scan",
-    "strategy_monitor",
-    "paper_eod",
 )
 
 #: 行情同步托管任务名（运维「行情同步」面板 upsert，勿改名）

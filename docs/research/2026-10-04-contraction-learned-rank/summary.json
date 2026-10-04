@@ -1,0 +1,807 @@
+{
+  "plan_sha256": "4606f7b3ec08b038ae5704a8cb79cfdf9eae836c2c7c092983cf0a7d9cadc232",
+  "inner": {
+    "start": "2025-01-01",
+    "end": "2025-06-30",
+    "common_market_days": 113,
+    "common_slots": 226,
+    "first_signal_day": "2025-01-02",
+    "last_signal_day": "2025-06-24",
+    "runs": {
+      "legacy_original": {
+        "metrics": {
+          "base": {
+            "trades": 89,
+            "wins": 43,
+            "losses": 46,
+            "positive_net_sum": 351.5477666154567,
+            "negative_net_sum": -237.76058642061886,
+            "zero_net_trades": 0,
+            "avg_net_return": 1.2785076426386266,
+            "profit_factor": 1.4785788170691105,
+            "win_rate": 48.31460674157304,
+            "net_sum": 113.78718019483777,
+            "common_slot_mean": 0.5034830982072468,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 89,
+            "common_slots": 226
+          },
+          "double_cost": {
+            "trades": 89,
+            "wins": 41,
+            "losses": 48,
+            "positive_net_sum": 342.70362055655187,
+            "negative_net_sum": -247.60644036171414,
+            "zero_net_trades": 0,
+            "avg_net_return": 1.0685076426386266,
+            "profit_factor": 1.3840658589328925,
+            "win_rate": 46.06741573033708,
+            "net_sum": 95.09718019483776,
+            "common_slot_mean": 0.4207839831629989,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 89,
+            "common_slots": 226
+          },
+          "winner_removed": {
+            "trades": 88,
+            "wins": 42,
+            "losses": 46,
+            "positive_net_sum": 318.06792704326415,
+            "negative_net_sum": -237.76058642061886,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.912583416166423,
+            "profit_factor": 1.337765572636058,
+            "win_rate": 47.72727272727273,
+            "net_sum": 80.30734062264523,
+            "common_slot_mean": 0.3553422151444479,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 89,
+            "common_slots": 226
+          },
+          "double_cost_winner_removed": {
+            "trades": 88,
+            "wins": 40,
+            "losses": 48,
+            "positive_net_sum": 309.4337809843594,
+            "negative_net_sum": -247.60644036171414,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.702583416166423,
+            "profit_factor": 1.249700050339261,
+            "win_rate": 45.45454545454545,
+            "net_sum": 61.82734062264522,
+            "common_slot_mean": 0.2735723036400231,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 89,
+            "common_slots": 226
+          },
+          "largest_winner": {
+            "decision_date": "2025-03-25",
+            "code": "300871",
+            "selection_score": 87.2835,
+            "signal_date": "2025-03-25",
+            "row": 536,
+            "col": 776,
+            "corrected_candidate": true,
+            "legacy_candidate": true,
+            "legacy_selected": true,
+            "original_score": 87.2835,
+            "legacy_score": 87.2835,
+            "feature_eligible": true,
+            "missing_features": "",
+            "momentum10_pct": 22.727272724879665,
+            "csi300_return20_pct": 0.16924581426112084,
+            "recent_impulse_age": 6.0,
+            "pullback_depth_pct": 4.972804947052345,
+            "contraction_volume_ratio": 0.6492001410287507,
+            "breakout_volume_ratio": 6.058971100902486,
+            "breakout_extension_pct": 7.048458157871651,
+            "chinext_above_ma20_breadth": 0.2526002971768202,
+            "close_location": 0.9609375003435715,
+            "body_fraction": 0.8906250014506348,
+            "range_over_prior_atr14": 4.397546012138109,
+            "pullback_support_distance_pct": 21.398834295726754,
+            "label_status": "closed",
+            "label_available_date": "2025-03-31",
+            "net_return_pct": 33.47983957219254,
+            "label_reason": "filled",
+            "entry_date": "2025-03-26",
+            "entry_price": 16.83,
+            "exit_date": "2025-03-31",
+            "exit_price": 22.5,
+            "hold_days": 3.0,
+            "gross_return_pct": 33.68983957219254,
+            "mae_pct": -3.3868092691621943,
+            "mfe_pct": 49.73262032085564,
+            "exit_reason": "hold_expired",
+            "benchmark_return_pct": null,
+            "entry_factor": 1.5988419146835,
+            "exit_factor": 1.5988419146835
+          }
+        },
+        "active_entry_months": 6,
+        "selected_order_dates": 56,
+        "closed_on_new_vs_legacy": 0,
+        "original_common_slots": 226,
+        "paired_vs_controls": {
+          "legacy_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              0.0,
+              0.0
+            ],
+            "point_delta_per_opportunity": 0.0
+          },
+          "corrected_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              0.0,
+              0.010619586564899138
+            ],
+            "point_delta_per_opportunity": 0.0035077459413742954
+          },
+          "eligible_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              0.0,
+              0.010619586564899138
+            ],
+            "point_delta_per_opportunity": 0.0035077459413742954
+          }
+        }
+      },
+      "corrected_original": {
+        "metrics": {
+          "base": {
+            "trades": 90,
+            "wins": 43,
+            "losses": 47,
+            "positive_net_sum": 351.5477666154567,
+            "negative_net_sum": -238.55333700336945,
+            "zero_net_trades": 0,
+            "avg_net_return": 1.255493662356524,
+            "profit_factor": 1.4736652650995665,
+            "win_rate": 47.77777777777778,
+            "net_sum": 112.99442961208716,
+            "common_slot_mean": 0.49997535226587236,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "double_cost": {
+            "trades": 90,
+            "wins": 41,
+            "losses": 49,
+            "positive_net_sum": 342.70362055655187,
+            "negative_net_sum": -248.60919094446473,
+            "zero_net_trades": 0,
+            "avg_net_return": 1.0454936623565239,
+            "profit_factor": 1.3784833105108585,
+            "win_rate": 45.55555555555556,
+            "net_sum": 94.09442961208715,
+            "common_slot_mean": 0.4163470336818016,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "winner_removed": {
+            "trades": 89,
+            "wins": 42,
+            "losses": 47,
+            "positive_net_sum": 318.06792704326415,
+            "negative_net_sum": -238.55333700336945,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.8934223599988163,
+            "profit_factor": 1.3333199654162524,
+            "win_rate": 47.19101123595505,
+            "net_sum": 79.51459003989464,
+            "common_slot_mean": 0.35183446920307365,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "double_cost_winner_removed": {
+            "trades": 89,
+            "wins": 40,
+            "losses": 49,
+            "positive_net_sum": 309.4337809843594,
+            "negative_net_sum": -248.60919094446473,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.6834223599988161,
+            "profit_factor": 1.2446594585213138,
+            "win_rate": 44.9438202247191,
+            "net_sum": 60.82459003989463,
+            "common_slot_mean": 0.2691353541588258,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "largest_winner": {
+            "decision_date": "2025-03-25",
+            "code": "300871",
+            "selection_score": 87.2835,
+            "signal_date": "2025-03-25",
+            "row": 536,
+            "col": 776,
+            "corrected_candidate": true,
+            "legacy_candidate": true,
+            "legacy_selected": true,
+            "original_score": 87.2835,
+            "legacy_score": 87.2835,
+            "feature_eligible": true,
+            "missing_features": "",
+            "momentum10_pct": 22.727272724879665,
+            "csi300_return20_pct": 0.16924581426112084,
+            "recent_impulse_age": 6.0,
+            "pullback_depth_pct": 4.972804947052345,
+            "contraction_volume_ratio": 0.6492001410287507,
+            "breakout_volume_ratio": 6.058971100902486,
+            "breakout_extension_pct": 7.048458157871651,
+            "chinext_above_ma20_breadth": 0.2526002971768202,
+            "close_location": 0.9609375003435715,
+            "body_fraction": 0.8906250014506348,
+            "range_over_prior_atr14": 4.397546012138109,
+            "pullback_support_distance_pct": 21.398834295726754,
+            "label_status": "closed",
+            "label_available_date": "2025-03-31",
+            "net_return_pct": 33.47983957219254,
+            "label_reason": "filled",
+            "entry_date": "2025-03-26",
+            "entry_price": 16.83,
+            "exit_date": "2025-03-31",
+            "exit_price": 22.5,
+            "hold_days": 3.0,
+            "gross_return_pct": 33.68983957219254,
+            "mae_pct": -3.3868092691621943,
+            "mfe_pct": 49.73262032085564,
+            "exit_reason": "hold_expired",
+            "benchmark_return_pct": null,
+            "entry_factor": 1.5988419146835,
+            "exit_factor": 1.5988419146835
+          }
+        },
+        "active_entry_months": 6,
+        "selected_order_dates": 56,
+        "closed_on_new_vs_legacy": 1,
+        "original_common_slots": 226,
+        "paired_vs_controls": {
+          "legacy_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -0.010619586564899171,
+              0.0
+            ],
+            "point_delta_per_opportunity": -0.0035077459413742954
+          },
+          "corrected_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              0.0,
+              0.0
+            ],
+            "point_delta_per_opportunity": 0.0
+          },
+          "eligible_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              0.0,
+              0.0
+            ],
+            "point_delta_per_opportunity": 0.0
+          }
+        }
+      },
+      "eligible_original": {
+        "metrics": {
+          "base": {
+            "trades": 90,
+            "wins": 43,
+            "losses": 47,
+            "positive_net_sum": 351.5477666154567,
+            "negative_net_sum": -238.55333700336945,
+            "zero_net_trades": 0,
+            "avg_net_return": 1.255493662356524,
+            "profit_factor": 1.4736652650995665,
+            "win_rate": 47.77777777777778,
+            "net_sum": 112.99442961208716,
+            "common_slot_mean": 0.49997535226587236,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "double_cost": {
+            "trades": 90,
+            "wins": 41,
+            "losses": 49,
+            "positive_net_sum": 342.70362055655187,
+            "negative_net_sum": -248.60919094446473,
+            "zero_net_trades": 0,
+            "avg_net_return": 1.0454936623565239,
+            "profit_factor": 1.3784833105108585,
+            "win_rate": 45.55555555555556,
+            "net_sum": 94.09442961208715,
+            "common_slot_mean": 0.4163470336818016,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "winner_removed": {
+            "trades": 89,
+            "wins": 42,
+            "losses": 47,
+            "positive_net_sum": 318.06792704326415,
+            "negative_net_sum": -238.55333700336945,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.8934223599988163,
+            "profit_factor": 1.3333199654162524,
+            "win_rate": 47.19101123595505,
+            "net_sum": 79.51459003989464,
+            "common_slot_mean": 0.35183446920307365,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "double_cost_winner_removed": {
+            "trades": 89,
+            "wins": 40,
+            "losses": 49,
+            "positive_net_sum": 309.4337809843594,
+            "negative_net_sum": -248.60919094446473,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.6834223599988161,
+            "profit_factor": 1.2446594585213138,
+            "win_rate": 44.9438202247191,
+            "net_sum": 60.82459003989463,
+            "common_slot_mean": 0.2691353541588258,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "largest_winner": {
+            "decision_date": "2025-03-25",
+            "code": "300871",
+            "selection_score": 87.2835,
+            "signal_date": "2025-03-25",
+            "row": 536,
+            "col": 776,
+            "corrected_candidate": true,
+            "legacy_candidate": true,
+            "legacy_selected": true,
+            "original_score": 87.2835,
+            "legacy_score": 87.2835,
+            "feature_eligible": true,
+            "missing_features": "",
+            "momentum10_pct": 22.727272724879665,
+            "csi300_return20_pct": 0.16924581426112084,
+            "recent_impulse_age": 6.0,
+            "pullback_depth_pct": 4.972804947052345,
+            "contraction_volume_ratio": 0.6492001410287507,
+            "breakout_volume_ratio": 6.058971100902486,
+            "breakout_extension_pct": 7.048458157871651,
+            "chinext_above_ma20_breadth": 0.2526002971768202,
+            "close_location": 0.9609375003435715,
+            "body_fraction": 0.8906250014506348,
+            "range_over_prior_atr14": 4.397546012138109,
+            "pullback_support_distance_pct": 21.398834295726754,
+            "label_status": "closed",
+            "label_available_date": "2025-03-31",
+            "net_return_pct": 33.47983957219254,
+            "label_reason": "filled",
+            "entry_date": "2025-03-26",
+            "entry_price": 16.83,
+            "exit_date": "2025-03-31",
+            "exit_price": 22.5,
+            "hold_days": 3.0,
+            "gross_return_pct": 33.68983957219254,
+            "mae_pct": -3.3868092691621943,
+            "mfe_pct": 49.73262032085564,
+            "exit_reason": "hold_expired",
+            "benchmark_return_pct": null,
+            "entry_factor": 1.5988419146835,
+            "exit_factor": 1.5988419146835
+          }
+        },
+        "active_entry_months": 6,
+        "selected_order_dates": 56,
+        "closed_on_new_vs_legacy": 1,
+        "original_common_slots": 226,
+        "paired_vs_controls": {
+          "legacy_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -0.010619586564899171,
+              0.0
+            ],
+            "point_delta_per_opportunity": -0.0035077459413742954
+          },
+          "corrected_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              0.0,
+              0.0
+            ],
+            "point_delta_per_opportunity": 0.0
+          },
+          "eligible_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              0.0,
+              0.0
+            ],
+            "point_delta_per_opportunity": 0.0
+          }
+        }
+      },
+      "rank_only": {
+        "metrics": {
+          "base": {
+            "trades": 90,
+            "wins": 41,
+            "losses": 49,
+            "positive_net_sum": 279.18837215419387,
+            "negative_net_sum": -259.4931972925432,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.21883527624056376,
+            "profit_factor": 1.0758986172552611,
+            "win_rate": 45.55555555555556,
+            "net_sum": 19.695174861650738,
+            "common_slot_mean": 0.08714679142323335,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "double_cost": {
+            "trades": 90,
+            "wins": 40,
+            "losses": 50,
+            "positive_net_sum": 270.6775594286225,
+            "negative_net_sum": -269.8823845669718,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.008835276240563574,
+            "profit_factor": 1.0029463755588441,
+            "win_rate": 44.44444444444444,
+            "net_sum": 0.7951748616507217,
+            "common_slot_mean": 0.0035184728391624855,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "winner_removed": {
+            "trades": 89,
+            "wins": 40,
+            "losses": 49,
+            "positive_net_sum": 245.70853258200137,
+            "negative_net_sum": -259.4931972925432,
+            "zero_net_trades": 0,
+            "avg_net_return": -0.1548838731521551,
+            "profit_factor": 0.9468785122139387,
+            "win_rate": 44.9438202247191,
+            "net_sum": -13.784664710541804,
+            "common_slot_mean": -0.060994091639565505,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "double_cost_winner_removed": {
+            "trades": 89,
+            "wins": 39,
+            "losses": 50,
+            "positive_net_sum": 237.40771985642996,
+            "negative_net_sum": -269.8823845669718,
+            "zero_net_trades": 0,
+            "avg_net_return": -0.36488387315215515,
+            "profit_factor": 0.8796710472132234,
+            "win_rate": 43.82022471910113,
+            "net_sum": -32.47466471054181,
+            "common_slot_mean": -0.1436932066838133,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 90,
+            "common_slots": 226
+          },
+          "largest_winner": {
+            "decision_date": "2025-03-25",
+            "code": "300871",
+            "selection_score": 6.1442817249,
+            "signal_date": "2025-03-25",
+            "row": 536,
+            "col": 776,
+            "corrected_candidate": true,
+            "legacy_candidate": true,
+            "legacy_selected": true,
+            "original_score": 87.2835,
+            "legacy_score": 87.2835,
+            "feature_eligible": true,
+            "missing_features": "",
+            "momentum10_pct": 22.727272724879665,
+            "csi300_return20_pct": 0.16924581426112084,
+            "recent_impulse_age": 6.0,
+            "pullback_depth_pct": 4.972804947052345,
+            "contraction_volume_ratio": 0.6492001410287507,
+            "breakout_volume_ratio": 6.058971100902486,
+            "breakout_extension_pct": 7.048458157871651,
+            "chinext_above_ma20_breadth": 0.2526002971768202,
+            "close_location": 0.9609375003435715,
+            "body_fraction": 0.8906250014506348,
+            "range_over_prior_atr14": 4.397546012138109,
+            "pullback_support_distance_pct": 21.398834295726754,
+            "label_status": "closed",
+            "label_available_date": "2025-03-31",
+            "net_return_pct": 33.47983957219254,
+            "label_reason": "filled",
+            "entry_date": "2025-03-26",
+            "entry_price": 16.83,
+            "exit_date": "2025-03-31",
+            "exit_price": 22.5,
+            "hold_days": 3.0,
+            "gross_return_pct": 33.68983957219254,
+            "mae_pct": -3.3868092691621943,
+            "mfe_pct": 49.73262032085564,
+            "exit_reason": "hold_expired",
+            "benchmark_return_pct": null,
+            "entry_factor": 1.5988419146835,
+            "exit_factor": 1.5988419146835
+          }
+        },
+        "active_entry_months": 6,
+        "selected_order_dates": 56,
+        "closed_on_new_vs_legacy": 22,
+        "original_common_slots": 226,
+        "paired_vs_controls": {
+          "legacy_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -0.9504704116729399,
+              0.1418659210683588
+            ],
+            "point_delta_per_opportunity": -0.41633630678401334
+          },
+          "corrected_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -0.9405610293885573,
+              0.1418659210683588
+            ],
+            "point_delta_per_opportunity": -0.4128285608426391
+          },
+          "eligible_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -0.9405610293885573,
+              0.1418659210683588
+            ],
+            "point_delta_per_opportunity": -0.4128285608426391
+          }
+        }
+      },
+      "positive_only": {
+        "metrics": {
+          "base": {
+            "trades": 77,
+            "wins": 33,
+            "losses": 44,
+            "positive_net_sum": 245.33337088557786,
+            "negative_net_sum": -233.21695572295394,
+            "zero_net_trades": 0,
+            "avg_net_return": 0.15735604107303816,
+            "profit_factor": 1.0519534058965139,
+            "win_rate": 42.857142857142854,
+            "net_sum": 12.116415162623937,
+            "common_slot_mean": 0.053612456471787334,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 77,
+            "common_slots": 226
+          },
+          "double_cost": {
+            "trades": 77,
+            "wins": 33,
+            "losses": 44,
+            "positive_net_sum": 238.40337088557789,
+            "negative_net_sum": -242.45695572295395,
+            "zero_net_trades": 0,
+            "avg_net_return": -0.05264395892696154,
+            "profit_factor": 0.9832812186175928,
+            "win_rate": 42.857142857142854,
+            "net_sum": -4.053584837376039,
+            "common_slot_mean": -0.01793621609458424,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 77,
+            "common_slots": 226
+          },
+          "winner_removed": {
+            "trades": 76,
+            "wins": 32,
+            "losses": 44,
+            "positive_net_sum": 211.85353131338533,
+            "negative_net_sum": -233.21695572295394,
+            "zero_net_trades": 0,
+            "avg_net_return": -0.2810976895995869,
+            "profit_factor": 0.9083967786847071,
+            "win_rate": 42.10526315789473,
+            "net_sum": -21.363424409568605,
+            "common_slot_mean": -0.09452842659101153,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 77,
+            "common_slots": 226
+          },
+          "double_cost_winner_removed": {
+            "trades": 76,
+            "wins": 32,
+            "losses": 44,
+            "positive_net_sum": 205.13353131338533,
+            "negative_net_sum": -242.45695572295395,
+            "zero_net_trades": 0,
+            "avg_net_return": -0.49109768959958694,
+            "profit_factor": 0.846061647114729,
+            "win_rate": 42.10526315789473,
+            "net_sum": -37.32342440956861,
+            "common_slot_mean": -0.16514789561756021,
+            "unresolved": 0,
+            "cancelled": 0,
+            "selected_orders": 77,
+            "common_slots": 226
+          },
+          "largest_winner": {
+            "decision_date": "2025-03-25",
+            "code": "300871",
+            "selection_score": 6.1442817249,
+            "signal_date": "2025-03-25",
+            "row": 536,
+            "col": 776,
+            "corrected_candidate": true,
+            "legacy_candidate": true,
+            "legacy_selected": true,
+            "original_score": 87.2835,
+            "legacy_score": 87.2835,
+            "feature_eligible": true,
+            "missing_features": "",
+            "momentum10_pct": 22.727272724879665,
+            "csi300_return20_pct": 0.16924581426112084,
+            "recent_impulse_age": 6.0,
+            "pullback_depth_pct": 4.972804947052345,
+            "contraction_volume_ratio": 0.6492001410287507,
+            "breakout_volume_ratio": 6.058971100902486,
+            "breakout_extension_pct": 7.048458157871651,
+            "chinext_above_ma20_breadth": 0.2526002971768202,
+            "close_location": 0.9609375003435715,
+            "body_fraction": 0.8906250014506348,
+            "range_over_prior_atr14": 4.397546012138109,
+            "pullback_support_distance_pct": 21.398834295726754,
+            "label_status": "closed",
+            "label_available_date": "2025-03-31",
+            "net_return_pct": 33.47983957219254,
+            "label_reason": "filled",
+            "entry_date": "2025-03-26",
+            "entry_price": 16.83,
+            "exit_date": "2025-03-31",
+            "exit_price": 22.5,
+            "hold_days": 3.0,
+            "gross_return_pct": 33.68983957219254,
+            "mae_pct": -3.3868092691621943,
+            "mfe_pct": 49.73262032085564,
+            "exit_reason": "hold_expired",
+            "benchmark_return_pct": null,
+            "entry_factor": 1.5988419146835,
+            "exit_factor": 1.5988419146835
+          }
+        },
+        "active_entry_months": 6,
+        "selected_order_dates": 51,
+        "closed_on_new_vs_legacy": 21,
+        "original_common_slots": 226,
+        "paired_vs_controls": {
+          "legacy_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -1.097505436579773,
+              0.23328589691848803
+            ],
+            "point_delta_per_opportunity": -0.4498706417354593
+          },
+          "corrected_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -1.0868882412750778,
+              0.23328589691848803
+            ],
+            "point_delta_per_opportunity": -0.44636289579408506
+          },
+          "eligible_original": {
+            "months": 6,
+            "replicates": 5000,
+            "seed": 20261004,
+            "ci95_delta_per_opportunity": [
+              -1.0868882412750778,
+              0.23328589691848803
+            ],
+            "point_delta_per_opportunity": -0.44636289579408506
+          }
+        }
+      }
+    },
+    "candidate_density": {
+      "corrected_full": {
+        "zero": 57,
+        "one": 22,
+        "two": 10,
+        "over_two": 24
+      },
+      "feature_eligible": {
+        "zero": 57,
+        "one": 22,
+        "two": 10,
+        "over_two": 24
+      }
+    },
+    "replacements_vs_eligible_original": {
+      "rank_only": {
+        "added_names": 21,
+        "removed_names": 21,
+        "changed_dates": 18
+      },
+      "positive_only": {
+        "added_names": 20,
+        "removed_names": 33,
+        "changed_dates": 29
+      }
+    },
+    "historical_feature_prefix_passed": true,
+    "candidate_label_status_counts": {
+      "closed": 183,
+      "unresolved": 13
+    }
+  },
+  "nominees": [],
+  "later": {},
+  "passes_later": {},
+  "completed_at": "2026-10-04T15:55:29.838316+08:00",
+  "status": "stopped_no_inner_qualifier",
+  "later_not_read": true,
+  "no_2023h2_outcomes": true,
+  "source_snapshot_unchanged": true
+}

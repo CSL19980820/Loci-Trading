@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "checks": [
+    "all12_features_ignore_today_HLCV",
+    "feature_prefix_causality",
+    "negative_predictions_not_clipped",
+    "positive_policy_requires_strict_positive",
+    "industry_intersection_rerank",
+    "finite_zero_volume_known_cancel",
+    "missing_volume_not_zero",
+    "unknown_limit_not_zero",
+    "actual_exit_after_fit_cutoff_excluded",
+    "selected_unknown_null_budget",
+    "empty_days_in_budget_not_labels"
+  ]
+}

@@ -40,7 +40,7 @@
 
 本域 router 一律用 `_write: None = write_guard` 默认参数风格声明写权限依赖，**不要**改成 `Annotated[..., Depends(...)]`——那是 community 两个 router 为了绕开 `from __future__ import annotations` 才用的写法，本域各文件都带该 future 导入。
 
-策略目录返回 `entry_instructions` 时，前端战法详情以“买入说明”展示；内置战法首次读取目录时会将默认简述写入 `ops.db.strategy_docs`，已有非空人工内容优先保留。该字段只描述执行预案，不改变 `entry_timing` 或回测成交逻辑。
+策略目录返回 `entry_instructions` 时，前端战法详情以“买入说明”展示；内置战法首次读取目录时会将默认简述写入 `ops.db.strategy_docs`。股票范围调整前的已知旧内置默认说明按完整原文摘要精确识别，并随当前默认升级；其余非空人工内容保留。该字段只描述执行预案，不改变 `entry_timing` 或回测成交逻辑。
 
 战法定时（工坊详情保存）：
 - `GET|PUT|DELETE /api/strategies/{slug}/job` — 绑定 `screen:{slug}`；`schedule_mode` 合成交易日 cron；`universe` 写入 config 供选股 Job 消费；`next_runs` 为完整 `YYYY-MM-DD HH:MM`。`interval` 的 cron 按小时粗触发，执行前会按配置的起止分钟再次闸门，预览只显示窗口内可执行时刻。

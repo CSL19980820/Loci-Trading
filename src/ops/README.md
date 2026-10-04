@@ -1,5 +1,9 @@
 # 运维（ops）
 
+## 当前瘦身边界
+
+独立纸面量化舱、`strategy_monitor`、`paper_eod` 和重复的 `intel_brief` 任务已移除。Ops schema 15 删除专属旧舱表和退役任务历史；Guardian/股票智能体在 palace.db 中的账户不在删除范围。告警、通知和情报采集保留。离线清理及回滚见 `deploy/SLIMMING.md`。
+
 ## 职责
 定时任务、技能包、通知、调度器、运维配置。
 

@@ -1,0 +1,215 @@
+{
+  "contraction-rebreakout-v1": {
+    "strategy": "contraction-rebreakout-v1",
+    "segment": "train",
+    "cost_pct": 0.21,
+    "baseline": {
+      "n": 226,
+      "mean": 0.7042452607291924,
+      "median": -1.3292442442442551,
+      "positive_pct": 45.13274336283185
+    },
+    "by_exit": {
+      "hold_expired": {
+        "n": 146,
+        "mean": 4.666905075345225,
+        "median": 2.9650438080819894,
+        "positive_pct": 69.86301369863014,
+        "net_sum": 681.3681410004028
+      },
+      "stop_loss": {
+        "n": 80,
+        "mean": -6.527608900945069,
+        "median": -6.210000000000005,
+        "positive_pct": 0.0,
+        "net_sum": -522.2087120756055
+      }
+    },
+    "unconditional_economic_marks": {
+      "session1_open_gross": {
+        "n": 226,
+        "mean": 9.824982518806696e-17,
+        "median": 0.0,
+        "positive_pct": 2.6548672566371683
+      },
+      "session1_close_gross": {
+        "n": 226,
+        "mean": 0.2073354984256961,
+        "median": -0.09532280645226932,
+        "positive_pct": 48.67256637168141
+      },
+      "session2_open_gross": {
+        "n": 226,
+        "mean": -0.03130046758717226,
+        "median": -0.3193473489221721,
+        "positive_pct": 43.80530973451327
+      },
+      "session2_close_gross": {
+        "n": 226,
+        "mean": 0.3250021325973051,
+        "median": -0.732906126283317,
+        "positive_pct": 43.36283185840708
+      },
+      "session3_open_gross": {
+        "n": 226,
+        "mean": 0.09372589071707085,
+        "median": -0.9220647773279245,
+        "positive_pct": 42.92035398230089
+      },
+      "session3_close_gross": {
+        "n": 226,
+        "mean": 1.0973454679858723,
+        "median": -0.44511513792974133,
+        "positive_pct": 46.017699115044245
+      },
+      "session4_open_gross": {
+        "n": 226,
+        "mean": 0.5807059071732892,
+        "median": -0.94160802923689,
+        "positive_pct": 46.46017699115044
+      },
+      "session4_close_gross": {
+        "n": 226,
+        "mean": 1.2708626999707013,
+        "median": 0.3270730294523738,
+        "positive_pct": 50.442477876106196
+      }
+    },
+    "entry_day_classification": {
+      "entry_day_red": {
+        "n": 114,
+        "mean": -1.8592948082956426,
+        "median": -6.210000000000005,
+        "positive_pct": 29.82456140350877
+      },
+      "entry_day_green": {
+        "n": 112,
+        "mean": 3.3135628309866143,
+        "median": 2.3474957861743135,
+        "positive_pct": 60.71428571428571
+      }
+    },
+    "gap_buckets": {
+      "gap_negative": {
+        "n": 149,
+        "mean": 0.5401750266781726,
+        "median": -1.4313740458015265,
+        "positive_pct": 43.624161073825505
+      },
+      "gap_0_to_3": {
+        "n": 65,
+        "mean": 0.6160915984783765,
+        "median": -1.0936524300441683,
+        "positive_pct": 47.69230769230769
+      },
+      "gap_ge3": {
+        "n": 12,
+        "mean": 3.2189496707212757,
+        "median": -0.6573684210526407,
+        "positive_pct": 50.0
+      }
+    },
+    "limitations": [
+      "Entry-day mark is unavailable at opening and cannot be an opening filter.",
+      "Forward marks are diagnostic only; they do not apply limit-down exit feasibility, stops, fees, or portfolio constraints.",
+      "No stop-versus-timeout causal claim: exit categories depend on realized future prices."
+    ]
+  },
+  "double-volume-yin-low-open-v1": {
+    "strategy": "double-volume-yin-low-open-v1",
+    "segment": "train",
+    "cost_pct": 0.21,
+    "baseline": {
+      "n": 513,
+      "mean": -0.832997393567846,
+      "median": -1.6128056112224465,
+      "positive_pct": 38.98635477582846
+    },
+    "by_exit": {
+      "hold_expired": {
+        "n": 321,
+        "mean": 3.1382002761938654,
+        "median": 1.8002483247930623,
+        "positive_pct": 62.30529595015576,
+        "net_sum": 1007.3622886582308
+      },
+      "stop_loss": {
+        "n": 192,
+        "mean": -7.472343497700709,
+        "median": -6.210000000000005,
+        "positive_pct": 0.0,
+        "net_sum": -1434.689951558536
+      }
+    },
+    "unconditional_economic_marks": {
+      "session1_open_gross": {
+        "n": 513,
+        "mean": -1.7313419487331875e-16,
+        "median": 0.0,
+        "positive_pct": 1.5594541910331383
+      },
+      "session1_close_gross": {
+        "n": 513,
+        "mean": 1.14659096758957,
+        "median": 0.6177325581395499,
+        "positive_pct": 57.1150097465887
+      },
+      "session2_open_gross": {
+        "n": 513,
+        "mean": 0.02510581130355015,
+        "median": -0.09866798223976403,
+        "positive_pct": 48.53801169590643
+      },
+      "session2_close_gross": {
+        "n": 513,
+        "mean": 0.1258526903955129,
+        "median": -0.42075736325386526,
+        "positive_pct": 44.44444444444444
+      },
+      "session3_open_gross": {
+        "n": 513,
+        "mean": -0.30827746986292864,
+        "median": -0.7309941520467822,
+        "positive_pct": 41.91033138401559
+      },
+      "session3_close_gross": {
+        "n": 513,
+        "mean": -0.14366790965370774,
+        "median": -0.5136986301369828,
+        "positive_pct": 46.393762183235864
+      },
+      "session4_open_gross": {
+        "n": 513,
+        "mean": -0.4273727792671158,
+        "median": -0.7905138339921014,
+        "positive_pct": 44.054580896686154
+      },
+      "session4_close_gross": {
+        "n": 513,
+        "mean": -0.3396608343829857,
+        "median": -0.675675675675691,
+        "positive_pct": 43.07992202729044
+      }
+    },
+    "entry_day_classification": {
+      "entry_day_red": {
+        "n": 203,
+        "mean": -3.8987695846158616,
+        "median": -6.210000000000005,
+        "positive_pct": 19.704433497536947
+      },
+      "entry_day_green": {
+        "n": 310,
+        "mean": 1.1745889121829518,
+        "median": 0.3089317523399684,
+        "positive_pct": 51.61290322580645
+      }
+    },
+    "gap_buckets": {},
+    "limitations": [
+      "Entry-day mark is unavailable at opening and cannot be an opening filter.",
+      "Forward marks are diagnostic only; they do not apply limit-down exit feasibility, stops, fees, or portfolio constraints.",
+      "No stop-versus-timeout causal claim: exit categories depend on realized future prices."
+    ]
+  }
+}

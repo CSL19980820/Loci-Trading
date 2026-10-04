@@ -145,7 +145,7 @@ export function useQuantBacktestPanel(opts: {
         range.value = [cfg.start, cfg.end]
         activePreset.value = null
       }
-      if (cfg.signal_dataset) mode.value = 'trade'
+      if (cfg.signal_dataset || cfg.mode === 'trade') mode.value = 'trade'
     },
     { immediate: true },
   )
@@ -204,7 +204,7 @@ export function useQuantBacktestPanel(opts: {
 
   const entryDetail = computed(() => {
     if (mode.value === 'trade') {
-      if (selected.value?.backtest_config?.signal_dataset) {
+      if (selected.value?.backtest_config?.signal_dataset || selected.value?.backtest_config?.mode === 'trade') {
         return `持有期 ${holdDays.value} 表示买入后 ${holdDays.value} 个交易日（含买入日 ${holdDays.value + 1} 日）· 费用为实验假设`
       }
       return '按入场价模拟买卖（止损/持有期）· 成本计入净收益'

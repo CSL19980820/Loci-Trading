@@ -15,13 +15,10 @@ import {
   ChartColumn,
   Cpu,
   BriefcaseBusiness,
-  Globe2,
   Gauge,
-  LayoutDashboard,
-  Search,
+  ListFilter,
   Settings,
   ShieldCheck,
-  Sparkles,
   Target,
   TrendingUp,
 } from '@lucide/vue'
@@ -32,30 +29,17 @@ import { useUserStore } from '@/shared/stores/user'
 /** 组名是分区（一级菜单），带自己的主 icon */
 type NavGroup = { id: string; label: string; icon: Component; items: NavMenuItem[] }
 
-const navGroups: NavGroup[] = [
-  {
-    id: 'market',
-    label: '市场',
-    icon: Globe2,
-    items: [
-      navMenuItem('pulse', Gauge),
-      navMenuItem('data-query', LayoutDashboard),
-    ],
-  },
-  {
-    id: 'mine',
-    label: '我的',
-    icon: BriefcaseBusiness,
-    items: [
-      navMenuItem('pool', Target),
-      navMenuItem('screen-history', Search),
-      navMenuItem('quant', ChartColumn),
-      navMenuItem('strategy-converter', Sparkles),
-      navMenuItem('agents', Cpu),
-      navMenuItem('winrate', TrendingUp),
-    ],
-  },
-]
+const navGroups: NavGroup[] = [{
+  id: 'workspace', label: '交易工作台', icon: BriefcaseBusiness,
+  items: [
+    navMenuItem('pulse', Gauge),
+    navMenuItem('screen-history', ListFilter),
+    navMenuItem('pool', Target),
+    navMenuItem('quant', ChartColumn),
+    navMenuItem('agents', Cpu),
+    navMenuItem('winrate', TrendingUp),
+  ],
+}]
 
 /**
  * 底部固定菜单。`path` 有值即是真路由项（选中态生效），否则是开弹层的动作项。
@@ -75,7 +59,7 @@ export function useSidebarNav() {
   const userStore = useUserStore()
   const themeOpen = ref(false)
 
-  const defaultOpeneds = ref(['market', 'mine'])
+  const defaultOpeneds = ref(['workspace'])
 
   const active = computed(() => {
     if (route.path.startsWith('/agents')) return '/agents'

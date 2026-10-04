@@ -38,7 +38,6 @@ export interface McpServer {
   builtin?: boolean
   /** 常驻内置（悟道） */
   resident?: boolean
-  hist_daily_primary?: boolean
   quota?: {
     daily_total: number
     daily_structured: number

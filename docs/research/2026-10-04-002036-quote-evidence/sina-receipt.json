@@ -1,0 +1,69 @@
+{
+  "source": "sina",
+  "code": "002036",
+  "requested_window": [
+    "2026-07-22",
+    "2026-07-29"
+  ],
+  "started_at": "2026-10-04T16:34:36.619682+08:00",
+  "prices": "unadjusted yuan/share",
+  "volume": "shares",
+  "amount": "yuan",
+  "trade_status_field": null,
+  "mutable_adapter_paths": "isolated_check temporary directory",
+  "no_database_writes": true,
+  "no_candidate_or_return_calculation": true,
+  "snapshots_before_sha256": {
+    ".local\\chinext-payoff-20261004\\market.db": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+    ".local\\multi-strategy-scoring-20261004\\market.db": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c"
+  },
+  "native_call": "SinaAdapter.fetch_daily(code, instrument_type=STOCK)",
+  "endpoint": "https://finance.sina.com.cn/realstock/company/sz002036/hisdata_klc2/klc_kl.js",
+  "unit_basis": "Sina native English volume/amount columns use DAILY_CONTRACT without multiplier; source returns shares/yuan",
+  "source_code_sha256": {
+    "src/market/infrastructure/adapters/sina_adapter.py": "5f12cc7961746a7f2b1ff9941171f4adc3de63ed1a25b946aa5b8b7f05ddb9ab",
+    "src/market/infrastructure/sina.py": "471bb5efe315f20ebb100b95e5df437ffb787434e1d73235a8c9f9074e7ae452",
+    "src/market/domain/source_contract.py": "6193003eaa3e852df6bf7a21bbd4b00a584ed9178a9aa1f0f40987c1fdd70617"
+  },
+  "returned_rows": 5192,
+  "returned_columns": [
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount",
+    "turnover",
+    "outstanding_share"
+  ],
+  "returned_first_date": "2004-09-03",
+  "returned_last_date": "2026-09-30",
+  "ok": true,
+  "selected_rows": [
+    {
+      "date": "2026-07-22",
+      "open": 7.48,
+      "high": 7.69,
+      "low": 6.9,
+      "close": 7.23,
+      "volume": 123608323.0,
+      "amount": 888461618.0
+    }
+  ],
+  "all_dates_in_requested_window": true,
+  "csv_sha256": "cbc11d47f4aba0510f089e68db0cc26da91e527ae5d9fc7e9ae7e30e59b63071",
+  "missing_requested_weekdays": [
+    "2026-07-23",
+    "2026-07-24",
+    "2026-07-27",
+    "2026-07-28",
+    "2026-07-29"
+  ],
+  "completed_at": "2026-10-04T16:34:38.275664+08:00",
+  "snapshots_after_sha256": {
+    ".local\\chinext-payoff-20261004\\market.db": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+    ".local\\multi-strategy-scoring-20261004\\market.db": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c"
+  },
+  "snapshots_unchanged": true
+}

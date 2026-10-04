@@ -24,6 +24,11 @@ def ensure_managed_intel_jobs(store: Any, *, enabled: bool = True) -> dict[str, 
     不回写 enabled / cron / 用户调过的参数——否则每次应用启动都会把用户在
     运维页关掉的任务重新打开、把改过的采集量还原成默认值。
     """
+    from src.intel import wudao_availability
+    availability = wudao_availability()
+    if not availability.get("available"):
+        return {"created": [], "updated": [], "skipped": True,
+                "reason": availability.get("reason") or "未启用悟道情报"}
     specs = [
         (
             MANAGED_INTEL_OPEN,

@@ -31,8 +31,6 @@ def wudao_quota_config() -> dict[str, int]:
     return merged
 
 
-def wudao_hist_daily_primary() -> bool:
-    return bool(wudao_config().get("hist_daily_primary", False))
 
 
 def save_wudao_settings(updates: dict[str, Any]) -> dict[str, Any]:
@@ -52,7 +50,6 @@ def public_wudao_settings() -> dict[str, Any]:
     cfg = wudao_config()
     quota = wudao_quota_config()
     return {
-        "hist_daily_primary": bool(cfg.get("hist_daily_primary", False)),
         "note": str(cfg.get("note") or ""),
         "quota": quota,
     }

@@ -3,7 +3,7 @@ import { Progress } from '@/shared/components/ui/progress'
 import { Spinner } from '@/shared/components/ui/spinner'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowUpRight, BookOpen, Compass, Cpu, Flag, Receipt } from '@lucide/vue'
+import { ArrowUpRight, BookOpen, Compass, Cpu, Flag, Receipt, ScanEye } from '@lucide/vue'
 
 import { Button } from '@/shared/components/ui/button'
 import { Card } from '@/shared/components/ui/card'
@@ -63,7 +63,7 @@ function open(query?: Record<string, string>): void {
 <template>
   <Card
     class="agent-card"
-    :class="{ 'agent-card--guardian': card?.kind === 'guardian', 'agent-card--leader': card?.kind === 'leader' }"
+    :class="{ 'agent-card--guardian': card?.kind === 'guardian', 'agent-card--leader': card?.kind === 'leader', 'agent-card--falcon': card?.kind === 'falcon' }"
     :interactive="Boolean(card)"
     :aria-busy="loading"
     :data-agent-id="card?.id"
@@ -89,6 +89,7 @@ function open(query?: Record<string, string>): void {
         <span class="agent-card__avatar" aria-hidden="true">
           <Compass v-if="card.kind === 'guardian'" />
           <Flag v-else-if="card.kind === 'leader'" />
+          <ScanEye v-else-if="card.kind === 'falcon'" />
           <Cpu v-else />
         </span>
         <div class="agent-card__identity">
@@ -205,7 +206,8 @@ function open(query?: Record<string, string>): void {
 }
 
 .agent-card--guardian .agent-card__avatar,
-.agent-card--leader .agent-card__avatar {
+.agent-card--leader .agent-card__avatar,
+.agent-card--falcon .agent-card__avatar {
   border-color: var(--seal-border);
   background: var(--seal-soft);
   color: var(--seal-ink);

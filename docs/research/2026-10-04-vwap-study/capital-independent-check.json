@@ -1,0 +1,133 @@
+{
+  "checked_at": "2026-10-04T08:46:52.061892+00:00",
+  "scope": "18 fixed policy-period-cost cases; accepted return sum, nonnegative cash, quotas, final empty portfolio, independently recomputed daily-close drawdown and input hashes",
+  "all_passed": true,
+  "cases": [
+    {
+      "phase": "validation_2025h2",
+      "variant": "corrected_low_open",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 1294424.2541353875,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "corrected_low_open",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 1254981.8226224997,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "full_shape",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 1225574.675112638,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "full_shape",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 1180735.9573210145,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "yin_close_and_open_above_vwap",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 1042487.7042902051,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "yin_close_and_open_above_vwap",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 1038470.1422260756,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "corrected_low_open",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 949116.2412624672,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "corrected_low_open",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 894015.1100793503,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "full_shape",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 981003.8644844943,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "full_shape",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 915813.3661901776,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "yin_close_and_open_above_vwap",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 1248722.0222621888,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "yin_close_and_open_above_vwap",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 1235943.4902955256,
+      "passed": true
+    },
+    {
+      "phase": "pooled_later",
+      "variant": "corrected_low_open",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 1243540.4953978546,
+      "passed": true
+    },
+    {
+      "phase": "pooled_later",
+      "variant": "corrected_low_open",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 1148996.9327018498,
+      "passed": true
+    },
+    {
+      "phase": "pooled_later",
+      "variant": "full_shape",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 1206578.5395971322,
+      "passed": true
+    },
+    {
+      "phase": "pooled_later",
+      "variant": "full_shape",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 1096549.323511192,
+      "passed": true
+    },
+    {
+      "phase": "pooled_later",
+      "variant": "yin_close_and_open_above_vwap",
+      "cost_case": "base",
+      "ending_equity_from_independent_accepted_return_sum": 1291209.726552394,
+      "passed": true
+    },
+    {
+      "phase": "pooled_later",
+      "variant": "yin_close_and_open_above_vwap",
+      "cost_case": "double_cost",
+      "ending_equity_from_independent_accepted_return_sum": 1274413.6325216014,
+      "passed": true
+    }
+  ]
+}

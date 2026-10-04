@@ -7,7 +7,7 @@
 import { ref } from 'vue'
 import { toast } from 'vue-sonner'
 
-import { listAlertRules, saveAlertRule, scanAlertRules } from '@/shared/api/quant_ops_paper'
+import { listAlertRules, saveAlertRule, scanAlertRules } from '@/shared/api/quant_utilities'
 
 export function useAlertRules() {
   const alertCode = ref('')

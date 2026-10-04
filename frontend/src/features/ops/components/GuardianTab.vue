@@ -4,7 +4,7 @@ import { computed, defineAsyncComponent, KeepAlive, onMounted, onUnmounted, ref,
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import GuardianMobileSummary from './GuardianMobileSummary.vue'
 import { toast } from 'vue-sonner'
-import { Archive, Bot, Ellipsis, Info, Cpu, Pause, Play, RefreshCw, Settings, TriangleAlert } from '@lucide/vue'
+import { Archive, Bot, Ellipsis, Info, Cpu, Pause, Play, RefreshCw, Settings, TriangleAlert, Wallet, ListChecks, FileText, MessageSquare } from '@lucide/vue'
 import { getGuardian, saveGuardian } from '@/shared/api/guardian'
 import { getProviders } from '@/shared/api/quant'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
@@ -14,7 +14,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog'
 import GuardianStoragePanel from '@/features/agents/components/GuardianStoragePanel.vue'
 import { Skeleton } from '@/shared/components/ui/skeleton'
-import PageTabs from '@/shared/components/ui/PageTabs.vue'
+import AgentWorkspaceNav from '@/features/agents/components/AgentWorkspaceNav.vue'
 import type { GuardianStatus, GuardianConfig } from '@/shared/types/guardian'
 import type { LlmProvider } from '@/shared/types/quant'
 import { agentMoney } from '@/features/agents/agentFormat'
@@ -52,10 +52,10 @@ const stateLabel = computed(() => {
   return '运行中'
 })
 const workspaceTabs = computed(() => [
-  { name: 'account', label: '持仓股', badge: data.value?.state.positions.length || undefined },
-  { name: 'research', label: '自选股', badge: data.value?.observation_count || undefined },
-  { name: 'reviews', label: '复盘计划' },
-  { name: 'consult', label: '对话' },
+  { name: 'account', label: '持仓股', badge: data.value?.state.positions.length || undefined, icon: Wallet },
+  { name: 'research', label: '自选股', badge: data.value?.observation_count || undefined, icon: ListChecks },
+  { name: 'reviews', label: '复盘计划', icon: FileText },
+  { name: 'consult', label: '对话', icon: MessageSquare },
 ])
 const pnlTone = (value?: number) => (value ?? 0) > 0 ? 'gain' : (value ?? 0) < 0 ? 'loss' : ''
 const signedMoney = (value?: number) => ((value ?? 0) > 0 ? '+' : '') + agentMoney(value ?? 0)
@@ -153,7 +153,6 @@ const panelId = `guardian-workspace-panel-${useId()}`
           <span v-if="data" class="guardian-model" :title="data.config.model"><Cpu aria-hidden="true" />{{ data.config.model || '模型未配置' }}</span>
         </div>
       </div>
-      <PageTabs v-if="mobile" :panel-id="panelId" :model-value="section" :items="workspaceTabs" variant="pill" :sticky="false" aria-label="交易员工作区" @update:model-value="onSectionChange" class="guardian-inline-tabs" />
       <div class="guardian-actions">
         <Button v-if="!mobile" class="guardian-storage-action" variant="ghost" size="sm" :disabled="storage?.busy" @click="storage?.configure()"><Settings aria-hidden="true" />保留策略</Button>
         <Button v-if="!mobile" class="guardian-storage-action" variant="ghost" size="sm" :disabled="storage?.busy" @click="storage?.cleanup()"><Archive aria-hidden="true" />清理过期详情</Button>
@@ -219,22 +218,22 @@ const panelId = `guardian-workspace-panel-${useId()}`
         </div>
       </section>
 
-      <div v-if="!mobile" class="guardian-tabs-row">
-        <PageTabs :panel-id="panelId" :model-value="section" :items="workspaceTabs" :sticky="false" aria-label="交易员工作区" @update:model-value="onSectionChange" class="guardian-tabs">
-          <template #trailing>
+      <div class="guardian-workspace-body">
+        <AgentWorkspaceNav :panel-id="panelId" :model-value="section" :items="workspaceTabs" aria-label="交易员工作区" @update:model-value="onSectionChange">
+          <template #footer>
             <span class="guardian-history-summary" :title="storage?.summary">{{ storage?.summary }}</span>
           </template>
-        </PageTabs>
-      </div>
+        </AgentWorkspaceNav>
 
-      <!-- 视图内容 -->
-      <div :id="panelId" class="guardian-content-area" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${section}`">
-        <KeepAlive v-if="active">
-          <GuardianAccountPanel v-if="section === 'account'" :account="data.state" :experience="data.experience" @review="section = 'research'" @section-change="value => accountSection = value" />
-          <GuardianResearchPanel v-else-if="section === 'research'" :account="data.state" :enabled="enabled" :notify="data.config.notify" @changed="load" />
-          <GuardianReviewPanel v-else-if="section === 'reviews'" :enabled="enabled" @changed="load" />
-          <GuardianConsultPanel v-else-if="section === 'consult'" :model="data.config.model" />
-        </KeepAlive>
+        <!-- 视图内容 -->
+        <div :id="panelId" class="guardian-content-area" data-agent-workspace-scroll role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${section}`">
+          <KeepAlive v-if="active">
+            <GuardianAccountPanel v-if="section === 'account'" :account="data.state" :experience="data.experience" @review="section = 'research'" @section-change="value => accountSection = value" />
+            <GuardianResearchPanel v-else-if="section === 'research'" :account="data.state" :enabled="enabled" :notify="data.config.notify" @changed="load" />
+            <GuardianReviewPanel v-else-if="section === 'reviews'" :enabled="enabled" @changed="load" />
+            <GuardianConsultPanel v-else-if="section === 'consult'" :model="data.config.model" />
+          </KeepAlive>
+        </div>
       </div>
 
       <Dialog v-model:open="feesOpen"><DialogContent class="sm:max-w-xl"><DialogHeader><DialogTitle>费用与成交口径</DialogTitle></DialogHeader><div class="space-y-3 text-sm leading-7"><p>初始本金 {{ agentMoney(data.state.initial_capital_cents) }} 元 · T+1。</p><p>累计费用 {{ agentMoney(data.state.fees_cents) }} 元。成本含买入费用，卖出净收入扣除费用后计盈亏。</p><p>佣金万 2.5（免 5，无最低收费）；印花税卖出万五；过户费双向十万一。</p><p>按新鲜行情参考价模拟成交，未模拟盘口排队及分红送转。</p></div></DialogContent></Dialog>

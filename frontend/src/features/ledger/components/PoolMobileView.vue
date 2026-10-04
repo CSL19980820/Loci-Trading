@@ -11,15 +11,19 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import type { Candidate } from '@/shared/types/palace'
+import { isHistoricalCandidate } from '@/shared/lib/candidateSource'
+import PoolHistoryScope from './PoolHistoryScope.vue'
 
 const props = defineProps<{
  rows: Candidate[]; page: number; pages: number; total: number; decision: string; filterCount: number
  busy: boolean; error: string; canWrite: boolean; selectionMode: boolean; selectedIds: string[]
  strategyLabel: (value: string) => string
+ includeBackfill: boolean
 }>()
 const emit = defineEmits<{
  decision: [value: string]; detail: [row: Candidate]; filter: []; refresh: []; record: []; multi: []
  select: [id: string, checked: boolean | 'indeterminate']; delete: []; page: [value: number]
+ history: [value: boolean]
 }>()
 const frame = ref<InstanceType<typeof MobilePageFrame>>()
 watch(() => props.page, () => frame.value?.scrollToTop())
@@ -36,14 +40,14 @@ function score(value: number | null | undefined) { return value == null || !Numb
     <DropdownMenuItem v-if="canWrite" @select="emit('multi')"><ListChecks />{{ selectionMode ? '取消多选' : '多选记录' }}</DropdownMenuItem>
    </DropdownMenuContent></DropdownMenu>
   </template>
-  <template #navigation><PageTabs :model-value="decision" :items="decisions" variant="pill" :sticky="false" aria-label="按裁决筛选" @update:model-value="value => emit('decision',value)" /></template>
+  <template #navigation><PageTabs :model-value="decision" :items="decisions" variant="pill" :sticky="false" aria-label="按裁决筛选" @update:model-value="value => emit('decision',value)" /><PoolHistoryScope :model-value="includeBackfill" @update:model-value="value => emit('history',value)" /></template>
   <p v-if="error" class="pool-mobile__error" role="alert">{{ error }} <Button access="read" variant="link" @click="emit('refresh')">重试</Button></p>
   <div v-if="busy && !rows.length" class="pool-mobile__loading"><Skeleton v-for="n in 6" :key="n" class="h-20" /></div>
   <div v-else-if="rows.length" class="pool-mobile__list">
    <article v-for="row in rows" :key="row.id" class="pool-mobile-row">
     <Label v-if="canWrite && selectionMode" class="pool-mobile-row__select"><Checkbox :model-value="selectedIds.includes(row.id)" :aria-label="`选择${row.name}`" @update:model-value="value => emit('select',row.id,value)" /></Label>
     <Item as="button" type="button" class="pool-mobile-row__body" :aria-label="`查看${row.name}候选详情`" @click="emit('detail',row)">
-     <span class="pool-mobile-row__identity"><b>{{ row.name }}</b><small>{{ row.code }}</small></span>
+     <span class="pool-mobile-row__identity"><b>{{ row.name }}</b><small>{{ row.code }}</small><UiBadge v-if="isHistoricalCandidate(row)" variant="secondary" class="pool-mobile-row__history">历史回填</UiBadge></span>
      <span class="pool-mobile-row__meta"><UiBadge :variant="row.decision === '精选' ? 'info' : row.decision === '观察' ? 'warn' : 'secondary'">{{ row.decision }}</UiBadge><time>{{ row.date }}</time><span>{{ strategyLabel(row.rule_version) }}</span></span>
      <span class="pool-mobile-row__score"><strong>{{ score(row.score) }}</strong><small>评分</small></span>
     </Item>
@@ -64,6 +68,8 @@ function score(value: number | null | undefined) { return value == null || !Numb
 .pool-mobile-row__select { display:grid; place-items:center; flex:none; width:36px; padding-left:4px; }
 .pool-mobile-row__body { display:grid; grid-template-columns:minmax(0,1fr) 48px; grid-template-rows:auto auto; align-items:center; gap:7px 7px; min-width:0; width:100%; min-height:80px; padding:13px 12px; border:0; background:transparent; text-align:left; color:var(--text-primary); cursor:pointer; }
 .pool-mobile-row__body:active { background:var(--surface-hover); }
+.pool-mobile-row__identity:has(.pool-mobile-row__history) { flex-wrap:wrap; }
+.pool-mobile-row__history { flex:none; font-size:10px; padding-inline:5px; }
 .pool-mobile-row__identity { display:flex; align-items:baseline; min-width:0; gap:6px; }.pool-mobile-row__identity b { font-size:15px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.pool-mobile-row__identity small { color:var(--text-tertiary); font:11px var(--mono); flex:none; }
 .pool-mobile-row__meta { display:flex; align-items:center; gap:5px; min-width:0; grid-column:1; font-size:10px; color:var(--text-tertiary); }.pool-mobile-row__meta time { flex:none; font-variant-numeric:tabular-nums; }.pool-mobile-row__meta>span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.pool-mobile-row__meta :deep(.ui-badge) { font-size:10px; padding-inline:5px; }
 .pool-mobile-row__score { display:flex; flex-direction:column; align-items:flex-end; grid-column:2; grid-row:1/3; gap:4px; }.pool-mobile-row__score strong { font:600 19px/1.2 var(--font); font-variant-numeric:tabular-nums; }.pool-mobile-row__score small { font-size:10px; color:var(--text-tertiary); }

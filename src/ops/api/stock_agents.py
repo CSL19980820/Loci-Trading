@@ -34,7 +34,7 @@ class AgentFunds(BaseModel):
 
 class AgentRun(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    phase: Literal["review", "premarket", "auction", "intraday"]
+    phase: Literal["research", "review", "weekly_review", "premarket", "auction", "intraday"]
     research_date: date | None = None
     request_id: str = Field(min_length=8, max_length=80, pattern=r"^[a-zA-Z0-9_-]+$")
 
@@ -69,6 +69,12 @@ def build_stock_agents_router(*, write_dependency, scheduler_getter=None) -> API
             if profile["config"]["enabled"]:
                 ledger.update_config(profile["id"], {**profile["config"], "enabled": False}, revision=profile["revision"])
             raise HTTPException(503, "配置已保存，但日程同步失败；智能体保持暂停，请刷新后重新启用") from exc
+
+    @router.get("/activity")
+    def activity(limit: int = Query(default=16, ge=1, le=50)):
+        from src.ledger import read_agent_activity
+        with api_errors():
+            return read_agent_activity(limit=limit)
 
     @router.get("/options")
     def options():
@@ -120,17 +126,21 @@ def build_stock_agents_router(*, write_dependency, scheduler_getter=None) -> API
             return diary.compact(force=True, dry_run=dry_run)
 
     @router.get("/{agent_id}")
-    def get_agent(agent_id: str):
+    def get_agent(agent_id: str, refresh_quotes: bool = False):
         with api_errors(), StockAgentStore() as ledger:
-            return public_profile(ledger.get(agent_id))
+            return public_profile(ledger.get(agent_id), ledger=ledger, refresh_quotes=refresh_quotes)
 
     @router.put("/{agent_id}")
     def update_agent(agent_id: str, payload: UpdateAgent, _write: Write):
         with api_errors(), OpsStore(None) as ops, StockAgentStore() as ledger:
             current = public_profile(ledger.get(agent_id))["config"]
             # 旧客户端没有分场景字段；缺省保留，显式空字符串才表示回退或清空。
-            preserved = {key: current.get(key, "") for key in ("common_prompt", "premarket_prompt", "review_prompt")
+            preserved = {key: current.get(key, "") for key in ("common_prompt", "premarket_prompt", "review_prompt", "weekly_review_prompt")
                          if key not in payload.config.model_fields_set}
+            schedule_preserved = {key: current["schedule"].get(key, default)
+                                  for key, default in (("weekly_review_enabled", False), ("weekly_review_time", "20:30"))
+                                  if key not in payload.config.schedule.model_fields_set}
+            preserved["schedule"] = payload.config.schedule.model_copy(update=schedule_preserved)
             config = validate_agent_config(ops, payload.config.model_copy(update=preserved))
             profile = ledger.update_config(agent_id, config, revision=payload.revision)
             sync_jobs(ops, ledger, profile)
@@ -168,10 +178,11 @@ def build_stock_agents_router(*, write_dependency, scheduler_getter=None) -> API
             return {**row, "sections": trading_run_sections(row['detail'], summary=row.get('summary', ''), status=row.get('status', ''))}
 
     @router.get("/{agent_id}/equity")
-    def equity(agent_id: str, limit: Annotated[int, Query(ge=1, le=2000)] = 365):
+    def equity(agent_id: str, limit: Annotated[int, Query(ge=1, le=2000)] = 365,
+               range: Literal["day", "week", "month", "half_year", "year"] | None = None):
         with api_errors(), StockAgentStore() as ledger:
             ledger.get(agent_id)
-            return ledger.equity(agent_id, limit=limit)
+            return ledger.equity(agent_id, limit=limit, range=range)
 
     @router.post("/{agent_id}/cleanup")
     def cleanup(agent_id: str, _write: Write, dry_run: bool = True):
@@ -180,10 +191,13 @@ def build_stock_agents_router(*, write_dependency, scheduler_getter=None) -> API
 
     @router.post("/{agent_id}/run", status_code=202)
     def run(agent_id: str, payload: AgentRun, background: BackgroundTasks, _write: Write):
-        with api_errors(), StockAgentStore() as ledger:
+        with api_errors(), OpsStore(None) as ops, StockAgentStore() as ledger:
             now = agent_time()
             target = payload.research_date.isoformat() if payload.research_date else None
-            research_scope(payload.phase, now, target)
+            scope = research_scope(payload.phase, now, target)
+            if not scope["historical_review"] and ledger.get(agent_id)["config"]["kind"] == "falcon":
+                from src.ops.application.falcon_watch_pool import sync_falcon_watch_pools
+                sync_falcon_watch_pools(ops, str(ledger.db_path), as_of=now, agent_id=agent_id)
             slot = f"{now.date().isoformat()}:manual:{payload.phase}:{target or 'live'}:{payload.request_id}"
             profile = ledger.claim_run(agent_id, slot, payload.phase, now=now)
             if profile is None:

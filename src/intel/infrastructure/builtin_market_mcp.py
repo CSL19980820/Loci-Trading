@@ -11,11 +11,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from src.intel.infrastructure.builtin_akshare_tools import (
-    call_akshare_tool,
-    is_akshare_tool,
-    list_akshare_tools,
-)
 from src.intel.infrastructure.mcp import McpTool
 
 BUILTIN_MCP_NAME = "loci-market"
@@ -56,13 +51,13 @@ def _lane_has_source(lane: str) -> bool:
 
 
 def list_builtin_tools() -> list[McpTool]:
-    """当前生效的工具清单：可用 lane 的行情工具 + 已上桌的 AkShare 接口。"""
+    """当前生效的工具清单：可用 lane 的行情工具。"""
     live = [
         tool
         for tool in _market_tools()
         if tool.name not in _LANE_BY_TOOL or _lane_has_source(_LANE_BY_TOOL[tool.name])
     ]
-    return live + list_akshare_tools(server=BUILTIN_MCP_NAME)
+    return live
 
 
 def _market_tools() -> list[McpTool]:
@@ -160,8 +155,8 @@ def _market_tools() -> list[McpTool]:
 def builtin_server_record() -> dict[str, Any]:
     """对外列表用。
 
-    ``tools``：当前模型可调用的生效清单（按 lane 启停过滤 + 已上桌 AkShare）。
-    ``tools_catalog``：UI 详情用——完整内置行情工具（标 available）+ 已上桌 AkShare，
+    ``tools``：当前模型可调用的生效清单（按 lane 启停过滤）。
+    ``tools_catalog``：UI 详情用——完整内置行情工具（标 available），
     避免详情弹窗只露出「碰巧有源」的那几条，漏掉我们支持的能力。
     """
     live = list_builtin_tools()
@@ -175,16 +170,6 @@ def builtin_server_record() -> dict[str, Any]:
                 "input_schema": tool.input_schema,
                 "group": "lane",
                 "available": tool.name in live_names,
-            }
-        )
-    for tool in list_akshare_tools(server=BUILTIN_MCP_NAME):
-        catalog.append(
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.input_schema,
-                "group": "akshare",
-                "available": True,
             }
         )
     return {
@@ -443,8 +428,6 @@ def call_builtin_tool(
 ) -> dict[str, Any]:
     """与 McpClient.call_tool 相同返回形状。"""
     bare = _bare_tool_name(name, server)
-    if is_akshare_tool(bare):
-        return call_akshare_tool(bare, arguments)
     handler = _HANDLERS.get(bare)
     if handler is None:
         available = ", ".join(sorted(_HANDLERS))

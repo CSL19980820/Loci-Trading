@@ -13,7 +13,7 @@ export function formatFunnel(
     | undefined,
 ): string {
   if (!f) return ''
-  return `漏斗 ${f.instruments_total ?? '—'} → 板 ${f.after_board ?? '—'} → 剔ST后 ${f.after_st ?? '—'} → 面板 ${f.panel_columns ?? '—'} → 信号 ${f.signals_true ?? '—'}`
+  return `漏斗 ${f.instruments_total ?? '—'} → 板块配置后 ${f.after_board ?? '—'} → ST配置后 ${f.after_st ?? '—'} → 面板 ${f.panel_columns ?? '—'} → 信号 ${f.signals_true ?? '—'}`
 }
 
 export function fmt(value: number | boolean | null | undefined): string {

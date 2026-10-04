@@ -1,0 +1,168 @@
+{
+  "segment": "train",
+  "completed_at": "2026-10-04T17:32:31.230540+08:00",
+  "runs": {
+    "corrected_low_open": {
+      "metrics": {
+        "base": {
+          "trades": 512,
+          "avg_net_return": -0.971968250650719,
+          "win_rate": 37.5,
+          "profit_factor": 0.7010351859771373,
+          "payoff_ratio": 1.1683919766285622,
+          "avg_win": 6.077718058212184,
+          "avg_loss": -5.201780035968461,
+          "worst_net": -19.958858447488584
+        },
+        "double_cost": {
+          "trades": 512,
+          "avg_net_return": -1.1819682506507192,
+          "win_rate": 36.71875,
+          "profit_factor": 0.6506505801433476,
+          "payoff_ratio": 1.1213339785449183,
+          "avg_win": 5.99522818693175,
+          "avg_loss": -5.34651433171709,
+          "worst_net": -20.168858447488585
+        },
+        "largest_winner_removed": {
+          "trades": 511,
+          "avg_net_return": -1.0320815880033896,
+          "win_rate": 37.37769080234834,
+          "profit_factor": 0.6831651330031546,
+          "payoff_ratio": 1.1445698563403637,
+          "avg_win": 5.953800628482594,
+          "avg_loss": -5.201780035968461,
+          "worst_net": -19.958858447488584
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 511,
+          "avg_net_return": -1.2420815880033897,
+          "win_rate": 36.59491193737769,
+          "profit_factor": 0.6336001571925258,
+          "payoff_ratio": 1.0977885076490823,
+          "avg_win": 5.869341989340135,
+          "avg_loss": -5.34651433171709,
+          "worst_net": -20.168858447488585
+        }
+      },
+      "selected_orders": 513,
+      "execution_accounting": {
+        "closed": 512,
+        "upper_limit_at_slot": 1
+      },
+      "label_accounting": {
+        "closed": 512,
+        "cancelled": 1
+      },
+      "unresolved_selected": 0,
+      "slots": 712,
+      "slot_mean": -0.6989434611420902,
+      "original_open_slot_mean": -0.6121983253614302,
+      "active_months": 18
+    },
+    "yin_close_and_open_above_vwap": {
+      "metrics": {
+        "base": {
+          "trades": 56,
+          "avg_net_return": 1.8731757731546985,
+          "win_rate": 53.57142857142857,
+          "profit_factor": 1.9244375463370291,
+          "payoff_ratio": 1.667845873492092,
+          "avg_win": 7.278997157776611,
+          "avg_loss": -4.364310439870584,
+          "worst_net": -15.317057890563047
+        },
+        "double_cost": {
+          "trades": 56,
+          "avg_net_return": 1.6631757731546981,
+          "win_rate": 50.0,
+          "profit_factor": 1.7815353652577999,
+          "payoff_ratio": 1.7815353652578,
+          "avg_win": 7.582526882933043,
+          "avg_loss": -4.2561753366236434,
+          "worst_net": -15.527057890563048
+        },
+        "largest_winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.3663981120018036,
+          "win_rate": 52.72727272727273,
+          "profit_factor": 1.662294212211199,
+          "payoff_ratio": 1.4903327419824544,
+          "avg_win": 6.504274744714979,
+          "avg_loss": -4.364310439870584,
+          "worst_net": -15.317057890563047
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.1563981120018039,
+          "win_rate": 49.09090909090909,
+          "profit_factor": 1.5336942470124026,
+          "payoff_ratio": 1.5904977376424918,
+          "avg_win": 6.7694372439096755,
+          "avg_loss": -4.2561753366236434,
+          "worst_net": -15.527057890563048
+        }
+      },
+      "selected_orders": 58,
+      "execution_accounting": {
+        "closed": 56,
+        "upper_limit_at_slot": 2
+      },
+      "label_accounting": {
+        "closed": 56,
+        "cancelled": 2
+      },
+      "unresolved_selected": 0,
+      "slots": 712,
+      "slot_mean": 0.14732843159643697,
+      "original_open_slot_mean": 0.20667734200608778,
+      "active_months": 17
+    }
+  },
+  "paired_comparisons": {
+    "corrected_low_open_vs_original_open": {
+      "months": 18,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.2785385706110336,
+        0.08546399582874661
+      ],
+      "point_delta_per_opportunity": -0.08674513578066007
+    },
+    "yin_close_and_open_above_vwap_vs_original_open": {
+      "months": 18,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.1963328119630723,
+        0.036192156392843365
+      ],
+      "point_delta_per_opportunity": -0.05934891040965074
+    },
+    "B_vs_low_at_fifth_slot": {
+      "months": 18,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        0.34862826445611894,
+        1.4664122831601805
+      ],
+      "point_delta_per_opportunity": 0.8462718927385271
+    }
+  },
+  "fixed_preselection_identity": "passed",
+  "sensitivity_only": true,
+  "original_B_strict_pass": false,
+  "artifact_sha256": {
+    "train-corrected_low_open-events.csv": "a0c0fa037f6ca2d7c06a2b9665afbd48152ad3fe28f4fc13e7e56e5647d6ddc8",
+    "train-corrected_low_open-labels.csv": "88a2b5b4c23ff48b3a66f2f1a4a0eb74944470a59e2a92751944b5805f3212a3",
+    "train-corrected_low_open-trades.csv": "047931e893cba08e440bfd74484e6f41463b199b4eb8e3a3b8408a79756d3242",
+    "train-execution-changes.csv": "d6ddc6d4a4bf56d9bc8c3edb31f0df5182a4d25e93d1511d7c84eb640027fdba",
+    "train-official-overlay.json": "a5338d955b09046ec0b16f3a9625b7955c763aae07dc722e474e6078745f932f",
+    "train-paired-calendar.csv": "7f33a941a6deae6149e32c5992b632ca9aaf8cd2df69b5a410960248ec3228ee",
+    "train-yin_close_and_open_above_vwap-events.csv": "7951039efd3858e8be4c0d332fed83683ae2c387d6f715c0203289ece7d8bcba",
+    "train-yin_close_and_open_above_vwap-labels.csv": "a63a1caf174ecc702b7674298fc314e9c370944bbf2cd0c78477f2b328fbd363",
+    "train-yin_close_and_open_above_vwap-trades.csv": "6909aff51f8297db13f5477205e7a370618564352ab46cb07e324321f1761540"
+  }
+}

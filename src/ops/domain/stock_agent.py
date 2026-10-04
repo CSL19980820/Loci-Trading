@@ -28,12 +28,14 @@ class AgentSchedule(BaseModel):
     auction_time: Literal["09:25"] = "09:25"
     intraday_minutes: Literal[5, 10, 15, 30] = 5
     intraday_enabled: bool = True
+    weekly_review_enabled: bool = False
+    weekly_review_time: str = Field(default="20:30", pattern=r"^(1[5-9]|2[0-3]):[0-5]\d$")
 
 
 class StockAgentConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, allow_inf_nan=False)
     name: str = Field(min_length=1, max_length=40)
-    kind: Literal["custom", "leader"] = "custom"
+    kind: Literal["custom", "leader", "falcon"] = "custom"
     description: str = Field(default="", max_length=240)
     provider: str = Field(default="", max_length=200)
     model: str = Field(default="", max_length=200)
@@ -41,6 +43,7 @@ class StockAgentConfig(BaseModel):
     common_prompt: str = Field(default="", max_length=100000)
     premarket_prompt: str = Field(default="", max_length=100000)
     review_prompt: str = Field(default="", max_length=100000)
+    weekly_review_prompt: str = Field(default="", max_length=100000)
     enabled: bool = False
     initial_capital_cents: int = Field(default=20_000_000, ge=10_000, le=100_000_000_000, strict=True)
     strategies: list[str] = Field(default_factory=list, max_length=0)

@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "synthetic_only": true,
+  "cases": [
+    "historical_shape_with_unknown_target",
+    "no_target_score_or_selection",
+    "ST_price_geometry_preserved_for_identity_review",
+    "no_future_factor_backfill",
+    "no_target_factor_forward_claim",
+    "missing_yin_volume_not_fabricated"
+  ]
+}

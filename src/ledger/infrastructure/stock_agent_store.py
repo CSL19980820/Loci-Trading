@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import secrets
 import sqlite3
+from copy import deepcopy
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -12,7 +13,9 @@ from typing import Any
 from uuid import uuid4
 
 from src.ledger.domain.guardian_account import check_guardian_account, new_guardian_account
-from src.ledger.domain.stock_agent_account import pending_watchlist, validate_stock_agent_transition
+from src.ledger.domain.stock_agent_account import (
+    pending_watchlist, validate_stock_agent_transition, validate_falcon_candidate_transition,
+)
 from src.ledger.infrastructure.stock_agent_history import (
     StockAgentConflict, StockAgentHistoryMixin, agent_now, encode_agent_json,
 )
@@ -20,7 +23,8 @@ from src.ledger.infrastructure.stock_agent_schema import SCHEMA
 from src.shared.paths import palace_db
 
 
-def _exceeds_agent_limits(cfg: dict[str, Any], previous: dict[str, Any], state: dict[str, Any]) -> bool:
+def _exceeds_agent_limits(cfg: dict[str, Any], previous: dict[str, Any], state: dict[str, Any],
+                         *, auto_observe_codes: set[str] | None = None) -> bool:
     """本轮使持仓/观察/当日入选数量越过上限并继续变大时拒绝提交。
 
     下调上限后账户本就越限：卖出、撤观察等不增加数量的收敛动作仍须能落账，
@@ -35,8 +39,12 @@ def _exceeds_agent_limits(cfg: dict[str, Any], previous: dict[str, Any], state: 
 
     day, chosen = selected(state)
     previous_day, previous_chosen = selected(previous)
+    prior_auto = set((previous.get("falcon_watch_pool") or {}).get("auto_observe_codes") or []) if cfg.get("kind") == "falcon" else set()
+    current_auto = (auto_observe_codes or set()) if cfg.get("kind") == "falcon" else set()
+    previous_watch_count = sum(row["code"] not in prior_auto for row in previous.get("watchlist", []))
+    current_watch_count = sum(row["code"] not in current_auto for row in state.get("watchlist", []))
     return (grew(cfg["temporary_position_limit"], len(previous.get("positions", [])), len(state["positions"]))
-            or grew(cfg["watch_limit"], len(previous.get("watchlist", [])), len(state.get("watchlist", [])))
+            or grew(cfg["watch_limit"], previous_watch_count, current_watch_count)
             or grew(cfg["daily_selection_limit"], previous_chosen if previous_day == day else 0, chosen))
 
 
@@ -126,11 +134,29 @@ class StockAgentStore(StockAgentHistoryMixin):
                                  (agent_id, config["name"])).fetchone():
                 raise StockAgentConflict("已有同名智能体")
             state = current["state"]
+            automatic = set((state.get("falcon_watch_pool") or {}).get("auto_observe_codes") or []) if current["config"].get("kind") == "falcon" else set()
+            manual_watch_count = sum(row["code"] not in automatic for row in state.get("watchlist", []))
             if ((config["temporary_position_limit"] and len(state["positions"]) > config["temporary_position_limit"])
-                    or (config["watch_limit"] and len(state.get("watchlist", [])) > config["watch_limit"])):
+                    or (config["watch_limit"] and manual_watch_count > config["watch_limit"])):
                 raise ValueError("当前持仓或观察数量超过新上限，请先由智能体收敛后再降低")
             self.conn.execute("UPDATE stock_agent_profiles SET config_json=?,revision=revision+1,updated_at=?,cleanup_at=NULL WHERE id=?",
                               (encode_agent_json(config), agent_now().isoformat(), agent_id))
+        return self.get(agent_id)
+
+    def update_falcon_watch_pool(self, agent_id: str, projector: Callable[[dict], dict],
+                                 *, now: datetime | None = None) -> dict[str, Any]:
+        """在最新账户上只合并来源观察状态；真实变更使旧模型租约失效。"""
+        with self._write():
+            profile = self.get(agent_id)
+            if profile["config"].get("kind") != "falcon" or profile["archived"]:
+                return profile
+            previous = profile["state"]
+            projected = projector(deepcopy(previous))
+            updated = {**previous, **{key: deepcopy(projected[key]) for key in (
+                "watchlist", "falcon_watch_pool") if key in projected}}
+            if updated != previous:
+                self.conn.execute("""UPDATE stock_agent_profiles SET state_json=?,state_version=state_version+1,
+                    updated_at=? WHERE id=?""", (encode_agent_json(updated), agent_now(now).isoformat(), agent_id))
         return self.get(agent_id)
 
     def deposit(self, agent_id: str, amount_cents: int, request_id: str, *, now: datetime | None = None) -> dict[str, Any]:
@@ -212,13 +238,35 @@ class StockAgentStore(StockAgentHistoryMixin):
         current_time = agent_now(now)
         check_guardian_account(state)
         detail = encode_agent_json(result)
-        fills, actions = result.get("fills", []), result.get("actions", [])[:12]
+        fills, actions = result.get("fills", []), result.get("actions", [])
         summary, timestamp = str(result.get("summary") or "本轮无操作")[:2000], current_time.isoformat()
         with self._write():
             profile = self.assert_owner(agent_id, run_id, now=current_time)
             if state["initial_capital_cents"] != profile["state"]["initial_capital_cents"]:
                 raise StockAgentConflict("交易不能修改累计投入")
             cfg = profile["config"]
+            automatic = set()
+            if cfg.get("kind") == "falcon":
+                scope = result.get("candidate_scope_at_commit", result.get("candidate_scope")) or {}
+                validate_falcon_candidate_transition(profile["state"], state, fills, scope, current_time)
+                lifecycle_ready = scope.get("lifecycle_ready") and not scope.get("historical_review")
+                automatic = (set(scope.get("auto_observe_codes") or []) if lifecycle_ready else
+                             set((profile["state"].get("falcon_watch_pool") or {}).get("auto_observe_codes") or []))
+                if lifecycle_ready:
+                    evidenced = {row.get("code") for row in scope.get("candidates") or []
+                                 if row.get("origin") == "quant" and row.get("entry_eligible") is True and row.get("evidence_id")}
+                    held = {row["code"] for row in state["positions"]}
+                    if not automatic <= evidenced or not automatic - held <= {row["code"] for row in state.get("watchlist", [])}:
+                        raise ValueError("猎隼自动观察池必须覆盖有证据的有效公式产出；持仓单独管理")
+                    if set((state.get("falcon_watch_pool") or {}).get("auto_observe_codes") or []) != automatic:
+                        raise ValueError("猎隼自动观察池元数据与独立来源快照不一致")
+                else:
+                    if set((state.get("falcon_watch_pool") or {}).get("auto_observe_codes") or []) != automatic:
+                        raise ValueError("未核实当前来源时不能修改已保存的自动观察池资格")
+                    prior_watch = {row["code"] for row in profile["state"].get("watchlist", [])}
+                    held = {row["code"] for row in state["positions"]}
+                    if not (prior_watch & automatic) - held <= {row["code"] for row in state.get("watchlist", [])}:
+                        raise ValueError("未核实当前来源时仍需保留已有自动观察；当前持仓单独管理")
             if cfg.get("kind") == "leader":
                 state = {**state, "watchlist": pending_watchlist(state)}
                 phase = self.conn.execute("SELECT phase FROM stock_agent_runs WHERE id=?", (run_id,)).fetchone()[0]
@@ -228,7 +276,7 @@ class StockAgentStore(StockAgentHistoryMixin):
                             f.get("side") == "buy" or f.get("code") not in held for f in fills):
                         raise ValueError("龙头选手盘中仅管理已有持仓，禁止修改观察池或提交新增买入")
             state_json = encode_agent_json(state)
-            if _exceeds_agent_limits(cfg, profile["state"], state):
+            if _exceeds_agent_limits(cfg, profile["state"], state, auto_observe_codes=automatic):
                 raise ValueError("账户超出智能体数量约束")
             if before_commit:
                 before_commit()

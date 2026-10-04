@@ -16,7 +16,9 @@ from src.market.infrastructure.polars_panel import (
     read_quotes_flat_polars,
 )
 from src.market.infrastructure.store_codes import MarketError, normalize_code
-from src.market.infrastructure.store_panel_window import cached_raw_panels
+from src.market.infrastructure.store_panel_window import (
+    cached_factor_rows, cached_raw_panels, read_raw_panel_arrays,
+)
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
 
 
@@ -67,6 +69,20 @@ def _require_bounded_range(
 class MarketPanelMixin:
     """load_panel / 复权比例矩阵。依赖宿主提供 conn。"""
 
+    def adjust_panels(
+        self, panels: dict[str, pd.DataFrame], adjust: str,
+    ) -> dict[str, pd.DataFrame]:
+        """Adjust already aligned panels using their shared global date axis."""
+        if adjust not in {"none", "qfq", "hfq"}:
+            raise MarketError(f"未知复权方式：{adjust}")
+        output = dict(panels)
+        prices = [name for name in panels if name in PRICE_FIELDS]
+        if adjust != "none" and prices and not panels[prices[0]].empty:
+            ratio = self._factor_panel(panels[prices[0]], adjust)
+            for name in prices:
+                output[name] = panels[name] * ratio
+        return output
+
     conn: sqlite3.Connection
 
     def load_panel(
@@ -78,6 +94,7 @@ class MarketPanelMixin:
         end: str | None = None,
         adjust: str = "qfq",
         min_bars: int = 0,
+        raw_price_fields: Sequence[str] = (),
     ) -> dict[str, pd.DataFrame]:
         """加载全市场面板：{字段: DataFrame(index=trade_date, columns=code)}。
 
@@ -87,6 +104,8 @@ class MarketPanelMixin:
 
         min_bars: 丢弃有效 K 线不足该根数的票（次新股会让指标全是 NaN，
                   留着只会污染筛选结果）。
+        raw_price_fields: 从本次已读取的字段中保留指定 __raw_* 价格，供涨跌停判断。
+                          先按相同有效根数筛列，再分别提供原价与复权价。
 
         **必须限定范围**：codes / start / end 至少给一个，否则直接报错，
         见 `_require_bounded_range`——这不是参数校验洁癖，是这张表的物理约束。
@@ -120,9 +139,13 @@ class MarketPanelMixin:
                 raise StopIteration
             return {}
 
-        panels = cached_raw_panels(self, needed, codes=codes, start=start, end=end)
+        panels = cached_raw_panels(
+            self, needed, codes=normalized if codes else None, start=start, end=end,
+        )
         if panels is None:
-            panels = self._read_raw_panels(needed, columns, where_sql, params)
+            panels = self._read_raw_panels(
+                needed, columns, where_sql, params, codes=normalized if codes else None,
+            )
         if not panels or all(panel.empty for panel in panels.values()):
             return panels
 
@@ -135,15 +158,17 @@ class MarketPanelMixin:
             panels = {field: panel[kept] for field, panel in panels.items()}
 
         price_fields = [field for field in needed if field in PRICE_FIELDS]
+        raw_prices = {f"__raw_{field}": panels[field] for field in price_fields if field in raw_price_fields}
         if price_fields and adjust != "none":
             ratio = _consolidate(self._factor_panel(panels[price_fields[0]], adjust))
             for field in price_fields:
                 panels[field] = panels[field] * ratio
         # 合并放在列筛选和复权之后，避免重新生成逐列内存块。
-        return {field: _consolidate(panel) for field, panel in panels.items()}
+        return {field: _consolidate(panel) for field, panel in {**panels, **raw_prices}.items()}
 
     def _read_raw_panels(
         self, needed: list[str], columns: str, where_sql: str, params: list[Any],
+        *, codes: Sequence[str] | None = None,
     ) -> dict[str, pd.DataFrame]:
         flat: pd.DataFrame | None = None
         if polars_panel_enabled():
@@ -161,8 +186,23 @@ class MarketPanelMixin:
                 params=params,
             )
         if flat is None:
-            sql = f"SELECT {columns} FROM quotes_daily WHERE 1=1{where_sql}"
-            flat = pd.read_sql_query(sql, self.conn, params=params)
+            # The native reader and task-local range cache share one streaming
+            # boundary; ordinary reads have no cache budget or SQL row limit.
+            for _ in range(3):
+                version = (self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0])
+                loaded = read_raw_panel_arrays(
+                    self.conn, needed, where="1=1" + where_sql, params=params, codes=codes,
+                )
+                current = (self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0])
+                if loaded is not None and current == version:
+                    panels, present = loaded
+                    if present.empty:
+                        return {field: pd.DataFrame() for field in needed}
+                    keep = present.any(axis=0)
+                    return panels if keep.all() else {
+                        field: panel.loc[:, keep] for field, panel in panels.items()
+                    }
+            raise MarketError("行情在面板读取期间连续发生变化，请重新执行")
         if flat.empty:
             return {field: pd.DataFrame() for field in needed}
 
@@ -182,47 +222,65 @@ class MarketPanelMixin:
         requested_values = ", ".join("(?)" for _ in codes)
         # 只取足以把稀疏因子对齐到请求窗口的三部分：窗口起点前最后一条、
         # 窗口内变化，以及完全没有较早因子时的首个后续值（保留原 bfill 语义）。
-        rows = self.conn.execute(
-            f"""
-            WITH requested(code) AS (VALUES {requested_values}),
-            anchor AS (
-                SELECT factors.code, MAX(factors.trade_date) AS trade_date
+        cached = cached_factor_rows(self, codes)
+        if cached is not None:
+            anchors = {}
+            later = {}
+            within = []
+            known = set()
+            for code, day, value in cached:
+                if day <= last_date:
+                    known.add(code)
+                if day <= first_date:
+                    anchors[code] = (code, day, value)
+                elif day <= last_date:
+                    within.append((code, day, value))
+                elif code not in later:
+                    later[code] = (code, day, value)
+            rows = [*anchors.values(), *within,
+                    *(row for code, row in later.items() if code not in known)]
+        else:
+            rows = self.conn.execute(
+                f"""
+                WITH requested(code) AS (VALUES {requested_values}),
+                anchor AS (
+                    SELECT factors.code, MAX(factors.trade_date) AS trade_date
+                    FROM adjust_factors AS factors
+                    JOIN requested ON requested.code = factors.code
+                    WHERE factors.trade_date <= ?
+                    GROUP BY factors.code
+                ),
+                later AS (
+                    SELECT factors.code, MIN(factors.trade_date) AS trade_date
+                    FROM adjust_factors AS factors
+                    JOIN requested ON requested.code = factors.code
+                    WHERE factors.trade_date > ?
+                    GROUP BY factors.code
+                )
+                SELECT factors.code AS code, factors.trade_date AS trade_date, factors.hfq_factor AS hfq_factor
+                FROM adjust_factors AS factors
+                JOIN anchor ON anchor.code = factors.code AND anchor.trade_date = factors.trade_date
+                UNION ALL
+                SELECT factors.code, factors.trade_date, factors.hfq_factor
                 FROM adjust_factors AS factors
                 JOIN requested ON requested.code = factors.code
-                WHERE factors.trade_date <= ?
-                GROUP BY factors.code
-            ),
-            later AS (
-                SELECT factors.code, MIN(factors.trade_date) AS trade_date
+                WHERE factors.trade_date > ? AND factors.trade_date <= ?
+                UNION ALL
+                SELECT factors.code, factors.trade_date, factors.hfq_factor
                 FROM adjust_factors AS factors
-                JOIN requested ON requested.code = factors.code
-                WHERE factors.trade_date > ?
-                GROUP BY factors.code
-            )
-            SELECT factors.code AS code, factors.trade_date AS trade_date, factors.hfq_factor AS hfq_factor
-            FROM adjust_factors AS factors
-            JOIN anchor ON anchor.code = factors.code AND anchor.trade_date = factors.trade_date
-            UNION ALL
-            SELECT factors.code, factors.trade_date, factors.hfq_factor
-            FROM adjust_factors AS factors
-            JOIN requested ON requested.code = factors.code
-            WHERE factors.trade_date > ? AND factors.trade_date <= ?
-            UNION ALL
-            SELECT factors.code, factors.trade_date, factors.hfq_factor
-            FROM adjust_factors AS factors
-            JOIN later ON later.code = factors.code AND later.trade_date = factors.trade_date
-            WHERE NOT EXISTS (
-                SELECT 1 FROM adjust_factors AS known
-                WHERE known.code = factors.code AND known.trade_date <= ?
-            )
-            ORDER BY code, trade_date
-            """,
-            [*codes, first_date, last_date, first_date, last_date, last_date],
-        ).fetchall()
+                JOIN later ON later.code = factors.code AND later.trade_date = factors.trade_date
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM adjust_factors AS known
+                    WHERE known.code = factors.code AND known.trade_date <= ?
+                )
+                ORDER BY code, trade_date
+                """,
+                [*codes, first_date, last_date, first_date, last_date, last_date],
+            ).fetchall()
         if not rows:
             return ratio
         sparse = pd.DataFrame(
-            [(str(row["code"]), str(row["trade_date"]), float(row["hfq_factor"])) for row in rows],
+            [(str(row[0]), str(row[1]), float(row[2])) for row in rows],
             columns=["code", "trade_date", "hfq_factor"],
         )
         sparse = sparse[sparse["code"].isin(set(reference.columns))]

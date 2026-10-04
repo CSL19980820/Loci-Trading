@@ -18,7 +18,7 @@ from src.shared.observability import span as observation_span
 
 STICKY_TTL_SEC = 600.0
 #: hist_daily 并发同步时，门闩被占满则排队等待的上限（秒）
-ADAPTER_CLAIM_WAIT_SEC = 120.0
+ADAPTER_CLAIM_WAIT_SEC = 8.0
 ADAPTER_CLAIM_POLL_SEC = 0.05
 
 #: 每个 (lane, 来源) 允许的在途外部请求数；默认单飞。
@@ -38,7 +38,6 @@ ADAPTER_LANE_CONCURRENCY: dict[str, int] = {LANE_HIST_DAILY: 4}
 ADAPTER_SOURCE_CONCURRENCY: dict[tuple[str, str], int] = {
     (LANE_HIST_DAILY, "tdx"): 8,
     (LANE_SPOT_BATCH, "tdx"): 8,
-    (LANE_HIST_DAILY, "hithink"): 2,
 }
 #: 各 lane 的**权威源**：只要它还在启用名单里，就永远排在合并优先序第一位。
 #:
@@ -202,7 +201,7 @@ def pin_sticky(lane: str, adapter_id: str, *, ttl_sec: float = STICKY_TTL_SEC) -
         _sticky[lane] = (adapter_id, time.monotonic() + max(0.0, ttl_sec))
 
 
-_LIVE_QUOTE_PREFERRED: tuple[str, ...] = ("sina", "tencent")
+_LIVE_QUOTE_PREFERRED: tuple[str, ...] = ("sina", "tdx")
 
 
 def _race_live_quotes(

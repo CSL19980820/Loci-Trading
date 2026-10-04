@@ -1,0 +1,109 @@
+{
+  "created_at": "2026-10-04T13:46:46.043292+08:00",
+  "strategy": "contraction-rebreakout-v1",
+  "variants": {
+    "baseline": {
+      "mechanism": "original",
+      "score": "S0",
+      "entry": "next_open"
+    },
+    "shape_without_momentum": {
+      "mechanism": "remove the 40-point momentum preference",
+      "score": "100*(15*C+15*D+10*V+20*L)/60",
+      "entry": "next_open"
+    },
+    "support_efficiency": {
+      "mechanism": "prefer nearby support and small breakout extension",
+      "score": "45*clip(1-risk/12)+30*clip(1-extension/5)+25*C",
+      "entry": "next_open"
+    },
+    "quiet_breakout": {
+      "mechanism": "contraction quality and moderate expansion instead of maximum volume",
+      "score": "35*C+25*D+25*clip(min(vr-1,(5-vr)/3))+15*L",
+      "entry": "next_open"
+    },
+    "thrust_quality": {
+      "mechanism": "a decisive bullish body and expansion against prior volatility, not ten-day momentum",
+      "score": "45*body_efficiency+35*clip(range_atr-1)+20*C",
+      "entry": "next_open"
+    },
+    "decisive_breakout_gate": {
+      "mechanism": "reject indecisive candles and marginal breakouts, refill from full pool",
+      "score": "S0",
+      "gate": "body_efficiency>=0.6 AND extension>=1",
+      "entry": "next_open"
+    },
+    "close_cap_limit": {
+      "mechanism": "keep original picks but refuse a fill above prior close plus 1%",
+      "score": "S0",
+      "entry": "next_dip",
+      "limit": "raw_C(T)*1.01"
+    },
+    "platform_retest_limit": {
+      "mechanism": "one-session resting limit near the already-known breakout platform",
+      "score": "S0",
+      "entry": "next_dip",
+      "limit": "raw_C(T)*min(1,prior5high(T)/C(T)*1.005)"
+    },
+    "thrust_close_cap_limit": {
+      "mechanism": "decisive-breakout ranking plus the prior-close cap",
+      "score": "45*body_efficiency+35*clip(range_atr-1)+20*C",
+      "entry": "next_dip",
+      "limit": "raw_C(T)*1.01"
+    }
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "source_sha256": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "f1b78a41f5bf53489bf22733218f650296732afee34e2df154d106c1fcd582c3",
+    "tools/research_contraction_redesign.py": "3bb5bca407254fef7ab0b6a0f3f91320cb2edefee987ef28c6831d566207fd24",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "diagnosis_sha256": "cb050e2e769de205d9ee45c1ae27c4fedf4e09580cf11075bae4d61bec60a4ff",
+  "features": "C,D,V,L are original contraction/depth/volume/close-location components normalized 0..1; momentum/extension/risk are percentages; risk=C(T)/min(L(T-2),L(T-1))-1; body_efficiency=(C-O)/(H-L); range_atr=(H-L)/prior14-session average true range. clip=[0,1]. No long-trend factor.",
+  "exit": {
+    "key": "H04-S06-Tnone",
+    "sessions_including_entry": 4,
+    "hold_days": 3,
+    "stop_loss_pct": -6.0,
+    "take_profit_pct": null
+  },
+  "cost_pct": 0.21,
+  "stress_cost_pct": 0.42,
+  "maturity_sessions": 4,
+  "selection": "Only original complete shape candidates, gates unchanged except named decisive-breakout gate. Round4 then code ascending Top2; gated stocks allow rank3+ refill. Equal original Top2 opportunity budget with unfilled/filtered=0; censored outcomes forbidden from zero-fill.",
+  "diagnosis_decision": "Training buckets did not support assuming high gaps, high momentum or distant pullback support were inherently bad. Retain support-efficiency and no-momentum as narrow controls. Replace provisional moderate-momentum/risk-gate/support-limit designs with body/ATR thrust score, body>=0.6 and extension>=1 gate, and thrust+close-limit before freezing. No candidate performance or later-period results used for this decision.",
+  "entry": "next_open or one-session next_dip conditional-order proxy. Limits computed from T-known raw coordinates and floored to 0.01. T+1 O<=limit fills at O, else L<=limit fills at limit; otherwise cancelled. No T+1 close/high signal input. Overnight economic-factor changes cancel conditional orders without replacement; strict open-at-limit guard retained.",
+  "nomination": "At most 2, train-only; at least 20 closed trades across 4 closed-trade months, PF>1 (or no losses), mean>0, double-cost and winner-removed opportunity means>0; <30 flagged low-frequency. Budget representative: opportunity mean>baseline, highest opportunity mean then PF/id. Quality representative: trade mean and PF>baseline, highest double-cost-and-winner-removed trade mean then opportunity mean/id; choose a distinct candidate. Quality nominee need not beat budget baseline; opportunity sacrifice must be reported. Later run only baseline and nominees, no rescue/tuning.",
+  "limitations": [
+    "All periods previously observed, retrospective only; multiple mechanism search and training selection bias remain",
+    "Current catalog/names/status and factor revisions; not strict point-in-time or survivor-free",
+    "Daily touch is conditional-order proxy, no queue/partial fills/order timestamps; T+1 risk remains",
+    "Independent overlapping trade events, no account NAV, funding/capacity, minimum commission or portfolio max drawdown",
+    "Month-block bootstrap descriptive only; no multiple-testing correction",
+    "Known prior failed exits/filters/delayed confirmation are not re-searched"
+  ]
+}

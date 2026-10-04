@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "checks": [
+    "warehouse_amount_div_shares_no_extra100",
+    "cross_factor_common_coordinate",
+    "today_amount_volume_source_HLC_cannot_gate",
+    "A_and_B_have_distinct_opening_condition",
+    "amount_adds_information_beyond_OHLCV",
+    "out_of_range_vwap_unknown_not_clamped",
+    "unverified_source_unknown",
+    "close_equal_vwap_allowed",
+    "prefix_causality",
+    "missing_holding_low_unresolved",
+    "inconsistent_holding_ohlc_unresolved",
+    "missing_holding_volume_unresolved",
+    "known_zero_volume_suspension_preserved",
+    "unknown_holding_limit_reference_unresolved",
+    "zero_loss_PF_positive_numerator_only"
+  ]
+}

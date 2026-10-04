@@ -15,6 +15,8 @@ export function usePoolFilters(strategies: Ref<StrategyInfo[]>) {
   const filters = reactive({
     strategy: '',
     decision: '',
+    // 独立于三项 BasicForm；表单回写不能意外清掉历史范围开关。
+    includeBackfill: false,
     dateRange: null as [string, string] | null,
   })
 
@@ -80,6 +82,7 @@ export function usePoolFilters(strategies: Ref<StrategyInfo[]>) {
       start: start || undefined,
       end: end || undefined,
       limit: 1000,
+      include_backfill: filters.includeBackfill,
     }
   })
 

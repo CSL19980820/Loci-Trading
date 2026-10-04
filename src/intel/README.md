@@ -1,5 +1,9 @@
 # 情报（intel）
 
+## 当前接入范围
+
+外部结构化情报保留悟道 MCP，Hithink 专用接入已移除。`intel_fetch` 及已有快照的只读摘要保留，重复的 `intel_brief` 生成任务删除。悟道历史行情适配和 `hist_daily_primary` 开关不再使用。详细边界见 `deploy/SLIMMING.md`。
+
 ## 职责
 MCP/外部情报接入与限流；补本地行情仓算不出的数据。
 

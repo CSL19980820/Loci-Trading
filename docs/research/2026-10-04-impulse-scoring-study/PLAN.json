@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-10-04T10:43:32.996810+08:00",
+  "strategy": "impulse-inside-breakout-v1",
+  "variants": {
+    "baseline": "原评分 S0",
+    "low80": "简单低位：0.8*S0 + 20*(1-P)",
+    "context70": "位置+修复：0.7*S0 + 20*R*B(P) + 5*R + 5*U",
+    "trend80": "纯趋势：0.8*S0 + 15*R + 5*U",
+    "context80": "轻量位置+修复：0.8*S0 + 10*R + 5*U + 5*R*B(P)"
+  },
+  "features": {
+    "P": "(C(T-5)-LLV(L,120)(T-5))/(HHV(H,120)(T-5)-LLV(L,120)(T-5)); clip[0,1]",
+    "B": "min(P/0.2,1,(1-P)/0.5), clipped[0,1]; 20%-50% full comfort bonus",
+    "R": "C(T)>MA20(T) AND MA20(T)>MA20(T-10)",
+    "U": "R AND MA20(T)>=MA60(T) AND MA60(T)>=MA60(T-10)",
+    "missing": "Any missing/invalid context => retain S0 for all alternatives; no candidate deletion"
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "fixed_exit": {
+    "key": "H04-S06-Tnone",
+    "sessions_including_entry": 4,
+    "hold_days": 3,
+    "stop_loss_pct": -6.0,
+    "take_profit_pct": null
+  },
+  "cost_pct": 0.21,
+  "stress_cost_pct": 0.42,
+  "common_maturity_sessions": 4,
+  "selection": "Train-only nomination: mean net > baseline and PF > baseline and PF>1; highest mean, PF, lexical id. All five frozen variants reported in every segment; no tuning.",
+  "comparison": "Full shape candidates reranked then daily Top2, rounded4, code ascending tie. Same number of signals daily; unfilled or censored opportunities count zero in opportunity mean.",
+  "robustness": "Report changed dates/picks; replaced contribution; monthly-block paired bootstrap 5000 seed20261004; double costs; largest winner removed; per-period and pooled metrics. CI descriptive, not multiple-testing corrected.",
+  "limitations": [
+    "All periods retrospective: prior studies already inspected 2025H2 and 2026; no new untouched holdout.",
+    "Current catalog and names, stored adjustment revisions: not strict point-in-time or survivor-free.",
+    "Independent trade events, equal opportunity accounting; no portfolio NAV/capacity/compounding simulation.",
+    "Four-session maturity purge for this fixed exit; old study used 20 sessions, so baseline is verified on the common subset.",
+    "Daily bar execution and worst low through exit session cannot establish exact intraday path."
+  ],
+  "sources": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "0f411bdf13cd9b006c8c63d402e60446ce51980241fe78c09000ae535552f9b9",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c"
+}

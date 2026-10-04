@@ -1,0 +1,54 @@
+{
+  "created_at": "2026-10-04T14:59:05.097272+08:00",
+  "sources": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "f1b78a41f5bf53489bf22733218f650296732afee34e2df154d106c1fcd582c3",
+    "tools/research_contraction_structure.py": "d00803a241ad8adcf32aa4f4521bb828df789bd1baed2212f9ec82c057348d69",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "tools/research_contraction_risk_budget.py": "39f6734bcd6b88c0ccfeb18e1893bb7e31a042ca61c02620e6321b929bbc5a17",
+    "tools/research_contraction_risk_validation.py": "3eb143f04dc5ea3aecd05dae28c465a0c04296fa3cbf9a6deaced7a689a360a9"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "train_plan_sha256": "cc8c3b4f701199c5a42a526905801b606c5d5f02f68a664357b5c21f6093e8b7",
+  "train_summary_sha256": "cb837c2678df7339a47b100ce72c17d76fe411139155e3c439ad978aae1edd4a",
+  "nomination_sha256": "eaf8232e3c458a5d29481b97380df324882a5cc1bdf2dcbfb0bd1c3a267df4ac",
+  "variants": [
+    "legacy_original4",
+    "baseline_flat4",
+    "base8_fixed4_unrestricted"
+  ],
+  "segments": {
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "common_maturity_sessions": 20,
+  "contracts": "Exactly frozen base8 first-breakout events, Top2/code-dedup, retained opening-below-platform cancellation; no maximum platform-risk rejection; fixed-6%/4 sessions; w=1. Costs .21/.42; 20-session maturity. Same two unchanged controls.",
+  "acceptance": "Candidate nonempty and mean>0/PF>1 in EACH later segment; pooled later double-cost, largest-weighted-winner removed, and combined double-cost+same-winner-removed net contribution all>0. Publish common-slot opportunity cost vs baseline and paired month-bootstrap CI regardless. If passed, separate fixed-total-capital validation remains mandatory.",
+  "no_rescue": "No new candidates, cutoffs, score/entry/exit/allocation choices after later results; no2023H2 outcomes.",
+  "limitations": [
+    "2024-2026 already observed: retrospective, multiple development bias",
+    "2023 indicator/state warmup only;2023H2 forward returns withheld",
+    "Current catalog/names/factor revisions not strict PIT; economic-reference limits are contract values,not official ex-right notices",
+    "Daily opening conditions do not prove auction fills or queues",
+    "Different-code overlap; no total capital limit; holdings/concurrency exposed",
+    "Whole entry/exit-bar MAE/MFE not used for decisions",
+    "Removal of a diagnosed risk admission mismatch is another retrospective development round, not unseen validation.",
+    "Capital risk budget is nominal; T+1, opening gaps, suspension and lower-limit queues can exceed planned loss.",
+    "Training-only nomination is new, but years2024-2026 and related strategies have been repeatedly observed; later outputs remain retrospective, not pristine out-of-sample proof."
+  ]
+}

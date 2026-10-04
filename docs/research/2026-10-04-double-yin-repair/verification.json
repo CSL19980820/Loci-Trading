@@ -1,0 +1,136 @@
+{
+  "status": "passed",
+  "source_data_groups_hashes_unchanged": true,
+  "checks": [
+    "full_event_terminal_accounting",
+    "unique_origin_code",
+    "strict_T_plus_1",
+    "economic_return_identity",
+    "0.21_percent_cost",
+    "entry_and_origin_budgets_reconcile",
+    "both_quota_max2",
+    "industry_intersection_exclusion",
+    "repair_no_overlapping_same_code",
+    "raw_entry_above_six"
+  ],
+  "runs": [
+    {
+      "segment": "train",
+      "variant": "original_baseline",
+      "events": 503,
+      "trades": 503,
+      "status": "passed"
+    },
+    {
+      "segment": "train",
+      "variant": "corrected_baseline",
+      "events": 504,
+      "trades": 504,
+      "status": "passed"
+    },
+    {
+      "segment": "train",
+      "variant": "one_dry_fixed",
+      "events": 1856,
+      "trades": 48,
+      "status": "passed"
+    },
+    {
+      "segment": "train",
+      "variant": "one_dry_structural",
+      "events": 1856,
+      "trades": 48,
+      "status": "passed"
+    },
+    {
+      "segment": "train",
+      "variant": "two_dry_fixed",
+      "events": 1856,
+      "trades": 25,
+      "status": "passed"
+    },
+    {
+      "segment": "train",
+      "variant": "two_dry_structural",
+      "events": 1856,
+      "trades": 25,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "original_baseline",
+      "events": 183,
+      "trades": 183,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "corrected_baseline",
+      "events": 183,
+      "trades": 183,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "one_dry_fixed",
+      "events": 560,
+      "trades": 18,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "one_dry_structural",
+      "events": 560,
+      "trades": 18,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "original_baseline",
+      "events": 255,
+      "trades": 255,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "corrected_baseline",
+      "events": 255,
+      "trades": 255,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "one_dry_fixed",
+      "events": 906,
+      "trades": 34,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "one_dry_structural",
+      "events": 906,
+      "trades": 34,
+      "status": "passed"
+    }
+  ],
+  "scope": "Artifact accounting and arithmetic checks passed; does not certify all state-transition comparisons.",
+  "known_issue_pending_independent_quantification": {
+    "status": "confirmed_partial_scope_complete_replay_required",
+    "source": "independent market_snapshot review",
+    "factor_issue": "hfq_close/raw_close reconstruction has about1e-15 jitter despite identical stored factor",
+    "known_repair_state_changes": {
+      "base_dates": 4,
+      "false_equal_high_break": 1
+    },
+    "false_low_open_executed_control": {
+      "code": "002868",
+      "date": "2024-09-25",
+      "raw_open_and_previous_close": 12.48,
+      "direct_factor": 1.378677629031,
+      "reported_net_pct": 22.2258974
+    },
+    "existing_repair_orders_rechecked": 496,
+    "existing_repair_trades_rechecked": 250,
+    "limitation": "Existing orders and trades matched direct-factor boundaries, but a full origin replay may create different additional orders. Frozen source/results preserved."
+  }
+}

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 import inspect
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,9 @@ from src.backtest.application.horizon import (
 from src.market import MarketStore
 from src.market import UniverseError, resolve_universe
 from src.strategy.application.catalog import get
-from src.strategy.application.price_constraints import attach_raw_limit_close
+from src.strategy.application.price_constraints import (
+    attach_raw_limit_close,
+)
 from src.strategy.domain.base import (
     StrategyEngine,
     StrategyError,
@@ -44,13 +46,13 @@ MAX_HORIZON_SPAN_DAYS = 186
 def resolve_backtest_config(
     strategy: str | StrategyEngine, overrides: Mapping[str, Any] | None = None,
 ) -> BacktestConfig:
-    """历史快照战法的完整执行默认值；调用方显式值优先，旧战法不变。"""
+    """采用显式声明的执行默认值；调用方显式值优先，旧战法不变。"""
     engine = get(strategy) if isinstance(strategy, str) else strategy
     template = getattr(engine, "backtest_config", None) or {}
     fields = BacktestConfig.__dataclass_fields__
     defaults = {
         key: value for key, value in template.items() if key in fields and key != "valuation_end"
-    } if template.get("signal_dataset") else {}
+    } if template.get("signal_dataset") or bool(getattr(engine, "use_backtest_defaults", False)) else {}
     return BacktestConfig(**(defaults | dict(overrides or {})))
 
 
@@ -79,6 +81,7 @@ def backtest_strategy(
         skip_universe_safety=skip_universe_safety,
         adjust=adjust,
         config=config,
+        source_evidence_mode="compact",
     )
     return execute_backtest_context(store, ctx)
 
@@ -95,8 +98,13 @@ def prepare_backtest_context(
     universe: Mapping[str, Any] | None = None,
     skip_universe_safety: bool = False,
     adjust: str | None = None,
+    source_evidence_mode: Literal["full", "compact"] = "full",
 ) -> dict[str, Any]:
-    """准备一次回测的冻结上下文，供研究层生成同宇宙对照。"""
+    """准备研究冻结上下文，默认保留验证所需的完整 receipt/attempt。
+
+    只消费回测报告的调用方可显式选择 compact；严格 PIT 研究保留 full，
+    不能在验证实际选中来源的 provenance 字段之前裁掉成功回执。
+    """
     return _prepare_signal_context(
         store,
         strategy,
@@ -109,6 +117,7 @@ def prepare_backtest_context(
         adjust=adjust,
         tail_days=None,
         config=config,
+        source_evidence_mode=source_evidence_mode,
     )
 
 
@@ -228,6 +237,7 @@ def backtest_strategy_horizon(
         adjust=adjust,
         tail_days=tail,
         config=None,
+        source_evidence_mode="compact",
     )
     engine = ctx["engine"]
     execution_panels = ctx.get("execution_panels", ctx["panels"])
@@ -296,9 +306,12 @@ def _prepare_signal_context(
     adjust: str | None,
     tail_days: int | None,
     config: BacktestConfig | None,
+    source_evidence_mode: Literal["full", "compact"] = "full",
 ) -> dict[str, Any]:
     """一次 resolve + load_panel + compute；成交与 Horizon 共用。"""
     engine = get(strategy) if isinstance(strategy, str) else strategy
+    if getattr(engine, "requires_realtime_inputs", False):
+        raise StrategyError("该战法使用盘后完整样本和次日09:25现场报价，不支持以系统日K代替实时结果回测")
     resolved_params = merge_params(engine, params)
     effective_universe = (
         universe if universe is not None else getattr(engine, "default_universe", None)
@@ -340,6 +353,9 @@ def _prepare_signal_context(
 
     warmup = signal_history_bars(engine, params=params)
     load_start, load_end = _expand_range(days, start, end, warmup, tail)
+    requires_full_history = bool(getattr(engine, "requires_full_history", False))
+    if requires_full_history:
+        load_start = days[0]
     if cfg.valuation_end is not None:
         if start and cfg.valuation_end < start:
             raise StrategyError("估值截止日不能早于信号开始日")
@@ -368,6 +384,7 @@ def _prepare_signal_context(
         start=load_start,
         end=load_end,
         min_bars=engine.min_bars(),
+        include_ohlc=bool(getattr(engine, "requires_raw_limit_ohlc", False)),
     )
     if getattr(engine, "requires_instrument_names", False):
         panels["__instrument_names__"] = {
@@ -409,11 +426,11 @@ def _prepare_signal_context(
         factors = (adjusted / raw).where(valid).ffill().fillna(1.0)
         execution_panels = {**execution_panels, "__adjust_factor": factors}
 
-    # 前视闸门：静态始终；大宇宙分片截断一致性（见 audit_sampling）
-    from src.strategy.application.audit import LookAheadError, guard_strategy
+    # 受控内置实现的因果性在版本测试中验证，其他实现保留运行时截断检查。
+    from src.strategy.application.audit import LookAheadError, guard_runtime_strategy
 
     try:
-        guard_strategy(engine, panels, params=resolved_params)
+        guard_runtime_strategy(engine, panels, params=resolved_params)
     except LookAheadError as exc:
         raise StrategyError(str(exc)) from exc
 
@@ -450,6 +467,7 @@ def _prepare_signal_context(
         "resolved": resolved,
         "fields": fields,
         "effective_adjust": effective_adjust,
+        "history_mode": "full" if requires_full_history else "window",
         "load_start": load_start,
         "load_end": load_end,
         "start": start,
@@ -469,6 +487,8 @@ def _prepare_signal_context(
             start=load_start,
             end=load_end,
             include_source_details=not bool(cfg.signal_dataset),
+            source_summary_only=bool(getattr(engine, "source_evidence_summary", False)),
+            source_evidence_mode=source_evidence_mode,
         ) | ({"signal_dataset": dataset_evidence} if dataset_evidence else {}),
     }
 
@@ -510,6 +530,7 @@ def _attach_context(config: dict[str, Any], ctx: dict[str, Any]) -> None:
         **ctx["data_snapshot"],
         "fields": list(ctx["fields"]),
         "adjust": ctx["effective_adjust"],
+        "history_mode": ctx["history_mode"],
         "start": ctx["load_start"],
         "end": ctx["load_end"],
         "raw_limit_close": "__raw_close" in panels,
@@ -553,6 +574,8 @@ def _data_snapshot(
     start: str,
     end: str,
     include_source_details: bool = True,
+    source_summary_only: bool = False,
+    source_evidence_mode: Literal["full", "compact"] = "full",
 ) -> dict[str, Any]:
     """兼容测试替身/旧读模型，同时优先保留查询范围来源证据。"""
     method = store.data_snapshot
@@ -561,6 +584,10 @@ def _data_snapshot(
     kwargs: dict[str, Any] = {"codes": codes, "start": start, "end": end}
     if not include_source_details:
         kwargs["include_source_details"] = False
+    if source_summary_only:
+        kwargs["source_summary_only"] = True
+    if source_evidence_mode != "full" and isinstance(store, MarketStore):
+        kwargs["source_evidence_mode"] = source_evidence_mode
     if not accepts_kwargs:
         kwargs = {key: value for key, value in kwargs.items() if key in parameters}
     # 不捕获方法内部TypeError后改做无范围全库查询。

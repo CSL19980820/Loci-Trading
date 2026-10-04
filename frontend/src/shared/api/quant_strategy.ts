@@ -126,8 +126,8 @@ export function runScreen(payload: {
  * 顶层字段是「当前这一个」槽，只为兼容老代码；判断「哪个战法在跑」必须看
  * `runs` / `running_strategies`，否则又会退化成「引擎单槽」的错觉。
  */
-export function getScreenRunStatus(): Promise<import('@/shared/types/quant').ScreenRunStatus> {
-  return quantRequest('/screen/run')
+export function getScreenRunStatus(options: { view?: 'full' | 'progress'; strategy?: string } = {}): Promise<import('@/shared/types/quant').ScreenRunStatus> {
+  return quantRequest(`/screen/run${query({ view: options.view, strategy: options.strategy })}`)
 }
 
 export function startScreenRun(payload: {

@@ -71,6 +71,28 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
     if not slug:
         raise JobError("screen 任务必须指定 strategy")
 
+    engine = get(str(slug))
+    if getattr(engine, "requires_realtime_inputs", False):
+        from src.strategy.application.screen_run import execute_realtime_screen
+
+        context.check_cancelled()
+        payload = execute_realtime_screen(
+            engine, config,
+            palace_db=context.palace_db or default_palace_db(),
+            source="job:screen",
+            before_persist=context.check_cancelled,
+        )
+        if payload.get("skipped"):
+            raise JobSkipped(str(payload.get("reason") or "非交易日，本轮跳过"))
+        payload.update(
+            strategy_name=engine.name,
+            pick_count=len(payload["picks"]),
+            watch_count=len(payload["watch_picks"]),
+            spot_refresh={"enabled": True, "status": "realtime_candidate_quotes",
+                          "message": "候选池内现场获取今日竞价行情"},
+        )
+        return payload
+
     from src.ops.application.jobs.screen_schedule_guard import guard_screen_schedule
 
     schedule_check = guard_screen_schedule(config, context)

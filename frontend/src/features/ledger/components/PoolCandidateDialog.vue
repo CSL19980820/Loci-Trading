@@ -6,9 +6,12 @@
  * 已发生的行情。战法 / 池 / 来源三处文案由页面解析后传入；删除与看档案都往外抛。
  */
 import { computed } from 'vue'
+import { useQuery } from '@pinia/colada'
 import { ArrowUpRight, Trash2 } from '@lucide/vue'
 
 import { useQuotesQuery } from '@/features/market/composables/useQuotesQuery'
+import { getCandidate } from '@/shared/api/palace'
+import { Alert, AlertDescription } from '@/shared/components/ui/alert'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/shared/components/ui/accordion'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -22,6 +25,7 @@ import {
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import StockLink from '@/shared/components/ui/StockLink.vue'
 import { formatDateTime } from '@/shared/lib/dateTime'
+import { toErrorMessage } from '@/shared/lib/errors'
 import { decisionLabel, decisionTone, timingLabel } from '@/shared/lib/format'
 import type { OpenBatchInput } from '@/shared/stores/batchBrowse'
 import type { Candidate } from '@/shared/types/palace'
@@ -43,6 +47,18 @@ const props = defineProps<{
 const emit = defineEmits<{ delete: [row: Candidate]; archive: [date?: string] }>()
 
 const open = defineModel<boolean>({ required: true })
+
+const detailQuery = useQuery({
+  key: () => ['candidate-detail', props.candidate?.id ?? ''],
+  query: () => getCandidate(props.candidate!.id),
+  enabled: () => open.value && Boolean(props.candidate?.id) && props.candidate?.evidence === undefined,
+  staleTime: 30_000,
+})
+const detailError = computed(() => detailQuery.error.value
+  ? toErrorMessage(detailQuery.error.value, '加载候选证据失败') : '')
+const candidateEvidence = computed(() => props.candidate?.evidence ?? (
+  detailQuery.data.value?.id === props.candidate?.id ? detailQuery.data.value?.evidence : undefined
+))
 
 const liveCode = computed(() => (open.value ? String(props.candidate?.code || '').trim() : ''))
 
@@ -167,7 +183,7 @@ const facts = computed(() => {
 })
 
 const evidence = computed(() =>
-  Object.entries(props.candidate?.evidence ?? {}).map(([key, raw]) => {
+  Object.entries(candidateEvidence.value ?? {}).map(([key, raw]) => {
     const value = typeof raw === 'string' ? raw : JSON.stringify(raw)
     return { key, value, wide: value.length > 36 }
   }),
@@ -267,7 +283,14 @@ const evidence = computed(() =>
           @pick="(date) => emit('archive', date)"
         />
 
-        <Accordion v-if="evidence.length" type="single" collapsible class="cand__evidence">
+        <Alert v-if="detailError" variant="destructive" class="my-3">
+          <AlertDescription>{{ detailError }}</AlertDescription>
+          <Button variant="outline" size="sm" class="mt-2" @click="detailQuery.refetch()">重试证据</Button>
+        </Alert>
+        <div v-else-if="detailQuery.isPending.value && !candidateEvidence" class="py-3" aria-label="加载候选证据">
+          <Skeleton class="h-5 w-32" />
+        </div>
+        <Accordion v-else-if="evidence.length" type="single" collapsible class="cand__evidence">
           <AccordionItem value="evidence" class="border-0">
             <AccordionTrigger class="cand__evidence-trigger">
               证据

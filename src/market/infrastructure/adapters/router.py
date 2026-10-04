@@ -18,7 +18,6 @@ from src.market.infrastructure.adapters.base import AdapterError, MarketAdapter
 from src.market.infrastructure.adapters.registry import (
     enabled_adapter_ids,
     get_adapter,
-    lane_disabled_provider_ids,
     lane_route_policy,
 )
 from src.market.infrastructure.adapters.types import (
@@ -267,15 +266,7 @@ def fetch_daily_best(
     preferred = [adapter.meta.id for adapter in resolved]
     errors: list[str] = []
     adapters: list[MarketAdapter] = []
-    # 扶摇是通达信备源；抽样交叉校验也不应在 TDX 成功时消耗其远端请求。
-    hithink_fallback = (
-        next((adapter for adapter in resolved if adapter.meta.id == "hithink"), None)
-        if cross_check and preferred[0] == "tdx"
-        else None
-    )
     for adapter in resolved:
-        if adapter is hithink_fallback:
-            continue
         if circuit.acquire(LANE_HIST_DAILY, adapter.meta.id):
             adapters.append(adapter)
             continue
@@ -285,7 +276,7 @@ def fetch_daily_best(
         _record_receipt(
             receipt, source_id=adapter.meta.id, state="skipped", error=message
         )
-    if not adapters and hithink_fallback is None:
+    if not adapters:
         raise AdapterError(
             f"{code} 所有 hist_daily 来源都在熔断冷却中 -> " + " | ".join(errors[-6:])
         )
@@ -350,45 +341,6 @@ def fetch_daily_best(
     finally:
         pool.shutdown(wait=True, cancel_futures=False)
 
-    if hithink_fallback is not None:
-        aid = hithink_fallback.meta.id
-        if any(source_id == "tdx" for source_id, _frame in successes):
-            _record_receipt(
-                receipt, source_id=aid, state="skipped", error="通达信命中，扶摇备源未请求"
-            )
-        elif not circuit.acquire(LANE_HIST_DAILY, aid):
-            cooldown = circuit.cooldown_remaining(LANE_HIST_DAILY, aid)
-            message = f"来源连续失败已熔断，{int(cooldown)}s 后自动重试"
-            errors.append(f"{aid}: {message}")
-            _record_receipt(
-                receipt,
-                source_id=aid,
-                state="skipped",
-                error=message,
-            )
-        else:
-            _record_receipt(receipt, source_id=aid, state="attempted")
-            source_id, frame, error, kind = _fetch_daily_queued(
-                hithink_fallback,
-                code,
-                instrument_type,
-                max(0.0, claim_wait_sec),
-                recent_bars,
-            )
-            if kind == "ok" and frame is not None and not frame.empty:
-                circuit.record_success(LANE_HIST_DAILY, aid)
-                successes.append((source_id, frame))
-            else:
-                if kind != "empty":
-                    circuit.record_failure(LANE_HIST_DAILY, aid)
-                errors.append(f"{aid}: {error or '空数据'}")
-                _record_receipt(
-                    receipt,
-                    source_id=aid,
-                    state="empty" if kind == "empty" else "failed",
-                    error=error or "空数据",
-                )
-
     if not successes:
         raise AdapterError(
             f"{code} 全部 hist_daily 适配器失败 -> " + " | ".join(errors[-6:])
@@ -436,8 +388,7 @@ def fetch_daily_routed(
     ``cross_check`` 为 None 时按 ``should_cross_check(code)`` 抽样决定——多数票
     只打主源，抽中的票才做多源协作合并。粘性赢家只提高优先序。
     ``adapter_ids`` 为 None 时读 ``lane_providers`` 启用名单。
-    启用源全灭且用户关掉了其他日 K 源时，把关掉的源当最后回退（不钉粘性），
-    避免必需线路只剩单源时一次握手超时就整票失败。
+    仅尝试明确启用的主备源；关闭的来源不会作为隐式最后回退。
     """
     effective_cross_check = (
         should_cross_check(code) if cross_check is None else bool(cross_check)
@@ -482,35 +433,7 @@ def fetch_daily_routed(
                 f"{exc}（历史日 K 已手动锁定「{preferred}」且未开失败回退，"
                 "其余数据源未尝试；可在运维「数据源」页打开失败回退或改回自动）"
             ) from exc
-        parked = lane_disabled_provider_ids(LANE_HIST_DAILY)
-        if not parked:
-            raise
-        # 关开关 = 日常协同合并不用它们，不是「必需日 K 单源抖动就整票失败」。
-        for aid in parked:
-            try:
-                frame, winner = fetch_daily_best(
-                    code,
-                    instrument_type=instrument_type,
-                    adapter_ids=[aid],
-                    max_workers=1,
-                    receipt=receipt,
-                    recent_bars=recent_bars,
-                )
-            except AdapterError:
-                continue
-            _record_receipt(
-                receipt,
-                source_id=winner,
-                state="emergency",
-                rows=int(len(frame)),
-                fields=frame.columns,
-                error="启用源失败后回退到已关闭来源",
-            )
-            return frame, winner
-        raise AdapterError(
-            f"{exc}（历史日 K 只剩 {len(ids)} 个启用源；"
-            f"{'、'.join(parked)} 已关闭，最后回退仍失败）"
-        ) from exc
+        raise
     # 手选无回退时始终钉住手选源；其余钉合并主源。
     pin_id = preferred if (policy and policy["mode"] == "manual" and preferred) else winner
     if pin_id:

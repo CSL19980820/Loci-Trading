@@ -28,12 +28,11 @@ def retention_snapshot(store: Any) -> dict[str, Any]:
         global_previous = (system or {}).get("config") or {}
         days = int(previous.get("keep_days", 15))
         policy = RetentionPolicy.model_validate({
-            **{field: days for field in ("job_days", "monitor_days", "alert_days", "decision_days", "leader_days", "quota_days", "ai_event_days", "ai_grant_days", "skill_days", "research_days")},
+            **{field: days for field in ("job_days", "alert_days", "decision_days", "leader_days", "quota_days", "ai_event_days", "ai_grant_days", "skill_days", "research_days")},
             "job_keep_min": int(previous.get("run_keep_min", 5)),
             "job_keep_max": int(previous.get("run_keep_max", 200)),
             "ai_session_keep": int(previous.get("ai_session_keep", 500)),
             "intraday_days": int(global_previous.get("intraday_keep_days", 60)),
-            "community_days": int(global_previous.get("community_keep_days", 15)),
         })
     return {
         "policy": policy.model_dump(),
@@ -46,7 +45,7 @@ def retention_snapshot(store: Any) -> dict[str, Any]:
 def save_retention(store: Any, policy: RetentionPolicy, *, expected_revision: int) -> dict[str, Any]:
     if current_tenant() != PRIMARY_TENANT:
         previous = retention_snapshot(store)["policy"]
-        for field in ("login_days", "audit_days", "intraday_days", "community_days", "notification_days", "usage_days"):
+        for field in ("login_days", "audit_days", "intraday_days", "notification_days", "usage_days"):
             if getattr(policy, field) != previous[field]:
                 raise PermissionError("全局日志保留期仅可在主工作区调整")
     store.set_versioned_setting(RETENTION_KEY, {"policy": policy.model_dump()}, expected_revision=expected_revision)

@@ -1,0 +1,242 @@
+{
+  "completed_at": "2026-10-04T17:05:36.336428+08:00",
+  "catalog_codes": 1408,
+  "first_quote": "2023-01-03",
+  "last_quote_read": "2026-09-29",
+  "full": {
+    "market_days": 666,
+    "active_days": 652,
+    "empty_days": 14,
+    "potential_code_days": 58017,
+    "distinct_codes": 1399,
+    "mean_per_market_day": 87.11261261261261,
+    "median": 67.0,
+    "p90": 183.0,
+    "p95": 223.5,
+    "max_per_day": 548,
+    "max_dates": [
+      "2024-10-17"
+    ]
+  },
+  "segments": {
+    "train": {
+      "market_days": 359,
+      "active_days": 345,
+      "empty_days": 14,
+      "potential_code_days": 30770,
+      "distinct_codes": 1368,
+      "mean_per_market_day": 85.71030640668523,
+      "median": 61.0,
+      "p90": 186.2,
+      "p95": 256.2999999999999,
+      "max_per_day": 548,
+      "max_dates": [
+        "2024-10-17"
+      ]
+    },
+    "validation_2025h2": {
+      "market_days": 126,
+      "active_days": 126,
+      "empty_days": 0,
+      "potential_code_days": 9869,
+      "distinct_codes": 1257,
+      "mean_per_market_day": 78.32539682539682,
+      "median": 70.0,
+      "p90": 135.5,
+      "p95": 154.25,
+      "max_per_day": 240,
+      "max_dates": [
+        "2025-09-04"
+      ]
+    },
+    "observed_2026": {
+      "market_days": 181,
+      "active_days": 181,
+      "empty_days": 0,
+      "potential_code_days": 17378,
+      "distinct_codes": 1365,
+      "mean_per_market_day": 96.01104972375691,
+      "median": 78.0,
+      "p90": 198.0,
+      "p95": 224.0,
+      "max_per_day": 457,
+      "max_dates": [
+        "2026-07-09"
+      ]
+    }
+  },
+  "years": {
+    "2024": {
+      "market_days": 242,
+      "active_days": 231,
+      "empty_days": 11,
+      "potential_code_days": 21461,
+      "distinct_codes": 1346,
+      "mean_per_market_day": 88.68181818181819,
+      "median": 58.5,
+      "p90": 200.8,
+      "p95": 274.34999999999985,
+      "max_per_day": 548,
+      "max_dates": [
+        "2024-10-17"
+      ]
+    },
+    "2025": {
+      "market_days": 243,
+      "active_days": 240,
+      "empty_days": 3,
+      "potential_code_days": 19178,
+      "distinct_codes": 1364,
+      "mean_per_market_day": 78.92181069958848,
+      "median": 66.0,
+      "p90": 152.8,
+      "p95": 182.79999999999995,
+      "max_per_day": 275,
+      "max_dates": [
+        "2025-03-03"
+      ]
+    },
+    "2026": {
+      "market_days": 181,
+      "active_days": 181,
+      "empty_days": 0,
+      "potential_code_days": 17378,
+      "distinct_codes": 1365,
+      "mean_per_market_day": 96.01104972375691,
+      "median": 78.0,
+      "p90": 198.0,
+      "p95": 224.0,
+      "max_per_day": 457,
+      "max_dates": [
+        "2026-07-09"
+      ]
+    }
+  },
+  "current_static_clean_potential_code_days": 56343,
+  "current_static_filter_not_applied": true,
+  "no_return_or_network_calls": true,
+  "frozen_inputs_unchanged": true,
+  "plan_sha256": "38a825a4561757447d855a6367b1e01666aa1197fdacc0e609b027b9d12aeb30",
+  "synthetic_checks": {
+    "passed": true,
+    "synthetic_only": true,
+    "checks": [
+      "T-12..T-3 exact impulse window",
+      "T-13 growth origin and valid13",
+      "at least30 prior closes",
+      "two-day shrink/pullback",
+      "future poisoning cannot alter current prepool",
+      "exact prefix equality"
+    ]
+  },
+  "prefix_checks": {
+    "passed": true,
+    "actual_prefix_tests": [
+      {
+        "target_date": "2024-01-02",
+        "last_input_date": "2023-12-29",
+        "fields_checked": 19,
+        "exact_prefix_equal": true
+      },
+      {
+        "target_date": "2025-06-30",
+        "last_input_date": "2025-06-27",
+        "fields_checked": 19,
+        "exact_prefix_equal": true
+      },
+      {
+        "target_date": "2025-07-01",
+        "last_input_date": "2025-06-30",
+        "fields_checked": 19,
+        "exact_prefix_equal": true
+      },
+      {
+        "target_date": "2025-12-31",
+        "last_input_date": "2025-12-30",
+        "fields_checked": 19,
+        "exact_prefix_equal": true
+      },
+      {
+        "target_date": "2026-01-05",
+        "last_input_date": "2025-12-31",
+        "fields_checked": 19,
+        "exact_prefix_equal": true
+      },
+      {
+        "target_date": "2026-09-30",
+        "last_input_date": "2026-09-29",
+        "fields_checked": 19,
+        "exact_prefix_equal": true
+      }
+    ],
+    "current_target_bar_never_required": true
+  },
+  "daily_candidate_coverage": {
+    "all_known_daily_candidates_covered": true,
+    "segments": {
+      "train": {
+        "input_sha256": "738e9e50a116de690a1a938ffe63d4b38457db950bcaa0c2fdd41429ba1da623",
+        "corrected_candidate": {
+          "candidate_keys": 444,
+          "covered": 444,
+          "missing": 0
+        },
+        "legacy_candidate": {
+          "candidate_keys": 443,
+          "covered": 443,
+          "missing": 0
+        }
+      },
+      "validation_2025h2": {
+        "input_sha256": "7efd7a030f5f900d1d079dcc82eb1cf02a3450e074f2d1468907a381e9308dce",
+        "corrected_candidate": {
+          "candidate_keys": 190,
+          "covered": 190,
+          "missing": 0
+        },
+        "legacy_candidate": {
+          "candidate_keys": 191,
+          "covered": 191,
+          "missing": 0
+        }
+      },
+      "observed_2026": {
+        "input_sha256": "a27f412fd87a8d8d77686fff3e5f28512092a27e860d1c4fc61b6f2831a97a8f",
+        "corrected_candidate": {
+          "candidate_keys": 323,
+          "covered": 323,
+          "missing": 0
+        },
+        "legacy_candidate": {
+          "candidate_keys": 323,
+          "covered": 323,
+          "missing": 0
+        }
+      }
+    },
+    "future_candidate_keys_used_only_after_prepool_persisted": true
+  },
+  "deterministic_samples": [
+    {
+      "segment": "train",
+      "target_date": "2024-01-02",
+      "asof_date": "2023-12-29",
+      "code": "301151",
+      "selection": "lexical first(date,code) from complete T-1 pool, no returns/current-day outcome selection"
+    },
+    {
+      "segment": "validation_2025h2",
+      "target_date": "2025-07-01",
+      "asof_date": "2025-06-30",
+      "code": "300033",
+      "selection": "lexical first(date,code) from complete T-1 pool, no returns/current-day outcome selection"
+    },
+    {
+      "segment": "observed_2026",
+      "target_date": "2026-01-05",
+      "asof_date": "2025-12-31",
+      "code": "300006",
+      "selection": "lexical first(date,code) from complete T-1 pool, no returns/current-day outcome selection"
+    }
+  ]
+}

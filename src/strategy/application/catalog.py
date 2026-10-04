@@ -25,6 +25,8 @@ from typing import Any, Callable
 from src.shared.tenancy import current_tenant
 from src.strategy.domain.base import StrategyEngine, StrategyError, StrategyInfo, _REGISTRY
 from src.strategy.application import (  # noqa: F401
+    contraction_rebreakout,
+    impulse_inside_breakout,
     qianlong,
     tail_resonance,
     yangshi_tail,

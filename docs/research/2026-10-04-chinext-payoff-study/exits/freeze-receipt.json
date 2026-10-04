@@ -1,0 +1,139 @@
+{
+  "created_at": "2026-10-04T00:32:28.902826+08:00",
+  "phase": "training_complete_validation_unopened",
+  "database_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "training_summary_sha256": "7e88fa509c3220123604ba9b434079aed9d2021665a682eb8fec1c7f6575e26d",
+  "methodology_sha256": "58cdbf5bda682a33a6741e2f72f5e44d850fcd258535cf32ef00e0c345a4b7b8",
+  "source_sha256": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "0f411bdf13cd9b006c8c63d402e60446ce51980241fe78c09000ae535552f9b9"
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "max_hold_including_entry": 20,
+  "selection_policy": {
+    "primary_target": "payoff_ratio",
+    "eligibility": "closed>=80, finite payoff, profit_factor>1, avg_net_return>0",
+    "shortlist_holds": [
+      4,
+      5,
+      7,
+      10
+    ],
+    "pareto_axes": [
+      "payoff_ratio",
+      "profit_factor",
+      "avg_net_return"
+    ],
+    "representatives": [
+      "maximum_payoff",
+      "maximum_net_mean",
+      "stress_drop_winner_pf"
+    ],
+    "robustness": "0.41% total cost and remove largest winner; diagnostic, no validation tuning",
+    "tie_break": "primary descending, payoff/PF/mean descending, shorter hold, lexical key",
+    "maximum_per_strategy": 3,
+    "baseline": "H04-S06-Tnone reported regardless of eligibility",
+    "twenty_sessions": "training sensitivity only, excluded from short-hold shortlist"
+  },
+  "strategies": {
+    "contraction-rebreakout-v1": {
+      "revision": "builtin:contraction-rebreakout-v1:2",
+      "params": {},
+      "execution_input_sha256": "725b29e9f1a79ee3cf0c44b5dca5b5d0ff111281e6afe454e8f754a8ae715c96",
+      "signals_sha256": "fb68b7a0689bee7666a4f5c69feea9af7d5dec27b6204e7fe0f4c68200c92bc6",
+      "selected_signal_keys_sha256": "7c482a5790d75eadd0a930d7aabdf0cd1742acc2f8d30b0fa66d08c2d7218acb",
+      "selection": {
+        "eligible_count": 48,
+        "pareto_keys": [
+          "H07-S04-Tnone",
+          "H07-S08-Tnone",
+          "H07-Snone-Tnone",
+          "H10-S04-Tnone"
+        ],
+        "selected": [
+          {
+            "key": "H10-S04-Tnone",
+            "sessions_including_entry": 10,
+            "hold_days": 9,
+            "stop_loss_pct": -4.0,
+            "take_profit_pct": null,
+            "roles": [
+              "maximum_payoff"
+            ]
+          },
+          {
+            "key": "H07-Snone-Tnone",
+            "sessions_including_entry": 7,
+            "hold_days": 6,
+            "stop_loss_pct": null,
+            "take_profit_pct": null,
+            "roles": [
+              "maximum_net_mean",
+              "stress_drop_winner_pf"
+            ]
+          }
+        ],
+        "no_eligible_candidate": false
+      }
+    },
+    "impulse-inside-breakout-v1": {
+      "revision": "builtin:impulse-inside-breakout-v1:3",
+      "params": {},
+      "execution_input_sha256": "ceb4b905273e22a84c8246914f9c186477855aaef2f66709e6bbb01cda3d8ade",
+      "signals_sha256": "6426d49e672260518c61bb4c3a222ef7468c751490495a27afbf4b0fd23df4b9",
+      "selected_signal_keys_sha256": "c03008c48ca0b9ef5d138ab8bd3c52793142165ba89a3591e12ba2a8a9ad7384",
+      "selection": {
+        "eligible_count": 4,
+        "pareto_keys": [
+          "H04-S04-Tnone",
+          "H04-Snone-Tnone"
+        ],
+        "selected": [
+          {
+            "key": "H04-S04-Tnone",
+            "sessions_including_entry": 4,
+            "hold_days": 3,
+            "stop_loss_pct": -4.0,
+            "take_profit_pct": null,
+            "roles": [
+              "maximum_payoff"
+            ]
+          },
+          {
+            "key": "H04-Snone-Tnone",
+            "sessions_including_entry": 4,
+            "hold_days": 3,
+            "stop_loss_pct": null,
+            "take_profit_pct": null,
+            "roles": [
+              "maximum_net_mean",
+              "stress_drop_winner_pf"
+            ]
+          }
+        ],
+        "no_eligible_candidate": false
+      }
+    }
+  }
+}

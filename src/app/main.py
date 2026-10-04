@@ -262,7 +262,7 @@ def create_app(
                 _ensure_managed_jobs()
             except Exception as jobs_exc:  # noqa: BLE001
                 logger.debug("托管任务预写跳过：%s", jobs_exc)
-        from src.research.infrastructure.backtest_jobs import recover_research_jobs
+        from src.research import recover_research_jobs
         from src.research.api.backtest_router import _BACKTEST_EXECUTOR
         from src.research.api.factor_router import _FACTOR_EXECUTOR
         from src.ops.api.guardian_consult import _CONSULT_EXECUTOR
@@ -273,8 +273,8 @@ def create_app(
             executor.start()
         gateway = None
         if os.getenv("LOCI_GRPC_LISTEN"):
-            from src.ai.infrastructure.grpc_gateway import start_from_env
-            gateway = await start_from_env()
+            from src.ai import start_grpc_from_env
+            gateway = await start_grpc_from_env()
         try:
             yield
         finally:
@@ -500,18 +500,6 @@ def create_app(
     app.include_router(
         build_admin_router(auth_dependency=auth_dependency, identity_db=identity_db_path)
     )
-    try:
-        from src.community import build_community_router
-
-        app.include_router(
-            build_community_router(
-                write_dependency=require_write_access,
-                auth_dependency=auth_dependency,
-            )
-        )
-    except ImportError:
-        # 社区上下文是可选能力：缺依赖时工作台照常可用。
-        logger.warning("社区上下文未装载（community 依赖缺失）")
 
     app.include_router(
         build_ledger_router(
@@ -522,7 +510,7 @@ def create_app(
     )
 
     # ---- 行情 / 策略 / 回测 / 技能 / 任务 / 供应商 -----------------
-    # 这些能力依赖 pandas、akshare、apscheduler 等可选重量级库。router 内部
+    # 这些能力依赖 pandas、apscheduler 等可选重量级库。router 内部
     # 全部懒导入：即便线上镜像只装了最小依赖，账本 API 也照常可用，
     # 对应接口返回 503 并说清缺什么。GET /api/capabilities 可一次看清。
     from src.app.legacy import build_quant_router

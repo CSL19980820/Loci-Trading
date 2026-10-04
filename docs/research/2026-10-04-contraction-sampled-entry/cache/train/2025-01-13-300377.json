@@ -1,0 +1,51 @@
+{
+  "code": "300377",
+  "requested_date": "2025-01-13",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-01-13-300377.attempt1.raw.json",
+  "raw_sha256": "539c79c1787a94944ace510dc0d019bbce55af21dbd0c3ec3c11399eaf43f910",
+  "attempts": [
+    {
+      "code": "300377",
+      "requested_date": "2025-01-13",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:41:49.251360+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 1456970.0,
+        "sampled_share_sum": 145697000.0,
+        "daily_volume": 145696900.0,
+        "volume_signed_diff": 100.0,
+        "volume_abs_diff": 100.0,
+        "volume_relative_diff": 6.863564015432037e-07,
+        "volume_tolerance": 145696.9,
+        "final_price_signed_diff": 0.0,
+        "final_price_abs_diff": 0.0,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 1,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 22.830000000000002,
+        "raw_positive_max": 26.8,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-01-13-300377.attempt1.raw.json",
+      "raw_sha256": "539c79c1787a94944ace510dc0d019bbce55af21dbd0c3ec3c11399eaf43f910",
+      "completed_at": "2026-10-04T17:41:49.374910+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:41:49.375955+08:00"
+}

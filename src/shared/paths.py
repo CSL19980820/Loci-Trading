@@ -272,10 +272,6 @@ def identity_db() -> Path:
     return Path(raw) if raw else data_dir() / "identity.db"
 
 
-def community_db() -> Path:
-    """社区库（策略广场、榜单、跟单、动态）：跨租户全局唯一。"""
-    raw = os.environ.get("LOCI_COMMUNITY_DB", "").strip()
-    return Path(raw) if raw else data_dir() / "community.db"
 
 
 def ops_db() -> Path:

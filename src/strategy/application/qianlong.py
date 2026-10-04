@@ -21,6 +21,7 @@ from src.formula import (
     weighted_ref_sum,
 )
 from src.strategy.domain.base import SignalResult, merge_params, register
+from src.strategy.application.execution_profile import ExecutionProfile
 
 # 辰星线原式跳过 REF(YTSL,19)，并使用分母 211；两处都必须原样保留。
 CHENXING_WEIGHTS: dict[int, float] = {offset: float(20 - offset) for offset in range(19)}
@@ -50,12 +51,13 @@ def select_one_per_day(
 class _QianlongCore:
     """潜龙 V3 共用的核心突破条件，不单独作为公开战法注册。"""
 
+    ignored_legacy_params = ("price_min",)
+
     def default_params(self) -> dict[str, Any]:
         return {
             "death_lookback": 15,
             "below_window": 10,
             "below_min": 3,
-            "price_min": 8.0,
             "vol_boost": 1.3,
             "hold_ratio": 1.002,
         }
@@ -80,7 +82,7 @@ class _QianlongCore:
         had_death = EXIST(death_cross, int(p["death_lookback"]))
         ran_below = COUNT(close < white, int(p["below_window"])) >= int(p["below_min"])
 
-        bullish = (close > open_) & (close >= float(p["price_min"]))
+        bullish = close > open_
         breakout = (close > white) & (REF(close, 1) <= REF(white, 1))
         volume_up = volume > MA(volume, 5) * float(p["vol_boost"])
         hold = close > white * float(p["hold_ratio"])
@@ -124,17 +126,18 @@ class _QianlongCore:
 
 
 class QianlongCloseePickerV3(_QianlongCore):
-    """潜龙出海 V3.2：核心突破 + 换手 3.5%-8% + 弱市空仓 + 每日白线贴近度 Top2。"""
+    """潜龙出海 V3.3：核心突破 + 换手 3.5%-8% + 弱市空仓 + 每日白线贴近度 Top2。"""
 
     slug = "qianlong-close-v3"
-    name = "潜龙出海（V3.2）"
+    name = "潜龙出海（V3.3）"
     description = (
-        "V3.2：V2 核心突破 + T 日换手 3.5%-8% + 非涨停价；"
+        "V3.3：统一股票池内核心突破 + T 日换手 3.5%-8% + 非涨停价；"
         "上涨家数<45% 整日空仓，否则按刚站上辰星线取 Top2；"
         "次日开盘买入，持有 3 日，止损 -7%"
     )
     entry_instructions = (
         "T 日收盘后选出：潜龙核心突破成立、未触及涨停价、换手率 3.5%≤turnover<8%；"
+        "股票范围由统一股票池配置决定，战法内不再限制板块、名称或绝对股价。"
         "若当日市场上涨家数占比 <45%，整日空仓；"
         "否则按白线贴近度（辰星线/CLOSE）降序最多保留 2 只，即刚站上白线、延伸最小的票。"
         "T+1 按开盘价买入（一字涨停买不进则跳过）；"
@@ -143,12 +146,13 @@ class QianlongCloseePickerV3(_QianlongCore):
     )
     entry_timing = "next_open"
     requires_raw_limit_price = True
+    requires_instrument_names = True
     screen_rank_factor = "白线贴近度"
     screen_top_n = 2
     screen_hold_days = 3
     screen_stop_loss_pct = -7.0
-    strategy_revision = "builtin:qianlong-close-v3.2"
-    version = "v3.2"
+    strategy_revision = 'builtin:qianlong-close-v3.3'
+    version = 'v3.3'
     version_history = [
         {
             "version": "v1",
@@ -158,22 +162,52 @@ class QianlongCloseePickerV3(_QianlongCore):
         {"version": "v2", "status": "archived", "source": "builtin:qianlong-close-v2"},
         {"version": "v3", "status": "archived", "source": "builtin:qianlong-close-v3"},
         {"version": "v3.1", "status": "archived", "source": "builtin:qianlong-close-v3.1"},
-        {"version": "v3.2", "status": "active", "source": "builtin"},
+        {
+            "version": "v3.2",
+            "status": "archived",
+            "source": "builtin:qianlong-close-v3.2",
+            "backtest_metrics": {
+                "trades": 1021,
+                "win_rate": 47.7,
+                "avg_net_return": 0.4127,
+                "median_net_return": -0.2234,
+                "payoff_ratio": 1.31,
+                "completed_trades": 1021,
+                "portfolio_return_pct": 81.9594,
+                "max_drawdown_pct": -30.7208,
+                "occupancy_pct": 43.19,
+            },
+            "backtest_config": {
+                "start": "2021-01-04",
+                "end": "2026-08-12",
+                "adjust": "qfq",
+                "hold_days": 3,
+                "stop_loss_pct": -7.0,
+                "take_profit_pct": None,
+                "commission_bps": 3.0,
+                "stamp_duty_bps": 5.0,
+                "slippage_bps": 10.0,
+                "benchmark": None,
+                "portfolio_model": "overlapping_equal_weight_sleeves",
+                "portfolio_return_pct": 81.9594,
+                "max_drawdown_pct": -30.7208,
+                "occupancy_pct": 43.19,
+                "completed_trades": 1021,
+                "signal_days": 587,
+                "weak_breadth_skip": 0.45,
+                "turnover_min": 0.035,
+                "turnover_max": 0.08,
+                "screen_top_n": 2,
+                "screen_rank_factor": "白线贴近度",
+                "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
+                "note": "V3.2 排序改为辰星线延伸升序；数字来自 2021-01-04~2026-08-12 全样本对照，不是 2026 "
+                "半年窗。",
+            },
+        },
+        {"version": "v3.3", "status": "active", "source": "builtin"},
     ]
-    backtest_metrics: dict[str, Any] | None = {
-        "trades": 1021,
-        "win_rate": 47.7,
-        "avg_net_return": 0.4127,
-        "median_net_return": -0.2234,
-        "payoff_ratio": 1.31,
-        "completed_trades": 1021,
-        "portfolio_return_pct": 81.9594,
-        "max_drawdown_pct": -30.7208,
-        "occupancy_pct": 43.19,
-    }
+    backtest_metrics = None
     backtest_config = {
-        "start": "2021-01-04",
-        "end": "2026-08-12",
         "adjust": "qfq",
         "hold_days": 3,
         "stop_loss_pct": -7.0,
@@ -182,21 +216,9 @@ class QianlongCloseePickerV3(_QianlongCore):
         "stamp_duty_bps": 5.0,
         "slippage_bps": 10.0,
         "benchmark": None,
-        "portfolio_model": "overlapping_equal_weight_sleeves",
-        "portfolio_return_pct": 81.9594,
-        "max_drawdown_pct": -30.7208,
-        "occupancy_pct": 43.19,
-        "completed_trades": 1021,
-        "signal_days": 587,
-        "weak_breadth_skip": 0.45,
-        "turnover_min": 0.035,
-        "turnover_max": 0.08,
-        "screen_top_n": 2,
-        "screen_rank_factor": "白线贴近度",
-        "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
-        "note": "V3.2 排序改为辰星线延伸升序；数字来自 2021-01-04~2026-08-12 全样本对照，不是 2026 半年窗。",
+        "start": "2021-01-04",
+        "end": "2026-08-12",
     }
-    default_universe = {"preset": "default_a_share", "boards": ["main", "chi_next"]}
 
     def default_params(self) -> dict[str, Any]:
         return {
@@ -209,6 +231,19 @@ class QianlongCloseePickerV3(_QianlongCore):
 
     def required_fields(self) -> tuple[str, ...]:
         return (*super().required_fields(), "turnover")
+
+    def execution_profile(self, params: dict[str, Any] | None = None) -> ExecutionProfile:
+        p = merge_params(self, params)
+        death_window, below_window = int(p["death_lookback"]), int(p["below_window"])
+        # CROSS(MA26, 辰星21) depends on 27 bars; the surrounding EXIST/COUNT
+        # add their own history. A zero window is cumulative, not finite.
+        finite = death_window > 0 and below_window > 0
+        return ExecutionProfile(
+            pure=True, causal=True, column_mode="coupled",
+            origin="finite" if finite else "sensitive",
+            lookback_bars=max(26 + death_window, 20 + below_window, 26) if finite else None,
+            metadata_fields=("__raw_close", "__instrument_names__"),
+        )
 
     def compute(
         self, panels: dict[str, pd.DataFrame], params: dict[str, Any] | None = None

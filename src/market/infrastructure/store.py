@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import hashlib
 from pathlib import Path
 import sqlite3
+from typing import Literal
 
 from src.market.infrastructure.store_board_page import MarketBoardPageMixin
 from src.market.infrastructure.store_codes import (
@@ -112,8 +113,15 @@ class MarketStore(
         start: str | None = None,
         end: str | None = None,
         include_source_details: bool = True,
+        source_summary_only: bool = False,
+        source_evidence_mode: Literal["full", "compact"] = "full",
     ) -> dict[str, object]:
-        """返回研究可复现的行情仓摘要，不暴露本地缓存路径。"""
+        """返回研究可复现的行情仓摘要，不暴露本地缓存路径。
+
+        默认保留完整来源证据；消费结果或报告可显式选择 compact，直接读取
+        计数与失败/attempt 样本，等效于全文读取后 compact_job_result。
+        source_summary_only 仍控制是否评估逐回执证据，不与 compact 混同。
+        """
         quotes = self._time_series_snapshot("quotes_daily", timestamp_column="fetched_at")
         adjust_factors = self._time_series_snapshot(
             "adjust_factors", timestamp_column="fetched_at"
@@ -130,6 +138,8 @@ class MarketStore(
             "source_evidence": self.source_evidence(
                 codes=codes, start=start, end=end,
                 **({"include_details": False} if not include_source_details else {}),
+                **({"summary_only": True} if source_summary_only else {}),
+                **({"mode": source_evidence_mode} if source_evidence_mode != "full" else {}),
             ),
         }
         return {**payload, "market_revision": self._revision_digest("market_revision")}

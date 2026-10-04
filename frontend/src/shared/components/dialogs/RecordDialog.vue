@@ -46,7 +46,7 @@ const STRATEGY_FIELD: BasicFormSchema = {
   field: 'strategy_tag',
   label: '战法',
   component: 'select',
-  tooltip: '内置三档直接选；自定义技能可输入其 slug 后回车',
+  tooltip: '内置战法直接选；自定义技能可输入其 slug 后回车',
   componentProps: {
     placeholder: '选一个战法',
     filterable: true,

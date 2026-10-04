@@ -11,10 +11,7 @@ from src.market.infrastructure.adapters.base import (
     MarketAdapter,
     window_start_date,
 )
-from src.market.infrastructure.adapters.baostock_adapter import BaostockAdapter
-from src.market.infrastructure.adapters.eastmoney_adapter import EastmoneyAdapter
 from src.market.infrastructure.adapters.exchange_list_adapter import ExchangeListAdapter
-from src.market.infrastructure.adapters.hithink_adapter import HithinkAdapter
 from src.market.infrastructure.adapters.registry import (
     adapters_for_lane,
     all_adapters,
@@ -45,7 +42,6 @@ from src.market.infrastructure.adapters.router import (
 )
 from src.market.infrastructure.adapters.sina_adapter import SinaAdapter
 from src.market.infrastructure.adapters.tdx_adapter import TdxAdapter
-from src.market.infrastructure.adapters.tencent_adapter import TencentAdapter
 from src.market.infrastructure.adapters.types import (
     ALL_LANES,
     AdapterMeta,
@@ -71,12 +67,9 @@ __all__ = [
     "ALL_LANES",
     "AdapterError",
     "AdapterMeta",
-    "BaostockAdapter",
     "LANE_AUCTION_SNAPSHOT",
     "LANE_BROKEN_LIMIT_UP",
-    "EastmoneyAdapter",
     "ExchangeListAdapter",
-    "HithinkAdapter",
     "LANE_ADJUST_FACTOR",
     "LANE_CAPITAL_FLOW",
     "LANE_HIST_DAILY",
@@ -95,7 +88,6 @@ __all__ = [
     "SpeedTestResult",
     "TAPE_LANES",
     "TdxAdapter",
-    "TencentAdapter",
     "adapters_for_lane",
     "all_adapters",
     "clear_sticky",
@@ -121,8 +113,3 @@ __all__ = [
     "speedtest_daily",
     "window_start_date",
 ]
-
-# 行情域名遇系统代理 ProxyError 时自动直连重试（akshare 东财等）
-from src.market.infrastructure.http_client import install_market_proxy_fallback
-
-install_market_proxy_fallback()

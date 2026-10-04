@@ -1,0 +1,36 @@
+{
+  "mode": "training_density_only_no_returns_evaluated",
+  "origin_maturity_sessions": 10,
+  "cutoff": "2025-06-30",
+  "definitions": "W5, volume<=0.6*yin; one-day higher-low green or two-day lower-volume higher-low flat-to-up close and <=8% range; breakout volume>=1.2*base last; opening>=trigger <=confirm close*1.02 and risk<=6%",
+  "independent_origin_upper_bound_before_duplicate_capacity_rules": {
+    "one_dry_reclaim": {
+      "origins": 937,
+      "ready": 396,
+      "confirmed": 104,
+      "opening_risk_gate": 24,
+      "factor_cancel": 24,
+      "support_cancel": 366,
+      "expired": 443
+    },
+    "two_dry_break": {
+      "origins": 937,
+      "ready": 169,
+      "confirmed": 43,
+      "opening_risk_gate": 15,
+      "factor_cancel": 24,
+      "support_cancel": 367,
+      "expired": 503
+    },
+    "two_dry_mid": {
+      "origins": 937,
+      "ready": 169,
+      "confirmed": 29,
+      "opening_risk_gate": 8,
+      "factor_cancel": 24,
+      "support_cancel": 367,
+      "expired": 517
+    }
+  },
+  "warning": "Counts only; candidate definitions not yet frozen; no 2023H2 or later-segment returns read."
+}

@@ -11,7 +11,6 @@ from src.intel.application.fetch import (
 )
 from src.intel.application.kline_payload import kline_payload_frames, kline_payload_to_frame
 from src.intel.infrastructure.builtin_market_mcp import BUILTIN_MCP_NAME
-from src.intel.infrastructure.builtin_hithink_mcp import HITHINK_ENDPOINTS, hithink_api_key
 from src.intel.infrastructure.builtin_wudao_mcp import (
     BUILTIN_WUDAO_NAME,
     ensure_resident_wudao,
@@ -40,12 +39,10 @@ from src.intel.infrastructure.registry import (
     save_server,
     set_server_active,
 )
-from src.intel.infrastructure.wudao_settings import wudao_hist_daily_primary
 
 __all__ = [
     "BUILTIN_MCP_NAME",
     "BUILTIN_WUDAO_NAME",
-    "HITHINK_ENDPOINTS",
     "McpClient",
     "McpError",
     "McpQuotaError",
@@ -61,7 +58,6 @@ __all__ = [
     "ensure_resident_wudao",
     "get_mcp_server_from_json",
     "guarded_client_call",
-    "hithink_api_key",
     "is_resident_wudao_server",
     "kline_payload_frames",
     "kline_payload_to_frame",
@@ -79,5 +75,4 @@ __all__ = [
     "unavailable_mcp_payload",
     "upsert_mcp_server_json",
     "wudao_availability",
-    "wudao_hist_daily_primary",
 ]

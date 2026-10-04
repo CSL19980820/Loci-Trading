@@ -275,13 +275,6 @@ class OpsJobsMixin:
 
         return ensure_managed_intel_jobs(self, enabled=enabled)
 
-    def ensure_managed_intel_brief_jobs(self, *, enabled: bool = True) -> dict:
-        """确保四档「简报·*」推送任务（首次默认开启；比悟道出稿晚 10 分钟）。"""
-        from src.ops.application.ensure_intel_brief_jobs import (
-            ensure_managed_intel_brief_jobs,
-        )
-
-        return ensure_managed_intel_brief_jobs(self, enabled=enabled)
 
     @staticmethod
     def _job_row(row: sqlite3.Row) -> dict[str, Any]:

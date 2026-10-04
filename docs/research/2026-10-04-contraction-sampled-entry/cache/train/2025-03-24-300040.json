@@ -1,0 +1,51 @@
+{
+  "code": "300040",
+  "requested_date": "2025-03-24",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-03-24-300040.attempt1.raw.json",
+  "raw_sha256": "9b82eaf59049c55d5d60971c2745faaf5e3c506cc679e26eaa99407cdfcf8d45",
+  "attempts": [
+    {
+      "code": "300040",
+      "requested_date": "2025-03-24",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:42:25.962158+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 1105177.0,
+        "sampled_share_sum": 110517700.0,
+        "daily_volume": 110517600.0,
+        "volume_signed_diff": 100.0,
+        "volume_abs_diff": 100.0,
+        "volume_relative_diff": 9.048332573273397e-07,
+        "volume_tolerance": 110517.6,
+        "final_price_signed_diff": 8.881784197001252e-16,
+        "final_price_abs_diff": 8.881784197001252e-16,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 1,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 6.92,
+        "raw_positive_max": 7.54,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-03-24-300040.attempt1.raw.json",
+      "raw_sha256": "9b82eaf59049c55d5d60971c2745faaf5e3c506cc679e26eaa99407cdfcf8d45",
+      "completed_at": "2026-10-04T17:42:26.085461+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:42:26.086520+08:00"
+}

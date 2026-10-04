@@ -1,0 +1,80 @@
+{
+  "created_at": "2026-10-04T15:53:50.549075+08:00",
+  "root_plan_sha256": "8097c29ce9160a342026c244ca6907e9bc0b7b2291b1bf54a933749afc74c15d",
+  "core_sha256": "aedd4b984d55d00e5a2b014aafd647f8e419d9720033a0add25bb5784bcefbe6",
+  "sources": {
+    "tools/research_contraction_learned_rank.py": "7bd8b3c40ca03c14a886ffc24334f5535ae784317fd43f3677cdedee3651ab1c",
+    "tools/research_contraction_structure.py": "d00803a241ad8adcf32aa4f4521bb828df789bd1baed2212f9ec82c057348d69",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_regularized_rank_core.py": "aedd4b984d55d00e5a2b014aafd647f8e419d9720033a0add25bb5784bcefbe6",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "src/strategy/application/contraction_rebreakout.py": "613d676689ff913e566e2a3be92ab4849e0d55b5e5bdef7a3dfd58f52c535121",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/market/infrastructure/store_panel.py": "191daeb13e26731dbaade3432faa6b6b1d984ce69dd1d59b757576f266cd1f36"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "feature_names": [
+    "momentum10_pct",
+    "csi300_return20_pct",
+    "recent_impulse_age",
+    "pullback_depth_pct",
+    "contraction_volume_ratio",
+    "breakout_volume_ratio",
+    "breakout_extension_pct",
+    "chinext_above_ma20_breadth",
+    "close_location",
+    "body_fraction",
+    "range_over_prior_atr14",
+    "pullback_support_distance_pct"
+  ],
+  "phases": {
+    "inner_fit": [
+      "2024-01-01",
+      "2024-12-31"
+    ],
+    "inner_validation": [
+      "2025-01-01",
+      "2025-06-30"
+    ],
+    "full_refit": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "controls": [
+    "legacy_original",
+    "corrected_original",
+    "eligible_original"
+  ],
+  "policies": [
+    "rank_only",
+    "positive_only"
+  ],
+  "adapter_contract_sha256": "35b5b4837e72fff7f14f84cbb33bfaf70e210301d719a68060bcc2fc7985282f",
+  "exact_feature_formulas": "draft-contract.md feature table, bound by SHA; all12 fixed before returns.",
+  "numeric": "DirectSQL hfq_factor asof each date, forward-only. Signal10significant digits; exact raw*factor execution. Rebuild old basis/6shape booleans before shared economic-reference close-limit gate; original5score components unchanged.",
+  "labels": "All corrected candidates,notTop2. closed=gross-.21,available actualexit; knownlimitup or finiteV<=0 cancelled0 atentryday; unknownquote/volume/reference/unresolvedexit staysnull. Actual2024maturity,never2023outcomes.",
+  "evaluation": "Uniform4-session planned-maturity calendar ALLarms,2slots/day includingempty. Freeze preselection beforelabels;cancel norefill;selectedunknown disablesnomination. Independent events original4/-6;no cash/dedup/cooldown change.",
+  "nomination": "SharedPLAN exact gates:2024fit100labels/60dates/6months;inner20closed/3months,positive mean/PF,combinedcost-winnerpositive,slot>ALL3controls;noqualifierSTOP. Later each12/4months+positive/PF+slot>allcontrols;pooled40+all3stresspositive.",
+  "limitations": [
+    "Previously observed history; chronological inner validation does not erase retrospective selection bias.",
+    "Current catalog/names/factor revisions notPIT; daily-next-open proxy not auction queue proof.",
+    "Independent event slots not shared-capital NAV."
+  ],
+  "preflight_failure": {
+    "original_plan_sha256": "f06901efcb5a2bc83d7ebc5a8b328fca9523d0fb354a2daaa40d9692f0226273",
+    "original_source_sha256": "6709ea1fc27c8c3321f11d0fdce9103cb2109c928da44ba336c0f1ee08b57e9c",
+    "reason": "Candidate-frame date mask was a bare ndarray rejected by pandas.where. Converted to same-indexSeries only; failure occurred before any labels/model/returns were computed."
+  }
+}

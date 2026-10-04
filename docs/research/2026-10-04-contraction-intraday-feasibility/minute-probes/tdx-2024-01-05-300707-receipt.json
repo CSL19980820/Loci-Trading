@@ -1,0 +1,55 @@
+{
+  "segment": "train",
+  "code": "300707",
+  "requested_date": "2024-01-05",
+  "selection": "minimum date/code from preexisting complete shape keys only",
+  "key_source": "docs\\research\\2026-10-04-multi-strategy-scoring\\contraction-rebreakout-v1\\train-candidates.csv",
+  "source_sha256": "4e4699c46c6c8fa4acb817c97c34462a46bd81859d83d5366a38d10e8551094a",
+  "provider": "tdx",
+  "started_at": "2026-10-04T09:01:55.595646+00:00",
+  "request_method": "get_history_minute_time_data",
+  "history_query_attempted": true,
+  "source_timestamp_present": false,
+  "date_evidence": "request parameter only; decoded records have no date",
+  "source_volume_unit": "not assumed from daily adapter; compare returned sum with same-day raw daily shares",
+  "raw_sha256": "d43113b936b5bc525f1b55d96835793c85d38ee62dc20dc0ac6aee78b0fa080f",
+  "raw_fields": [
+    "price",
+    "vol"
+  ],
+  "raw_rows": 240,
+  "status": "nonempty",
+  "comparison": {
+    "rows": 240,
+    "columns": [
+      "datetime",
+      "close",
+      "volume"
+    ],
+    "first_time_label": "2024-01-05 09:31",
+    "last_time_label": "2024-01-05 15:00",
+    "has_source_OHLC": false,
+    "has_amount": false,
+    "last_close": 18.7,
+    "sampled_close_min": 18.0,
+    "sampled_close_max": 19.150000000000002,
+    "raw_volume_sum": 180446.0,
+    "last_raw_volume": 2952.0,
+    "raw_volume_nondecreasing": false,
+    "raw_volume_sum_to_daily_shares": 0.010000055418548589,
+    "raw_volume_sum_times100_to_daily_shares": 1.0000055418548588,
+    "daily_quote_for_unit_check_only": {
+      "trade_date": "2024-01-05",
+      "code": "300707",
+      "open": 17.99,
+      "high": 19.17,
+      "low": 17.9,
+      "close": 18.7,
+      "volume": 18044500.0,
+      "amount": 337207488.0,
+      "source": "tdx"
+    }
+  },
+  "completed_at": "2026-10-04T09:01:55.633539+00:00",
+  "elapsed_seconds": 0.030999999959021807
+}

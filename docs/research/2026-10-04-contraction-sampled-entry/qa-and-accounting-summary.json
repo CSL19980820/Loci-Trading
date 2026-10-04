@@ -1,0 +1,85 @@
+{
+  "targets": 1366,
+  "valid": 1366,
+  "match_classes": {
+    "within_frozen_tolerance": 627,
+    "exact": 739
+  },
+  "volume_exact": 739,
+  "price_exact_at_raw_cent": 1366,
+  "max_abs_volume_diff_shares": 100.0,
+  "max_abs_volume_relative_diff": 0.00010209290454313425,
+  "max_abs_final_price_diff": 2.842170943040401e-14,
+  "max_outside_points": 0,
+  "max_zero_volume_points": 72,
+  "new_first_requests": 1365,
+  "reused_existing_requests": 1,
+  "second_requests": 0,
+  "decision_statuses": {
+    "known_not_candidate": 30252,
+    "candidate": 369
+  },
+  "decision_reasons": {
+    "conditional_high_impossible": 28231,
+    "current_static_ineligible": 1055,
+    "prefix225_conditions": 1333,
+    "official_full_day_halt": 2
+  },
+  "rank_columns": [
+    "signal_date",
+    "total_prepool",
+    "static_ineligible",
+    "official_halt",
+    "conditional_high_impossible",
+    "known_candidates",
+    "unknown_records",
+    "selected",
+    "rank_complete"
+  ],
+  "actual_known_cancellations": [
+    {
+      "signal_date": "2024-08-12",
+      "code": "300875",
+      "label_reason": "limit_up_point235",
+      "entry_date": "2024-08-12"
+    },
+    {
+      "signal_date": "2024-10-14",
+      "code": "300972",
+      "label_reason": "limit_up_point235",
+      "entry_date": "2024-10-14"
+    }
+  ],
+  "csv_return_budget_checks": [
+    {
+      "arm": "sampled_early",
+      "orders": 195,
+      "closed": 193,
+      "entry_exit_factor_return_reconciled": true,
+      "daily_opportunity_reconciled": true,
+      "combined_cost_winner_reconciled": true
+    },
+    {
+      "arm": "sampled_next_open",
+      "orders": 195,
+      "closed": 195,
+      "entry_exit_factor_return_reconciled": true,
+      "daily_opportunity_reconciled": true,
+      "combined_cost_winner_reconciled": true
+    },
+    {
+      "arm": "original_eod",
+      "orders": 227,
+      "closed": 227,
+      "entry_exit_factor_return_reconciled": true,
+      "daily_opportunity_reconciled": true,
+      "combined_cost_winner_reconciled": true
+    }
+  ],
+  "preselection_identity": true,
+  "later_cache_or_outputs_exist": {
+    "validation_2025h2": false,
+    "observed_2026": false
+  },
+  "plan_sha256": "1bb85a7b55770df16e9261bf0a4547fd19378c2ce8139506ac565576de02afb9"
+}

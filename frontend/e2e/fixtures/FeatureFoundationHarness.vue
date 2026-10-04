@@ -10,6 +10,7 @@ import AssistantConfirmCard from '../../src/features/ai/components/AssistantConf
 import ScreenSkillLogicPanel from '../../src/features/strategy/components/ScreenSkillLogicPanel.vue'
 import StrategyConverterView from '../../src/features/strategy/StrategyConverterView.vue'
 import { createEmptyScreenSkillDraft } from '../../src/features/strategy/composables/screenSkillDraft'
+import RecordDialog from '../../src/shared/components/dialogs/RecordDialog.vue'
 import type { ResearchProfile } from '../../src/shared/types/quant-research'
 const view = new URLSearchParams(location.search).get('view') || 'research'
 const draft = reactive(createEmptyScreenSkillDraft())
@@ -18,6 +19,7 @@ draft.logic[0]!.citationsText = 'ref-a, ref-b'
 const replies = ref<string[]>([])
 const assistantOpen = ref(false)
 const settingsOpen = ref(false)
+const recordOpen = ref(true)
 const commands = ref<string[]>([])
 const sends = ref<unknown[]>([])
 const messages = ref([{id: 'a1', role: 'assistant' as const, status: 'done' as const, content: '模拟对话内容。'}])
@@ -41,6 +43,7 @@ Object.assign(window, { __featureFoundation: { draft, replies, assistantOpen, se
       <template v-else-if="view === 'research'"><ResearchEvidencePanel :profile="profile" :run="null" /><ResearchTemporalDataPanel /></template>
       <AssistantConfirmCard v-else-if="view === 'confirm'" :ask="ask" @reply="replies.push($event)" />
       <ScreenSkillLogicPanel v-else-if="view === 'tags'" :draft="draft" />
+      <RecordDialog v-else-if="view === 'strategy-record'" v-model="recordOpen" kind="review" />
     </main>
   </TooltipProvider>
 </template>

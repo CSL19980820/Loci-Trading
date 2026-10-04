@@ -1,0 +1,68 @@
+{
+  "created_at": "2026-10-04T16:24:12.726606+08:00",
+  "controls": [
+    "corrected_low_open",
+    "full_shape",
+    "vwap_eligible_full_shape"
+  ],
+  "policies": [
+    "yin_close_above_vwap",
+    "yin_close_and_open_above_vwap"
+  ],
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "origin": "Original complete corrected strong-up then double-volume-yin shape, not low-open subset. Raw T opening must be finite and>6. Same main/nonST/name/history/recent-gain identity and full original60/40 score; filter full pool before industry-intersection Top2.",
+  "vwap_definition": "Raw A_yin yuan/raw V_yin shares; warehouse TDX V has already converted lots to shares, no extra100. Neither amount nor shares are multiplied by HFQ. VWAP itself is a price and is multiplied by direct factor only for cross-date price comparison.",
+  "eligibility": "Only T-1 requires row source exactlytdx, finite positive raw amount,volume,low,high with high>=low, and L-.01-1e-10<=A/V<=H+.01+1e-10. Invalid/unknown prior VWAP excludes the candidate with a reason, no close*volume substitution or clamping. NoT amount,volume,source,HLC completeness restriction for preselection.",
+  "A": "At T open, normalized economic C[T-1]>=normalized(A[T-1]/V[T-1]*factor[T-1]). Describes the yin close relative to daily VWAP, not an intraday temporal sequence.",
+  "B": "A AND normalized rawO[T]*factor[T]>=normalized(A[T-1]/V[T-1]*factor[T-1]); equivalent to comparing rawO[T] with prior rawVWAP*factor[T-1]/factor[T]. No separate low-open gate and no VWAP distance threshold.",
+  "numeric": "Direct sparse SQL factor dated<=phase cutoff,ffill only; quoted price without prior known factor fails. Existing10significant-digit signal geometry; actual fills,entry basis,stops and returns use unrounded raw*direct factor.",
+  "controls_contract": "corrected_low_open retains old low-open behavior;full_shape has no VWAP eligibility gate;vwap_eligible_full_shape shares exactly the prior-day known-VWAP gate withA/B and keeps old score. All industry rules and execution identical. Eligibility removal is not credited to the VWAP relation.",
+  "execution": "Original daily-opening proxy and4market sessions including entry,-6% stop,T+1,gap worse open,limit/suspension sell delays,cost0.21%. Select first;cancelled orders consume quota without refill. No new exit,cooldown,overlap or size parameter.",
+  "unknown_contract": "Shared learned-rank order_labels plus this adapter's holding-path guard: finite nonpositiveT volume or known upper-limit open is confirmed cancelled0. MissingT volume/quote,unknown limit reference or unclosed fill is unresolved/null, never0. Claimed closed trades with nonfinite volume or an invalid positive-volume OHLC/factor/limit-reference anywhere from entry through exit become unresolved and leave closed-trade metrics; finite nonpositive-volume suspension days retain existing legal exit delays. T daily volume is used only to label execution after preselection; T amount/source/VWAP may be saved in a separately named postdecision QC file and never gate opening eligibility.",
+  "budget": "For all5 arms,all market decision days with T+3<=segment end,2slots each including empty/filtered/cancelled days. Selected unresolved means whole-period slot mean and paired comparison unavailable. No-candidate days retained; no portfolioNAV claim.",
+  "selection": {
+    "train": ">=20closed,>=6entry months,net mean>0,PF>1(double-yin helper's nullPF with positive gains and no losses counts as unbounded positive PF),double-cost0.42and removal of original largest net winner leaves positive mean,slot_mean>ALL3 controls,no selected unknown;onlyA/B at most2,no fallback.",
+    "later": "Only frozen train qualifiers plus3controls in2025H2 and2026;each>=12closed,>=4months,mean>0,PF>1,slotmean>ALL3controls,no unknown. Combined>=40 and double-cost+largest-winner-removed mean>0. Only passes may enter rootcapitaloverlay.",
+    "stop": "No train qualifier stops family without later candidate returns;no new threshold,window,feature,model,ranking or exit rescue."
+  },
+  "limitations": [
+    "Daily aggregate VWAP is neither holding-owner cost nor signed capital flow. C>=VWAP does not establish absorption,late recovery,or event timing.",
+    "B can buy a higher opening and exclude a later profitable below-VWAP opening;these are hypotheses,not a direction guaranteed by the statistic.",
+    "TDX row source plus source contract/unit/range audit supports aggregate evidence but is not tick reconstruction or field-levelPIT.",
+    "Current catalog/industry/revised factors and daily-open execution proxy remain;all periods previously observed,no freshOOS claim.",
+    "2023H2warmup only,no trade outcomes;turnover/outstanding shares not used."
+  ],
+  "root_plan_sha256": "5b12aa558234e2904b412a3ddefd96bae5e56ad6d2e93da27fe221d699763034",
+  "readiness_sha256": "539efac0055744fa388e5cfc3d06a332784220648ceab30cb693211509ff64da",
+  "sources": {
+    "tools/research_double_yin_vwap.py": "9b8d6599460fd1de511700f731c5cde754717c1cf54a448919bdd8c6bbfdf572",
+    "tools/research_double_yin_learned_rank.py": "6b4778c093825c296c3a6398c334e46cc2e9b74977f4e6e645eedab00c5a73da",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "tools/research_double_yin_repair.py": "afc40939bc0315cdbeec8821104bf70bb0a2b82679d5244cec1eb91a6279e29d",
+    "tools/research_double_yin_redesign.py": "0f9f304e153b07ea0d2d9053f7ed51999b9cad3a75fa7864b4335910879a3e21",
+    "tools/research_double_yin_scoring_proxy.py": "e2bfd7c19039790a622109420dbb80b48a296400f2233d39b6802163848edbdb",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "src/strategy/application/double_yin_low_open.py": "c111f1662dcc013b7518d822952cd381e5b776d0bfebcdc85a6983e7c2826833",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "191daeb13e26731dbaade3432faa6b6b1d984ce69dd1d59b757576f266cd1f36",
+    "src/market/infrastructure/tdx_daily.py": "e1e8b3a93af6021e7ef6b39624c5c1124e503086703652abb9a14859b0ee8ad9"
+  },
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+}

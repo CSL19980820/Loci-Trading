@@ -1,0 +1,7 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,contraction-rebreakout-v1,momentum_0_30,2024-07-25,300963,closed,6.311739130434789
+train,contraction-rebreakout-v1,momentum_0_30,2024-10-31,300572,closed,-7.546956521739124
+train,contraction-rebreakout-v1,momentum_0_30,2025-02-17,300853,closed,39.33451345755696
+train,contraction-rebreakout-v1,momentum_0_30,2025-03-06,301381,closed,-1.7646218487395124
+train,contraction-rebreakout-v1,momentum_0_30,2025-04-21,300503,closed,1.0743224092117023
+train,contraction-rebreakout-v1,momentum_0_30,2025-04-29,301526,closed,1.4072506738544537

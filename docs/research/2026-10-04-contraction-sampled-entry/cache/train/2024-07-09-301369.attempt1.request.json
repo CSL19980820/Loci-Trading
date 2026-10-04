@@ -1,0 +1,11 @@
+{
+  "code": "301369",
+  "requested_date": "2024-07-09",
+  "provider": "tdx",
+  "attempt": 1,
+  "started_at": "2026-10-04T17:40:53.313697+08:00",
+  "method": "get_history_minute_time_data",
+  "reused_existing_probe": false,
+  "source_timestamp_present": false,
+  "sdk_auto_retry": false
+}

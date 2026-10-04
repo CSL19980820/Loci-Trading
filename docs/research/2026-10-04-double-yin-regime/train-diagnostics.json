@@ -1,0 +1,536 @@
+{
+  "groups": {
+    "all_candidates": {
+      "index_above_ma60": {
+        "False": {
+          "trades": 483,
+          "avg_net_return": -1.4167077657975038,
+          "win_rate": 36.231884057971016,
+          "profit_factor": 0.6020447425813505,
+          "payoff_ratio": 1.059598746943177,
+          "avg_win": 5.91539674803136,
+          "avg_loss": -5.582676239563904,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 818,
+          "avg_net_return": -0.11945205265210877,
+          "win_rate": 41.56479217603912,
+          "profit_factor": 0.9634342375591977,
+          "payoff_ratio": 1.3544751928038132,
+          "avg_win": 7.572084399082161,
+          "avg_loss": -5.5904194032580765,
+          "worst_net": -21.95840085287848
+        }
+      },
+      "breadth_above_half": {
+        "False": {
+          "trades": 647,
+          "avg_net_return": -0.9432257785611162,
+          "win_rate": 39.56723338485317,
+          "profit_factor": 0.7449720561932566,
+          "payoff_ratio": 1.1378284139514192,
+          "avg_win": 6.96357392377835,
+          "avg_loss": -6.120056274210486,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 654,
+          "avg_net_return": -0.26256047587244224,
+          "win_rate": 39.60244648318043,
+          "profit_factor": 0.9140887185533142,
+          "payoff_ratio": 1.394073528295595,
+          "avg_win": 7.054162942494848,
+          "avg_loss": -5.060108236270236,
+          "worst_net": -21.21515463917526
+        }
+      },
+      "advancing_above_half": {
+        "False": {
+          "trades": 777,
+          "avg_net_return": -1.3897533276648564,
+          "win_rate": 36.16473616473616,
+          "profit_factor": 0.6298661518871141,
+          "payoff_ratio": 1.111792211160173,
+          "avg_win": 6.53946003058354,
+          "avg_loss": -5.881908476188647,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 524,
+          "avg_net_return": 0.5684288275686529,
+          "win_rate": 44.656488549618324,
+          "profit_factor": 1.202038364292225,
+          "payoff_ratio": 1.4897056651484837,
+          "avg_win": 7.573140418801061,
+          "avg_loss": -5.083648801218878,
+          "worst_net": -21.21515463917526
+        }
+      },
+      "stock_above_ma60": {
+        "False": {
+          "trades": 244,
+          "avg_net_return": 0.9951808252764848,
+          "win_rate": 47.540983606557376,
+          "profit_factor": 1.3803389044146015,
+          "payoff_ratio": 1.5231325841816292,
+          "avg_win": 7.5971169886900825,
+          "avg_loss": -4.987823822817087,
+          "worst_net": -23.60261285909713
+        },
+        "True": {
+          "trades": 1057,
+          "avg_net_return": -0.9695418650114302,
+          "win_rate": 37.74834437086093,
+          "profit_factor": 0.7269546183310248,
+          "payoff_ratio": 1.198837440756427,
+          "avg_win": 6.838189363171363,
+          "avg_loss": -5.704017184228656,
+          "worst_net": -24.70612403100775
+        }
+      },
+      "stock_ma20_above_ma60": {
+        "False": {
+          "trades": 569,
+          "avg_net_return": -0.0725474803817371,
+          "win_rate": 43.7609841827768,
+          "profit_factor": 0.9752242578006737,
+          "payoff_ratio": 1.2533002509888176,
+          "avg_win": 6.5254891974950295,
+          "avg_loss": -5.206644770354596,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 732,
+          "avg_net_return": -1.011888133350288,
+          "win_rate": 36.33879781420765,
+          "profit_factor": 0.7282384022842706,
+          "payoff_ratio": 1.2757860731746997,
+          "avg_win": 7.461865851192333,
+          "avg_loss": -5.848837832681485,
+          "worst_net": -22.86625000000001
+        }
+      },
+      "relative_positive": {
+        "False": {
+          "trades": 224,
+          "avg_net_return": 1.420724300182846,
+          "win_rate": 53.125,
+          "profit_factor": 1.5617934468210295,
+          "payoff_ratio": 1.378053041312673,
+          "avg_win": 7.434603176902715,
+          "avg_loss": -5.395005093433006,
+          "worst_net": -21.981217712177127
+        },
+        "True": {
+          "trades": 1077,
+          "avg_net_return": -1.0215634848566173,
+          "win_rate": 36.768802228412255,
+          "profit_factor": 0.7123755043411075,
+          "payoff_ratio": 1.225069996101753,
+          "avg_win": 6.881276132681818,
+          "avg_loss": -5.617047315319496,
+          "worst_net": -24.70612403100775
+        }
+      },
+      "market_stock_cell": {
+        "M0_S0": {
+          "trades": 435,
+          "avg_net_return": -0.025204555317322047,
+          "win_rate": 44.59770114942529,
+          "profit_factor": 0.9914863259195019,
+          "payoff_ratio": 1.2316917760134019,
+          "avg_win": 6.581672603463073,
+          "avg_loss": -5.343603595995317,
+          "worst_net": -24.70612403100775
+        },
+        "M0_S1": {
+          "trades": 313,
+          "avg_net_return": -1.9052624658097985,
+          "win_rate": 34.82428115015974,
+          "profit_factor": 0.5518623033112318,
+          "payoff_ratio": 1.0328432098668925,
+          "avg_win": 6.73739334121902,
+          "avg_loss": -6.523152088192845,
+          "worst_net": -22.86625000000001
+        },
+        "M1_S0": {
+          "trades": 198,
+          "avg_net_return": 0.2082204668940104,
+          "win_rate": 44.94949494949495,
+          "profit_factor": 1.0765708448817415,
+          "payoff_ratio": 1.3184968774394363,
+          "avg_win": 6.512950459861045,
+          "avg_loss": -4.939678334702928,
+          "worst_net": -17.705183044315977
+        },
+        "M1_S1": {
+          "trades": 355,
+          "avg_net_return": -0.6081638000933279,
+          "win_rate": 34.647887323943664,
+          "profit_factor": 0.8251452205429828,
+          "payoff_ratio": 1.5563714728940812,
+          "avg_win": 8.283172165862446,
+          "avg_loss": -5.322104851009536,
+          "worst_net": -21.21515463917526
+        }
+      }
+    },
+    "corrected_low_open": {
+      "index_above_ma60": {
+        "False": {
+          "trades": 218,
+          "avg_net_return": -1.5762978193626316,
+          "win_rate": 35.321100917431195,
+          "profit_factor": 0.5712973063834045,
+          "payoff_ratio": 1.0461418207800004,
+          "avg_win": 5.947165266425044,
+          "avg_loss": -5.6848556747218595,
+          "worst_net": -21.27072252113759
+        },
+        "True": {
+          "trades": 295,
+          "avg_net_return": -0.3127196035128289,
+          "win_rate": 41.355932203389834,
+          "profit_factor": 0.8986168080638332,
+          "payoff_ratio": 1.2742680966806814,
+          "avg_win": 6.702330957566877,
+          "avg_loss": -5.259749478956321,
+          "worst_net": -18.862849740932653
+        }
+      },
+      "breadth_above_half": {
+        "False": {
+          "trades": 270,
+          "avg_net_return": -1.3162921962282144,
+          "win_rate": 38.51851851851852,
+          "profit_factor": 0.6485443081880518,
+          "payoff_ratio": 1.0351764919155444,
+          "avg_win": 6.305968579929378,
+          "avg_loss": -6.091684489724536,
+          "worst_net": -21.27072252113759
+        },
+        "True": {
+          "trades": 243,
+          "avg_net_return": -0.33121940195769717,
+          "win_rate": 39.09465020576132,
+          "profit_factor": 0.8850658007568896,
+          "payoff_ratio": 1.3788393527581015,
+          "avg_win": 6.524161789739287,
+          "avg_loss": -4.7316330047361665,
+          "worst_net": -13.090886426592798
+        }
+      },
+      "advancing_above_half": {
+        "False": {
+          "trades": 287,
+          "avg_net_return": -1.673228421366058,
+          "win_rate": 34.146341463414636,
+          "profit_factor": 0.5519706432306973,
+          "payoff_ratio": 1.0645148119449162,
+          "avg_win": 6.036991472675759,
+          "avg_loss": -5.671120218276631,
+          "worst_net": -21.27072252113759
+        },
+        "True": {
+          "trades": 226,
+          "avg_net_return": 0.19615641272000212,
+          "win_rate": 44.690265486725664,
+          "profit_factor": 1.0693045958428902,
+          "payoff_ratio": 1.3233967770332802,
+          "avg_win": 6.772187505105576,
+          "avg_loss": -5.117276709927541,
+          "worst_net": -18.862849740932653
+        }
+      },
+      "stock_above_ma60": {
+        "False": {
+          "trades": 108,
+          "avg_net_return": 0.05127841364706095,
+          "win_rate": 40.74074074074074,
+          "profit_factor": 1.0179625922168338,
+          "payoff_ratio": 1.4806728614063036,
+          "avg_win": 7.132938319672166,
+          "avg_loss": -4.8173627717451994,
+          "worst_net": -18.179661610268372
+        },
+        "True": {
+          "trades": 405,
+          "avg_net_return": -1.089934015632644,
+          "win_rate": 38.27160493827161,
+          "profit_factor": 0.6854144861355261,
+          "payoff_ratio": 1.1055072357024616,
+          "avg_win": 6.204947201756852,
+          "avg_loss": -5.612760370414133,
+          "worst_net": -21.27072252113759
+        }
+      },
+      "stock_ma20_above_ma60": {
+        "False": {
+          "trades": 265,
+          "avg_net_return": -0.5560960586942955,
+          "win_rate": 40.75471698113208,
+          "profit_factor": 0.8198581757024388,
+          "payoff_ratio": 1.191830866530397,
+          "avg_win": 6.210064498160673,
+          "avg_loss": -5.210524976785612,
+          "worst_net": -18.862849740932653
+        },
+        "True": {
+          "trades": 248,
+          "avg_net_return": -1.1633860971909276,
+          "win_rate": 36.693548387096776,
+          "profit_factor": 0.6770718999465437,
+          "payoff_ratio": 1.1681350361715095,
+          "avg_win": 6.6475729289729095,
+          "avg_loss": -5.690757252483342,
+          "worst_net": -21.27072252113759
+        }
+      },
+      "relative_positive": {
+        "False": {
+          "trades": 88,
+          "avg_net_return": 0.33791517874963933,
+          "win_rate": 47.72727272727273,
+          "profit_factor": 1.1241379218568934,
+          "payoff_ratio": 1.2311986763194547,
+          "avg_win": 6.411449262908154,
+          "avg_loss": -5.207485506786395,
+          "worst_net": -17.13732290708371
+        },
+        "True": {
+          "trades": 425,
+          "avg_net_return": -1.0955805726760153,
+          "win_rate": 36.94117647058823,
+          "profit_factor": 0.6836716352698354,
+          "payoff_ratio": 1.1670318360020122,
+          "avg_win": 6.409778556023853,
+          "avg_loss": -5.492376778668103,
+          "worst_net": -21.27072252113759
+        }
+      },
+      "market_stock_cell": {
+        "M0_S0": {
+          "trades": 198,
+          "avg_net_return": -0.5062574271409013,
+          "win_rate": 41.41414141414141,
+          "profit_factor": 0.8341383501302498,
+          "payoff_ratio": 1.1800005928671828,
+          "avg_win": 6.147730955208252,
+          "avg_loss": -5.209938869835993,
+          "worst_net": -18.862849740932653
+        },
+        "M0_S1": {
+          "trades": 116,
+          "avg_net_return": -2.1672319616841365,
+          "win_rate": 35.3448275862069,
+          "profit_factor": 0.5077798184655029,
+          "payoff_ratio": 0.928865521583237,
+          "avg_win": 6.3255100366907495,
+          "avg_loss": -6.8099309207957415,
+          "worst_net": -21.27072252113759
+        },
+        "M1_S0": {
+          "trades": 86,
+          "avg_net_return": -0.16116064672737956,
+          "win_rate": 44.18604651162791,
+          "profit_factor": 0.942097757911995,
+          "payoff_ratio": 1.1900182205204148,
+          "avg_win": 5.934367609801585,
+          "avg_loss": -4.986787183146143,
+          "worst_net": -13.090886426592798
+        },
+        "M1_S1": {
+          "trades": 113,
+          "avg_net_return": -0.6228983531816394,
+          "win_rate": 33.6283185840708,
+          "profit_factor": 0.8028569679374589,
+          "payoff_ratio": 1.5845861209291952,
+          "avg_win": 7.543428508790259,
+          "avg_loss": -4.760503963247401,
+          "worst_net": -10.910934579439248
+        }
+      }
+    },
+    "full_shape": {
+      "index_above_ma60": {
+        "False": {
+          "trades": 247,
+          "avg_net_return": -1.4635775033624943,
+          "win_rate": 36.8421052631579,
+          "profit_factor": 0.5988249260283722,
+          "payoff_ratio": 1.0265570160486381,
+          "avg_win": 5.92976134146309,
+          "avg_loss": -5.776358496177418,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 323,
+          "avg_net_return": -0.20365728361557262,
+          "win_rate": 41.1764705882353,
+          "profit_factor": 0.9356523102405961,
+          "payoff_ratio": 1.3366461574865658,
+          "avg_win": 7.191713257017333,
+          "avg_loss": -5.380416662058608,
+          "worst_net": -18.862849740932653
+        }
+      },
+      "breadth_above_half": {
+        "False": {
+          "trades": 299,
+          "avg_net_return": -1.2385954276279227,
+          "win_rate": 38.12709030100334,
+          "profit_factor": 0.6783475383885894,
+          "payoff_ratio": 1.1008271456306056,
+          "avg_win": 6.851113831175334,
+          "avg_loss": -6.223605457376956,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 271,
+          "avg_net_return": -0.21012883054471257,
+          "win_rate": 40.59040590405904,
+          "profit_factor": 0.9262394600942111,
+          "payoff_ratio": 1.3556777552287997,
+          "avg_win": 6.5007197136587145,
+          "avg_loss": -4.7951806309321485,
+          "worst_net": -17.705183044315977
+        }
+      },
+      "advancing_above_half": {
+        "False": {
+          "trades": 314,
+          "avg_net_return": -1.6502866780943166,
+          "win_rate": 35.35031847133758,
+          "profit_factor": 0.5715769136734239,
+          "payoff_ratio": 1.0453163376189645,
+          "avg_win": 6.228276387688475,
+          "avg_loss": -5.958269438202149,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 256,
+          "avg_net_return": 0.355097933528318,
+          "win_rate": 44.140625,
+          "profit_factor": 1.1273425685250107,
+          "payoff_ratio": 1.4266370557440402,
+          "avg_win": 7.121835984274565,
+          "avg_loss": -4.992044721956478,
+          "worst_net": -18.862849740932653
+        }
+      },
+      "stock_above_ma60": {
+        "False": {
+          "trades": 133,
+          "avg_net_return": 0.6940738086203648,
+          "win_rate": 44.3609022556391,
+          "profit_factor": 1.2648141889527122,
+          "payoff_ratio": 1.5863771183474695,
+          "avg_win": 7.472927404643311,
+          "avg_loss": -4.710687842262795,
+          "worst_net": -18.179661610268372
+        },
+        "True": {
+          "trades": 437,
+          "avg_net_return": -1.1890086098052053,
+          "win_rate": 37.75743707093822,
+          "profit_factor": 0.670055435922514,
+          "payoff_ratio": 1.1045762337631746,
+          "avg_win": 6.395172293227219,
+          "avg_loss": -5.789706584071198,
+          "worst_net": -24.70612403100775
+        }
+      },
+      "stock_ma20_above_ma60": {
+        "False": {
+          "trades": 302,
+          "avg_net_return": -0.4941140918963682,
+          "win_rate": 41.05960264900662,
+          "profit_factor": 0.8444331608156816,
+          "payoff_ratio": 1.2121701824612205,
+          "avg_win": 6.5322191971149755,
+          "avg_loss": -5.388863124690788,
+          "worst_net": -24.70612403100775
+        },
+        "True": {
+          "trades": 268,
+          "avg_net_return": -1.0375466051703837,
+          "win_rate": 37.3134328358209,
+          "profit_factor": 0.7116053250131166,
+          "payoff_ratio": 1.195496946022036,
+          "avg_win": 6.8611096481418965,
+          "avg_loss": -5.739127708332456,
+          "worst_net": -22.86625000000001
+        }
+      },
+      "relative_positive": {
+        "False": {
+          "trades": 95,
+          "avg_net_return": 1.3709217521783272,
+          "win_rate": 50.526315789473685,
+          "profit_factor": 1.5285426203776458,
+          "payoff_ratio": 1.4966979824531115,
+          "avg_win": 7.846799838072568,
+          "avg_loss": -5.242740973841322,
+          "worst_net": -17.13732290708371
+        },
+        "True": {
+          "trades": 475,
+          "avg_net_return": -1.173731605042752,
+          "win_rate": 37.05263157894737,
+          "profit_factor": 0.6675441810624896,
+          "payoff_ratio": 1.1340665348732069,
+          "avg_win": 6.360566778573655,
+          "avg_loss": -5.608636339211607,
+          "worst_net": -24.70612403100775
+        }
+      },
+      "market_stock_cell": {
+        "M0_S0": {
+          "trades": 225,
+          "avg_net_return": -0.47006989771590385,
+          "win_rate": 41.77777777777778,
+          "profit_factor": 0.8506040216807317,
+          "payoff_ratio": 1.1854162429805943,
+          "avg_win": 6.406275780138712,
+          "avg_loss": -5.404241605489444,
+          "worst_net": -24.70612403100775
+        },
+        "M0_S1": {
+          "trades": 124,
+          "avg_net_return": -1.8881525604689986,
+          "win_rate": 36.29032258064516,
+          "profit_factor": 0.5674663031582149,
+          "payoff_ratio": 0.9962186210999773,
+          "avg_win": 6.826001569502816,
+          "avg_loss": -6.851911242098516,
+          "worst_net": -22.86625000000001
+        },
+        "M1_S0": {
+          "trades": 100,
+          "avg_net_return": 0.1966054865013637,
+          "win_rate": 44.0,
+          "profit_factor": 1.0687013108547816,
+          "payoff_ratio": 1.3601653047242677,
+          "avg_win": 6.950791719421812,
+          "avg_loss": -5.110255125078988,
+          "worst_net": -17.705183044315977
+        },
+        "M1_S1": {
+          "trades": 121,
+          "avg_net_return": -0.8847012405311421,
+          "win_rate": 33.88429752066116,
+          "profit_factor": 0.7240725735371125,
+          "payoff_ratio": 1.412824533730951,
+          "avg_win": 6.85149550344442,
+          "avg_loss": -4.849502071818618,
+          "worst_net": -10.910934579439248
+        }
+      }
+    }
+  },
+  "accounting": {
+    "closed": 1301
+  },
+  "warning": "Overlapping independent full-pool trades for conditional diagnostics, no Top2/capital claim"
+}

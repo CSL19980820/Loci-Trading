@@ -1,0 +1,69 @@
+{
+  "created_at": "2026-10-04T09:42:48.245984+00:00",
+  "posthoc": true,
+  "plan_sha256": "7e7fae722cae6ccef80267104ec0397ed285b61c4f53ca073a5b0d9e749a376e",
+  "script_sha256": "f9eb200eadb7f21c65e202101f1fd17154610b79f9c2b74715963a4f592e4602",
+  "sources": {
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-corrected_low_open-trades.csv": "01d628530dbd3ead80fead616663507e2cc30d8fd28042bc8f1ea80ec63e5106",
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-corrected_low_open-labels.csv": "82257cb3acbb351843c689b1ad0c74d61eb6c56ca77741c0961a7f1e7169d6e5",
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-corrected_low_open-trades.csv": "5e0b8385bfa0e467ecda43145839f8210c859192c43b3491524efeb2145aaef8",
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-corrected_low_open-labels.csv": "f2e13c4ee8b94642d26e9c06a9247471d57ca23728b0afd5271bb65c6c2faf30",
+    "docs\\research\\2026-10-04-sampled-execution-study\\capital-inputs\\pooled-low-trades.csv": "f6859ada914c7043a389b4aee9f2c01b8c526f2c03f99f03d07ca718a88aa6ad",
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-yin_close_and_open_above_vwap-trades.csv": "f9839442d6d0e83e8d013b57bf39b484d5b3109a6a87aec08db7d9be13ae09c7",
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-yin_close_and_open_above_vwap-labels.csv": "9f7b8f615dc4ab4b6d1b044d8c1184622b03b2fcca7574541372e398bfa97dfd",
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-yin_close_and_open_above_vwap-trades.csv": "4cd8de38e16226eab0871f06ab8703ceda1f1a911de1f5da051992741907f557",
+    "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-yin_close_and_open_above_vwap-labels.csv": "42d036dc8c41196633ea85c8519426b6064abed476c9e56bd33d9f44b9cad624",
+    "docs\\research\\2026-10-04-sampled-execution-study\\capital-inputs\\pooled-B-trades.csv": "fcd9f71c2a1aaac5449806c27fe9e861a71463bfadb39cae80c0a6ece32f1f17"
+  },
+  "streams": [
+    {
+      "phase": "validation_2025h2",
+      "arm": "low",
+      "start": "2025-07-01",
+      "end": "2025-12-31",
+      "input": "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-corrected_low_open-trades.csv",
+      "output": "docs\\research\\2026-10-04-sampled-execution-study\\capital\\validation_2025h2-low"
+    },
+    {
+      "phase": "observed_2026",
+      "arm": "low",
+      "start": "2026-01-01",
+      "end": "2026-09-30",
+      "input": "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-corrected_low_open-trades.csv",
+      "output": "docs\\research\\2026-10-04-sampled-execution-study\\capital\\observed_2026-low"
+    },
+    {
+      "phase": "pooled",
+      "arm": "low",
+      "start": "2025-07-01",
+      "end": "2026-09-30",
+      "input": "docs\\research\\2026-10-04-sampled-execution-study\\capital-inputs\\pooled-low-trades.csv",
+      "output": "docs\\research\\2026-10-04-sampled-execution-study\\capital\\pooled-low"
+    },
+    {
+      "phase": "validation_2025h2",
+      "arm": "B",
+      "start": "2025-07-01",
+      "end": "2025-12-31",
+      "input": "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-yin_close_and_open_above_vwap-trades.csv",
+      "output": "docs\\research\\2026-10-04-sampled-execution-study\\capital\\validation_2025h2-B"
+    },
+    {
+      "phase": "observed_2026",
+      "arm": "B",
+      "start": "2026-01-01",
+      "end": "2026-09-30",
+      "input": "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-yin_close_and_open_above_vwap-trades.csv",
+      "output": "docs\\research\\2026-10-04-sampled-execution-study\\capital\\observed_2026-B"
+    },
+    {
+      "phase": "pooled",
+      "arm": "B",
+      "start": "2025-07-01",
+      "end": "2026-09-30",
+      "input": "docs\\research\\2026-10-04-sampled-execution-study\\capital-inputs\\pooled-B-trades.csv",
+      "output": "docs\\research\\2026-10-04-sampled-execution-study\\capital\\pooled-B"
+    }
+  ],
+  "original_criteria_unchanged": true
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import calendar
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -30,7 +31,8 @@ class StockAgentHistoryMixin:
     conn: sqlite3.Connection
 
     def history(self, agent_id: str, *, kind: str = "runs", limit: int = 20,
-                offset: int = 0, start: str | None = None, end: str | None = None) -> dict[str, Any]:
+                offset: int = 0, start: str | None = None, end: str | None = None,
+                cutoff: str | None = None) -> dict[str, Any]:
         tables = {"runs": ("stock_agent_runs", "started_at"),
                   "trades": ("stock_agent_trades", "at"), "funding": ("stock_agent_funding", "at")}
         if kind not in tables:
@@ -44,6 +46,14 @@ class StockAgentHistoryMixin:
         if end:
             where.append(f"{time_column} < ?")
             params.append((datetime.fromisoformat(end[:10]) + timedelta(days=1)).date().isoformat())
+        if cutoff:
+            # 截止条件先进入SQL再计数/分页，避免未来日记挤掉当前页的旧证据。
+            datetime.fromisoformat(cutoff)
+            where.append(f"julianday({time_column}) <= julianday(?)")
+            params.append(cutoff)
+            if kind == "runs":
+                where.append("finished_at IS NOT NULL AND julianday(finished_at) <= julianday(?)")
+                params.append(cutoff)
         clause = " AND ".join(where)
         total = self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {clause}", params).fetchone()[0]
         columns = ("id,phase,started_at,finished_at,status,summary,actions_json" if kind == "runs" else "*")
@@ -72,14 +82,45 @@ class StockAgentHistoryMixin:
         result["actions"] = json.loads(result.pop("actions_json"))
         return result
 
-    def equity(self, agent_id: str, *, limit: int = 365) -> dict[str, Any]:
+    def equity(self, agent_id: str, *, limit: int = 365, range: str | None = None,
+               now: datetime | None = None) -> dict[str, Any]:
         limit = max(1, min(2000, limit))
-        total = self.conn.execute("SELECT COUNT(*) FROM stock_agent_equity WHERE agent_id=?", (agent_id,)).fetchone()[0]
+        current = agent_now(now)
+        if range == "day":
+            snapshots = []
+            for row in self.conn.execute("SELECT json_extract(detail_json,'$.valuation_snapshot') FROM stock_agent_runs WHERE agent_id=? AND status='success' AND started_at>=? AND started_at<? ORDER BY started_at,id",
+                    (agent_id, current.date().isoformat(), (current + timedelta(days=1)).date().isoformat())):
+                point = json.loads(row[0]) if row[0] else None
+                if isinstance(point, dict) and str(point.get("at", ""))[:10] == current.date().isoformat():
+                    snapshots.append(point)
+            daily = self.conn.execute("SELECT * FROM stock_agent_equity WHERE agent_id=? AND day=?", (agent_id, current.date().isoformat())).fetchone()
+            if daily:
+                snapshots.append(dict(daily))
+            points = {point["at"]: point for point in snapshots}
+            ordered = [points[at] for at in sorted(points)]
+            return {"items": ordered[-limit:], "total": len(ordered), "truncated": len(ordered) > limit,
+                    "granularity": "intraday", "caliber": "当日已保存的真实账户估值；缺少历史时点不补造曲线。"}
+        start = None
+        if range == "week":
+            start = (current - timedelta(days=6)).date().isoformat()
+        elif range in {"month", "half_year", "year"}:
+            months = {"month": 1, "half_year": 6, "year": 12}[range]
+            value = current.year * 12 + current.month - 1 - months
+            year, month0 = divmod(value, 12)
+            day = min(current.day, calendar.monthrange(year, month0 + 1)[1])
+            start = (current.replace(year=year, month=month0+1, day=day) + timedelta(days=1)).date().isoformat()
+        elif range is not None:
+            raise ValueError("未知账户曲线范围")
+        where, params = "agent_id=?", [agent_id]
+        if start:
+            where += " AND day>=? AND day<=?"
+            params += [start, current.date().isoformat()]
+        total = self.conn.execute(f"SELECT COUNT(*) FROM stock_agent_equity WHERE {where}", params).fetchone()[0]
         rows = self.conn.execute(
-            "SELECT * FROM stock_agent_equity WHERE agent_id=? ORDER BY day DESC LIMIT ?", (agent_id, limit),
+            f"SELECT * FROM stock_agent_equity WHERE {where} ORDER BY day DESC LIMIT ?", [*params, limit],
         ).fetchall()
         return {"items": [dict(row) for row in reversed(rows)], "total": total, "truncated": total > limit,
-                "caliber": "累计盈亏=模拟净资产−累计投入；追加资金不计为利润。估值时间及陈旧标记随每日快照保留。"}
+                "granularity": "daily", "caliber": "累计盈亏=模拟净资产−累计投入；追加资金不计为利润。估值时间及陈旧标记随每日快照保留。"}
 
     def prune_diary(self, agent_id: str, *, now: datetime | None = None,
                     force: bool = False, dry_run: bool = False) -> dict[str, Any]:

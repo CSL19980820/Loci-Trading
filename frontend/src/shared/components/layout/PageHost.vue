@@ -51,7 +51,8 @@ watch(
       @escape-key-down.prevent="archivePage?.close()" @pointer-down-outside.prevent @close-auto-focus="restoreFocus">
       <DialogTitle class="sr-only">个股档案</DialogTitle>
       <DialogDescription class="sr-only">查看个股行情、研究和记录；关闭后返回原页面。</DialogDescription>
-      <component ref="archivePage" :is="component!" :key="route.fullPath" />
+      <!-- 工作台随路由更新：切票 / 选股日期不能重建左侧批次列表。 -->
+      <component ref="archivePage" :is="component!" />
     </DialogContent>
   </Dialog>
 </template>

@@ -291,12 +291,7 @@ def compose_research_tools(protocol: str, *, primary_loader: Callable[..., Any],
     # 一些系统回退已提供同名本地工具；本轮专用账户工具以不可变快照为准。
     primary = [schema for schema in primary if (schema.get("function") or schema).get("name") not in workbench.names]
     from src.ops.application.guardian_tool_schema import research_tool_schemas
-    from src.ops.application.hithink_trader_tools import hithink_trader_tools
-    hithink_schemas, hithink_handlers = (
-        hithink_trader_tools(protocol, deadline=deadline, checkpoint=workbench._checkpoint)
-        if deadline is not None else ([], {})
-    )
-    original = [*primary, *workbench.schemas, *hithink_schemas]
+    original = [*primary, *workbench.schemas]
     schemas = research_tool_schemas(original)
     source = {**source, "research_workbench": True, "available_tool_count": len(schemas),
               "tool_schema_characters_before": len(json.dumps(original, ensure_ascii=False)),
@@ -304,8 +299,6 @@ def compose_research_tools(protocol: str, *, primary_loader: Callable[..., Any],
     def execute(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if name in workbench.names:
             return workbench.execute(name, arguments)
-        if name in hithink_handlers:
-            return hithink_handlers[name](name, arguments)
         if execute_primary is None:
             return {"is_error": True, "text": "该外部工具不可用；可使用system__工具或guardian_quotes核对替代数据。"}
         return execute_primary(name, arguments)

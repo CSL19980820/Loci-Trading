@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.ops.application.job_stagger import staggered_minute
-from src.ops.application.retired_slugs import is_retired_strategy_slug
+from src.ops.application.retired_slugs import canonical_strategy_slug, is_retired_strategy_slug
 from src.ops.application.trading_schedule import compose_trading_cron
 from src.ops.infrastructure.scheduler import normalize_cron_weekdays
 #: 盘后选股默认点（收盘后、日终同步前）。分钟是**基准值**，实际时点还要叠加
@@ -63,6 +63,7 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
             existing = store.get_job_by_name(job_name)
             if existing is not None and existing.get("enabled"):
                 store.update_job(existing["id"], enabled=False)
+            ensure_screen_prepare_job(store, engine, None)
             continue
         slugs.append(slug)
         engine_schedule = _schedule_for_engine(engine, default_schedule)
@@ -127,19 +128,28 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
             "model": str(prev_cfg.get("model") or ""),
             "thinking": str(prev_cfg.get("thinking") or ""),
             "use_ai_pick": bool(prev_cfg.get("use_ai_pick", False)),
-            "push_wecom": bool(prev_cfg.get("push_wecom", True)),
+            "push_wecom": bool(prev_cfg.get("push_wecom", getattr(engine, "screen_push_wecom", True))),
             "schedule": schedule,
             # 未声明则写 False，清掉盘中定点实验残留的强制刷现价。
             "force_spot_refresh": bool(
                 getattr(engine, "screen_force_spot_refresh", False)
             ),
         }
+        declared_config = getattr(engine, "screen_job_config", None)
+        if isinstance(declared_config, dict):
+            config.update(declared_config)
+        if getattr(engine, "requires_realtime_inputs", False):
+            config["push_wecom"] = False
+            config["use_ai_pick"] = False
         if isinstance(prev_cfg.get("universe"), dict):
             config["universe"] = prev_cfg["universe"]
         else:
             default_universe = getattr(engine, "default_universe", None)
             if isinstance(default_universe, dict):
                 config["universe"] = dict(default_universe)
+        allowed_boards = getattr(engine, "screen_allowed_boards", None)
+        if allowed_boards:
+            config["universe"] = {**config.get("universe", {}), "boards": list(allowed_boards)}
         if existing is None:
             store.create_job(
                 name=job_name, kind="screen", cron=cron, config=config, enabled=True
@@ -153,16 +163,22 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
             }
             store.update_job(existing["id"], **update_fields)
             updated += 1
+        ensure_screen_prepare_job(store, engine, store.get_job_by_name(job_name))
     # ``screen:`` 是战法绑定任务的保留前缀。活动目录收缩后，旧任务不能继续
-    # 被调度器执行或发送过时结果；只删这个前缀下且 kind=screen 的托管任务。
+    # 被调度器执行或发送过时结果；明确退役的战法也清除用户另命名的 screen 任务。
     active = set(slugs)
     removed_slugs: list[str] = []
     for job in store.list_jobs():
         name = str(job.get("name") or "")
-        if job.get("kind") != "screen" or not name.startswith("screen:"):
+        if job.get("kind") != "screen":
             continue
-        slug = name[len("screen:") :]
-        if slug in active:
+        config = job.get("config") if isinstance(job.get("config"), dict) else {}
+        configured_slug = canonical_strategy_slug(config.get("strategy"))
+        configured_retired = is_retired_strategy_slug(configured_slug)
+        if not name.startswith("screen:") and not configured_retired:
+            continue
+        slug = name[len("screen:") :] if name.startswith("screen:") else configured_slug
+        if slug in active and not configured_retired:
             continue
         if store.delete_job(
             str(job["id"]), expected_name=name, allowed_kinds={"screen"}
@@ -201,7 +217,7 @@ def _schedule_for_engine(
         }
     else:
         schedule = dict(default_schedule)
-    if str(schedule.get("mode") or "") == "once":
+    if str(schedule.get("mode") or "") == "once" and getattr(engine, "screen_staggered", True):
         schedule["run_minute"] = staggered_minute(int(schedule.get("run_minute") or 0))
     return schedule
 
@@ -211,7 +227,45 @@ def _top_n_for_engine(engine: Any, previous: dict[str, Any]) -> int:
     maximum = int(getattr(engine, "screen_top_n", 0) or 0)
     if maximum > 0:
         return maximum
-    return int(previous.get("top_n") or 0)
+    return int(previous.get("top_n") or getattr(engine, "screen_default_top_n", 0) or 0)
+
+
+def ensure_screen_prepare_job(
+    store: Any, engine: Any, screen_job: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """与晨间任务同步启停；盘后同档准备完整样本，不推送、不精选。"""
+    declaration = getattr(engine, "screen_prepare_schedule", None)
+    if not isinstance(declaration, dict):
+        return None
+    slug = str(engine.slug)
+    name = f"screen-prepare:{slug}"
+    existing = store.get_job_by_name(name)
+    if screen_job is None or store.is_screen_job_opted_out(slug):
+        if existing is not None and existing.get("enabled"):
+            store.update_job(existing["id"], enabled=False)
+        return store.get_job_by_name(name)
+    schedule = {
+        "mode": declaration.get("mode", "once"),
+        "run_hour": int(declaration.get("run_hour", SCREEN_EOD_HOUR)),
+        "run_minute": staggered_minute(int(declaration.get("run_minute", SCREEN_EOD_MINUTE))),
+        "interval_minutes": 10,
+        "window_start_hour": 9, "window_start_minute": 30,
+        "window_end_hour": SCREEN_EOD_HOUR, "window_end_minute": SCREEN_EOD_MINUTE,
+    }
+    cron = compose_trading_cron(schedule["mode"], **{key: value for key, value in schedule.items() if key != "mode"})
+    config = {"strategy": slug, "push_wecom": False, "schedule": schedule,
+              "record_candidates": False, "use_ai_pick": False, "top_n": 0}
+    screen_config = screen_job.get("config") or {}
+    for key in ("params", "codes", "universe"):
+        if key in screen_config:
+            config[key] = screen_config[key]
+    enabled = bool(screen_job.get("enabled"))
+    if existing is None:
+        job_id = store.create_job(name=name, kind="screen_prepare", cron=cron, config=config, enabled=enabled)
+    else:
+        job_id = existing["id"]
+        store.update_job(job_id, config=config, cron=cron, enabled=enabled)
+    return store.get_job(job_id)
 
 
 def _has_schedule_override(engine: Any) -> bool:

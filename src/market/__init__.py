@@ -19,6 +19,7 @@ from src.market.infrastructure.adapters import (
     LANE_INSTRUMENTS,
     LANE_LIMIT_UP_POOL,
     LANE_MARKET_EMOTION,
+    LANE_SPOT_BATCH,
     MarketAdapter,
     TAPE_LANES,
     LANE_THEME_BOARD,
@@ -43,19 +44,6 @@ from src.market.infrastructure.adapters import (
     provider_master_enabled,
     speedtest_daily,
 )
-from src.market.infrastructure.akshare_catalog import (
-    MAX_MCP_SAMPLE_ROWS,
-    discover_stock_capabilities,
-    probe_stock_capability,
-)
-from src.market.infrastructure.akshare_tools import (
-    MAX_BATCH_PROBE,
-    catalog_entries,
-    check_akshare_version,
-    clear_catalog_cache,
-    installed_akshare_version,
-    probe_stock_capabilities_batch,
-)
 from src.market.infrastructure.sentinel import (
     DataQualityError,
     HealthReport,
@@ -63,8 +51,6 @@ from src.market.infrastructure.sentinel import (
     guard_market_health,
 )
 from src.market.infrastructure.sources import (
-    BaostockSource,
-    EastmoneySource,
     QuoteSource,
     SinaSource,
     SourceError,
@@ -156,7 +142,7 @@ from src.market.infrastructure.tape.router import (
     route_tape,
     tape_readiness,
 )
-from src.market.infrastructure import sina, tencent
+from src.market.infrastructure import sina
 
 from src.market.application.intraday import (
     CaptureReport,
@@ -240,11 +226,9 @@ __all__ = [
     "AdapterError",
     "AdapterMeta",
     "AuctionSnapshot",
-    "BaostockSource",
     "BrokenLimitUp",
     "DataQualityError",
     "DEFAULT_DB",
-    "EastmoneySource",
     "HealthReport",
     "HOT_WINDOW_TRADING_DAYS",
     "hot_fallback_reason",
@@ -256,11 +240,10 @@ __all__ = [
     "LANE_INSTRUMENTS",
     "LANE_LIMIT_UP_POOL",
     "LANE_MARKET_EMOTION",
+    "LANE_SPOT_BATCH",
     "LANE_THEME_BOARD",
     "LANE_THEME_MEMBERS",
     "LimitUpLadder",
-    "MAX_BATCH_PROBE",
-    "MAX_MCP_SAMPLE_ROWS",
     "MarketAdapter",
     "MarketEmotion",
     "MarketStore",
@@ -322,15 +305,11 @@ __all__ = [
     "RECLAIMABLE_INDEXES",
     "ReclaimReport",
     "reclaim_market_db",
-    "catalog_entries",
-    "check_akshare_version",
     "check_market_health",
     "classify_board",
-    "clear_catalog_cache",
     "clear_provider_cooldown",
     "clear_sticky",
     "default_sources",
-    "discover_stock_capabilities",
     "enabled_adapter_ids",
     "fetch_capital_flow_routed",
     "fetch_daily_best",
@@ -344,7 +323,6 @@ __all__ = [
     "format_tray_title",
     "get_adapter",
     "guard_market_health",
-    "installed_akshare_version",
     "is_st_name",
     "list_catalog",
     "lane_provider_enabled",
@@ -358,8 +336,6 @@ __all__ = [
     "open_screen_store",
     "peek_sticky",
     "probe_lane",
-    "probe_stock_capabilities_batch",
-    "probe_stock_capability",
     "provider_disabled_lanes",
     "provider_master_enabled",
     "resolve_universe",
@@ -374,7 +350,6 @@ __all__ = [
     "sync_instruments",
     "sync_quotes",
     "sina",
-    "tencent",
     "to_sina_symbol",
     "universe_stats",
     "query_agent_market",

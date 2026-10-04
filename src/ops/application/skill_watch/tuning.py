@@ -15,7 +15,7 @@ from src.ops.application.skill_watch.defaults import (
     DEFAULT_GATE_PARAMS,
     DEFAULT_ROLE_PARAMS,
 )
-from src.ops.application.paper_policy.auction_gap import (
+from src.ops.application.signal_policy.auction_gap import (
     DEFAULT_ABANDON_GAP_PCT,
     DEFAULT_DOWNGRADE_GAP_PCT,
 )

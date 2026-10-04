@@ -233,8 +233,8 @@ def _field_value(
     work: pd.DataFrame,
     code: str,
 ) -> float | None:
-    if field == "__raw_close":
-        raw = bar.get("close")
+    if field in ("__raw_open", "__raw_high", "__raw_low", "__raw_close"):
+        raw = bar.get(field.removeprefix("__raw_"))
         return float(raw) if raw is not None else None
     if field == "outstanding_share":
         shares = bar.get("outstanding_share")

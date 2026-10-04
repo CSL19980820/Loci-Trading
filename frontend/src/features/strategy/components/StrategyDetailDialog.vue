@@ -120,7 +120,8 @@ const metrics = computed(() => {
       value: formatPercent(net),
       tone: typeof net === 'number' ? (net > 0 ? 'is-up' : net < 0 ? 'is-down' : '') : '',
     },
-    { key: 'pf', label: '盈亏比 PF', value: formatProfitFactor(m?.profit_factor), tone: '' },
+    { key: 'payoff', label: '盈亏比', value: formatProfitFactor(m?.payoff_ratio), tone: '' },
+    { key: 'pf', label: '利润因子 PF', value: formatProfitFactor(m?.profit_factor), tone: '' },
   ]
 })
 
@@ -527,7 +528,7 @@ async function save(): Promise<void> {
 .sd__metrics {
   display: grid;
   flex-shrink: 0;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin: 0 24px;
 }
@@ -620,6 +621,7 @@ async function save(): Promise<void> {
   }
 
   .sd__foot {
+    flex-direction: column-reverse;
     padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0));
   }
 }

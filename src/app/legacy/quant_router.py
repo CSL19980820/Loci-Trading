@@ -48,7 +48,7 @@ def build_quant_router(
                 return False
 
         has_pandas = probe("pandas")
-        has_akshare = probe("akshare")
+        has_quotes = probe("requests") and probe("tdxpy")
         has_scheduler = probe("apscheduler")
         has_yaml = probe("yaml")
         # LLM 走 httpx2；密钥早已不再加密（见 src/ai/infrastructure/crypto.py），
@@ -56,7 +56,7 @@ def build_quant_router(
         has_llm_http = probe("httpx2")
         return {
             "market": has_pandas,
-            "quotes_sync": has_pandas and has_akshare,
+            "quotes_sync": has_pandas and has_quotes,
             "strategies": has_pandas,
             "backtest": has_pandas,
             "skills": has_yaml,
@@ -66,7 +66,7 @@ def build_quant_router(
                 name
                 for name, ok in (
                     ("pandas", has_pandas),
-                    ("akshare", has_akshare),
+                    ("行情连接", has_quotes),
                     ("apscheduler", has_scheduler),
                     ("PyYAML", has_yaml),
                     ("httpx2", has_llm_http),

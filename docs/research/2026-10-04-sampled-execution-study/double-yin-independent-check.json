@@ -1,0 +1,195 @@
+{
+  "checked_at": "2026-10-04T09:41:04.970697+00:00",
+  "passed": true,
+  "verified_cache_files": 3204,
+  "policy_order_records": 1104,
+  "policy_closed_trade_records": 1098,
+  "checks": [
+    "immutable key identity",
+    "all cache hashes",
+    "slot5 actual price/positive volume",
+    "T+1 exit",
+    "SQL factor endpoints",
+    "economic gross/net identities",
+    "label-trade consistency",
+    "deferred stops use frozen closing-limit block and resumption close",
+    "PF and combined cost-winner pressure",
+    "calendar opportunity means"
+  ],
+  "runs": [
+    {
+      "segment": "train",
+      "arm": "corrected_low_open",
+      "orders": 513,
+      "cancelled": 1,
+      "slots": 712,
+      "slot_mean": -0.6989434611420902,
+      "metrics": {
+        "n": 512,
+        "mean": -0.9719682506507191,
+        "PF": 0.7010351859771374,
+        "win_rate": 37.5,
+        "double_cost_drop_max": -1.2420815880033895
+      }
+    },
+    {
+      "segment": "train",
+      "arm": "yin_close_and_open_above_vwap",
+      "orders": 58,
+      "cancelled": 2,
+      "slots": 712,
+      "slot_mean": 0.14732843159643697,
+      "metrics": {
+        "n": 56,
+        "mean": 1.8731757731546985,
+        "PF": 1.9244375463370291,
+        "win_rate": 53.57142857142857,
+        "double_cost_drop_max": 1.156398112001804
+      }
+    },
+    {
+      "segment": "validation_2025h2",
+      "arm": "corrected_low_open",
+      "orders": 190,
+      "cancelled": 2,
+      "slots": 246,
+      "slot_mean": 0.6829090806237897,
+      "metrics": {
+        "n": 188,
+        "mean": 0.8935937969864483,
+        "PF": 1.3540177115136178,
+        "win_rate": 43.61702127659574,
+        "double_cost_drop_max": 0.5038940482617199
+      }
+    },
+    {
+      "segment": "validation_2025h2",
+      "arm": "yin_close_and_open_above_vwap",
+      "orders": 19,
+      "cancelled": 0,
+      "slots": 246,
+      "slot_mean": 0.10348513261494309,
+      "metrics": {
+        "n": 19,
+        "mean": 1.3398601380671575,
+        "PF": 1.721731596878334,
+        "win_rate": 57.89473684210526,
+        "double_cost_drop_max": 0.15439235380549485
+      }
+    },
+    {
+      "segment": "observed_2026",
+      "arm": "corrected_low_open",
+      "orders": 263,
+      "cancelled": 0,
+      "slots": 356,
+      "slot_mean": -0.5746560039798002,
+      "metrics": {
+        "n": 263,
+        "mean": -0.7778613589992736,
+        "PF": 0.7786118946013115,
+        "win_rate": 37.6425855513308,
+        "double_cost_drop_max": -1.1023548352909862
+      }
+    },
+    {
+      "segment": "observed_2026",
+      "arm": "yin_close_and_open_above_vwap",
+      "orders": 61,
+      "cancelled": 1,
+      "slots": 356,
+      "slot_mean": 0.5393319033418759,
+      "metrics": {
+        "n": 60,
+        "mean": 3.200035959828463,
+        "PF": 2.3033289667525687,
+        "win_rate": 55.0,
+        "double_cost_drop_max": 2.5341369658792683
+      }
+    }
+  ],
+  "pooled": {
+    "corrected_low_open": {
+      "n": 451,
+      "mean": -0.08111286825577974,
+      "PF": 0.9738440553652615,
+      "win_rate": 40.133037694013304,
+      "double_cost_drop_max": -0.36795411198192735
+    },
+    "yin_close_and_open_above_vwap": {
+      "n": 79,
+      "mean": 2.7526519014301747,
+      "PF": 2.190976032554919,
+      "win_rate": 55.69620253164557,
+      "double_cost_drop_max": 2.192069533463498
+    }
+  },
+  "deferred_stop_model_examples": [
+    {
+      "code": "605218",
+      "entry": "2024-02-06",
+      "exit": "2024-02-08",
+      "gross": -3.922872340425543,
+      "exit_equals_daily_close": true,
+      "trigger_date": "2024-02-07",
+      "trigger_high": 15.06,
+      "trigger_low": 13.55,
+      "trigger_close": 13.55,
+      "lower_limit": 13.55,
+      "true_one_price_bar": false
+    },
+    {
+      "code": "002725",
+      "entry": "2024-02-27",
+      "exit": "2024-02-29",
+      "gross": -3.3898305084745672,
+      "exit_equals_daily_close": true,
+      "trigger_date": "2024-02-28",
+      "trigger_high": 9.17,
+      "trigger_low": 8.16,
+      "trigger_close": 8.16,
+      "lower_limit": 8.16,
+      "true_one_price_bar": false
+    },
+    {
+      "code": "605389",
+      "entry": "2025-07-02",
+      "exit": "2025-07-11",
+      "gross": -1.01271785209609,
+      "exit_equals_daily_close": true,
+      "trigger_date": "2025-07-03",
+      "trigger_high": 38.21,
+      "trigger_low": 38.21,
+      "trigger_close": 38.21,
+      "lower_limit": 38.21,
+      "true_one_price_bar": true
+    },
+    {
+      "code": "600470",
+      "entry": "2026-02-27",
+      "exit": "2026-03-04",
+      "gross": -3.649635036496357,
+      "exit_equals_daily_close": true,
+      "trigger_date": "2026-03-03",
+      "trigger_high": 8.16,
+      "trigger_low": 7.59,
+      "trigger_close": 7.59,
+      "lower_limit": 7.59,
+      "true_one_price_bar": false
+    },
+    {
+      "code": "002897",
+      "entry": "2026-06-04",
+      "exit": "2026-06-09",
+      "gross": -2.7489449070377536,
+      "exit_equals_daily_close": true,
+      "trigger_date": "2026-06-08",
+      "trigger_high": 87.7,
+      "trigger_low": 82.31,
+      "trigger_close": 82.31,
+      "lower_limit": 82.31,
+      "true_one_price_bar": false
+    }
+  ],
+  "limitation": "Inherited strict mask blocks full day if daily close at lower limit, even when intraday high differs; this is a daily execution proxy, not proven queue inability. Deferred stop exits use first allowed daily close and can lose less than 6 percent."
+}

@@ -1,0 +1,51 @@
+{
+  "code": "300558",
+  "requested_date": "2024-10-18",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2024-10-18-300558.attempt1.raw.json",
+  "raw_sha256": "9e6b3c9b96f820b3211addd0e253fe215671bef0ffd696b546345ff266cbd361",
+  "attempts": [
+    {
+      "code": "300558",
+      "requested_date": "2024-10-18",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:41:16.407941+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 113891.0,
+        "sampled_share_sum": 11389100.0,
+        "daily_volume": 11389000.0,
+        "volume_signed_diff": 100.0,
+        "volume_abs_diff": 100.0,
+        "volume_relative_diff": 8.780402142418123e-06,
+        "volume_tolerance": 11389.0,
+        "final_price_signed_diff": 0.0,
+        "final_price_abs_diff": 0.0,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 1,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 42.660000000000004,
+        "raw_positive_max": 47.19,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2024-10-18-300558.attempt1.raw.json",
+      "raw_sha256": "9e6b3c9b96f820b3211addd0e253fe215671bef0ffd696b546345ff266cbd361",
+      "completed_at": "2026-10-04T17:41:16.544867+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:41:16.545391+08:00"
+}

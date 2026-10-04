@@ -1,0 +1,61 @@
+{
+  "created_at_utc": "2026-10-04T10:18:08.185973+00:00",
+  "objective": "你再优化优化审查审查 这两个一定要增强",
+  "goal_achieved": false,
+  "both_strategies_verified_enhanced": false,
+  "double_yin": {
+    "status": "promising_low_frequency_candidate_not_full_replacement",
+    "post_train_narrow_gap_count": 0,
+    "post_train_known_model_metrics_unchanged": true,
+    "full_execution_evidence_complete": false,
+    "original_strict_acceptance_failure_not_reversed": true
+  },
+  "contraction": {
+    "status": "no_verified_enhancement",
+    "sampled_early_training_candidate_negative_and_failed": true,
+    "narrow_gap_count_in_candidate": 0,
+    "failed_candidate_not_nominated": true
+  },
+  "completed_this_stage": {
+    "exit_time_semantics_reproduced": true,
+    "incidence_independently_verified": true,
+    "single_prefrozen_gap_sensitivity_completed": true,
+    "source_order_count": 2022,
+    "changed_policy_records": 12,
+    "changed_unique_events": 11,
+    "unchanged_records": 2010,
+    "unknown_preserved": 2,
+    "cancelled_preserved": 8,
+    "new_metrics_independently_verified": true,
+    "prior_results_sources_and_databases_preserved": true
+  },
+  "limits": [
+    "opening fill remains a price proxy, not own-order execution",
+    "intraday stop/limit queue cases remain unresolved",
+    "fixed orders only: no refills or capital reexecution",
+    "previously observed historical data, not fresh OOS",
+    "frozen independent incidence verifier retains one unused defaultdict F401 warning"
+  ],
+  "safe_research_scope": {
+    "new_nomination": false,
+    "new_parameter_search": false,
+    "production_modified": false,
+    "scheduled_collector_created": false,
+    "deployed": false,
+    "committed_or_pushed": false
+  },
+  "artifact_links_verified": 17,
+  "task_owned_temporary_files_remaining": [],
+  "sha256": {
+    "report.md": "d32fa71317beb8478de46918a481a1a61835d16824eac1a35d71dd45e445b671",
+    "SENSITIVITY-PLAN.md": "343cfa43cbd4ba804116458389a0e73140670ee907b1d291addd4b16e426dce6",
+    "sensitivity-contract-freeze.json": "0d704a18b5e6a733d00691a52839a518c1794d3fe0293f74eb57048a072581e0",
+    "contract-review.md": "7bcdf9ca5dfef192c2a9161d13e43ec92f9860e7d1e0efaab1e8eaf78fe12317",
+    "method-review.md": "e60dddafbadb47a8d60c8f448a1b7d27898b60f892793dbd3ca298c6d2d8698a",
+    "root-synthetic-check.json": "47564fe61ef9b42aecb7299b3d1d0c89043bf336cc5ac086027c867be1472144",
+    "incidence/completion-receipt.json": "3d5656c8b44159af058fc925779c6b6f6d8dada736110537d83a5ac5fba174eb",
+    "review/verification.json": "e9931c5ccba8db1a688c160cb4330f3e8698b0e66f9726e51547ad4ced8a1fd8",
+    "sensitivity/completion-receipt.json": "dbf3e4b824a52d1a2bcf17bed18446e0aecc9dc646c5eb0b9926d34a495781b8",
+    "root-sensitivity-check.json": "abd8fd0866944cf5108237dc000792f964d4114b86cb63cc4525d5598548639b"
+  }
+}

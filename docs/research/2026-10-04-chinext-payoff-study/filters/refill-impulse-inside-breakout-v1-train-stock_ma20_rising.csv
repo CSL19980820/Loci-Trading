@@ -1,0 +1,7 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,impulse-inside-breakout-v1,stock_ma20_rising,2024-03-12,300427,closed,-0.4657544757033292
+train,impulse-inside-breakout-v1,stock_ma20_rising,2024-07-31,300377,closed,-6.210000000000005
+train,impulse-inside-breakout-v1,stock_ma20_rising,2024-12-06,301171,closed,-8.225768725361362
+train,impulse-inside-breakout-v1,stock_ma20_rising,2025-02-21,301397,closed,13.272842475006772
+train,impulse-inside-breakout-v1,stock_ma20_rising,2025-02-27,300687,closed,22.515651088119835
+train,impulse-inside-breakout-v1,stock_ma20_rising,2025-05-06,300572,closed,0.9022881355932312

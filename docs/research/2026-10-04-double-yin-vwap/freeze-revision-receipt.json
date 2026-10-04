@@ -1,0 +1,12 @@
+{
+  "reason": "Root final review added positive-volume OHLC interval integrity before any execution results",
+  "original_plan_sha256": "d7e13f35c01428718c6528d72c687afe493f92bb22bbaa484ef4624492366141",
+  "original_source_sha256": "9b8d6599460fd1de511700f731c5cde754717c1cf54a448919bdd8c6bbfdf572",
+  "replacement_plan_sha256": "a22f4980c5772e1d789eb83182d7b39d8141d5ef802edcef0cbeba290c884dd0",
+  "stopped_run_exit_code": 1,
+  "captured_output": "Prepare VWAP train cutoff=2025-06-30",
+  "stage_files_after_stop": [],
+  "observation": "No execution progress or results observed; only PLAN-DRAFT.json, PLAN.json and self-check.json existed immediately after stopping. The adapter writes preselection CSV before calling execute; absence of that CSV supports that no execute stage was reached.",
+  "change": "Reject positive-volume holding bars with high < max(open,close) or low > min(open,close); add one synthetic regression. No strategy threshold, parameter, policy, split or acceptance gate changed.",
+  "recorded_at": "2026-10-04T16:26:55.2722915+08:00"
+}

@@ -1,0 +1,51 @@
+{
+  "code": "300751",
+  "requested_date": "2025-03-03",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-03-03-300751.attempt1.raw.json",
+  "raw_sha256": "d9e6fa4c768409723cf184847ee54aa6064a931612d1cef44daf4a21edf48770",
+  "attempts": [
+    {
+      "code": "300751",
+      "requested_date": "2025-03-03",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:42:17.311445+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 45580.0,
+        "sampled_share_sum": 4558000.0,
+        "daily_volume": 4557900.0,
+        "volume_signed_diff": 100.0,
+        "volume_abs_diff": 100.0,
+        "volume_relative_diff": 2.193992847583317e-05,
+        "volume_tolerance": 4557.900000000001,
+        "final_price_signed_diff": 1.4210854715202004e-14,
+        "final_price_abs_diff": 1.4210854715202004e-14,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 1,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 98.77,
+        "raw_positive_max": 103.9,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-03-03-300751.attempt1.raw.json",
+      "raw_sha256": "d9e6fa4c768409723cf184847ee54aa6064a931612d1cef44daf4a21edf48770",
+      "completed_at": "2026-10-04T17:42:17.449912+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:42:17.450440+08:00"
+}

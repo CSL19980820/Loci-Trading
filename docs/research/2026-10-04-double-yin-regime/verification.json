@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "source_snapshot_groups_unchanged": true,
+  "self_check_count": 11,
+  "checks": [
+    "full_pool_selected_gate_accounting",
+    "no_INDEX_in_breadth",
+    "historically_insufficient_breadth_excluded",
+    "same_price_false_low_open_removed",
+    "T_plus_1",
+    "raw_entry_price",
+    "economic_return_identity",
+    "cost_and_largest_winner_stress",
+    "calendar_budget_reconciliation",
+    "industry_intersection_Top2",
+    "no_later_evaluation_when_no_qualifier"
+  ],
+  "runs": [
+    {
+      "variant": "corrected_low_open",
+      "closed": 513,
+      "orders": 513,
+      "status": "passed"
+    },
+    {
+      "variant": "full_shape",
+      "closed": 570,
+      "orders": 570,
+      "status": "passed"
+    },
+    {
+      "variant": "market_permission",
+      "closed": 221,
+      "orders": 221,
+      "status": "passed"
+    },
+    {
+      "variant": "stock_permission",
+      "closed": 356,
+      "orders": 356,
+      "status": "passed"
+    },
+    {
+      "variant": "market_and_stock",
+      "closed": 162,
+      "orders": 162,
+      "status": "passed"
+    }
+  ]
+}

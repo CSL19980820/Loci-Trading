@@ -120,19 +120,9 @@ def _num(value: Any) -> float:
 
 
 def default_cross_section() -> list[dict[str, Any]]:
-    """东财全市场截面 → 报价行。
-    
-    这里够到了 ``EastmoneyAdapter`` 的两个受保护成员，理由写清楚：公开的
-    ``fetch_live_quotes`` 必须先给一份代码清单，而且只吐固定 11 个字段，把排行榜
-    要的**换手率 / 量比 / 涨速**丢掉了——那三列就在同一张已经下载好的表里，
-    为它们再发一次 HTTP 是纯浪费。``_load_spot_raw`` 自带 4s TTL，与本模块
-    6s 的截面周期天然对齐。
-    """
-    from src.market.infrastructure.adapters import get_adapter
-    
-    adapter = get_adapter("eastmoney")
-    raw = adapter._load_spot_raw(who="全市场截面")  # noqa: SLF001 - 见 docstring
-    return rows_from_spot_frame(adapter._normalize_spot(raw, include_rich=True))
+    """统一保留来源的全市场快照；不直接绑定某个供应商实现。"""
+    from src.market.application.cross_section import fetch_cross_section
+    return fetch_cross_section()
 
 
 def rows_from_spot_frame(frame: Any) -> list[dict[str, Any]]:
@@ -152,7 +142,7 @@ def rows_from_spot_frame(frame: Any) -> list[dict[str, Any]]:
                 "price": price,
                 "prev_close": _num(item.get("prev_close")) or price,
                 "trade_time": "",
-                "source": "eastmoney",
+                "source": str(item.get("source") or "unknown"),
             }
         )
         for key in ("open", "high", "low"):
@@ -191,7 +181,7 @@ def movers_universe(
     for key, descending, count in slices:
         if len(picked) >= limit:
             break
-        ordered = sorted(rows, key=lambda row: _num(row.get(key)), reverse=descending)
+        ordered = sorted((row for row in rows if row.get(key) is not None), key=lambda row: _num(row.get(key)), reverse=descending)
         for row in ordered[: max(0, int(count))]:
             code = str(row.get("code") or "")
             if code and code not in picked:
@@ -238,7 +228,7 @@ def resolve_preset(
         inst_types = {code: "INDEX" for code in basket_codes}
         inst_types.update({str(row.get("code") or ""): "STOCK" for row in picked})
         return Resolution(
-            preset=name, kind="ranked", source="eastmoney_spot_all", rows=picked,
+            preset=name, kind="ranked", source="market_snapshot", rows=picked,
             codes=[str(row.get("code") or "") for row in picked],
             instrument_types=inst_types,
             # 指数不在东财截面里：交给调用方单独补一次，指数带才会跟着推流跳。
@@ -251,7 +241,7 @@ def resolve_preset(
         rows = list((cross_section or default_cross_section)() or [])
         picked = movers_universe(rows)
         return Resolution(
-            preset=name, kind="ranked", source="eastmoney_signals", rows=picked,
+            preset=name, kind="ranked", source="market_snapshot", rows=picked,
             codes=[str(row.get("code") or "") for row in picked],
             instrument_types={str(row.get("code") or ""): "STOCK" for row in picked},
             truncated=len(rows) > len(picked),
@@ -276,10 +266,12 @@ def resolve_preset(
     wanted = set(_clean_codes(codes)) if codes else set()
     if wanted:
         rows = [row for row in rows if str(row.get("code") or "") in wanted]
-    ordered = sorted(rows, key=lambda row: _num(row.get(key)), reverse=descending)
+    ordered = sorted((row for row in rows if row.get(key) is not None), key=lambda row: _num(row.get(key)), reverse=descending)
+    if not ordered and rows:
+        raise WatchlistError(f"保留来源暂不提供{_label}所需字段，不生成空值排行")
     picked = ordered[:limit][:MAX_PRESET_CODES]
     return Resolution(
-        preset=name, kind="ranked", source="eastmoney_spot", rows=picked,
+        preset=name, kind="ranked", source="market_snapshot", rows=picked,
         codes=[str(row.get("code") or "") for row in picked],
         instrument_types={str(row.get("code") or ""): "STOCK" for row in picked},
         truncated=len(rows) > len(picked),

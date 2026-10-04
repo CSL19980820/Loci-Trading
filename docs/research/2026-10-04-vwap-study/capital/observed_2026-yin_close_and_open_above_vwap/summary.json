@@ -1,0 +1,70 @@
+{
+  "base": {
+    "initial_capital": 1000000.0,
+    "ending_equity": 1248722.0222621898,
+    "total_return_pct": 24.872202226218974,
+    "max_drawdown_pct": -2.3736216977945257,
+    "accepted_trades": 60,
+    "supplied_closed_trades": 60,
+    "decisions": {
+      "accepted": 60
+    },
+    "daily_budget_slots": 362,
+    "max_simultaneous_positions": 5,
+    "mean_positions_before_exits": 1.2044198895027625,
+    "carried_stale_close_marks": 0
+  },
+  "double_cost": {
+    "initial_capital": 1000000.0,
+    "ending_equity": 1235943.4902955245,
+    "total_return_pct": 23.59434902955244,
+    "max_drawdown_pct": -2.524012889075755,
+    "accepted_trades": 60,
+    "supplied_closed_trades": 60,
+    "decisions": {
+      "accepted": 60
+    },
+    "daily_budget_slots": 362,
+    "max_simultaneous_positions": 5,
+    "mean_positions_before_exits": 1.2044198895027625,
+    "carried_stale_close_marks": 0
+  },
+  "completed_at": "2026-10-04T16:45:47.218826+08:00",
+  "period": [
+    "2026-01-01",
+    "2026-09-30"
+  ],
+  "quote_pairs": 10317,
+  "source_sha256": "f9eb200eadb7f21c65e202101f1fd17154610b79f9c2b74715963a4f592e4602",
+  "trades_sha256": "2c9d9c9207d168afdf0d1137737cb9390d9345e7eed20bd8bc82695a81ac74c1",
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "self_check": {
+    "status": "passed",
+    "checks": [
+      "entry_quota",
+      "same_code_exit_day",
+      "cash_return",
+      "no_future_proceeds",
+      "position_count"
+    ]
+  },
+  "contract": {
+    "initial_capital": 1000000.0,
+    "fixed_ticket_including_entry_fee": 100000.0,
+    "max_positions": 10,
+    "max_new_positions_per_day": 2,
+    "priority": "code ascending among already frozen selected trade events",
+    "cash_timing": "All same-day exit cash available only next session; even opening exits",
+    "no_refill": true,
+    "same_code_exit_day_entry": "rejected",
+    "fees": "Entry 0.08 percent funded inside the cash ticket; reserve exit 0.13 percent in marks; stress doubles both. Costs use entry notional, matching frozen event conventions."
+  },
+  "limitations": [
+    "Fixed notional economic-return capacity overlay, not a lot-size/order-book/account simulator",
+    "Receives a frozen event stream; cash-skipped events do not unlock rank3 or downstream signals",
+    "Daily total-return marks use current stored adjustment factors; not strict point-in-time",
+    "Stress fee may change later cash availability and hence accepted trade count",
+    "Missing closes are carried and explicitly counted; no intraday portfolio drawdown",
+    "Requires upstream evidence of zero unresolved positions and pre-fill daily Top2; closed CSV alone cannot prove those conditions"
+  ]
+}

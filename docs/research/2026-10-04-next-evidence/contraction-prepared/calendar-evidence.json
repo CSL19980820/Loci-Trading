@@ -1,0 +1,41 @@
+{
+  "planned_target_date": "2026-10-08",
+  "as_of": "2026-09-30",
+  "planning_only": true,
+  "official_fact_extraction": {
+    "checked_at_utc": "2026-10-04 10:29:44 UTC",
+    "as_of_market_date": "2026-09-30",
+    "planned_next_trade_date": "2026-10-08",
+    "status": "official_holiday_schedule_confirmed_for_local_research_preparation",
+    "sources": [
+      {
+        "exchange": "SSE",
+        "title": "关于2026年中秋节、国庆节休市安排的公告",
+        "published_at": "2026-09-17",
+        "url": "https://www.sse.com.cn/disclosure/announcement/general/c/c_20260915_10832273.shtml",
+        "notice_id": "上证公告〔2026〕22号"
+      },
+      {
+        "exchange": "SZSE",
+        "title": "关于2026年中秋节、国庆节休市安排的通知",
+        "published_at": "2026-09-17",
+        "url": "https://investor.szse.cn/disclosure/notice/general/t20260917_622911.html"
+      }
+    ],
+    "facts": {
+      "national_day_holiday_from": "2026-10-01",
+      "national_day_holiday_through": "2026-10-07",
+      "scheduled_reopening": "2026-10-08",
+      "saturday_2026_10_10_is_closed": true
+    },
+    "evidence_kind": "Fact extraction from official web search results; not a saved HTML response or source-byte hash",
+    "local_or_production_calendar_cache_modified": false,
+    "authorizes_realtime_execution": false,
+    "limitation": "Local immutable pre-market input preparation only; on-day calendar, source timestamps, price availability and corporate-action coordinates must still be verified."
+  },
+  "saved_calendar_checked_at": "2026-09-19T18:30:00.794276+08:00",
+  "saved_calendar_older_than72h": true,
+  "builtin_and_saved_schedule_agree": true,
+  "no_calendar_refresh": true,
+  "realtime_execution_ready": false
+}

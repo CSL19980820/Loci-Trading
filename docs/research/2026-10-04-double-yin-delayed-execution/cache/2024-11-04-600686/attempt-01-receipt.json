@@ -1,0 +1,42 @@
+{
+  "code": "600686",
+  "requested_date": "2024-11-04",
+  "market": 1,
+  "method": "get_history_minute_time_data",
+  "date_argument": 20241104,
+  "server": {
+    "host": "110.41.147.114",
+    "port": 7709
+  },
+  "attempt": 1,
+  "started_at": "2026-10-04T17:29:57.488123+08:00",
+  "tdxpy_version": "0.2.7",
+  "source_timestamp_present": false,
+  "status": "valid",
+  "quality": {
+    "status": "valid",
+    "reasons": [],
+    "source_timestamp_present": false,
+    "date_evidence": "request_parameter_plus_daily_consistency_checks_not_native_timestamp",
+    "rows": 240,
+    "slot_index": 4,
+    "synthetic_slot_label": "09:35",
+    "slot_price": 14.21,
+    "slot_volume_lots": 13452.0,
+    "slot_volume_shares": 1345200.0,
+    "tail_price_delta_yuan": 0.0,
+    "tail_price_abs_delta_yuan": 0.0,
+    "volume_sum_lots": 816187.0,
+    "volume_sum_shares": 81618700.0,
+    "daily_volume_shares": 81618600.0,
+    "volume_signed_delta_shares": 100.0,
+    "volume_abs_delta_shares": 100.0,
+    "volume_relative_delta": 1.2252109200598884e-06,
+    "volume_tolerance_shares": 81618.6,
+    "tail_exact_numeric_match": true,
+    "volume_exact_numeric_match": false,
+    "match_class": "within_frozen_tolerance"
+  },
+  "raw_sha256": "4154b309fcaa4978f1464ee58322f949ebcd04e6b6338e8423e02db6d54a6253",
+  "completed_at": "2026-10-04T17:29:57.656352+08:00"
+}

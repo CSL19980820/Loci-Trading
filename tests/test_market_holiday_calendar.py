@@ -118,11 +118,7 @@ def test_spot_refresh_and_screen_spot_gates_skip_holidays(monkeypatch):
     assert screen_spot._is_trading_day(store, date(2026, 9, 28)) is True
 
 
-def test_paper_quant_gate_blocks_buys_on_holiday():
-    from src.ops.application.jobs.paper_quant_support import resolve_trading_day_gate
+def test_retired_paper_jobs_cannot_reenter_the_scheduler():
+    from src.ops import JOB_KINDS
 
-    store = FakeStore(db_days("2026-09-24"))
-    holiday = resolve_trading_day_gate("2026-09-25", market=store)
-    assert (holiday["is_trading_day"], holiday["buy_execution_allowed"]) == (False, False)
-    reopen = resolve_trading_day_gate("2026-10-08", market=store)
-    assert (reopen["is_trading_day"], reopen["calendar_source"]) == (True, "exchange_schedule")
+    assert not {"strategy_monitor", "paper_eod", "intel_brief"} & set(JOB_KINDS)

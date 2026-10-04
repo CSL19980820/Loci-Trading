@@ -16,6 +16,7 @@ from src.shared.api_deps import (
     ops_store,
     palace_store,
 )
+from src.shared.evidence_compact import compact_job_result
 from src.shared.screen_capacity import ScreenCapacityBusy, screen_capacity_permit
 from src.strategy.api.schemas import (
     AnalysisRequest,
@@ -97,6 +98,14 @@ def build_strategy_router(
         if scheduler is not None and scheduler.running:
             scheduler.reload()
 
+    def _sync_falcon_watch_pools() -> None:
+        try:
+            from src.ops import sync_falcon_watch_pools
+            with _ops() as store:
+                sync_falcon_watch_pools(store, palace_db)
+        except Exception:  # noqa: BLE001 — 选股开关已保存，观察池由维护任务重试
+            logger.exception("选股开关变更后同步猎隼观察池失败")
+
     @router.post("/api/strategies/screen", tags=["strategy"])
     def run_screen(payload: ScreenRequest, _write: None = write_guard) -> dict[str, Any]:
         try:
@@ -117,6 +126,27 @@ def build_strategy_router(
                 detail="多日选股请使用异步接口 POST /api/screen/run",
             )
         trade_date = win_end or payload.date
+        from src.strategy import get as get_strategy
+
+        try:
+            engine = get_strategy(payload.strategy)
+        except StrategyError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if getattr(engine, "requires_realtime_inputs", False):
+            from src.strategy.application.screen_run import execute_realtime_screen
+
+            try:
+                realtime_opts = payload.model_dump()
+                realtime_opts["universe"] = effective_screen_universe(
+                    payload.strategy, payload.universe, ops_db=ops_db,
+                )
+                return execute_realtime_screen(
+                    engine, realtime_opts, palace_db=palace_db, source="api:screen",
+                )
+            except ScreenCapacityBusy as exc:
+                raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
+            except StrategyError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         universe = effective_screen_universe(
             payload.strategy, payload.universe, ops_db=ops_db
         )
@@ -230,6 +260,7 @@ def build_strategy_router(
                 top_n=payload.top_n,
                 source="api:screen",
             )
+        compact_job_result(body)
         return body
 
     # ---- 分析任务（异步）---------------------------------------------
@@ -366,7 +397,7 @@ def build_strategy_router(
         except ImportError as exc:
             raise missing_dependency(exc) from exc
         try:
-            get_strategy(slug)
+            engine = get_strategy(slug)
         except Exception as exc:
             raise HTTPException(status_code=404, detail=f"未知战法：{slug}") from exc
 
@@ -378,6 +409,9 @@ def build_strategy_router(
                 if existing is not None:
                     store.delete_job(existing["id"])
                 store.set_screen_job_opt_out(slug)
+                from src.ops.application.ensure_screen_jobs import ensure_screen_prepare_job
+                ensure_screen_prepare_job(store, engine, None)
+            _sync_falcon_watch_pools()
             _reload_scheduler()
             return {"slug": slug, "bound": False, "next_runs": []}
 
@@ -423,9 +457,26 @@ def build_strategy_router(
         }
         if payload.universe is not None:
             config["universe"] = payload.universe.model_dump(exclude_none=True)
+        if getattr(engine, "requires_realtime_inputs", False):
+            config.update(getattr(engine, "screen_job_config", {}))
+            config["push_wecom"] = False
+            config["use_ai_pick"] = False
+            config["top_n"] = payload.top_n or int(getattr(engine, "screen_default_top_n", 2))
+            schedule.update(getattr(engine, "screen_schedule", {}))
+            cron = compose_trading_cron(
+                schedule["mode"], **{key: value for key, value in schedule.items() if key != "mode"},
+            )
+            config["schedule"] = schedule
 
         with _ops() as store:
             existing = store.get_job_by_name(job_name)
+            allowed_boards = getattr(engine, "screen_allowed_boards", None)
+            if allowed_boards:
+                previous_universe = (existing.get("config") or {}).get("universe") if existing else None
+                config["universe"] = {
+                    **(config.get("universe") or previous_universe or engine.default_universe),
+                    "boards": list(allowed_boards),
+                }
             try:
                 if existing is None:
                     job_id = store.create_job(
@@ -447,7 +498,10 @@ def build_strategy_router(
             except OpsError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
+            from src.ops.application.ensure_screen_jobs import ensure_screen_prepare_job
+            ensure_screen_prepare_job(store, engine, job)
 
+        _sync_falcon_watch_pools()
         _reload_scheduler()
         next_runs: list[str] = []
         if schedule.get("mode") in {"once", "interval"}:
@@ -482,6 +536,10 @@ def build_strategy_router(
                 raise HTTPException(status_code=404, detail=f"战法 {slug} 没有绑定定时任务")
             store.delete_job(job["id"])
             store.set_screen_job_opt_out(slug)
+            from src.strategy import get as get_strategy
+            from src.ops.application.ensure_screen_jobs import ensure_screen_prepare_job
+            ensure_screen_prepare_job(store, get_strategy(slug), None)
+        _sync_falcon_watch_pools()
         _reload_scheduler()
         return {"removed": True}
 

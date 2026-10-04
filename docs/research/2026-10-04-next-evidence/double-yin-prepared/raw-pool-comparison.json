@@ -1,0 +1,108 @@
+{
+  "raw_snapshot_candidate_codes": [
+    "000036",
+    "000068",
+    "002074",
+    "002494",
+    "002799",
+    "600032",
+    "600152",
+    "600189",
+    "600982",
+    "603328"
+  ],
+  "economic_snapshot_candidate_codes": [
+    "000036",
+    "000068",
+    "002074",
+    "002494",
+    "002799",
+    "600032",
+    "600152",
+    "600189",
+    "600982",
+    "603328"
+  ],
+  "raw_only": [],
+  "economic_only": [],
+  "production_raw_candidate_codes": [
+    "000036",
+    "000068",
+    "002074",
+    "002494",
+    "002799",
+    "600032",
+    "600152",
+    "600189",
+    "600982",
+    "603328"
+  ],
+  "snapshot_raw_vs_production_equal": true,
+  "production_public_payload_sha256": "07c2d977c3e12ba7f12c157c14d395772ccf2ac2ad5a7a74519bc3ce0caa32e4",
+  "universe_size_snapshot": 3044,
+  "universe_size_production": 3044,
+  "production_full_universe_membership_not_stored": true,
+  "overlapping_raw_history_comparisons": [
+    {
+      "code": "000036",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "000068",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "002074",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "002494",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "002799",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "600032",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "600152",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "600189",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "600982",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    },
+    {
+      "code": "603328",
+      "compared_field_cells": 325,
+      "mismatch_count": 0,
+      "mismatches": []
+    }
+  ],
+  "all_field_cells_match": true
+}

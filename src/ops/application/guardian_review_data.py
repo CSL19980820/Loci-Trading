@@ -88,8 +88,7 @@ def _recover_closing_quote(market: Any, code: str, day: str, closed_at: datetime
     if datetime.now(TZ) < closed_at:
         raise ValueError(f"{code} {day} 尚未收盘，不能补取收盘日线")
 
-    from src.market.infrastructure.adapters.tdx_adapter import TdxAdapter
-    from src.market.infrastructure.adapters.wudao_adapter import WudaoAdapter, wudao_adapter_enabled
+    from src.market import get_adapter, lane_provider_enabled, LANE_HIST_DAILY
 
     def bar_for_day(frame: Any) -> dict[str, Any] | None:
         if frame is None or frame.empty:
@@ -108,25 +107,17 @@ def _recover_closing_quote(market: Any, code: str, day: str, closed_at: datetime
             return {"date": day, **prices, "volume": row.get("volume"), "amount": row.get("amount")}
         return None
 
-    wudao = None
-    if wudao_adapter_enabled():
-        try:
-            # MCP 的收盘态缓存会拒绝复用盘中半截 K 线；只取本日原始 OHLC。
-            wudao = bar_for_day(WudaoAdapter().fetch_daily_many([code], bars=150).get(code))
-        except Exception:
-            pass
+    if not lane_provider_enabled("tdx", LANE_HIST_DAILY):
+        raise ValueError("通达信日线已停用，不能绕过来源设置补写权威收盘价")
     tdx = None
     try:
-        tdx = bar_for_day(TdxAdapter().fetch_daily_window(code, bars=150))
+        tdx = bar_for_day(get_adapter("tdx").fetch_daily_window(code, bars=150))
     except Exception:
         pass
-    if wudao and tdx and abs(wudao["close"] - tdx["close"]) > 0.011:
-        raise ValueError(f"{code} {day} 悟道与通达信收盘价不一致，拒绝日结")
     if tdx:
         market.upsert_quote_bars([{"code": code, **tdx}], source="tdx")
-    elif wudao:
-        # 悟道 volume 为手，而本地日线约定为股；日结只需价格，避免污染量额。
-        market.upsert_quote_bars([{"code": code, **wudao, "volume": None, "amount": None}], source="wudao")
+    else:
+        raise ValueError(f"{code} {day} 未取得有效通达信收盘日线，保留原记录并等待重试")
 
 
 def closing_account(market: Any, trades: list[dict], day: str, initial: int) -> dict[str, Any]:

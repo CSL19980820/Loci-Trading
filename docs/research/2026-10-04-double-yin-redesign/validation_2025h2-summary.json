@@ -1,0 +1,407 @@
+{
+  "segment": "validation_2025h2",
+  "origin_start": "2025-07-01",
+  "origin_end": "2025-12-31",
+  "last_mature_origin": "2025-12-25",
+  "original_candidate_events": 312,
+  "original_selected_events": 188,
+  "original_active_days": 109,
+  "fixed_budget_slots": 218,
+  "prefix_check": "2024-07-05",
+  "baseline_original_common_subset_reproduced": true,
+  "proxy_evidence": {
+    "mode": "offline_daily_opening_proxy",
+    "canonical_realtime_required": true,
+    "historical_0925_quote_coverage_verified": false,
+    "historical_industry_membership_verified": false,
+    "group_source": "eastmoney_orginfo",
+    "candidate_codes": 969,
+    "candidate_codes_missing_groups": [],
+    "candidate_events": 1622,
+    "candidate_events_missing_groups": 0,
+    "candidate_events_missing_score": 0,
+    "industry_rule": "greedy TopN with all supplied group intersections excluded",
+    "price_convention": "caller_supplied_unadjusted_OHLC",
+    "sector_groups_path": "E:\\my_space\\stock-analyzer\\.local\\multi-strategy-scoring-20261004\\candidate-industry-groups.json",
+    "sector_groups_sha256": "f2219c80c049923ebce64ae3f23b6786e80b948c60de1565363a444cfa234d27",
+    "industry_evidence": {
+      "source": "eastmoney_orginfo",
+      "fetched_at": "2026-10-04T13:03:13.550544+08:00",
+      "classification": "EM2016",
+      "coverage": 1.0,
+      "requested": 1180,
+      "returned": 1180,
+      "rejected": 0,
+      "rejects": {},
+      "candidate_code_count": 1180,
+      "candidate_event_count": 2115,
+      "historical_membership": false,
+      "limitation": "Current EM2016 classifications are not historical industry memberships",
+      "industry_snapshot": {
+        "source": "eastmoney_orginfo",
+        "fetched_at": "2026-10-04T13:03:10+08:00",
+        "classification": "EM2016",
+        "requested": 1180,
+        "returned": 1180,
+        "rejected": 0,
+        "coverage": 1.0,
+        "failed_codes": [],
+        "rejects": {},
+        "consumer_industries": [
+          "休闲服务",
+          "农林牧渔",
+          "商贸零售",
+          "家电",
+          "社会服务",
+          "纺织服装",
+          "美容护理",
+          "轻工制造",
+          "食品饮料"
+        ]
+      }
+    },
+    "economic_factors": {
+      "quoted_factor_observations": 2163320,
+      "no_price_forward_carried_cells": 0,
+      "leading_no_price_neutral_placeholders": 29312
+    },
+    "entry_assumption": "stored daily opening proxy, not verified 09:25 obtainable execution",
+    "exit_assumption": "caller-frozen research exit; original live selector has no exit rule"
+  },
+  "runs": {
+    "baseline": {
+      "label": "原评分开盘买，4日/-6%",
+      "metrics": {
+        "base": {
+          "trades": 188,
+          "avg_net_return": 1.5610925156186857,
+          "win_rate": 46.276595744680854,
+          "profit_factor": 1.6159343874736594,
+          "payoff_ratio": 1.8759698061475818,
+          "avg_win": 8.850269789739153,
+          "avg_loss": -4.717703750207857,
+          "worst_net": -12.575591397849475
+        },
+        "double_cost": {
+          "trades": 188,
+          "avg_net_return": 1.3510925156186853,
+          "win_rate": 45.744680851063826,
+          "profit_factor": 1.5103306757098913,
+          "payoff_ratio": 1.791322429330336,
+          "avg_win": 8.741075172845193,
+          "avg_loss": -4.8796771757683715,
+          "worst_net": -12.785591397849476
+        },
+        "largest_winner_removed": {
+          "trades": 187,
+          "avg_net_return": 1.348243134054911,
+          "win_rate": 45.98930481283423,
+          "profit_factor": 1.5291243942945345,
+          "payoff_ratio": 1.7958321374854418,
+          "avg_win": 8.47220400975886,
+          "avg_loss": -4.717703750207857,
+          "worst_net": -12.575591397849475
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 187,
+          "avg_net_return": 1.1382431340549108,
+          "win_rate": 45.45454545454545,
+          "profit_factor": 1.4276469536680114,
+          "payoff_ratio": 1.7131763444016137,
+          "avg_win": 8.359747505842849,
+          "avg_loss": -4.8796771757683715,
+          "worst_net": -12.785591397849476
+        }
+      },
+      "accounting": {
+        "closed": 188
+      },
+      "eligible_shape_events": 312,
+      "selected_orders": 188,
+      "closed": 188,
+      "unresolved_positions": 0,
+      "fixed_budget_slots": 218,
+      "unused_or_unfilled_slots": 30,
+      "original_selected_events": 188,
+      "fill_retention_pct_of_original": 100.0,
+      "opportunity_mean": 1.3462632703500592,
+      "monthly_blocks": {
+        "months": 6,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.0,
+          0.0
+        ],
+        "point_delta_per_opportunity": 0.0
+      },
+      "per_month": {
+        "2025-07": {
+          "net_sum": -11.134016094655314,
+          "slots": 46,
+          "closed": 38,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.24204382814468073
+        },
+        "2025-08": {
+          "net_sum": 72.80886421849145,
+          "slots": 36,
+          "closed": 34,
+          "unresolved_positions": 0,
+          "opportunity_mean": 2.022468450513651
+        },
+        "2025-09": {
+          "net_sum": 86.58745001477399,
+          "slots": 36,
+          "closed": 31,
+          "unresolved_positions": 0,
+          "opportunity_mean": 2.405206944854833
+        },
+        "2025-10": {
+          "net_sum": 72.44943722896834,
+          "slots": 32,
+          "closed": 26,
+          "unresolved_positions": 0,
+          "opportunity_mean": 2.2640449134052605
+        },
+        "2025-11": {
+          "net_sum": 56.48814512261463,
+          "slots": 36,
+          "closed": 31,
+          "unresolved_positions": 0,
+          "opportunity_mean": 1.5691151422948508
+        },
+        "2025-12": {
+          "net_sum": 16.285512446119803,
+          "slots": 32,
+          "closed": 28,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.5089222639412438
+        }
+      }
+    },
+    "quality_gate": {
+      "label": "支撑与承接质量硬门",
+      "metrics": {
+        "base": {
+          "trades": 45,
+          "avg_net_return": -0.12945384917973124,
+          "win_rate": 37.77777777777778,
+          "profit_factor": 0.9427086450699632,
+          "payoff_ratio": 1.5526965918799396,
+          "avg_win": 5.6385437834541605,
+          "avg_loss": -3.6314524118503084,
+          "worst_net": -6.210000000000016
+        },
+        "double_cost": {
+          "trades": 45,
+          "avg_net_return": -0.3394538491797312,
+          "win_rate": 37.77777777777778,
+          "profit_factor": 0.8579831869435866,
+          "payoff_ratio": 1.413148778495319,
+          "avg_win": 5.4285437834541606,
+          "avg_loss": -3.8414524118503084,
+          "worst_net": -6.420000000000016
+        },
+        "largest_winner_removed": {
+          "trades": 44,
+          "avg_net_return": -0.48856782843889374,
+          "win_rate": 36.36363636363637,
+          "profit_factor": 0.7885833662078737,
+          "payoff_ratio": 1.380020890863779,
+          "avg_win": 5.0114801925310815,
+          "avg_loss": -3.6314524118503084,
+          "worst_net": -6.210000000000016
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 44,
+          "avg_net_return": -0.6985678284388939,
+          "win_rate": 36.36363636363637,
+          "profit_factor": 0.7142358340029682,
+          "payoff_ratio": 1.2499127095051943,
+          "avg_win": 4.801480192531082,
+          "avg_loss": -3.8414524118503084,
+          "worst_net": -6.420000000000016
+        }
+      },
+      "accounting": {
+        "closed": 45
+      },
+      "eligible_shape_events": 47,
+      "selected_orders": 45,
+      "closed": 45,
+      "unresolved_positions": 0,
+      "fixed_budget_slots": 218,
+      "unused_or_unfilled_slots": 173,
+      "original_selected_events": 188,
+      "fill_retention_pct_of_original": 23.93617021276596,
+      "opportunity_mean": -0.026722124830678498,
+      "monthly_blocks": {
+        "months": 6,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -2.293185742941644,
+          -0.35777371692653626
+        ],
+        "point_delta_per_opportunity": -1.3729853951807376
+      },
+      "per_month": {
+        "2025-07": {
+          "net_sum": 17.56377752529117,
+          "slots": 46,
+          "closed": 9,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.38182125054980803
+        },
+        "2025-08": {
+          "net_sum": 14.62943689103621,
+          "slots": 36,
+          "closed": 13,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.4063732469732281
+        },
+        "2025-09": {
+          "net_sum": -7.838873838288035,
+          "slots": 36,
+          "closed": 7,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.21774649550800096
+        },
+        "2025-10": {
+          "net_sum": -7.47661539503645,
+          "slots": 32,
+          "closed": 5,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.23364423109488905
+        },
+        "2025-11": {
+          "net_sum": -18.91979166666667,
+          "slots": 36,
+          "closed": 5,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.5255497685185185
+        },
+        "2025-12": {
+          "net_sum": -3.783356729424131,
+          "slots": 32,
+          "closed": 6,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.11822989779450409
+        }
+      }
+    },
+    "quality_stop": {
+      "label": "质量硬门后挂收复阴线收盘买stop",
+      "metrics": {
+        "base": {
+          "trades": 38,
+          "avg_net_return": -1.0001760951783267,
+          "win_rate": 36.8421052631579,
+          "profit_factor": 0.6179271521938211,
+          "payoff_ratio": 1.059303689475122,
+          "avg_win": 4.390592536384819,
+          "avg_loss": -4.144791130256828,
+          "worst_net": -6.688102189781021
+        },
+        "double_cost": {
+          "trades": 38,
+          "avg_net_return": -1.2101760951783265,
+          "win_rate": 36.8421052631579,
+          "profit_factor": 0.5599990692123017,
+          "payoff_ratio": 0.9599984043639458,
+          "avg_win": 4.180592536384819,
+          "avg_loss": -4.354791130256828,
+          "worst_net": -6.898102189781021
+        },
+        "largest_winner_removed": {
+          "trades": 37,
+          "avg_net_return": -1.248415937897193,
+          "win_rate": 35.13513513513514,
+          "profit_factor": 0.5356481962283471,
+          "payoff_ratio": 0.9888889776523333,
+          "avg_win": 4.098738263382134,
+          "avg_loss": -4.144791130256828,
+          "worst_net": -6.688102189781021
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 37,
+          "avg_net_return": -1.4584159378971926,
+          "win_rate": 35.13513513513514,
+          "profit_factor": 0.48369711190743037,
+          "payoff_ratio": 0.8929792835214099,
+          "avg_win": 3.888738263382133,
+          "avg_loss": -4.354791130256828,
+          "worst_net": -6.898102189781021
+        }
+      },
+      "accounting": {
+        "closed": 38,
+        "not_triggered": 7
+      },
+      "eligible_shape_events": 47,
+      "selected_orders": 45,
+      "closed": 38,
+      "unresolved_positions": 0,
+      "fixed_budget_slots": 218,
+      "unused_or_unfilled_slots": 180,
+      "original_selected_events": 188,
+      "fill_retention_pct_of_original": 20.21276595744681,
+      "opportunity_mean": -0.17434262209530463,
+      "monthly_blocks": {
+        "months": 6,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -2.4326196772056337,
+          -0.549304630643534
+        ],
+        "point_delta_per_opportunity": -1.5206058924453636
+      },
+      "per_month": {
+        "2025-07": {
+          "net_sum": 7.620156001487233,
+          "slots": 46,
+          "closed": 9,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.16565556524972247
+        },
+        "2025-08": {
+          "net_sum": -14.132174891341819,
+          "slots": 36,
+          "closed": 12,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.39256041364838384
+        },
+        "2025-09": {
+          "net_sum": -7.237680768650639,
+          "slots": 36,
+          "closed": 6,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.20104668801807332
+        },
+        "2025-10": {
+          "net_sum": -11.441576713159488,
+          "slots": 32,
+          "closed": 4,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.357549272286234
+        },
+        "2025-11": {
+          "net_sum": -7.3220618556700945,
+          "slots": 36,
+          "closed": 2,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.20339060710194706
+        },
+        "2025-12": {
+          "net_sum": -5.493353389441607,
+          "slots": 32,
+          "closed": 5,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.17166729342005022
+        }
+      }
+    }
+  }
+}

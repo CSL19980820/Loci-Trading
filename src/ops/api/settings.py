@@ -8,7 +8,7 @@ from src.ops.api.data_sources import (
 )
 from src.ops.api.market_sync import build_market_sync_settings_router
 from src.ops.api.notifications import build_notification_settings_router
-from src.ops.api.paper_quant import build_paper_quant_router
+from src.ops.api.alerts import build_alerts_router
 from src.ops.api.guardian import build_guardian_router
 from src.ops.api.stock_agents import build_stock_agents_router
 from src.ops.api.share_pack import build_share_pack_router
@@ -57,7 +57,7 @@ def build_ops_settings_router(
         )
     )
     router.include_router(
-        build_paper_quant_router(
+        build_alerts_router(
             write_dependency=write_dependency,
             ops_db=ops_db,
             scheduler_getter=scheduler_getter,

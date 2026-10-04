@@ -1,0 +1,51 @@
+{
+  "code": "301392",
+  "requested_date": "2025-04-14",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-04-14-301392.attempt1.raw.json",
+  "raw_sha256": "37f3fbb3dbd2e3b457f83d492386f7e8aef8cd976bb4bc09df8446112b6dec84",
+  "attempts": [
+    {
+      "code": "301392",
+      "requested_date": "2025-04-14",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:42:28.212340+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 24533.0,
+        "sampled_share_sum": 2453300.0,
+        "daily_volume": 2453200.0,
+        "volume_signed_diff": 100.0,
+        "volume_abs_diff": 100.0,
+        "volume_relative_diff": 4.076308495026904e-05,
+        "volume_tolerance": 2453.2000000000003,
+        "final_price_signed_diff": 0.0,
+        "final_price_abs_diff": 0.0,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 43,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 99.78,
+        "raw_positive_max": 114.29,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-04-14-301392.attempt1.raw.json",
+      "raw_sha256": "37f3fbb3dbd2e3b457f83d492386f7e8aef8cd976bb4bc09df8446112b6dec84",
+      "completed_at": "2026-10-04T17:42:28.338270+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:42:28.339322+08:00"
+}

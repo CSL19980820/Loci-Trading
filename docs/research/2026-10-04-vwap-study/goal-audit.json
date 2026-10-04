@@ -1,0 +1,34 @@
+{
+  "updated_at": "2026-10-04T08:50:50.657611+00:00",
+  "objective": "Both strategies require verified enhancement",
+  "goal_achieved": false,
+  "double_yin_status": "Promising low-frequency B; positive three-segment per-trade results and favorable pooled posthoc fixed-capital comparison; original every-segment calendar criterion still failed",
+  "contraction_status": "Both VWAP policies failed later returns; learned ranking also failed; no replacement",
+  "live_strategy_modified_by_this_research": false,
+  "production_mutation": false,
+  "new_automations_or_collection_jobs": false,
+  "official_evidence_correction_unknown_remaining": 0,
+  "capital_diagnostic_cases": 18,
+  "original_criteria_changed": false,
+  "all_prior_frozen_evidence_preserved": true,
+  "plans": [
+    {
+      "file": "docs\\research\\2026-10-04-double-yin-vwap\\PLAN.json",
+      "sha256": "a22f4980c5772e1d789eb83182d7b39d8141d5ef802edcef0cbeba290c884dd0",
+      "verified": true
+    },
+    {
+      "file": "docs\\research\\2026-10-04-double-yin-vwap\\data-correction\\PLAN.json",
+      "sha256": "ecae0e328c792f53b746117689aa32222fe0e6aa494d506107eb118db3d4b37a",
+      "verified": true
+    },
+    {
+      "file": "docs\\research\\2026-10-04-contraction-vwap\\PLAN.json",
+      "sha256": "ffb98b10f0a1a7f3f2d5fee6c898d7254615955e950e8cb27bf52b3cd38132a8",
+      "verified": true
+    }
+  ],
+  "local_report_links_verified": 14,
+  "temporary_files_remaining": [],
+  "goal_status_should_not_be_marked_complete": true
+}

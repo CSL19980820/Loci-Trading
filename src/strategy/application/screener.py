@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
+from functools import wraps
 from typing import Any
 
 import pandas as pd
@@ -25,7 +26,12 @@ from src.market import (
     resolve_universe,
 )
 from src.strategy.application.catalog import get
-from src.strategy.application.price_constraints import attach_raw_limit_close
+from src.strategy.application.compute_runtime import (
+    computation_scope, compute_result, execution_profile, range_compute_end,
+)
+from src.strategy.application.price_constraints import (
+    attach_raw_limit_close,
+)
 from src.strategy.domain.base import (
     SignalResult,
     StrategyEngine,
@@ -36,6 +42,14 @@ from src.strategy.domain.base import (
 
 
 ProgressCallback = Callable[[str, float, str], None]
+
+
+def _with_computation_scope(method):
+    @wraps(method)
+    def scoped(store, *args, **kwargs):
+        with computation_scope(store):
+            return method(store, *args, **kwargs)
+    return scoped
 
 
 @dataclass
@@ -119,6 +133,7 @@ def _seal_snapshot(store: MarketStore, snapshot: dict[str, Any]) -> dict[str, An
     }
 
 
+@_with_computation_scope
 def screen(
     store: MarketStore,
     strategy: str | StrategyEngine,
@@ -156,6 +171,8 @@ def screen(
             on_progress(phase, percent, message)
 
     engine = get(strategy) if isinstance(strategy, str) else strategy
+    if getattr(engine, "requires_realtime_inputs", False):
+        raise StrategyError("该战法须使用盘后样本与09:25实时报价入口，不能以系统行情面板代替现场筛选")
     resolved_params = merge_params(engine, params)
     effective_universe = (
         universe
@@ -165,13 +182,15 @@ def screen(
     effective_adjust = str(adjust or getattr(engine, "adjust", "qfq") or "qfq")
     started = time.monotonic()
 
-    # 静态前视闸门：entry_timing=open 裸用盘中字段等 block 级问题 fail-closed
-    from src.strategy.application.audit import LookAheadError, guard_strategy
+    from src.strategy.application.audit import LookAheadError, guard_runtime_strategy
+    from src.strategy.application.audit_policy import runtime_audit_mode
 
     try:
-        guard_strategy(engine)
+        guard_runtime_strategy(engine, params=resolved_params)
     except LookAheadError as exc:
         raise StrategyError(str(exc)) from exc
+    runtime_validation = runtime_audit_mode(engine, resolved_params)
+    dynamic_validation = runtime_validation == "dynamic"
 
     from src.market import should_overlay_live
 
@@ -210,13 +229,31 @@ def screen(
     )
     if live_overlay:
         end = today
+    profile = execution_profile(engine, resolved_params)
+    if not profile.pure:
+        # Bound the ordinary reader before it builds a large SQL/pivot heap.
+        # Proven column-independent formulas use the bounded batch path instead.
+        import os
+        try:
+            input_budget = int(os.environ.get("LOCI_SCREEN_INPUT_BYTES", "268435456"))
+        except ValueError:
+            input_budget = 268435456
+        estimate = len(store.trading_days(start=start, end=end)) * len(resolved.codes) * max(1, len(engine.required_fields())) * 8
+        if estimate > max(1, input_budget):
+            raise StrategyError("策略输入超出选股内存预算，请缩小股票范围或历史窗口")
     # 必须带 codes + 窗口：无范围 data_snapshot 会扫全库 source_evidence，
     # 在千万行 market.db 上易触发 disk I/O error，拖死尾盘选股。
     if data_snapshot is not None:
         snapshot = dict(data_snapshot)
     else:
         snapshot = dict(
-            store.data_snapshot(codes=list(resolved.codes), start=start, end=end)
+            store.data_snapshot(
+                codes=list(resolved.codes), start=start, end=end,
+                include_source_details=False,
+                **({"source_evidence_mode": "compact"} if isinstance(store, MarketStore) else {}),
+                **({"source_summary_only": True}
+                   if getattr(engine, "source_evidence_summary", False) else {}),
+            )
         )
     result_snapshot = {
         **snapshot,
@@ -226,6 +263,7 @@ def screen(
         "start": start,
         "end": end,
         "live_overlay": bool(live_overlay),
+        "strategy_validation": runtime_validation,
     }
     _progress(
         "universe",
@@ -254,14 +292,31 @@ def screen(
     pre_candidate_method = getattr(engine, "live_candidate_codes", None) if live_overlay else None
     live_prefilter = callable(pre_candidate_method)
     load_min_bars = max(1, engine.min_bars() - 1) if live_prefilter else engine.min_bars()
-    panels = store.load_panel(
-        fields=engine.required_fields(),
-        codes=resolved.codes,
-        start=start,
-        end=end,
-        adjust=effective_adjust,
-        min_bars=load_min_bars,
-    )
+    independent = (profile.pure and profile.causal and profile.column_mode == "independent"
+                   and profile.origin in {"finite", "sensitive"}
+                   and not profile.metadata_fields and not live_overlay
+                   and not getattr(engine, "requires_raw_limit_price", False)
+                   and not getattr(engine, "requires_instrument_names", False))
+    prepared = None
+    if independent:
+        from src.strategy.application.screen_independent_prepare import independent_inputs
+        _progress("compute", 52, "按股票批次计算区间…")
+        prepared = independent_inputs(store, engine, resolved_params, day=trade_date or end,
+                                      start=start, end=end, resolved=resolved, bars=bars,
+                                      adjust=effective_adjust, min_bars=load_min_bars,
+                                      codes=codes, universe=effective_universe,
+                                      skip_safety=skip_universe_safety,
+                                      on_progress=lambda message: _progress("compute", 52, message))
+        panels = prepared.raw_panels
+    else:
+        panels = store.load_panel(
+            fields=engine.required_fields(), codes=resolved.codes, start=start,
+            end=end, adjust=effective_adjust, min_bars=load_min_bars,
+            **({"raw_price_fields": ("open", "high", "low", "close")
+                                   if getattr(engine, "requires_raw_limit_ohlc", False) else ("close",)}
+               if isinstance(store, MarketStore) and getattr(engine, "requires_raw_limit_price", False)
+               else {}),
+        )
     attach_raw_limit_close(
         store,
         panels,
@@ -271,6 +326,7 @@ def screen(
         start=start,
         end=end,
         min_bars=load_min_bars,
+        include_ohlc=bool(getattr(engine, "requires_raw_limit_ohlc", False)),
     )
     if getattr(engine, "requires_instrument_names", False):
         panels["__instrument_names__"] = {
@@ -284,7 +340,8 @@ def screen(
             live_codes = pre_candidate_method(panels, today, resolved_params)
             result_snapshot["pre_candidate_count"] = len(live_codes)
             # 未请求股票也必须抹去旧今日K，否则会被完整compute误当实时数据。
-            for field in ("open", "high", "low", "close", "volume", "__raw_close"):
+            for field in ("open", "high", "low", "close", "volume",
+                          "__raw_open", "__raw_high", "__raw_low", "__raw_close"):
                 panel = panels.get(field)
                 if isinstance(panel, pd.DataFrame):
                     panels[field] = panel.reindex(panel.index.union([today])).copy()
@@ -355,15 +412,64 @@ def screen(
             data_snapshot=_seal_snapshot(store, result_snapshot),
         )
 
-    # 动态截断一致性：小宇宙全列，大宇宙分片全覆盖（见 audit_sampling）
-    _progress("audit", 58, "检查前视偏差（全股票范围）…")
+    # One range calculation can serve later targets only when their actual inputs
+    # match: original origin, axes, metadata and per-day adjustment are all keyed.
+    future_end = range_compute_end(engine, panels, resolved_params) if dynamic_validation and prepared is None and profile.pure and profile.causal and not live_overlay else None
+    if future_end and future_end > end:
+        _progress("compute", 57, "计算区间共享信号…")
+        future = store.load_panel(fields=engine.required_fields(), codes=resolved.codes,
+                                  start=start, end=future_end, adjust=effective_adjust,
+                                  min_bars=load_min_bars)
+        # Newly eligible columns must not alter a cross-sectional target universe.
+        for name, frame in future.items():
+            if isinstance(frame, pd.DataFrame) and not frame.columns.equals(reference.columns):
+                future[name] = frame.reindex(columns=reference.columns)
+        frame = None  # Release the loop's last full-history panel before computing.
+        attach_raw_limit_close(store, future,
+                               enabled=bool(getattr(engine, "requires_raw_limit_price", False)),
+                               adjust=effective_adjust, codes=resolved.codes, start=start,
+                               end=future_end, min_bars=load_min_bars,
+                               include_ohlc=bool(getattr(engine, "requires_raw_limit_ohlc", False)))
+        for name in profile.metadata_fields:
+            if name not in future and name in panels:
+                future[name] = panels[name]
+        future_reference = _reference_panel(future, engine.required_fields())
+        if future_reference is not None:
+            first_probe = reference.index[max(0, len(reference.index) - 3)]
+            wanted = list(future_reference.index[future_reference.index >= first_probe])
+            compute_result(engine, future, resolved_params, dates=wanted)
+        del future, future_reference
+
+    _progress("compute", 58, f"计算信号 · {engine.name}…")
+    from src.strategy.application.screen_python import PythonScreenEngine
+    worker_audited = prepared is None and not profile.pure
+    if worker_audited:
+        if isinstance(engine, PythonScreenEngine):
+            result: SignalResult = engine.compute_audited(panels, resolved_params)
+        else:
+            from src.strategy.application.compute_worker import compute_in_worker
+
+            result = compute_in_worker(engine, panels, resolved_params, audit=True)
+    else:
+        if prepared is not None:
+            result = prepared.result
+        elif dynamic_validation:
+            result = compute_result(engine, panels, resolved_params)
+        else:
+            # Reviewed builtins need only the requested signal day. Their daily
+            # origin/qfq anchor varies, so speculative cache hashes have no reuse.
+            signal_day = trade_date if trade_date in reference.index else str(reference.index[-1])
+            result = compute_result(engine, panels, resolved_params, dates=[signal_day], reuse=False)
+    # Independent formulas may be audited in column shards; coupled rankings
+    # retain the complete target universe. Both compare every factor and channel.
     try:
-        guard_strategy(engine, panels, params=resolved_params)
+        if prepared is None and not worker_audited:
+            if dynamic_validation:
+                _progress("audit", 58, "检查前视偏差（全股票范围）…")
+            guard_runtime_strategy(engine, panels, params=resolved_params, baseline=result)
     except LookAheadError as exc:
         raise StrategyError(str(exc)) from exc
 
-    _progress("compute", 62, f"计算信号 · {engine.name}…")
-    result: SignalResult = engine.compute(panels, resolved_params)
     target_date = trade_date or str(result.signals.index[-1])
     if target_date not in result.signals.index:
         target_date = str(result.signals.index[-1])
@@ -382,31 +488,24 @@ def screen(
         f"解释因子 · 正式 {len(pick_codes)} 只 · 观察 {len(watch_codes)} 只…",
     )
     close_panel = panels.get("close")
+    previous_close = _previous_close_row(close_panel, target_date)
+
+    def explain_pick(code: str) -> dict[str, Any]:
+        close = _cell(close_panel, target_date, code)
+        return {
+            "code": code,
+            "close": close,
+            "open": _cell(panels.get("open"), target_date, code),
+            "pct_chg": _pct_chg(close, previous_close, code),
+            "factors": result.explain(target_date, code),
+        }
+
     picks = enrich_picks(
-        [
-            {
-                "code": code,
-                "close": _cell(close_panel, target_date, code),
-                "open": _cell(panels.get("open"), target_date, code),
-                "pct_chg": _pct_chg(close_panel, target_date, code),
-                "factors": result.explain(target_date, code),
-            }
-            for code in pick_codes
-        ],
+        [explain_pick(code) for code in pick_codes],
         resolved.meta,
     )
     watch_picks = enrich_picks(
-        [
-            {
-                "code": code,
-                "close": _cell(close_panel, target_date, code),
-                "open": _cell(panels.get("open"), target_date, code),
-                "pct_chg": _pct_chg(close_panel, target_date, code),
-                "factors": result.explain(target_date, code),
-                "intent": "observe",
-            }
-            for code in watch_codes
-        ],
+        [{**explain_pick(code), "intent": "observe"} for code in watch_codes],
         resolved.meta,
     )
 
@@ -440,19 +539,23 @@ def _cell(panel: pd.DataFrame | None, trade_date: str, code: str) -> float | Non
     return None if pd.isna(value) else round(float(value), 4)
 
 
-def _pct_chg(panel: pd.DataFrame | None, trade_date: str, code: str) -> float | None:
-    """相对前一交易日收盘的涨跌幅（%）。缺前收则返回 None。"""
-    close = _cell(panel, trade_date, code)
-    if panel is None or close is None or trade_date not in panel.index:
+def _previous_close_row(panel: pd.DataFrame | None, trade_date: str) -> pd.Series | None:
+    """正式和观察解释共用一次前收行；多数据块面板不按股票重复组装整行。"""
+    if panel is None or trade_date not in panel.index:
         return None
     try:
         loc = panel.index.get_loc(trade_date)
         idx = int(loc)
     except (KeyError, TypeError, ValueError):
         return None
-    if idx <= 0 or code not in panel.columns:
+    return panel.iloc[idx - 1] if idx > 0 else None
+
+
+def _pct_chg(close: float | None, previous_close: pd.Series | None, code: str) -> float | None:
+    """沿用四位当前价与未舍入前收计算涨跌幅（%）；缺前收返回 None。"""
+    if close is None or previous_close is None or code not in previous_close.index:
         return None
-    prev = panel.iloc[idx - 1][code]
+    prev = previous_close[code]
     if pd.isna(prev):
         return None
     prev_f = float(prev)

@@ -71,6 +71,9 @@ export function formatBacktestValue(key: string, value: unknown): string {
 const BACKTEST_LABELS: Record<string, string> = {
   start: '起始', end: '结束', hold_days: '持有', stop_loss_pct: '止损',
   take_profit_pct: '止盈', benchmark: '基准', entry_timing: '入场', mode: '模式', universe: '股票池',
+  commission_bps: '单边佣金(bps)', stamp_duty_bps: '卖出印花税(bps)', slippage_bps: '单边滑点(bps)',
+  strict_limit_prices: '按涨跌停约束成交', economic_returns: '包含除权分红经济收益',
+  valuation_end: '行情截止', hold_days_convention: '持有期口径', review_note: '复盘说明',
 }
 
 /** 回测口径拆成「标签 · 值」对，给详情页排成小格子 */

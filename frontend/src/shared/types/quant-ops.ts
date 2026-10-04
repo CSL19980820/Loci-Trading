@@ -26,6 +26,7 @@ export type JobKind =
   | 'exchange_calendar'
   | 'sync'
   | 'screen'
+  | 'screen_prepare'
   | 'backtest'
   | 'compare'
   | 'optimize'
@@ -36,11 +37,8 @@ export type JobKind =
   | 'hot_rebuild'
   | 'data_quality'
   | 'intel_fetch'
-  | 'intel_brief'
   | 'skill_watch'
   | 'alert_scan'
-  | 'strategy_monitor'
-  | 'paper_eod'
 export type RunStatus = 'running' | 'success' | 'failed' | 'skipped'
 
 export interface Job {

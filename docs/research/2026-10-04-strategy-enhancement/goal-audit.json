@@ -1,0 +1,105 @@
+{
+  "created_at": "2026-10-04T07:19:52.416691+00:00",
+  "goal": "你再优化优化审查审查 这两个一定要增强",
+  "goal_achieved": false,
+  "goal_status": "active_not_achieved",
+  "reason": "No tested candidate establishes the intended positive-net-return enhancement in the frozen later and stress checks. Completed research and correctness repairs do not substitute for the return objective.",
+  "completed_work": {
+    "new_frozen_strategy_combinations": 20,
+    "contraction_structure": 6,
+    "contraction_risk_budget": 6,
+    "double_yin_repair": 4,
+    "double_yin_full_shape_and_environment": 4,
+    "same_rule_numerical_correction_counted_as_new_strategy": false
+  },
+  "requirements": [
+    {
+      "requirement": "增强倍量阴的扣费后收益能力",
+      "status": "not_achieved",
+      "evidence": "Corrected one-day repair later52 trades: fixed -.760148%, structural -.474352%; all environment arms negative in training."
+    },
+    {
+      "requirement": "增强缩量二次突破的扣费后收益能力",
+      "status": "not_achieved",
+      "evidence": "Sole nominated base8 candidate later95 trades mean -.484885%, PF .827862, combined cost/winner stress -.989988%."
+    },
+    {
+      "requirement": "完整机制、因果执行、费用与机会预算、独立审查",
+      "status": "completed_with_documented_daily_proxy_and_PIT_limits"
+    },
+    {
+      "requirement": "复权数值误分类审查与同规则纠错",
+      "status": "completed_research_only",
+      "evidence": "Full replay retained250 repair fills and496 selected orders; removed one false low-open control fill; old frozen sources and CSV preserved."
+    }
+  ],
+  "root_independent_csv_checks": {
+    "double_yin_regime_records": 1822,
+    "contraction_later_control_and_candidate_records": 365,
+    "double_yin_precision_records": 2132,
+    "checks": [
+      "economic_return_identity",
+      "cost_0.21_pct",
+      "T_plus_1",
+      "PF_and_cost_largest_winner_pressure",
+      "corrected_summary_reconciliation",
+      "precision_diff_no_new_repair_orders_or_fills"
+    ],
+    "records_are_not_independent_market_opportunities": true
+  },
+  "plans": [
+    {
+      "path": "docs/research/2026-10-04-contraction-structure/PLAN.json",
+      "sha256": "0c6a2cea50c5287da007f8f5b9208b7c09979945b7f1c9b8ec3d5a7b312731f1",
+      "referenced_sources_verified": 13
+    },
+    {
+      "path": "docs/research/2026-10-04-contraction-risk-budget/PLAN.json",
+      "sha256": "cc8c3b4f701199c5a42a526905801b606c5d5f02f68a664357b5c21f6093e8b7",
+      "referenced_sources_verified": 14
+    },
+    {
+      "path": "docs/research/2026-10-04-double-yin-repair/PLAN.json",
+      "sha256": "beabeee791283d2b8ae0e7b83ac6c54e2a27f741615826ca86525c94bc60b045",
+      "referenced_sources_verified": 10
+    },
+    {
+      "path": "docs/research/2026-10-04-double-yin-regime/PLAN.json",
+      "sha256": "a40f0bb20071e0c810bd2df4a099386bb898244835d14b3d7c442818fe976773",
+      "referenced_sources_verified": 11
+    },
+    {
+      "path": "docs/research/2026-10-04-double-yin-repair-precision/PLAN.json",
+      "sha256": "ef68ec03a7371c39a104e9fd89242803c12f0ca06019048ebcae316acd4588fc",
+      "referenced_sources_verified": 13
+    }
+  ],
+  "snapshots": [
+    {
+      "path": ".local/multi-strategy-scoring-20261004/market.db",
+      "sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+      "unchanged": true
+    },
+    {
+      "path": ".local/chinext-payoff-20261004/market.db",
+      "sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+      "unchanged": true
+    }
+  ],
+  "comparison_csv_sha256": "df60ad00c78e1e5c53cabf746a347770bbabfbcd410ebfc71d8610309a6d93f8",
+  "correction_summary": {
+    "old_repair_trades": 250,
+    "new_repair_trades": 250,
+    "control_false_fill_removed": "002868 / 2024-09-25",
+    "removed_control_net_pct": 22.225897435897444,
+    "numerical_tolerance": 1e-09
+  },
+  "limits": [
+    "Daily opening/trigger proxy, not historical09:25 order-queue proof",
+    "Current security/industry/factor revisions are not strict PIT history",
+    "2024-2026 already observed in multiple studies; not untouched OOS",
+    "No successful candidate warranted new-strategy fixed-total-capital acceptance",
+    "No production change, commit, push or deployment by this research task"
+  ],
+  "next_state": "Keep the return-enhancement goal active; do not promote failed candidates. User optimization-priority question is optional and unanswered at audit time; default remains net profitability."
+}

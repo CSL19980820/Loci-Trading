@@ -3,7 +3,7 @@ import { Spinner } from '@/shared/components/ui/spinner'
 import { Item } from '@/shared/components/ui/item'
 import { computed, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
-import { ChevronDown, Cpu, Flag } from '@lucide/vue'
+import { ChevronDown, Cpu, Flag, ScanEye } from '@lucide/vue'
 import { Alert, AlertDescription, AlertTitle } from '@/shared/components/ui/alert'
 import { Button } from '@/shared/components/ui/button'
 import {
@@ -33,17 +33,24 @@ import { Switch } from '@/shared/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/components/ui/tabs'
 import PhasePromptEditor from '@/shared/components/PhasePromptEditor.vue'
 import { confirmAction } from '@/shared/lib/confirm'
-import type { AgentConfig, AgentOptions } from '@/shared/types/stock_agents'
+import type { AgentConfig, AgentKind, AgentOptions } from '@/shared/types/stock_agents'
 import type { LlmProvider } from '@/shared/types/quant'
 const open = defineModel<boolean>({ default:false })
 const props = defineProps<{ config:AgentConfig; options:AgentOptions; providers:LlmProvider[]; creating?:boolean; busy?:boolean; error?:string }>()
 const emit = defineEmits<{ save:[config:AgentConfig] }>()
-const draft = ref<AgentConfig>(JSON.parse(JSON.stringify(props.config)))
+function copyConfig(config:AgentConfig):AgentConfig {
+  const value = JSON.parse(JSON.stringify(config)) as AgentConfig
+  value.schedule.weekly_review_enabled ??= false
+  value.schedule.weekly_review_time ??= '20:30'
+  return value
+}
+const draft = ref<AgentConfig>(copyConfig(props.config))
 const baseline = ref('')
 const section = ref('identity')
 const invalid = ref('')
 const dirty = computed(() => JSON.stringify(draft.value) !== baseline.value)
 const leader = computed(() => draft.value.kind === 'leader')
+const falcon = computed(() => draft.value.kind === 'falcon')
 const models = computed(() => props.providers.find(p => p.name === draft.value.provider)?.models ?? [])
 const capital = computed({ get:() => draft.value.initial_capital_cents / 100, set:(value:number) => { draft.value.initial_capital_cents = Math.round(value * 100) } })
 /** 供应商一换，旧模型名必然不对，跟着清空（原 el-select 的 @change 行为）。 */
@@ -74,16 +81,16 @@ function toggleStrategy(slug:string, checked:boolean) {
   else next.delete(slug)
   draft.value.strategies = [...next]
 }
-function applyTemplate(kind: 'leader' | 'custom') {
+function applyTemplate(kind:AgentKind) {
   if (!props.options?.templates?.[kind]) return
-  const tmpl = JSON.parse(JSON.stringify(props.options.templates[kind]))
+  const tmpl = copyConfig(props.options.templates[kind])
   draft.value = {
     ...tmpl,
     provider: draft.value.provider || tmpl.provider,
     model: draft.value.model || tmpl.model,
   }
 }
-watch(open, value => { if (value) { draft.value = JSON.parse(JSON.stringify(props.config)); baseline.value = JSON.stringify(draft.value); invalid.value = ''; section.value = 'identity' } }, { immediate:true })
+watch(open, value => { if (value) { draft.value = copyConfig(props.config); baseline.value = JSON.stringify(draft.value); invalid.value = ''; section.value = 'identity' } }, { immediate:true })
 async function canLeave():Promise<boolean> {
   if (!open.value) return true
   if (props.busy) return false
@@ -121,7 +128,22 @@ defineExpose({ isDirty:() => open.value && dirty.value })
         </Alert>
         <div v-if="creating" class="template-selector mb-4">
           <Label class="text-xs text-muted-foreground font-medium mb-2 block">选择初始化模板</Label>
-          <div class="grid grid-cols-2 gap-2.5">
+          <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            <Item v-if="options.templates.falcon" as="button"
+              type="button"
+              class="template-card flex items-start gap-2.5 p-3 rounded-lg border text-left transition-all cursor-pointer"
+              :class="draft.kind === 'falcon' ? 'border-seal bg-seal-soft/40 shadow-xs' : 'border-rule bg-surface hover:border-rule-strong'"
+              @click="applyTemplate('falcon')"
+            >
+              <span class="p-1.5 rounded-md bg-surface text-seal mt-0.5"><ScanEye class="size-4" /></span>
+              <div class="min-w-0">
+                <div class="font-semibold text-xs text-ink flex flex-wrap items-center gap-1.5">
+                  猎隼模板
+                  <span v-if="draft.kind === 'falcon'" class="text-[10px] font-normal px-1 py-0.2 bg-seal text-on-primary rounded">当前</span>
+                </div>
+                <p class="text-[11px] text-muted-foreground mt-0.5 leading-snug">量化与技能候选，自主超短择时，日周复盘与选股判分改进</p>
+              </div>
+            </Item>
             <Item as="button"
               type="button"
               class="template-card flex items-start gap-2.5 p-3 rounded-lg border text-left transition-all cursor-pointer"
@@ -140,14 +162,14 @@ defineExpose({ isDirty:() => open.value && dirty.value })
             <Item as="button"
               type="button"
               class="template-card flex items-start gap-2.5 p-3 rounded-lg border text-left transition-all cursor-pointer"
-              :class="draft.kind !== 'leader' ? 'border-seal bg-seal-soft/40 shadow-xs' : 'border-rule bg-surface hover:border-rule-strong'"
+              :class="draft.kind === 'custom' ? 'border-seal bg-seal-soft/40 shadow-xs' : 'border-rule bg-surface hover:border-rule-strong'"
               @click="applyTemplate('custom')"
             >
               <span class="p-1.5 rounded-md bg-surface text-mist mt-0.5"><Cpu class="size-4" /></span>
               <div class="min-w-0">
                 <div class="font-semibold text-xs text-ink flex items-center gap-1.5">
                   空白智能体
-                  <span v-if="draft.kind !== 'leader'" class="text-[10px] font-normal px-1 py-0.2 bg-seal text-on-primary rounded">当前</span>
+                  <span v-if="draft.kind === 'custom'" class="text-[10px] font-normal px-1 py-0.2 bg-seal text-on-primary rounded">当前</span>
                 </div>
                 <p class="text-[11px] text-muted-foreground mt-0.5 leading-snug">自定义研究方向、仓位与工作日程，自由从零配置</p>
               </div>
@@ -202,7 +224,7 @@ defineExpose({ isDirty:() => open.value && dirty.value })
               </div>
             </div>
             <p v-if="!providers.length" class="help">尚无可用供应商。请先到“设置 → 模型”配置，再启用智能体；当前可保存为暂停状态。</p>
-            <div class="field">
+            <div v-if="!falcon && options.strategies.length" class="field">
               <div class="field-head">
                 <Label for="agent-config-strategies">参考工坊战法</Label>
               </div>
@@ -224,7 +246,8 @@ defineExpose({ isDirty:() => open.value && dirty.value })
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <PhasePromptEditor v-model:common-prompt="draft.common_prompt" v-model:prompt="draft.prompt" v-model:premarket-prompt="draft.premarket_prompt" v-model:review-prompt="draft.review_prompt" :max-length="100000" />
+            <p v-if="falcon" class="help">研究范围固定为系统量化与技能已产出的个股。策略信号是研究证据，进出场由猎隼结合市场环境独立判断，允许等待或空仓。</p>
+            <PhasePromptEditor v-model:common-prompt="draft.common_prompt" v-model:prompt="draft.prompt" v-model:premarket-prompt="draft.premarket_prompt" v-model:review-prompt="draft.review_prompt" v-model:weekly-prompt="draft.weekly_review_prompt" :default-weekly-prompt="options.templates[draft.kind]?.weekly_review_prompt" separate-weekly :max-length="100000" />
             <p class="help">提示词只影响这个智能体。账户隔离、资金校验和数量上限由程序执行，不能被提示词覆盖。</p>
           </section>
           <section v-show="section === 'schedule'">
@@ -315,6 +338,25 @@ defineExpose({ isDirty:() => open.value && dirty.value })
                 </Select>
               </div>
             </div>
+            <div class="field-pair">
+              <div class="field">
+                <div class="field-head"><Label for="agent-config-weekly-enabled">每周经验复盘</Label></div>
+                <div class="switch-row">
+                  <Switch id="agent-config-weekly-enabled" v-model="draft.schedule.weekly_review_enabled" />
+                  <span class="switch-hint">{{ draft.schedule.weekly_review_enabled ? '周五运行' : '已关闭' }}</span>
+                </div>
+              </div>
+              <div class="field">
+                <div class="field-head"><Label for="agent-config-weekly-time">周五复盘时间</Label></div>
+                <Select v-model="draft.schedule.weekly_review_time" :disabled="!draft.schedule.weekly_review_enabled">
+                  <SelectTrigger id="agent-config-weekly-time" class="w-full" aria-label="周五复盘时间"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem v-for="slot in REVIEW_TIMES" :key="slot" :value="slot">{{ slot }}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p class="help">日复盘沉淀当日进出场经验；周复盘汇总整周表现，审视量化选股与判分依据，形成有证据的改进建议。</p>
             <div class="field">
               <div class="field-head"><Label for="agent-config-intraday-enabled">盘中自主模拟交易</Label></div>
               <div class="switch-row">

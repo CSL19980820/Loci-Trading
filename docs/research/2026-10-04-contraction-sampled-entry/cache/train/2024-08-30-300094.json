@@ -1,0 +1,51 @@
+{
+  "code": "300094",
+  "requested_date": "2024-08-30",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2024-08-30-300094.attempt1.raw.json",
+  "raw_sha256": "1c557c938818f6b6e87613d62bc0482ec1b761efb552e073cd9a48dd78fc139c",
+  "attempts": [
+    {
+      "code": "300094",
+      "requested_date": "2024-08-30",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:41:05.739177+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 1793700.0,
+        "sampled_share_sum": 179370000.0,
+        "daily_volume": 179370000.0,
+        "volume_signed_diff": 0.0,
+        "volume_abs_diff": 0.0,
+        "volume_relative_diff": 0.0,
+        "volume_tolerance": 179370.0,
+        "final_price_signed_diff": 0.0,
+        "final_price_abs_diff": 0.0,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 1,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": true,
+        "raw_positive_min": 2.64,
+        "raw_positive_max": 3.0100000000000002,
+        "match_class": "exact"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2024-08-30-300094.attempt1.raw.json",
+      "raw_sha256": "1c557c938818f6b6e87613d62bc0482ec1b761efb552e073cd9a48dd78fc139c",
+      "completed_at": "2026-10-04T17:41:05.863656+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:41:05.864714+08:00"
+}

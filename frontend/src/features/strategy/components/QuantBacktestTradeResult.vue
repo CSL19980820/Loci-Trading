@@ -176,7 +176,8 @@ const tradeColumns: BasicTableColumn[] = [
         :tone="pnlTone(metrics.avg_net_return)"
         layout="row"
       />
-      <StatCard label="盈亏比 PF" :value="fmtRatio(metrics.profit_factor)" layout="row" />
+      <StatCard label="盈亏比" :value="fmtRatio(metrics.payoff_ratio)" layout="row" />
+      <StatCard label="利润因子 PF" :value="fmtRatio(metrics.profit_factor)" layout="row" />
       <StatCard
         label="期望"
         :value="metrics.expectancy == null ? '—' : signed(metrics.expectancy)"

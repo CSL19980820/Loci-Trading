@@ -82,7 +82,7 @@ def _mcp_intel_providers() -> list[dict[str, Any]]:
     seen_wudao = False
     for item in list_mcp_servers_from_json():
         name = str(item.get("name") or "").strip()
-        if not name or name == BUILTIN_MCP_NAME:
+        if not name or name == BUILTIN_MCP_NAME or not is_resident_wudao_server(name):
             continue
         if is_resident_wudao_server(name):
             if seen_wudao:
@@ -96,7 +96,7 @@ def _mcp_intel_providers() -> list[dict[str, Any]]:
         note = str(item.get("note") or "").strip()
         if name in _MCP_PROVIDER_LABELS:
             desc_parts = [
-                "唯一悟道 MCP：情报工具 + 可选日 K（运维页开「日 K 优先」）"
+                "悟道特色情报；日线和现价统一由基础行情接入提供"
             ]
             if note and "本地配置" not in note:
                 desc_parts.insert(0, note)

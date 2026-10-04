@@ -1,0 +1,160 @@
+"""A new causal push/consolidation/first-breakout research family; offline only.
+
+The density phase reads training signals, never forward returns. All shapes,
+execution guards, exits and nomination rules must be frozen before performance.
+"""
+from __future__ import annotations
+
+import argparse
+import copy
+import sys
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT))
+
+from src.backtest.application.execution_contract import strict_price_masks  # noqa: E402
+from src.backtest.application.runner import prepare_backtest_context  # noqa: E402
+from src.strategy.application.catalog import get  # noqa: E402
+from tools.research_chinext_payoff_exits import (  # noqa: E402
+    BASELINE,
+    CutoffMarketStore,
+    common_maturity_mask,
+    context_evidence,
+    sha256,
+    source_hashes,
+)
+from tools.research_chinext_payoff_filters import SPLITS  # noqa: E402
+from tools.research_impulse_scoring import now  # noqa: E402
+from tools.strategy_chinext_review import write_json  # noqa: E402
+
+SLUG="contraction-rebreakout-v1"
+OUTPUT=ROOT/"docs/research/2026-10-04-contraction-structure"
+SHAPES={
+    "compact3":dict(push=5,pause=3,min_push_pct=8.,max_width_pct=8.,max_tr_ratio=.75,max_volume_ratio=.80,lifetime=5),
+    "shelf5":dict(push=10,pause=5,min_push_pct=10.,max_width_pct=10.,max_tr_ratio=.70,max_volume_ratio=.75,lifetime=7),
+    "base8":dict(push=15,pause=8,min_push_pct=12.,max_width_pct=12.,max_tr_ratio=.70,max_volume_ratio=.70,lifetime=10),
+}
+
+
+def sources():
+    paths=["tools/research_contraction_structure.py","tools/research_chinext_payoff_filters.py","tools/research_impulse_scoring.py"]
+    return {**source_hashes(),**{p:sha256(ROOT/p) for p in paths}}
+
+
+def prepare(db:Path,start:str,end:str):
+    store=CutoffMarketStore(db,end)
+    try:
+        engine=copy.copy(get(SLUG))
+        engine.requires_full_history=True
+        ctx=prepare_backtest_context(store,engine,start=start,end=end,config=BASELINE.config(end),source_evidence_mode="compact")
+        computed=engine.compute(ctx["panels"],ctx["resolved_params"])
+        raw=ctx["execution_panels"]
+        econ={k:raw[k]*raw["__adjust_factor"] if k in {"open","high","low","close"} else raw[k] for k in ("open","high","low","close","volume")}
+        names=ctx["panels"].get("__instrument_names__",{})
+        econ["__instrument_names__"]=names
+        if str(econ["close"].index[0])<"2023-01-01":
+            raise AssertionError("Unexpected history before retained snapshot")
+        days=store.trading_days(start=str(econ["close"].index[0]),end=end)
+        if list(econ["close"].index)!=days:
+            raise AssertionError("Compressed market calendar")
+        at_limit,_,known=strict_price_masks(raw["close"].to_numpy(),raw["close"].to_numpy(),raw["__adjust_factor"].to_numpy(),list(raw["close"].columns),raw["volume"].to_numpy())
+        signal_ok=pd.DataFrame(known&~at_limit,index=raw["close"].index,columns=raw["close"].columns)
+        return store,ctx,computed,econ,signal_ok
+    except Exception:
+        store.close()
+        raise
+
+
+def shape_events(panels:dict[str,Any],signal_ok:pd.DataFrame,family:str):
+    """An armed platform is fixed; a first close above it always consumes it.
+
+    Missing/invalid bars, floor violation or expiry also consume it. A fresh
+    pushing interval must start strictly after the previous terminal date.
+    Initial setups may form in 2023 warmup, but no 2023 outcomes are evaluated.
+    """
+    spec=SHAPES[family];push,pause=spec["push"],spec["pause"]
+    o,h,l,c,v=(panels[k] for k in ("open","high","low","close","volume"))
+    dates=list(c.index);codes=list(c.columns)
+    valid=(np.isfinite(o)&np.isfinite(h)&np.isfinite(l)&np.isfinite(c)&np.isfinite(v)&o.gt(0)&l.gt(0)&c.gt(0)&v.gt(0)&h.ge(o)&h.ge(c)&l.le(o)&l.le(c))
+    tr=pd.DataFrame(np.maximum.reduce([(h-l).to_numpy(),(h-c.shift()).abs().to_numpy(),(l-c.shift()).abs().to_numpy()]),index=c.index,columns=c.columns)
+    start_c=c.shift(pause+push);end_c=c.shift(pause)
+    pushing=(end_c/start_c-1)*100
+    upper=h.rolling(pause).max();floor=l.rolling(pause).min()
+    width=(upper/floor-1)*100
+    tr_ratio=tr.rolling(pause).mean()/tr.rolling(push).mean().shift(pause)
+    vol_ratio=v.rolling(pause).mean()/v.rolling(push).mean().shift(pause)
+    avg_vol=v.rolling(pause).mean()
+    strong=((c/c.shift()-1).ge(.05)&c.gt(o)).rolling(push).max().shift(pause).eq(1)
+    retained=floor.ge(start_c+.5*(end_c-start_c))
+    clean=pd.Series({code:str(code).startswith(("300","301")) and bool(str(panels["__instrument_names__"].get(str(code),"")).strip()) and "ST" not in str(panels["__instrument_names__"].get(str(code),"")).upper() and "退" not in str(panels["__instrument_names__"].get(str(code),"")) for code in codes})
+    armed_ok=(valid.rolling(push+pause+1).sum().eq(push+pause+1)&pushing.ge(spec["min_push_pct"])&strong&width.le(spec["max_width_pct"])&tr_ratio.le(spec["max_tr_ratio"])&vol_ratio.le(spec["max_volume_ratio"])&retained&clean&c.notna().cumsum().ge(31)).fillna(False)
+    arrays={k:x.to_numpy() for k,x in {"open":o,"high":h,"low":l,"close":c,"volume":v,"valid":valid,"armed_ok":armed_ok,"upper":upper,"floor":floor,"push_pct":pushing,"tr_ratio":tr_ratio,"vol_ratio":vol_ratio,"avg_volume":avg_vol,"signal_ok":signal_ok}.items()}
+    events=[];setups=[]
+    for col,code in enumerate(codes):
+        state=None;terminal=-1
+        for row,date in enumerate(dates):
+            if state is not None:
+                reason=None
+                if row>state["expiry_row"]:
+                    reason="expired"
+                elif not arrays["valid"][row,col]:
+                    reason="missing_or_invalid_bar"
+                elif arrays["low"][row,col]<state["floor"]*.995:
+                    reason="floor_violated_first"
+                elif arrays["close"][row,col]>state["upper"]:
+                    reason="first_price_breakout_consumed"
+                    clv=(arrays["close"][row,col]-arrays["low"][row,col])/(arrays["high"][row,col]-arrays["low"][row,col]) if arrays["high"][row,col]>arrays["low"][row,col] else 0.
+                    qualify=(arrays["close"][row,col]>=state["upper"]*1.005 and clv>=.65 and arrays["close"][row,col]>arrays["open"][row,col] and arrays["volume"][row,col]>=state["avg_volume"]*1.2 and arrays["signal_ok"][row,col])
+                    if qualify:
+                        clip=lambda value:min(1.,max(0.,value))
+                        score=20*clip(state["push_pct"]/20)+35*clip((1-state["tr_ratio"])/.5)+25*clip((1-state["vol_ratio"])/.5)+20*clv
+                        events.append(dict(family=family,signal_date=str(date),code=str(code),row=row,col=col,setup_id=state["setup_id"],arm_date=state["arm_date"],push_start=state["push_start"],push_end=state["push_end"],upper_economic=state["upper"],floor_economic=state["floor"],stop_economic=state["floor"]*.995,score=round(score,4),push_pct=state["push_pct"],tr_ratio=state["tr_ratio"],volume_ratio=state["vol_ratio"],clv=float(clv),signal_risk_pct=(1-state["floor"]*.995/arrays["close"][row,col])*100))
+                        reason="first_qualified_breakout"
+                if reason:
+                    state["terminal_date"]=str(date);state["terminal_reason"]=reason
+                    setups.append({k:x for k,x in state.items() if k!="expiry_row"})
+                    terminal=row;state=None
+            if state is None and arrays["armed_ok"][row,col] and row-pause-push>terminal:
+                state=dict(setup_id=f"{family}:{code}:{date}",code=str(code),arm_date=str(date),push_start=str(dates[row-pause-push]),push_end=str(dates[row-pause]),upper=float(arrays["upper"][row,col]),floor=float(arrays["floor"][row,col]),push_pct=float(arrays["push_pct"][row,col]),tr_ratio=float(arrays["tr_ratio"][row,col]),vol_ratio=float(arrays["vol_ratio"][row,col]),avg_volume=float(arrays["avg_volume"][row,col]),expiry_row=row+spec["lifetime"])
+        if state is not None:
+            setups.append({k:x for k,x in {**state,"terminal_date":None,"terminal_reason":"still_armed_at_cutoff"}.items() if k!="expiry_row"})
+    return events,setups
+
+
+def density(db:Path,output:Path):
+    output.mkdir(parents=True,exist_ok=True)
+    if (output/"density.json").exists():raise FileExistsError("Preserve density evidence")
+    before=sources();dbhash=sha256(db)
+    write_json(output/"density-plan.json",dict(created_at=now(),shapes=SHAPES,sources=before,snapshot_sha256=dbhash,scope="Training signal density only; 2023 warmup; no forward prices/returns or 2023H2 performance"))
+    start,end=SPLITS["train"];store,ctx,computed,econ,signal_ok=prepare(db,start,end)
+    try:
+        mature=common_maturity_mask(econ["close"].index,start,end,max_hold=10)
+        allowed=set(str(d) for d in mature.index[mature]);result={}
+        for family in SHAPES:
+            events,setups=shape_events(econ,signal_ok,family)
+            rows=[r for r in events if r["signal_date"] in allowed]
+            active=[r for r in setups if r["arm_date"]>=start]
+            pd.DataFrame(rows).to_csv(output/f"density-{family}-events.csv",index=False)
+            pd.DataFrame(active).to_csv(output/f"density-{family}-setups.csv",index=False)
+            risk=[r["signal_risk_pct"] for r in rows]
+            result[family]=dict(events=len(rows),signal_days=len({r["signal_date"] for r in rows}),codes=len({r["code"] for r in rows}),months=len({r["signal_date"][:7] for r in rows}),setups=len(active),signal_risk_le8=sum(x<=8 for x in risk),signal_risk_percentiles=np.quantile(risk,[.1,.5,.9]).tolist() if risk else [],terminal_counts=pd.Series([r["terminal_reason"] for r in active]).value_counts().to_dict())
+            print(f"Density {family}: {result[family]}",flush=True)
+        if sources()!=before or sha256(db)!=dbhash:raise AssertionError("Density inputs changed")
+        write_json(output/"density.json",dict(completed_at=now(),context=context_evidence(ctx),shapes=result,forward_returns_read=False))
+    finally:store.close()
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("phase",choices=["density"])
+    parser.add_argument("--db",type=Path,required=True)
+    parser.add_argument("--output",type=Path,default=OUTPUT)
+    args=parser.parse_args();density(args.db.resolve(strict=True),args.output.resolve())
+
+
+if __name__=="__main__":main()

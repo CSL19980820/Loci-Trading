@@ -128,7 +128,7 @@ def build_convert_prompt(source: str, source_type: str, slug: str, name: str,
 2. 代码第一行必须是 docstring，说明策略逻辑
 3. slug 必须是 {slug}，name 必须是 {name}
 4. entry_timing 必须是 {entry_timing}
-5. 把通达信的条件逐一翻译成向量化表达式，不能省略任何条件
+5. 把形态、评分和成交活跃度条件逐一翻译成向量化表达式；板块、ST/退市名称、代码范围与上市天数只写 default_universe，不能在 compute 中重复过滤。绝对股价或股本范围不写入方法体，也不要发明不受支持的股票池字段；保留必要行情有效性及真实涨跌停规则
 6. 如果公式里有 HSL（换手率），记住要乘以 100（行情仓是小数口径）
 7. min_bars 设为指标窗口最大值 + 10 的保守值
 8. factors 里放关键中间变量（至少 3 个），名字用中文，方便归因

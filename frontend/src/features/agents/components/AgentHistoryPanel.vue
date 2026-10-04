@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Spinner } from '@/shared/components/ui/spinner'
-import { onUnmounted, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
-import { ChevronRight, RefreshCw } from '@lucide/vue'
+import { ChevronRight, RefreshCw, Settings, Trash2 } from '@lucide/vue'
 import { Alert, AlertTitle } from '@/shared/components/ui/alert'
-import { Badge } from '@/shared/components/ui/badge'
 import { Button } from '@/shared/components/ui/button'
 import { Card } from '@/shared/components/ui/card'
-import TradingReportDocument from '@/shared/components/TradingReportDocument.vue'
+import AgentRunDetailDialog from './AgentRunDetail.vue'
+import { beijingToday, diarySummary, executedTradeActions, tradeActionLabel, type AgentHistoryMode, type AgentHistoryStats } from './agentHistoryDisplay'
 import EmptyState from '@/shared/components/ui/EmptyState.vue'
 import DateField from '@/shared/components/ui/app/DateField.vue'
 import {
@@ -18,17 +18,24 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from '@/shared/components/ui/pagination'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/components/ui/sheet'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/shared/components/ui/table'
 import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { getAgentHistory, getAgentRun } from '@/shared/api/stock_agents'
 import type { AgentHistoryKind, AgentHistoryRow, AgentPage, AgentRunDetail } from '@/shared/types/stock_agents'
 import { actionName, agentMoney, agentTime, phaseName, statusName } from '../agentFormat'
-const props = defineProps<{ id:string; kind:AgentHistoryKind; refreshKey?:string | number }>()
+const props = withDefaults(defineProps<{ id:string; kind:AgentHistoryKind; refreshKey?:string | number;
+  mode?:AgentHistoryMode; stats?:AgentHistoryStats; busy?:boolean }>(), { mode: 'today', busy: false })
+const emit = defineEmits<{ configure: []; cleanup: [] }>()
 const isMobile = useMobileLayout()
 const page = ref(1)
 const dates = ref<[string,string] | null>(null)
+const today = ref(beijingToday())
+const todayMode = computed(() => props.kind === 'runs' && props.mode === 'today')
+const dateValue = computed<string | string[] | null>({
+  get: () => todayMode.value ? dates.value?.[0] ?? today.value : dates.value,
+  set: value => { dates.value = typeof value === 'string' ? [value, value] : Array.isArray(value) ? [value[0]!, value[1]!] : null },
+})
 const rows = shallowRef<AgentPage>({ items:[], total:0, offset:0, limit:20 })
 const loading = ref(false)
 const error = ref('')
@@ -36,10 +43,13 @@ const detail = shallowRef<AgentRunDetail | null>(null)
 const detailOpen = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
+const contentScroller = ref<HTMLDivElement | null>(null)
 let controller:AbortController | undefined
 let detailController:AbortController | undefined
 let version = 0
 let disposed = false
+let dayTimer: ReturnType<typeof setInterval> | undefined
+let inspectedRow: AgentHistoryRow | undefined
 const TITLES: Record<AgentHistoryKind, string> = { runs: '工作日记', trades: '实际模拟成交', funding: '资金流水' }
 /** 「09/24 15:10」拆成日期与时刻两行 */
 function stampParts(value?: string | null): { day: string; time: string } {
@@ -60,10 +70,15 @@ async function load() {
   catch(e) { if (!disposed && !request.signal.aborted) error.value = e instanceof Error ? e.message : String(e) }
   finally { if (current === version) loading.value = false }
 }
-function dateChanged() { page.value = 1; void load() }
-function onPageChange(next:number) { page.value = next; void load() }
+function dateChanged() {
+  if (todayMode.value && !dates.value) dates.value = [today.value, today.value]
+  page.value = 1; contentScroller.value?.scrollTo({ top: 0 }); void load()
+}
+function returnToToday() { today.value = beijingToday(); dates.value = [today.value, today.value]; dateChanged() }
+function onPageChange(next:number) { page.value = next; contentScroller.value?.scrollTo({ top: 0 }); void load() }
 function onDetailOpenChange(open:boolean) { detailOpen.value = open; if (!open) detailController?.abort() }
 async function inspect(row:AgentHistoryRow) {
+  inspectedRow = row
   detailController?.abort(); detailController = new AbortController()
   const request = detailController
   detailOpen.value = true; detailLoading.value = true; detailError.value = ''; detail.value = null
@@ -71,29 +86,55 @@ async function inspect(row:AgentHistoryRow) {
   catch(e) { if (!disposed && !request.signal.aborted) detailError.value = e instanceof Error ? e.message : String(e) }
   finally { if (detailController === request) detailLoading.value = false }
 }
-watch(() => [props.id,props.kind],() => { page.value = 1; dates.value = null; detailOpen.value = false; detailController?.abort(); rows.value = { items:[],total:0,offset:0,limit:20 }; void load() },{ immediate:true })
-watch(() => props.refreshKey,() => { if (page.value === 1 && !dates.value && !loading.value && !detailOpen.value && !document.hidden) void load() })
-onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailController?.abort() })
+watch(() => [props.id,props.kind,props.mode],() => {
+  today.value = beijingToday(); page.value = 1; dates.value = todayMode.value ? [today.value, today.value] : null
+  detailOpen.value = false; detailController?.abort(); rows.value = { items:[],total:0,offset:0,limit:20 }; void load()
+},{ immediate:true })
+watch(() => props.refreshKey,() => {
+  const follows = !dates.value || (todayMode.value && dates.value[0] === today.value && dates.value[1] === today.value)
+  if (page.value === 1 && follows && !loading.value && !detailOpen.value && !document.hidden) void load()
+})
+onMounted(() => { dayTimer = setInterval(() => {
+  const nextDay = beijingToday()
+  if (nextDay === today.value) return
+  const follows = todayMode.value && dates.value?.[0] === today.value && dates.value?.[1] === today.value
+  today.value = nextDay
+  if (follows) { dates.value = [nextDay, nextDay]; dateChanged() }
+}, 60000) })
+onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailController?.abort(); clearInterval(dayTimer) })
 </script>
 <template>
   <Card class="agent-history" :aria-label="TITLES[kind]">
     <div class="history-filter">
+      <dl v-if="kind === 'runs' && stats" class="history-stats" aria-label="日记累计统计">
+        <div><dt>累计</dt><dd>{{ stats.total_runs.toLocaleString() }}</dd></div>
+        <div><dt>保留</dt><dd>{{ stats.history_kept.toLocaleString() }}</dd></div>
+        <div><dt>清理</dt><dd>{{ stats.cleaned_runs.toLocaleString() }}</dd></div>
+      </dl>
       <DateField
-        v-model="dates"
-        type="daterange"
+        v-model="dateValue"
+        :type="todayMode ? 'date' : 'daterange'"
+        :clearable="!todayMode"
+        :aria-label="kind === 'runs' ? '日记日期' : '历史日期'"
         value-format="YYYY-MM-DD"
         start-placeholder="开始日期"
         end-placeholder="结束日期"
         class="history-filter__dates"
         @change="dateChanged"
       />
-      <span class="history-filter__count">{{ rows.total.toLocaleString() }} 条</span>
+      <Button v-if="todayMode && dates?.[0] !== today" access="read" variant="ghost" size="xs" @click="returnToToday">今日</Button>
+      <div v-if="kind === 'runs'" class="history-management">
+        <Button access="read" variant="ghost" size="icon-sm" aria-label="设置日记保留策略" title="保留策略" :disabled="busy" @click="emit('configure')"><Settings /></Button>
+        <Button variant="ghost" size="icon-sm" aria-label="清理旧日记" title="清理旧日记" :disabled="busy" @click="emit('cleanup')"><Trash2 /></Button>
+      </div>
+      <span v-if="kind !== 'runs'" class="history-filter__count">{{ rows.total.toLocaleString() }} 条</span>
       <Button access="read" variant="ghost" size="icon-sm" :disabled="loading" aria-label="刷新当前历史页" @click="load">
         <Spinner v-if="loading" class="animate-spin motion-reduce:animate-none" aria-hidden="true" />
         <RefreshCw v-else aria-hidden="true" />
       </Button>
     </div>
 
+    <div ref="contentScroller" class="history-content" data-agent-workspace-scroll role="region" :aria-label="`${TITLES[kind]}列表`" tabindex="0">
     <Alert v-if="error" variant="destructive" class="mx-4 mb-3"><AlertTitle class="line-clamp-none">{{ error }}</AlertTitle></Alert>
 
     <div v-if="loading && !rows.items.length" class="history-skeleton" aria-hidden="true">
@@ -116,10 +157,9 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
                 {{ statusName(row.status) }}
               </UiBadge>
             </span>
-            <span class="diary-summary" :class="{ 'is-empty': !row.summary }">{{ row.summary || (row.status === 'running' ? '研究中…' : '—') }}</span>
-            <span v-if="row.actions?.length" class="diary-actions">
-              <span v-for="(action, i) in row.actions.slice(0, 4)" :key="i" class="diary-action">{{ actionName(action.action) }} {{ action.name || action.code }}</span>
-              <span v-if="row.actions.length > 4" class="diary-action is-more">+{{ row.actions.length - 4 }}</span>
+            <span class="diary-summary" :class="{ 'is-empty': !row.summary }">{{ diarySummary(row.summary) || (row.status === 'running' ? '研究中…' : '本轮没有文字摘要') }}</span>
+            <span v-if="executedTradeActions(row).length" class="diary-actions">
+              <span v-for="(action, i) in executedTradeActions(row)" :key="i" class="diary-action" :class="{ 'is-rejected': action.status === 'rejected' }">{{ tradeActionLabel(action) }}</span>
             </span>
           </span>
           <ChevronRight class="diary-row__chevron" aria-hidden="true" />
@@ -203,57 +243,53 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
     <div v-else class="history-empty">
       <EmptyState :description="dates ? '该日期范围无记录' : '暂无记录'" compact />
     </div>
+    </div>
 
     <div class="history-pagination">
       <Pagination :page="page" :items-per-page="20" :total="rows.total" :sibling-count="1" :disabled="loading" @update:page="onPageChange">
         <PaginationContent v-slot="{ items }">
           <span class="history-pagination__total">共 {{ rows.total.toLocaleString() }} 条</span>
-          <PaginationPrevious><span>上一页</span></PaginationPrevious>
+          <PaginationPrevious aria-label="上一页"><span>上一页</span></PaginationPrevious>
           <template v-for="(item, index) in items" :key="index">
             <PaginationItem v-if="item.type === 'page'" :value="item.value" :is-active="item.value === page">{{ item.value }}</PaginationItem>
             <PaginationEllipsis v-else />
           </template>
-          <PaginationNext><span>下一页</span></PaginationNext>
+          <PaginationNext aria-label="下一页"><span>下一页</span></PaginationNext>
         </PaginationContent>
       </Pagination>
     </div>
 
-    <Sheet :open="detailOpen" @update:open="onDetailOpenChange">
-      <SheetContent side="right" class="gap-0 p-0 sm:w-[720px] sm:max-w-[calc(100vw-2rem)]">
-        <SheetHeader class="border-b border-line px-4 py-3 text-left"><SheetTitle class="text-title">工作日记详情</SheetTitle></SheetHeader>
-        <div class="history-sheet__body">
-          <div v-if="detailLoading" class="history-skeleton" aria-hidden="true"><Skeleton v-for="n in 10" :key="n" class="h-9 w-full" /></div>
-          <Alert v-else-if="detailError" variant="destructive"><AlertTitle class="line-clamp-none">{{ detailError }}</AlertTitle></Alert>
-          <TradingReportDocument v-else-if="detail?.sections" :sections="detail.sections" :title="phaseName(detail.phase)" :metadata="`${agentTime(detail.started_at)} · ${statusName(detail.status)} · 模拟账户`" />
-          <article v-else-if="detail" class="diary-detail">
-            <div class="detail-meta"><Badge>{{ phaseName(detail.phase) }}</Badge><span>{{ statusName(detail.status) }}</span><time>{{ agentTime(detail.started_at) }}</time></div>
-            <p class="summary">{{ detail.detail.summary || detail.summary }}</p>
-            <Alert v-if="detail.detail.analysis_only"><AlertTitle class="line-clamp-none">仅研判，未交易</AlertTitle></Alert>
-            <h4 v-if="detail.detail.decisions?.length">本轮决策</h4>
-            <section v-for="(decision,i) in detail.detail.decisions" :key="i" class="decision">
-              <header><b>{{ actionName(decision.action) }} · {{ decision.name || decision.code }}</b><span v-if="decision.quantity">{{ decision.quantity }} 股</span></header>
-              <p>{{ decision.reason }}</p>
-            </section>
-            <h4 v-if="detail.detail.rejects?.length">未执行及原因</h4>
-            <section v-for="(reject,i) in detail.detail.rejects" :key="i" class="decision reject">
-              <b>{{ reject.code }} {{ actionName(reject.action) }}</b>
-              <p>{{ reject.reason }}</p>
-            </section>
-            <div v-if="detail.detail.usage" class="usage">
-              <span v-if="detail.detail.usage.model">模型 {{ detail.detail.usage.model }}</span>
-              <span v-if="detail.detail.usage.elapsed_ms != null">耗时 {{ (detail.detail.usage.elapsed_ms/1000).toFixed(1) }} 秒</span>
-              <span v-if="detail.detail.usage.input_tokens != null">输入 {{ detail.detail.usage.input_tokens.toLocaleString() }} tokens</span>
-              <span v-if="detail.detail.usage.output_tokens != null">输出 {{ detail.detail.usage.output_tokens.toLocaleString() }} tokens</span>
-            </div>
-          </article>
-        </div>
-      </SheetContent>
-    </Sheet>
+    <AgentRunDetailDialog :open="detailOpen" :detail="detail" :loading="detailLoading" :error="detailError"
+      @update:open="onDetailOpenChange" @retry="inspectedRow && inspect(inspectedRow)" />
   </Card>
 </template>
 <style scoped>
 .agent-history {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.history-content {
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+.history-content:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--seal));
+  outline-offset: -2px;
+}
+.history-content :deep([data-slot="table-container"]) {
+  overflow: visible;
+}
+.history-content :deep(thead) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
 }
 .history-filter {
   display: flex;
@@ -262,11 +298,20 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
   gap: var(--gap-2) var(--gap-3);
   padding: 12px 14px;
   border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 .history-filter__dates {
-  width: 260px;
+  flex: 1 1 180px;
+  width: 220px;
+  min-width: 150px;
   max-width: 100%;
 }
+.history-stats { display:flex; flex:none; gap:10px; margin:0; font-size:11px; }
+.history-stats > div { display:flex; align-items:baseline; gap:4px; }
+.history-stats dt { color:var(--text-tertiary); }
+.history-stats dd { margin:0; font:600 12px var(--mono); }
+.history-management { display:flex; align-items:center; flex:none; gap:2px; }
+.history-management button { width:28px; height:28px; }
 .history-filter__count {
   margin-left: auto;
   color: var(--text-tertiary);
@@ -382,6 +427,7 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
 .diary-action.is-more {
   color: var(--text-tertiary);
 }
+.diary-action.is-rejected { color:var(--warn-ink); background:var(--warn-soft,var(--surface-sunken)); }
 /* 手机成交卡 */
 .ledger-cards {
   margin: 0;
@@ -507,6 +553,12 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
   justify-content: flex-end;
   padding: var(--gap-2) var(--gap-4);
   border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+.history-pagination :deep([data-slot="pagination-content"]) {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .history-pagination__total {
   margin-right: auto;
@@ -515,74 +567,16 @@ onUnmounted(() => { disposed = true; ++version; controller?.abort(); detailContr
   font-size: var(--fs-aux);
   white-space: nowrap;
 }
-/* 详情抽屉 */
-.history-sheet__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 var(--gap-4) var(--gap-4);
-}
-.detail-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-3);
-  padding-top: var(--gap-3);
-  color: var(--text-tertiary);
-  font-size: var(--fs-aux);
-}
-.summary {
-  margin: var(--gap-3) 0;
-  font-size: var(--fs-ui);
-  line-height: 1.8;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.diary-detail h4 {
-  margin: var(--gap-4) 0 var(--gap-2);
-  font-size: var(--fs-ui);
-  font-weight: 600;
-}
-.decision {
-  padding: var(--gap-3) 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.decision header,
-.decision b {
-  font-size: var(--fs-aux);
-  font-weight: 600;
-}
-.decision header {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--gap-2);
-}
-.decision p {
-  margin: 6px 0 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-aux);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.reject {
-  color: var(--warn-ink);
-}
-.usage {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-3);
-  margin: var(--gap-3) 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-kicker);
-}
 @media (max-width: 640px) {
   .history-filter {
     padding-inline: var(--gap-3);
   }
   .history-filter__dates {
+    order: 4;
+    flex-basis: 100%;
     width: 100%;
   }
+  .history-management { margin-left:auto; }
   .diary-row {
     grid-template-columns: 48px minmax(0, 1fr) auto;
     gap: 10px;

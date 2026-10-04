@@ -1,12 +1,13 @@
 """选股任务的数据准备；区间复用只在当前连接和任务内生效。"""
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import contextmanager, ExitStack
 from datetime import date
 from collections.abc import Sequence
 from typing import Any
 
 from src.market import MarketStore, panel_read_window
+from src.strategy.application.compute_runtime import computation_scope
 from src.strategy.application.screen_run_state import screen_run_update
 from src.strategy.domain.base import signal_history_bars
 
@@ -43,23 +44,18 @@ def ensure_screen_quotes(full: Any, days: list[str], refresh_spot: bool) -> bool
     return True
 
 
+@contextmanager
 def range_read_scope(
     store: Any, engine: Any, days: list[str], params: dict[str, Any] | None,
     *, codes: Sequence[str] | None = None, universe: dict[str, Any] | None = None,
-) -> AbstractContextManager[None]:
+) :
     """只预读首日预热至区间末日；每日筛选、复权、审计仍使用原入口。"""
-    if len(days) < 2 or engine is None or not isinstance(store, MarketStore):
-        return nullcontext()
-    requested = codes or (universe or getattr(engine, "default_universe", None) or {}).get("codes_include")
-    if requested and len(set(requested)) * 4 < len(store.list_instruments(status="")):
-        # 小股票池的定向 SQL 比预读全市场更省，避免单票调试反而变慢。
-        return nullcontext()
-    calendar = store.trading_days(end=days[0])
-    if not calendar:
-        return nullcontext()
-    if getattr(engine, "requires_full_history", False):
-        start = calendar[0]
-    else:
-        bars = signal_history_bars(engine, params=params)
-        start = calendar[-min(bars, len(calendar))]
-    return panel_read_window(store, start=start, end=days[-1])
+    with ExitStack() as stack:
+        stack.enter_context(computation_scope(store, days))
+        if len(days) > 1 and engine is not None and isinstance(store, MarketStore):
+            calendar = store.trading_days(end=days[0])
+            if calendar:
+                bars = signal_history_bars(engine, params=params)
+                start = calendar[0] if getattr(engine, "requires_full_history", False) else calendar[-min(bars, len(calendar))]
+                stack.enter_context(panel_read_window(store, start=start, end=days[-1]))
+        yield

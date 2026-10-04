@@ -1,6 +1,7 @@
 """定时任务 HTTP。"""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.ops.api.schemas import JobCreate, JobUpdate
 from src.shared.api_deps import missing_dependency, ops_store
 from src.shared.paths import market_hot_db
+
+logger = logging.getLogger(__name__)
 
 
 class JobRunBatchDeleteInput(BaseModel):
@@ -82,6 +85,19 @@ def guard_tenant_cron_floor(cron: str) -> None:
     )
 
 
+def guard_retired_screen_strategy(kind: Any, config: Any, name: str = "") -> None:
+    """拒绝经手工任务入口重新启用退役战法。"""
+    if kind != "screen":
+        return
+    from src.ops.application.retired_slugs import is_retired_strategy_slug
+
+    slug = str(config.get("strategy") or "") if isinstance(config, dict) else ""
+    if not slug.strip() and str(name).startswith("screen:"):
+        slug = str(name)[len("screen:") :]
+    if is_retired_strategy_slug(slug):
+        raise HTTPException(status_code=422, detail=f"战法已退役，不能创建或运行选股任务：{slug}")
+
+
 def build_jobs_router(
     *,
     write_dependency,
@@ -102,6 +118,14 @@ def build_jobs_router(
         scheduler = scheduler_getter()
         if scheduler is not None and scheduler.running:
             scheduler.reload()
+
+    def _sync_falcon_watch_pools() -> None:
+        try:
+            from src.ops import sync_falcon_watch_pools
+            with _ops() as store:
+                sync_falcon_watch_pools(store, palace_db)
+        except Exception:  # noqa: BLE001 — 任务配置已保存，观察池由维护任务重试
+            logger.exception("选股任务变更后同步猎隼观察池失败")
 
     def _managed_screen_slug(job: dict[str, Any] | None) -> str | None:
         if not job or job.get("kind") != "screen":
@@ -131,6 +155,7 @@ def build_jobs_router(
         # 它们**不能**下沉到 OpsStore——托管任务的确保路径也走 create_job，
         # 而 ensure 的异常只打一行 warning，闸门放那儿会让启动期静默失败。
         guard_system_job_kind(payload.kind, action="创建")
+        guard_retired_screen_strategy(payload.kind, payload.config, payload.name)
         guard_tenant_cron_floor(payload.cron)
         with _ops() as store:
             try:
@@ -149,6 +174,8 @@ def build_jobs_router(
             except OpsError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
+        if payload.kind == "screen":
+            _sync_falcon_watch_pools()
         _reload_scheduler()
         return job or {}
 
@@ -174,6 +201,12 @@ def build_jobs_router(
                 raise HTTPException(status_code=404, detail=f"未知任务：{job_id}")
             # 改 cron / 改 enabled 同样是「让系统级任务按我的节奏跑」，一并挡住。
             guard_system_job_kind(existing.get("kind"), action="修改")
+            # 明确关闭旧任务仍允许；修改配置指向有效战法也允许。
+            if fields.get("enabled") is not False:
+                guard_retired_screen_strategy(
+                    existing.get("kind"), fields.get("config", existing.get("config")),
+                    str(fields.get("name", existing.get("name")) or ""),
+                )
             try:
                 store.update_job(job_id, **fields)
                 if "enabled" in fields:
@@ -183,6 +216,8 @@ def build_jobs_router(
             except OpsError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
+        if existing.get("kind") == "screen" or (job or {}).get("kind") == "screen":
+            _sync_falcon_watch_pools()
         _reload_scheduler()
         return job or {}
 
@@ -197,6 +232,8 @@ def build_jobs_router(
             screen_slug = _managed_screen_slug(existing)
             if screen_slug:
                 store.set_screen_job_opt_out(screen_slug)
+        if existing.get("kind") == "screen":
+            _sync_falcon_watch_pools()
         _reload_scheduler()
         return {"removed": True}
 
@@ -214,6 +251,7 @@ def build_jobs_router(
             if job is None:
                 raise HTTPException(status_code=404, detail=f"未知任务：{job_id}")
             guard_system_job_kind(job.get("kind"), action="手动触发")
+            guard_retired_screen_strategy(job.get("kind"), job.get("config"), str(job.get("name") or ""))
             try:
                 return run_job(
                     store, job,

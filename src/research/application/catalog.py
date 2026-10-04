@@ -31,17 +31,6 @@ _RESEARCH_SOURCES: tuple[dict[str, Any], ...] = (
         "notes": "注册不等于当前请求成功；实际命中源须由行情回执确认。",
     },
     {
-        "id": "akshare",
-        "name_cn": "AkShare 受控接口目录",
-        "base_url": "https://akshare.akfamily.xyz/",
-        "markets": ["A-share", "fund", "futures"],
-        "dims": ["1_financials", "4_peers", "6_fund_holders", "6_research", "10_valuation", "15_events", "16_lhb"],
-        "tier": "tier-1",
-        "access": "catalog-probe",
-        "health": "not_probed",
-        "notes": "只有经目录探针和字段映射确认后才能进入研究结果。",
-    },
-    {
         "id": "official_disclosure",
         "name_cn": "官方披露",
         "base_url": "",

@@ -1,0 +1,28 @@
+{
+  "status": "passed",
+  "checks": [
+    "exactly240",
+    "missing_slot_unknown",
+    "lot_share_scale_rejected_if_wrong",
+    "positive_zero_volume_prices_still_range_checked",
+    "new_entry_basis_changes_stop",
+    "four_sessions_and_Tplus1",
+    "gap_uses_unchanged_daily_open",
+    "zero_volume_cancel_not_unknown",
+    "unknown_budget_null",
+    "upper_limit_at_new_price",
+    "official_suspension_cancel",
+    "missing_holding_path_unknown",
+    "official_overlay_copy_and_dates",
+    "entry_day_MAE_MFE_not_claimed",
+    "four_existing_probes_pass_frozen_QA"
+  ],
+  "reused_probe_keys": [
+    "2024-01-05/300707",
+    "2025-07-03/300936",
+    "2026-01-05/300298",
+    "2026-09-30/300707"
+  ],
+  "new_network_requests": 0,
+  "new_real_returns": 0
+}

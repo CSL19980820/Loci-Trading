@@ -1,0 +1,15 @@
+{
+  "segment": "train",
+  "code": "300707",
+  "requested_date": "2024-01-05",
+  "selection": "minimum date/code from preexisting complete shape keys only",
+  "key_source": "docs\\research\\2026-10-04-multi-strategy-scoring\\contraction-rebreakout-v1\\train-candidates.csv",
+  "source_sha256": "4e4699c46c6c8fa4acb817c97c34462a46bd81859d83d5366a38d10e8551094a",
+  "provider": "tdx",
+  "started_at": "2026-10-04T09:01:55.595646+00:00",
+  "request_method": "get_history_minute_time_data",
+  "history_query_attempted": true,
+  "source_timestamp_present": false,
+  "date_evidence": "request parameter only; decoded records have no date",
+  "source_volume_unit": "not assumed from daily adapter; compare returned sum with same-day raw daily shares"
+}

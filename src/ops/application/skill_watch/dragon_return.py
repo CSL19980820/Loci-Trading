@@ -291,7 +291,7 @@ def _current_role_signals(leader_map: Mapping[str, Any]) -> list[dict[str, Any]]
 def _rank_eligible(
     leader_map: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    from src.ops.application.skill_watch.paper_eligibility import is_auction_abandoned
+    from src.ops.application.signal_policy.eligibility import is_auction_abandoned
 
     eligible_entries: list[dict[str, Any]] = []
     for row in leader_map.get("entries") or []:
@@ -413,7 +413,7 @@ def scan_dragon_return(
         row["suite_checks"] = checks
         row["suite_all_passed"] = _suite_passed(checks)
         row["decision_reason"] = _suite_summary(checks)
-    from src.ops.application.skill_watch.paper_eligibility import filter_openable_picks
+    from src.ops.application.signal_policy.eligibility import filter_openable_picks
 
     auction_cfg = section(tuning, "auction")
     raw_picks: list[dict[str, Any]] = []

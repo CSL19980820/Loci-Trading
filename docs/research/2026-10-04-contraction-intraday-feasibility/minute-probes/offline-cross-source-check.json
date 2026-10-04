@@ -1,0 +1,159 @@
+{
+  "purpose": "offline comparison only; no new requests or returns",
+  "recent_date": "2026-09-30",
+  "code": "300707",
+  "tdx_rows": 240,
+  "sina_rows": 232,
+  "matched_labels": 232,
+  "source_sina_duplicate_labels": 0,
+  "missing_sina_labels": [
+    {
+      "datetime": "2026-09-30 10:57",
+      "close": 12.14,
+      "volume": 0.0
+    },
+    {
+      "datetime": "2026-09-30 11:06",
+      "close": 12.15,
+      "volume": 0.0
+    },
+    {
+      "datetime": "2026-09-30 13:07",
+      "close": 12.15,
+      "volume": 0.0
+    },
+    {
+      "datetime": "2026-09-30 13:08",
+      "close": 12.15,
+      "volume": 0.0
+    },
+    {
+      "datetime": "2026-09-30 13:14",
+      "close": 12.13,
+      "volume": 0.0
+    },
+    {
+      "datetime": "2026-09-30 14:07",
+      "close": 12.14,
+      "volume": 0.0
+    },
+    {
+      "datetime": "2026-09-30 14:58",
+      "close": 12.1,
+      "volume": 0.0
+    },
+    {
+      "datetime": "2026-09-30 14:59",
+      "close": 12.1,
+      "volume": 0.0
+    }
+  ],
+  "matched_close_differences_gt_1e_8": 16,
+  "maximum_absolute_close_difference": 0.019999999999999574,
+  "matched_volume_differences_after_tdx_times100": 67,
+  "max_absolute_shares_delta": 6000.0,
+  "sina_full_day_ohlc": {
+    "open": 12.21,
+    "high": 12.3,
+    "low": 12.07,
+    "close": 12.09
+  },
+  "first_close_differences": [
+    {
+      "stamp": "2026-09-30 09:37:00",
+      "close_tdx": 12.16,
+      "close_sina": 12.17,
+      "volume_tdx": 79.0,
+      "volume_sina": 8000,
+      "price_delta": -0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 09:41:00",
+      "close_tdx": 12.18,
+      "close_sina": 12.19,
+      "volume_tdx": 24.0,
+      "volume_sina": 4800,
+      "price_delta": -0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 09:44:00",
+      "close_tdx": 12.21,
+      "close_sina": 12.22,
+      "volume_tdx": 50.0,
+      "volume_sina": 5100,
+      "price_delta": -0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 10:07:00",
+      "close_tdx": 12.16,
+      "close_sina": 12.15,
+      "volume_tdx": 45.0,
+      "volume_sina": 4800,
+      "price_delta": 0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 10:27:00",
+      "close_tdx": 12.13,
+      "close_sina": 12.12,
+      "volume_tdx": 41.0,
+      "volume_sina": 5900,
+      "price_delta": 0.010000000000001563
+    },
+    {
+      "stamp": "2026-09-30 10:42:00",
+      "close_tdx": 12.08,
+      "close_sina": 12.09,
+      "volume_tdx": 178.0,
+      "volume_sina": 18000,
+      "price_delta": -0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 10:49:00",
+      "close_tdx": 12.15,
+      "close_sina": 12.13,
+      "volume_tdx": 76.0,
+      "volume_sina": 8000,
+      "price_delta": 0.019999999999999574
+    },
+    {
+      "stamp": "2026-09-30 10:51:00",
+      "close_tdx": 12.13,
+      "close_sina": 12.14,
+      "volume_tdx": 3.0,
+      "volume_sina": 1600,
+      "price_delta": -0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 11:22:00",
+      "close_tdx": 12.13,
+      "close_sina": 12.14,
+      "volume_tdx": 15.0,
+      "volume_sina": 2000,
+      "price_delta": -0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 11:28:00",
+      "close_tdx": 12.14,
+      "close_sina": 12.13,
+      "volume_tdx": 6.0,
+      "volume_sina": 1700,
+      "price_delta": 0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 14:10:00",
+      "close_tdx": 12.18,
+      "close_sina": 12.19,
+      "volume_tdx": 4.0,
+      "volume_sina": 6400,
+      "price_delta": -0.009999999999999787
+    },
+    {
+      "stamp": "2026-09-30 14:17:00",
+      "close_tdx": 12.13,
+      "close_sina": 12.14,
+      "volume_tdx": 0.0,
+      "volume_sina": 200,
+      "price_delta": -0.009999999999999787
+    }
+  ]
+}

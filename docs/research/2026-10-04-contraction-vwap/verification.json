@@ -1,0 +1,179 @@
+{
+  "passed": true,
+  "counts": {
+    "formal_orders": 2465,
+    "closed_trade_returns": 2255,
+    "candidate_amount_rows": 958,
+    "raw_fill_branches": 2255,
+    "stored_factor_endpoints": 4510,
+    "preselection_lists": 18
+  },
+  "phases": {
+    "train": {
+      "legacy_original": {
+        "orders": 226,
+        "closed": 226,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 18,
+        "budget": 710
+      },
+      "corrected_original": {
+        "orders": 227,
+        "closed": 227,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 18,
+        "budget": 710
+      },
+      "vwap_eligible_original": {
+        "orders": 227,
+        "closed": 227,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 18,
+        "budget": 710
+      },
+      "vwap_gate_open": {
+        "orders": 129,
+        "closed": 129,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 18,
+        "budget": 710
+      },
+      "vwap_gate_limit": {
+        "orders": 129,
+        "closed": 94,
+        "cancelled": 35,
+        "unresolved": 0,
+        "entry_months": 18,
+        "budget": 710
+      },
+      "vwap_gate_limit_one_tick": {
+        "orders": 129,
+        "closed": 94,
+        "cancelled": 35,
+        "unresolved": 0,
+        "entry_months": 18,
+        "budget": 710
+      }
+    },
+    "validation_2025h2": {
+      "legacy_original": {
+        "orders": 116,
+        "closed": 114,
+        "cancelled": 0,
+        "unresolved": 2,
+        "entry_months": 6,
+        "budget": 244
+      },
+      "corrected_original": {
+        "orders": 116,
+        "closed": 114,
+        "cancelled": 0,
+        "unresolved": 2,
+        "entry_months": 6,
+        "budget": 244
+      },
+      "vwap_eligible_original": {
+        "orders": 116,
+        "closed": 114,
+        "cancelled": 0,
+        "unresolved": 2,
+        "entry_months": 6,
+        "budget": 244
+      },
+      "vwap_gate_open": {
+        "orders": 65,
+        "closed": 64,
+        "cancelled": 0,
+        "unresolved": 1,
+        "entry_months": 6,
+        "budget": 244
+      },
+      "vwap_gate_limit": {
+        "orders": 65,
+        "closed": 41,
+        "cancelled": 24,
+        "unresolved": 0,
+        "entry_months": 6,
+        "budget": 244
+      },
+      "vwap_gate_limit_one_tick": {
+        "orders": 65,
+        "closed": 41,
+        "cancelled": 24,
+        "unresolved": 0,
+        "entry_months": 6,
+        "budget": 244
+      }
+    },
+    "observed_2026": {
+      "legacy_original": {
+        "orders": 185,
+        "closed": 185,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 9,
+        "budget": 354
+      },
+      "corrected_original": {
+        "orders": 185,
+        "closed": 185,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 9,
+        "budget": 354
+      },
+      "vwap_eligible_original": {
+        "orders": 185,
+        "closed": 185,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 9,
+        "budget": 354
+      },
+      "vwap_gate_open": {
+        "orders": 100,
+        "closed": 100,
+        "cancelled": 0,
+        "unresolved": 0,
+        "entry_months": 9,
+        "budget": 354
+      },
+      "vwap_gate_limit": {
+        "orders": 100,
+        "closed": 58,
+        "cancelled": 42,
+        "unresolved": 0,
+        "entry_months": 9,
+        "budget": 354
+      },
+      "vwap_gate_limit_one_tick": {
+        "orders": 100,
+        "closed": 57,
+        "cancelled": 43,
+        "unresolved": 0,
+        "entry_months": 9,
+        "budget": 354
+      }
+    }
+  },
+  "raw_unknown_rows": 8,
+  "no_strategy_or_metric_helper_imports": true,
+  "source_plan_snapshot_hashes_unchanged": true,
+  "checks": [
+    "frozen preselection hashes",
+    "independent Top2 and no refill",
+    "same A/B/stress keys",
+    "all four cost/winner metric bundles",
+    "whole calendar budget and unknown nulls",
+    "raw TDX amount quotient and Decimal cents",
+    "actual raw opening/limit branches",
+    "stored factors and raw/economic gross/net returns",
+    "original NULL-volume rows exported"
+  ],
+  "plan_sha256": "ffb98b10f0a1a7f3f2d5fee6c898d7254615955e950e8cb27bf52b3cd38132a8",
+  "verifier_sha256": "1980dcad8afb80d17108bbf1d25e1c0cc34dcb0c1721e5bf39a71a6ed490ce09"
+}

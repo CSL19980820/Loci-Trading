@@ -9,7 +9,11 @@ index=交易日 / columns=股票代码）。绝大多数直接落在 pandas 的�
 """
 from __future__ import annotations
 
-from typing import Callable, TypeVar, Union
+from contextlib import contextmanager
+from contextvars import ContextVar
+from math import isfinite
+from time import monotonic
+from typing import Callable, Iterator, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -31,8 +35,35 @@ __all__ = [
     "ABS", "AVEDEV", "BARSCOUNT", "BARSLAST", "BARSSINCE", "COUNT", "CROSS",
     "DMA", "EMA", "EVERY", "EXIST", "FILTER", "HHV", "HHVBARS", "IF", "LLV",
     "LLVBARS", "MA", "MAX", "MIN", "REF", "SMA", "STD", "SUM", "WMA",
-    "ZTPRICE", "weighted_ref_sum",
+    "ZTPRICE", "weighted_ref_sum", "formula_execution_budget", "check_formula_budget",
+    "FormulaRuntimeBudgetExceeded",
 ]
+
+
+class FormulaRuntimeBudgetExceeded(RuntimeError):
+    """A controlled formula reached its opt-in cooperative execution deadline."""
+
+
+_FORMULA_DEADLINE: ContextVar[float | None] = ContextVar("formula_execution_deadline", default=None)
+
+
+@contextmanager
+def formula_execution_budget(deadline: float) -> Iterator[None]:
+    """Opt-in absolute monotonic deadline; nested budgets can only tighten it."""
+    if isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not isfinite(deadline):
+        raise ValueError("公式截止时间必须是有限 monotonic 数值")
+    current = _FORMULA_DEADLINE.get()
+    token = _FORMULA_DEADLINE.set(float(deadline) if current is None else min(current, deadline))
+    try:
+        yield
+    finally:
+        _FORMULA_DEADLINE.reset(token)
+
+
+def check_formula_budget() -> None:
+    deadline = _FORMULA_DEADLINE.get()
+    if deadline is not None and monotonic() >= deadline:
+        raise FormulaRuntimeBudgetExceeded("公式计算超过时间预算，请缩小股票范围、历史窗口或简化公式")
 
 
 # --------------------------------------------------------------------------
@@ -83,6 +114,7 @@ def _rolling_float64(series: F, periods: int, kernel: Callable | None) -> F | No
         # 保留原内核的 Kahan 累加、重复值及符号修正，不替换数值算法。
         with np.errstate(all="ignore"):
             for column in range(values.shape[1]):
+                check_formula_budget()
                 out[:, column] = kernel(values[:, column], start, end, periods)
         return _like(series, out[:, 0] if single else out)
     except (AttributeError, TypeError, ValueError):
@@ -133,6 +165,7 @@ def WMA(series: F, periods: int) -> F:
         span = rows - periods + 1
         total = np.zeros((span, cols), dtype=float)
         for offset, weight in enumerate(weights):
+            check_formula_budget()
             total += weight * matrix[offset : offset + span]
         out[periods - 1 :] = total
     return _like(series, out[:, 0] if single else out)
@@ -149,6 +182,7 @@ def weighted_ref_sum(series: F, weights: dict[int, float], divisor: float) -> F:
         raise ValueError("分母不能为 0")
     total = None
     for offset, weight in weights.items():
+        check_formula_budget()
         term = REF(series, offset) * weight
         total = term if total is None else total + term
     if total is None:
@@ -165,6 +199,7 @@ def DMA(series: F, alpha: F | float) -> F:
     out = np.full_like(values, np.nan, dtype=float)
     prev = None
     for i in range(values.shape[0]):
+        check_formula_budget()
         current, weight = values[i], weights[i]
         if prev is None:
             prev = np.where(np.isnan(current), np.nan, current)
@@ -274,6 +309,7 @@ def FILTER(condition: F, periods: int) -> F:
     # 股票是向量运算，循环次数等于交易日数而不是股票数。
     blocked = np.zeros(flags.shape[1], dtype=int)
     for i in range(flags.shape[0]):
+        check_formula_budget()
         fire = flags[i] & (blocked <= 0)
         out[i] = fire
         blocked = np.where(fire, periods, np.maximum(blocked - 1, 0))
@@ -312,6 +348,7 @@ def BARSSINCE(condition: F) -> F:
     result = np.full(matrix.shape, np.nan, dtype=float)
     # 每列只需定位首次成立的位置，之后是等差数列，不必逐行推进。
     for column in range(matrix.shape[1]):
+        check_formula_budget()
         hits = np.flatnonzero(matrix[:, column])
         if hits.size:
             first = hits[0]
@@ -449,9 +486,10 @@ def _round_half_up(series: Frame, digits: int) -> Frame:
 #: / 减法，(rows-N+1, cols, N) 就会被整块物化：250 天 × 5500 只 × N=60 是
 #: 约 1.5 GB，700 天更是 4.3 GB——而服务器可用内存只有 1.1 G
 #: （见 ``src/strategy/application/screener.py`` 的开头说明），这是 OOM 不是慢。
-#: 切成 256 列一批后峰值降到几十 MB 且与股票数无关；因为每批都装得进
-#: CPU 缓存，实测反而比一次性算更快。
+#: 仅限制列数仍会在长历史/大周期时物化数 GB；同时限制窗口单元格总数。
+#: 每个窗口保持完整时间轴，不修改均值/极值规约的浮点算法。
 _COLUMN_CHUNK = 256
+_MAX_WINDOW_CELLS = 2_000_000
 
 
 def _as_matrix(series: Frame) -> tuple[np.ndarray, bool]:
@@ -472,20 +510,31 @@ def _rolling_column_chunks(
     periods: int,
     kernel: Callable[[np.ndarray], np.ndarray],
 ) -> np.ndarray:
-    """按列分块地对滑动窗口调用 ``kernel``，返回与 ``matrix`` 同形的结果。
+    """按窗口单元格预算分行/列调用 ``kernel``，返回与 ``matrix`` 同形的结果。
 
     ``kernel`` 收到 ``(rows-N+1, chunk, N)`` 的窗口视图（时间轴在最后一维，
     最旧在前），必须返回 ``(rows-N+1, chunk)``。不足 N 根的前 N-1 行留空值，
     与 ``rolling`` 的 ``min_periods=N`` 一致。
     """
+    check_formula_budget()
     rows, cols = matrix.shape
     out = np.full((rows, cols), np.nan, dtype=float)
     if periods <= 0 or rows < periods or cols == 0:
         return out
-    for start in range(0, cols, _COLUMN_CHUNK):
-        stop = min(start + _COLUMN_CHUNK, cols)
-        windows = sliding_window_view(matrix[:, start:stop], periods, axis=0)
-        out[periods - 1 :, start:stop] = kernel(windows)
+    # One complete window is the minimum work unit. DSL periods are <= 1000;
+    # direct callers with a longer period still retain their existing semantics.
+    width = min(_COLUMN_CHUNK, max(1, _MAX_WINDOW_CELLS // periods))
+    for start in range(0, cols, width):
+        check_formula_budget()
+        stop = min(start + width, cols)
+        row_step = max(1, _MAX_WINDOW_CELLS // ((stop - start) * periods))
+        for first in range(periods - 1, rows, row_step):
+            check_formula_budget()
+            last = min(rows, first + row_step)
+            # Retain the N-1 prefix for every output row tile. The reduction axis
+            # and source strides match the original whole-history window view.
+            windows = sliding_window_view(matrix[first - periods + 1:last, start:stop], periods, axis=0)
+            out[first:last, start:stop] = kernel(windows)
     return out
 
 

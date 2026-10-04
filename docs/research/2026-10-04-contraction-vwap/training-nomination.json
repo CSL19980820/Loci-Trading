@@ -1,0 +1,10 @@
+{
+  "created_at": "2026-10-04T16:21:05.395296+08:00",
+  "nominees": [
+    "vwap_gate_open",
+    "vwap_gate_limit"
+  ],
+  "no_diagnostic_fallback": true,
+  "train_summary_sha256": "c04dc6c59ff48f258d6b69f3f67d6ca28cf517bf4a75e0a56e9a032736fe51cb",
+  "later_returns_not_yet_evaluated": true
+}

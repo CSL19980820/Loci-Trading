@@ -14,7 +14,8 @@ def trading_run_sections(detail: dict, *, summary: str = '', status: str = '') -
     # including pre-trade holdings for stocks already sold; never rewrite history.
     context = detail.get('decision_context') or {}
     names = dict(detail.get('stock_names') or {})
-    for rows in (context.get('candidates'), detail.get('candidates'), detail.get('fills'),
+    for rows in (context.get('candidates'), detail.get('candidates'),
+                 (detail.get('candidate_scope') or {}).get('candidates'), detail.get('fills'),
                  (detail.get('account') or {}).get('positions'),
                  (context.get('account_before') or {}).get('watchlist'),
                  (context.get('account_before') or {}).get('positions')):
@@ -82,6 +83,21 @@ def trading_run_sections(detail: dict, *, summary: str = '', status: str = '') -
     research = str(detail.get('research_plan') or '').strip()
     if research and research != title:
         result.append(section('后续计划与待核验', 'research', [research]))
+    learning = detail.get('learning') or {}
+    labels = {'pending': '待验证', 'supported': '有证据支持', 'rejected': '已被否定'}
+    for key, heading in (('lessons', '本轮沉淀经验'), ('optimization_proposals', '选股与判分优化建议')):
+        lines = []
+        for item in learning.get(key, []):
+            line = f"{item.get('title', '')} · {labels.get(item.get('status'), '待验证')}\n{item.get('finding', '')}"
+            if item.get('proposed_change'):
+                line += '\n优化假设：'+str(item['proposed_change'])
+            line += f"\n样本：{item.get('sample_size', 0)}；{item.get('sample_definition', '')}"
+            line += '\n证据：'+'、'.join(item.get('evidence_refs', []))
+            if item.get('validation_plan'):
+                line += '\n验证计划：'+str(item['validation_plan'])
+            lines.append(line)
+        if lines:
+            result.append(section(heading, 'research', lines))
     if not result and detail.get('outcome') == 'no_action':
         result.append(section('本轮结果', 'overview', ['本轮无交易。']))
     return result

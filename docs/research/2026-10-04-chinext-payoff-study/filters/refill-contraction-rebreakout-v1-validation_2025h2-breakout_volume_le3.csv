@@ -1,0 +1,11 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-07-03,301628,closed,-0.9271226831420908
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-07-08,300394,closed,2.983297717338517
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-08-01,300051,closed,-0.3407189542483766
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-08-21,301608,closed,-0.2212309074573269
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-08-22,301629,closed,-6.209999999999995
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-09-24,300715,closed,-1.782327044025179
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-10-09,300772,closed,-7.842474477394268
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-10-24,300236,closed,-6.210000000000005
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-10-24,301568,closed,-3.1407836208688376
+validation_2025h2,contraction-rebreakout-v1,breakout_volume_le3,2025-10-31,300683,closed,-6.209999999999995

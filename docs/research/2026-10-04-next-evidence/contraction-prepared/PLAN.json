@@ -1,0 +1,30 @@
+{
+  "created_at": "2026-10-04T18:34:23.189993+08:00",
+  "as_of": "2026-09-30",
+  "planned_target_date": "2026-10-08",
+  "bindings": {
+    "database_path": ".local/chinext-payoff-20261004/market.db",
+    "database_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+    "files_sha256": {
+      ".local/chinext-payoff-20261004/export-manifest.json": "eaf0bd6e37d554e36c11c9127aaa740601590ad1c298d0f263e9a72f862b3a28",
+      "data/exchange_calendar.json": "0114a9b1ec598611a99a2604612510bb45f8ed5b3d0613d2eee00f8308265355",
+      "docs/research/2026-10-04-contraction-intraday-feasibility/prepool/PLAN.json": "38a825a4561757447d855a6367b1e01666aa1197fdacc0e609b027b9d12aeb30",
+      "docs/research/2026-10-04-contraction-intraday-feasibility/prepool/potential-code-days.csv": "1c10a46e52f3b0de37d8742baa2c34fea6a36348ea9d376beb052deb21ac3211",
+      "docs/research/2026-10-04-next-evidence/exchange-session-evidence.json": "6550cabfb855f3a101fd645db094f031e3a196410361faa5ebd656c250d9a1c6",
+      "src/formula/domain/functions.py": "599dc60d5e564d7e0a553abf153d5ff95116a47b3f8dd140ba5d50ba8be368e1",
+      "src/market/domain/exchange_schedule.py": "fc8a4408e9dfa7171364a312a5717612e59ab28843450c7c891104615857011d",
+      "src/market/domain/universe.py": "343d04424b01a90a0c85be724582421ffbda181df68363c8ceaf2d67f40ad2fb",
+      "src/market/infrastructure/store_panel.py": "191daeb13e26731dbaade3432faa6b6b1d984ce69dd1d59b757576f266cd1f36",
+      "src/strategy/application/contraction_rebreakout.py": "613d676689ff913e566e2a3be92ab4849e0d55b5e5bdef7a3dfd58f52c535121",
+      "tools/research_contraction_forward_prepare.py": "0ea472a2cba64cfedda460624d2d26fb52f2598e9977e624084e95f48256f6dd",
+      "tools/research_contraction_intraday_prepool.py": "2fdb8f0e668decd56425639356069b22d9f72d130fad6562252c7f1d697f0519",
+      "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e"
+    }
+  },
+  "no_network": true,
+  "no_production_write": true,
+  "no_target_inputs": true,
+  "no_target_scores_or_returns": true,
+  "reuse_frozen_past_features": true,
+  "current_static_filter_applied": false
+}

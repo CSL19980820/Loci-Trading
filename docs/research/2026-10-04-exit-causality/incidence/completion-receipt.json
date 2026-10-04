@@ -1,0 +1,12 @@
+{
+  "completed_at": "2026-10-04T18:05:26.812439+08:00",
+  "plan_sha256": "6474a050923021626789047cef7a67a058a3fe2adf013bac5a509740f6a5c1b6",
+  "artifacts_sha256": {
+    "all-first-stop-triggers.csv": "546ea419e8eaa28078f0c0e3cc714d356b73366a96337815cb457406b199e6c6",
+    "all-orders-incidence.csv": "7bd669ffd2a7450f4ab93d46919fc52449e5e7441c71914578eaef6ef1bc572c",
+    "close-masked-nonflat-cases.csv": "ffee8b2a529bd5b2af9c21472606eb7f2a52216f6f474e86c7088666177ec53b",
+    "stop-window-ledger.csv": "ac4d81677dd6dcde1fe3ecce3e1b819c9c440b2a9972fbfccfbbd077f393f465",
+    "summary.json": "d4c80576dc3b7c106258d9754161cce98caef4ad7b5e81f416709bfbeb8b6703",
+    "unknown-orders-preserved.csv": "3a12dcf4fca0b678f0a6e7ae6e45b2abfd431f4751d40aeb64570fded359f2d7"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "segment": "observed_2026",
+  "code": "300298",
+  "requested_date": "2026-01-05",
+  "selection": "minimum date/code from preexisting complete shape keys only",
+  "key_source": "docs\\research\\2026-10-04-multi-strategy-scoring\\contraction-rebreakout-v1\\observed_2026-candidates.csv",
+  "source_sha256": "caf1788d32fbf94021f37fa502c081f525ffa776c50a78306fa10ca7a482727c",
+  "provider": "tdx",
+  "started_at": "2026-10-04T09:01:55.671205+00:00",
+  "request_method": "get_history_minute_time_data",
+  "history_query_attempted": true,
+  "source_timestamp_present": false,
+  "date_evidence": "request parameter only; decoded records have no date",
+  "source_volume_unit": "not assumed from daily adapter; compare returned sum with same-day raw daily shares"
+}

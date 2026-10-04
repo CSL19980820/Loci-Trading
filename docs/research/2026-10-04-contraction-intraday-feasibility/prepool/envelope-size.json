@@ -1,0 +1,160 @@
+{
+  "completed_at": "2026-10-04T17:12:11.981581+08:00",
+  "assumptions": "envelope-plan.md, bound by envelope-freeze-receipt.json",
+  "status": "conditional_collection_size_only_not_proven_minute_equivalence",
+  "code_days": 58017,
+  "sources": {
+    "tdx": 58006,
+    "tencent": 11
+  },
+  "schemes": {
+    "ideal_daily_high_and_volume": {
+      "full": {
+        "total_code_days": 58017,
+        "conditional_excluded": 55770,
+        "still_needing_minutes": 2247,
+        "unknown_retained": 11,
+        "known_not_excluded": 2236,
+        "exclusion_reasons": {
+          "high_and_volume": 50052,
+          "high_only": 5167,
+          "volume_only": 551
+        },
+        "unknown_reasons": {
+          "non_tdx_or_missing_source;missing_or_invalid_volume": 11
+        },
+        "exact_high_threshold_equal_retained": 39,
+        "dates_with_remaining_requests": 504
+      },
+      "segments": {
+        "train": {
+          "total_code_days": 30770,
+          "conditional_excluded": 29654,
+          "still_needing_minutes": 1116,
+          "unknown_retained": 3,
+          "known_not_excluded": 1113,
+          "exclusion_reasons": {
+            "high_and_volume": 26670,
+            "high_only": 2736,
+            "volume_only": 248
+          },
+          "unknown_reasons": {
+            "non_tdx_or_missing_source;missing_or_invalid_volume": 3
+          },
+          "exact_high_threshold_equal_retained": 23,
+          "dates_with_remaining_requests": 244
+        },
+        "validation_2025h2": {
+          "total_code_days": 9869,
+          "conditional_excluded": 9436,
+          "still_needing_minutes": 433,
+          "unknown_retained": 2,
+          "known_not_excluded": 431,
+          "exclusion_reasons": {
+            "high_and_volume": 8446,
+            "high_only": 898,
+            "volume_only": 92
+          },
+          "unknown_reasons": {
+            "non_tdx_or_missing_source;missing_or_invalid_volume": 2
+          },
+          "exact_high_threshold_equal_retained": 6,
+          "dates_with_remaining_requests": 106
+        },
+        "observed_2026": {
+          "total_code_days": 17378,
+          "conditional_excluded": 16680,
+          "still_needing_minutes": 698,
+          "unknown_retained": 6,
+          "known_not_excluded": 692,
+          "exclusion_reasons": {
+            "high_and_volume": 14936,
+            "high_only": 1533,
+            "volume_only": 211
+          },
+          "unknown_reasons": {
+            "non_tdx_or_missing_source;missing_or_invalid_volume": 6
+          },
+          "exact_high_threshold_equal_retained": 10,
+          "dates_with_remaining_requests": 154
+        }
+      }
+    },
+    "tdx_daily_high_only": {
+      "full": {
+        "total_code_days": 58017,
+        "conditional_excluded": 55219,
+        "still_needing_minutes": 2798,
+        "unknown_retained": 11,
+        "known_not_excluded": 2787,
+        "exclusion_reasons": {
+          "high_only": 55219
+        },
+        "unknown_reasons": {
+          "non_tdx_or_missing_source": 11
+        },
+        "exact_high_threshold_equal_retained": 64,
+        "dates_with_remaining_requests": 529
+      },
+      "segments": {
+        "train": {
+          "total_code_days": 30770,
+          "conditional_excluded": 29406,
+          "still_needing_minutes": 1364,
+          "unknown_retained": 3,
+          "known_not_excluded": 1361,
+          "exclusion_reasons": {
+            "high_only": 29406
+          },
+          "unknown_reasons": {
+            "non_tdx_or_missing_source": 3
+          },
+          "exact_high_threshold_equal_retained": 38,
+          "dates_with_remaining_requests": 261
+        },
+        "validation_2025h2": {
+          "total_code_days": 9869,
+          "conditional_excluded": 9344,
+          "still_needing_minutes": 525,
+          "unknown_retained": 2,
+          "known_not_excluded": 523,
+          "exclusion_reasons": {
+            "high_only": 9344
+          },
+          "unknown_reasons": {
+            "non_tdx_or_missing_source": 2
+          },
+          "exact_high_threshold_equal_retained": 10,
+          "dates_with_remaining_requests": 111
+        },
+        "observed_2026": {
+          "total_code_days": 17378,
+          "conditional_excluded": 16469,
+          "still_needing_minutes": 909,
+          "unknown_retained": 6,
+          "known_not_excluded": 903,
+          "exclusion_reasons": {
+            "high_only": 16469
+          },
+          "unknown_reasons": {
+            "non_tdx_or_missing_source": 6
+          },
+          "exact_high_threshold_equal_retained": 16,
+          "dates_with_remaining_requests": 157
+        }
+      }
+    }
+  },
+  "quote_fields_read": [
+    "high",
+    "volume",
+    "source"
+  ],
+  "direct_factor_asof_target_day": true,
+  "final_close_not_read": true,
+  "score_top2_returns_not_read": true,
+  "minute_downloads": 0,
+  "original_plan_pool_and_database_unchanged": true,
+  "no_global_100share_tolerance_inferred": true,
+  "receipt_sha256": "6e1a5548fe6a260707584d8ffe5270ec4a4b1aaeb051be5e962a9ca2b32c49e4"
+}

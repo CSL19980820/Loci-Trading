@@ -1,0 +1,1295 @@
+{
+  "completed_at": "2026-10-04T18:13:35.818729+08:00",
+  "groups": {
+    "contraction_sampled/train/sampled_early": {
+      "orders": 195,
+      "statuses": {
+        "closed": 193,
+        "cancelled": 2
+      },
+      "changed_orders": 0,
+      "unchanged_orders": 195,
+      "common_market_days": 355,
+      "common_slots": 710,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 193,
+          "avg_net_return": -0.09501793135824887,
+          "profit_factor": 0.9650715326777112,
+          "win_rate": 41.45077720207254,
+          "positive_net_sum": 506.69061031848435,
+          "negative_net_sum": -525.0290710706264,
+          "known_closed_net_sum": -18.338460752142034,
+          "net_sum": -18.338460752142034,
+          "common_slot_mean": -0.025828817960763428
+        },
+        "double_cost": {
+          "trades": 193,
+          "avg_net_return": -0.30501793135824895,
+          "profit_factor": 0.8927662131075109,
+          "win_rate": 40.41450777202073,
+          "positive_net_sum": 490.10460508915463,
+          "negative_net_sum": -548.9730658412966,
+          "known_closed_net_sum": -58.86846075214205,
+          "net_sum": -58.86846075214205,
+          "common_slot_mean": -0.08291332500301697
+        },
+        "winner_removed": {
+          "trades": 192,
+          "avg_net_return": -0.222273455504002,
+          "profit_factor": 0.9187159229683348,
+          "win_rate": 41.14583333333333,
+          "positive_net_sum": 482.352567613858,
+          "negative_net_sum": -525.0290710706264,
+          "known_closed_net_sum": -42.67650345676838,
+          "net_sum": -42.67650345676838,
+          "common_slot_mean": -0.0601077513475611
+        },
+        "double_cost_winner_removed": {
+          "trades": 192,
+          "avg_net_return": -0.43227345550400204,
+          "profit_factor": 0.848814980877838,
+          "win_rate": 40.10416666666667,
+          "positive_net_sum": 465.9765623845283,
+          "negative_net_sum": -548.9730658412966,
+          "known_closed_net_sum": -82.9965034567684,
+          "net_sum": -82.9965034567684,
+          "common_slot_mean": -0.11689648374192732
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_sampled/train/sampled_early",
+          "signal_date": "2024-12-18",
+          "code": "301600"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 193,
+          "avg_net_return": -0.09501793135824887,
+          "profit_factor": 0.9650715326777112,
+          "win_rate": 41.45077720207254,
+          "positive_net_sum": 506.69061031848435,
+          "negative_net_sum": -525.0290710706264,
+          "known_closed_net_sum": -18.338460752142034,
+          "net_sum": -18.338460752142034,
+          "common_slot_mean": -0.025828817960763428
+        },
+        "double_cost": {
+          "trades": 193,
+          "avg_net_return": -0.30501793135824895,
+          "profit_factor": 0.8927662131075109,
+          "win_rate": 40.41450777202073,
+          "positive_net_sum": 490.10460508915463,
+          "negative_net_sum": -548.9730658412966,
+          "known_closed_net_sum": -58.86846075214205,
+          "net_sum": -58.86846075214205,
+          "common_slot_mean": -0.08291332500301697
+        },
+        "winner_removed": {
+          "trades": 192,
+          "avg_net_return": -0.222273455504002,
+          "profit_factor": 0.9187159229683348,
+          "win_rate": 41.14583333333333,
+          "positive_net_sum": 482.352567613858,
+          "negative_net_sum": -525.0290710706264,
+          "known_closed_net_sum": -42.67650345676838,
+          "net_sum": -42.67650345676838,
+          "common_slot_mean": -0.0601077513475611
+        },
+        "double_cost_winner_removed": {
+          "trades": 192,
+          "avg_net_return": -0.43227345550400204,
+          "profit_factor": 0.848814980877838,
+          "win_rate": 40.10416666666667,
+          "positive_net_sum": 465.9765623845283,
+          "negative_net_sum": -548.9730658412966,
+          "known_closed_net_sum": -82.9965034567684,
+          "net_sum": -82.9965034567684,
+          "common_slot_mean": -0.11689648374192732
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_sampled/train/sampled_early",
+          "signal_date": "2024-12-18",
+          "code": "301600"
+        }
+      },
+      "known_changed_order_delta_sum": 0.0,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "contraction_sampled/train/sampled_next_open": {
+      "orders": 195,
+      "statuses": {
+        "closed": 195
+      },
+      "changed_orders": 1,
+      "unchanged_orders": 194,
+      "common_market_days": 355,
+      "common_slots": 710,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 195,
+          "avg_net_return": 0.4524098497708397,
+          "profit_factor": 1.1621170520161865,
+          "win_rate": 45.64102564102564,
+          "positive_net_sum": 632.3941430228112,
+          "negative_net_sum": -544.1742223174977,
+          "known_closed_net_sum": 88.21992070531374,
+          "net_sum": 88.21992070531374,
+          "common_slot_mean": 0.12425340944410386
+        },
+        "double_cost": {
+          "trades": 195,
+          "avg_net_return": 0.24240984977083954,
+          "profit_factor": 1.0834205513507131,
+          "win_rate": 44.1025641025641,
+          "positive_net_sum": 613.9159082939559,
+          "negative_net_sum": -566.645987588642,
+          "known_closed_net_sum": 47.26992070531371,
+          "net_sum": 47.26992070531371,
+          "common_slot_mean": 0.06657735310607564
+        },
+        "winner_removed": {
+          "trades": 194,
+          "avg_net_return": 0.3084431272284805,
+          "profit_factor": 1.1099610459817275,
+          "win_rate": 45.36082474226804,
+          "positive_net_sum": 604.0121889998228,
+          "negative_net_sum": -544.1742223174977,
+          "known_closed_net_sum": 59.83796668232522,
+          "net_sum": 59.83796668232522,
+          "common_slot_mean": 0.0842788263131341
+        },
+        "double_cost_winner_removed": {
+          "trades": 194,
+          "avg_net_return": 0.09844312722848036,
+          "profit_factor": 1.0337035240708166,
+          "win_rate": 43.81443298969072,
+          "positive_net_sum": 585.7439542709674,
+          "negative_net_sum": -566.645987588642,
+          "known_closed_net_sum": 19.09796668232519,
+          "net_sum": 19.09796668232519,
+          "common_slot_mean": 0.026898544622993226
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_sampled/train/sampled_next_open",
+          "signal_date": "2024-04-12",
+          "code": "300894"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 195,
+          "avg_net_return": 0.4858154113454152,
+          "profit_factor": 1.1761968175623856,
+          "win_rate": 45.64102564102564,
+          "positive_net_sum": 632.3941430228112,
+          "negative_net_sum": -537.6601378104554,
+          "known_closed_net_sum": 94.73400521235597,
+          "net_sum": 94.73400521235597,
+          "common_slot_mean": 0.13342817635543094
+        },
+        "double_cost": {
+          "trades": 195,
+          "avg_net_return": 0.27581541134541515,
+          "profit_factor": 1.0960202497241458,
+          "win_rate": 44.1025641025641,
+          "positive_net_sum": 613.9159082939559,
+          "negative_net_sum": -560.1319030815997,
+          "known_closed_net_sum": 53.78400521235595,
+          "net_sum": 53.78400521235595,
+          "common_slot_mean": 0.07575212001740275
+        },
+        "winner_removed": {
+          "trades": 194,
+          "avg_net_return": 0.3420208824194199,
+          "profit_factor": 1.1234089093150494,
+          "win_rate": 45.36082474226804,
+          "positive_net_sum": 604.0121889998228,
+          "negative_net_sum": -537.6601378104554,
+          "known_closed_net_sum": 66.35205118936746,
+          "net_sum": 66.35205118936746,
+          "common_slot_mean": 0.09345359322446121
+        },
+        "double_cost_winner_removed": {
+          "trades": 194,
+          "avg_net_return": 0.13202088241941975,
+          "profit_factor": 1.0457250355647687,
+          "win_rate": 43.81443298969072,
+          "positive_net_sum": 585.7439542709674,
+          "negative_net_sum": -560.1319030815997,
+          "known_closed_net_sum": 25.61205118936743,
+          "net_sum": 25.61205118936743,
+          "common_slot_mean": 0.03607331153432033
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_sampled/train/sampled_next_open",
+          "signal_date": "2024-04-12",
+          "code": "300894"
+        }
+      },
+      "known_changed_order_delta_sum": 6.5140845070422415,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "contraction_sampled/train/original_eod": {
+      "orders": 227,
+      "statuses": {
+        "closed": 227
+      },
+      "changed_orders": 1,
+      "unchanged_orders": 226,
+      "common_market_days": 355,
+      "common_slots": 710,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 227,
+          "avg_net_return": 0.6976505653834665,
+          "profit_factor": 1.2494017398221793,
+          "win_rate": 44.93392070484582,
+          "positive_net_sum": 793.3529396847323,
+          "negative_net_sum": -634.9862613426855,
+          "known_closed_net_sum": 158.3666783420469,
+          "net_sum": 158.3666783420469,
+          "common_slot_mean": 0.22305165963668577
+        },
+        "double_cost": {
+          "trades": 227,
+          "avg_net_return": 0.48765056538346624,
+          "profit_factor": 1.167355066291058,
+          "win_rate": 43.61233480176212,
+          "positive_net_sum": 772.1447049558767,
+          "negative_net_sum": -661.4480266138298,
+          "known_closed_net_sum": 110.69667834204684,
+          "net_sum": 110.69667834204684,
+          "common_slot_mean": 0.15591081456626316
+        },
+        "winner_removed": {
+          "trades": 226,
+          "avg_net_return": 0.5525966317250192,
+          "profit_factor": 1.1966764422678682,
+          "win_rate": 44.690265486725664,
+          "positive_net_sum": 759.8731001125395,
+          "negative_net_sum": -634.9862613426855,
+          "known_closed_net_sum": 124.88683876985434,
+          "net_sum": 124.88683876985434,
+          "common_slot_mean": 0.17589695601387934
+        },
+        "double_cost_winner_removed": {
+          "trades": 226,
+          "avg_net_return": 0.3425966317250191,
+          "profit_factor": 1.1170565723299952,
+          "win_rate": 43.36283185840708,
+          "positive_net_sum": 738.8748653836842,
+          "negative_net_sum": -661.4480266138298,
+          "known_closed_net_sum": 77.42683876985431,
+          "net_sum": 77.42683876985431,
+          "common_slot_mean": 0.1090518855913441
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_sampled/train/original_eod",
+          "signal_date": "2025-03-25",
+          "code": "300871"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 227,
+          "avg_net_return": 0.7263469729034764,
+          "profit_factor": 1.262351729999033,
+          "win_rate": 44.93392070484582,
+          "positive_net_sum": 793.3529396847323,
+          "negative_net_sum": -628.4721768356432,
+          "known_closed_net_sum": 164.88076284908914,
+          "net_sum": 164.88076284908914,
+          "common_slot_mean": 0.23222642654801287
+        },
+        "double_cost": {
+          "trades": 227,
+          "avg_net_return": 0.5163469729034761,
+          "profit_factor": 1.1789657785517214,
+          "win_rate": 43.61233480176212,
+          "positive_net_sum": 772.1447049558767,
+          "negative_net_sum": -654.9339421067875,
+          "known_closed_net_sum": 117.21076284908908,
+          "net_sum": 117.21076284908908,
+          "common_slot_mean": 0.16508558147759025
+        },
+        "winner_removed": {
+          "trades": 226,
+          "avg_net_return": 0.5814200144995424,
+          "profit_factor": 1.209079937219337,
+          "win_rate": 44.690265486725664,
+          "positive_net_sum": 759.8731001125395,
+          "negative_net_sum": -628.4721768356432,
+          "known_closed_net_sum": 131.40092327689658,
+          "net_sum": 131.40092327689658,
+          "common_slot_mean": 0.18507172292520643
+        },
+        "double_cost_winner_removed": {
+          "trades": 226,
+          "avg_net_return": 0.37142001449954226,
+          "profit_factor": 1.1281670072051482,
+          "win_rate": 43.36283185840708,
+          "positive_net_sum": 738.8748653836842,
+          "negative_net_sum": -654.9339421067875,
+          "known_closed_net_sum": 83.94092327689656,
+          "net_sum": 83.94092327689656,
+          "common_slot_mean": 0.1182266525026712
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_sampled/train/original_eod",
+          "signal_date": "2025-03-25",
+          "code": "300871"
+        }
+      },
+      "known_changed_order_delta_sum": 6.5140845070422415,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "contraction_original_later/validation_2025h2/corrected_original": {
+      "orders": 116,
+      "statuses": {
+        "closed": 114,
+        "unresolved": 2
+      },
+      "changed_orders": 0,
+      "unchanged_orders": 116,
+      "common_market_days": 122,
+      "common_slots": 244,
+      "unresolved_preserved": 2,
+      "complete_opportunity_statistics": false,
+      "old": {
+        "base": {
+          "trades": 114,
+          "avg_net_return": -0.37532730443150486,
+          "profit_factor": 0.871356444712211,
+          "win_rate": 38.59649122807017,
+          "positive_net_sum": 289.8163113898655,
+          "negative_net_sum": -332.603624095057,
+          "known_closed_net_sum": -42.78731270519155,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "double_cost": {
+          "trades": 114,
+          "avg_net_return": -0.585327304431505,
+          "profit_factor": 0.8080412582197507,
+          "win_rate": 36.84210526315789,
+          "positive_net_sum": 280.88547161686733,
+          "negative_net_sum": -347.6127843220589,
+          "known_closed_net_sum": -66.72731270519158,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "winner_removed": {
+          "trades": 113,
+          "avg_net_return": -0.6161306836340362,
+          "profit_factor": 0.7906734557085041,
+          "win_rate": 38.05309734513274,
+          "positive_net_sum": 262.980856844411,
+          "negative_net_sum": -332.603624095057,
+          "known_closed_net_sum": -69.62276725064609,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "double_cost_winner_removed": {
+          "trades": 113,
+          "avg_net_return": -0.8261306836340366,
+          "profit_factor": 0.7314461048010364,
+          "win_rate": 36.283185840707965,
+          "positive_net_sum": 254.2600170714128,
+          "negative_net_sum": -347.6127843220589,
+          "known_closed_net_sum": -93.35276725064614,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_original_later/validation_2025h2/corrected_original",
+          "signal_date": "2025-12-16",
+          "code": "301488"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 114,
+          "avg_net_return": -0.37532730443150486,
+          "profit_factor": 0.871356444712211,
+          "win_rate": 38.59649122807017,
+          "positive_net_sum": 289.8163113898655,
+          "negative_net_sum": -332.603624095057,
+          "known_closed_net_sum": -42.78731270519155,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "double_cost": {
+          "trades": 114,
+          "avg_net_return": -0.585327304431505,
+          "profit_factor": 0.8080412582197507,
+          "win_rate": 36.84210526315789,
+          "positive_net_sum": 280.88547161686733,
+          "negative_net_sum": -347.6127843220589,
+          "known_closed_net_sum": -66.72731270519158,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "winner_removed": {
+          "trades": 113,
+          "avg_net_return": -0.6161306836340362,
+          "profit_factor": 0.7906734557085041,
+          "win_rate": 38.05309734513274,
+          "positive_net_sum": 262.980856844411,
+          "negative_net_sum": -332.603624095057,
+          "known_closed_net_sum": -69.62276725064609,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "double_cost_winner_removed": {
+          "trades": 113,
+          "avg_net_return": -0.8261306836340366,
+          "profit_factor": 0.7314461048010364,
+          "win_rate": 36.283185840707965,
+          "positive_net_sum": 254.2600170714128,
+          "negative_net_sum": -347.6127843220589,
+          "known_closed_net_sum": -93.35276725064614,
+          "net_sum": null,
+          "common_slot_mean": null
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_original_later/validation_2025h2/corrected_original",
+          "signal_date": "2025-12-16",
+          "code": "301488"
+        }
+      },
+      "known_changed_order_delta_sum": 0.0,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "contraction_original_later/observed_2026/corrected_original": {
+      "orders": 185,
+      "statuses": {
+        "closed": 185
+      },
+      "changed_orders": 0,
+      "unchanged_orders": 185,
+      "common_market_days": 177,
+      "common_slots": 354,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 185,
+          "avg_net_return": -0.2855396260519881,
+          "profit_factor": 0.9114260374700232,
+          "win_rate": 38.91891891891892,
+          "positive_net_sum": 543.5674870891585,
+          "negative_net_sum": -596.3923179087765,
+          "known_closed_net_sum": -52.8248308196178,
+          "net_sum": -52.8248308196178,
+          "common_slot_mean": -0.14922268593112373
+        },
+        "double_cost": {
+          "trades": 185,
+          "avg_net_return": -0.4955396260519883,
+          "profit_factor": 0.8521665652877254,
+          "win_rate": 38.37837837837838,
+          "positive_net_sum": 528.4476130513698,
+          "negative_net_sum": -620.1224438709876,
+          "known_closed_net_sum": -91.67483081961784,
+          "net_sum": -91.67483081961784,
+          "common_slot_mean": -0.25896844864298824
+        },
+        "winner_removed": {
+          "trades": 184,
+          "avg_net_return": -0.45212375181983805,
+          "profit_factor": 0.8605099900908263,
+          "win_rate": 38.58695652173913,
+          "positive_net_sum": 513.2015475739262,
+          "negative_net_sum": -596.3923179087765,
+          "known_closed_net_sum": -83.1907703348502,
+          "net_sum": -83.1907703348502,
+          "common_slot_mean": -0.23500217608714746
+        },
+        "double_cost_winner_removed": {
+          "trades": 184,
+          "avg_net_return": -0.6621237518198381,
+          "profit_factor": 0.8035375569148143,
+          "win_rate": 38.04347826086957,
+          "positive_net_sum": 498.2916735361374,
+          "negative_net_sum": -620.1224438709876,
+          "known_closed_net_sum": -121.83077033485021,
+          "net_sum": -121.83077033485021,
+          "common_slot_mean": -0.3441547184600289
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_original_later/observed_2026/corrected_original",
+          "signal_date": "2026-06-09",
+          "code": "300666"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 185,
+          "avg_net_return": -0.2855396260519881,
+          "profit_factor": 0.9114260374700232,
+          "win_rate": 38.91891891891892,
+          "positive_net_sum": 543.5674870891585,
+          "negative_net_sum": -596.3923179087765,
+          "known_closed_net_sum": -52.8248308196178,
+          "net_sum": -52.8248308196178,
+          "common_slot_mean": -0.14922268593112373
+        },
+        "double_cost": {
+          "trades": 185,
+          "avg_net_return": -0.4955396260519883,
+          "profit_factor": 0.8521665652877254,
+          "win_rate": 38.37837837837838,
+          "positive_net_sum": 528.4476130513698,
+          "negative_net_sum": -620.1224438709876,
+          "known_closed_net_sum": -91.67483081961784,
+          "net_sum": -91.67483081961784,
+          "common_slot_mean": -0.25896844864298824
+        },
+        "winner_removed": {
+          "trades": 184,
+          "avg_net_return": -0.45212375181983805,
+          "profit_factor": 0.8605099900908263,
+          "win_rate": 38.58695652173913,
+          "positive_net_sum": 513.2015475739262,
+          "negative_net_sum": -596.3923179087765,
+          "known_closed_net_sum": -83.1907703348502,
+          "net_sum": -83.1907703348502,
+          "common_slot_mean": -0.23500217608714746
+        },
+        "double_cost_winner_removed": {
+          "trades": 184,
+          "avg_net_return": -0.6621237518198381,
+          "profit_factor": 0.8035375569148143,
+          "win_rate": 38.04347826086957,
+          "positive_net_sum": 498.2916735361374,
+          "negative_net_sum": -620.1224438709876,
+          "known_closed_net_sum": -121.83077033485021,
+          "net_sum": -121.83077033485021,
+          "common_slot_mean": -0.3441547184600289
+        },
+        "largest_winner_key": {
+          "group_id": "contraction_original_later/observed_2026/corrected_original",
+          "signal_date": "2026-06-09",
+          "code": "300666"
+        }
+      },
+      "known_changed_order_delta_sum": 0.0,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "double_yin_sampled/train/corrected_low_open": {
+      "orders": 513,
+      "statuses": {
+        "closed": 512,
+        "cancelled": 1
+      },
+      "changed_orders": 5,
+      "unchanged_orders": 508,
+      "common_market_days": 356,
+      "common_slots": 712,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 512,
+          "avg_net_return": -0.971968250650719,
+          "profit_factor": 0.7010351859771373,
+          "win_rate": 37.5,
+          "positive_net_sum": 1166.9218671767394,
+          "negative_net_sum": -1664.5696115099076,
+          "known_closed_net_sum": -497.64774433316813,
+          "net_sum": -497.64774433316813,
+          "common_slot_mean": -0.69894346114209
+        },
+        "double_cost": {
+          "trades": 512,
+          "avg_net_return": -1.1819682506507192,
+          "profit_factor": 0.6506505801433476,
+          "win_rate": 36.71875,
+          "positive_net_sum": 1127.102899143169,
+          "negative_net_sum": -1732.2706434763372,
+          "known_closed_net_sum": -605.1677443331682,
+          "net_sum": -605.1677443331682,
+          "common_slot_mean": -0.8499546970971464
+        },
+        "winner_removed": {
+          "trades": 511,
+          "avg_net_return": -1.0320815880033896,
+          "profit_factor": 0.6831651330031546,
+          "win_rate": 37.37769080234833,
+          "positive_net_sum": 1137.1759200401755,
+          "negative_net_sum": -1664.5696115099076,
+          "known_closed_net_sum": -527.3936914697321,
+          "net_sum": -527.3936914697321,
+          "common_slot_mean": -0.7407214767833316
+        },
+        "double_cost_winner_removed": {
+          "trades": 511,
+          "avg_net_return": -1.2420815880033897,
+          "profit_factor": 0.6336001571925258,
+          "win_rate": 36.59491193737769,
+          "positive_net_sum": 1097.566952006605,
+          "negative_net_sum": -1732.2706434763372,
+          "known_closed_net_sum": -634.7036914697321,
+          "net_sum": -634.7036914697321,
+          "common_slot_mean": -0.8914377689181631
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/train/corrected_low_open",
+          "signal_date": "2024-02-26",
+          "code": "000586"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 512,
+          "avg_net_return": -0.9083872167285858,
+          "profit_factor": 0.7150185904078755,
+          "win_rate": 37.5,
+          "positive_net_sum": 1166.9218671767394,
+          "negative_net_sum": -1632.0161221417752,
+          "known_closed_net_sum": -465.09425496503593,
+          "net_sum": -465.09425496503593,
+          "common_slot_mean": -0.6532222682093202
+        },
+        "double_cost": {
+          "trades": 512,
+          "avg_net_return": -1.118387216728586,
+          "profit_factor": 0.6631120339163307,
+          "win_rate": 36.71875,
+          "positive_net_sum": 1127.102899143169,
+          "negative_net_sum": -1699.717154108205,
+          "known_closed_net_sum": -572.614254965036,
+          "net_sum": -572.614254965036,
+          "common_slot_mean": -0.8042335041643764
+        },
+        "winner_removed": {
+          "trades": 511,
+          "avg_net_return": -0.9683761293573382,
+          "profit_factor": 0.6967920871687244,
+          "win_rate": 37.37769080234833,
+          "positive_net_sum": 1137.1759200401755,
+          "negative_net_sum": -1632.0161221417752,
+          "known_closed_net_sum": -494.8402021015998,
+          "net_sum": -494.8402021015998,
+          "common_slot_mean": -0.6950002838505616
+        },
+        "double_cost_winner_removed": {
+          "trades": 511,
+          "avg_net_return": -1.1783761293573383,
+          "profit_factor": 0.6457350561849617,
+          "win_rate": 36.59491193737769,
+          "positive_net_sum": 1097.566952006605,
+          "negative_net_sum": -1699.717154108205,
+          "known_closed_net_sum": -602.1502021015998,
+          "net_sum": -602.1502021015998,
+          "common_slot_mean": -0.845716575985393
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/train/corrected_low_open",
+          "signal_date": "2024-02-26",
+          "code": "000586"
+        }
+      },
+      "known_changed_order_delta_sum": 32.55348936813222,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "double_yin_sampled/train/yin_close_and_open_above_vwap": {
+      "orders": 58,
+      "statuses": {
+        "closed": 56,
+        "cancelled": 2
+      },
+      "changed_orders": 1,
+      "unchanged_orders": 57,
+      "common_market_days": 356,
+      "common_slots": 712,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 56,
+          "avg_net_return": 1.8731757731546985,
+          "profit_factor": 1.9244375463370291,
+          "win_rate": 53.57142857142857,
+          "positive_net_sum": 218.36991473329832,
+          "negative_net_sum": -113.47207143663519,
+          "known_closed_net_sum": 104.89784329666311,
+          "net_sum": 104.89784329666311,
+          "common_slot_mean": 0.14732843159643697
+        },
+        "double_cost": {
+          "trades": 56,
+          "avg_net_return": 1.6631757731546981,
+          "profit_factor": 1.7815353652577999,
+          "win_rate": 50.0,
+          "positive_net_sum": 212.3107527221252,
+          "negative_net_sum": -119.17290942546202,
+          "known_closed_net_sum": 93.13784329666309,
+          "net_sum": 93.13784329666309,
+          "common_slot_mean": 0.13081157766385265
+        },
+        "winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.3663981120018036,
+          "profit_factor": 1.662294212211199,
+          "win_rate": 52.72727272727272,
+          "positive_net_sum": 188.6239675967344,
+          "negative_net_sum": -113.47207143663519,
+          "known_closed_net_sum": 75.1518961600992,
+          "net_sum": 75.1518961600992,
+          "common_slot_mean": 0.1055504159551955
+        },
+        "double_cost_winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.1563981120018039,
+          "profit_factor": 1.5336942470124026,
+          "win_rate": 49.09090909090909,
+          "positive_net_sum": 182.77480558556124,
+          "negative_net_sum": -119.17290942546202,
+          "known_closed_net_sum": 63.601896160099216,
+          "net_sum": 63.601896160099216,
+          "common_slot_mean": 0.08932850584283597
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/train/yin_close_and_open_above_vwap",
+          "signal_date": "2024-02-26",
+          "code": "000586"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 56,
+          "avg_net_return": 1.9715953947701963,
+          "profit_factor": 2.0226820719953293,
+          "win_rate": 53.57142857142857,
+          "positive_net_sum": 218.36991473329832,
+          "negative_net_sum": -107.9605726261673,
+          "known_closed_net_sum": 110.409342107131,
+          "net_sum": 110.409342107131,
+          "common_slot_mean": 0.15506930071226263
+        },
+        "double_cost": {
+          "trades": 56,
+          "avg_net_return": 1.761595394770196,
+          "profit_factor": 1.86792290869314,
+          "win_rate": 50.0,
+          "positive_net_sum": 212.3107527221252,
+          "negative_net_sum": -113.66141061499414,
+          "known_closed_net_sum": 98.64934210713098,
+          "net_sum": 98.64934210713098,
+          "common_slot_mean": 0.13855244677967835
+        },
+        "winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.466607181283038,
+          "profit_factor": 1.7471560497356609,
+          "win_rate": 52.72727272727272,
+          "positive_net_sum": 188.6239675967344,
+          "negative_net_sum": -107.9605726261673,
+          "known_closed_net_sum": 80.66339497056708,
+          "net_sum": 80.66339497056708,
+          "common_slot_mean": 0.11329128507102118
+        },
+        "double_cost_winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.2566071812830382,
+          "profit_factor": 1.6080638503130604,
+          "win_rate": 49.09090909090909,
+          "positive_net_sum": 182.77480558556124,
+          "negative_net_sum": -113.66141061499414,
+          "known_closed_net_sum": 69.1133949705671,
+          "net_sum": 69.1133949705671,
+          "common_slot_mean": 0.09706937495866166
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/train/yin_close_and_open_above_vwap",
+          "signal_date": "2024-02-26",
+          "code": "000586"
+        }
+      },
+      "known_changed_order_delta_sum": 5.511498810467884,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "double_yin_sampled/validation_2025h2/corrected_low_open": {
+      "orders": 190,
+      "statuses": {
+        "closed": 188,
+        "cancelled": 2
+      },
+      "changed_orders": 0,
+      "unchanged_orders": 190,
+      "common_market_days": 123,
+      "common_slots": 246,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 188,
+          "avg_net_return": 0.8935937969864484,
+          "profit_factor": 1.3540177115136178,
+          "win_rate": 43.61702127659575,
+          "positive_net_sum": 642.53582877223,
+          "negative_net_sum": -474.5401949387778,
+          "known_closed_net_sum": 167.9956338334523,
+          "net_sum": 167.9956338334523,
+          "common_slot_mean": 0.6829090806237899
+        },
+        "double_cost": {
+          "trades": 188,
+          "avg_net_return": 0.6835937969864482,
+          "profit_factor": 1.2586003932340064,
+          "win_rate": 43.08510638297872,
+          "positive_net_sum": 625.48175297295,
+          "negative_net_sum": -496.9661191394977,
+          "known_closed_net_sum": 128.51563383345226,
+          "net_sum": 128.51563383345226,
+          "common_slot_mean": 0.5224212757457409
+        },
+        "winner_removed": {
+          "trades": 187,
+          "avg_net_return": 0.7138940482617199,
+          "profit_factor": 1.2813211366471597,
+          "win_rate": 43.31550802139038,
+          "positive_net_sum": 608.0383819637195,
+          "negative_net_sum": -474.5401949387778,
+          "known_closed_net_sum": 133.49818702494161,
+          "net_sum": 133.49818702494161,
+          "common_slot_mean": 0.5426755570119578
+        },
+        "double_cost_winner_removed": {
+          "trades": 187,
+          "avg_net_return": 0.5038940482617197,
+          "profit_factor": 1.1896068633171588,
+          "win_rate": 42.780748663101605,
+          "positive_net_sum": 591.1943061644394,
+          "negative_net_sum": -496.9661191394977,
+          "known_closed_net_sum": 94.22818702494158,
+          "net_sum": 94.22818702494158,
+          "common_slot_mean": 0.3830414106704942
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/validation_2025h2/corrected_low_open",
+          "signal_date": "2025-09-30",
+          "code": "002208"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 188,
+          "avg_net_return": 0.8935937969864484,
+          "profit_factor": 1.3540177115136178,
+          "win_rate": 43.61702127659575,
+          "positive_net_sum": 642.53582877223,
+          "negative_net_sum": -474.5401949387778,
+          "known_closed_net_sum": 167.9956338334523,
+          "net_sum": 167.9956338334523,
+          "common_slot_mean": 0.6829090806237899
+        },
+        "double_cost": {
+          "trades": 188,
+          "avg_net_return": 0.6835937969864482,
+          "profit_factor": 1.2586003932340064,
+          "win_rate": 43.08510638297872,
+          "positive_net_sum": 625.48175297295,
+          "negative_net_sum": -496.9661191394977,
+          "known_closed_net_sum": 128.51563383345226,
+          "net_sum": 128.51563383345226,
+          "common_slot_mean": 0.5224212757457409
+        },
+        "winner_removed": {
+          "trades": 187,
+          "avg_net_return": 0.7138940482617199,
+          "profit_factor": 1.2813211366471597,
+          "win_rate": 43.31550802139038,
+          "positive_net_sum": 608.0383819637195,
+          "negative_net_sum": -474.5401949387778,
+          "known_closed_net_sum": 133.49818702494161,
+          "net_sum": 133.49818702494161,
+          "common_slot_mean": 0.5426755570119578
+        },
+        "double_cost_winner_removed": {
+          "trades": 187,
+          "avg_net_return": 0.5038940482617197,
+          "profit_factor": 1.1896068633171588,
+          "win_rate": 42.780748663101605,
+          "positive_net_sum": 591.1943061644394,
+          "negative_net_sum": -496.9661191394977,
+          "known_closed_net_sum": 94.22818702494158,
+          "net_sum": 94.22818702494158,
+          "common_slot_mean": 0.3830414106704942
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/validation_2025h2/corrected_low_open",
+          "signal_date": "2025-09-30",
+          "code": "002208"
+        }
+      },
+      "known_changed_order_delta_sum": 0.0,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "double_yin_sampled/validation_2025h2/yin_close_and_open_above_vwap": {
+      "orders": 19,
+      "statuses": {
+        "closed": 19
+      },
+      "changed_orders": 0,
+      "unchanged_orders": 19,
+      "common_market_days": 123,
+      "common_slots": 246,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 19,
+          "avg_net_return": 1.3398601380671578,
+          "profit_factor": 1.7217315968783342,
+          "win_rate": 57.89473684210527,
+          "positive_net_sum": 60.729932507639155,
+          "negative_net_sum": -35.27258988436316,
+          "known_closed_net_sum": 25.457342623276,
+          "net_sum": 25.457342623276,
+          "common_slot_mean": 0.10348513261494309
+        },
+        "double_cost": {
+          "trades": 19,
+          "avg_net_return": 1.1298601380671576,
+          "profit_factor": 1.5809428429902852,
+          "win_rate": 57.89473684210527,
+          "positive_net_sum": 58.419932507639146,
+          "negative_net_sum": -36.95258988436316,
+          "known_closed_net_sum": 21.467342623275993,
+          "net_sum": 21.467342623275993,
+          "common_slot_mean": 0.08726562041982111
+        },
+        "winner_removed": {
+          "trades": 18,
+          "avg_net_return": 0.3643923538054949,
+          "profit_factor": 1.1859535234016552,
+          "win_rate": 55.55555555555556,
+          "positive_net_sum": 41.831652252862064,
+          "negative_net_sum": -35.27258988436316,
+          "known_closed_net_sum": 6.559062368498908,
+          "net_sum": 6.559062368498908,
+          "common_slot_mean": 0.026662855156499625
+        },
+        "double_cost_winner_removed": {
+          "trades": 18,
+          "avg_net_return": 0.15439235380549476,
+          "profit_factor": 1.0752061594923525,
+          "win_rate": 55.55555555555556,
+          "positive_net_sum": 39.73165225286206,
+          "negative_net_sum": -36.95258988436316,
+          "known_closed_net_sum": 2.7790623684989058,
+          "net_sum": 2.7790623684989058,
+          "common_slot_mean": 0.011297001497963031
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/validation_2025h2/yin_close_and_open_above_vwap",
+          "signal_date": "2025-12-16",
+          "code": "000546"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 19,
+          "avg_net_return": 1.3398601380671578,
+          "profit_factor": 1.7217315968783342,
+          "win_rate": 57.89473684210527,
+          "positive_net_sum": 60.729932507639155,
+          "negative_net_sum": -35.27258988436316,
+          "known_closed_net_sum": 25.457342623276,
+          "net_sum": 25.457342623276,
+          "common_slot_mean": 0.10348513261494309
+        },
+        "double_cost": {
+          "trades": 19,
+          "avg_net_return": 1.1298601380671576,
+          "profit_factor": 1.5809428429902852,
+          "win_rate": 57.89473684210527,
+          "positive_net_sum": 58.419932507639146,
+          "negative_net_sum": -36.95258988436316,
+          "known_closed_net_sum": 21.467342623275993,
+          "net_sum": 21.467342623275993,
+          "common_slot_mean": 0.08726562041982111
+        },
+        "winner_removed": {
+          "trades": 18,
+          "avg_net_return": 0.3643923538054949,
+          "profit_factor": 1.1859535234016552,
+          "win_rate": 55.55555555555556,
+          "positive_net_sum": 41.831652252862064,
+          "negative_net_sum": -35.27258988436316,
+          "known_closed_net_sum": 6.559062368498908,
+          "net_sum": 6.559062368498908,
+          "common_slot_mean": 0.026662855156499625
+        },
+        "double_cost_winner_removed": {
+          "trades": 18,
+          "avg_net_return": 0.15439235380549476,
+          "profit_factor": 1.0752061594923525,
+          "win_rate": 55.55555555555556,
+          "positive_net_sum": 39.73165225286206,
+          "negative_net_sum": -36.95258988436316,
+          "known_closed_net_sum": 2.7790623684989058,
+          "net_sum": 2.7790623684989058,
+          "common_slot_mean": 0.011297001497963031
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/validation_2025h2/yin_close_and_open_above_vwap",
+          "signal_date": "2025-12-16",
+          "code": "000546"
+        }
+      },
+      "known_changed_order_delta_sum": 0.0,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "double_yin_sampled/observed_2026/corrected_low_open": {
+      "orders": 263,
+      "statuses": {
+        "closed": 263
+      },
+      "changed_orders": 4,
+      "unchanged_orders": 259,
+      "common_market_days": 178,
+      "common_slots": 356,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 263,
+          "avg_net_return": -0.7778613589992733,
+          "profit_factor": 0.7786118946013116,
+          "win_rate": 37.6425855513308,
+          "positive_net_sum": 719.4898918084148,
+          "negative_net_sum": -924.0674292252236,
+          "known_closed_net_sum": -204.5775374168089,
+          "net_sum": -204.5775374168089,
+          "common_slot_mean": -0.5746560039798002
+        },
+        "double_cost": {
+          "trades": 263,
+          "avg_net_return": -0.9878613589992735,
+          "profit_factor": 0.7289634319141576,
+          "win_rate": 36.88212927756654,
+          "positive_net_sum": 698.7625155161331,
+          "negative_net_sum": -958.5700529329421,
+          "known_closed_net_sum": -259.80753741680894,
+          "net_sum": -259.80753741680894,
+          "common_slot_mean": -0.7297964534180026
+        },
+        "winner_removed": {
+          "trades": 262,
+          "avg_net_return": -0.892354835290986,
+          "profit_factor": 0.7469914429921382,
+          "win_rate": 37.404580152671755,
+          "positive_net_sum": 690.2704623789853,
+          "negative_net_sum": -924.0674292252236,
+          "known_closed_net_sum": -233.79696684623835,
+          "net_sum": -233.79696684623835,
+          "common_slot_mean": -0.6567330529388717
+        },
+        "double_cost_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -1.102354835290986,
+          "profit_factor": 0.6987001983187942,
+          "win_rate": 36.6412213740458,
+          "positive_net_sum": 669.7530860867037,
+          "negative_net_sum": -958.5700529329421,
+          "known_closed_net_sum": -288.81696684623836,
+          "net_sum": -288.81696684623836,
+          "common_slot_mean": -0.8112836147366246
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/observed_2026/corrected_low_open",
+          "signal_date": "2026-06-15",
+          "code": "603324"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 263,
+          "avg_net_return": -0.6864096591239501,
+          "profit_factor": 0.7994193279546233,
+          "win_rate": 37.6425855513308,
+          "positive_net_sum": 719.4898918084148,
+          "negative_net_sum": -900.0156321580137,
+          "known_closed_net_sum": -180.5257403495989,
+          "net_sum": -180.5257403495989,
+          "common_slot_mean": -0.5070947762629182
+        },
+        "double_cost": {
+          "trades": 263,
+          "avg_net_return": -0.8964096591239502,
+          "profit_factor": 0.7477248423240312,
+          "win_rate": 36.88212927756654,
+          "positive_net_sum": 698.7625155161331,
+          "negative_net_sum": -934.518255865732,
+          "known_closed_net_sum": -235.7557403495989,
+          "net_sum": -235.7557403495989,
+          "common_slot_mean": -0.6622352257011205
+        },
+        "winner_removed": {
+          "trades": 262,
+          "avg_net_return": -0.8005540831260624,
+          "profit_factor": 0.7669538591500776,
+          "win_rate": 37.404580152671755,
+          "positive_net_sum": 690.2704623789853,
+          "negative_net_sum": -900.0156321580137,
+          "known_closed_net_sum": -209.74516977902834,
+          "net_sum": -209.74516977902834,
+          "common_slot_mean": -0.5891718252219897
+        },
+        "double_cost_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -1.0105540831260624,
+          "profit_factor": 0.7166827206240594,
+          "win_rate": 36.6412213740458,
+          "positive_net_sum": 669.7530860867037,
+          "negative_net_sum": -934.518255865732,
+          "known_closed_net_sum": -264.7651697790284,
+          "net_sum": -264.7651697790284,
+          "common_slot_mean": -0.7437223870197427
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/observed_2026/corrected_low_open",
+          "signal_date": "2026-06-15",
+          "code": "603324"
+        }
+      },
+      "known_changed_order_delta_sum": 24.051797067210018,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    },
+    "double_yin_sampled/observed_2026/yin_close_and_open_above_vwap": {
+      "orders": 61,
+      "statuses": {
+        "closed": 60,
+        "cancelled": 1
+      },
+      "changed_orders": 0,
+      "unchanged_orders": 61,
+      "common_market_days": 178,
+      "common_slots": 356,
+      "unresolved_preserved": 0,
+      "complete_opportunity_statistics": true,
+      "old": {
+        "base": {
+          "trades": 60,
+          "avg_net_return": 3.200035959828463,
+          "profit_factor": 2.3033289667525687,
+          "win_rate": 55.00000000000001,
+          "positive_net_sum": 339.31888459233767,
+          "negative_net_sum": -147.31672700262985,
+          "known_closed_net_sum": 192.0021575897078,
+          "net_sum": 192.0021575897078,
+          "common_slot_mean": 0.5393319033418759
+        },
+        "double_cost": {
+          "trades": 60,
+          "avg_net_return": 2.9900359598284636,
+          "profit_factor": 2.1726648520732375,
+          "win_rate": 55.00000000000001,
+          "positive_net_sum": 332.3888845923376,
+          "negative_net_sum": -152.98672700262986,
+          "known_closed_net_sum": 179.40215758970783,
+          "net_sum": 179.40215758970783,
+          "common_slot_mean": 0.5039386449149096
+        },
+        "winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.744136965879268,
+          "profit_factor": 2.0990203507846505,
+          "win_rate": 54.23728813559322,
+          "positive_net_sum": 309.2208079895067,
+          "negative_net_sum": -147.31672700262985,
+          "known_closed_net_sum": 161.9040809868768,
+          "net_sum": 161.9040809868768,
+          "common_slot_mean": 0.4547867443451596
+        },
+        "double_cost_winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.5341369658792683,
+          "profit_factor": 1.9773009980421807,
+          "win_rate": 54.23728813559322,
+          "positive_net_sum": 302.50080798950665,
+          "negative_net_sum": -152.98672700262986,
+          "known_closed_net_sum": 149.51408098687682,
+          "net_sum": 149.51408098687682,
+          "common_slot_mean": 0.41998337355864274
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/observed_2026/yin_close_and_open_above_vwap",
+          "signal_date": "2026-06-11",
+          "code": "600110"
+        }
+      },
+      "new": {
+        "base": {
+          "trades": 60,
+          "avg_net_return": 3.200035959828463,
+          "profit_factor": 2.3033289667525687,
+          "win_rate": 55.00000000000001,
+          "positive_net_sum": 339.31888459233767,
+          "negative_net_sum": -147.31672700262985,
+          "known_closed_net_sum": 192.0021575897078,
+          "net_sum": 192.0021575897078,
+          "common_slot_mean": 0.5393319033418759
+        },
+        "double_cost": {
+          "trades": 60,
+          "avg_net_return": 2.9900359598284636,
+          "profit_factor": 2.1726648520732375,
+          "win_rate": 55.00000000000001,
+          "positive_net_sum": 332.3888845923376,
+          "negative_net_sum": -152.98672700262986,
+          "known_closed_net_sum": 179.40215758970783,
+          "net_sum": 179.40215758970783,
+          "common_slot_mean": 0.5039386449149096
+        },
+        "winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.744136965879268,
+          "profit_factor": 2.0990203507846505,
+          "win_rate": 54.23728813559322,
+          "positive_net_sum": 309.2208079895067,
+          "negative_net_sum": -147.31672700262985,
+          "known_closed_net_sum": 161.9040809868768,
+          "net_sum": 161.9040809868768,
+          "common_slot_mean": 0.4547867443451596
+        },
+        "double_cost_winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.5341369658792683,
+          "profit_factor": 1.9773009980421807,
+          "win_rate": 54.23728813559322,
+          "positive_net_sum": 302.50080798950665,
+          "negative_net_sum": -152.98672700262986,
+          "known_closed_net_sum": 149.51408098687682,
+          "net_sum": 149.51408098687682,
+          "common_slot_mean": 0.41998337355864274
+        },
+        "largest_winner_key": {
+          "group_id": "double_yin_sampled/observed_2026/yin_close_and_open_above_vwap",
+          "signal_date": "2026-06-11",
+          "code": "600110"
+        }
+      },
+      "known_changed_order_delta_sum": 0.0,
+      "fixed_order_sensitivity_not_strategy_reexecution": true
+    }
+  },
+  "changed_policy_orders": 12,
+  "fixed_policy_groups": 11,
+  "unknown_labels_unchanged": true,
+  "original_strict_failures_unchanged": true,
+  "no_new_nomination": true,
+  "real_execution_not_proven": true,
+  "current_script_sha256": "13cdacd96a2d585887a61df0d1a15736dd7d55d40cfb43e53a9811a003b06671",
+  "freeze_receipt_sha256": "cb52a6fa2e3ca3b67cce2ead90df5b2128f9461a631a79a67869d6368db61847"
+}

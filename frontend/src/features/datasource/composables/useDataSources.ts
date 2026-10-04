@@ -3,7 +3,6 @@ import { computed, onScopeDispose, ref } from 'vue'
 
 import {
   fetchLanesCatalog,
-  getAkshareSources,
   patchLaneProvider,
   probeLanes,
   saveLanePolicy,
@@ -11,7 +10,6 @@ import {
 } from '@/shared/api/quant'
 import { toErrorMessage } from '@/shared/lib/errors'
 import type {
-  AkshareCatalogSource,
   DataLane,
   LanePolicy,
   LanePolicyMode,
@@ -54,9 +52,9 @@ export type SourceRow = {
   tools: SourceTool[]
   enabledCount: number
   disabledCount: number
-  /** 本机 akshare 目录里归到该源的接口数；没装 akshare 时为 undefined */
+  /** 保留接入的诊断字段 */
   interfaceCount?: number
-  /** 只有 AkShare 接口、没有内置线路的源：没有总开关 */
+  /** 接入类型兼容标识 */
   interfaceOnly: boolean
   /** 已探测工具的中位耗时 */
   medianRttMs: number | null
@@ -90,18 +88,6 @@ export type LaneRow = {
 /** 探测/测速/启停都用它标记「哪一处正在忙」，按钮各自转圈。 */
 export type BusyKey = string
 
-/** AkShare 目录里的上游 id → 中文名。认不出的直接显示 id，不猜。 */
-  const INTERFACE_SOURCE_LABEL: Record<string, string> = {
-    akshare: 'AkShare 自有',
-    baidu: '百度股市通',
-    baostock: '证券宝',
-    eastmoney: '东方财富',
-    sina: '新浪财经',
-    tencent: '腾讯财经',
-    tonghuashun: '同花顺',
-    xueqiu: '雪球',
-  }
-
 function cellKey(providerId: string, lane: string): string {
   return `${providerId}:${lane}`
 }
@@ -117,7 +103,6 @@ export function useDataSources() {
   const lanes = ref<DataLane[]>([])
   const providers = ref<LaneProvider[]>([])
   const policies = ref<LanePolicy[]>([])
-  const interfaceStats = ref<Record<string, { count: number; label?: string }>>({})
   const cells = ref<Record<string, ProbeCell>>({})
   const loading = ref(false)
   const error = ref('')
@@ -135,7 +120,7 @@ export function useDataSources() {
   const laneRequired = computed(() => new Map(lanes.value.map((lane) => [lane.id, lane.required])))
   const policyByLane = computed(() => new Map(policies.value.map((item) => [item.lane, item])))
 
-  /** 只统计数据源家数，不把工具条数混进来。接口源（只有 AkShare 接口）也算一家。 */
+  /** 只统计数据源家数，不把工具条数混进来。 */
   const stats = computed(() => {
     const total = sources.value.length
     const enabled = sources.value.filter((row) => row.enabled).length
@@ -160,7 +145,6 @@ export function useDataSources() {
     const wired = providers.value.map((provider) => {
       const tools = (provider.lanes ?? []).map((lane) => toolOf(provider, lane))
       const probed = tools.filter((tool) => tool.probe)
-      const interfaces = interfaceStats.value[provider.id]
       return {
         id: provider.id,
         label: provider.label,
@@ -171,7 +155,6 @@ export function useDataSources() {
         tools,
         enabledCount: tools.filter((tool) => tool.enabled).length,
         disabledCount: tools.filter((tool) => !tool.enabled).length,
-        interfaceCount: interfaces?.count,
         interfaceOnly: false,
         medianRttMs: median(
           probed
@@ -182,29 +165,7 @@ export function useDataSources() {
         failedCount: probed.filter((tool) => tool.probe && !tool.probe.ok).length,
       }
     })
-    const wiredIds = new Set(wired.map((row) => row.id))
-    // AkShare 目录里那些没有内置线路的上游（同花顺 / 雪球 / akshare 自身…）
-    // 同样是数据来源；接口不再有上桌开关，一律视为可用面。
-    const interfaceOnly = Object.entries(interfaceStats.value)
-      .filter(([id]) => !wiredIds.has(id))
-      .map(([id, item]) => ({
-        id,
-        label: item.label || INTERFACE_SOURCE_LABEL[id] || id,
-        description: `AkShare 接口源，共 ${item.count} 个接口（可浏览/试跑/一键全测）`,
-        baseUrl: '',
-        enabled: true,
-        masterEnabled: true,
-        tools: [] as SourceTool[],
-        enabledCount: 0,
-        disabledCount: 0,
-        interfaceCount: item.count,
-        interfaceOnly: true,
-        medianRttMs: null,
-        probedCount: 0,
-        failedCount: 0,
-      }))
-      .sort((left, right) => (right.interfaceCount ?? 0) - (left.interfaceCount ?? 0))
-    return [...wired, ...interfaceOnly]
+    return wired
   })
 
   const laneRows = computed<LaneRow[]>(() =>
@@ -265,21 +226,11 @@ export function useDataSources() {
     const version = ++loadVersion
     loading.value = true
     try {
-      // 没装 akshare 时数不出接口数，别让它拖垮整份目录
-      const [catalog, akshare] = await Promise.all([
-        fetchLanesCatalog(),
-        getAkshareSources().catch(() => ({ sources: [] as AkshareCatalogSource[] })),
-      ])
+      const catalog = await fetchLanesCatalog()
       if (version !== loadVersion) return
       lanes.value = catalog.lanes ?? []
       providers.value = catalog.providers ?? []
       policies.value = catalog.policies ?? []
-      interfaceStats.value = Object.fromEntries(
-        (akshare.sources ?? []).map((item) => [
-          item.id,
-          { count: item.count, label: item.label },
-        ]),
-      )
       error.value = ''
     } catch (caught: unknown) {
       if (version !== loadVersion) return

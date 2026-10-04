@@ -110,7 +110,7 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.settings-rail__groups { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: var(--gap-4); width: 100%; height: auto; padding: 0; background: transparent; }
+.settings-rail__groups { display: flex; flex: 0 0 auto; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: var(--gap-4); width: 100%; height: auto; padding: 0; background: transparent; }
 
 .settings-rail {
   display: flex;
@@ -143,11 +143,14 @@ const emit = defineEmits<{
 
 .settings-rail__item {
   display: flex;
+  /* TabsTrigger 的 flex-1 适用于横向标签；纵向导航不能以 0 为高度基准。 */
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--gap-2);
   width: 100%;
   min-width: 0;
   height: var(--ctl-h);
+  min-height: 40px;
   margin: 0;
   padding: 0 var(--gap-2);
   border: 1px solid transparent;

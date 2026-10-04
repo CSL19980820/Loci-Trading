@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { CircleAlert, CircleCheck, RefreshCw, X } from '@lucide/vue'
@@ -21,17 +21,22 @@ import SystemTab from './components/SystemTab.vue'
 import RetentionSettingsTab from './components/RetentionSettingsTab.vue'
 import { provideOpsFeedback } from './composables/useOpsFeedback'
 import {
-  type OpsTab,
+  type OpsTab as BaseOpsTab,
   useSettingsSummaries,
 } from './composables/useSettingsSummaries'
 
+type OpsTab = BaseOpsTab | 'sources' | 'jobs' | 'alerts'
+const DataSourcePanel = defineAsyncComponent(() => import('@/features/datasource/DataSourcePanel.vue'))
+const JobsTab = defineAsyncComponent(() => import('./components/JobsTab.vue'))
+const AlertRulesCard = defineAsyncComponent(() => import('./components/AlertRulesCard.vue'))
+const NotifyPolicyCard = defineAsyncComponent(() => import('./components/NotifyPolicyCard.vue'))
 type TabLoadable = { load: () => Promise<void> }
 type SystemTabExpose = TabLoadable & {
   applyRecommendedSync: () => void
   isDirty: () => boolean
 }
 
-const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'retention'])
+const TAB_NAMES = new Set<string>(['mcp', 'llm', 'system', 'retention', 'sources', 'jobs', 'alerts'])
 const mobile = useMobileLayout()
 const compactNavigation = useMediaQuery('(max-width: 980px)')
 
@@ -54,16 +59,14 @@ const { summaries, refresh: refreshSummaries, refreshAppearanceLocal } =
 const route = useRoute()
 const router = useRouter()
 
-/** 旧 Tab 迁走：技能→市场；线路/AkShare→数据源；定时/执行历史→工坊定时；四联→系统 */
+/** 旧 Tab 迁走：技能→安装；线路→数据源；执行历史→定时任务；四联→系统 */
 const LEGACY_TAB_TARGETS: Record<string, { path: string; query: Record<string, string>; hash?: string }> = {
   guardian: { path: '/agents/guardian', query: {} },
   pack: { path: '/ops', query: { tab: 'system' } },
   signals: { path: '/ops', query: { tab: 'system' } },
-  skills: { path: '/quant', query: { tab: 'market', shelf: 'installed', kind: 'skill' } },
-  lanes: { path: '/quant', query: { tab: 'sources' } },
-  akshare: { path: '/quant', query: { tab: 'sources', view: 'interfaces' } },
-  jobs: { path: '/quant', query: { tab: 'jobs' } },
-  runs: { path: '/quant', query: { tab: 'jobs', runs: '1' } },
+  skills: { path: '/quant', query: { tab: 'install' } },
+  lanes: { path: '/ops', query: { tab: 'sources' } },
+  runs: { path: '/ops', query: { tab: 'jobs', runs: '1' } },
   'data-dir': { path: '/ops', query: { tab: 'system' }, hash: '#sys-sync' },
   'market-sync': { path: '/ops', query: { tab: 'system' }, hash: '#sys-sync' },
   notify: { path: '/ops', query: { tab: 'system' }, hash: '#sys-notify' },
@@ -85,6 +88,9 @@ const visited = reactive<Record<OpsTab, boolean>>({
   llm: false,
   system: false,
   retention: false,
+  sources: false,
+  jobs: false,
+  alerts: false,
 })
 visited[activeTab.value] = true
 
@@ -100,6 +106,9 @@ const railGroups = computed((): SettingsRailGroup[] => [
   {
     title: '系统管理',
     items: [
+      { name: 'sources', label: '数据源' },
+      { name: 'jobs', label: '定时任务' },
+      { name: 'alerts', label: '提醒与通知' },
       { name: 'system', label: '系统', ...summaries.system, children: undefined },
       { name: 'retention', label: '日志与数据', ...summaries.retention },
     ],
@@ -139,6 +148,9 @@ function tabLoader(tab: OpsTab): TabLoadable | null {
     llm: llmTab,
     system: systemTab,
     retention: retentionTab,
+    sources: { value: null },
+    jobs: { value: null },
+    alerts: { value: null },
   }
   return map[tab].value
 }
@@ -295,6 +307,9 @@ onMounted(() => {
             @changed="() => { refreshSummaries(); onAppearanceChanged() }"
           />
         </div>
+        <div v-if="activeTab === 'sources'" class="ops-pane"><DataSourcePanel /></div>
+        <div v-if="activeTab === 'jobs'" class="ops-pane"><JobsTab @enable-recommended-sync="goAnchor('sys-sync')" /></div>
+        <div v-if="activeTab === 'alerts'" class="ops-pane"><NotifyPolicyCard /><AlertRulesCard /></div>
         <div v-if="visited.retention" v-show="activeTab === 'retention'" class="ops-pane"><RetentionSettingsTab ref="retentionTab" /></div>
       </div>
     </div>
@@ -324,7 +339,7 @@ onMounted(() => {
 .ops-layout {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: 180px minmax(0, 1fr);
+  grid-template-columns: 208px minmax(0, 1fr);
   gap: 14px;
   min-width: 0;
   min-height: 0;
@@ -333,6 +348,11 @@ onMounted(() => {
 
 .ops-rail {
   min-height: 0;
+}
+
+/* 设置分区使用剩余整列宽度；不改变其他工作台中 SettingsPanel 的阅读限宽。 */
+.ops-pane :deep(.settings-panel) {
+  max-width: none;
 }
 
 .ops-content {

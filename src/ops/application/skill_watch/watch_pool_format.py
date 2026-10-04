@@ -249,7 +249,7 @@ def format_watch_pool_section(
     if slug == "dragon-return":
         return format_unified_pool_section(rows, changes)
 
-    from src.ops.application.skill_watch.paper_eligibility import is_observe_intent
+    from src.ops.application.signal_policy.eligibility import is_observe_intent
 
     positions = [row for row in rows if row.get("bucket") == "position"]
     watches = [row for row in rows if row.get("bucket") != "position"]

@@ -42,6 +42,7 @@ export function kindLabel(kind: string): string {
     {
       sync: '同步行情',
       screen: '选股',
+      screen_prepare: '样本准备',
       backtest: '回测',
       skill: '技能模式',
       notify: '企微推送',

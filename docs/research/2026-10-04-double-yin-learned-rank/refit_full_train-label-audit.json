@@ -1,0 +1,32 @@
+{
+  "execution": {
+    "closed": 1301
+  },
+  "label_status": {
+    "closed": 1301
+  },
+  "feature_missing": 0,
+  "eligible_rows": 1301,
+  "eligible_dates": 319,
+  "segment": "refit_full_train",
+  "decision_start": "2024-01-01",
+  "label_cutoff": "2025-06-30",
+  "common_mature_decision_days": 356,
+  "environment": {
+    "main_stock_catalog_codes": 3195,
+    "breadth_panel_codes": 3150,
+    "index_excluded": true,
+    "benchmark_coverage": 601,
+    "benchmark_sources": [
+      {
+        "source": "tdx",
+        "observations": 601,
+        "first_date": "2023-01-03",
+        "last_date": "2025-06-30"
+      }
+    ]
+  },
+  "candidate_rows_sha256": "d4458f1669411b6086c1ed47084218bd6467af4666adf33cd5f95ffeef268266",
+  "prefix_features": "passed",
+  "source_score_parity": "passed"
+}

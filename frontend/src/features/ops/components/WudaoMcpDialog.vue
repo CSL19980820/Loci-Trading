@@ -39,7 +39,6 @@ const form = reactive({
   note: '',
   is_active: true,
   verify: true,
-  hist_daily_primary: false,
   daily_total: 5000,
   daily_structured: 3000,
   daily_skill: 2000,
@@ -65,7 +64,6 @@ watch(open, (visible) => {
     note: props.server.note || '',
     is_active: props.server.is_active,
     verify: true,
-    hist_daily_primary: Boolean(props.server.hist_daily_primary),
     daily_total: props.server.quota?.daily_total ?? 5000,
     daily_structured: props.server.quota?.daily_structured ?? 3000,
     daily_skill: props.server.quota?.daily_skill ?? 2000,
@@ -89,7 +87,6 @@ async function submit(): Promise<void> {
       verify: form.verify,
     })
     await patchWudaoSettings({
-      hist_daily_primary: form.hist_daily_primary,
       quota: {
         daily_total: form.daily_total,
         daily_structured: form.daily_structured,
@@ -150,12 +147,6 @@ async function submit(): Promise<void> {
       </FormField>
       <FormField>
         <ToggleSwitch v-model="form.is_active" active-text="启用" inactive-text="停用" aria-label="启用悟道 MCP" />
-      </FormField>
-      <FormField>
-        <ToggleSwitch
-          v-model="form.hist_daily_primary"
-          active-text="日 K 同步优先使用悟道（需 Key 有效）"
-        />
       </FormField>
 
       <!-- 标题压成一行：调用限额 + 今日剩余读数 + 第一条控件（日总上限） -->

@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "checks": [
+    "ten_session_origin_maturity",
+    "formation_cannot_trigger",
+    "first_failed_high_break_terminal",
+    "entry_trigger_and_gap_bounds",
+    "factor_cancel",
+    "prefix_data_end_is_not_exit",
+    "censored_budget_is_null",
+    "occupied_and_exit_day_origin_rejected",
+    "two_day_cooldown",
+    "T0_extreme_does_not_stop",
+    "prefix_state_transitions_causal",
+    "full_shape_coordinate_scale_invariance",
+    "raw_six_yuan_gate_not_economic"
+  ]
+}

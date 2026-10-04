@@ -1,0 +1,8 @@
+{
+  "created_at": "2026-10-04T15:05:56.557198+08:00",
+  "qualified": [],
+  "selected": [],
+  "status": "stop_no_training_advantage",
+  "train_sha256": "5794a97183a735663e6750e585abeeb35a66fa23d829b102c7a93e3a0b23c085",
+  "plan_sha256": "a40f0bb20071e0c810bd2df4a099386bb898244835d14b3d7c442818fe976773"
+}

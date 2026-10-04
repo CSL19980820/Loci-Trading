@@ -17,7 +17,6 @@ DEFAULT_PRUNE_CONFIG: dict[str, Any] = {
     # 跨租户全局库。identity 只删过期会话/票据（没有天数概念，开关而已）；
     # community 只删动态流 / 榜单快照 / 当日信号广播三张可重建表。
     "identity_purge": True,
-    "community_keep_days": 15,
 }
 
 

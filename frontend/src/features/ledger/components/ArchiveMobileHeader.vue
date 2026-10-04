@@ -10,6 +10,7 @@ const emit = defineEmits<{ back: []; history: []; prev: []; next: []; batch: [];
   <div class="mobile-stock-identity">
    <Button access="read" variant="ghost" size="icon-sm" aria-label="返回" @click="emit('back')"><ArrowLeft /></Button>
    <div class="mobile-stock-name"><h1 :title="name">{{ name }}</h1><span>{{ code }}<small v-if="board"> · {{ board }}</small><small v-if="industry" :title="industry"> · {{ industry }}</small></span></div>
+   <slot name="footprint" />
    <Button access="read" variant="outline" size="icon-sm" aria-label="选股记录" :title="`${historyCount} 条选股记录`" @click="emit('history')"><History /><span v-if="historyCount" class="mobile-stock-count">{{ historyCount }}</span></Button>
    <Button access="read" variant="outline" size="icon-sm" aria-label="打开AI助手" @click="emit('chat')"><MessageCircle /></Button>
   </div>
@@ -23,7 +24,7 @@ const emit = defineEmits<{ back: []; history: []; prev: []; next: []; batch: [];
 </template>
 <style scoped>
 .mobile-stock-header { padding:5px 10px 6px; flex:none; border-bottom:1px solid var(--border-subtle); background:var(--surface); }
-.mobile-stock-identity { display:grid; grid-template-columns:30px minmax(0,1fr) 36px 36px; gap:7px; align-items:center; min-height:42px; }
+.mobile-stock-identity { display:grid; grid-template-columns:30px minmax(0,1fr) repeat(3,36px); gap:7px; align-items:center; min-height:42px; }
 .mobile-stock-identity button { position:relative; width:36px; height:36px; padding:0; }
 .mobile-stock-identity button:first-child { width:30px; }
 .mobile-stock-name { min-width:0; }

@@ -291,9 +291,4 @@ def _preferred_chinese_rename(contract: LaneContract) -> dict[str, str]:
 
 
 # 由契约派生；勿再手写第二份中英表。
-EASTMONEY_DAILY_RENAME = _preferred_chinese_rename(DAILY_CONTRACT)
 #: 现价对照含 live 富字段（name/pct…），由 LIVE_CONTRACT 派生。
-EASTMONEY_LIVE_RENAME = _preferred_chinese_rename(LIVE_CONTRACT)
-EASTMONEY_SPOT_RENAME = EASTMONEY_LIVE_RENAME  # 兼容旧名
-EASTMONEY_MINUTE_RENAME = _preferred_chinese_rename(MINUTE_CONTRACT)
-EASTMONEY_CAPITAL_FLOW_RENAME = _preferred_chinese_rename(CAPITAL_FLOW_CONTRACT)

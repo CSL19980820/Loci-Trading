@@ -1,0 +1,48 @@
+{
+  "created_at": "2026-10-04T09:01:55.425934+00:00",
+  "scope": "native interface capability only; no returns, new universe, installs or production access",
+  "tdx_samples": [
+    {
+      "segment": "train",
+      "code": "300707",
+      "requested_date": "2024-01-05",
+      "selection": "minimum date/code from preexisting complete shape keys only",
+      "key_source": "docs\\research\\2026-10-04-multi-strategy-scoring\\contraction-rebreakout-v1\\train-candidates.csv",
+      "source_sha256": "4e4699c46c6c8fa4acb817c97c34462a46bd81859d83d5366a38d10e8551094a"
+    },
+    {
+      "segment": "validation_2025h2",
+      "code": "300936",
+      "requested_date": "2025-07-03",
+      "selection": "minimum date/code from preexisting complete shape keys only",
+      "key_source": "docs\\research\\2026-10-04-multi-strategy-scoring\\contraction-rebreakout-v1\\validation_2025h2-candidates.csv",
+      "source_sha256": "967202aeee4fb4b6728a586ee59970da807b1827b5c71300748e9d0aa2d11cbe"
+    },
+    {
+      "segment": "observed_2026",
+      "code": "300298",
+      "requested_date": "2026-01-05",
+      "selection": "minimum date/code from preexisting complete shape keys only",
+      "key_source": "docs\\research\\2026-10-04-multi-strategy-scoring\\contraction-rebreakout-v1\\observed_2026-candidates.csv",
+      "source_sha256": "caf1788d32fbf94021f37fa502c081f525ffa776c50a78306fa10ca7a482727c"
+    },
+    {
+      "segment": "recent_reference",
+      "code": "300707",
+      "requested_date": "2026-09-30",
+      "selection": "same earliest-training code at latest frozen daily date; no outcomes"
+    }
+  ],
+  "max_tdx_history_queries": 4,
+  "max_sina_http_queries": 1,
+  "tdx_raw_evidence": "library-decoded original binary response fields, not a raw wire packet",
+  "tdx_time_labels": "synthesized by project fixed 09:31..11:30 and13:01..15:00; source timestamp absent",
+  "source_sha256": {
+    "src/market/infrastructure/tdx_minute.py": "372132bfc229b54949533e72e47206cae9c541448160487d7f477a3a5d901fb2",
+    "src/market/infrastructure/sina.py": "471bb5efe315f20ebb100b95e5df437ffb787434e1d73235a8c9f9074e7ae452",
+    "src/market/infrastructure/adapters/tdx_adapter.py": "8089f3d1958a1935ecc79bb3fc3a173d9c057003f49a00444af7b9a692805aa8",
+    "src/market/infrastructure/adapters/sina_adapter.py": "5f12cc7961746a7f2b1ff9941171f4adc3de63ed1a25b946aa5b8b7f05ddb9ab"
+  },
+  "daily_snapshot": ".local\\multi-strategy-scoring-20261004\\market.db",
+  "script_sha256": "0f0d14c7925bae2f4fdd2afd51c23ef9d4c76b9c7b9f422230362e48d0e95bb3"
+}

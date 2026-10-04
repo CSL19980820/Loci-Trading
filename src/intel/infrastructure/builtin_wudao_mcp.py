@@ -1,6 +1,6 @@
 """悟道 A 股 MCP — 内置常驻外部情报源（与 loci-market 并列）。
 
-凭据仍走 ``data/mcp.json``（Cursor 兼容）；配额 / 日 K 优先走 ``loci.config.json``。
+凭据仍走 ``data/mcp.json``（Cursor 兼容）；配额走 ``loci.config.json``。
 未配 Key 或已过期时仍展示在列表，但 ``is_usable=false``、工具不参与 Agent。
 """
 from __future__ import annotations
@@ -98,6 +98,5 @@ def resident_wudao_record(row: dict[str, Any] | None = None) -> dict[str, Any]:
         "source": "builtin+wudao",
         "builtin": True,
         "resident": True,
-        "hist_daily_primary": settings["hist_daily_primary"],
         "quota": settings["quota"],
     }

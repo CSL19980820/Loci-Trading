@@ -38,15 +38,7 @@ export type {
 
 export type {
   JsonValue,
-  AkshareCatalogParameter,
-  AkshareCatalogCapability,
-  AkshareCatalogSource,
-  AkshareCatalog,
-  AkshareVersionInfo,
-  AkshareBatchProbeItem,
-  AkshareBatchProbeResult,
   ColumnGloss,
-  AkshareCatalogProbeResult,
   LlmModel,
   LlmProvider,
 } from './quant-catalog'

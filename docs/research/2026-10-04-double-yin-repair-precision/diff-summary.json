@@ -1,0 +1,280 @@
+{
+  "created_at": "2026-10-04T15:15:48.891836+08:00",
+  "old_repair_trades": 250,
+  "new_repair_trades": 250,
+  "numeric_material_tolerance": 1e-09,
+  "runs": {
+    "train/original_baseline": {
+      "trades": {
+        "old": 503,
+        "new": 503,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 503,
+        "new": 503,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      }
+    },
+    "train/corrected_baseline": {
+      "trades": {
+        "old": 504,
+        "new": 503,
+        "removed": 1,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 504,
+        "new": 503,
+        "removed": 1,
+        "added": 0,
+        "changed": 0
+      }
+    },
+    "train/one_dry_fixed": {
+      "trades": {
+        "old": 48,
+        "new": 48,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 1856,
+        "new": 1856,
+        "removed": 0,
+        "added": 0,
+        "changed": 9
+      },
+      "selected_orders": {
+        "old": 108,
+        "new": 108,
+        "removed": 0,
+        "added": 0
+      }
+    },
+    "train/one_dry_structural": {
+      "trades": {
+        "old": 48,
+        "new": 48,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 1856,
+        "new": 1856,
+        "removed": 0,
+        "added": 0,
+        "changed": 9
+      },
+      "selected_orders": {
+        "old": 108,
+        "new": 108,
+        "removed": 0,
+        "added": 0
+      }
+    },
+    "train/two_dry_fixed": {
+      "trades": {
+        "old": 25,
+        "new": 25,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 1856,
+        "new": 1856,
+        "removed": 0,
+        "added": 0,
+        "changed": 7
+      },
+      "selected_orders": {
+        "old": 53,
+        "new": 53,
+        "removed": 0,
+        "added": 0
+      }
+    },
+    "train/two_dry_structural": {
+      "trades": {
+        "old": 25,
+        "new": 25,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 1856,
+        "new": 1856,
+        "removed": 0,
+        "added": 0,
+        "changed": 7
+      },
+      "selected_orders": {
+        "old": 53,
+        "new": 53,
+        "removed": 0,
+        "added": 0
+      }
+    },
+    "validation_2025h2/original_baseline": {
+      "trades": {
+        "old": 183,
+        "new": 183,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 183,
+        "new": 183,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      }
+    },
+    "validation_2025h2/corrected_baseline": {
+      "trades": {
+        "old": 183,
+        "new": 183,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 183,
+        "new": 183,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      }
+    },
+    "validation_2025h2/one_dry_fixed": {
+      "trades": {
+        "old": 18,
+        "new": 18,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 560,
+        "new": 560,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "selected_orders": {
+        "old": 36,
+        "new": 36,
+        "removed": 0,
+        "added": 0
+      }
+    },
+    "validation_2025h2/one_dry_structural": {
+      "trades": {
+        "old": 18,
+        "new": 18,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 560,
+        "new": 560,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "selected_orders": {
+        "old": 36,
+        "new": 36,
+        "removed": 0,
+        "added": 0
+      }
+    },
+    "observed_2026/original_baseline": {
+      "trades": {
+        "old": 255,
+        "new": 255,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 255,
+        "new": 255,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      }
+    },
+    "observed_2026/corrected_baseline": {
+      "trades": {
+        "old": 255,
+        "new": 255,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 255,
+        "new": 255,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      }
+    },
+    "observed_2026/one_dry_fixed": {
+      "trades": {
+        "old": 34,
+        "new": 34,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 906,
+        "new": 906,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "selected_orders": {
+        "old": 51,
+        "new": 51,
+        "removed": 0,
+        "added": 0
+      }
+    },
+    "observed_2026/one_dry_structural": {
+      "trades": {
+        "old": 34,
+        "new": 34,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "events": {
+        "old": 906,
+        "new": 906,
+        "removed": 0,
+        "added": 0,
+        "changed": 0
+      },
+      "selected_orders": {
+        "old": 51,
+        "new": 51,
+        "removed": 0,
+        "added": 0
+      }
+    }
+  }
+}

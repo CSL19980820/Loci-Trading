@@ -1,0 +1,12 @@
+{
+  "created_at": "2026-10-04T08:10:22.287784+00:00",
+  "plan_sha256": "5b12aa558234e2904b412a3ddefd96bae5e56ad6d2e93da27fe221d699763034",
+  "scope": "Root four-policy hypothesis and routing freeze, before new VWAP returns; child plans separately freeze sources",
+  "new_candidate_returns_observed": false,
+  "clarifications": {
+    "file": "CONTRACT-CLARIFICATIONS.md",
+    "sha256": "a6d5593bed410d49aba5ce848ad240267b0bdccf7c2cce62596561285e7b68a4",
+    "frozen_at": "2026-10-04T08:11:39.934343+00:00",
+    "before_new_returns": true
+  }
+}

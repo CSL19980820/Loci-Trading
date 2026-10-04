@@ -1,0 +1,231 @@
+{
+  "status": "passed",
+  "verified_at": "2026-10-04T16:46:40.351219+08:00",
+  "scope": "Independent eight-arm CSV arithmetic and complete label/calendar/paired reconciliation; original evidence, announcements, wrapper, snapshot and group hashes",
+  "arms": [
+    {
+      "segment": "validation_2025h2",
+      "policy": "corrected_low_open",
+      "orders": 190,
+      "closed": 190,
+      "cancelled": 0,
+      "unknown": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "policy": "full_shape",
+      "orders": 218,
+      "closed": 218,
+      "cancelled": 0,
+      "unknown": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "policy": "vwap_eligible_full_shape",
+      "orders": 218,
+      "closed": 218,
+      "cancelled": 0,
+      "unknown": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "policy": "yin_close_and_open_above_vwap",
+      "orders": 19,
+      "closed": 19,
+      "cancelled": 0,
+      "unknown": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "corrected_low_open",
+      "orders": 263,
+      "closed": 263,
+      "cancelled": 0,
+      "unknown": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "full_shape",
+      "orders": 312,
+      "closed": 311,
+      "cancelled": 1,
+      "unknown": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "vwap_eligible_full_shape",
+      "orders": 312,
+      "closed": 311,
+      "cancelled": 1,
+      "unknown": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "yin_close_and_open_above_vwap",
+      "orders": 61,
+      "closed": 60,
+      "cancelled": 1,
+      "unknown": 0,
+      "status": "passed"
+    }
+  ],
+  "exact_label_changes": [
+    {
+      "policy": "corrected_low_open",
+      "decision_date": "2025-07-02",
+      "code": "605389",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "unresolved_holding_path",
+        "entry_date": "2025-07-02",
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "closed",
+        "label_available_date": "2025-07-11",
+        "label_available_at": "2025-07-11T15:00:00+08:00",
+        "net_return_pct": -1.22271785209609,
+        "execution_reason": "closed",
+        "entry_date": "2025-07-02",
+        "exit_date": "2025-07-11"
+      }
+    },
+    {
+      "policy": "full_shape",
+      "decision_date": "2025-07-02",
+      "code": "605389",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "unresolved_holding_path",
+        "entry_date": "2025-07-02",
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "closed",
+        "label_available_date": "2025-07-11",
+        "label_available_at": "2025-07-11T15:00:00+08:00",
+        "net_return_pct": -1.22271785209609,
+        "execution_reason": "closed",
+        "entry_date": "2025-07-02",
+        "exit_date": "2025-07-11"
+      }
+    },
+    {
+      "policy": "vwap_eligible_full_shape",
+      "decision_date": "2025-07-02",
+      "code": "605389",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "unresolved_holding_path",
+        "entry_date": "2025-07-02",
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "closed",
+        "label_available_date": "2025-07-11",
+        "label_available_at": "2025-07-11T15:00:00+08:00",
+        "net_return_pct": -1.22271785209609,
+        "execution_reason": "closed",
+        "entry_date": "2025-07-02",
+        "exit_date": "2025-07-11"
+      }
+    },
+    {
+      "policy": "full_shape",
+      "decision_date": "2026-07-23",
+      "code": "002036",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "cancelled",
+        "label_available_date": "2026-07-23",
+        "label_available_at": "2026-07-23T15:00:00+08:00",
+        "net_return_pct": 0.0,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      }
+    },
+    {
+      "policy": "vwap_eligible_full_shape",
+      "decision_date": "2026-07-23",
+      "code": "002036",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "cancelled",
+        "label_available_date": "2026-07-23",
+        "label_available_at": "2026-07-23T15:00:00+08:00",
+        "net_return_pct": 0.0,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      }
+    },
+    {
+      "policy": "yin_close_and_open_above_vwap",
+      "decision_date": "2026-07-23",
+      "code": "002036",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "cancelled",
+        "label_available_date": "2026-07-23",
+        "label_available_at": "2026-07-23T15:00:00+08:00",
+        "net_return_pct": 0.0,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      }
+    }
+  ],
+  "pooled_slot_means_pct": {
+    "corrected_low_open": 0.39350777066867254,
+    "full_shape": 0.36124613745868256,
+    "vwap_eligible_full_shape": 0.36124613745868256,
+    "yin_close_and_open_above_vwap": 0.4841240769661727
+  },
+  "source_and_original_evidence_hashes": "passed",
+  "original_candidate_and_raw_qc_identity": "passed",
+  "old_closed_trade_identity": "passed",
+  "training_identity": "passed",
+  "all_selected_unknown_cleared": true,
+  "strict_capital_candidates": []
+}

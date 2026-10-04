@@ -1,0 +1,127 @@
+{
+  "created_at": "2026-10-04T14:37:41.461438+08:00",
+  "shapes": {
+    "compact3": {
+      "push": 5,
+      "pause": 3,
+      "min_push_pct": 8.0,
+      "max_width_pct": 8.0,
+      "max_tr_ratio": 0.75,
+      "max_volume_ratio": 0.8,
+      "lifetime": 5
+    },
+    "shelf5": {
+      "push": 10,
+      "pause": 5,
+      "min_push_pct": 10.0,
+      "max_width_pct": 10.0,
+      "max_tr_ratio": 0.7,
+      "max_volume_ratio": 0.75,
+      "lifetime": 7
+    },
+    "base8": {
+      "push": 15,
+      "pause": 8,
+      "min_push_pct": 12.0,
+      "max_width_pct": 12.0,
+      "max_tr_ratio": 0.7,
+      "max_volume_ratio": 0.7,
+      "lifetime": 10
+    }
+  },
+  "variants": {
+    "legacy_original4": {
+      "family": "original",
+      "exit": "fixed4",
+      "deduplicate": false
+    },
+    "baseline_flat4": {
+      "family": "original",
+      "exit": "fixed4",
+      "deduplicate": true
+    },
+    "compact3_fixed4": {
+      "family": "compact3",
+      "exit": "fixed4",
+      "deduplicate": true
+    },
+    "compact3_structure10": {
+      "family": "compact3",
+      "exit": "structure10",
+      "deduplicate": true
+    },
+    "shelf5_fixed4": {
+      "family": "shelf5",
+      "exit": "fixed4",
+      "deduplicate": true
+    },
+    "shelf5_structure10": {
+      "family": "shelf5",
+      "exit": "structure10",
+      "deduplicate": true
+    },
+    "base8_fixed4": {
+      "family": "base8",
+      "exit": "fixed4",
+      "deduplicate": true
+    },
+    "base8_structure10": {
+      "family": "base8",
+      "exit": "structure10",
+      "deduplicate": true
+    }
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "sources": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "f1b78a41f5bf53489bf22733218f650296732afee34e2df154d106c1fcd582c3",
+    "tools/research_contraction_structure.py": "d00803a241ad8adcf32aa4f4521bb828df789bd1baed2212f9ec82c057348d69",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b"
+  },
+  "density_path": "density-final/density.json",
+  "density_sha256": "ba5be644d7a1fb11de932c8346783f9ab78e2dd5fd43b61713efab2969478e65",
+  "setup": "At S close: push C(S-K)/C(S-K-P)-1 reaches family threshold, with at least one bullish >=5% day in that P-session push; K-session box width=HH/LL-1 within cap, mean TR ratio and volume ratio to push within caps, box low retains >=half push close advance. All P+K+1 bars valid/positive-volume, >=31 observed bars; clean ChiNext universe.",
+  "state": "Arm S after close; freeze box high/low, mean volume and setup components. Later low<floor*0.995 invalidates before any breakout; missing/invalid bar or expiry consumes too. First close>frozen high consumes whether quality passes or not, including non-Top2. New push start must follow last terminal date. No rolling expansion after arming.",
+  "volume_comparability": "No split/share adjustment series: raw volume is never adjusted by total-return factor. Conservatively forbid arming across any economic-factor change in the P+K+1 setup window, and invalidate an armed platform if that factor changes before first breakout. This also excludes cash-dividend events; no later-outcome-based exemptions.",
+  "breakout": "First closing-price crossing C>frozen upper consumes the setup; intraday H-only crossing does not. That first close crossing qualifies only C>=upper*1.005,C>O,CLV=(C-L)/(H-L)>=0.65,V>=setup_volume*1.2,corrected economic-reference raw close below upper limit. No fixed two-day decline or signal-day >=3% requirement.",
+  "legacy_limit_correction": "Fair baseline intersects existing original shape candidates with economic-reference below-limit. This removes false admissions but cannot restore hypothetical exclusions caused by a factor decrease. Read-only training metadata audit found zero material factor decreases during2023-01-01..2025-06-30; do not claim all original price logic was repaired. New shape universe independently applies the economic-reference contract.",
+  "score": "20*clip(push_pct/20)+35*clip((1-TR_ratio)/0.5)+25*clip((1-volume_ratio)/0.5)+20*CLV; clip0..1,round4,code tie; setup parts frozen at arm, CLV signal-day only.",
+  "execution": "Next-day opening-conditional proxy. New-family orders cancelled if actual open<=floor*0.995 or distance to that fixed stop>8%; no same-day H/L/C entry admission or post-cancel refill. 4-session/-6% or10-session/fixed platform stop, no trailing widening. Raw fill/economic factor; unchanged _resolve_exit T+1/limit/suspension/gap rules. No historical auction quote availability claim.",
+  "duplicate_control": "At signal close remove codes still held after that close, then rank full events Top2. Actual exits on/before signal date are past-known. Setups consumed independently of selection. Legacy control allows original repeated events; fair baseline deduplicates and corrects limit reference.",
+  "budget": "Every common mature market day x2 including zero-signal/new dates.20-session maturity for10-session holding plus deferred-sale buffer; unknown exits not zero. Original opportunity overlap/new contribution retained separately. Independent event slots are not fixed-capital NAV.",
+  "nomination": "Train only,at most2: >=20 closed across4months,mean>0,PF>1,double-cost and winner-removed mean>0. Budget rep highest fixed-slot mean above fair baseline; distinct quality rep trade mean/PF>fair baseline, highest double-cost-winner-removed trade mean then slot mean. No later rescue.",
+  "acceptance": "Both later segments have trades,mean>0 and PF>1; post-train pooled double-cost,winner-removed,and combined double-cost-winner-removed means>0; common-slot improvement/idle cost vs fair baseline and month-block CI public. Subsequent fixed-capital portfolio test still required.",
+  "cost_pct": 0.21,
+  "stress_cost_pct": 0.42,
+  "limitations": [
+    "2024-2026 already observed: retrospective, multiple development bias",
+    "2023 indicator/state warmup only;2023H2 forward returns withheld",
+    "Current catalog/names/factor revisions not strict PIT; economic-reference limits are contract values,not official ex-right notices",
+    "Daily opening conditions do not prove auction fills or queues",
+    "Different-code overlap; no total capital limit; holdings/concurrency exposed",
+    "Whole entry/exit-bar MAE/MFE not used for decisions"
+  ]
+}

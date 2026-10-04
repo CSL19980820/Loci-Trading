@@ -1,0 +1,470 @@
+{
+  "segment": "observed_2026",
+  "origin_start": "2026-01-01",
+  "origin_end": "2026-09-30",
+  "last_mature_origin": "2026-09-23",
+  "original_candidate_events": 483,
+  "original_selected_events": 261,
+  "original_active_days": 153,
+  "fixed_budget_slots": 306,
+  "prefix_check": "2024-11-20",
+  "baseline_original_common_subset_reproduced": true,
+  "proxy_evidence": {
+    "mode": "offline_daily_opening_proxy",
+    "canonical_realtime_required": true,
+    "historical_0925_quote_coverage_verified": false,
+    "historical_industry_membership_verified": false,
+    "group_source": "eastmoney_orginfo",
+    "candidate_codes": 1180,
+    "candidate_codes_missing_groups": [],
+    "candidate_events": 2115,
+    "candidate_events_missing_groups": 0,
+    "candidate_events_missing_score": 0,
+    "industry_rule": "greedy TopN with all supplied group intersections excluded",
+    "price_convention": "caller_supplied_unadjusted_OHLC",
+    "sector_groups_path": "E:\\my_space\\stock-analyzer\\.local\\multi-strategy-scoring-20261004\\candidate-industry-groups.json",
+    "sector_groups_sha256": "f2219c80c049923ebce64ae3f23b6786e80b948c60de1565363a444cfa234d27",
+    "industry_evidence": {
+      "source": "eastmoney_orginfo",
+      "fetched_at": "2026-10-04T13:03:13.550544+08:00",
+      "classification": "EM2016",
+      "coverage": 1.0,
+      "requested": 1180,
+      "returned": 1180,
+      "rejected": 0,
+      "rejects": {},
+      "candidate_code_count": 1180,
+      "candidate_event_count": 2115,
+      "historical_membership": false,
+      "limitation": "Current EM2016 classifications are not historical industry memberships",
+      "industry_snapshot": {
+        "source": "eastmoney_orginfo",
+        "fetched_at": "2026-10-04T13:03:10+08:00",
+        "classification": "EM2016",
+        "requested": 1180,
+        "returned": 1180,
+        "rejected": 0,
+        "coverage": 1.0,
+        "failed_codes": [],
+        "rejects": {},
+        "consumer_industries": [
+          "休闲服务",
+          "农林牧渔",
+          "商贸零售",
+          "家电",
+          "社会服务",
+          "纺织服装",
+          "美容护理",
+          "轻工制造",
+          "食品饮料"
+        ]
+      }
+    },
+    "economic_factors": {
+      "quoted_factor_observations": 2713640,
+      "no_price_forward_carried_cells": 6,
+      "leading_no_price_neutral_placeholders": 50306
+    },
+    "entry_assumption": "stored daily opening proxy, not verified 09:25 obtainable execution",
+    "exit_assumption": "caller-frozen research exit; original live selector has no exit rule"
+  },
+  "runs": {
+    "baseline": {
+      "label": "原评分开盘买，4日/-6%",
+      "metrics": {
+        "base": {
+          "trades": 261,
+          "avg_net_return": -0.12225458062780228,
+          "win_rate": 41.76245210727969,
+          "profit_factor": 0.9636301061685143,
+          "payoff_ratio": 1.3437777627304053,
+          "avg_win": 7.7561728020586225,
+          "avg_loss": -5.771916322159515,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost": {
+          "trades": 261,
+          "avg_net_return": -0.33225458062780266,
+          "win_rate": 41.37931034482759,
+          "profit_factor": 0.9046322138421371,
+          "payoff_ratio": 1.2815623029430276,
+          "avg_win": 7.616546127461604,
+          "avg_loss": -5.943172727514443,
+          "worst_net": -34.77980551053486
+        },
+        "largest_winner_removed": {
+          "trades": 260,
+          "avg_net_return": -0.2376121148943968,
+          "win_rate": 41.53846153846154,
+          "profit_factor": 0.9295828711312311,
+          "payoff_ratio": 1.3083018186291402,
+          "avg_win": 7.5514086212565115,
+          "avg_loss": -5.771916322159515,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 260,
+          "avg_net_return": -0.4476121148943969,
+          "win_rate": 41.15384615384615,
+          "profit_factor": 0.8720131362056587,
+          "payoff_ratio": 1.2468972882193063,
+          "avg_win": 7.410525957356698,
+          "avg_loss": -5.943172727514443,
+          "worst_net": -34.77980551053486
+        }
+      },
+      "accounting": {
+        "closed": 261
+      },
+      "eligible_shape_events": 483,
+      "selected_orders": 261,
+      "closed": 261,
+      "unresolved_positions": 0,
+      "fixed_budget_slots": 306,
+      "unused_or_unfilled_slots": 45,
+      "original_selected_events": 261,
+      "fill_retention_pct_of_original": 100.0,
+      "opportunity_mean": -0.10427596582959611,
+      "monthly_blocks": {
+        "months": 9,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.0,
+          0.0
+        ],
+        "point_delta_per_opportunity": 0.0
+      },
+      "per_month": {
+        "2026-01": {
+          "net_sum": 5.556989966846849,
+          "slots": 34,
+          "closed": 29,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.1634408813778485
+        },
+        "2026-02": {
+          "net_sum": 13.973312277213896,
+          "slots": 24,
+          "closed": 17,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.5822213448839123
+        },
+        "2026-03": {
+          "net_sum": 24.92218198323969,
+          "slots": 32,
+          "closed": 27,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.7788181869762403
+        },
+        "2026-04": {
+          "net_sum": -57.817681846766874,
+          "slots": 36,
+          "closed": 25,
+          "unresolved_positions": 0,
+          "opportunity_mean": -1.6060467179657465
+        },
+        "2026-05": {
+          "net_sum": 16.968866766265144,
+          "slots": 32,
+          "closed": 29,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.5302770864457858
+        },
+        "2026-06": {
+          "net_sum": -35.481904073533954,
+          "slots": 38,
+          "closed": 36,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.9337343177245777
+        },
+        "2026-07": {
+          "net_sum": -58.03670967982617,
+          "slots": 42,
+          "closed": 38,
+          "unresolved_positions": 0,
+          "opportunity_mean": -1.381826420948242
+        },
+        "2026-08": {
+          "net_sum": 83.33285556437767,
+          "slots": 38,
+          "closed": 36,
+          "unresolved_positions": 0,
+          "opportunity_mean": 2.1929698832730966
+        },
+        "2026-09": {
+          "net_sum": -25.326356501672713,
+          "slots": 30,
+          "closed": 24,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.8442118833890905
+        }
+      }
+    },
+    "quality_gate": {
+      "label": "支撑与承接质量硬门",
+      "metrics": {
+        "base": {
+          "trades": 64,
+          "avg_net_return": 0.10473684469562844,
+          "win_rate": 37.5,
+          "profit_factor": 1.0312746713330467,
+          "payoff_ratio": 1.7187911188884113,
+          "avg_win": 9.20979186338667,
+          "avg_loss": -5.358296166518996,
+          "worst_net": -8.769322033898309
+        },
+        "double_cost": {
+          "trades": 64,
+          "avg_net_return": -0.10526315530437186,
+          "win_rate": 35.9375,
+          "profit_factor": 0.9697609268486975,
+          "payoff_ratio": 1.7287042609041998,
+          "avg_win": 9.393441350554063,
+          "avg_loss": -5.433804707371299,
+          "worst_net": -8.97932203389831
+        },
+        "largest_winner_removed": {
+          "trades": 63,
+          "avg_net_return": -0.29332558883409277,
+          "win_rate": 36.507936507936506,
+          "profit_factor": 0.9137808385246788,
+          "payoff_ratio": 1.5891840669994413,
+          "avg_win": 8.515318894096174,
+          "avg_loss": -5.358296166518996,
+          "worst_net": -8.769322033898309
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 63,
+          "avg_net_return": -0.5033255888340926,
+          "win_rate": 34.92063492063492,
+          "profit_factor": 0.8576682866403033,
+          "payoff_ratio": 1.598381806920565,
+          "avg_win": 8.685294586621609,
+          "avg_loss": -5.433804707371299,
+          "worst_net": -8.97932203389831
+        }
+      },
+      "accounting": {
+        "closed": 64
+      },
+      "eligible_shape_events": 73,
+      "selected_orders": 64,
+      "closed": 64,
+      "unresolved_positions": 0,
+      "fixed_budget_slots": 306,
+      "unused_or_unfilled_slots": 242,
+      "original_selected_events": 261,
+      "fill_retention_pct_of_original": 24.521072796934867,
+      "opportunity_mean": 0.021905745295817677,
+      "monthly_blocks": {
+        "months": 9,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.6168569179019642,
+          0.7987580177428294
+        ],
+        "point_delta_per_opportunity": 0.12618171112541382
+      },
+      "per_month": {
+        "2026-01": {
+          "net_sum": 31.620202607030798,
+          "slots": 34,
+          "closed": 7,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.9300059590303176
+        },
+        "2026-02": {
+          "net_sum": -10.86609864020031,
+          "slots": 24,
+          "closed": 5,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.45275411000834626
+        },
+        "2026-03": {
+          "net_sum": -5.107223804252985,
+          "slots": 32,
+          "closed": 5,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.1596007438829058
+        },
+        "2026-04": {
+          "net_sum": -8.01831059477382,
+          "slots": 36,
+          "closed": 8,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.2227308498548283
+        },
+        "2026-05": {
+          "net_sum": -22.672919733280242,
+          "slots": 32,
+          "closed": 12,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.7085287416650076
+        },
+        "2026-06": {
+          "net_sum": 19.945040201483124,
+          "slots": 38,
+          "closed": 8,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.524869478986398
+        },
+        "2026-07": {
+          "net_sum": -36.5645164565596,
+          "slots": 42,
+          "closed": 6,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.870583725156181
+        },
+        "2026-08": {
+          "net_sum": 36.667112582982035,
+          "slots": 38,
+          "closed": 8,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.9649240153416325
+        },
+        "2026-09": {
+          "net_sum": 1.6998718980912262,
+          "slots": 30,
+          "closed": 5,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.05666239660304087
+        }
+      }
+    },
+    "quality_stop": {
+      "label": "质量硬门后挂收复阴线收盘买stop",
+      "metrics": {
+        "base": {
+          "trades": 52,
+          "avg_net_return": -0.041885651043379685,
+          "win_rate": 36.53846153846154,
+          "profit_factor": 0.9884909792471814,
+          "payoff_ratio": 1.7168527534293152,
+          "avg_win": 9.845762378309475,
+          "avg_loss": -5.7347739103677515,
+          "worst_net": -10.368201498751041
+        },
+        "double_cost": {
+          "trades": 52,
+          "avg_net_return": -0.25188565104338034,
+          "win_rate": 36.53846153846154,
+          "profit_factor": 0.9332336723245235,
+          "payoff_ratio": 1.6208795361425934,
+          "avg_win": 9.635762378309472,
+          "avg_loss": -5.9447739103677515,
+          "worst_net": -10.578201498751042
+        },
+        "largest_winner_removed": {
+          "trades": 51,
+          "avg_net_return": -0.5004629296041432,
+          "win_rate": 35.294117647058826,
+          "profit_factor": 0.865131089476791,
+          "payoff_ratio": 1.5860736640407835,
+          "avg_win": 9.095773868462471,
+          "avg_loss": -5.7347739103677515,
+          "worst_net": -10.368201498751041
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 51,
+          "avg_net_return": -0.7104629296041433,
+          "win_rate": 35.294117647058826,
+          "profit_factor": 0.8153019474771321,
+          "payoff_ratio": 1.4947202370414092,
+          "avg_win": 8.88577386846247,
+          "avg_loss": -5.9447739103677515,
+          "worst_net": -10.578201498751042
+        }
+      },
+      "accounting": {
+        "closed": 52,
+        "not_triggered": 12
+      },
+      "eligible_shape_events": 73,
+      "selected_orders": 64,
+      "closed": 52,
+      "unresolved_positions": 0,
+      "fixed_budget_slots": 306,
+      "unused_or_unfilled_slots": 254,
+      "original_selected_events": 261,
+      "fill_retention_pct_of_original": 19.92337164750958,
+      "opportunity_mean": -0.0071178230531233865,
+      "monthly_blocks": {
+        "months": 9,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.6530162734875655,
+          0.7844321986228167
+        ],
+        "point_delta_per_opportunity": 0.09715814277647276
+      },
+      "per_month": {
+        "2026-01": {
+          "net_sum": 20.975469710799057,
+          "slots": 34,
+          "closed": 6,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.616925579729384
+        },
+        "2026-02": {
+          "net_sum": -8.052880143112723,
+          "slots": 24,
+          "closed": 4,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.33553667262969683
+        },
+        "2026-03": {
+          "net_sum": -9.90272727272732,
+          "slots": 32,
+          "closed": 3,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.30946022727272876
+        },
+        "2026-04": {
+          "net_sum": -5.056668829764227,
+          "slots": 36,
+          "closed": 6,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.14046302304900632
+        },
+        "2026-05": {
+          "net_sum": -16.95096062893056,
+          "slots": 32,
+          "closed": 10,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.52971751965408
+        },
+        "2026-06": {
+          "net_sum": 19.314966696068943,
+          "slots": 38,
+          "closed": 7,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.5082885972649722
+        },
+        "2026-07": {
+          "net_sum": -37.507146936623585,
+          "slots": 42,
+          "closed": 5,
+          "unresolved_positions": 0,
+          "opportunity_mean": -0.8930273080148472
+        },
+        "2026-08": {
+          "net_sum": 31.98706290415742,
+          "slots": 38,
+          "closed": 7,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.8417648132673005
+        },
+        "2026-09": {
+          "net_sum": 3.014830645877238,
+          "slots": 30,
+          "closed": 4,
+          "unresolved_positions": 0,
+          "opportunity_mean": 0.10049435486257459
+        }
+      }
+    }
+  }
+}

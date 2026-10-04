@@ -187,12 +187,7 @@ def _upsert_manifest(
     body.setdefault("contract_version", MANIFEST_CONTRACT)
     body["trade_date"] = validate_trade_date(trade_date)
     body["protection"] = key.protection
-    try:
-        import akshare
-
-        body["akshare_version"] = str(getattr(akshare, "__version__", ""))
-    except Exception:
-        body.setdefault("akshare_version", "")
+    body.pop("akshare_version", None)
     files = [item for item in body.get("files", []) if item.get("dataset") != record.dataset]
     files.append(record.to_dict())
     body["files"] = sorted(files, key=lambda item: str(item.get("dataset")))

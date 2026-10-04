@@ -58,9 +58,7 @@ def build_market_router(
     market_db: str | None = None,
 ) -> APIRouter:
     router = APIRouter()
-    from src.market.api.akshare import build_akshare_catalog_router
 
-    router.include_router(build_akshare_catalog_router(write_dependency=write_dependency))
     write_guard = Depends(write_dependency)
 
     def _market():
@@ -233,7 +231,7 @@ def build_market_router(
     ) -> dict[str, Any]:
         """实时拉取分钟线；不写 ``market.db``。``date`` 指定交易日时只取该日。
 
-        源（通达信/东财/新浪）只给不复权成交价；``adjust=qfq|hfq`` 时用本地
+        源（通达信/新浪）只给不复权成交价；``adjust=qfq|hfq`` 时用本地
         ``adjust_factors`` 缩放到与日 K 同口径（通达信协议本身不提供前复权分时）。
         """
         from src.market.application.minute import (

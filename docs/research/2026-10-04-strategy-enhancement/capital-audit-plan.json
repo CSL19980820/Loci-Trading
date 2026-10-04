@@ -1,0 +1,37 @@
+{
+  "created_at": "2026-10-04T14:26:51.898991+08:00",
+  "source": "tools\\research_strategy_capital_audit.py",
+  "source_sha256": "f9eb200eadb7f21c65e202101f1fd17154610b79f9c2b74715963a4f592e4602",
+  "phase": "frozen_before_new_candidate_returns",
+  "initial_capital": 1000000,
+  "fixed_ticket": "100000 cash budget including entry fee",
+  "max_positions": 10,
+  "daily_new_position_limit": 2,
+  "cost_pct": 0.21,
+  "stress_cost_pct": 0.42,
+  "priority": "code ascending among supplied frozen event picks; no return-based choice",
+  "cash": "Only prior-day exit proceeds available at new entry; no same-day recycling even for opening exits",
+  "same_code": "Reject entries if a prior accepted position is still held, including its exit day",
+  "equity": "Entry fee funded inside cash ticket; only exit fee reserved in marks; entry factor must match snapshot",
+  "purpose": "Compare enhanced and baseline streams under the same capital and position constraints if event-study nominees show promise",
+  "limitations": [
+    "fixed-notional economic-return overlay, not lot-sized broker/account simulation",
+    "no rank3 refill and no regenerated downstream signals after a cash skip",
+    "daily close drawdown only; no intraday drawdown",
+    "stress fee can change subsequent cash acceptance",
+    "uses current catalog and adjustment-factor revisions"
+  ],
+  "fees": {
+    "entry_pct": 0.08,
+    "exit_pct": 0.13,
+    "stress": "double both",
+    "stock_notional": "cash ticket / (1 + entry fee rate)"
+  },
+  "preconditions": [
+    "Upstream daily Top2 frozen before fills, no unfilled-order refill",
+    "Upstream unresolved positions = 0 on common window",
+    "Every supplied filled event obeys T+1 and has raw/economic prices matching frozen source",
+    "Daily input entries <= 2; no hindsight selection from a larger filled pool"
+  ],
+  "preflight_change": "Before any real trade audit: fund entry fees inside cash tickets and verify entry factor consistency; no candidate return was read to make this change."
+}

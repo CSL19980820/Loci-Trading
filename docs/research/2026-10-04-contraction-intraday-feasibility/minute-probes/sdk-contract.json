@@ -1,0 +1,33 @@
+{
+  "inspection_only": true,
+  "new_network_requests": 0,
+  "installed_library": "tdxpy",
+  "installed_version": "0.2.7",
+  "pytdx_installed": false,
+  "method_signature": "(self, category, market, code, start, count)",
+  "minute_category": 8,
+  "max_page_constant": 800,
+  "request_date_argument": false,
+  "request_offset_fields": "start/count both unsigned16-bit H in <HIHHHH6sHHHHIIH",
+  "max_unsigned_start": 65535,
+  "response_fields": [
+    "open",
+    "close",
+    "high",
+    "low",
+    "vol",
+    "amount",
+    "year",
+    "month",
+    "day",
+    "hour",
+    "minute",
+    "datetime"
+  ],
+  "timestamp_origin": "decoded by get_datetime(category,body_buf), not a synthetic fixed240 loop",
+  "project_uses_category_for_daily": 9,
+  "project_minute_adapter_uses": "get_history_minute_time_data(date)->price/vol",
+  "historical_retention_contract": "No server earliestdate/retention/completepool evidence established by this static inspection",
+  "category8_volume_unit": "not separately requested or validated in this study",
+  "parser_source_sha256": "95d4814c4017f3afc2ffa8ec0036125f8d54cdc190b96d749c3727fd976c1972"
+}

@@ -1,0 +1,14 @@
+{
+  "created_at": "2026-10-04T15:55:29.377197+08:00",
+  "model_sha256": "2c10afcfec12f891fd4f34909282f71f5ac0f9dba70a1792d88c8aa72967e578",
+  "preselected_sha256": {
+    "legacy_original": "3a1c724cb5ff52d2a2513d20482604c6457bbe07bf8e6ebbb29f81ebc2162dc9",
+    "corrected_original": "9a7a1a54de10a01474ce70b32484aa3f330fe8a0283c6e3c2088bc0dd46eab88",
+    "eligible_original": "9a7a1a54de10a01474ce70b32484aa3f330fe8a0283c6e3c2088bc0dd46eab88",
+    "rank_only": "f8a81661eb684b789e7399790b08c6d00c2356ffdf885bd227f3cc6fe7947576",
+    "positive_only": "4e1ac84a48804b49e25ffad1b2011ffb22752902098d79384adad72cc910827d"
+  },
+  "labels_not_yet_evaluated_for_phase": true,
+  "common_market_days": 113,
+  "common_slots": 226
+}

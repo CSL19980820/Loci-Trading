@@ -1,0 +1,135 @@
+{
+  "status": "passed",
+  "source_plan_core_snapshot_groups_unchanged": true,
+  "root_core_self_checks": 10,
+  "adapter_self_checks": 11,
+  "known_label_fit_time_and_date_weight_scaler": "passed",
+  "saved_predictions_match_frozen_model": "passed",
+  "preselected_orders_equal_executed_orders": "passed",
+  "selected_unknown_day_and_full_period_budget_remain_null": "passed",
+  "unknown_day_other_resolved_trades_preserved_in_trade_and_label_ledgers": true,
+  "no_eliminated_rank_only_later_results": true,
+  "candidate_day_histograms": {
+    "fit_2024": {
+      "0": 27,
+      "1": 42,
+      "2": 37,
+      "more_than2": 133
+    },
+    "refit_full_train": {
+      "0": 37,
+      "1": 62,
+      "2": 51,
+      "more_than2": 206
+    }
+  },
+  "training": [
+    {
+      "phase": "fit_2024",
+      "labels": 859,
+      "used": 858,
+      "dates": 212,
+      "status": "passed"
+    },
+    {
+      "phase": "refit_full_train",
+      "labels": 1301,
+      "used": 1301,
+      "dates": 319,
+      "status": "passed"
+    }
+  ],
+  "runs": [
+    {
+      "segment": "inner_2025h1",
+      "variant": "full_shape",
+      "closed": 186,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "inner_2025h1",
+      "variant": "feature_eligible_full_shape",
+      "closed": 186,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "inner_2025h1",
+      "variant": "corrected_low_open",
+      "closed": 161,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "inner_2025h1",
+      "variant": "rank_only",
+      "closed": 186,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "inner_2025h1",
+      "variant": "positive_only",
+      "closed": 36,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "full_shape",
+      "closed": 218,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "feature_eligible_full_shape",
+      "closed": 218,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "corrected_low_open",
+      "closed": 190,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "validation_2025h2",
+      "variant": "positive_only",
+      "closed": 27,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "full_shape",
+      "closed": 311,
+      "unresolved_selected": 1,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "feature_eligible_full_shape",
+      "closed": 311,
+      "unresolved_selected": 1,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "corrected_low_open",
+      "closed": 263,
+      "unresolved_selected": 0,
+      "status": "passed"
+    },
+    {
+      "segment": "observed_2026",
+      "variant": "positive_only",
+      "closed": 57,
+      "unresolved_selected": 0,
+      "status": "passed"
+    }
+  ]
+}

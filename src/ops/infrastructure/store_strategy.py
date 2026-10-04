@@ -2,10 +2,22 @@
 from __future__ import annotations
 
 import datetime as _dt
+import hashlib
 from typing import Any
 import sqlite3
 
 from src.ops.infrastructure.store_helpers import OpsError, _now, dumps, loads, new_id
+
+
+# 2026-10 股票范围收归统一股票池前的内置默认说明。只识别完整原文摘要，
+# 不按 ST/板块/价格关键词改写，避免覆盖用户自行维护的买入说明。
+_LEGACY_BUILTIN_ENTRY_INSTRUCTION_HASHES = {
+    "qianlong-close-v3": "c24d0a01c63e7015ed3b8bc31c5afde318c2ad04d28e2dfc53d65f85bf0cd7ac",
+    "sanyuan-tail-v1": "0235fae82586730ac75ce5fb679c721f23357148958db9acc8f461bca10a3c7e",
+    "yangshi-tail-v1": "a5d49eec652581396fa906d0c0a63279bc3ad64050cb39559750a6a2e3c0b3c8",
+    "impulse-inside-breakout-v1": "6f16199948e723a681b273786afd7c74c6d00f36e5b0a64e7b19088f17352dcd",
+    "contraction-rebreakout-v1": "e71e762c09f540ceddef77412b3ab5aba51a2f644d92ea9cdf97d4027cb6535c",
+}
 
 
 class OpsStrategyMixin:
@@ -64,14 +76,23 @@ class OpsStrategyMixin:
         return slug
 
     def ensure_strategy_entry_instructions(self, strategies: list[dict[str, Any]]) -> None:
-        """把内置战法的默认买入简述补进档案库，不覆盖已有人工内容。"""
+        """补默认买入简述；仅精确识别的旧内置默认可升级，人工内容保留。"""
         for strategy in strategies:
             slug = str(strategy.get("slug") or "").strip()
             instructions = str(strategy.get("entry_instructions") or "").strip()
             if not slug or not instructions:
                 continue
             existing = self.get_strategy_doc(slug)
-            if existing and str(existing.get("entry_instructions") or "").strip():
+            existing_instructions = str((existing or {}).get("entry_instructions") or "").strip()
+            if existing_instructions:
+                legacy_digest = _LEGACY_BUILTIN_ENTRY_INSTRUCTION_HASHES.get(slug)
+                if (
+                    str(strategy.get("source_kind") or "") == "builtin"
+                    and legacy_digest
+                    and existing_instructions != instructions
+                    and hashlib.sha256(existing_instructions.encode("utf-8")).hexdigest() == legacy_digest
+                ):
+                    self.upsert_strategy_doc(slug, entry_instructions=instructions)
                 continue
             self.upsert_strategy_doc(
                 slug,

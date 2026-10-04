@@ -1,0 +1,122 @@
+{
+  "status": "frozen_before_any_new_candidate_returns",
+  "features": {
+    "impulse_return_pct": "100*(C[T-2]/C[T-3]-1)",
+    "recent_gain_10_pct": "100*(C[T-2]/C[T-12]-1)",
+    "yin_volume_ratio": "raw V[T-1]/raw V[T-2]",
+    "yin_body_pct": "100*(C[T-1]/O[T-1]-1)",
+    "yin_close_location": "(C[T-1]-L[T-1])/(H[T-1]-L[T-1])",
+    "impulse_body_retained": "(C[T-1]-O[T-2])/(C[T-2]-O[T-2])",
+    "opening_gap_pct": "100*(O[T]/C[T-1]-1)",
+    "opening_position_60": "clip((O[T]-min L[T-60:T-1])/(max H[T-60:T-1]-min L[T-60:T-1]),0,1)",
+    "nearest_ma_distance_pct": "100*min(abs(O[T]/MA_p[T-1]-1)),p in5,10,20",
+    "index_return_20_pct": "100*(CSI300 C[T-1]/CSI300 C[T-21]-1)",
+    "breadth_above_ma20": "All main-board STOCK breadth C>MA20 atT-1, prior20 valid-price/positive-volume sessions",
+    "breadth_advancing": "Same eligible main-board denominator, fraction C[T-1]>C[T-2]"
+  },
+  "policies": [
+    "rank_only",
+    "positive_only"
+  ],
+  "controls": [
+    "full_shape",
+    "feature_eligible_full_shape",
+    "corrected_low_open"
+  ],
+  "splits": {
+    "fit_2024": [
+      "2024-01-01",
+      "2024-12-31"
+    ],
+    "inner_2025h1": [
+      "2025-01-01",
+      "2025-06-30"
+    ],
+    "refit_full_train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "universe": "Entire corrected strong-up then double-volume-yin shape with valid raw current open>6; low-open is not a learning gate. Original sector intersection Top2 rule remains. All candidates, not old Top2 or low-open subset, receive independent order labels.",
+  "decision": "T daily-opening proxy: today's O and bars fully closed byT-1; noT H/L/C/V, turnover, execution outcome, or future factor to build a feature. CSI300/breadth T-1. Opening-based scoring and same-open fill remain a proxy, not proof of09:25availability.",
+  "numeric": "Frozen regime direct SQL hfq factors<=stage cutoff, forward only; signal price geometry10significant digits; raw prices*direct factors for fills/returns. Sparse factor source and current catalog/industry remain retrospective/PIT limitations.",
+  "labels": {
+    "target": "Net percentage return of each predeclared current-opening order opportunity, not conditional-on-fill return. Same4sessions including entry,-6% stop,strictT+1,original strict limits/delays/cost0.21%.",
+    "closed": "Actual finalized net_return_pct, label_available_date=actual exit_date; actual exit must be<=stage cutoff, irrespective of planned maturity.",
+    "cancelled": "Exactly0 only for finite nonpositive observed volume proving no fill, or known upper-limit opening under frozen execution contract. Conservatively available at that day's close; slot consumed/no refill.",
+    "unresolved": "Unknown limit reference, missing/nonfinite volume or quote, unclosed filled position, or other unknown execution: net_return_pct=null,label_available_date=null. Never coerce unknown to0.",
+    "boundary": "Before execution every segment uses common T+3<=end origin maturity. Additionally2024 fit requires actual available date<=2024-12-31 and before2025H1. Labels unresolved after suspensions/limit delays remain excluded.",
+    "selection_unknown": "Any selected unresolved order makes that policy's calendar result/nomination unavailable. Unselected unresolved full-pool labels do not become model training zeros."
+  },
+  "training": "Use frozen root core lambda1,fit_start2024-01-01,date-normalized weights,fit-only scaler,z±5,constant scale1,unpenalized intercept,no target clipping. No fitting on oldTop2 or low-open subset.",
+  "ranking": "Signed finite predicted net return rounded to10decimal percentage points, no0..100clip and no score imputation. rank_only ranks all feature-complete candidates;positive_only first requires prediction>0. Greedy max2 with every industry-group intersection excluded,code tie order. No refilling after unknown/cancelled execution.",
+  "control_contract": "full_shape=old60/40 over complete shape;feature_eligible_full_shape=same rank recomputed after exact model feature-completeness gate;corrected_low_open=old behavior corrected for price coordinates. Policies must beat all3 perroot acceptance.",
+  "budget": "Same all market days with T+3<=segment end,2slots every day including empty/filtered days. Actual opening entry date equals decision date. Confirmed unfilled=0;unresolved selected=null. No zero-labelled training samples are invented for no-candidate calendar days. Independent event opportunities, not a portfolio NAV.",
+  "freeze_guard": "This adapter,rootPLAN/core,snapshot,groups and nomination hashes must remain unchanged.",
+  "limitations": [
+    "Current identity/industry and factor revisions, not historical PIT.",
+    "Daily open/intraday daily extremes do not establish09:25execution or liquidity capacity.",
+    "Later history already observed in earlier studies; no untouched OOS claim.",
+    "No2023H2trade outcomes;2023is warmup only."
+  ],
+  "created_at": "2026-10-04T15:44:39.465659+08:00",
+  "acceptance": {
+    "training": {
+      "min_labels": 100,
+      "min_decision_days": 60,
+      "min_months": 6
+    },
+    "inner": {
+      "min_closed": 20,
+      "min_active_months": 3,
+      "net_mean": ">0",
+      "PF": ">1",
+      "stress": "double_cost_largest_winner_removed mean>0",
+      "budget": "slot_mean strictly greater than ALL3 controls",
+      "unresolved_selected": 0
+    },
+    "later_each": {
+      "min_closed": 12,
+      "min_active_months": 4,
+      "net_mean": ">0",
+      "PF": ">1",
+      "budget": "slot_mean strictly greater than ALL3 controls",
+      "unresolved_selected": 0
+    },
+    "later_combined": {
+      "min_closed": 40,
+      "stress": "double_cost,largest_winner_removed,and both combined each mean>0"
+    },
+    "stop": "If no inner qualifier, stop without full-train refit or later evaluation; no fallback or retuning.",
+    "confidence": "Paired month blocks for all3 controls; crossing zero is not statistically confirmed advantage.",
+    "capital": "Only later qualifiers may enter root's separate fixed-total-capital verification."
+  },
+  "root_plan_sha256": "8097c29ce9160a342026c244ca6907e9bc0b7b2291b1bf54a933749afc74c15d",
+  "root_receipt_sha256": "a4d846a085014cc1d05906920970b7ccd41970ad5929235af1e0c942aefcde21",
+  "sources": {
+    "tools/research_double_yin_learned_rank.py": "6b4778c093825c296c3a6398c334e46cc2e9b74977f4e6e645eedab00c5a73da",
+    "tools/research_regularized_rank_core.py": "aedd4b984d55d00e5a2b014aafd647f8e419d9720033a0add25bb5784bcefbe6",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "tools/research_double_yin_repair.py": "afc40939bc0315cdbeec8821104bf70bb0a2b82679d5244cec1eb91a6279e29d",
+    "tools/research_double_yin_redesign.py": "0f9f304e153b07ea0d2d9053f7ed51999b9cad3a75fa7864b4335910879a3e21",
+    "tools/research_double_yin_scoring_proxy.py": "e2bfd7c19039790a622109420dbb80b48a296400f2233d39b6802163848edbdb",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "src/strategy/application/double_yin_low_open.py": "c111f1662dcc013b7518d822952cd381e5b776d0bfebcdc85a6983e7c2826833",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "191daeb13e26731dbaade3432faa6b6b1d984ce69dd1d59b757576f266cd1f36",
+    "src/market/domain/universe.py": "343d04424b01a90a0c85be724582421ffbda181df68363c8ceaf2d67f40ad2fb"
+  },
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+}

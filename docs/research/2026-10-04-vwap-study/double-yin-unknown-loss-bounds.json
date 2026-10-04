@@ -1,0 +1,23 @@
+{
+  "scope": "Supplemental mathematical floor under frozen unlevered positive-price long and fixed transaction costs; does not fill unknown labels, change nomination or validate execution",
+  "bounds": [
+    {
+      "period": "observed_2026",
+      "known_closed": 60,
+      "unknown": 1,
+      "unknown_assumed_net_lower_bound_pct": -100.21,
+      "all_order_mean_lower_bound_pct": 2.4378852439344043,
+      "double_cost_drop_known_max_winner_mean_lower_bound_pct": 1.7862326074540147,
+      "these_are_bounds_not_estimated_or_realized_results": true
+    },
+    {
+      "period": "pooled_later",
+      "known_closed": 79,
+      "unknown": 1,
+      "unknown_assumed_net_lower_bound_pct": -100.21,
+      "all_order_mean_lower_bound_pct": 2.3904086791704495,
+      "double_cost_drop_known_max_winner_mean_lower_bound_pct": 1.8443753278592177,
+      "these_are_bounds_not_estimated_or_realized_results": true
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from src.formula.domain.screen_formula_evaluator import apply_formula_call
+from src.formula.domain.functions import check_formula_budget, FormulaRuntimeBudgetExceeded
 from src.formula.domain.screen_formula_compiler import BoundExpr, FIELD_ALIASES
 from src.formula.domain.screen_formula_types import (
     CompiledScreenFormula,
@@ -193,6 +194,7 @@ def _eval_expr(
     reference: pd.Series | pd.DataFrame,
     diagnostics: list[FormulaDiagnostic],
 ) -> Any:
+    check_formula_budget()
     if expr.kind == "literal":
         return _return_expr(expr, expr.value, diagnostics)
     if expr.kind == "param":
@@ -263,6 +265,55 @@ def _eval_expr(
     raise AssertionError(f"unknown bound expr {expr.kind}")
 
 
+def _binding_release_plan(compiled: CompiledScreenFormula) -> tuple[tuple[str, ...], ...]:
+    """Release after last use, while keeping every statement's evaluation intact."""
+    last_use = {statement.name: index for index, statement in enumerate(compiled.program)}
+
+    def visit(expr: BoundExpr, index: int) -> None:
+        if expr.kind == "binding":
+            last_use[str(expr.value)] = index
+        for arg in expr.args:
+            visit(arg, index)
+
+    for index, statement in enumerate(compiled.program):
+        visit(statement.expr, index)
+    pinned = {compiled.signal_name, *compiled.factor_names}
+    release: list[list[str]] = [[] for _ in compiled.program]
+    for name, index in last_use.items():
+        if name not in pinned:
+            release[index].append(name)
+    return tuple(tuple(names) for names in release)
+
+
+def estimate_formula_working_frames(compiled: CompiledScreenFormula) -> int:
+    """Conservative dense float64 panel units for planning a column batch.
+
+    Includes input/turnover conversion, live bindings, expression operands and
+    controlled function scratch, scans and output broadcasts. Count scalar/alias
+    bindings as full frames too. This is a planning estimate, not an RSS limit;
+    rolling window blocks and the caller's read/result caches need separate bytes.
+    """
+    def scratch(expr: BoundExpr) -> int:
+        held = 0
+        peak = 4  # result and shape/non-finite/truthiness scans
+        for arg in expr.args:
+            peak = max(peak, held + scratch(arg))
+            held += 1  # scalar/borrowed input operands may cost less; keep the upper estimate
+        return max(peak, held + (16 if expr.kind == "call" else 4))
+
+    release = _binding_release_plan(compiled)
+    live: set[str] = set()
+    peak = 0
+    for index, statement in enumerate(compiled.program):
+        peak = max(peak, len(live) + scratch(statement.expr))
+        live.add(statement.name)
+        peak = max(peak, len(live) + 4)
+        live.difference_update(release[index])
+    peak = max(peak, len(live) + len(compiled.factor_names) + 4)
+    inputs = len(compiled.required_fields) + int("turnover" in compiled.required_fields)
+    return inputs + peak
+
+
 def evaluate_screen_formula(
     compiled: CompiledScreenFormula,
     panels: dict[str, pd.Series | pd.DataFrame],
@@ -273,20 +324,33 @@ def evaluate_screen_formula(
     diagnostics: list[FormulaDiagnostic] = []
     env: dict[str, Any] = {}
     signal_value: Any = None
-    for statement in compiled.program:
-        value = _eval_expr(
-            statement.expr,
-            env,
-            resolved_params,
-            fields,
-            reference,
-            diagnostics,
-        )
-        _scan_non_finite(statement.name, value, diagnostics)
-        _scan_shape(statement.name, value, reference, diagnostics)
+    release = _binding_release_plan(compiled)
+    for index, statement in enumerate(compiled.program):
+        try:
+            check_formula_budget()
+            value = _eval_expr(
+                statement.expr,
+                env,
+                resolved_params,
+                fields,
+                reference,
+                diagnostics,
+            )
+            _scan_non_finite(statement.name, value, diagnostics)
+            _scan_shape(statement.name, value, reference, diagnostics)
+            check_formula_budget()
+        except FormulaRuntimeBudgetExceeded as exc:
+            diagnostics.append(FormulaDiagnostic(
+                code="E_FORMULA_RUNTIME_BUDGET", message=str(exc),
+                line=statement.line, column=statement.column,
+            ))
+            raise _eval_error(diagnostics) from exc
         env[statement.name] = value
         if statement.kind == "signal":
             signal_value = value
+        for name in release[index]:
+            env.pop(name, None)
+        del value
     assert signal_value is not None
     signal_frame = _ensure_like(reference, signal_value)
     signal_frame = _truthy(signal_frame).fillna(False).astype(bool)

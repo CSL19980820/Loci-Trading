@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "checks": [
+    "declared_lambda_objective",
+    "future_labels_and_features_do_not_fit",
+    "prewindow_labels_do_not_fit",
+    "equal_date_weights_not_equal_row_weights",
+    "feature_unit_invariance",
+    "prediction_uses_past_scaler_and_fixed_clip",
+    "missing_prediction_feature_stays_unknown",
+    "resolved_cancel_zero_has_its_own_information_time",
+    "clipped_design_unpenalized_intercept",
+    "constant_feature_and_target"
+  ]
+}

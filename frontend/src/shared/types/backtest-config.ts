@@ -15,6 +15,7 @@ export interface BacktestExecutionConfig {
 }
 
 export interface StrategyBacktestTemplate extends BacktestExecutionConfig {
+  mode?: 'trade' | 'horizon'
   start?: string
   end?: string
   account_model?: 'daily_close'

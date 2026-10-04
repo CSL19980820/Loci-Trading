@@ -1,0 +1,12 @@
+{
+  "created_at": "2026-10-04T13:48:21.172483+08:00",
+  "selected": [
+    "quality_gate",
+    "quality_stop"
+  ],
+  "qualified": [],
+  "status": "diagnostic_only_no_qualified_candidate",
+  "unassessable_due_to_censoring": [],
+  "train_sha256": "2120cf195d46df5e9322b5aa199a5ab61df4bda9bba788a45ea142a3815e7e31",
+  "plan_sha256": "cc1d12234271ef117b17dff1466cfad2c497502cfa5697fe63fca5fecda8c653"
+}

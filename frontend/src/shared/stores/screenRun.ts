@@ -6,11 +6,10 @@
  * 「潜龙在跑」把所有战法的选股按钮全禁了，还挂着一句「引擎是后端全局单槽」的
  * 告示——那句话现在是假的，一并删掉。
  *
- * 只保留一条轮询：`GET /api/screen/run` 一次就返回全部槽，按战法各开一条轮询
- * 纯属自找 N 倍请求。
+ * 只保留一条 progress 轮询：全部槽只传进度，新终态按战法补一次完整结果。
  */
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef } from 'vue'
 import { toast } from 'vue-sonner'
 
 import { cancelScreenRun, getScreenRunStatus, startScreenRun } from '@/shared/api/quant'
@@ -46,7 +45,25 @@ interface RunTrack {
   exact: boolean
 }
 
-const POLL_MS = 900
+const POLL_MS = 1200
+
+/** 结果随该次运行的最后一次写入发布；重跑不能继承上一轮的结果。 */
+function slotVersion(slot: ScreenRunSlot): string {
+  return `${slot.started_at ?? 0}:${slot.updated_at ?? 0}`
+}
+
+function sameLog(left: string[], right: string[]): boolean {
+  return left === right || (left.length === right.length && left.every((line, index) => line === right[index]))
+}
+
+/** 比较进度字段和日志，不遍历大结果数组。 */
+function reuseSlot(previous: ScreenRunSlot | undefined, next: ScreenRunSlot): ScreenRunSlot {
+  if (!previous) return next
+  const keys = Object.keys(next) as (keyof ScreenRunSlot)[]
+  const priorKeys = Object.keys(previous)
+  if (keys.length !== priorKeys.length || previous.result !== next.result || !sameLog(previous.log, next.log)) return next
+  return keys.every(key => key === 'log' || key === 'result' || previous[key] === next[key]) ? previous : next
+}
 
 /** 「2 分 13 秒」——秒数进位成分钟，免得进度条旁边挂一串 3 位数秒。 */
 function durationText(ms: number): string {
@@ -66,7 +83,7 @@ function slotsOf(payload: ScreenRunStatus): Record<string, ScreenRunSlot> {
 
 export const useScreenRunStore = defineStore('screenRun', () => {
   /** slug → 后端槽快照。跑完的槽也留着（前端要回看 picks） */
-  const runs = ref<Record<string, ScreenRunSlot>>({})
+  const runs = shallowRef<Record<string, ScreenRunSlot>>({})
   const tracks = ref<Record<string, RunTrack>>({})
   /** slug → 放弃跟踪的残影 */
   const abandonedRuns = ref<Record<string, AbandonedScreenRun>>({})
@@ -86,12 +103,18 @@ export const useScreenRunStore = defineStore('screenRun', () => {
 
   let timer: number | undefined
   let pollGeneration = 0
+  let snapshotRequest: { generation: number; promise: Promise<void> } | null = null
+  let snapshotAt = 0
+  let snapshotGeneration = -1
+  const resultRequests = new Map<string, Promise<void>>()
+  const loadedResults = new Map<string, string>()
+  const resultInterests = new Set<string>()
 
   const runningStrategies = computed(() =>
     Object.entries(runs.value)
       .filter(([slug, slot]) => slug && slot.status === 'running')
       // 按后端 started_at 升序。聚合快照里槽的顺序是「最近碰过」的 LRU 序，会随
-      // 每次轮询变动；chip 的主位不能每 900ms 换一个战法。
+      // 每次轮询变动；chip 的主位不能随轮询换一个战法。
       .sort((a, b) => Number(a[1].started_at || 0) - Number(b[1].started_at || 0))
       .map(([slug]) => slug),
   )
@@ -208,7 +231,10 @@ export const useScreenRunStore = defineStore('screenRun', () => {
     }
     const authoritative = Number(slot.started_at || 0) * 1000
     if (authoritative > 0) {
-      tracks.value = { ...tracks.value, [slug]: { since: authoritative, exact: true } }
+      const track = tracks.value[slug]
+      if (!track?.exact || track.since !== authoritative) {
+        tracks.value = { ...tracks.value, [slug]: { since: authoritative, exact: true } }
+      }
       return
     }
     // 老后端没有 started_at：只能记「前端什么时候开始看见它在跑」，文案降级成
@@ -255,11 +281,26 @@ export const useScreenRunStore = defineStore('screenRun', () => {
         lastStatus.set(slug, String(slot.status || ''))
         continue
       }
-      next[slug] = slot
+      const previous = runs.value[slug]
+      const version = slotVersion(slot)
+      if (slot.status === 'done' && !slot.result_omitted && Object.hasOwn(slot, 'result')) loadedResults.set(slug, version)
+      // progress 的缺字段不是清空；已取得同一版本的 full 后只复用本地结果。
+      const loaded = loadedResults.get(slug) === version
+      const sameVersion = previous && slot.updated_at !== undefined && previous.status === slot.status && slotVersion(previous) === version
+      const result = slot.result_omitted
+        ? loaded && sameVersion ? previous.result ?? null : null
+        : sameVersion && previous.result_omitted !== true ? previous.result : slot.result
+      const normalized = slot.result_omitted
+        ? { ...slot, result, result_omitted: !loaded }
+        : { ...slot, result }
+      next[slug] = reuseSlot(previous, normalized)
       trackSlot(slug, slot)
-      notify(slug, slot)
+      // 等新终态结果回来再提示，保留真实入库数量；初次水合不弹历史完成提示。
+      if (!(slot.status === 'done' && slot.result_omitted && !loaded)) notify(slug, next[slug]!)
     }
-    runs.value = next
+    if (Object.keys(runs.value).length !== Object.keys(next).length || Object.keys(next).some(slug => runs.value[slug] !== next[slug])) {
+      runs.value = next
+    }
     if (payload.max_concurrent_runs) {
       maxConcurrentRuns.value = Number(payload.max_concurrent_runs)
     }
@@ -271,6 +312,9 @@ export const useScreenRunStore = defineStore('screenRun', () => {
     const slug = String(slot.strategy || '')
     if (!slug) return
     muted.delete(slug)
+    loadedResults.delete(slug)
+    resultInterests.add(slug)
+    if (slot.status === 'done' && !slot.result_omitted && Object.hasOwn(slot, 'result')) loadedResults.set(slug, slotVersion(slot))
     runs.value = { ...runs.value, [slug]: slot }
     trackSlot(slug, slot)
     lastStatus.set(slug, String(slot.status || ''))
@@ -293,27 +337,84 @@ export const useScreenRunStore = defineStore('screenRun', () => {
     }, POLL_MS)
   }
 
+  function needsResult(slug: string, slot: ScreenRunSlot): boolean {
+    return slot.status === 'done' && slot.result_omitted === true && loadedResults.get(slug) !== slotVersion(slot)
+      && (resultInterests.has(slug) || lastStatus.get(slug) === 'running')
+  }
+
+  function needsPoll(): boolean {
+    return running.value || Object.entries(runs.value).some(([slug, slot]) => needsResult(slug, slot))
+  }
+
+  /** 终态结果只读取一次；读结果不阻塞其它战法的进度请求。 */
+  function loadResult(slug: string, slot: ScreenRunSlot, gen: number): Promise<void> {
+    const version = slotVersion(slot)
+    const key = `${gen}:${slug}:${version}`
+    const pending = resultRequests.get(key)
+    if (pending) return pending
+    const task = (async () => {
+      try {
+        const full = await getScreenRunStatus({ strategy: slug })
+        const current = runs.value[slug]
+        if (gen !== pollGeneration || muted.has(slug) || !current || current.status !== 'done'
+          || slotVersion(current) !== version || full.strategy !== slug || full.status !== 'done'
+          || slotVersion(full) !== version || full.result_omitted) return
+        loadedResults.set(slug, version)
+        const resolved = { ...current, result: full.result ?? null, result_omitted: false }
+        runs.value = { ...runs.value, [slug]: resolved }
+        notify(slug, resolved)
+        if (!needsPoll()) stopPoll()
+      } catch {
+        // progress 已到终态，结果读取失败仍需下轮重试。
+      } finally {
+        resultRequests.delete(key)
+      }
+    })()
+    resultRequests.set(key, task)
+    return task
+  }
+
+  /** App、页面水合和轮询共用同一代在途请求，只消费一次快照。 */
+  function readSnapshot(gen: number): Promise<void> {
+    if (snapshotRequest?.generation === gen) return snapshotRequest.promise
+    let task!: Promise<void>
+    task = (async () => {
+      try {
+        const payload = await getScreenRunStatus({ view: 'progress' })
+        if (gen !== pollGeneration) return
+        applySnapshot(payload)
+        snapshotAt = Date.now()
+        snapshotGeneration = gen
+        for (const [slug, slot] of Object.entries(runs.value)) {
+          if (needsResult(slug, slot)) void loadResult(slug, slot, gen)
+        }
+      } finally {
+        if (snapshotRequest?.promise === task) snapshotRequest = null
+      }
+    })()
+    snapshotRequest = { generation: gen, promise: task }
+    return task
+  }
+
   async function tick(gen: number): Promise<void> {
     if (gen !== pollGeneration) return
     try {
-      const next = await getScreenRunStatus()
+      await readSnapshot(gen)
       if (gen !== pollGeneration) return
-      applySnapshot(next)
-      if (running.value) {
+      if (needsPoll()) {
         schedulePoll()
         return
       }
       stopPoll()
     } catch {
       if (gen !== pollGeneration) return
-      schedulePoll()
+      if (needsPoll()) schedulePoll()
     }
   }
 
   function ensurePoll(): void {
-    if (!running.value) return
-    if (timer) return
-    pollGeneration += 1
+    if (!needsPoll()) return
+    if (timer || snapshotRequest?.generation === pollGeneration) return
     void tick(pollGeneration)
   }
 
@@ -326,19 +427,44 @@ export const useScreenRunStore = defineStore('screenRun', () => {
    * 同步占槽的，所以下一次 GET 一定看得见它。
    */
   function resyncPoll(): void {
+    pollGeneration += 1
     stopPoll()
     ensurePoll()
   }
 
-  async function hydrate(): Promise<void> {
+  async function hydrate(force = false): Promise<void> {
+    const gen = pollGeneration
+    // 页面晚于 App 挂载也复用同一轮采样，不能因路由多一个消费者就多一次 GET。
+    if (!force && snapshotGeneration === gen && Date.now() - snapshotAt < POLL_MS) {
+      if (needsPoll() && !timer && snapshotRequest?.generation !== gen) schedulePoll()
+      return
+    }
     try {
-      const next = await getScreenRunStatus()
-      applySnapshot(next)
-      if (running.value) ensurePoll()
+      await readSnapshot(gen)
+      if (gen !== pollGeneration) return
+      if (needsPoll() && !timer) schedulePoll()
     } catch {
       /* 启动时接口未就绪可忽略 */
     }
   }
+
+  /** 只有当前查看的战法才恢复历史大结果；未见过的槽先共享一次 progress 水合。 */
+  async function ensureResultFor(strategy: string): Promise<void> {
+    const slug = String(strategy || '').trim()
+    if (!slug) return
+    resultInterests.add(slug)
+    const gen = pollGeneration
+    if (!runFor(slug)) await hydrate(true)
+    if (gen !== pollGeneration) return
+    const slot = runFor(slug)
+    if (slot && needsResult(slug, slot)) await loadResult(slug, slot, gen)
+    if (gen === pollGeneration && needsPoll() && !timer) schedulePoll()
+  }
+
+  onScopeDispose(() => {
+    pollGeneration += 1
+    stopPoll()
+  })
 
   /**
    * 停止某个战法的选股：先请求后端中止，再把它从本地进度里摘掉。
@@ -394,7 +520,7 @@ export const useScreenRunStore = defineStore('screenRun', () => {
     pollGeneration += 1
     stopPoll()
     // 别的战法还在跑就继续轮询——单槽时代这里是无条件停掉整条轮询
-    if (running.value) ensurePoll()
+    if (needsPoll()) ensurePoll()
   }
 
   function dismissAbandoned(strategy?: string): void {
@@ -510,6 +636,7 @@ export const useScreenRunStore = defineStore('screenRun', () => {
     abandonedFor,
     // 动作
     hydrate,
+    ensureResultFor,
     ensurePoll,
     stopPoll,
     start,

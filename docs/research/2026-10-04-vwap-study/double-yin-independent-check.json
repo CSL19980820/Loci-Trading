@@ -1,0 +1,115 @@
+{
+  "checked_at": "2026-10-04T08:34:01.002367+00:00",
+  "source": "Independent SQL prior VWAP, direct factors, conditional full-pool industry Top2 and CSV accounting; no strategy helpers imported",
+  "candidate_records": 2517,
+  "selected_order_records": 3442,
+  "closed_trade_records": 3436,
+  "records_are_overlapping_across_arms": true,
+  "all_checks_passed": true,
+  "checks": [
+    {
+      "phase": "train",
+      "variant": "corrected_low_open",
+      "trades": 513,
+      "selected": 513,
+      "unknown": 0,
+      "passed": true
+    },
+    {
+      "phase": "train",
+      "variant": "full_shape",
+      "trades": 570,
+      "selected": 570,
+      "unknown": 0,
+      "passed": true
+    },
+    {
+      "phase": "train",
+      "variant": "vwap_eligible_full_shape",
+      "trades": 570,
+      "selected": 570,
+      "unknown": 0,
+      "passed": true
+    },
+    {
+      "phase": "train",
+      "variant": "yin_close_above_vwap",
+      "trades": 138,
+      "selected": 138,
+      "unknown": 0,
+      "passed": true
+    },
+    {
+      "phase": "train",
+      "variant": "yin_close_and_open_above_vwap",
+      "trades": 58,
+      "selected": 58,
+      "unknown": 0,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "corrected_low_open",
+      "trades": 189,
+      "selected": 190,
+      "unknown": 1,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "full_shape",
+      "trades": 217,
+      "selected": 218,
+      "unknown": 1,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "vwap_eligible_full_shape",
+      "trades": 217,
+      "selected": 218,
+      "unknown": 1,
+      "passed": true
+    },
+    {
+      "phase": "validation_2025h2",
+      "variant": "yin_close_and_open_above_vwap",
+      "trades": 19,
+      "selected": 19,
+      "unknown": 0,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "corrected_low_open",
+      "trades": 263,
+      "selected": 263,
+      "unknown": 0,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "full_shape",
+      "trades": 311,
+      "selected": 312,
+      "unknown": 1,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "vwap_eligible_full_shape",
+      "trades": 311,
+      "selected": 312,
+      "unknown": 1,
+      "passed": true
+    },
+    {
+      "phase": "observed_2026",
+      "variant": "yin_close_and_open_above_vwap",
+      "trades": 60,
+      "selected": 61,
+      "unknown": 1,
+      "passed": true
+    }
+  ]
+}

@@ -221,7 +221,8 @@ def _copy_quotes_window(full: MarketStore, hot: MarketStore, start_date: str, *,
                     full.conn.execute(calendar_sql, (start_date,)), cursor,
                     "INSERT OR REPLACE INTO trading_calendar VALUES(?,?)",
                 )
-    # 回执：删除热库孤儿后，重灌窗口内日 K 关联的回执（含 attempts）。
+    # 回执：重灌窗口内日 K 关联的回执（含 attempts）。两条镜像入口随后都
+    # 会裁剪窗口并清理孤儿；这里只复制，避免无变化选股也扫描全库回执两次。
     _replace_linked_receipts(full, hot, start_date)
     return written
 
@@ -260,7 +261,6 @@ def _changed_receipt_rows(
 
 def _replace_linked_receipts(full: MarketStore, hot: MarketStore, start_date: str) -> None:
     with hot._transaction() as cursor:
-        _purge_orphan_receipts(cursor)
         ids = [
             str(row[0])
             for row in full.conn.execute(

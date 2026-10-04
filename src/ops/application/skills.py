@@ -444,10 +444,9 @@ def sync_skills_from_templates(
     installed: list[str] = []
     skipped: list[str] = []
     from src.ops.application.retired_slugs import is_retired_strategy_slug
-    from src.ops.application.retire_dragon_return import is_retired_paper_cabin
 
     for slug, source_dir in candidates:
-        if is_retired_paper_cabin(slug) or is_retired_strategy_slug(slug):
+        if slug in {"dragon-return", "dragon-pool"} or is_retired_strategy_slug(slug):
             skipped.append(slug)
             continue
         source_resolved = source_dir.resolve()

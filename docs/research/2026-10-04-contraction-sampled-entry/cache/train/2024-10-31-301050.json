@@ -1,0 +1,51 @@
+{
+  "code": "301050",
+  "requested_date": "2024-10-31",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2024-10-31-301050.attempt1.raw.json",
+  "raw_sha256": "a19c3a1fec1af2e5f6fcab6b4652156b7ef64cdfe571178751bf46b624ae662a",
+  "attempts": [
+    {
+      "code": "301050",
+      "requested_date": "2024-10-31",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:41:28.558127+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 244654.0,
+        "sampled_share_sum": 24465400.0,
+        "daily_volume": 24465423.0,
+        "volume_signed_diff": -23.0,
+        "volume_abs_diff": 23.0,
+        "volume_relative_diff": -9.401022823108352e-07,
+        "volume_tolerance": 24465.423,
+        "final_price_signed_diff": 7.105427357601002e-15,
+        "final_price_abs_diff": 7.105427357601002e-15,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 1,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 54.58,
+        "raw_positive_max": 60.480000000000004,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2024-10-31-301050.attempt1.raw.json",
+      "raw_sha256": "a19c3a1fec1af2e5f6fcab6b4652156b7ef64cdfe571178751bf46b624ae662a",
+      "completed_at": "2026-10-04T17:41:28.657259+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:41:28.657785+08:00"
+}

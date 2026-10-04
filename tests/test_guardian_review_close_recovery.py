@@ -1,4 +1,4 @@
-"""持仓新票不在证券目录时，日复盘仍要取得可核对的收盘价。"""
+"""权威日结定向补数；退役来源不得再被隐式调用或伪造成交量。"""
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -6,39 +6,32 @@ import pandas as pd
 import pytest
 
 from src.market import MarketStore
-from src.market.infrastructure.adapters import tdx_adapter, wudao_adapter
+from src.market.infrastructure.adapters import tdx_adapter
+import src.market as market_api
 from src.ops.application import guardian_review_data as review
-
 
 DAY = "2026-09-22"
 CLOSED = datetime(2026, 9, 22, 15, tzinfo=ZoneInfo("Asia/Shanghai"))
 
 
-def _frame(close: float, *, wudao: bool) -> pd.DataFrame:
-    return pd.DataFrame([{
-        "date": DAY.replace("-", "") if wudao else DAY,
-        "open": 58.5, "high": 60.0, "low": 58.0, "close": close,
-        "volume": 2000000 if wudao else 200000000,
-        "amount": 12000000000,
-    }])
+def _frame(close=58.62, day=DAY):
+    return pd.DataFrame([{"date": day, "open": 58.5, "high": 60.0, "low": 58.0,
+                          "close": close, "volume": 200000000, "amount": 12000000000}])
 
 
-def _market(tmp_path):
-    return MarketStore(tmp_path / "market.db")
+@pytest.fixture(autouse=True)
+def enabled(monkeypatch):
+    monkeypatch.setattr(market_api, "lane_provider_enabled", lambda *args, **kwargs: True)
 
 
-def test_missing_held_close_uses_wudao_and_tdx_without_catalog_entry(tmp_path, monkeypatch):
-    monkeypatch.setattr(wudao_adapter, "wudao_adapter_enabled", lambda: True)
-    monkeypatch.setattr(wudao_adapter.WudaoAdapter, "fetch_daily_many",
-                        lambda self, codes, bars: {"688825": _frame(58.62, wudao=True)})
+def test_missing_held_close_uses_tdx_without_catalog_entry(tmp_path, monkeypatch):
     monkeypatch.setattr(tdx_adapter.TdxAdapter, "fetch_daily_window",
-                        lambda self, code, bars: _frame(58.62, wudao=False))
+                        lambda self, code, bars: _frame())
     monkeypatch.setattr(review, "guardian_account_at", lambda *_args, **_kwargs: {
-        "positions": [{"code": "688825", "name": "长鑫科技", "quantity": 400}],
+        "positions": [{"code": "688825", "name": "测试证券", "quantity": 400}],
     })
-    monkeypatch.setattr(review, "mark_guardian_account",
-                        lambda _state, quotes, _at: {"quotes": quotes})
-    with _market(tmp_path) as market:
+    monkeypatch.setattr(review, "mark_guardian_account", lambda _state, quotes, _at: {"quotes": quotes})
+    with MarketStore(tmp_path / "market.db") as market:
         assert market.instruments_meta(["688825"]) == {}
         account = review.closing_account(market, [], DAY, 10000000)
         row = market.history("688825", start=DAY, end=DAY, adjust="none").iloc[-1]
@@ -47,27 +40,31 @@ def test_missing_held_close_uses_wudao_and_tdx_without_catalog_entry(tmp_path, m
     assert row["volume"] == 200000000
 
 
-def test_wudao_only_close_keeps_unknown_volume_out_of_market_db(tmp_path, monkeypatch):
-    monkeypatch.setattr(wudao_adapter, "wudao_adapter_enabled", lambda: True)
-    monkeypatch.setattr(wudao_adapter.WudaoAdapter, "fetch_daily_many",
-                        lambda self, codes, bars: {"688825": _frame(58.62, wudao=True)})
-    monkeypatch.setattr(tdx_adapter.TdxAdapter, "fetch_daily_window",
-                        lambda self, code, bars: (_ for _ in ()).throw(RuntimeError("TDX unavailable")))
-    with _market(tmp_path) as market:
-        review._recover_closing_quote(market, "688825", DAY, CLOSED)
-        row = market.history("688825", start=DAY, end=DAY, adjust="none").iloc[-1]
-    assert row["source"] == "wudao"
-    assert row["close"] == 58.62
-    assert pd.isna(row["volume"])
+def test_unavailable_authority_preserves_existing_facts(tmp_path, monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("TDX unavailable")
+    monkeypatch.setattr(tdx_adapter.TdxAdapter, "fetch_daily_window", unavailable)
+    with MarketStore(tmp_path / "market.db") as market:
+        market.upsert_quote_bars([{"code": "688825", **_frame().iloc[0].to_dict()}], source="sina")
+        before = market.history("688825", start=DAY, end=DAY, adjust="none").to_dict("records")
+        with pytest.raises(ValueError, match="未取得有效通达信"):
+            review._recover_closing_quote(market, "688825", DAY, CLOSED)
+        assert market.history("688825", start=DAY, end=DAY, adjust="none").to_dict("records") == before
 
 
-def test_disagreeing_sources_do_not_write_close(tmp_path, monkeypatch):
-    monkeypatch.setattr(wudao_adapter, "wudao_adapter_enabled", lambda: True)
-    monkeypatch.setattr(wudao_adapter.WudaoAdapter, "fetch_daily_many",
-                        lambda self, codes, bars: {"688825": _frame(58.62, wudao=True)})
-    monkeypatch.setattr(tdx_adapter.TdxAdapter, "fetch_daily_window",
-                        lambda self, code, bars: _frame(59.62, wudao=False))
-    with _market(tmp_path) as market:
-        with pytest.raises(ValueError, match="收盘价不一致"):
+@pytest.mark.parametrize("frame", [_frame(day="2026-09-21"), _frame(close=float("nan")), _frame(close=61)])
+def test_invalid_or_other_day_bar_never_becomes_close(tmp_path, monkeypatch, frame):
+    monkeypatch.setattr(tdx_adapter.TdxAdapter, "fetch_daily_window", lambda *args, **kwargs: frame)
+    with MarketStore(tmp_path / "market.db") as market:
+        with pytest.raises(ValueError, match="未取得有效通达信"):
             review._recover_closing_quote(market, "688825", DAY, CLOSED)
         assert market.history("688825", start=DAY, end=DAY, adjust="none").empty
+
+
+def test_disabled_source_cannot_be_called_by_recovery(tmp_path, monkeypatch):
+    monkeypatch.setattr(market_api, "lane_provider_enabled", lambda *args, **kwargs: False)
+    monkeypatch.setattr(tdx_adapter.TdxAdapter, "fetch_daily_window",
+                        lambda *args, **kwargs: pytest.fail("disabled source was called"))
+    with MarketStore(tmp_path / "market.db") as market:
+        with pytest.raises(ValueError, match="已停用"):
+            review._recover_closing_quote(market, "688825", DAY, CLOSED)

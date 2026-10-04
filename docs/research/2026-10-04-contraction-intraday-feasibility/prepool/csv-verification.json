@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "independent_csv_and_calendar_checks": true,
+  "rows": 58017,
+  "distinct_codes": 1399,
+  "market_days": 666,
+  "source_pool_hash_unchanged": true,
+  "no_returns_read": true
+}

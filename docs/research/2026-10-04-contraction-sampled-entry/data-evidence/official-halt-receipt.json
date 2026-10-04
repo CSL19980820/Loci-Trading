@@ -1,0 +1,32 @@
+{
+  "records": [
+    {
+      "code": "300506",
+      "trade_date": "2025-05-19",
+      "session": "whole_day_from_open",
+      "status": "officially_suspended",
+      "announcement_id": "2025-057",
+      "url": "https://static.cninfo.com.cn/finalpage/2025-05-19/1223573025.PDF",
+      "file": "300506-2025-05-19-halt.pdf",
+      "sha256": "8d17cee2ca025b73938d04d07e33fc40d1608f043610baf939d44d72e91095fc",
+      "received_at": "2026-10-04T09:17:11.092514+00:00",
+      "use": "Known no intraday trading on this specified date only; do not infer resumption or modify snapshot",
+      "content_checked": true
+    },
+    {
+      "code": "300959",
+      "trade_date": "2025-06-20",
+      "session": "whole_day_from_open",
+      "status": "officially_suspended",
+      "announcement_id": "2025-031",
+      "url": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223934210.PDF",
+      "file": "300959-2025-06-20-halt.pdf",
+      "sha256": "46229a873963e609d8537ea01eb7eaa37472e145c10c39338db67bec81b6d998",
+      "received_at": "2026-10-04T09:17:11.327568+00:00",
+      "use": "Known no intraday trading on this specified date only; do not infer resumption or modify snapshot",
+      "content_checked": true
+    }
+  ],
+  "no_db_mutation": true,
+  "no_policy_change": true
+}

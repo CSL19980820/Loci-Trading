@@ -1,0 +1,15 @@
+{
+  "code": "603727",
+  "requested_date": "2026-06-17",
+  "market": 1,
+  "method": "get_history_minute_time_data",
+  "date_argument": 20260617,
+  "server": {
+    "host": "110.41.147.114",
+    "port": 7709
+  },
+  "attempt": 1,
+  "started_at": "2026-10-04T17:31:19.646565+08:00",
+  "tdxpy_version": "0.2.7",
+  "source_timestamp_present": false
+}

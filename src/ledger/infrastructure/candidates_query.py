@@ -117,6 +117,7 @@ class CandidateQueryMixin:
         end: str | None = None,
         limit: int = 200,
         include_backfill: bool = False,
+        slim: bool = False,
     ) -> list[dict[str, Any]]:
         """查询候选列表。
 
@@ -153,15 +154,20 @@ class CandidateQueryMixin:
             clauses.append("occurred_on <= ?")
             params.append(normalize_date(end))
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        # 列表/时间轴只需轻字段；不能先读完整证据再在 HTTP 层丢弃。
+        evidence_columns = (
+            "NULL AS effective_params_json, NULL AS evidence_json"
+            if slim else "effective_params_json, evidence_json"
+        )
         rows = self.conn.execute(
             f"""
             SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                   rule_version, strategy_slug, strategy_revision, effective_params_json,
-                   evidence_json, tier, source, created_at
+                   rule_version, strategy_slug, strategy_revision,
+                   {evidence_columns}, tier, source, created_at
             FROM (
                 SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
-                       rule_version, strategy_slug, strategy_revision, effective_params_json,
-                       evidence_json, tier, source, created_at,
+                       rule_version, strategy_slug, strategy_revision,
+                       {evidence_columns}, tier, source, created_at,
                        ROW_NUMBER() OVER (
                            PARTITION BY occurred_on, pool_id, code
                            ORDER BY created_at DESC, id DESC
@@ -189,14 +195,47 @@ class CandidateQueryMixin:
                 "rule_version": _normalize_rule_version(str(row["rule_version"])),
                 "strategy_slug": str(row["strategy_slug"]),
                 "strategy_revision": str(row["strategy_revision"]),
-                "effective_params": _loads(str(row["effective_params_json"])),
-                "evidence": _loads(str(row["evidence_json"])),
+                **({} if slim else {
+                    "effective_params": _loads(str(row["effective_params_json"])),
+                    "evidence": _loads(str(row["evidence_json"])),
+                }),
                 "tier": str(row["tier"]),
                 "source": str(row["source"]),
                 "created_at": str(row["created_at"]),
             }
             for row in rows
         ]
+
+    def candidate_payload(self, candidate_id: str) -> dict[str, Any] | None:
+        """按准确 ID 读取单条候选及完整证据，供轻量列表打开详情。"""
+        row = self.conn.execute(
+            """SELECT id, occurred_on, pool_id, code, name, score, decision, timing, reason,
+                      rule_version, strategy_slug, strategy_revision, effective_params_json,
+                      evidence_json, tier, source, created_at
+               FROM candidate_reviews WHERE id = ?""",
+            (candidate_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": str(row["id"]),
+            "date": str(row["occurred_on"]),
+            "pool_id": str(row["pool_id"]),
+            "code": str(row["code"]),
+            "name": str(row["name"]),
+            "score": float(row["score"]) if row["score"] is not None else None,
+            "decision": _normalize_decision(str(row["decision"])),
+            "timing": _normalize_timing(str(row["timing"])),
+            "reason": _normalize_reason_text(str(row["reason"])),
+            "rule_version": _normalize_rule_version(str(row["rule_version"])),
+            "strategy_slug": str(row["strategy_slug"]),
+            "strategy_revision": str(row["strategy_revision"]),
+            "effective_params": _loads(str(row["effective_params_json"])),
+            "evidence": _loads(str(row["evidence_json"])),
+            "tier": str(row["tier"]),
+            "source": str(row["source"]),
+            "created_at": str(row["created_at"]),
+        }
 
     def candidates_by_strategies(
         self,

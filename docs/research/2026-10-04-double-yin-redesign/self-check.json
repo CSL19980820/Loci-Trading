@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "checks": [
+    "buy_stop_fills_target_not_prior_open",
+    "stop_open_gap_not_backfilled",
+    "stop_not_touched",
+    "limit_fills_target",
+    "limit_open_gap_not_backfilled",
+    "limit_not_touched",
+    "unknown_entry_fails",
+    "opening_features_ignore_same_day_HLCV",
+    "only_close_confirmation_uses_today_close",
+    "common_maturity_covers_delayed_entry",
+    "no_T0_stop_and_next_day_gap_uses_worse_open"
+  ]
+}

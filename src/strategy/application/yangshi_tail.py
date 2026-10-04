@@ -1,4 +1,4 @@
-"""杨氏尾盘选股 V1：素材原文六条闸门 + 当日涨幅降序 Top1。
+"""杨氏尾盘选股：保留量价条件，股票范围交由统一股票池。
 
 来源是用户资料里 `【股市百科全书】.doc` 段 1127–1132 的「9：尾盘选股法」整章，原文六条：
 
@@ -6,6 +6,7 @@
     5:换手率大于2%  6:净资产收益率大于0.001%
 
 **第 6 条未实现**——本仓行情库没有财务数据，`market.db` 只有 OHLCV 与股本换手。
+现行版本不再应用原文中的绝对股价、流通股本门槛；下文研究记录属于旧版本。
 
 ## 为什么入场是 next_open 而不是 close
 
@@ -37,6 +38,7 @@ from src.strategy.application.score_percentile import (
     pooled_percentile,
 )
 from src.strategy.domain.base import SignalResult, merge_params, register
+from src.strategy.application.execution_profile import ExecutionProfile
 
 #: 市场上涨家数占比低于该阈值时整日空仓。网格实测：加这道闸门把 Top1 持 3 日的
 #: 组合回撤从 -46.3% 压到 -32.6%，逐笔均净从 +0.5903% 升到 +0.6955%。
@@ -60,7 +62,8 @@ def _once_schedule(hour: int, minute: int) -> dict[str, Any]:
 
 
 _YANGSHI_GATES = (
-    "闸门：流通股本 < 2 亿股、未复权收盘价 < 12 元且 ≥ 3 元、"
+    "股票范围由统一股票池配置决定，战法内不再限制板块、名称、绝对股价或流通股本；"
+    "量价条件："
     "当日涨幅 1% < pct < 5%、换手率 > 2%、成交额 ≥ 3000 万、"
     "当日未封涨停且非一字。原文第 6 条「净资产收益率 > 0.001%」因本仓无财务数据未实现。"
     "若当日市场上涨家数占比 < 40%，整日空仓；闸门前合格的 Top1 进入 watch_signals 观察，"
@@ -72,13 +75,13 @@ _YANGSHI_GATES = (
 
 
 class YangshiTailPickerV1:
-    """六条闸门过滤后按当日涨幅降序取第一只；极弱市空仓。"""
+    """量价条件过滤后按当日涨幅降序取第一只；极弱市空仓。"""
 
     slug = "yangshi-tail-v1"
     name = "杨氏尾盘选股（15:30）"
     description = (
-        "V1：流通股本<2亿股 + 现价<12元 + 涨幅 1%~5% + 换手>2% 四条素材闸门，"
-        "叠加成交额/价格/非封板可交易底线；上涨家数<40% 整日空仓，"
+        "在统一股票池内，涨幅 1%~5% + 换手>2%，"
+        "叠加成交额/非封板可交易底线；上涨家数<40% 整日空仓，"
         "否则按当日涨幅降序取第一只；次日开盘买入，持有 2 日"
     )
     entry_instructions = (
@@ -95,32 +98,64 @@ class YangshiTailPickerV1:
     # 回测器的 hold_days 从实际买入日计：T+1 买入、T+3 收盘卖出是 2 个持仓日。
     screen_hold_days = 2
     screen_stop_loss_pct = None
-    strategy_revision = "builtin:yangshi-tail-v1"
-    version = "v1"
-    version_history = [{"version": "v1", "status": "active", "source": "builtin"}]
-    backtest_metrics: dict[str, Any] | None = {
-        # 全样本 5.6 年逐笔口径；组合层为每日一票、重叠持仓分 3 份资金串行连乘。
-        "trades": 828,
-        "win_rate": 48.309,
-        "avg_net_return": 0.6955,
-        "profit_factor": 1.371,
-        "payoff_ratio": 1.467,
-        "completed_trades": 828,
-        "portfolio_return_pct": 328.4,
-        "max_drawdown_pct": -32.6,
-        "occupancy_pct": 60.97,
-        "by_year_avg_net_return": {
-            "2021": 0.770,
-            "2022": 0.754,
-            "2023": 0.314,
-            "2024": 0.753,
-            "2025": 0.748,
-            "2026": 0.949,
+    strategy_revision = 'builtin:yangshi-tail-v1:2'
+    version = 'v1.1'
+    version_history = [
+        {
+            "version": "v1",
+            "status": "archived",
+            "source": "builtin:yangshi-tail-v1",
+            "backtest_metrics": {
+                "trades": 828,
+                "win_rate": 48.309,
+                "avg_net_return": 0.6955,
+                "profit_factor": 1.371,
+                "payoff_ratio": 1.467,
+                "completed_trades": 828,
+                "portfolio_return_pct": 328.4,
+                "max_drawdown_pct": -32.6,
+                "occupancy_pct": 60.97,
+                "by_year_avg_net_return": {
+                    "2021": 0.77,
+                    "2022": 0.754,
+                    "2023": 0.314,
+                    "2024": 0.753,
+                    "2025": 0.748,
+                    "2026": 0.949,
+                },
+            },
+            "backtest_config": {
+                "start": "2021-01-04",
+                "end": "2026-08-11",
+                "adjust": "qfq",
+                "execution_adjust": "none",
+                "hold_days": 2,
+                "stop_loss_pct": None,
+                "take_profit_pct": None,
+                "commission_bps": 3.0,
+                "stamp_duty_bps": 5.0,
+                "slippage_bps": 10.0,
+                "benchmark": None,
+                "portfolio_model": "per_signal_day_equal_weight_one_slot",
+                "portfolio_return_pct": 328.4,
+                "max_drawdown_pct": -32.6,
+                "occupancy_pct": 60.97,
+                "completed_trades": 828,
+                "signal_days": 828,
+                "trading_days": 1358,
+                "weak_breadth_skip": 0.4,
+                "screen_top_n": 1,
+                "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
+                "research_script": "scripts/yangshi_tail_rank_portfolio_research.py",
+                "research_doc": "docs/research/2026-08-yule-materials-tail-close-feasibility.md",
+                "unimplemented_source_rule": "原文第6条 净资产收益率>0.001%（本仓无财务数据）",
+                "live_clock": "15:30",
+            },
         },
-    }
+        {"version": "v1.1", "status": "active", "source": "builtin"},
+    ]
+    backtest_metrics = None
     backtest_config = {
-        "start": "2021-01-04",
-        "end": "2026-08-11",
         "adjust": "qfq",
         "execution_adjust": "none",
         "hold_days": 2,
@@ -130,29 +165,14 @@ class YangshiTailPickerV1:
         "stamp_duty_bps": 5.0,
         "slippage_bps": 10.0,
         "benchmark": None,
-        "portfolio_model": "per_signal_day_equal_weight_one_slot",
-        "portfolio_return_pct": 328.4,
-        "max_drawdown_pct": -32.6,
-        "occupancy_pct": 60.97,
-        "completed_trades": 828,
-        "signal_days": 828,
-        "trading_days": 1358,
-        "weak_breadth_skip": WEAK_BREADTH_SKIP,
-        "screen_top_n": 1,
-        "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]},
-        "research_script": "scripts/yangshi_tail_rank_portfolio_research.py",
-        "research_doc": "docs/research/2026-08-yule-materials-tail-close-feasibility.md",
-        "unimplemented_source_rule": "原文第6条 净资产收益率>0.001%（本仓无财务数据）",
-        "live_clock": "15:30",
+        "start": "2021-01-04",
+        "end": "2026-08-11",
     }
-    default_universe = {"preset": "default_a_share", "boards": ["main", "chi_next"]}
+    ignored_legacy_params = ("price_min", "price_max", "shares_max")
     warmup_bars = 40
 
     def default_params(self) -> dict[str, Any]:
         return {
-            "shares_max": 2e8,
-            "price_max": 12.0,
-            "price_min": 3.0,
             "pct_chg_min": 1.0,
             "pct_chg_max": 5.0,
             # 库内 turnover 是小数（中位数约 0.024），与素材的「2%」同量纲需除以 100。
@@ -171,13 +191,21 @@ class YangshiTailPickerV1:
             "volume",
             "amount",
             "turnover",
-            "outstanding_share",
         )
 
     def min_bars(self) -> int:
-        # 只需前一根算涨幅；取 40 根是为了把上市不足约两个月的次新挡在外面，
-        # 与回测研究里「上市满 60 自然日」的口径近似对齐。
+        # 40 日候选评分参照期；证券上市时间范围由统一股票池决定。
         return 40
+
+    def execution_profile(self, params: dict[str, Any] | None = None) -> ExecutionProfile:
+        merge_params(self, params)
+        # Each of the 40 score-pool dates also needs its prior close for gain
+        # and sealed-limit predicates, so the complete factor window is 41.
+        return ExecutionProfile(
+            pure=True, causal=True, column_mode="coupled", origin="finite",
+            lookback_bars=SCORE_POOL_DAYS + 1,
+            metadata_fields=("__raw_close", "__instrument_names__"),
+        )
 
     def compute(
         self, panels: dict[str, pd.DataFrame], params: dict[str, Any] | None = None
@@ -186,9 +214,8 @@ class YangshiTailPickerV1:
         close, high, low = panels["close"], panels["high"], panels["low"]
         volume, amount = panels["volume"], panels["amount"]
         turnover = panels["turnover"].astype(float)
-        shares = panels["outstanding_share"].astype(float)
 
-        # 「现价 < 12 元」是绝对价格条件，必须用未复权价，否则前复权会让老票整体偏移。
+        # 涨停判断使用未复权收盘价。
         raw_close = panels.get("__raw_close")
         if not isinstance(raw_close, pd.DataFrame):
             raw_close = close
@@ -198,14 +225,12 @@ class YangshiTailPickerV1:
         previous_close = REF(close, 1)
         pct_chg = (close / previous_close - 1.0) * 100.0
 
-        # ── 素材原文四条（第 6 条 ROE 本仓无数据，未实现）──
-        small_float = shares.lt(float(p["shares_max"]))
-        cheap = raw_close.lt(float(p["price_max"]))
+        # 素材量价条件；股票范围不在公式内重复收窄。
         gain_band = pct_chg.gt(float(p["pct_chg_min"])) & pct_chg.lt(float(p["pct_chg_max"]))
         active = turnover.gt(float(p["turnover_min"]))
-        source_gate = (small_float & cheap & gain_band & active).fillna(False)
+        source_gate = (gain_band & active).fillna(False)
 
-        # ── 可交易底线：买得进、不是仙股、不是封板/一字 ──
+        # 成交活跃度与非封板/一字条件。
         names = panels.get("__instrument_names__")
         ratios = limit_ratio_panel(raw_close, names if isinstance(names, dict) else None)
         # 只传未复权收盘价当 high，把共用谓词退化成「收盘价正好在涨停价」的精确判定，
@@ -216,7 +241,6 @@ class YangshiTailPickerV1:
         tradable = (
             volume.gt(0)
             & amount.ge(float(p["amount_min"]))
-            & raw_close.ge(float(p["price_min"]))
             & ~sealed
             & ~one_word
         ).fillna(False)
@@ -261,15 +285,12 @@ class YangshiTailPickerV1:
             factors={
                 # 排序因子就是当日涨幅：评分百分位 = 它在近期条件候选里的位置，与选股同序。
                 SCORE_PERCENTILE: pooled_percentile(strength, eligible, window=SCORE_POOL_DAYS),
-                "流通股本(亿股)": shares / 1e8,
                 "未复权收盘价": raw_close,
                 "当日涨幅(%)": pct_chg,
                 "换手率(%)": turnover * 100.0,
-                "闸门_流通股本<2亿股": small_float,
-                "闸门_现价<12元": cheap,
                 "闸门_涨幅1%~5%": gain_band,
                 "闸门_换手>2%": active,
-                "素材四条闸门": source_gate,
+                "量价条件": source_gate,
                 "可交易底线": tradable,
                 "条件候选": eligible,
                 "市场上涨家数占比": breadth_panel,

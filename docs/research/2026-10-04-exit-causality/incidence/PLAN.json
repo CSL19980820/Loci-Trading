@@ -1,0 +1,186 @@
+{
+  "created_at": "2026-10-04T18:04:59.210068+08:00",
+  "purpose": "incidence_only_no_counterfactual_exits_or_returns",
+  "specs": [
+    {
+      "family": "contraction_sampled",
+      "segment": "train",
+      "policy": "sampled_early",
+      "db": "chinext",
+      "kind": "orders",
+      "path": "docs\\research\\2026-10-04-contraction-sampled-entry\\train\\sampled_early-orders.csv"
+    },
+    {
+      "family": "contraction_sampled",
+      "segment": "train",
+      "policy": "sampled_next_open",
+      "db": "chinext",
+      "kind": "orders",
+      "path": "docs\\research\\2026-10-04-contraction-sampled-entry\\train\\sampled_next_open-orders.csv"
+    },
+    {
+      "family": "contraction_sampled",
+      "segment": "train",
+      "policy": "original_eod",
+      "db": "chinext",
+      "kind": "orders",
+      "path": "docs\\research\\2026-10-04-contraction-sampled-entry\\train\\original_eod-orders.csv"
+    },
+    {
+      "family": "contraction_original_later",
+      "segment": "validation_2025h2",
+      "policy": "corrected_original",
+      "db": "chinext",
+      "kind": "orders",
+      "path": "docs\\research\\2026-10-04-contraction-vwap\\validation_2025h2\\corrected_original-orders.csv"
+    },
+    {
+      "family": "contraction_original_later",
+      "segment": "observed_2026",
+      "policy": "corrected_original",
+      "db": "chinext",
+      "kind": "orders",
+      "path": "docs\\research\\2026-10-04-contraction-vwap\\observed_2026\\corrected_original-orders.csv"
+    },
+    {
+      "family": "double_yin_sampled",
+      "segment": "train",
+      "policy": "corrected_low_open",
+      "db": "main",
+      "kind": "labels",
+      "path": "docs\\research\\2026-10-04-double-yin-delayed-execution\\train-corrected_low_open-labels.csv"
+    },
+    {
+      "family": "double_yin_sampled",
+      "segment": "train",
+      "policy": "yin_close_and_open_above_vwap",
+      "db": "main",
+      "kind": "labels",
+      "path": "docs\\research\\2026-10-04-double-yin-delayed-execution\\train-yin_close_and_open_above_vwap-labels.csv"
+    },
+    {
+      "family": "double_yin_sampled",
+      "segment": "validation_2025h2",
+      "policy": "corrected_low_open",
+      "db": "main",
+      "kind": "labels",
+      "path": "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-corrected_low_open-labels.csv"
+    },
+    {
+      "family": "double_yin_sampled",
+      "segment": "validation_2025h2",
+      "policy": "yin_close_and_open_above_vwap",
+      "db": "main",
+      "kind": "labels",
+      "path": "docs\\research\\2026-10-04-double-yin-delayed-execution\\validation_2025h2-yin_close_and_open_above_vwap-labels.csv"
+    },
+    {
+      "family": "double_yin_sampled",
+      "segment": "observed_2026",
+      "policy": "corrected_low_open",
+      "db": "main",
+      "kind": "labels",
+      "path": "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-corrected_low_open-labels.csv"
+    },
+    {
+      "family": "double_yin_sampled",
+      "segment": "observed_2026",
+      "policy": "yin_close_and_open_above_vwap",
+      "db": "main",
+      "kind": "labels",
+      "path": "docs\\research\\2026-10-04-double-yin-delayed-execution\\observed_2026-yin_close_and_open_above_vwap-labels.csv"
+    }
+  ],
+  "files_sha256": {
+    "docs/research/2026-10-04-contraction-sampled-entry/data-evidence/300506-2025-05-19-halt.pdf": "8d17cee2ca025b73938d04d07e33fc40d1608f043610baf939d44d72e91095fc",
+    "docs/research/2026-10-04-contraction-sampled-entry/data-evidence/300959-2025-06-20-halt.pdf": "46229a873963e609d8537ea01eb7eaa37472e145c10c39338db67bec81b6d998",
+    "docs/research/2026-10-04-contraction-sampled-entry/data-evidence/official-halt-receipt.json": "d5d2dbd21c6a9082f3ed99d287db0cf10bb4b3e9dff33caa6cd216d72025ff47",
+    "docs/research/2026-10-04-contraction-sampled-entry/freeze-receipt.json": "4bde23662c21081bf34ecef7432cfc6ae5acfb7a701d399b0bec4d176bfb0cd4",
+    "docs/research/2026-10-04-contraction-sampled-entry/PLAN.json": "1bb85a7b55770df16e9261bf0a4547fd19378c2ce8139506ac565576de02afb9",
+    "docs/research/2026-10-04-contraction-sampled-entry/train/completion-receipt.json": "084d3191260cbb2bc1d5600f99e1b17b28ba83a88f322fa3316f251ed8afd2e7",
+    "docs/research/2026-10-04-contraction-sampled-entry/train/original_eod-orders.csv": "f9175bcec92fa175ad82b24b225a6bf21d42035748fa8993d1eb14d77d5e2a6e",
+    "docs/research/2026-10-04-contraction-sampled-entry/train/sampled_early-orders.csv": "384259fce3eafdc564fc476b9d24122a3175673bac49ad3a95ad89c3239ba555",
+    "docs/research/2026-10-04-contraction-sampled-entry/train/sampled_next_open-orders.csv": "8b9ee8c4db24ad8e4e7c7621ce3a8630755184c7d6fd6705f059d6fc243f7f2b",
+    "docs/research/2026-10-04-contraction-vwap/freeze-receipt.json": "b46e25258e70ee2d36d348d1280433e2adea22d48babed4ce93630c7a24a760f",
+    "docs/research/2026-10-04-contraction-vwap/observed_2026/corrected_original-orders.csv": "0241207fc0cb9f16705431239e95b7193bd3b58237e9c0eb1221a40ecd194ddf",
+    "docs/research/2026-10-04-contraction-vwap/PLAN.json": "ffb98b10f0a1a7f3f2d5fee6c898d7254615955e950e8cb27bf52b3cd38132a8",
+    "docs/research/2026-10-04-contraction-vwap/validation_2025h2/corrected_original-orders.csv": "d797bb6c7129cc06a6bc176d2ed180cd4ccca7313e7837a1f5dca8ddfadf6c1b",
+    "docs/research/2026-10-04-double-yin-delayed-execution/freeze-receipt.json": "18241998a6edfe7a8d4ed9720ec7c74fdebbc2a4d02a30fa14ef2a749954842f",
+    "docs/research/2026-10-04-double-yin-delayed-execution/observed_2026-corrected_low_open-events.csv": "6117a1076070d2cf5494f8785beea444b3a56d5c649a4809ea94f5e2d54ee79e",
+    "docs/research/2026-10-04-double-yin-delayed-execution/observed_2026-corrected_low_open-labels.csv": "f2e13c4ee8b94642d26e9c06a9247471d57ca23728b0afd5271bb65c6c2faf30",
+    "docs/research/2026-10-04-double-yin-delayed-execution/observed_2026-corrected_low_open-trades.csv": "5e0b8385bfa0e467ecda43145839f8210c859192c43b3491524efeb2145aaef8",
+    "docs/research/2026-10-04-double-yin-delayed-execution/observed_2026-official-overlay.json": "c5e2be7930581ab38d897effccbd0826748c94229cc8604db6349ee342dbd5a1",
+    "docs/research/2026-10-04-double-yin-delayed-execution/observed_2026-yin_close_and_open_above_vwap-events.csv": "653ddea2bb9c20cfc79f7744408bf87f638328d27c8b487e1507ef6293e56e27",
+    "docs/research/2026-10-04-double-yin-delayed-execution/observed_2026-yin_close_and_open_above_vwap-labels.csv": "42d036dc8c41196633ea85c8519426b6064abed476c9e56bd33d9f44b9cad624",
+    "docs/research/2026-10-04-double-yin-delayed-execution/observed_2026-yin_close_and_open_above_vwap-trades.csv": "4cd8de38e16226eab0871f06ab8703ceda1f1a911de1f5da051992741907f557",
+    "docs/research/2026-10-04-double-yin-delayed-execution/order-keys.csv": "0c51a43bffa78aacb28064354a16ba22c23af442d6fca2775945e4c62c707ac7",
+    "docs/research/2026-10-04-double-yin-delayed-execution/PLAN.md": "f857acf372a04202556d633a9bcfa7aced2c265d6ac3d58b0e34cd3f637b8b74",
+    "docs/research/2026-10-04-double-yin-delayed-execution/train-corrected_low_open-events.csv": "a0c0fa037f6ca2d7c06a2b9665afbd48152ad3fe28f4fc13e7e56e5647d6ddc8",
+    "docs/research/2026-10-04-double-yin-delayed-execution/train-corrected_low_open-labels.csv": "88a2b5b4c23ff48b3a66f2f1a4a0eb74944470a59e2a92751944b5805f3212a3",
+    "docs/research/2026-10-04-double-yin-delayed-execution/train-corrected_low_open-trades.csv": "047931e893cba08e440bfd74484e6f41463b199b4eb8e3a3b8408a79756d3242",
+    "docs/research/2026-10-04-double-yin-delayed-execution/train-official-overlay.json": "a5338d955b09046ec0b16f3a9625b7955c763aae07dc722e474e6078745f932f",
+    "docs/research/2026-10-04-double-yin-delayed-execution/train-yin_close_and_open_above_vwap-events.csv": "7951039efd3858e8be4c0d332fed83683ae2c387d6f715c0203289ece7d8bcba",
+    "docs/research/2026-10-04-double-yin-delayed-execution/train-yin_close_and_open_above_vwap-labels.csv": "a63a1caf174ecc702b7674298fc314e9c370944bbf2cd0c78477f2b328fbd363",
+    "docs/research/2026-10-04-double-yin-delayed-execution/train-yin_close_and_open_above_vwap-trades.csv": "6909aff51f8297db13f5477205e7a370618564352ab46cb07e324321f1761540",
+    "docs/research/2026-10-04-double-yin-delayed-execution/validation_2025h2-corrected_low_open-events.csv": "7419069c0d57059621bc7b27342cbf7f8dc868abced667185e798ea18d133cb6",
+    "docs/research/2026-10-04-double-yin-delayed-execution/validation_2025h2-corrected_low_open-labels.csv": "82257cb3acbb351843c689b1ad0c74d61eb6c56ca77741c0961a7f1e7169d6e5",
+    "docs/research/2026-10-04-double-yin-delayed-execution/validation_2025h2-corrected_low_open-trades.csv": "01d628530dbd3ead80fead616663507e2cc30d8fd28042bc8f1ea80ec63e5106",
+    "docs/research/2026-10-04-double-yin-delayed-execution/validation_2025h2-official-overlay.json": "8148af17ae3254ed68ba5cd2343c19f4e6272d61be669a53d7d037c455105c1b",
+    "docs/research/2026-10-04-double-yin-delayed-execution/validation_2025h2-yin_close_and_open_above_vwap-events.csv": "13a345442c7d92beb0679148f59d49fb5e0fd204fbea82deb7ee715224353581",
+    "docs/research/2026-10-04-double-yin-delayed-execution/validation_2025h2-yin_close_and_open_above_vwap-labels.csv": "9f7b8f615dc4ab4b6d1b044d8c1184622b03b2fcca7574541372e398bfa97dfd",
+    "docs/research/2026-10-04-double-yin-delayed-execution/validation_2025h2-yin_close_and_open_above_vwap-trades.csv": "f9839442d6d0e83e8d013b57bf39b484d5b3109a6a87aec08db7d9be13ae09c7",
+    "docs/research/2026-10-04-double-yin-vwap/data-correction/announcements/002036-resumption-2026-07-30.pdf": "d2be3f800ca3f301a529c4dd1acbbea398a6acafe495fb2bdd220d999e0e10d5",
+    "docs/research/2026-10-04-double-yin-vwap/data-correction/announcements/002036-suspension-2026-07-23.pdf": "0a3d3fa3a878a4fc7963090ed39fc7efe11dfc86df09e963c0c4522d00614c66",
+    "docs/research/2026-10-04-double-yin-vwap/data-correction/announcements/605389-resumption-2025-07-11.pdf": "10753b0da5ad7c0220ab74e259f255ad554a0df5824e38a63659c19735bb13cc",
+    "docs/research/2026-10-04-double-yin-vwap/data-correction/announcements/605389-suspension-2025-07-04.pdf": "7d42146b6c36649ae9dfe33fb84a048edd72ab1f7aaeb780e5c707c5a20d9408",
+    "docs/research/2026-10-04-double-yin-vwap/data-correction/PLAN.json": "ecae0e328c792f53b746117689aa32222fe0e6aa494d506107eb118db3d4b37a",
+    "docs/research/2026-10-04-exit-causality/incidence/PLAN.md": "12243f4b5b559085a8b5f18efedf5cf2d84931ee1cc36e3a2c20295d6983f318",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/formula/domain/board.py": "fa785c9aa4af8adda4b184348d8c970f376554a8fbdf3c6ebd91482f911d26d4",
+    "src/market/infrastructure/store_rw.py": "48d0b211ac7680d20e023d2185f3e447e980250075ee71869277e1e6cf2f5da0",
+    "tools/research_contraction_sampled_entry.py": "6a7668e02374d78ae72000a2b95c2c8a232bc06303b48fe35bd432663b39bb2f",
+    "tools/research_contraction_vwap.py": "ba57ed30e5480ce9c7204b8dc3f5d2758349074b151888dc05f4866ebe588e11",
+    "tools/research_double_yin_delayed_execution.py": "ed0e092b0a44a6646f6ec9b51c3999af72261f99c216ab5b817021f54abac315",
+    "tools/research_double_yin_redesign.py": "0f9f304e153b07ea0d2d9053f7ed51999b9cad3a75fa7864b4335910879a3e21",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "tools/research_double_yin_vwap_data_correction.py": "ca8adb85cdab8df1baa4dc44a6e536e38a5ccddb834d6af048cd21632b3abf35",
+    "tools/research_exit_mask_incidence.py": "8a7c1540b14b1e509f222c155d633a713db23c65ec7e9345b0631febe7497e8f"
+  },
+  "databases_sha256": {
+    "chinext": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+    "main": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c"
+  },
+  "self_checks": {
+    "passed": true,
+    "synthetic_only": true,
+    "cases": [
+      "nonflat_close_mask",
+      "gap_above_lower",
+      "flat_at_lower",
+      "first_known_trigger",
+      "unknown_before_trigger",
+      "confirmed_no_trade_does_not_create_touch",
+      "complete_no_trigger",
+      "unknown_no_observed_trigger",
+      "unknown_limit_reference_preserved"
+    ]
+  },
+  "stop_pct": -6.0,
+  "offsets_after_actual_entry": [
+    1,
+    2,
+    3
+  ],
+  "price_columns_read": [
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "source"
+  ],
+  "source_return_and_exit_price_columns_excluded": true,
+  "unknown_rule": "Do not establish first trigger after an earlier unknown possible trading bar",
+  "expiry_close_constraint_not_redefined": true
+}

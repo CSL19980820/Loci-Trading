@@ -1,0 +1,164 @@
+{
+  "created_at": "2026-10-04T13:47:27.129543+08:00",
+  "slug": "double-volume-yin-low-open-v1",
+  "variants": {
+    "baseline": {
+      "label": "原评分开盘买，4日/-6%",
+      "gate": "all",
+      "rank": "old",
+      "entry": "open",
+      "exit": "fixed"
+    },
+    "support_hold": {
+      "label": "阴线守住前阳实体中点",
+      "gate": "support",
+      "rank": "old",
+      "entry": "open",
+      "exit": "fixed"
+    },
+    "safe_gap": {
+      "label": "低开不破昨日低点且不超过2%",
+      "gate": "gap",
+      "rank": "old",
+      "entry": "open",
+      "exit": "fixed"
+    },
+    "quality_rank": {
+      "label": "保留涨幅/阴线收盘/开盘承接重排",
+      "gate": "all",
+      "rank": "quality",
+      "entry": "open",
+      "exit": "fixed"
+    },
+    "quality_gate": {
+      "label": "支撑与承接质量硬门",
+      "gate": "quality",
+      "rank": "quality",
+      "entry": "open",
+      "exit": "fixed"
+    },
+    "confirm_close": {
+      "label": "当日收盘收复阴线收盘，次开买",
+      "gate": "confirm",
+      "rank": "old",
+      "entry": "next_open",
+      "exit": "fixed"
+    },
+    "reclaim_stop": {
+      "label": "先定Top2，再挂收复昨日收盘买stop",
+      "gate": "all",
+      "rank": "old",
+      "entry": "stop",
+      "exit": "fixed"
+    },
+    "support_limit": {
+      "label": "守前阳中点，开盘上方才挂中点限价",
+      "gate": "limit",
+      "rank": "old",
+      "entry": "limit",
+      "exit": "fixed"
+    },
+    "quality_stop": {
+      "label": "质量硬门后挂收复阴线收盘买stop",
+      "gate": "quality",
+      "rank": "quality",
+      "entry": "stop",
+      "exit": "fixed"
+    },
+    "next_session_open": {
+      "label": "原开盘买，最早合法次日开盘卖",
+      "gate": "all",
+      "rank": "old",
+      "entry": "open",
+      "exit": "next_open"
+    },
+    "next_session_close": {
+      "label": "原开盘买，最早合法次日收盘卖",
+      "gate": "all",
+      "rank": "old",
+      "entry": "open",
+      "exit": "next_close"
+    }
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "prior_observation": "The old strategy's loss and original training path diagnostics were already observed; these new rules are frozen before their own returns.",
+  "definitions": {
+    "origin": "T is the low-opening day; impulse=T-2, high-volume yin=T-1.",
+    "midpoint": "(O(T-2)+C(T-2))/2",
+    "retention": "clip((C(T-1)-O(T-2))/(C(T-2)-O(T-2)),0,1)",
+    "yin_clv": "clip((C(T-1)-L(T-1))/(H(T-1)-L(T-1)),0,1)",
+    "open_support": "clip((O(T)-L(T-1))/(C(T-1)-L(T-1)),0,1); zero if denominator<=0",
+    "quality_score": "50*retention+30*yin_clv+20*open_support; rounded4",
+    "support_gate": "C(T-1)>=midpoint AND L(T-1)>=O(T-2)",
+    "gap_gate": "O(T)>L(T-1) AND O(T)/C(T-1)-1 >= -0.02",
+    "quality_gate": "retention>=0.5 AND yin_clv>=0.35 AND O(T)>L(T-1) AND gap>=-0.03",
+    "confirmation": "At T close, C(T)>O(T) AND C(T)>C(T-1), then next market session open entry",
+    "stop_target": "C(T-1) rounded to cents + 0.01; order valid only after T opening and only for T",
+    "limit_target": "floor(midpoint*100)/100; support_gate AND O(T)>target; order valid only for T"
+  },
+  "orders": {
+    "allocation": "Original full candidates, missing sector excluded, greedy original group intersection exclusion and max2; rank BEFORE checking later touch; no refill for untriggered orders.",
+    "decision_time": "All except confirm_close use prior closed candles and T opening only. confirm_close first becomes known at T close.",
+    "stop_fill": "If open>=target, skip opening_already_crossed (no opening backfill). Otherwise high>=target fills target; high<target unfilled.",
+    "limit_fill": "If open<=target, skip opening_already_crossed (no opening backfill). Otherwise low<=target fills target; low>target unfilled.",
+    "tradability": "Positive observed daily volume/open, known adjusted previous-close limit reference; reject upper-limit opening and stop target at/above upper limit.",
+    "corporate_actions": "For stop compare T-1 versus T adjustment factors, for limit T-2 versus T; any change cancels the source-price order as non-comparable, with reason counted. Current factors are revisioned retrospective evidence, not strict PIT.",
+    "uncertainty": "Daily high/low prove a touch, not queue priority or exact post-order intraday fill. These are explicitly daily-order proxies, not historical 09:25 replay."
+  },
+  "exits": {
+    "fixed": "4 market sessions including entry; -6% stop from entry+1; existing _resolve_exit handles gap/slippage convention and limit/suspension delays; no take profit.",
+    "next_open": "Earliest legal entry+1 open; no same-day sale, no fixed stop; if no valid opening or opening limit-down, defer to next tradable opening.",
+    "next_close": "Earliest legal entry+1 close; no fixed stop; existing exit tradability rules defer suspension/close-at-limit-down.",
+    "interpretation": "All exits are research conventions; the original live double-yin selector has no intrinsic holding/exit rule."
+  },
+  "comparison": {
+    "cost_pct": 0.21,
+    "stress_cost_pct": 0.42,
+    "common_maturity": "5 sessions from origin T: allows confirmation at T close, entry T+1 and 4-session holding; all variants including original use the same origin-date window.",
+    "budget": "Exactly 2 slots on each original mature baseline-active origin date; filtered/unfilled/unused slots earn zero. Filled but censored positions remain unresolved: opportunity mean, paired CI and nomination are unavailable when any exist. Also report closed-trade mean and fill retention.",
+    "baseline": "Original open entry and fixed exit must reproduce old-study baseline trades on the common mature origin-date subset."
+  },
+  "selection": {
+    "maximum_shortlist": 2,
+    "eligible": "Train net mean>0, PF>1, original two-slot opportunity mean>baseline, and double-cost+largest-winner-removed mean>0; no fixed 80-trade cutoff.",
+    "order": "Eligible first by original-budget mean descending, PF descending, lexical id.",
+    "fallback": "If no eligible candidate, follow at most two candidates with budget improvement by the same ordering, labelled diagnostic_only, never qualified recommendations.",
+    "uncertainty": "Counts, retention, winner sensitivity and monthly block intervals reported; a small sample can be shortlisted but cannot be called robust.",
+    "later": "Freeze the maximum two training selections and then evaluate only them plus baseline in the later observed periods. No retuning or retrospective replacement."
+  },
+  "diagnostics": "Training only: all original shape candidates under baseline execution grouped by fixed retention, yin close position, gap, support and volume bands; original Top2 entry-day/overnight marks and exit attribution. These do not create extra tuned rules.",
+  "limitations": [
+    "All time segments already observed historically, not untouched out-of-sample.",
+    "Current instrument names/status and current EM2016 groups; no historical membership/PIT reconstruction.",
+    "Raw daily-bar shape convention and current adjustment-factor revisions retained.",
+    "Independent trade events; no portfolio NAV, sizing or liquidity-capacity claim.",
+    "Day-of-entry MFE/MAE include full-day extremes, including pre-fill or post-exit points; not realizable intraday path.",
+    "Multiple fixed hypotheses and selective follow-up remain vulnerable to data snooping; descriptive confidence intervals have no multiple-testing correction."
+  ],
+  "sources": {
+    "tools/research_double_yin_redesign.py": "0f9f304e153b07ea0d2d9053f7ed51999b9cad3a75fa7864b4335910879a3e21",
+    "tools/research_double_yin_scoring_proxy.py": "e2bfd7c19039790a622109420dbb80b48a296400f2233d39b6802163848edbdb",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "src/strategy/application/double_yin_low_open.py": "c111f1662dcc013b7518d822952cd381e5b776d0bfebcdc85a6983e7c2826833",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369"
+  },
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": "f2219c80c049923ebce64ae3f23b6786e80b948c60de1565363a444cfa234d27"
+}

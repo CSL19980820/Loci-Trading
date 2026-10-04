@@ -133,7 +133,6 @@ onMounted(() => {
   window.addEventListener('focus', revalidateSession)
   window.addEventListener('loci:session-expired', expireSession)
   heartbeat = setInterval(() => { if (userStore.isVisitor) void revalidateSession() }, 10_000)
-  if (userStore.canWrite) void screenRun.hydrate()
 })
 
 onUnmounted(() => {
@@ -144,6 +143,9 @@ onUnmounted(() => {
   window.removeEventListener('beforeunload', onQuitWhileSyncing)
   window.removeEventListener('pagehide', onQuitWhileSyncing)
 })
+
+// 会话由异步路由守卫水合，首次挂载时权限可能尚未返回。
+watch(() => userStore.canWrite, canWrite => { if (canWrite) void screenRun.hydrate() }, { immediate: true })
 
 watch(
   () => ({ name: route.name, path: route.fullPath, public: route.meta.public === true }),

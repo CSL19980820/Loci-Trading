@@ -46,6 +46,7 @@ import { toBatchItems } from '@/shared/lib/batchBrowse'
 import { confirmDangerous } from '@/shared/lib/confirm'
 import { toErrorMessage } from '@/shared/lib/errors'
 import { decisionLabel, decisionTone } from '@/shared/lib/format'
+import { isHistoricalCandidate } from '@/shared/lib/candidateSource'
 import { useUserStore } from '@/shared/stores/user'
 import { useBatchBrowseStore } from '@/shared/stores/batchBrowse'
 import type { Candidate } from '@/shared/types/palace'
@@ -53,9 +54,10 @@ import type { StrategyInfo } from '@/shared/types/quant'
 
 import PoolCandidateDialog from './components/PoolCandidateDialog.vue'
 import PoolMobileView from './components/PoolMobileView.vue'
+import PoolHistoryScope from './components/PoolHistoryScope.vue'
 import { useMobileLayout } from '@/shared/composables/useMobileLayout'
 import { useCandidatesQuery } from './composables/useCandidatesQuery'
-import { sourceLabel, usePoolLabels } from './composables/poolLabels'
+import { candidateSourceLabel, usePoolLabels } from './composables/poolLabels'
 import { usePoolFilters } from './composables/usePoolFilters'
 
 const userStore = useUserStore()
@@ -221,6 +223,7 @@ function handleReset(): void {
   filters.strategy = ''
   filters.decision = ''
   filters.dateRange = null
+  filters.includeBackfill = false
   page.value = 1
   void nextTick(() => load())
 }
@@ -234,6 +237,13 @@ function applyMore(): void {
 function resetMore(): void {
   moreOpen.value = false
   handleReset()
+}
+
+function setHistoryScope(value: boolean): void {
+  page.value = 1
+  selectedIds.value = []
+  basicTableRef.value?.clearSelection()
+  filters.includeBackfill = value
 }
 
 function onSelectionChange(selection: Record<string, unknown>[]): void {
@@ -345,7 +355,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <PoolMobileView v-if="isMobile" :rows="rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)" :page="page" :pages="pageCount" :total="rows.length" :decision="decisionTab" :filter-count="moreCount" :busy="!!busy" :error="error" :can-write="userStore.canWrite" :selection-mode="selectionMode" :selected-ids="selectedIds" :strategy-label="strategyLabel"
+  <PoolMobileView v-if="isMobile" :rows="rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)" :page="page" :pages="pageCount" :total="rows.length" :decision="decisionTab" :filter-count="moreCount" :busy="!!busy" :error="error" :can-write="userStore.canWrite" :selection-mode="selectionMode" :selected-ids="selectedIds" :strategy-label="strategyLabel" :include-backfill="filters.includeBackfill" @history="setHistoryScope"
     @decision="value => decisionTab = value" @detail="row => openDetail(row as unknown as Record<string, unknown>)" @filter="moreOpen = true" @refresh="load" @record="recordOpen = true" @multi="toggleSelectionMode" @select="toggleSelected" @delete="confirmBatchDelete" @page="onPageChange" />
   <Sheet v-if="isMobile" v-model:open="moreOpen"><SheetContent side="right" class="pool-more-sheet"><SheetHeader><SheetTitle>筛选候选</SheetTitle><SheetDescription class="sr-only">选择战法与选出日期</SheetDescription></SheetHeader><BasicForm v-model="moreModel" :schemas="moreSchemas" :columns="1" label-position="top" class="pool-more-sheet__form" /><SheetFooter class="pool-more-sheet__foot"><Button access="read" variant="outline" @click="moreOpen = false">取消</Button><Button access="read" @click="applyMore">应用筛选</Button><Button access="read" variant="ghost" @click="resetMore">重置全部</Button></SheetFooter></SheetContent></Sheet>
   <div v-else class="page-fill pool-page">
@@ -446,6 +456,8 @@ onMounted(async () => {
         </Button>
               </template>
       </PageToolbar>
+
+      <PoolHistoryScope :model-value="filters.includeBackfill" @update:model-value="setHistoryScope" />
 
       <div class="pool-grid">
         <Card class="pool-records">
@@ -548,7 +560,10 @@ onMounted(async () => {
               </span>
             </template>
             <template #strategy="{ row }">
-              <span class="pool-cell-inline pool-strategy" :title="strategyLabel(String(row.rule_version ?? ''))">{{ strategyLabel(String(row.rule_version ?? '')) }}</span>
+              <span class="pool-cell-inline pool-strategy" :title="strategyLabel(String(row.rule_version ?? ''))">
+                <span class="pool-clip">{{ strategyLabel(String(row.rule_version ?? '')) }}</span>
+                <UiBadge v-if="isHistoricalCandidate(row)" variant="secondary" class="shrink-0">历史回填</UiBadge>
+              </span>
             </template>
             <template #date="{ row }">
               <span class="pool-num">{{ row.date }}</span>
@@ -606,7 +621,7 @@ onMounted(async () => {
     :candidate="detail"
     :strategy-text="detail ? strategyLabel(detail.rule_version) : '—'"
     :pool-text="poolLabel(detail?.pool_id)"
-    :source-text="sourceLabel(detail?.source)"
+    :source-text="candidateSourceLabel(detail)"
     :batch="poolBatch"
     @delete="confirmDelete"
     @archive="goArchive"
@@ -720,6 +735,7 @@ onMounted(async () => {
 
 .pool-clip {
   display: inline-block;
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

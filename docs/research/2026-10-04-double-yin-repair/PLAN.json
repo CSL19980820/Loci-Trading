@@ -1,0 +1,99 @@
+{
+  "created_at": "2026-10-04T14:42:13.549473+08:00",
+  "variants": {
+    "one_dry_fixed": {
+      "base": "one",
+      "exit": "fixed"
+    },
+    "one_dry_structural": {
+      "base": "one",
+      "exit": "structural"
+    },
+    "two_dry_fixed": {
+      "base": "two",
+      "exit": "fixed"
+    },
+    "two_dry_structural": {
+      "base": "two",
+      "exit": "structural"
+    }
+  },
+  "controls": [
+    "original_baseline",
+    "corrected_baseline"
+  ],
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "preflight_changes": [
+    "Old low-open density preflight computed counts only, no new rule returns.",
+    "Before code freeze the task scope expanded origins to all strong-up then double-volume-yin shapes; day T low-open is no longer required for repair variants.",
+    "Dropped the redundant entry risk<=6% gate before outcomes; losses controlled by exits."
+  ],
+  "origin": "T is first market session after yin; full corrected historical strong-up(>=8%,bullish) then double-volume-yin, recent10 gain<=30%, main/nonST/name/history rules retained. No T opening condition for repairs; actual entry raw>6. Controls keep original low-open rule.",
+  "coordinate": "Full pool recomputed raw OHLC*hfq factor; all price geometry, recent return, position and MA in consistent economic units. Raw volume, raw actual six-yuan gate, raw limit/fill. Current factors are revisioned, not PIT. Preserve exact original control and separate corrected control; no repair alpha credit for technical price fixes.",
+  "observation": {
+    "window": "T through T+5 inclusive; complete closed bars only. Expire after final day's confirmation opportunity.",
+    "invalid": "Cancel on close below impulse T-2 low, any factor change over anchor T-3..T or observation/entry (raw volume incomparable), unknown industry, or expiration.",
+    "one": "First dry stabilizing bar: V<=0.6*yin V, L>=preceding L, C>=O. Freeze trigger=max(bar H,yin C), base low=bar L, last volume=bar V. Formation bar cannot trigger.",
+    "two": "First two consecutive dry bars, each V<=0.6*yin V; second V<=first V,L>=first L,C>=first C; range maxH/minL-1<=8%. Freeze trigger=max(two H), low=min(two L), last volume=second V. Both bars inside observation window.",
+    "first_break": "On FIRST later bar H>frozen trigger consume opportunity. Confirm only C>trigger,C>O,V>=1.2*last base V; otherwise terminal failed_first_breakout; no retry/rearming/moving trigger."
+  },
+  "selection": {
+    "ranking": "At confirmation close: smaller (C-base_low)/C, then higher CLV, then smaller mean base V/yin V, code, older origin. All features now known.",
+    "quota": "Greedy max2 orders per confirmation day with intersection of ALL industry groups excluded. Also cumulative max2 orders per origin date. Unfilled consumes quota; no refill. Unselected confirmations terminate with daily_capacity/industry_conflict/origin_quota.",
+    "duplicates": "Keep earliest active origin for same code; later origins during watch/pending/position rejected and logged. Exit day origins blocked because ingest precedes exits. Two sessions after exit blocked; next third allowed. No hidden future exit to release code.",
+    "entry": "Next market open only. Require economic O>=frozen trigger and O<=confirmation C*1.02; raw O>6; positive observed volume; known strict limit reference; no upper-limit opening; unchanged anchor factor. Otherwise cancel permanently."
+  },
+  "exits": {
+    "fixed": "4 sessions including entry; -6% economic stop, no profit take.",
+    "structural": "3 sessions including entry; stop=max(base_low-.01*entry_factor,entry_basis*.94), frozen at entry; no profit take.",
+    "causality": "At each market day opening process pending; ingest origins with current occupied/cooldown state; call unchanged _resolve_exit only with last_index=current_day; then closed-bar observation/confirmation. No entry-day sale. Gap uses worse opening, blocked sells delay.",
+    "censoring": "data_end during simulation means still held, never release. Final unresolved fills are censored, not zero. Any such fill makes primary/origin budget means and CI/nomination unavailable."
+  },
+  "comparison": {
+    "maturity": "Every variant/control shares origins T+9<=segment end, exactly10 sessions from origin. Calendar not compressed for suspensions. Baseline old-mature versus common trim explicitly recorded.",
+    "primary": "All market days from segment start through end-3 sessions times2 slots, INCLUDING empty days. Allocate realized net return to actual entry date; unused/unfilled slots zero. Not portfolio NAV or capital/time utilization.",
+    "secondary": "Origin-date budget uses every common origin calendar date times2; separate month-block paired bootstrap. Auxiliary old active-origin-date slots disclosed. Never label origin CI as primary entry calendar CI.",
+    "cost_pct": 0.21,
+    "double_cost_pct": 0.42
+  },
+  "nomination": {
+    "max": 2,
+    "train": ">=20 closed trades,>=6 active entry months,mean>0,PF>1,primary calendar slot mean>corrected baseline,positive double-cost+largest-winner-removed mean; no censored positions.",
+    "sort": "Eligible by primary slot mean desc,PF desc,lexical id. If none eligible, at most2 nonzero closed noncensored diagnostic-only candidates by same ordering, retaining low-frequency positive evidence.",
+    "later": "Evaluate only training-selected maximum2 plus both controls. Both later segments require mean>0,PF>1,>=12 closed,>=4 active months; combined later>=40 and positive double-cost+max-winner-removed mean. Publish primary budget increment vs corrected baseline and frequency loss, not merely less trading.",
+    "status": "Previously observed historical periods, not untouched out-of-sample. No 2023H2 returns; reserve them for future supplemental historical evidence. Confidence intervals descriptive with no multiplicity correction."
+  },
+  "limitations": [
+    "Daily opening execution proxy, no 09:25 availability or queue-priority evidence.",
+    "Current instrument identity, EM2016 memberships and factor revisions; survivor/PIT caveat.",
+    "Controls reproduce independent historical trade events; repairs explicitly reject overlapping same-code origins. These are alternative mechanisms, not identical portfolio backtests.",
+    "Costs are per trade; slot sums/means do not model shared capital, sizing, financing or liquidity capacity."
+  ],
+  "sources": {
+    "tools/research_double_yin_repair.py": "afc40939bc0315cdbeec8821104bf70bb0a2b82679d5244cec1eb91a6279e29d",
+    "tools/research_double_yin_redesign.py": "0f9f304e153b07ea0d2d9053f7ed51999b9cad3a75fa7864b4335910879a3e21",
+    "tools/research_double_yin_scoring_proxy.py": "e2bfd7c19039790a622109420dbb80b48a296400f2233d39b6802163848edbdb",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "src/strategy/application/double_yin_low_open.py": "c111f1662dcc013b7518d822952cd381e5b776d0bfebcdc85a6983e7c2826833",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369"
+  },
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+}

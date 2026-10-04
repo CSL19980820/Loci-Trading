@@ -1,0 +1,202 @@
+{
+  "verified_at": "2026-10-04T13:54:39.253845+08:00",
+  "status": "passed",
+  "method": "Independent CSV reconstruction, read-only raw/hfq checks, frozen hashes; no backtest rerun",
+  "source_snapshot_groups_unchanged": true,
+  "plan_sha256": "cc1d12234271ef117b17dff1466cfad2c497502cfa5697fe63fca5fecda8c653",
+  "training_only_selection_status": "diagnostic_only_no_qualified_candidate",
+  "segments": {
+    "train": {
+      "candidate_rows_checked": 952,
+      "budget_slots": 600,
+      "runs": {
+        "baseline": {
+          "selected_orders": 512,
+          "closed": 512,
+          "censored": 0,
+          "opportunity_mean": -0.7097952318726655,
+          "status": "passed"
+        },
+        "support_hold": {
+          "selected_orders": 462,
+          "closed": 462,
+          "censored": 0,
+          "opportunity_mean": -0.5620132138550681,
+          "status": "passed"
+        },
+        "safe_gap": {
+          "selected_orders": 298,
+          "closed": 298,
+          "censored": 0,
+          "opportunity_mean": -0.18629318022420463,
+          "status": "passed"
+        },
+        "quality_rank": {
+          "selected_orders": 512,
+          "closed": 512,
+          "censored": 0,
+          "opportunity_mean": -0.6524740636925979,
+          "status": "passed"
+        },
+        "quality_gate": {
+          "selected_orders": 108,
+          "closed": 108,
+          "censored": 0,
+          "opportunity_mean": 0.006500622299487298,
+          "status": "passed"
+        },
+        "confirm_close": {
+          "selected_orders": 278,
+          "closed": 276,
+          "censored": 0,
+          "opportunity_mean": -0.8639735294516383,
+          "status": "passed"
+        },
+        "reclaim_stop": {
+          "selected_orders": 512,
+          "closed": 319,
+          "censored": 0,
+          "opportunity_mean": -0.5152610399595391,
+          "status": "passed"
+        },
+        "support_limit": {
+          "selected_orders": 402,
+          "closed": 173,
+          "censored": 0,
+          "opportunity_mean": -0.33038564446624374,
+          "status": "passed"
+        },
+        "quality_stop": {
+          "selected_orders": 108,
+          "closed": 77,
+          "censored": 0,
+          "opportunity_mean": -0.10192932352783744,
+          "status": "passed"
+        },
+        "next_session_open": {
+          "selected_orders": 512,
+          "closed": 512,
+          "censored": 0,
+          "opportunity_mean": -0.14984207785343212,
+          "status": "passed"
+        },
+        "next_session_close": {
+          "selected_orders": 512,
+          "closed": 512,
+          "censored": 0,
+          "opportunity_mean": -0.12357467602290508,
+          "status": "passed"
+        }
+      }
+    },
+    "validation_2025h2": {
+      "candidate_rows_checked": 312,
+      "budget_slots": 218,
+      "runs": {
+        "baseline": {
+          "selected_orders": 188,
+          "closed": 188,
+          "censored": 0,
+          "opportunity_mean": 1.3462632703500592,
+          "status": "passed"
+        },
+        "quality_gate": {
+          "selected_orders": 45,
+          "closed": 45,
+          "censored": 0,
+          "opportunity_mean": -0.026722124830678498,
+          "status": "passed"
+        },
+        "quality_stop": {
+          "selected_orders": 45,
+          "closed": 38,
+          "censored": 0,
+          "opportunity_mean": -0.17434262209530463,
+          "status": "passed"
+        }
+      }
+    },
+    "observed_2026": {
+      "candidate_rows_checked": 483,
+      "budget_slots": 306,
+      "runs": {
+        "baseline": {
+          "selected_orders": 261,
+          "closed": 261,
+          "censored": 0,
+          "opportunity_mean": -0.10427596582959611,
+          "status": "passed"
+        },
+        "quality_gate": {
+          "selected_orders": 64,
+          "closed": 64,
+          "censored": 0,
+          "opportunity_mean": 0.021905745295817677,
+          "status": "passed"
+        },
+        "quality_stop": {
+          "selected_orders": 64,
+          "closed": 52,
+          "censored": 0,
+          "opportunity_mean": -0.0071178230531233865,
+          "status": "passed"
+        }
+      }
+    }
+  },
+  "raw_feature_rows_verified": 1747,
+  "quote_pairs_checked": 7272,
+  "factor_pairs_checked": 3322,
+  "trigger_touch_diagnostics": {
+    "train/reclaim_stop": {
+      "filled": 319,
+      "touch_less_than_one_tick": 10,
+      "nonfilled_status": {
+        "not_triggered": 190,
+        "corporate_action_coordinate_change": 3
+      }
+    },
+    "train/support_limit": {
+      "filled": 173,
+      "touch_less_than_one_tick": 8,
+      "nonfilled_status": {
+        "not_triggered": 225,
+        "corporate_action_coordinate_change": 4
+      }
+    },
+    "train/quality_stop": {
+      "filled": 77,
+      "touch_less_than_one_tick": 3,
+      "nonfilled_status": {
+        "not_triggered": 31
+      }
+    },
+    "validation_2025h2/quality_stop": {
+      "filled": 38,
+      "touch_less_than_one_tick": 1,
+      "nonfilled_status": {
+        "not_triggered": 7
+      }
+    },
+    "observed_2026/quality_stop": {
+      "filled": 52,
+      "touch_less_than_one_tick": 1,
+      "nonfilled_status": {
+        "not_triggered": 12
+      }
+    }
+  },
+  "censored_positions_all_variants": 0,
+  "tests": [
+    "independent shape gates and quality scoring from raw source bars",
+    "pre-touch industry Top2 identical to orders",
+    "entry timing and target fill contracts",
+    "0.21 roundtrip cost and raw/economic returns",
+    "base/stress/largest-winner metrics",
+    "fixed original budget slots incl unfilled/filter zero",
+    "all month-block paired bootstrap intervals",
+    "no same-day sale",
+    "every source/data/group hash unchanged"
+  ],
+  "censor_preflight": "PLAN.preflight.json was unused; censored zero accounting was corrected and final plan frozen before any new return run. Actual censored count zero. Independent synthetic test confirms censored event value null and next-open limit-down deferral."
+}

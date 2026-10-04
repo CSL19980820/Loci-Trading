@@ -1,0 +1,51 @@
+{
+  "checked_at": "2026-10-04T09:47:29.354786+00:00",
+  "passed": true,
+  "closed_policy_records": 615,
+  "common_slots": 710,
+  "checks": [
+    "preselection orders identity",
+    "same225point lists",
+    "235point actual entry price and volume or nextopen SQL",
+    "T+1",
+    "direct SQL factors",
+    "economic gross/net identities",
+    "metrics and cost-winner stress",
+    "full calendar unknown accounting",
+    "failed training gate stops later collection"
+  ],
+  "runs": [
+    {
+      "arm": "sampled_early",
+      "selected": 195,
+      "closed": 193,
+      "mean": -0.0950179313582489,
+      "PF": 0.9650715326777111,
+      "win_rate": 41.45077720207254,
+      "slot_mean": -0.02582881796076343,
+      "combined_stress": -0.4322734555040019
+    },
+    {
+      "arm": "sampled_next_open",
+      "selected": 195,
+      "closed": 195,
+      "mean": 0.45240984977083964,
+      "PF": 1.1621170520161868,
+      "win_rate": 45.64102564102564,
+      "slot_mean": 0.12425340944410383,
+      "combined_stress": 0.0984431272284805
+    },
+    {
+      "arm": "original_eod",
+      "selected": 227,
+      "closed": 227,
+      "mean": 0.6976505653834664,
+      "PF": 1.2494017398221795,
+      "win_rate": 44.93392070484582,
+      "slot_mean": 0.22305165963668572,
+      "combined_stress": 0.3425966317250192
+    }
+  ],
+  "later_not_run": true,
+  "original_strategy_mutated": false
+}

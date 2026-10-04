@@ -1,0 +1,66 @@
+{
+  "created_at": "2026-10-04T13:03:03.573038+08:00",
+  "slug": "yangshi-tail-v1",
+  "spec": {
+    "position_lag": 1,
+    "trend_lag": 0,
+    "top_n": 1,
+    "hold_days": 2,
+    "stop": null,
+    "slippage_bps": 10,
+    "evidence": "native_daily"
+  },
+  "variants": {
+    "baseline": "原评分 S0",
+    "low80": "简单低位：0.8*S0 + 20*(1-P)",
+    "context70": "位置+修复：0.7*S0 + 20*R*B(P) + 5*R + 5*U",
+    "trend80": "纯趋势：0.8*S0 + 15*R + 5*U",
+    "context80": "轻量位置+修复：0.8*S0 + 10*R + 5*U + 5*R*B(P)"
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "sources": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "f1b78a41f5bf53489bf22733218f650296732afee34e2df154d106c1fcd582c3",
+    "tools/research_multi_strategy_scoring.py": "d5ef1abd44bc675b5c0184c56e087489d5eb2309eea3a2256450fdeb2b981749",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d",
+    "src/strategy/application/yangshi_tail.py": "a963133e7700e08628ae8d235c349b3773b7d128c407e9877d942909d3e112b5",
+    "src/strategy/application/qianlong.py": "b9bf16152b76fcaa8754e8ce9acd8046e1b314227777974930f1a24f23335e99",
+    "src/strategy/application/double_yin_low_open.py": "c111f1662dcc013b7518d822952cd381e5b776d0bfebcdc85a6983e7c2826833",
+    "src/strategy/application/persist.py": "16e9a34a30c144708fcd3c5fdafaa1225db003d1708dea32cba9c5f06294b23a",
+    "src/strategy/application/score_percentile.py": "f6c27cd536326abbc805346abba5d5f06f1ef2ba0528c66cc7def7435721af65"
+  },
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": null,
+  "features": "P=120-session high/low position at fixed prepattern lag; B=min(P/.2,1,(1-P)/.5) clipped; R=C>MA20 and MA20>MA20.shift10; U=R and MA20>=MA60 and MA60>=MA60.shift10; trend lag as specified. Missing context retains S0.",
+  "ranking": "All original candidates and market gates retained. Same TopN; score rounded4, native rank strength secondary, code ascending. Double-yin preserves sector exclusions.",
+  "nomination": "Train-only mean>baseline AND original-opportunity mean>baseline AND PF>max(1,baseline), >=80 closed; order by opportunity mean, PF, lexical id. All frozen variants reported; no tuning.",
+  "limitations": [
+    "Retrospective observed periods, not untouched OOS",
+    "Current membership/names and factor revisions, not strict PIT",
+    "Independent event trades, not portfolio NAV",
+    "Qianlong qfq absolute-price signal gate retained: split-end adjustment can change earlier absolute-price eligibility; prefix check on an already-adjusted panel does not eliminate that time bias. Raw execution and economic factors are separate.",
+    "Double-yin proxy only; historical daily open and current sector mapping do not recreate 09:25 feeds; hold/stop is a research convention"
+  ]
+}

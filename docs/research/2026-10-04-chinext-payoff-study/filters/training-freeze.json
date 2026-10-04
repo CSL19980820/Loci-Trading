@@ -1,0 +1,76 @@
+{
+  "created_at": "2026-10-04T00:46:45.251636+08:00",
+  "phase": "training_complete_validation_unopened",
+  "database_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "source_sha256": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "0f411bdf13cd9b006c8c63d402e60446ce51980241fe78c09000ae535552f9b9",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d"
+  },
+  "training_summary_sha256": "3b34d0dc442a915935caedd8f43b53da77af075e5ddd0e6f4e9ae1a56e98bb57",
+  "plan_sha256": "ab1f66cc31c6e25aab78d14cb4b470d6a3bd4b73bdc975a223bdcd86d8f007bf",
+  "selection_policy": {
+    "max_per_strategy": 3,
+    "eligibility": "closed>=80 AND payoff_ratio>1 AND profit_factor>1 AND mean_net>0; both wins and losses required",
+    "ranking": "training unrounded payoff descending, PF descending, mean descending, scenario id ascending",
+    "baseline_is_control_not_shortlist": true,
+    "no_validation_based_retuning": true
+  },
+  "strategies": {
+    "contraction-rebreakout-v1": {
+      "selected": [
+        "breakout_volume_le3",
+        "breadth_50",
+        "clv_ge0_75"
+      ],
+      "eligible": [
+        "breakout_volume_le3",
+        "breadth_50",
+        "clv_ge0_75",
+        "index_ma20",
+        "stock_ma20_rising",
+        "momentum_0_30",
+        "relative_volume_le2_5",
+        "prior_extreme_lt15",
+        "historical_equal_four"
+      ],
+      "rejection_reasons": {
+        "baseline": [
+          "predefined control"
+        ]
+      },
+      "no_eligible_candidate": false
+    },
+    "impulse-inside-breakout-v1": {
+      "selected": [
+        "breadth_50",
+        "stock_ma20_rising",
+        "index_ma20"
+      ],
+      "eligible": [
+        "breadth_50",
+        "stock_ma20_rising",
+        "index_ma20",
+        "momentum_0_30",
+        "breakout_volume_le3",
+        "relative_volume_le2_5",
+        "prior_extreme_lt15",
+        "clv_ge0_75"
+      ],
+      "rejection_reasons": {
+        "baseline": [
+          "predefined control"
+        ]
+      },
+      "no_eligible_candidate": false
+    }
+  }
+}

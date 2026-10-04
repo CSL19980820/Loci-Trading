@@ -24,4 +24,11 @@ __all__ = [
     "build_research_profile",
     "get_dimension_spec",
     "list_dimension_specs",
+    "recover_research_jobs",
 ]
+
+
+def recover_research_jobs():
+    """Recover persisted research jobs at startup, never during package import."""
+    from src.research.infrastructure.backtest_jobs import recover_research_jobs as recover
+    return recover()

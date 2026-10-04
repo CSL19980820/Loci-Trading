@@ -283,7 +283,25 @@ def query_archived_attempts(root: Path, receipt_ids: Sequence[str]) -> list[dict
     return _query_archive(root, _ATTEMPT_TABLE, receipt_ids)
 
 
-def _query_archive(root: Path, table: str, receipt_ids: Sequence[str]) -> list[dict[str, Any]]:
+def query_archived_receipt_metadata(root: Path, receipt_ids: Sequence[str]) -> list[dict[str, Any]]:
+    """消费摘要仅取归档回执的事实字段，不读取覆盖 JSON 与完整凭证。"""
+    return _query_archive(root, _RECEIPT_TABLE, receipt_ids,
+                          select="receipt_id, code, state, unresolved, generated_at, selected_source")
+
+
+def query_archived_attempt_counts(root: Path, receipt_ids: Sequence[str]) -> list[dict[str, Any]]:
+    return _query_archive(root, _ATTEMPT_TABLE, receipt_ids,
+                          select="receipt_id, COUNT(*) AS total", suffix=" GROUP BY receipt_id")
+
+
+def query_archived_attempt_sample(root: Path, receipt_id: str, limit: int) -> list[dict[str, Any]]:
+    # 同一 receipt 的归档行顺序沿用完整查询，只截取既有顺序的前 N 行。
+    return _query_archive(root, _ATTEMPT_TABLE, [receipt_id], suffix=f" LIMIT {max(0, int(limit))}")
+
+
+def _query_archive(
+    root: Path, table: str, receipt_ids: Sequence[str], *, select: str = "*", suffix: str = "",
+) -> list[dict[str, Any]]:
     if not receipt_ids or not _files(root, table):
         return []
     import duckdb
@@ -296,9 +314,9 @@ def _query_archive(root: Path, table: str, receipt_ids: Sequence[str]) -> list[d
             chunk = list(receipt_ids[offset : offset + _IN_CHUNK])
             placeholders = ",".join("?" for _ in chunk)
             rows = db.execute(
-                "SELECT * FROM read_parquet(" + parquet + ") WHERE receipt_id IN ("
+                "SELECT " + select + " FROM read_parquet(" + parquet + ") WHERE receipt_id IN ("
                 + placeholders
-                + ")",
+                + ")" + suffix,
                 chunk,
             ).fetchdf()
             out.extend(rows.to_dict(orient="records"))
@@ -340,5 +358,8 @@ __all__ = [
     "default_archive_root",
     "prune_archive",
     "query_archived_attempts",
+    "query_archived_attempt_counts",
+    "query_archived_attempt_sample",
     "query_archived_receipts",
+    "query_archived_receipt_metadata",
 ]

@@ -1,0 +1,13 @@
+{
+  "segment": "recent_reference",
+  "code": "300707",
+  "requested_date": "2026-09-30",
+  "selection": "same earliest-training code at latest frozen daily date; no outcomes",
+  "provider": "tdx",
+  "started_at": "2026-10-04T09:01:55.705081+00:00",
+  "request_method": "get_history_minute_time_data",
+  "history_query_attempted": true,
+  "source_timestamp_present": false,
+  "date_evidence": "request parameter only; decoded records have no date",
+  "source_volume_unit": "not assumed from daily adapter; compare returned sum with same-day raw daily shares"
+}

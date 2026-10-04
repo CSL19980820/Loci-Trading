@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.ops.application.skill_watch.roles import EXIT_ROLES, ROLE_LABEL
-from src.ops.application.skill_watch.paper_eligibility import is_observe_intent
+from src.ops.application.signal_policy.eligibility import is_observe_intent
 
 #: 完整观察池规则（入池/粘性/替换/汇报）——日终扫描与文档注入；不注入盯盘 monitor。
 OBSERVE_POOL_RULES = """

@@ -1,0 +1,48 @@
+{
+  "created_at": "2026-10-04T16:20:23.203088+08:00",
+  "sources": {
+    "tools/research_contraction_vwap.py": "ba57ed30e5480ce9c7204b8dc3f5d2758349074b151888dc05f4866ebe588e11",
+    "tools/research_contraction_learned_rank.py": "7bd8b3c40ca03c14a886ffc24334f5535ae784317fd43f3677cdedee3651ab1c",
+    "tools/research_contraction_structure.py": "d00803a241ad8adcf32aa4f4521bb828df789bd1baed2212f9ec82c057348d69",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/strategy/application/contraction_rebreakout.py": "613d676689ff913e566e2a3be92ab4849e0d55b5e5bdef7a3dfd58f52c535121",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/market/infrastructure/store_panel.py": "191daeb13e26731dbaade3432faa6b6b1d984ce69dd1d59b757576f266cd1f36"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "root_plan_sha256": "5b12aa558234e2904b412a3ddefd96bae5e56ad6d2e93da27fe221d699763034",
+  "contract_sha256": "ae5ee734ddef3539471747c282d38a4d0710ed76c1dca53df666401c171d66b9",
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "controls": [
+    "legacy_original",
+    "corrected_original",
+    "vwap_eligible_original"
+  ],
+  "policies": [
+    "vwap_gate_open",
+    "vwap_gate_limit"
+  ],
+  "stress": "vwap_gate_limit_one_tick",
+  "shared_contract": "PLAN.md and root VWAP PLAN.md; exact hashes above",
+  "no_2023h2_outcomes": true,
+  "current_catalog_and_revised_factors_not_PIT": true,
+  "independent_event_budget_not_capital_NAV": true
+}

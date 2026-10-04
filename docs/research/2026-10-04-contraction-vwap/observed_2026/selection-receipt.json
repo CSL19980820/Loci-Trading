@@ -1,0 +1,20 @@
+{
+  "created_at": "2026-10-04T16:22:52.740942+08:00",
+  "returns_not_yet_evaluated": true,
+  "common_days": 177,
+  "common_slots": 354,
+  "first": "2026-01-05",
+  "last": "2026-09-23",
+  "nominations": [
+    "vwap_gate_open",
+    "vwap_gate_limit"
+  ],
+  "preselected_sha256": {
+    "legacy_original": "12b87e05f2a7d47e4e0835ce16e754b5d16079ae4debf780f959e6c30d176c65",
+    "corrected_original": "9775b0d4884d30650274fb17a0f368cc88e048ceab2020420ba83ff1b64610a4",
+    "vwap_eligible_original": "9775b0d4884d30650274fb17a0f368cc88e048ceab2020420ba83ff1b64610a4",
+    "vwap_gate_open": "8f2cf2beeda8b57808f053dc541ccd7c5954c0d740903a52f4ad6aaf512ece2f",
+    "vwap_gate_limit": "8f2cf2beeda8b57808f053dc541ccd7c5954c0d740903a52f4ad6aaf512ece2f",
+    "vwap_gate_limit_one_tick": "8f2cf2beeda8b57808f053dc541ccd7c5954c0d740903a52f4ad6aaf512ece2f"
+  }
+}

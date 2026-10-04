@@ -1,0 +1,77 @@
+{
+  "segment": "observed_2026",
+  "candidate_and_raw_qc_identity": "byte_identical",
+  "existing_closed_trades": "unchanged",
+  "changed_labels": [
+    {
+      "policy": "full_shape",
+      "decision_date": "2026-07-23",
+      "code": "002036",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "cancelled",
+        "label_available_date": "2026-07-23",
+        "label_available_at": "2026-07-23T15:00:00+08:00",
+        "net_return_pct": 0.0,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      }
+    },
+    {
+      "policy": "vwap_eligible_full_shape",
+      "decision_date": "2026-07-23",
+      "code": "002036",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "cancelled",
+        "label_available_date": "2026-07-23",
+        "label_available_at": "2026-07-23T15:00:00+08:00",
+        "net_return_pct": 0.0,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      }
+    },
+    {
+      "policy": "yin_close_and_open_above_vwap",
+      "decision_date": "2026-07-23",
+      "code": "002036",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "cancelled",
+        "label_available_date": "2026-07-23",
+        "label_available_at": "2026-07-23T15:00:00+08:00",
+        "net_return_pct": 0.0,
+        "execution_reason": "suspended_entry",
+        "entry_date": null,
+        "exit_date": null
+      }
+    }
+  ],
+  "changed_label_count": 3
+}

@@ -19,11 +19,6 @@ export {
   getUniverseStats,
   getMarketHealth,
   repairMarketTurnover,
-  getAkshareCatalog,
-  getAkshareSources,
-  getAkshareVersion,
-  probeAkshareCatalog,
-  probeAkshareCatalogBatch,
   type LiveTapeItem,
   type LiveTape,
   type MinuteBar,
@@ -120,7 +115,6 @@ export {
   deleteMcpServer,
   getMcpQuota,
   saveWudaoMcp,
-  saveHithinkMcp,
   patchWudaoSettings,
   type SkillRunAsk,
   type SkillRun,
@@ -131,24 +125,16 @@ export {
 } from '@/shared/api/quant_ops'
 
 export {
-  absorbPaperStyle,
   deleteAlertRule,
   downloadSharePack,
-  explorePaperMemory,
-  getPaperCabin,
   getSharePackStatus,
   listAlertRules,
-  rebuildPaperMemory,
-  runPaperEod,
-  runPaperMonitor,
   saveAlertRule,
-  savePaperCabinConfig,
-  savePaperStyle,
   scanAlertRules,
   type SharePackOption,
   type SharePackResult,
   type SharePackStatus,
-} from '@/shared/api/quant_ops_paper'
+} from '@/shared/api/quant_utilities'
 
 export {
   getCandidateOutcomes,

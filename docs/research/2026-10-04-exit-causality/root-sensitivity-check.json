@@ -1,0 +1,119 @@
+{
+  "passed": true,
+  "source_orders": 2022,
+  "source_groups": 11,
+  "directly_verified_changed_orders": 12,
+  "unchanged_orders": 2010,
+  "original_statuses": {
+    "closed": 2012,
+    "cancelled": 8,
+    "unresolved": 2
+  },
+  "changed_orders_higher_net": 12,
+  "changed_orders_lower_net": 0,
+  "sql_checks": [
+    {
+      "group_id": "contraction_sampled/train/original_eod",
+      "signal_date": "2025-03-31",
+      "code": "300193",
+      "exit_date": "2025-04-07",
+      "raw_open": 9.7,
+      "net_return_pct": -14.822676056338025
+    },
+    {
+      "group_id": "contraction_sampled/train/sampled_next_open",
+      "signal_date": "2025-03-31",
+      "code": "300193",
+      "exit_date": "2025-04-07",
+      "raw_open": 9.7,
+      "net_return_pct": -14.822676056338025
+    },
+    {
+      "group_id": "double_yin_sampled/observed_2026/corrected_low_open",
+      "signal_date": "2026-03-20",
+      "code": "603387",
+      "exit_date": "2026-03-23",
+      "raw_open": 9.25,
+      "net_return_pct": -7.986669990029916
+    },
+    {
+      "group_id": "double_yin_sampled/observed_2026/corrected_low_open",
+      "signal_date": "2026-07-14",
+      "code": "600118",
+      "exit_date": "2026-07-15",
+      "raw_open": 77.09,
+      "net_return_pct": -6.346612687203213
+    },
+    {
+      "group_id": "double_yin_sampled/observed_2026/corrected_low_open",
+      "signal_date": "2026-07-28",
+      "code": "600539",
+      "exit_date": "2026-07-29",
+      "raw_open": 14.86,
+      "net_return_pct": -14.065072463768127
+    },
+    {
+      "group_id": "double_yin_sampled/observed_2026/corrected_low_open",
+      "signal_date": "2026-09-14",
+      "code": "600712",
+      "exit_date": "2026-09-15",
+      "raw_open": 5.65,
+      "net_return_pct": -6.6669536423841
+    },
+    {
+      "group_id": "double_yin_sampled/train/corrected_low_open",
+      "signal_date": "2024-01-19",
+      "code": "002090",
+      "exit_date": "2024-01-22",
+      "raw_open": 9.31,
+      "net_return_pct": -7.665268389662029
+    },
+    {
+      "group_id": "double_yin_sampled/train/corrected_low_open",
+      "signal_date": "2024-04-12",
+      "code": "000017",
+      "exit_date": "2024-04-15",
+      "raw_open": 9.06,
+      "net_return_pct": -7.095919835560128
+    },
+    {
+      "group_id": "double_yin_sampled/train/corrected_low_open",
+      "signal_date": "2025-01-02",
+      "code": "600602",
+      "exit_date": "2025-01-06",
+      "raw_open": 14.04,
+      "net_return_pct": -9.041168831168836
+    },
+    {
+      "group_id": "double_yin_sampled/train/corrected_low_open",
+      "signal_date": "2025-01-03",
+      "code": "002350",
+      "exit_date": "2025-01-06",
+      "raw_open": 6.3,
+      "net_return_pct": -10.721363636363636
+    },
+    {
+      "group_id": "double_yin_sampled/train/corrected_low_open",
+      "signal_date": "2025-05-30",
+      "code": "600192",
+      "exit_date": "2025-06-03",
+      "raw_open": 8.5,
+      "net_return_pct": -6.391015452538641
+    },
+    {
+      "group_id": "double_yin_sampled/train/yin_close_and_open_above_vwap",
+      "signal_date": "2024-10-08",
+      "code": "001212",
+      "exit_date": "2024-10-09",
+      "raw_open": 22.8,
+      "net_return_pct": -9.805559080095163
+    }
+  ],
+  "source_and_database_hashes_unchanged": true,
+  "no_experiment_module_import": true,
+  "group_metrics_and_daily_budget_verified": true,
+  "unknown_full_opportunity_statistics_remain_null": true,
+  "verifier_sha256": "352f4edba654af0b9745b18b90f9ba3f5a026a4c53a2b11342a8231037a64d22",
+  "input_receipt_sha256": "cb52a6fa2e3ca3b67cce2ead90df5b2128f9461a631a79a67869d6368db61847",
+  "limitation": "Fixed original orders and opening-price model sensitivity; own-order execution and a new strategy enhancement are not proved."
+}

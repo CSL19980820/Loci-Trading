@@ -234,7 +234,7 @@ def _maybe_push_wecom(
         # 「仅观察」也不算可执行：只出观察票的引擎会刷屏，统一池缺 action 时默认
         # intent=observe，旧逻辑只要 picks 非空就刷「👀观察 N：…仅观察」。
         if status == "success" and slug and push_only_when_actionable(slug):
-            from src.ops.application.paper_policy.eligibility import has_actionable_picks
+            from src.ops.application.signal_policy.eligibility import has_actionable_picks
 
             if not has_actionable_picks(picks_now):
                 return {"push_skipped": True, "reason": "no_actionable_picks", "slug": slug}

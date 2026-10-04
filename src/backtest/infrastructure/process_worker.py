@@ -173,13 +173,16 @@ def _worker_entry(
             run_optimize_job,
         )
         from src.market import MarketStore
+        from src.strategy.application.compute_worker import python_worker_scope
 
         handlers = {
             "backtest": run_backtest_job,
             "compare": run_compare_job,
             "optimize": run_optimize_job,
         }
-        with tenant_scope(tenant_id):
+        # This daemon is already terminated by the parent's job budget/cancel
+        # monitor. Reuse that boundary instead of spawning a forbidden child.
+        with tenant_scope(tenant_id), python_worker_scope():
             with MarketStore(market_db) as store:
                 result = handlers[operation](store, config)
         _send_message(sender, {"status": "ok", "result": result})

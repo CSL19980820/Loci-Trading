@@ -39,7 +39,7 @@ def notify_stock_agent(store, path: str, agent_id: str, run_id: str) -> dict:
         if previous.get("success"):
             return previous
         phase = run["phase"]
-        if phase not in {"premarket", "auction", "review"} and not detail.get("fills"):
+        if phase not in {"premarket", "auction", "review", "weekly_review"} and not detail.get("fills"):
             return {"success": False, "skipped": "no_action"}
         summary = str(detail.get("summary") or run.get("summary") or "本轮研究已完成。")
         summary = re.sub(r"\[([^\]]+)\]\(https?://[^\s)]+\)", r"\1", summary)

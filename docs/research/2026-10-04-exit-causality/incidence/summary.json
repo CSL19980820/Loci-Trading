@@ -1,0 +1,382 @@
+{
+  "created_at": "2026-10-04T18:05:25.961512+08:00",
+  "plan_sha256": "6474a050923021626789047cef7a67a058a3fe2adf013bac5a509740f6a5c1b6",
+  "groups": {
+    "contraction_original_later/observed_2026/corrected_original": {
+      "orders": 185,
+      "source_statuses": {
+        "closed": 185
+      },
+      "incidence_statuses": {
+        "first_stop_trigger_known": 78,
+        "no_stop_trigger_in_planned_window": 107
+      },
+      "known_first_stop_triggers": 78,
+      "first_trigger_model_strict_down": 0,
+      "first_trigger_close_threshold_masked": 0,
+      "close_masked_nonflat": 0,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {},
+      "nonflat_masked_open_at_or_below_stop": 0,
+      "nonflat_masked_open_above_stop": 0,
+      "nonflat_masked_stop_price_paths": {},
+      "nonflat_masked_open_at_or_below_stop_above_lower": 0,
+      "nonflat_masked_intraday_touch_open_above_stop": 0,
+      "nonflat_masked_source_exit_later": 0,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "contraction_original_later/validation_2025h2/corrected_original": {
+      "orders": 116,
+      "source_statuses": {
+        "closed": 114,
+        "unresolved": 2
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 80,
+        "first_stop_trigger_known": 34,
+        "trigger_unknown_incomplete_path": 2
+      },
+      "known_first_stop_triggers": 34,
+      "first_trigger_model_strict_down": 0,
+      "first_trigger_close_threshold_masked": 0,
+      "close_masked_nonflat": 0,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {},
+      "nonflat_masked_open_at_or_below_stop": 0,
+      "nonflat_masked_open_above_stop": 0,
+      "nonflat_masked_stop_price_paths": {},
+      "nonflat_masked_open_at_or_below_stop_above_lower": 0,
+      "nonflat_masked_intraday_touch_open_above_stop": 0,
+      "nonflat_masked_source_exit_later": 0,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "contraction_sampled/train/original_eod": {
+      "orders": 227,
+      "source_statuses": {
+        "closed": 227
+      },
+      "incidence_statuses": {
+        "first_stop_trigger_known": 80,
+        "no_stop_trigger_in_planned_window": 147
+      },
+      "known_first_stop_triggers": 80,
+      "first_trigger_model_strict_down": 1,
+      "first_trigger_close_threshold_masked": 1,
+      "close_masked_nonflat": 1,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {
+        "above_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop": 1,
+      "nonflat_masked_open_above_stop": 0,
+      "nonflat_masked_stop_price_paths": {
+        "open_at_or_below_stop_above_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop_above_lower": 1,
+      "nonflat_masked_intraday_touch_open_above_stop": 0,
+      "nonflat_masked_source_exit_later": 1,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "contraction_sampled/train/sampled_early": {
+      "orders": 195,
+      "source_statuses": {
+        "closed": 193,
+        "cancelled": 2
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 131,
+        "first_stop_trigger_known": 62,
+        "known_cancelled_no_entry": 2
+      },
+      "known_first_stop_triggers": 62,
+      "first_trigger_model_strict_down": 0,
+      "first_trigger_close_threshold_masked": 0,
+      "close_masked_nonflat": 0,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {},
+      "nonflat_masked_open_at_or_below_stop": 0,
+      "nonflat_masked_open_above_stop": 0,
+      "nonflat_masked_stop_price_paths": {},
+      "nonflat_masked_open_at_or_below_stop_above_lower": 0,
+      "nonflat_masked_intraday_touch_open_above_stop": 0,
+      "nonflat_masked_source_exit_later": 0,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "contraction_sampled/train/sampled_next_open": {
+      "orders": 195,
+      "source_statuses": {
+        "closed": 195
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 129,
+        "first_stop_trigger_known": 66
+      },
+      "known_first_stop_triggers": 66,
+      "first_trigger_model_strict_down": 1,
+      "first_trigger_close_threshold_masked": 1,
+      "close_masked_nonflat": 1,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {
+        "above_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop": 1,
+      "nonflat_masked_open_above_stop": 0,
+      "nonflat_masked_stop_price_paths": {
+        "open_at_or_below_stop_above_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop_above_lower": 1,
+      "nonflat_masked_intraday_touch_open_above_stop": 0,
+      "nonflat_masked_source_exit_later": 1,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "double_yin_sampled/observed_2026/corrected_low_open": {
+      "orders": 263,
+      "source_statuses": {
+        "closed": 263
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 149,
+        "first_stop_trigger_known": 114
+      },
+      "known_first_stop_triggers": 114,
+      "first_trigger_model_strict_down": 10,
+      "first_trigger_close_threshold_masked": 10,
+      "close_masked_nonflat": 8,
+      "close_masked_flat": 2,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {
+        "above_lower": 7,
+        "at_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop": 5,
+      "nonflat_masked_open_above_stop": 3,
+      "nonflat_masked_stop_price_paths": {
+        "intraday_touch_with_open_above_stop": 3,
+        "open_at_or_below_stop_above_lower": 4,
+        "open_at_or_below_stop_at_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop_above_lower": 4,
+      "nonflat_masked_intraday_touch_open_above_stop": 3,
+      "nonflat_masked_source_exit_later": 8,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "double_yin_sampled/observed_2026/yin_close_and_open_above_vwap": {
+      "orders": 61,
+      "source_statuses": {
+        "closed": 60,
+        "cancelled": 1
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 41,
+        "first_stop_trigger_known": 19,
+        "known_cancelled_no_entry": 1
+      },
+      "known_first_stop_triggers": 19,
+      "first_trigger_model_strict_down": 1,
+      "first_trigger_close_threshold_masked": 1,
+      "close_masked_nonflat": 1,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {
+        "above_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop": 0,
+      "nonflat_masked_open_above_stop": 1,
+      "nonflat_masked_stop_price_paths": {
+        "intraday_touch_with_open_above_stop": 1
+      },
+      "nonflat_masked_open_at_or_below_stop_above_lower": 0,
+      "nonflat_masked_intraday_touch_open_above_stop": 1,
+      "nonflat_masked_source_exit_later": 1,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "double_yin_sampled/train/corrected_low_open": {
+      "orders": 513,
+      "source_statuses": {
+        "closed": 512,
+        "cancelled": 1
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 326,
+        "first_stop_trigger_known": 186,
+        "known_cancelled_no_entry": 1
+      },
+      "known_first_stop_triggers": 186,
+      "first_trigger_model_strict_down": 19,
+      "first_trigger_close_threshold_masked": 19,
+      "close_masked_nonflat": 19,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {
+        "above_lower": 17,
+        "at_lower": 2
+      },
+      "nonflat_masked_open_at_or_below_stop": 7,
+      "nonflat_masked_open_above_stop": 12,
+      "nonflat_masked_stop_price_paths": {
+        "intraday_touch_with_open_above_stop": 12,
+        "open_at_or_below_stop_above_lower": 5,
+        "open_at_or_below_stop_at_lower": 2
+      },
+      "nonflat_masked_open_at_or_below_stop_above_lower": 5,
+      "nonflat_masked_intraday_touch_open_above_stop": 12,
+      "nonflat_masked_source_exit_later": 19,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "double_yin_sampled/train/yin_close_and_open_above_vwap": {
+      "orders": 58,
+      "source_statuses": {
+        "closed": 56,
+        "cancelled": 2
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 44,
+        "first_stop_trigger_known": 12,
+        "known_cancelled_no_entry": 2
+      },
+      "known_first_stop_triggers": 12,
+      "first_trigger_model_strict_down": 1,
+      "first_trigger_close_threshold_masked": 1,
+      "close_masked_nonflat": 1,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {
+        "above_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop": 1,
+      "nonflat_masked_open_above_stop": 0,
+      "nonflat_masked_stop_price_paths": {
+        "open_at_or_below_stop_above_lower": 1
+      },
+      "nonflat_masked_open_at_or_below_stop_above_lower": 1,
+      "nonflat_masked_intraday_touch_open_above_stop": 0,
+      "nonflat_masked_source_exit_later": 1,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "double_yin_sampled/validation_2025h2/corrected_low_open": {
+      "orders": 190,
+      "source_statuses": {
+        "closed": 188,
+        "cancelled": 2
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 132,
+        "first_stop_trigger_known": 56,
+        "known_cancelled_no_entry": 2
+      },
+      "known_first_stop_triggers": 56,
+      "first_trigger_model_strict_down": 3,
+      "first_trigger_close_threshold_masked": 3,
+      "close_masked_nonflat": 2,
+      "close_masked_flat": 1,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {
+        "above_lower": 2
+      },
+      "nonflat_masked_open_at_or_below_stop": 0,
+      "nonflat_masked_open_above_stop": 2,
+      "nonflat_masked_stop_price_paths": {
+        "intraday_touch_with_open_above_stop": 2
+      },
+      "nonflat_masked_open_at_or_below_stop_above_lower": 0,
+      "nonflat_masked_intraday_touch_open_above_stop": 2,
+      "nonflat_masked_source_exit_later": 2,
+      "nonflat_masked_source_exit_unknown": 0
+    },
+    "double_yin_sampled/validation_2025h2/yin_close_and_open_above_vwap": {
+      "orders": 19,
+      "source_statuses": {
+        "closed": 19
+      },
+      "incidence_statuses": {
+        "no_stop_trigger_in_planned_window": 15,
+        "first_stop_trigger_known": 4
+      },
+      "known_first_stop_triggers": 4,
+      "first_trigger_model_strict_down": 0,
+      "first_trigger_close_threshold_masked": 0,
+      "close_masked_nonflat": 0,
+      "close_masked_flat": 0,
+      "close_masked_ohlc_unknown": 0,
+      "first_trigger_unknown_mask_reference": 0,
+      "first_trigger_unknown_close": 0,
+      "nonflat_masked_open_relative_lower": {},
+      "nonflat_masked_open_at_or_below_stop": 0,
+      "nonflat_masked_open_above_stop": 0,
+      "nonflat_masked_stop_price_paths": {},
+      "nonflat_masked_open_at_or_below_stop_above_lower": 0,
+      "nonflat_masked_intraday_touch_open_above_stop": 0,
+      "nonflat_masked_source_exit_later": 0,
+      "nonflat_masked_source_exit_unknown": 0
+    }
+  },
+  "all_policy_order_rows": {
+    "orders": 2022,
+    "source_statuses": {
+      "closed": 2012,
+      "unresolved": 2,
+      "cancelled": 8
+    },
+    "incidence_statuses": {
+      "first_stop_trigger_known": 711,
+      "no_stop_trigger_in_planned_window": 1301,
+      "trigger_unknown_incomplete_path": 2,
+      "known_cancelled_no_entry": 8
+    },
+    "known_first_stop_triggers": 711,
+    "first_trigger_model_strict_down": 36,
+    "first_trigger_close_threshold_masked": 36,
+    "close_masked_nonflat": 33,
+    "close_masked_flat": 3,
+    "close_masked_ohlc_unknown": 0,
+    "first_trigger_unknown_mask_reference": 0,
+    "first_trigger_unknown_close": 0,
+    "nonflat_masked_open_relative_lower": {
+      "above_lower": 30,
+      "at_lower": 3
+    },
+    "nonflat_masked_open_at_or_below_stop": 15,
+    "nonflat_masked_open_above_stop": 18,
+    "nonflat_masked_stop_price_paths": {
+      "open_at_or_below_stop_above_lower": 12,
+      "intraday_touch_with_open_above_stop": 18,
+      "open_at_or_below_stop_at_lower": 3
+    },
+    "nonflat_masked_open_at_or_below_stop_above_lower": 12,
+    "nonflat_masked_intraday_touch_open_above_stop": 18,
+    "nonflat_masked_source_exit_later": 33,
+    "nonflat_masked_source_exit_unknown": 0
+  },
+  "unique_filled_basis_rows": 1820,
+  "unique_nonflat_masked_basis_rows": 32,
+  "unique_nonflat_masked_code_dates": 32,
+  "occurrence_not_return_analysis": true,
+  "original_unknown_labels_preserved": true,
+  "price_facts_do_not_prove_order_execution": true,
+  "expiry_close_rule_not_redefined": true
+}

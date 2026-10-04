@@ -10,7 +10,7 @@ import { ArrowLeft, History } from '@lucide/vue'
 import ArchiveBatchDock from '@/features/ledger/components/ArchiveBatchDock.vue'
 import ArchiveBatchRail from '@/features/ledger/components/ArchiveBatchRail.vue'
 import StockTimeline from '@/features/ledger/components/StockTimeline.vue'
-import StrategyFootprint from '@/features/ledger/components/StrategyFootprint.vue'
+import ArchiveFootprint from '@/features/ledger/components/ArchiveFootprint.vue'
 import { candidateStrategySlug, useStrategyFootprints } from '@/features/ledger/composables/useStrategyFootprints'
 import DataQueryDetailPanel from '@/features/market/components/DataQueryDetailPanel.vue'
 import { useQuotesQuery } from '@/features/market/composables/useQuotesQuery'
@@ -343,7 +343,11 @@ onUnmounted(() => {
 
 <template>
   <div class="page-fill stock-workbench" :class="{ 'stock-workbench--batch': hasBatch }">
-    <ArchiveMobileHeader v-if="mobile" :name="stockName" :code="code" :board="boardTag" :industry="industryTag" :price="lastClose" :pct="detailPct" :change="detailChange" :history-count="timelineEvents.length" :batch-position="hasBatch ? batch.positionLabel : undefined" :can-prev="canPrev" :can-next="canNext" @back="goBack" @history="historyOpen = true" @prev="goBatchStep(-1)" @next="goBatchStep(1)" @batch="toggleDock" @chat="openAssistant" />
+    <ArchiveMobileHeader v-if="mobile" :name="stockName" :code="code" :board="boardTag" :industry="industryTag" :price="lastClose" :pct="detailPct" :change="detailChange" :history-count="timelineEvents.length" :batch-position="hasBatch ? batch.positionLabel : undefined" :can-prev="canPrev" :can-next="canNext" @back="goBack" @history="historyOpen = true" @prev="goBatchStep(-1)" @next="goBatchStep(1)" @batch="toggleDock" @chat="openAssistant">
+      <template #footprint>
+        <ArchiveFootprint :code="code" :name="stockName" :lanes="footprintLanes" :loading="footprintBusy" :focus-date="focusDate" icon-only @pick="focusFootprint" />
+      </template>
+    </ArchiveMobileHeader>
     <header v-else class="sw-top">
       <div class="sw-top__row">
         <Button access="read"
@@ -389,6 +393,7 @@ onUnmounted(() => {
           @toggle-dock="toggleDock"
         />
         <Button access="read" variant="outline" size="sm" class="sw-history" @click="historyOpen = true"><History aria-hidden="true" />选股记录<span v-if="timelineEvents.length" class="tabular-nums">{{ timelineEvents.length }}</span></Button>
+        <ArchiveFootprint :code="code" :name="stockName" :lanes="footprintLanes" :loading="footprintBusy" :focus-date="focusDate" @pick="focusFootprint" />
       </div>
     </header>
 
@@ -413,7 +418,8 @@ onUnmounted(() => {
         @select="selectBatchCode"
       />
 
-      <div class="sw-body">
+      <!-- 股票内的图表交互独立重置；左侧批次列表和工作台设置保持原位。 -->
+      <div :key="code" class="sw-body">
         <Alert v-if="quoteErrorText" variant="destructive" class="sw-quote-error">
           <AlertTitle class="line-clamp-none min-w-0">{{ quoteErrorText }}</AlertTitle>
           <AlertDescription>
@@ -457,14 +463,6 @@ onUnmounted(() => {
           />
           <StatCard layout="row" label="换手率" :value="turnoverText" :loading="quoteBusy && !lastBar" />
         </div>
-
-        <StrategyFootprint
-          class="sw-footprint"
-          :lanes="footprintLanes"
-          :loading="footprintBusy"
-          :focus-date="focusDate"
-          @pick="focusFootprint"
-        />
 
         <div class="sw-grid">
           <div class="sw-chart">

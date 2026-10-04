@@ -50,5 +50,6 @@ export interface StrategyBacktestMetrics {
   trades?: number | null
   win_rate?: number | null
   avg_net_return?: number | null
+  payoff_ratio?: number | null
   profit_factor?: number | null
 }

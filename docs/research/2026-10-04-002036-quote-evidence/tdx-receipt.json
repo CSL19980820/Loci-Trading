@@ -1,0 +1,66 @@
+{
+  "source": "tdx",
+  "code": "002036",
+  "requested_window": [
+    "2026-07-22",
+    "2026-07-29"
+  ],
+  "started_at": "2026-10-04T16:34:23.331361+08:00",
+  "prices": "unadjusted yuan/share",
+  "volume": "shares",
+  "amount": "yuan",
+  "trade_status_field": null,
+  "mutable_adapter_paths": "isolated_check temporary directory",
+  "no_database_writes": true,
+  "no_candidate_or_return_calculation": true,
+  "snapshots_before_sha256": {
+    ".local\\chinext-payoff-20261004\\market.db": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+    ".local\\multi-strategy-scoring-20261004\\market.db": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c"
+  },
+  "native_call": "TdxAdapter.fetch_daily_window(code, instrument_type=STOCK, bars=90)",
+  "endpoint": "tdx://117.34.114.15:7709",
+  "unit_basis": "tdx_daily._rows_to_frame: vol in lots times100; amount unchanged yuan",
+  "source_code_sha256": {
+    "src/market/infrastructure/adapters/tdx_adapter.py": "8089f3d1958a1935ecc79bb3fc3a173d9c057003f49a00444af7b9a692805aa8",
+    "src/market/infrastructure/tdx_daily.py": "e1e8b3a93af6021e7ef6b39624c5c1124e503086703652abb9a14859b0ee8ad9"
+  },
+  "returned_rows": 90,
+  "returned_columns": [
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "amount"
+  ],
+  "returned_first_date": "2026-05-19",
+  "returned_last_date": "2026-09-30",
+  "ok": true,
+  "selected_rows": [
+    {
+      "date": "2026-07-22",
+      "open": 7.48,
+      "high": 7.69,
+      "low": 6.9,
+      "close": 7.23,
+      "volume": 123608300.0,
+      "amount": 888461632.0
+    }
+  ],
+  "all_dates_in_requested_window": true,
+  "csv_sha256": "6bc8af94146ca4f7bacd405544c97f6d09259b5acb60052d95f5ba80e9009270",
+  "missing_requested_weekdays": [
+    "2026-07-23",
+    "2026-07-24",
+    "2026-07-27",
+    "2026-07-28",
+    "2026-07-29"
+  ],
+  "completed_at": "2026-10-04T16:34:26.785295+08:00",
+  "snapshots_after_sha256": {
+    ".local\\chinext-payoff-20261004\\market.db": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+    ".local\\multi-strategy-scoring-20261004\\market.db": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c"
+  },
+  "snapshots_unchanged": true
+}

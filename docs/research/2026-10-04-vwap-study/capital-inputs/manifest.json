@@ -1,0 +1,36 @@
+{
+  "zero_unknown_confirmed": true,
+  "new_signals_selected": false,
+  "rows": [
+    {
+      "arm": "corrected_low_open",
+      "closed": 453,
+      "output": "pooled_later-corrected_low_open-trades.csv",
+      "sha256": "b3a0738e526bafefb480a3c717c63519f53bc0608f8101e8b7ce3fec19fe242e",
+      "inputs": {
+        "validation_2025h2-corrected_low_open-trades.csv": "22800bc42eb0571a4d7a96065fda707c4a7ca1f0f584254b270be66f59828be6",
+        "observed_2026-corrected_low_open-trades.csv": "50ff8274394eabe0f6995ba357004175276706470a6bd7cc3c40cb9cae7c45a0"
+      }
+    },
+    {
+      "arm": "full_shape",
+      "closed": 529,
+      "output": "pooled_later-full_shape-trades.csv",
+      "sha256": "75d79ff66876503a34a52b832ee32a4fb9fc8c77fcf73ec22cd64ef0015b6b26",
+      "inputs": {
+        "validation_2025h2-full_shape-trades.csv": "dfd4c7dd6dbdb467fb9d306eb94c618292888dd5d96a3851c529e0fbf688e38e",
+        "observed_2026-full_shape-trades.csv": "d1daa6ded61aba049f247d6d17b4c3b24941d9d0bfa4632b0883b6c2b63d4a98"
+      }
+    },
+    {
+      "arm": "yin_close_and_open_above_vwap",
+      "closed": 79,
+      "output": "pooled_later-yin_close_and_open_above_vwap-trades.csv",
+      "sha256": "42a4019d6af114bf38b801f5654a5ea6f7b40213f203a7ad73ac861146c5a504",
+      "inputs": {
+        "validation_2025h2-yin_close_and_open_above_vwap-trades.csv": "f6387583ddf8e595fc70815cbf9735937ed0e525e9118bc0b73a8b17b114dfbd",
+        "observed_2026-yin_close_and_open_above_vwap-trades.csv": "2c9d9c9207d168afdf0d1137737cb9390d9345e7eed20bd8bc82695a81ac74c1"
+      }
+    }
+  ]
+}

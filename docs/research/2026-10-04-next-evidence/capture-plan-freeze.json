@@ -1,0 +1,17 @@
+{
+  "frozen_at_utc": "2026-10-04T10:47:45.598192+00:00",
+  "capture_plan_sha256": "80085f5d159efa6bbc28bc84c51be05970a68ab538cee6ed641a99687fdb1299",
+  "capture_script_sha256": "c1ed0bd3fdbf14c64d59f1d7312fc4b5cc2d5e5b0ebadc4099dbd83141cd6649",
+  "real_network_requests_this_stage": 0,
+  "future_quotes_received": false,
+  "pools": {
+    "double_yin": 10,
+    "contraction": 98
+  },
+  "phases": [
+    "double_yin_open",
+    "double_yin_later_quote",
+    "contraction_prefix",
+    "contraction_later_quote"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "checks": [
+    "copied_volume_no_raw_view_mutation",
+    "only_confirmed_code_dates",
+    "resumption_day_excluded",
+    "other_arrays_same_identity",
+    "training_date_disjoint_identity"
+  ]
+}

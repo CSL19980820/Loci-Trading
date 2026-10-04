@@ -48,7 +48,6 @@ from src.ops.application.notify_registry import (
     list_channels,
     test_channel,
 )
-from src.ops.application.notify_subscribers import dispatch_subscription_signal
 from src.ops.application import skill_runs
 from src.ops.application.screen import (
     ScreenPackageError,
@@ -129,7 +128,6 @@ __all__ = [
     "NotifyChannelError",
     "NotifyMessage",
     "dispatch",
-    "dispatch_subscription_signal",
     "list_channels",
     "test_channel",
     "DEFAULT_DB",
@@ -183,4 +181,12 @@ __all__ = [
     "read_screen_archive",
     "restore_screen_package",
     "save_screen_package",
+    "sync_falcon_watch_pools",
 ]
+
+
+def sync_falcon_watch_pools(ops, palace_path, *, as_of=None, agent_id=None):
+    """在选股配置/产出变更后，无模型同步本租户猎隼观察池。"""
+    from src.ops.application.falcon_watch_pool import sync_falcon_watch_pools as sync
+    from src.shared.paths import palace_db
+    return sync(ops, str(palace_path or palace_db()), as_of=as_of, agent_id=agent_id)

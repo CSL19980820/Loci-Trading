@@ -1,0 +1,46 @@
+{
+  "created_at": "2026-10-04T17:34:24.221511+08:00",
+  "expanded_high": "precision10((rawH+.01+1e-8)*factorT)",
+  "quote_fields_read": [
+    "high",
+    "source"
+  ],
+  "no_returns": true,
+  "no_network": true,
+  "segments": {
+    "train": {
+      "prepool_code_days": 30770,
+      "expanded_H_only_possible_before_identity": 1405,
+      "actual_minute_targets": 1366,
+      "disposition": {
+        "conditional_high_impossible": 28344,
+        "awaiting_minute": 1366,
+        "current_static_ineligible": 1058,
+        "official_full_day_halt": 2
+      },
+      "target_dates": 260
+    },
+    "validation_2025h2": {
+      "prepool_code_days": 9869,
+      "expanded_H_only_possible_before_identity": 538,
+      "actual_minute_targets": 527,
+      "disposition": {
+        "conditional_high_impossible": 9130,
+        "awaiting_minute": 527,
+        "current_static_ineligible": 212
+      },
+      "target_dates": 110
+    },
+    "observed_2026": {
+      "prepool_code_days": 17378,
+      "expanded_H_only_possible_before_identity": 928,
+      "actual_minute_targets": 907,
+      "disposition": {
+        "conditional_high_impossible": 16067,
+        "awaiting_minute": 907,
+        "current_static_ineligible": 404
+      },
+      "target_dates": 156
+    }
+  }
+}

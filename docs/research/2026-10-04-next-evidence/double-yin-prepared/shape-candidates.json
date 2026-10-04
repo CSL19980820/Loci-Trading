@@ -1,0 +1,810 @@
+{
+  "as_of": "2026-09-30",
+  "planned_target": "2026-10-08",
+  "captured_at": "2026-10-04T18:42:14.316370+08:00",
+  "current_identity_candidate_codes": [
+    "000036",
+    "000068",
+    "002074",
+    "002494",
+    "002799",
+    "600032",
+    "600152",
+    "600189",
+    "600982",
+    "603328"
+  ],
+  "identity_review_codes": [],
+  "full_shape_observation_codes": [
+    "000036",
+    "000068",
+    "002074",
+    "002494",
+    "002799",
+    "600032",
+    "600152",
+    "600189",
+    "600982",
+    "603328"
+  ],
+  "candidates": [
+    {
+      "code": "000036",
+      "name": "华联控股",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 9.92,
+      "yin_volume_ratio": 2.7389,
+      "recent_gain_pct": 10.5,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "000036",
+        "open": 4.13,
+        "high": 4.16,
+        "low": 3.85,
+        "close": 4.08,
+        "volume": 134136500.0,
+        "amount": 536321920.0,
+        "source": "tdx",
+        "receipt_id": "1330602da1564d82a04c8be465f54859",
+        "fetched_at": "2026-10-02 07:10:23",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "000036",
+        "factor": 11.3638654265905,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:56:39",
+        "factor_observation_date": "2023-06-08",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 3.998329462897869,
+      "previous_vwap_economic_exact": 45.43647794754326,
+      "previous_vwap_economic": 45.43647795,
+      "industry": {
+        "industry": "房地产",
+        "industry_l1": "房地产",
+        "industry_l2": "房地产开发",
+        "industry_l3": "房地产开发",
+        "industry_path": "房地产-房地产开发-房地产开发",
+        "groups": [
+          "industry:房地产"
+        ],
+        "source": "eastmoney_orginfo",
+        "fetched_at": "2026-10-04T14:41:08+08:00",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 41.93266342,
+        "economic_high60": 56.47841117,
+        "economic_MA": {
+          "5": 45.637283552,
+          "10": 45.160001204000004,
+          "20": 44.722492386000006
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "000068",
+      "name": "华控赛格",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 9.94,
+      "yin_volume_ratio": 2.2513,
+      "recent_gain_pct": 7.27,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "000068",
+        "open": 3.47,
+        "high": 3.48,
+        "low": 3.23,
+        "close": 3.41,
+        "volume": 78562100.0,
+        "amount": 262906448.0,
+        "source": "tdx",
+        "receipt_id": "0945171bcb364a63bf1dd521477dfc7c",
+        "fetched_at": "2026-10-02 07:10:24",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "000068",
+        "factor": 2.2806292933718,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:56:40",
+        "factor_observation_date": "2008-01-14",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 3.346479383825025,
+      "previous_vwap_economic_exact": 7.632078912416164,
+      "previous_vwap_economic": 7.632078912,
+      "industry": {
+        "industry": "建筑",
+        "industry_l1": "建筑",
+        "industry_l2": "建筑施工",
+        "industry_l3": "专业工程",
+        "industry_path": "建筑-建筑施工-专业工程",
+        "groups": [
+          "industry:建筑"
+        ],
+        "source": "eastmoney_orginfo",
+        "fetched_at": "2026-10-04T14:41:08+08:00",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 5.610348062,
+        "economic_high60": 8.073427699,
+        "economic_MA": {
+          "5": 7.6081793226,
+          "10": 7.5260766682,
+          "20": 7.47590282375
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "002074",
+      "name": "国轩高科",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 10.01,
+      "yin_volume_ratio": 2.589,
+      "recent_gain_pct": 13.05,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "002074",
+        "open": 30.49,
+        "high": 30.49,
+        "low": 28.88,
+        "close": 29.5,
+        "volume": 119465700.0,
+        "amount": 3531351296.0,
+        "source": "tdx",
+        "receipt_id": "3d068e1bafa946e9b38dac7d5415612e",
+        "fetched_at": "2026-10-02 07:10:47",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "002074",
+        "factor": 4.5785588865101,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:57:34",
+        "factor_observation_date": "2026-07-16",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 29.55954132441362,
+      "previous_vwap_economic_exact": 135.34010061205652,
+      "previous_vwap_economic": 135.3401006,
+      "industry": {
+        "fetched_at": "2026-10-03T21:26:40+08:00",
+        "groups": [
+          "industry:电气设备"
+        ],
+        "industry": "电气设备",
+        "industry_l1": "电气设备",
+        "industry_l2": "电源设备",
+        "industry_l3": "储能设备",
+        "industry_path": "电气设备-电源设备-储能设备",
+        "source": "eastmoney_orginfo",
+        "historical_membership": false,
+        "evidence_file": "existing-raw-pool.json",
+        "evidence_file_sha256": "43fbf0a1a4c6596ac765f4fe2fe2570beab67a196aa9ba0688ad2ff44ffef855"
+      },
+      "scoring_inputs": {
+        "economic_low60": 110.6531072,
+        "economic_high60": 139.6002604,
+        "economic_MA": {
+          "5": 126.63378169999999,
+          "10": 123.99653177,
+          "20": 120.84877252999999
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "002494",
+      "name": "华斯股份",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 9.92,
+      "yin_volume_ratio": 2.4781,
+      "recent_gain_pct": 13.92,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "002494",
+        "open": 5.24,
+        "high": 5.24,
+        "low": 4.86,
+        "close": 5.05,
+        "volume": 72706100.0,
+        "amount": 362348640.0,
+        "source": "tdx",
+        "receipt_id": "74fa89b82e8a4ad788231f4de1ad02aa",
+        "fetched_at": "2026-10-02 07:10:56",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "002494",
+        "factor": 2.7014814846668,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:58:12",
+        "factor_observation_date": "2019-05-14",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 4.983744692673655,
+      "previous_vwap_economic_exact": 13.46349401156431,
+      "previous_vwap_economic": 13.46349401,
+      "industry": {
+        "industry": "纺织服装",
+        "industry_l1": "纺织服装",
+        "industry_l2": "服装家纺",
+        "industry_l3": "服装",
+        "industry_path": "纺织服装-服装家纺-服装",
+        "groups": [
+          "industry:纺织服装",
+          "family:consumer"
+        ],
+        "source": "eastmoney_orginfo",
+        "fetched_at": "2026-10-04T14:41:08+08:00",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 10.75189631,
+        "economic_high60": 14.3718815,
+        "economic_MA": {
+          "5": 13.51821335,
+          "10": 13.067065941000001,
+          "20": 12.9765663115
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "002799",
+      "name": "环球印务",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 10.06,
+      "yin_volume_ratio": 3.3193,
+      "recent_gain_pct": 11.19,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "002799",
+        "open": 8.31,
+        "high": 8.31,
+        "low": 7.12,
+        "close": 7.32,
+        "volume": 55780500.0,
+        "amount": 428972768.0,
+        "source": "tdx",
+        "receipt_id": "b25e763b3a334ee7a67bff34923b7254",
+        "fetched_at": "2026-10-02 07:11:26",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "002799",
+        "factor": 2.5845572404754,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:58:37",
+        "factor_observation_date": "2024-08-16",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 7.690371509756994,
+      "previous_vwap_economic_exact": 19.87620536748817,
+      "previous_vwap_economic": 19.87620537,
+      "industry": {
+        "groups": [
+          "industry:轻工制造",
+          "family:consumer"
+        ],
+        "source": "eastmoney_orginfo",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "fetched_at": "2026-10-04T13:03:13.550544+08:00",
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 14.65443955,
+        "economic_high60": 21.47767067,
+        "economic_MA": {
+          "5": 18.288327034,
+          "10": 17.887720661,
+          "20": 17.859290530499997
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "600032",
+      "name": "浙江新能",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 9.96,
+      "yin_volume_ratio": 2.2255,
+      "recent_gain_pct": 13.16,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "600032",
+        "open": 8.09,
+        "high": 8.2,
+        "low": 7.67,
+        "close": 7.7,
+        "volume": 125913000.0,
+        "amount": 987360128.0,
+        "source": "tdx",
+        "receipt_id": "c8b364e9137b4bdb88acba465bf25ed5",
+        "fetched_at": "2026-10-02 07:12:32",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "600032",
+        "factor": 1.0401557469783,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:59:01",
+        "factor_observation_date": "2026-09-21",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 7.841605934256193,
+      "previous_vwap_economic_exact": 8.15649147805572,
+      "previous_vwap_economic": 8.156491478,
+      "industry": {
+        "fetched_at": "2026-10-03T21:26:40+08:00",
+        "groups": [
+          "industry:公用事业"
+        ],
+        "industry": "公用事业",
+        "industry_l1": "公用事业",
+        "industry_l2": "电力",
+        "industry_l3": "新能源发电",
+        "industry_path": "公用事业-电力-新能源发电",
+        "source": "eastmoney_orginfo",
+        "historical_membership": false,
+        "evidence_file": "existing-raw-pool.json",
+        "evidence_file_sha256": "43fbf0a1a4c6596ac765f4fe2fe2570beab67a196aa9ba0688ad2ff44ffef855"
+      },
+      "scoring_inputs": {
+        "economic_low60": 6.53446996,
+        "economic_high60": 8.529277125,
+        "economic_MA": {
+          "5": 7.659706920800001,
+          "10": 7.504694331600001,
+          "20": 7.3774221672
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "600152",
+      "name": "维科技术",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 10.05,
+      "yin_volume_ratio": 2.6976,
+      "recent_gain_pct": 3.48,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "600152",
+        "open": 8.81,
+        "high": 9.07,
+        "low": 8.32,
+        "close": 8.48,
+        "volume": 96526300.0,
+        "amount": 827742080.0,
+        "source": "tdx",
+        "receipt_id": "3cbe34c8b5664dbfb75cec2fb848e0e9",
+        "fetched_at": "2026-10-02 07:12:35",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "600152",
+        "factor": 3.0671517417072,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:59:09",
+        "factor_observation_date": "2016-07-08",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 8.575301031946733,
+      "previous_vwap_economic_exact": 26.301749495798973,
+      "previous_vwap_economic": 26.3017495,
+      "industry": {
+        "groups": [
+          "industry:电气设备"
+        ],
+        "source": "eastmoney_orginfo",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "fetched_at": "2026-10-04T13:03:13.550544+08:00",
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 19.56842811,
+        "economic_high60": 27.8190663,
+        "economic_MA": {
+          "5": 24.396124953999998,
+          "10": 24.420662168,
+          "20": 24.620027031
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "600189",
+      "name": "泉阳泉",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 10.01,
+      "yin_volume_ratio": 2.6051,
+      "recent_gain_pct": 14.49,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "600189",
+        "open": 9.1,
+        "high": 9.1,
+        "low": 8.52,
+        "close": 8.95,
+        "volume": 52495400.0,
+        "amount": 463018880.0,
+        "source": "tdx",
+        "receipt_id": "13de9ced1690487e94df10cb4558819e",
+        "fetched_at": "2026-10-02 07:12:35",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "600189",
+        "factor": 2.7460048963058,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 14:59:12",
+        "factor_observation_date": "2018-07-16",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 8.820180053871386,
+      "previous_vwap_economic_exact": 24.22025761422958,
+      "previous_vwap_economic": 24.22025761,
+      "industry": {
+        "groups": [
+          "industry:食品饮料",
+          "family:consumer"
+        ],
+        "source": "eastmoney_orginfo",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "fetched_at": "2026-10-04T13:03:13.550544+08:00",
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 18.83759359,
+        "economic_high60": 24.98864456,
+        "economic_MA": {
+          "5": 23.901226618000003,
+          "10": 22.860490761,
+          "20": 22.312662784500002
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "600982",
+      "name": "宁波能源",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 10.02,
+      "yin_volume_ratio": 2.2884,
+      "recent_gain_pct": 5.78,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "600982",
+        "open": 5.64,
+        "high": 5.64,
+        "low": 5.27,
+        "close": 5.3,
+        "volume": 111841300.0,
+        "amount": 604049920.0,
+        "source": "tdx",
+        "receipt_id": "0494ebc9c4b5432cbfb86f9b8f84afe3",
+        "fetched_at": "2026-10-02 07:13:13",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "600982",
+        "factor": 4.9046426071336,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 15:00:07",
+        "factor_observation_date": "2026-05-26",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 5.4009558186466,
+      "previous_vwap_economic_exact": 26.489758027380248,
+      "previous_vwap_economic": 26.48975803,
+      "industry": {
+        "groups": [
+          "industry:公用事业"
+        ],
+        "source": "eastmoney_orginfo",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "fetched_at": "2026-10-04T13:03:13.550544+08:00",
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 21.87470603,
+        "economic_high60": 27.6621843,
+        "economic_MA": {
+          "5": 25.00386801,
+          "10": 25.101960863,
+          "20": 24.846919447500003
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    },
+    {
+      "code": "603328",
+      "name": "依顿电子",
+      "current_identity_eligible": true,
+      "identity_review_required": false,
+      "current_identity_exclusions": "",
+      "historical_shape_factors": {
+        "有效历史满足": true,
+        "前日大涨收阳": true,
+        "昨日收阴": true,
+        "昨日倍量": true,
+        "近期涨幅未超限": true
+      },
+      "anchor_gain_pct": 9.98,
+      "yin_volume_ratio": 2.9495,
+      "recent_gain_pct": 6.96,
+      "previous_closed_raw": {
+        "trade_date": "2026-09-30",
+        "code": "603328",
+        "open": 15.0,
+        "high": 15.2,
+        "low": 13.48,
+        "close": 13.83,
+        "volume": 84642300.0,
+        "amount": 1191006336.0,
+        "source": "tdx",
+        "receipt_id": "be4d360f5b37444895c057c41f4b94b6",
+        "fetched_at": "2026-10-02 07:13:25",
+        "quote_row_present": true
+      },
+      "previous_closed_factor": {
+        "trade_date": "2026-09-30",
+        "code": "603328",
+        "factor": 3.0505004314659,
+        "factor_source": "sina",
+        "factor_fetched_at": "2026-09-30 15:00:58",
+        "factor_observation_date": "2026-06-26",
+        "factor_known": true,
+        "uses_future_observation": false
+      },
+      "previous_vwap_known": true,
+      "previous_vwap_raw": 14.071053551238565,
+      "previous_vwap_economic_exact": 42.92375492923303,
+      "previous_vwap_economic": 42.92375493,
+      "industry": {
+        "groups": [
+          "industry:电子设备"
+        ],
+        "source": "eastmoney_orginfo",
+        "classification": "EM2016",
+        "historical_membership": false,
+        "fetched_at": "2026-10-04T13:03:13.550544+08:00",
+        "evidence_file": "docs/research/2026-10-04-double-yin-repair/industry-groups.json",
+        "evidence_file_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+      },
+      "scoring_inputs": {
+        "economic_low60": 24.52602347,
+        "economic_high60": 46.6421516,
+        "economic_MA": {
+          "5": 43.231692116000005,
+          "10": 42.557531518,
+          "20": 39.18977904200001
+        },
+        "score": null,
+        "score_status": "unknown_until_target_open_and_factor_and_identity_validated"
+      },
+      "target_open_raw": null,
+      "target_factor": null,
+      "target_factor_observation_date": null,
+      "target_source_prev_close": null,
+      "target_identity_verified": false,
+      "B_condition": null,
+      "selected_rank": null,
+      "return_value": null
+    }
+  ],
+  "historical_scope_before_low_open_vwap_or_top2": true,
+  "target_inputs_known": false
+}

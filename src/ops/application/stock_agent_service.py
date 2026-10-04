@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
+import logging
+import time
 from zoneinfo import ZoneInfo
 
 from src.ledger import StockAgentStore, mark_guardian_account
-from src.ops.application.stock_agent_prompts import CUSTOM_PHASE_PROMPTS, LEADER_PHASE_PROMPTS, PHASE_NAMES, stock_agent_prompt_config
+from src.ops.application.stock_agent_prompts import CUSTOM_PHASE_PROMPTS, LEADER_PHASE_PROMPTS, FALCON_PHASE_PROMPTS, PHASE_NAMES, stock_agent_prompt_config, phase_prompts
 from src.ops.domain.stock_agent import StockAgentConfig
 
 
@@ -30,7 +33,7 @@ def validate_agent_config(store, config: StockAgentConfig) -> dict:
         if provider.model != config.model:
             raise ValueError("所选模型未启用")
     if not data["prompt"]:
-        data["prompt"] = (LEADER_PHASE_PROMPTS if config.kind == "leader" else CUSTOM_PHASE_PROMPTS)["prompt"]
+        data["prompt"] = phase_prompts(config.kind)["prompt"]
     return data
 
 
@@ -45,6 +48,10 @@ def stock_agent_templates(store) -> dict:
         "leader": StockAgentConfig(name="龙头选手", kind="leader", description="独立研究起爆点 · 首板与龙头接力 · 集中出手，可空仓",
                                    initial_capital_cents=10_000_000, watch_limit=5,
                                    **LEADER_PHASE_PROMPTS, **model).model_dump(),
+        "falcon": StockAgentConfig(name="猎隼", kind="falcon",
+                                   description="只研究量化/技能产出 · 自主超短择时 · 日周复盘与选股判分优化",
+                                   schedule={"weekly_review_enabled": True},
+                                   **FALCON_PHASE_PROMPTS, **model).model_dump(),
     }
 
 
@@ -60,6 +67,11 @@ def schedules(profile: dict) -> list[dict]:
                    "cron": f"*/{schedule['intraday_minutes']} 9-14 * * mon-fri", "enabled": schedule["intraday_enabled"]})
     result.append({"phase": "closeout", "label": "尾盘收敛", "time": "14:50 / 14:55",
                    "cron": "50,55 14 * * mon-fri", "enabled": schedule["intraday_enabled"]})
+    if schedule.get("weekly_review_enabled"):
+        weekly_time = schedule.get("weekly_review_time", "20:30")
+        hour, minute = weekly_time.split(":")
+        result.append({"phase": "weekly_review", "label": PHASE_NAMES["weekly_review"], "time": f"周五 · {weekly_time}",
+                       "cron": f"{int(minute)} {int(hour)} * * fri", "enabled": True})
     return result
 
 
@@ -71,6 +83,14 @@ def ensure_stock_agent_jobs(store, *, palace_path=None) -> dict:
     count = 0
     for profile in profiles:
         cfg = profile["config"]
+        # 开关关闭后仍要停用先前创建的周复盘任务，避免旧cron继续运行。
+        if not cfg["schedule"].get("weekly_review_enabled"):
+            name = f"股票智能体:{profile['id']}:weekly_review"
+            if store.get_job_by_name(name):
+                store.ensure_job(name=name, kind="stock_agent", cron="30 20 * * fri", enabled=False,
+                                 config={"agent_id": profile["id"], "phase": "weekly_review", "revision": profile["revision"],
+                                         "display_name": f"{cfg['name']} · {PHASE_NAMES['weekly_review']}", "managed": True,
+                                         "timezone": "Asia/Shanghai", "timeout_sec": cfg["timeout_seconds"] + 30})
         for item in schedules(profile):
             # ID只用作不可变内部任务键；任何用户界面采用display_name，而非展示编码。
             name = f"股票智能体:{profile['id']}:{item['phase']}"
@@ -83,9 +103,45 @@ def ensure_stock_agent_jobs(store, *, palace_path=None) -> dict:
     return {"jobs": count}
 
 
-def public_profile(profile: dict, *, summary: bool = False) -> dict:
+def public_profile(profile: dict, *, summary: bool = False, ledger=None, refresh_quotes: bool = False) -> dict:
     now = agent_time()
-    state = mark_guardian_account(profile["state"], {}, now)
+    quotes = {}
+    if refresh_quotes:
+        codes = list(dict.fromkeys(row["code"] for key in ("positions", "watchlist") for row in profile["state"].get(key, [])))
+        if codes:
+            try:
+                from src.ops.application.stock_agent_workbench import research_quotes, quote_values
+                quotes = research_quotes(codes, force_refresh=False, now=now, deadline=time.monotonic() + 6)
+                now = agent_time()
+                quotes = {code: quote for code, quote in quotes.items() if quote_values(quote, now)[0] is not None}
+            except Exception:
+                logging.getLogger(__name__).debug("工作台行情暂不可用，保留最后记录的报价", exc_info=True)
+    # 数据源回退到较早快照时，不把已有持仓估值倒退成“最新报价”。
+    for row in profile["state"].get("positions", []):
+        if row["code"] not in quotes:
+            continue
+        try:
+            previous = datetime.fromisoformat(row.get("mark_at") or "")
+            previous = previous.replace(tzinfo=previous.tzinfo or now.tzinfo)
+            from src.ops.application.stock_agent_workbench import quote_values
+            stamp = quote_values(quotes[row["code"]], now)[1]
+            if stamp is not None and datetime.fromisoformat(stamp) < previous:
+                quotes.pop(row["code"])
+        except (ValueError, TypeError):
+            pass
+    state = mark_guardian_account(profile["state"], quotes, now)
+    if not summary:
+        from src.ops.application.stock_agent_workbench import enrich_workbench_state
+        trades = []
+        if ledger is not None and state["positions"]:
+            held = [row["code"] for row in state["positions"]]
+            placeholders = ",".join("?" for _ in held)
+            trades = [json.loads(row[0]) for row in ledger.conn.execute(
+                f"SELECT detail_json FROM stock_agent_trades WHERE agent_id=? AND json_extract(detail_json,'$.code') IN ({placeholders}) ORDER BY at,id", (profile["id"], *held))]
+        state = enrich_workbench_state(state, now=now, trades=trades, quotes=quotes)
+        if profile["config"].get("kind") == "falcon":
+            from src.ops.application.falcon_learning import public_falcon_learning
+            state["falcon_learning"] = public_falcon_learning(state.get("falcon_learning"))
     running = bool(profile["active_run"] and (profile["lease_until"] or "") > now.isoformat())
     status = profile["latest_status"]
     if status == "running" and not running:

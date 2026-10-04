@@ -61,6 +61,12 @@ def build_screen_skills_router(
                 store.ensure_managed_screen_jobs()
         except Exception:  # noqa: BLE001 — 任务同步失败不挡战法保存成功
             logger.exception("战法变更后同步盘后任务失败（slug=%s）", deleted_slug)
+        try:
+            from src.ops import sync_falcon_watch_pools
+            with ops_store(ops_db) as store:
+                sync_falcon_watch_pools(store, None)
+        except Exception:  # noqa: BLE001 — 技能变更已保存，观察池由维护任务重试
+            logger.exception("选股公式变更后同步猎隼观察池失败（slug=%s）", deleted_slug)
         _reload_scheduler()
 
     @router.get("/api/screen-skills", tags=["strategy"])

@@ -287,6 +287,10 @@ export function createCandidate(payload: CandidatePayload): Promise<{ id: string
   })
 }
 
+export function getCandidate(id: string): Promise<Candidate> {
+  return request<Candidate>(`/candidates/${encodeURIComponent(id)}`)
+}
+
 export function deleteCandidate(id: string): Promise<{ removed: boolean }> {
   return request<{ removed: boolean }>(`/candidates/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

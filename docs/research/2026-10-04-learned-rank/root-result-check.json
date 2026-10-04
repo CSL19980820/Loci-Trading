@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "independent_csv_files": 18,
+  "trade_records": 2786,
+  "comparison_rows": 21,
+  "checks": [
+    "economic raw*factor returns",
+    "0.21percent costs",
+    "T+1",
+    "mean/PF against saved summaries",
+    "closed-only per-fill vs unresolved calendar distinction",
+    "0.42cost and fixed largest winner deletion"
+  ],
+  "research_outcome": "No policy passed final protocol; goal remains not achieved."
+}

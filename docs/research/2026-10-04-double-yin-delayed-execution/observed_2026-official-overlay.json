@@ -1,0 +1,37 @@
+[
+  {
+    "date": "2026-07-23",
+    "code": "002036",
+    "original_volume": null,
+    "corrected_execution_volume": 0.0,
+    "reason": "officially_confirmed_suspension"
+  },
+  {
+    "date": "2026-07-24",
+    "code": "002036",
+    "original_volume": null,
+    "corrected_execution_volume": 0.0,
+    "reason": "officially_confirmed_suspension"
+  },
+  {
+    "date": "2026-07-27",
+    "code": "002036",
+    "original_volume": null,
+    "corrected_execution_volume": 0.0,
+    "reason": "officially_confirmed_suspension"
+  },
+  {
+    "date": "2026-07-28",
+    "code": "002036",
+    "original_volume": null,
+    "corrected_execution_volume": 0.0,
+    "reason": "officially_confirmed_suspension"
+  },
+  {
+    "date": "2026-07-29",
+    "code": "002036",
+    "original_volume": null,
+    "corrected_execution_volume": 0.0,
+    "reason": "officially_confirmed_suspension"
+  }
+]

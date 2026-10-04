@@ -1,0 +1,58 @@
+{
+  "recorded_at_utc": "2026-10-04 09:01:16 UTC",
+  "purpose": "Bounded historical minute coverage probes; keys chosen chronologically from already-existing full candidate lists without reading forward outcomes",
+  "probes": [
+    {
+      "request": {
+        "code": "300707",
+        "tradeDate": "2024-01-05",
+        "detailLevel": "raw",
+        "embedStock": false
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `wudao-a-stock/minute_data`\n\nCaused by:\n    Mcp error: -32603: 20240105 暂无完整历史分时数据({\"error\":\"MINUTE_HISTORY_EMPTY\",\"statusCode\":404,\"tool\":\"minute_data\",\"details\":{\"requestedDate\":\"2024-01-05\",\"tradeDate\":\"2024-01-05\"}})"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "request": {
+        "code": "300936",
+        "tradeDate": "2025-07-03",
+        "detailLevel": "raw",
+        "embedStock": false
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `wudao-a-stock/minute_data`\n\nCaused by:\n    Mcp error: -32603: 20250703 暂无完整历史分时数据({\"error\":\"MINUTE_HISTORY_EMPTY\",\"statusCode\":404,\"tool\":\"minute_data\",\"details\":{\"requestedDate\":\"2025-07-03\",\"tradeDate\":\"2025-07-03\"}})"
+          }
+        ],
+        "isError": true
+      }
+    },
+    {
+      "request": {
+        "code": "300298",
+        "tradeDate": "2026-01-05",
+        "detailLevel": "raw",
+        "embedStock": false
+      },
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "tool call error: tool call failed for `wudao-a-stock/minute_data`\n\nCaused by:\n    Mcp error: -32603: 20260105 暂无完整历史分时数据({\"error\":\"MINUTE_HISTORY_EMPTY\",\"statusCode\":404,\"tool\":\"minute_data\",\"details\":{\"requestedDate\":\"2026-01-05\",\"tradeDate\":\"2026-01-05\"}})"
+          }
+        ],
+        "isError": true
+      }
+    }
+  ],
+  "scope": "Single-name failures only; do not infer all vendors/all dates absent. No fallback to current data, no production writes or new strategy results."
+}

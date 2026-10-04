@@ -1,0 +1,9 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,contraction-rebreakout-v1,prior_extreme_lt15,2024-02-21,300973,closed,6.571115879828326
+train,contraction-rebreakout-v1,prior_extreme_lt15,2024-07-25,300963,closed,6.311739130434789
+train,contraction-rebreakout-v1,prior_extreme_lt15,2024-09-19,300598,closed,2.1833102652825778
+train,contraction-rebreakout-v1,prior_extreme_lt15,2024-10-18,300660,closed,0.6175862068965579
+train,contraction-rebreakout-v1,prior_extreme_lt15,2024-10-18,301265,closed,-1.7644041450777146
+train,contraction-rebreakout-v1,prior_extreme_lt15,2025-02-26,301029,closed,-6.210000000000005
+train,contraction-rebreakout-v1,prior_extreme_lt15,2025-03-06,301381,closed,-1.7646218487395124
+train,contraction-rebreakout-v1,prior_extreme_lt15,2025-04-29,301526,closed,1.4072506738544537

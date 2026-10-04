@@ -1,0 +1,96 @@
+{
+  "tdxpy_version": "0.2.7",
+  "source_label_interpretation": "TDX labels synthesized by project; Sina day string supplied by provider; interval boundaries not independently specified",
+  "recent_comparison": {
+    "source_sina_zero_volume_rows": 0,
+    "tdx_zero_volume_rows": 9,
+    "min_cumulative_volume_gap_shares": -6000.0,
+    "max_cumulative_volume_gap_shares": 0.0
+  },
+  "cutoff_prefixes": [
+    {
+      "inclusive_label": "09:31",
+      "tdx_price_samples": 1,
+      "sina_source_bars": 1,
+      "tdx_last_labeled_price": 12.21,
+      "sina_last_source_close": 12.21,
+      "tdx_labeled_cumulative_shares": 91700.0,
+      "sina_source_cumulative_shares": 91700.0,
+      "tdx_sampled_price_max": 12.21,
+      "tdx_sampled_price_min": 12.21,
+      "sina_source_running_high": 12.3,
+      "sina_source_running_low": 12.21,
+      "sina_source_first_open": 12.21
+    },
+    {
+      "inclusive_label": "11:30",
+      "tdx_price_samples": 120,
+      "sina_source_bars": 118,
+      "tdx_last_labeled_price": 12.13,
+      "sina_last_source_close": 12.13,
+      "tdx_labeled_cumulative_shares": 957900.0,
+      "sina_source_cumulative_shares": 957900.0,
+      "tdx_sampled_price_max": 12.21,
+      "tdx_sampled_price_min": 12.08,
+      "sina_source_running_high": 12.3,
+      "sina_source_running_low": 12.07,
+      "sina_source_first_open": 12.21
+    },
+    {
+      "inclusive_label": "13:01",
+      "tdx_price_samples": 121,
+      "sina_source_bars": 119,
+      "tdx_last_labeled_price": 12.13,
+      "sina_last_source_close": 12.13,
+      "tdx_labeled_cumulative_shares": 967400.0,
+      "sina_source_cumulative_shares": 967400.0,
+      "tdx_sampled_price_max": 12.21,
+      "tdx_sampled_price_min": 12.08,
+      "sina_source_running_high": 12.3,
+      "sina_source_running_low": 12.07,
+      "sina_source_first_open": 12.21
+    },
+    {
+      "inclusive_label": "14:50",
+      "tdx_price_samples": 230,
+      "sina_source_bars": 224,
+      "tdx_last_labeled_price": 12.13,
+      "sina_last_source_close": 12.13,
+      "tdx_labeled_cumulative_shares": 1596000.0,
+      "sina_source_cumulative_shares": 1596000.0,
+      "tdx_sampled_price_max": 12.21,
+      "tdx_sampled_price_min": 12.08,
+      "sina_source_running_high": 12.3,
+      "sina_source_running_low": 12.07,
+      "sina_source_first_open": 12.21
+    },
+    {
+      "inclusive_label": "14:55",
+      "tdx_price_samples": 235,
+      "sina_source_bars": 229,
+      "tdx_last_labeled_price": 12.1,
+      "sina_last_source_close": 12.11,
+      "tdx_labeled_cumulative_shares": 1727200.0,
+      "sina_source_cumulative_shares": 1727900.0,
+      "tdx_sampled_price_max": 12.21,
+      "tdx_sampled_price_min": 12.08,
+      "sina_source_running_high": 12.3,
+      "sina_source_running_low": 12.07,
+      "sina_source_first_open": 12.21
+    },
+    {
+      "inclusive_label": "15:00",
+      "tdx_price_samples": 240,
+      "sina_source_bars": 232,
+      "tdx_last_labeled_price": 12.09,
+      "sina_last_source_close": 12.09,
+      "tdx_labeled_cumulative_shares": 1821600.0,
+      "sina_source_cumulative_shares": 1821600.0,
+      "tdx_sampled_price_max": 12.21,
+      "tdx_sampled_price_min": 12.08,
+      "sina_source_running_high": 12.3,
+      "sina_source_running_low": 12.07,
+      "sina_source_first_open": 12.21
+    }
+  ]
+}

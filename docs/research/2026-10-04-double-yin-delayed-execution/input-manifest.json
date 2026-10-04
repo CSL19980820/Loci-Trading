@@ -1,0 +1,116 @@
+{
+  "created_at": "2026-10-04T17:15:14.735085+08:00",
+  "status": "proposal_before_network_and_returns",
+  "source_orders": [
+    {
+      "segment": "train",
+      "policy": "corrected_low_open",
+      "path": "docs/research/2026-10-04-double-yin-vwap/train-corrected_low_open-labels.csv",
+      "sha256": "3496af27406de52fb460a5203f26065fa76f368bab01838993a0a3f2770b037f",
+      "selected_order_count": 513,
+      "key_fields_only": [
+        "decision_date",
+        "code"
+      ],
+      "no_terminal_return_filter": true
+    },
+    {
+      "segment": "train",
+      "policy": "yin_close_and_open_above_vwap",
+      "path": "docs/research/2026-10-04-double-yin-vwap/train-yin_close_and_open_above_vwap-labels.csv",
+      "sha256": "927a4e7c93b8c3ae16b36981981c129f531fea0db3e3ebf442794aaf5b78e83e",
+      "selected_order_count": 58,
+      "key_fields_only": [
+        "decision_date",
+        "code"
+      ],
+      "no_terminal_return_filter": true
+    },
+    {
+      "segment": "validation_2025h2",
+      "policy": "corrected_low_open",
+      "path": "docs/research/2026-10-04-double-yin-vwap/data-correction/validation_2025h2-corrected_low_open-labels.csv",
+      "sha256": "f771d977fb9df1a1496e88248e24f2009ed50f80bf169521327668174cc6afa9",
+      "selected_order_count": 190,
+      "key_fields_only": [
+        "decision_date",
+        "code"
+      ],
+      "no_terminal_return_filter": true
+    },
+    {
+      "segment": "validation_2025h2",
+      "policy": "yin_close_and_open_above_vwap",
+      "path": "docs/research/2026-10-04-double-yin-vwap/data-correction/validation_2025h2-yin_close_and_open_above_vwap-labels.csv",
+      "sha256": "86f12e90c43e56de5206f73b2eada0ff5046f1e172cffc5bdb68fb82818c63e2",
+      "selected_order_count": 19,
+      "key_fields_only": [
+        "decision_date",
+        "code"
+      ],
+      "no_terminal_return_filter": true
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "corrected_low_open",
+      "path": "docs/research/2026-10-04-double-yin-vwap/data-correction/observed_2026-corrected_low_open-labels.csv",
+      "sha256": "515eca432452953483aef619da06d0f835c4fad73791b4850e810ec45db7a3c1",
+      "selected_order_count": 263,
+      "key_fields_only": [
+        "decision_date",
+        "code"
+      ],
+      "no_terminal_return_filter": true
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "yin_close_and_open_above_vwap",
+      "path": "docs/research/2026-10-04-double-yin-vwap/data-correction/observed_2026-yin_close_and_open_above_vwap-labels.csv",
+      "sha256": "1c560e6cb5afade36a42965c9bf768910b63aaeaae7c7e07de8362688ff4b46d",
+      "selected_order_count": 61,
+      "key_fields_only": [
+        "decision_date",
+        "code"
+      ],
+      "no_terminal_return_filter": true
+    }
+  ],
+  "keyset_sha256": "0c51a43bffa78aacb28064354a16ba22c23af442d6fca2775945e4c62c707ac7",
+  "segments": [
+    {
+      "segment": "train",
+      "low_orders": 513,
+      "B_orders": 58,
+      "unique_code_days": 554,
+      "overlap": 17,
+      "decision_dates": 304
+    },
+    {
+      "segment": "validation_2025h2",
+      "low_orders": 190,
+      "B_orders": 19,
+      "unique_code_days": 206,
+      "overlap": 3,
+      "decision_dates": 110
+    },
+    {
+      "segment": "observed_2026",
+      "low_orders": 263,
+      "B_orders": 61,
+      "unique_code_days": 309,
+      "overlap": 15,
+      "decision_dates": 156
+    }
+  ],
+  "unique_code_days": 1069,
+  "unique_codes": 741,
+  "unique_dates": 570,
+  "official_suspension_entries": 1,
+  "proposed_required_network_code_days": 1068,
+  "existing_probe_key_hits": 0,
+  "original_plan_sha256": "a22f4980c5772e1d789eb83182d7b39d8141d5ef802edcef0cbeba290c884dd0",
+  "official_correction_plan_sha256": "ecae0e328c792f53b746117689aa32222fe0e6aa494d506107eb118db3d4b37a",
+  "daily_snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "no_new_requests": true,
+  "no_new_returns": true
+}

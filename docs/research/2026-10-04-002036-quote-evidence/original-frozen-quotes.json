@@ -1,0 +1,84 @@
+{
+  "captured_at": "2026-10-04T16:34:23.330361+08:00",
+  "snapshot_sha256": {
+    ".local\\chinext-payoff-20261004\\market.db": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+    ".local\\multi-strategy-scoring-20261004\\market.db": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c"
+  },
+  "rows": {
+    ".local\\chinext-payoff-20261004\\market.db": [],
+    ".local\\multi-strategy-scoring-20261004\\market.db": [
+      {
+        "trade_date": "2026-07-22",
+        "code": "002036",
+        "open": 7.48,
+        "high": 7.69,
+        "low": 6.9,
+        "close": 7.23,
+        "volume": 123608300.0,
+        "amount": 888461632.0,
+        "source": "tdx",
+        "fetched_at": "2026-09-11 12:25:26"
+      },
+      {
+        "trade_date": "2026-07-23",
+        "code": "002036",
+        "open": 7.23,
+        "high": 7.23,
+        "low": 7.23,
+        "close": 7.23,
+        "volume": null,
+        "amount": null,
+        "source": "tencent",
+        "fetched_at": "2026-08-24 16:27:44"
+      },
+      {
+        "trade_date": "2026-07-24",
+        "code": "002036",
+        "open": 7.23,
+        "high": 7.23,
+        "low": 7.23,
+        "close": 7.23,
+        "volume": null,
+        "amount": null,
+        "source": "tencent",
+        "fetched_at": "2026-08-24 16:27:44"
+      },
+      {
+        "trade_date": "2026-07-27",
+        "code": "002036",
+        "open": 7.23,
+        "high": 7.23,
+        "low": 7.23,
+        "close": 7.23,
+        "volume": null,
+        "amount": null,
+        "source": "tencent",
+        "fetched_at": "2026-08-24 16:27:44"
+      },
+      {
+        "trade_date": "2026-07-28",
+        "code": "002036",
+        "open": 7.23,
+        "high": 7.23,
+        "low": 7.23,
+        "close": 7.23,
+        "volume": null,
+        "amount": null,
+        "source": "tencent",
+        "fetched_at": "2026-08-24 16:27:44"
+      },
+      {
+        "trade_date": "2026-07-29",
+        "code": "002036",
+        "open": 7.23,
+        "high": 7.23,
+        "low": 7.23,
+        "close": 7.23,
+        "volume": null,
+        "amount": null,
+        "source": "tencent",
+        "fetched_at": "2026-08-24 16:27:44"
+      }
+    ]
+  }
+}

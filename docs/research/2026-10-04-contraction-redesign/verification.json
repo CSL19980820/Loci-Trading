@@ -1,0 +1,1130 @@
+{
+  "verified_at": "2026-10-04T13:51:42.142382+08:00",
+  "status": "passed",
+  "method": "Independent stdlib/numpy CSV reconstruction; no research scoring, metric, ranking, nomination or bootstrap helpers imported",
+  "checks": {
+    "train": {
+      "baseline": {
+        "planned": 226,
+        "trades": 226,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 226,
+            "win_rate": 45.13274336283185,
+            "avg_net_return": 0.7042452607291924,
+            "profit_factor": 1.2509635091252853,
+            "payoff_ratio": 1.5207791679562292,
+            "original_opportunity_mean": 0.7042452607291924
+          },
+          "double_cost": {
+            "trades": 226,
+            "win_rate": 43.80530973451327,
+            "avg_net_return": 0.49424526072919234,
+            "profit_factor": 1.1691274553374826,
+            "payoff_ratio": 1.4997897659379826,
+            "original_opportunity_mean": 0.49424526072919234
+          },
+          "winner_removed": {
+            "trades": 225,
+            "win_rate": 44.888888888888886,
+            "avg_net_return": 0.5585759526782441,
+            "profit_factor": 1.1981723042262082,
+            "payoff_ratio": 1.4710234230103942,
+            "original_opportunity_mean": 0.5561043776663934
+          },
+          "double_cost_winner_removed": {
+            "trades": 225,
+            "win_rate": 43.55555555555555,
+            "avg_net_return": 0.34857595267824437,
+            "profit_factor": 1.1187525934380587,
+            "payoff_ratio": 1.4498120343534024,
+            "original_opportunity_mean": 0.3470335812062167
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            0.0,
+            0.0
+          ],
+          "point_delta_per_opportunity": 0.0
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 0
+      },
+      "shape_without_momentum": {
+        "planned": 226,
+        "trades": 226,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 226,
+            "win_rate": 45.13274336283185,
+            "avg_net_return": 0.3205901596665123,
+            "profit_factor": 1.1145186913242628,
+            "payoff_ratio": 1.3549050757275352,
+            "original_opportunity_mean": 0.3205901596665123
+          },
+          "double_cost": {
+            "trades": 226,
+            "win_rate": 43.36283185840708,
+            "avg_net_return": 0.1105901596665124,
+            "profit_factor": 1.0379243276337866,
+            "payoff_ratio": 1.3556562646645376,
+            "original_opportunity_mean": 0.1105901596665124
+          },
+          "winner_removed": {
+            "trades": 225,
+            "win_rate": 44.888888888888886,
+            "avg_net_return": 0.13151516585118148,
+            "profit_factor": 1.0467709406614825,
+            "payoff_ratio": 1.2851445212081567,
+            "original_opportunity_mean": 0.13093324033856563
+          },
+          "double_cost_winner_removed": {
+            "trades": 225,
+            "win_rate": 43.111111111111114,
+            "avg_net_return": -0.07848483414881832,
+            "profit_factor": 0.9732045392845503,
+            "payoff_ratio": 1.2842286703961077,
+            "original_opportunity_mean": -0.07813755612161116
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.6790315343801683,
+            -0.05550879612569343
+          ],
+          "point_delta_per_opportunity": -0.38365510106268014
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 11.553862576254618
+      },
+      "support_efficiency": {
+        "planned": 226,
+        "trades": 226,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 226,
+            "win_rate": 46.46017699115044,
+            "avg_net_return": 0.31627754545860026,
+            "profit_factor": 1.1170754604580992,
+            "payoff_ratio": 1.2872964830040954,
+            "original_opportunity_mean": 0.31627754545860026
+          },
+          "double_cost": {
+            "trades": 226,
+            "win_rate": 44.24778761061947,
+            "avg_net_return": 0.10627754545860024,
+            "profit_factor": 1.0377472409209294,
+            "payoff_ratio": 1.3075615235603713,
+            "original_opportunity_mean": 0.10627754545860024
+          },
+          "winner_removed": {
+            "trades": 225,
+            "win_rate": 46.22222222222222,
+            "avg_net_return": 0.168883936450894,
+            "profit_factor": 1.0622386174817875,
+            "payoff_ratio": 1.235873776108618,
+            "original_opportunity_mean": 0.16813666239580155
+          },
+          "double_cost_winner_removed": {
+            "trades": 225,
+            "win_rate": 44.0,
+            "avg_net_return": -0.04111606354910604,
+            "profit_factor": 0.98546117513582,
+            "payoff_ratio": 1.2542233138092254,
+            "original_opportunity_mean": -0.04093413406437549
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -1.0358078806907298,
+            0.17663978799535218
+          ],
+          "point_delta_per_opportunity": -0.38796771527059204
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 52.03789117245856
+      },
+      "quiet_breakout": {
+        "planned": 226,
+        "trades": 226,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 226,
+            "win_rate": 44.690265486725664,
+            "avg_net_return": 0.37726977382671134,
+            "profit_factor": 1.1361746692233827,
+            "payoff_ratio": 1.4061567688408203,
+            "original_opportunity_mean": 0.37726977382671134
+          },
+          "double_cost": {
+            "trades": 226,
+            "win_rate": 42.47787610619469,
+            "avg_net_return": 0.16726977382671115,
+            "profit_factor": 1.057914454672557,
+            "payoff_ratio": 1.4325924907024208,
+            "original_opportunity_mean": 0.16726977382671115
+          },
+          "winner_removed": {
+            "trades": 225,
+            "win_rate": 44.44444444444444,
+            "avg_net_return": 0.2301472413895297,
+            "profit_factor": 1.0827035534620593,
+            "payoff_ratio": 1.353379441827574,
+            "original_opportunity_mean": 0.2291288907639123
+          },
+          "double_cost_winner_removed": {
+            "trades": 225,
+            "win_rate": 42.22222222222222,
+            "avg_net_return": 0.02014724138952986,
+            "profit_factor": 1.0069447908417395,
+            "payoff_ratio": 1.3779244506255384,
+            "original_opportunity_mean": 0.02005809430373548
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.7466277803419366,
+            0.10526604137644736
+          ],
+          "point_delta_per_opportunity": -0.3269754869024812
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": -22.402531208889812
+      },
+      "thrust_quality": {
+        "planned": 226,
+        "trades": 226,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 226,
+            "win_rate": 47.34513274336283,
+            "avg_net_return": 1.2065019109424262,
+            "profit_factor": 1.4312741147669288,
+            "payoff_ratio": 1.5917908379183598,
+            "original_opportunity_mean": 1.2065019109424262
+          },
+          "double_cost": {
+            "trades": 226,
+            "win_rate": 46.46017699115044,
+            "avg_net_return": 0.9965019109424262,
+            "profit_factor": 1.3425985251456076,
+            "payoff_ratio": 1.5471849670725575,
+            "original_opportunity_mean": 0.9965019109424262
+          },
+          "winner_removed": {
+            "trades": 225,
+            "win_rate": 47.11111111111111,
+            "avg_net_return": 0.8644103782168657,
+            "profit_factor": 1.3076234437887313,
+            "payoff_ratio": 1.4679923567062172,
+            "original_opportunity_mean": 0.8605855535344903
+          },
+          "double_cost_winner_removed": {
+            "trades": 225,
+            "win_rate": 46.22222222222222,
+            "avg_net_return": 0.6544103782168657,
+            "profit_factor": 1.2239915372296308,
+            "payoff_ratio": 1.42406707696909,
+            "original_opportunity_mean": 0.6515147570743132
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.35976562363562525,
+            1.325437531626476
+          ],
+          "point_delta_per_opportunity": 0.5022566502132338
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 121.97245216193416
+      },
+      "decisive_breakout_gate": {
+        "planned": 142,
+        "trades": 142,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 142,
+            "win_rate": 54.22535211267606,
+            "avg_net_return": 2.6247955384279416,
+            "profit_factor": 2.180310244126293,
+            "payoff_ratio": 1.8405216346520656,
+            "original_opportunity_mean": 1.649207816180388
+          },
+          "double_cost": {
+            "trades": 142,
+            "win_rate": 53.52112676056338,
+            "avg_net_return": 2.414795538427942,
+            "profit_factor": 2.040802924210629,
+            "payoff_ratio": 1.772276223656599,
+            "original_opportunity_mean": 1.517260913525521
+          },
+          "winner_removed": {
+            "trades": 141,
+            "win_rate": 53.90070921985816,
+            "avg_net_return": 2.3652741395846615,
+            "profit_factor": 2.056119226765867,
+            "payoff_ratio": 1.7585230228918596,
+            "original_opportunity_mean": 1.4756798835461828
+          },
+          "double_cost_winner_removed": {
+            "trades": 141,
+            "win_rate": 53.191489361702125,
+            "avg_net_return": 2.1552741395846624,
+            "profit_factor": 1.922404525915997,
+            "payoff_ratio": 1.6917159828060775,
+            "original_opportunity_mean": 1.3446621844311388
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            0.49791141010663276,
+            1.4413062503603913
+          ],
+          "point_delta_per_opportunity": 0.9449625554511958
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 66.58007704116883
+      },
+      "close_cap_limit": {
+        "planned": 226,
+        "trades": 217,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 217,
+            "win_rate": 44.23963133640553,
+            "avg_net_return": 0.4832299658056234,
+            "profit_factor": 1.173173125349448,
+            "payoff_ratio": 1.4786869600758668,
+            "original_opportunity_mean": 0.4639862946009747
+          },
+          "double_cost": {
+            "trades": 217,
+            "win_rate": 43.31797235023041,
+            "avg_net_return": 0.2732299658056234,
+            "profit_factor": 1.0939560997591755,
+            "payoff_ratio": 1.4314531943657296,
+            "original_opportunity_mean": 0.26234912645938174
+          },
+          "winner_removed": {
+            "trades": 216,
+            "win_rate": 43.98148148148148,
+            "avg_net_return": 0.34766709026248543,
+            "profit_factor": 1.1240178612434886,
+            "payoff_ratio": 1.4316438022153908,
+            "original_opportunity_mean": 0.33228359069334895
+          },
+          "double_cost_winner_removed": {
+            "trades": 216,
+            "win_rate": 43.05555555555556,
+            "avg_net_return": 0.1376670902624855,
+            "profit_factor": 1.0471216840619073,
+            "payoff_ratio": 1.3849028724689743,
+            "original_opportunity_mean": 0.13157562609157905
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.5689508231661153,
+            0.06328463430055142
+          ],
+          "point_delta_per_opportunity": -0.24025896612821776
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 0
+      },
+      "platform_retest_limit": {
+        "planned": 226,
+        "trades": 159,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 159,
+            "win_rate": 43.39622641509434,
+            "avg_net_return": 0.7567519021794903,
+            "profit_factor": 1.2907416885256446,
+            "payoff_ratio": 1.6835761154682323,
+            "original_opportunity_mean": 0.5324050993209688
+          },
+          "double_cost": {
+            "trades": 159,
+            "win_rate": 43.39622641509434,
+            "avg_net_return": 0.5467519021794904,
+            "profit_factor": 1.2008861470575134,
+            "payoff_ratio": 1.566373235292409,
+            "original_opportunity_mean": 0.38466173648911056
+          },
+          "winner_removed": {
+            "trades": 158,
+            "win_rate": 43.037974683544306,
+            "avg_net_return": 0.5731565909076932,
+            "profit_factor": 1.218820013533551,
+            "payoff_ratio": 1.6131441355591116,
+            "original_opportunity_mean": 0.40070239541334307
+          },
+          "double_cost_winner_removed": {
+            "trades": 158,
+            "win_rate": 43.037974683544306,
+            "avg_net_return": 0.36315659090769337,
+            "profit_factor": 1.132590857627664,
+            "payoff_ratio": 1.499017311566026,
+            "original_opportunity_mean": 0.25388823612130773
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.8412982441368173,
+            0.43593104035545027
+          ],
+          "point_delta_per_opportunity": -0.1718401614082235
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 0
+      },
+      "thrust_close_cap_limit": {
+        "planned": 226,
+        "trades": 216,
+        "opportunities": 226,
+        "metrics": {
+          "base": {
+            "trades": 216,
+            "win_rate": 46.2962962962963,
+            "avg_net_return": 0.6023280204385953,
+            "profit_factor": 1.2133027078120344,
+            "payoff_ratio": 1.4074311410619598,
+            "original_opportunity_mean": 0.5756763381183035
+          },
+          "double_cost": {
+            "trades": 216,
+            "win_rate": 45.83333333333333,
+            "avg_net_return": 0.3923280204385952,
+            "profit_factor": 1.1335941435353551,
+            "payoff_ratio": 1.3397021696326925,
+            "original_opportunity_mean": 0.37496837351653345
+          },
+          "winner_removed": {
+            "trades": 215,
+            "win_rate": 46.04651162790698,
+            "avg_net_return": 0.47312045763603744,
+            "profit_factor": 1.1667706946106513,
+            "payoff_ratio": 1.3671252583316722,
+            "original_opportunity_mean": 0.4500924707599471
+          },
+          "double_cost_winner_removed": {
+            "trades": 215,
+            "win_rate": 45.58139534883721,
+            "avg_net_return": 0.2631204576360376,
+            "profit_factor": 1.089182043137799,
+            "payoff_ratio": 1.3003499902767601,
+            "original_opportunity_mean": 0.2503137096980004
+          }
+        },
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.9927109807228666,
+            0.5975020282146225
+          ],
+          "point_delta_per_opportunity": -0.12856892261088904
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 21.795344411898473
+      }
+    },
+    "validation_2025h2": {
+      "baseline": {
+        "planned": 116,
+        "trades": 116,
+        "opportunities": 116,
+        "metrics": {
+          "base": {
+            "trades": 116,
+            "win_rate": 39.6551724137931,
+            "avg_net_return": -0.07658581989693332,
+            "profit_factor": 0.9731622852301033,
+            "payoff_ratio": 1.4808991296979832,
+            "original_opportunity_mean": -0.07658581989693332
+          },
+          "double_cost": {
+            "trades": 116,
+            "win_rate": 37.93103448275862,
+            "avg_net_return": -0.28658581989693316,
+            "profit_factor": 0.903928695874686,
+            "payoff_ratio": 1.4791560477949408,
+            "original_opportunity_mean": -0.28658581989693316
+          },
+          "winner_removed": {
+            "trades": 115,
+            "win_rate": 39.130434782608695,
+            "avg_net_return": -0.33170062945728074,
+            "profit_factor": 0.8847652898937383,
+            "payoff_ratio": 1.376301562056926,
+            "original_opportunity_mean": -0.3288411412723042
+          },
+          "double_cost_winner_removed": {
+            "trades": 115,
+            "win_rate": 37.391304347826086,
+            "avg_net_return": -0.5417006294572806,
+            "profit_factor": 0.8199727781770401,
+            "payoff_ratio": 1.372977675087137,
+            "original_opportunity_mean": -0.5370307964447177
+          }
+        },
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            0.0,
+            0.0
+          ],
+          "point_delta_per_opportunity": 0.0
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 0
+      },
+      "decisive_breakout_gate": {
+        "planned": 79,
+        "trades": 79,
+        "opportunities": 116,
+        "metrics": {
+          "base": {
+            "trades": 79,
+            "win_rate": 39.24050632911392,
+            "avg_net_return": -0.37686847785021144,
+            "profit_factor": 0.87304562039053,
+            "payoff_ratio": 1.3518125735079174,
+            "original_opportunity_mean": -0.2566604288807474
+          },
+          "double_cost": {
+            "trades": 79,
+            "win_rate": 39.24050632911392,
+            "avg_net_return": -0.5868684778502112,
+            "profit_factor": 0.8104509333604484,
+            "payoff_ratio": 1.25489176778392,
+            "original_opportunity_mean": -0.3996776702600576
+          },
+          "winner_removed": {
+            "trades": 78,
+            "win_rate": 38.46153846153847,
+            "avg_net_return": -0.7568490644834579,
+            "profit_factor": 0.7482701808416566,
+            "payoff_ratio": 1.1972322893466505,
+            "original_opportunity_mean": -0.5089157502561182
+          },
+          "double_cost_winner_removed": {
+            "trades": 78,
+            "win_rate": 38.46153846153847,
+            "avg_net_return": -0.9668490644834578,
+            "profit_factor": 0.6916761929094525,
+            "payoff_ratio": 1.1066819086551238,
+            "original_opportunity_mean": -0.6501226468078423
+          }
+        },
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -1.317399365862632,
+            0.7094607108211435
+          ],
+          "point_delta_per_opportunity": -0.18007460898381414
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": -23.146490226011927
+      },
+      "thrust_quality": {
+        "planned": 116,
+        "trades": 116,
+        "opportunities": 116,
+        "metrics": {
+          "base": {
+            "trades": 116,
+            "win_rate": 39.6551724137931,
+            "avg_net_return": -0.16079337288049922,
+            "profit_factor": 0.9432431300100095,
+            "payoff_ratio": 1.4353699804500144,
+            "original_opportunity_mean": -0.16079337288049922
+          },
+          "double_cost": {
+            "trades": 116,
+            "win_rate": 38.793103448275865,
+            "avg_net_return": -0.3707933728804991,
+            "profit_factor": 0.874765077321215,
+            "payoff_ratio": 1.3801848997734725,
+            "original_opportunity_mean": -0.3707933728804991
+          },
+          "winner_removed": {
+            "trades": 115,
+            "win_rate": 39.130434782608695,
+            "avg_net_return": -0.416640422032008,
+            "profit_factor": 0.8542020070886949,
+            "payoff_ratio": 1.3287586776935254,
+            "original_opportunity_mean": -0.41304869425587
+          },
+          "double_cost_winner_removed": {
+            "trades": 115,
+            "win_rate": 38.26086956521739,
+            "avg_net_return": -0.626640422032008,
+            "profit_factor": 0.7901776505568211,
+            "payoff_ratio": 1.275059390671234,
+            "original_opportunity_mean": -0.6212383494282838
+          }
+        },
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.24597921258329514,
+            0.09418727221077469
+          ],
+          "point_delta_per_opportunity": -0.08420755298356589
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": -22.006525723319648
+      }
+    },
+    "observed_2026": {
+      "baseline": {
+        "planned": 185,
+        "trades": 185,
+        "opportunities": 185,
+        "metrics": {
+          "base": {
+            "trades": 185,
+            "win_rate": 38.91891891891892,
+            "avg_net_return": -0.2855396260519878,
+            "profit_factor": 0.9114260374700234,
+            "payoff_ratio": 1.4304325310293424,
+            "original_opportunity_mean": -0.2855396260519878
+          },
+          "double_cost": {
+            "trades": 185,
+            "win_rate": 38.37837837837838,
+            "avg_net_return": -0.49553962605198776,
+            "profit_factor": 0.8521665652877256,
+            "payoff_ratio": 1.3682674428563484,
+            "original_opportunity_mean": -0.49553962605198776
+          },
+          "winner_removed": {
+            "trades": 184,
+            "win_rate": 38.58695652173913,
+            "avg_net_return": -0.4521237518198377,
+            "profit_factor": 0.8605099900908263,
+            "payoff_ratio": 1.369544068736104,
+            "original_opportunity_mean": -0.4496798396478386
+          },
+          "double_cost_winner_removed": {
+            "trades": 184,
+            "win_rate": 38.04347826086957,
+            "avg_net_return": -0.6621237518198376,
+            "profit_factor": 0.8035375569148143,
+            "payoff_ratio": 1.308618306975555,
+            "original_opportunity_mean": -0.6585447045127034
+          }
+        },
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            0.0,
+            0.0
+          ],
+          "point_delta_per_opportunity": 0.0
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 0
+      },
+      "decisive_breakout_gate": {
+        "planned": 134,
+        "trades": 134,
+        "opportunities": 185,
+        "metrics": {
+          "base": {
+            "trades": 134,
+            "win_rate": 40.298507462686565,
+            "avg_net_return": 0.07750726451717807,
+            "profit_factor": 1.0244374531379026,
+            "payoff_ratio": 1.5176851157598557,
+            "original_opportunity_mean": 0.05614039700163168
+          },
+          "double_cost": {
+            "trades": 134,
+            "win_rate": 39.55223880597015,
+            "avg_net_return": -0.13249273548282195,
+            "profit_factor": 0.9598145549281445,
+            "payoff_ratio": 1.4668863952675415,
+            "original_opportunity_mean": -0.09596771110647645
+          },
+          "winner_removed": {
+            "trades": 133,
+            "win_rate": 39.849624060150376,
+            "avg_net_return": -0.15022530879646998,
+            "profit_factor": 0.9529885679852493,
+            "payoff_ratio": 1.4384733101664142,
+            "original_opportunity_mean": -0.10799981659421895
+          },
+          "double_cost_winner_removed": {
+            "trades": 133,
+            "win_rate": 39.097744360902254,
+            "avg_net_return": -0.36022530879646997,
+            "profit_factor": 0.8915579345358033,
+            "payoff_ratio": 1.388772936488463,
+            "original_opportunity_mean": -0.25897278956719194
+          }
+        },
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.26121593329032544,
+            0.9541391741431824
+          ],
+          "point_delta_per_opportunity": 0.3416800230536195
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 65.52690289700467
+      },
+      "thrust_quality": {
+        "planned": 185,
+        "trades": 185,
+        "opportunities": 185,
+        "metrics": {
+          "base": {
+            "trades": 185,
+            "win_rate": 41.08108108108108,
+            "avg_net_return": 0.060573528504096544,
+            "profit_factor": 1.0193602386087937,
+            "payoff_ratio": 1.4619771843205065,
+            "original_opportunity_mean": 0.060573528504096544
+          },
+          "double_cost": {
+            "trades": 185,
+            "win_rate": 40.54054054054054,
+            "avg_net_return": -0.14942647149590313,
+            "profit_factor": 0.9540578202340853,
+            "payoff_ratio": 1.3992848030099916,
+            "original_opportunity_mean": -0.14942647149590313
+          },
+          "winner_removed": {
+            "trades": 184,
+            "win_rate": 40.76086956521739,
+            "avg_net_return": -0.19253262222771758,
+            "profit_factor": 0.9387962188962874,
+            "payoff_ratio": 1.3643838381292708,
+            "original_opportunity_mean": -0.191491905350811
+          },
+          "double_cost_winner_removed": {
+            "trades": 184,
+            "win_rate": 40.21739130434783,
+            "avg_net_return": -0.40253262222771724,
+            "profit_factor": 0.8769076019555618,
+            "payoff_ratio": 1.3035113002042136,
+            "original_opportunity_mean": -0.4003567702156755
+          }
+        },
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.33258615747723913,
+            1.1454860926076036
+          ],
+          "point_delta_per_opportunity": 0.3461131545560845
+        },
+        "ranking_reconstructed": true,
+        "refill_sum": 57.93887147943857
+      }
+    }
+  },
+  "pooled": {
+    "baseline": {
+      "metrics": {
+        "base": {
+          "trades": 527,
+          "win_rate": 41.745730550284634,
+          "avg_net_return": 0.18491583111410895,
+          "profit_factor": 1.0624039228391435,
+          "payoff_ratio": 1.4825363832346232,
+          "original_opportunity_mean": 0.18491583111410895
+        },
+        "double_cost": {
+          "trades": 527,
+          "win_rate": 40.60721062618596,
+          "avg_net_return": -0.02508416888589089,
+          "profit_factor": 0.9918730225325394,
+          "payoff_ratio": 1.45073016847049,
+          "original_opportunity_mean": -0.02508416888589089
+        },
+        "winner_removed": {
+          "trades": 526,
+          "win_rate": 41.634980988593156,
+          "avg_net_return": 0.12161749700559492,
+          "profit_factor": 1.040964625354042,
+          "payoff_ratio": 1.4592517807474472,
+          "original_opportunity_mean": 0.12138672376649512
+        },
+        "double_cost_winner_removed": {
+          "trades": 526,
+          "win_rate": 40.49429657794677,
+          "avg_net_return": -0.08838250299440491,
+          "profit_factor": 0.971419437952696,
+          "payoff_ratio": 1.427484901780253,
+          "original_opportunity_mean": -0.08821479426007017
+        }
+      },
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.0,
+          0.0
+        ],
+        "point_delta_per_opportunity": 0.0
+      },
+      "post_train_metrics": {
+        "base": {
+          "trades": 301,
+          "win_rate": 39.202657807308974,
+          "avg_net_return": -0.2050125778327642,
+          "profit_factor": 0.9334616862256785,
+          "payoff_ratio": 1.4476566828754165,
+          "original_opportunity_mean": -0.2050125778327642
+        },
+        "double_cost": {
+          "trades": 301,
+          "win_rate": 38.205980066445186,
+          "avg_net_return": -0.41501257783276396,
+          "profit_factor": 0.8707054502125043,
+          "payoff_ratio": 1.4082714238219636,
+          "original_opportunity_mean": -0.41501257783276396
+        },
+        "winner_removed": {
+          "trades": 300,
+          "win_rate": 39.0,
+          "avg_net_return": -0.3069157514763146,
+          "profit_factor": 0.9007192107233227,
+          "payoff_ratio": 1.4088172270287866,
+          "original_opportunity_mean": -0.3058960978169249
+        },
+        "double_cost_winner_removed": {
+          "trades": 300,
+          "win_rate": 38.0,
+          "avg_net_return": -0.5169157514763145,
+          "profit_factor": 0.8394931822250555,
+          "payoff_ratio": 1.369699402577722,
+          "original_opportunity_mean": -0.5151984233983201
+        }
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.0,
+          0.0
+        ],
+        "point_delta_per_opportunity": 0.0
+      }
+    },
+    "decisive_breakout_gate": {
+      "metrics": {
+        "base": {
+          "trades": 355,
+          "win_rate": 45.63380281690141,
+          "avg_net_return": 0.9953079722588815,
+          "profit_factor": 1.3622831864505558,
+          "payoff_ratio": 1.622967006079983,
+          "original_opportunity_mean": 0.6704636245766659
+        },
+        "double_cost": {
+          "trades": 355,
+          "win_rate": 45.07042253521127,
+          "avg_net_return": 0.7853079722588814,
+          "profit_factor": 1.2744332558742357,
+          "payoff_ratio": 1.5532155305967248,
+          "original_opportunity_mean": 0.5290025240074059
+        },
+        "winner_removed": {
+          "trades": 354,
+          "win_rate": 45.48022598870056,
+          "avg_net_return": 0.8873362072784532,
+          "profit_factor": 1.3220726214874325,
+          "payoff_ratio": 1.5848448195470468,
+          "original_opportunity_mean": 0.596047471302794
+        },
+        "double_cost_winner_removed": {
+          "trades": 354,
+          "win_rate": 44.91525423728814,
+          "avg_net_return": 0.6773362072784535,
+          "profit_factor": 1.2360347424355294,
+          "payoff_ratio": 1.5158916652511207,
+          "original_opportunity_mean": 0.45498485270696876
+        }
+      },
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.09947632250564453,
+          0.8702035508874704
+        ],
+        "point_delta_per_opportunity": 0.48554779346255683
+      },
+      "post_train_metrics": {
+        "base": {
+          "trades": 213,
+          "win_rate": 39.906103286384976,
+          "avg_net_return": -0.09101707185382557,
+          "profit_factor": 0.9706047755193088,
+          "payoff_ratio": 1.4616166031349591,
+          "original_opportunity_mean": -0.0644074295842686
+        },
+        "double_cost": {
+          "trades": 213,
+          "win_rate": 39.436619718309856,
+          "avg_net_return": -0.3010170718538255,
+          "profit_factor": 0.9065895263285133,
+          "payoff_ratio": 1.3922624868616453,
+          "original_opportunity_mean": -0.2130120807470592
+        },
+        "winner_removed": {
+          "trades": 212,
+          "win_rate": 39.62264150943396,
+          "avg_net_return": -0.23468196141555286,
+          "profit_factor": 0.9245620482209501,
+          "payoff_ratio": 1.408856454431924,
+          "original_opportunity_mean": -0.16529094956842927
+        },
+        "double_cost_winner_removed": {
+          "trades": 212,
+          "win_rate": 39.15094339622642,
+          "avg_net_return": -0.4446819614155529,
+          "profit_factor": 0.8626558336635903,
+          "payoff_ratio": 1.3407542475012428,
+          "original_opportunity_mean": -0.31319792631261534
+        }
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.41540535660433164,
+          0.6649089277768234
+        ],
+        "point_delta_per_opportunity": 0.1406051482484956
+      }
+    },
+    "thrust_quality": {
+      "metrics": {
+        "base": {
+          "trades": 527,
+          "win_rate": 43.45351043643264,
+          "avg_net_return": 0.5032704049186114,
+          "profit_factor": 1.1722574553584588,
+          "payoff_ratio": 1.525470400422798,
+          "original_opportunity_mean": 0.5032704049186114
+        },
+        "double_cost": {
+          "trades": 527,
+          "win_rate": 42.69449715370019,
+          "avg_net_return": 0.2932704049186116,
+          "profit_factor": 1.0964441559335236,
+          "payoff_ratio": 1.4716717115196627,
+          "original_opportunity_mean": 0.2932704049186116
+        },
+        "winner_removed": {
+          "trades": 526,
+          "win_rate": 43.346007604562736,
+          "avg_net_return": 0.3556015334941344,
+          "profit_factor": 1.1214829667275417,
+          "payoff_ratio": 1.4657979126526641,
+          "original_opportunity_mean": 0.35492676777592924
+        },
+        "double_cost_winner_removed": {
+          "trades": 526,
+          "win_rate": 42.585551330798474,
+          "avg_net_return": 0.1456015334941346,
+          "profit_factor": 1.0477912902660451,
+          "payoff_ratio": 1.4126471859836858,
+          "original_opportunity_mean": 0.14532524974936395
+        }
+      },
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.1492402217350029,
+          0.8007200764129184
+        ],
+        "point_delta_per_opportunity": 0.3183545738045025
+      },
+      "post_train_metrics": {
+        "base": {
+          "trades": 301,
+          "win_rate": 40.53156146179402,
+          "avg_net_return": -0.02473730392318947,
+          "profit_factor": 0.9917946758225842,
+          "payoff_ratio": 1.4551741555101851,
+          "original_opportunity_mean": -0.02473730392318947
+        },
+        "double_cost": {
+          "trades": 301,
+          "win_rate": 39.8671096345515,
+          "avg_net_return": -0.23473730392318934,
+          "profit_factor": 0.9252445886486159,
+          "payoff_ratio": 1.3955772545449956,
+          "original_opportunity_mean": -0.23473730392318934
+        },
+        "winner_removed": {
+          "trades": 300,
+          "win_rate": 40.33333333333333,
+          "avg_net_return": -0.1802601124801264,
+          "profit_factor": 0.9404066532620503,
+          "payoff_ratio": 1.3911800903628677,
+          "original_opportunity_mean": -0.1796612416745446
+        },
+        "double_cost_winner_removed": {
+          "trades": 300,
+          "win_rate": 39.666666666666664,
+          "avg_net_return": -0.39026011248012626,
+          "profit_factor": 0.8761290558213358,
+          "payoff_ratio": 1.3325996563332922,
+          "original_opportunity_mean": -0.3889635672559398
+        }
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.25596767658307606,
+          0.6915411539874595
+        ],
+        "point_delta_per_opportunity": 0.18027527390957468
+      }
+    }
+  },
+  "nominees_recomputed": [
+    "decisive_breakout_gate",
+    "thrust_quality"
+  ],
+  "source_and_receipt_hashes_match": true,
+  "inputs_unchanged_during_verification": true,
+  "input_sha256": {
+    "docs\\research\\2026-10-04-contraction-redesign\\summary.json": "8b7cc8e7a790530f3c596f1705ff24e4fd4ab993b305e0cd7555dc92198fa625",
+    "docs\\research\\2026-10-04-contraction-redesign\\PLAN.json": "32bfc571fa006008b0eec90aa0bd9c6ac4ad609103d8e5e9f9939c69b29de369",
+    "docs\\research\\2026-10-04-contraction-redesign\\training-nomination.json": "563afba8a4ce18e5c3e34f962ef35bfc7fb0f1dc3550bc46bfd80b729b0ea752",
+    "docs\\research\\2026-10-04-contraction-redesign\\freeze-receipt.json": "43e9c88468024fb5ab6d47d5849d7c02e8d50af74fb207c98a40bcb27b2d1259",
+    "docs\\research\\2026-10-04-contraction-redesign\\paired-daily-results.csv": "16ce6102c97dbabd209212e4dc5016cb1ed6195a9520d25e70a6bb26bec8ef35",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-summary.json": "9b94cfeaff613e77bd74471118039a3a4a236578a910b0bd39a7ccf661908ef4",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-candidates.csv": "5e0e8add98e11b17f11217b8edace167a9239be30f8a0ea5cf91fbc7d395ea8e",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-baseline-signals.csv": "ef00adfd226f6855dab167152a7322736a38b05c5271d7536ea0ecc0d24e2228",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-baseline-trades.csv": "6efcd14926bbd6996dcd1ff2383de7ad482c2368f53f7e32b0bd5b6bdad74de8",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-baseline-original-opportunities.csv": "81560198934fd9c6300acb04134f9b357cc3399670f9d087b2d7d01188083332",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-baseline-refills.csv": "2be868f55fd742df6c3d416c8b62273d55f54029fdf68ce977507e49c8239a0b",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-shape_without_momentum-signals.csv": "aaa635572ccde5fd81e1f7314e687027d3c9be168bb3f0be0c2a62d4318e3eaf",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-shape_without_momentum-trades.csv": "a35ca033807bacf06c31d6a791f6c4194e2f555c1750e4e0324014b773a6c0e1",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-shape_without_momentum-original-opportunities.csv": "59e541778a1b524ac010a69a72b73d44ae58087d36f83cbd2d1e49809eb50e05",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-shape_without_momentum-refills.csv": "9517a815ecdaccd6558d9d1f8cbf097813124f846c6463e75a335ea31141ad3d",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-support_efficiency-signals.csv": "608f616f749b0431922076a589c2f7b9967cdce36a9c9d33830e37ebff30986a",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-support_efficiency-trades.csv": "951db3ff802785aaee025f8689e0abc1e4182d4d5094680a1241d5ba6226d26d",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-support_efficiency-original-opportunities.csv": "c5a5b3e6250c9226920f57533c562847db00b992b9826e45afc205143fb166cd",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-support_efficiency-refills.csv": "f0bdae819222c5af3aaca0aee42eb8863b5a7cc825441f273e2d265327fd4f6d",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-quiet_breakout-signals.csv": "338111b01d198111ec8581b9bd5fa3122da1b55a08b25f7ed046020c3cab48f3",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-quiet_breakout-trades.csv": "bc04e79e199928d8a914f8e803f3e81e4426fd58d7169110da69e714a1d3359b",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-quiet_breakout-original-opportunities.csv": "eaab7635add5f02095bfec36edf4a6c190f8f547565f39764497493eca8a29c1",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-quiet_breakout-refills.csv": "4d527784c3bcd2fd099f3edb4386a65f79528c61f42ac363b2cd2526ea3dcb17",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_quality-signals.csv": "1d129d50587892e379f74c7e2a14c1a811e835c453bd18c104fb9250c2ae28b1",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_quality-trades.csv": "034ac19739b36ec7d938c1bfa16ef936cd15da9aef560c7afb4ce44ee481c47e",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_quality-original-opportunities.csv": "d8f65ee9085cf1924d9874a80d215f4600c94cb3347f13612f2b4848eec2aec8",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_quality-refills.csv": "84069c71fd0d56609e8db8bc67bd27f1a020e5392f34520568bb1d13919c9df3",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-decisive_breakout_gate-signals.csv": "50eda0715f6c11c4aa3aead49bb544cdb69fddd85f66d9ea6868604622699c82",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-decisive_breakout_gate-trades.csv": "cb1b4674a333bb210dcf1557b22601b92f924d7dbcb3b7dffb3260ffd232764e",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-decisive_breakout_gate-original-opportunities.csv": "2d455767ecf005c8e219f879ef7173cc11fff1a592607832bfcecbd0e4c04c08",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-decisive_breakout_gate-refills.csv": "e744b1db98070cfb1bcd8c0cf347c1eb27aa1ed27232a0148e271371e649e26c",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-close_cap_limit-signals.csv": "02fe459517408c7d7b2365512bda48ff2b0084992c41350279017adae2500799",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-close_cap_limit-trades.csv": "8f6ae36a4b4e1cef8c65fe7e97b9f0d2555e9217ddd51ca8d608e1d5117e6be0",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-close_cap_limit-original-opportunities.csv": "159b7157a3576053d361b53fb9843dc9cf30ca79914359e353780ac2d320870c",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-close_cap_limit-refills.csv": "2be868f55fd742df6c3d416c8b62273d55f54029fdf68ce977507e49c8239a0b",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-platform_retest_limit-signals.csv": "1cdb9fce07de1300f80096e67aa90f1afeae04279742b9f467ceaaead9ac65b2",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-platform_retest_limit-trades.csv": "f3c02a27305a2dcfbb9d89173d01545e0a6ac158b74d9b2eeeed01955b03f4b4",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-platform_retest_limit-original-opportunities.csv": "4425e0145830a977f0e34e9678c335bb7c57b933b5c715eeffac73ea30c5b4cc",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-platform_retest_limit-refills.csv": "2be868f55fd742df6c3d416c8b62273d55f54029fdf68ce977507e49c8239a0b",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_close_cap_limit-signals.csv": "16a894b942f50905a3804f2a11ce92a2cc2ca62759f6abc4ea59d9fd6062be95",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_close_cap_limit-trades.csv": "06251faf2382c7342c9d4c52877d7663eb0ae0ecc750b70b5c0f39f4d5db1b1a",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_close_cap_limit-original-opportunities.csv": "6d243075c052f6db61763d0cff90e9a45c820e76902e14b0a89f6d9bd7a31d05",
+    "docs\\research\\2026-10-04-contraction-redesign\\train-thrust_close_cap_limit-refills.csv": "ff99072e14da79fd82cf8360fe55d94643f5e850dd8f492c3393439a7916fb60",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-summary.json": "7cd7ae01887af81b2b050bf9750e98ef866272ae8b73f329423c8fa898a8fac3",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-candidates.csv": "d044ca854e98ab6a5b2622719c36eda7b103ed3e3c8eff89dda59a114c48571e",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-baseline-signals.csv": "6a71618c89996756a65f18d8064fceb7382daa6484723d19cecae069cf781c9e",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-baseline-trades.csv": "dc0e7a5624cf85cb95bb7793e32e1c37e60373eb2a0b4ede1a7788b7bb6d2274",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-baseline-original-opportunities.csv": "905ec94c6b6c59687ae5dd61649be36db5472d5f4691051a789b7d8b2b009763",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-baseline-refills.csv": "2be868f55fd742df6c3d416c8b62273d55f54029fdf68ce977507e49c8239a0b",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-decisive_breakout_gate-signals.csv": "2373689a7a0ba21d72fa9b040e31e226b58a36bfa5e7f85b694d0987b1312e02",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-decisive_breakout_gate-trades.csv": "faf388eccf687be5cc47740d07302cc1598fb48398e7d2cfc176273090f2937b",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-decisive_breakout_gate-original-opportunities.csv": "b15490220b8402ff65ffa4a991e472dc6f9c2ee10b50e0c33944ff587d518edf",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-decisive_breakout_gate-refills.csv": "276563a34e359f09cd5ca1bc880bd4901344849a19758116a388fd5280f3fafb",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-thrust_quality-signals.csv": "d5c98d131e733c0f1566bd1e5e0b3ab8ee1d0f1d4d9c7407b0257cd827c57caa",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-thrust_quality-trades.csv": "154b88079f0bef4404f6fb2e8dc264b0542c8bbc92900cd340444df63addb6c4",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-thrust_quality-original-opportunities.csv": "ebf5835a312152cae187b8bb68df0d05d12781c29957f677c7b96014d211b596",
+    "docs\\research\\2026-10-04-contraction-redesign\\validation_2025h2-thrust_quality-refills.csv": "6ed72459e9d021276e8020e1bfb03fa44b93f84e6dce49c63bbfb1607291b073",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-summary.json": "0b9cf5c25597be352cc5edc224621d749f45cdcaf90416cd66c1bfb1f7e91830",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-candidates.csv": "e12bac96bd8ee0fc8b9699763c1db783a65bcd3ba3e107ae8106798e538662a7",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-baseline-signals.csv": "29c96ab3cb7471f09178d3bcbf3f990bd250e849a1ff4c2727b09377c5a71e1b",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-baseline-trades.csv": "60c9079e83c78e5ede6cf9882f41d6d1c2e0b6a19b95f3d9d4637ffa8e0c8aa9",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-baseline-original-opportunities.csv": "eb9f1e4fef95d06d7539cb5fdbc4765dd72cc20d11b98d3118996a7411606f28",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-baseline-refills.csv": "2be868f55fd742df6c3d416c8b62273d55f54029fdf68ce977507e49c8239a0b",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-decisive_breakout_gate-signals.csv": "29c307b0f6d81354ae91247118d3f2b92fc86f831307c0634558d00d90f8e093",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-decisive_breakout_gate-trades.csv": "8081150c754a314eb603270f7751b8293ef52308d41ffa2b9a2f35f14927c37d",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-decisive_breakout_gate-original-opportunities.csv": "2f3c5928244b024a9624c1a1c80b3feb0efd184358043c4f61d36e353ed2ef38",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-decisive_breakout_gate-refills.csv": "c959f91718c6e31a308ebe59237ed939b7018e854210fa6395f857cc871a3c6e",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-thrust_quality-signals.csv": "ab9acbf8f63a45b63815d0a58296db0867fe259d3815bd76a3777c80bd416eeb",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-thrust_quality-trades.csv": "229af5bca35ebfa386a61a14f0d69e4fa81c44ae9cb4b47cd38866e8daf9970f",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-thrust_quality-original-opportunities.csv": "5a9b1c892aa976a6f3bffbac014cb3a69098236b0ee1b4897caaf2e80df4070f",
+    "docs\\research\\2026-10-04-contraction-redesign\\observed_2026-thrust_quality-refills.csv": "881dbb2512ca3d094d972ec0ca9fa9034378f5484a12d0f92aee14d17b2cf283"
+  },
+  "limitations": "This verifies accounting and formulas, not actual limit-order queue execution or unseen-period profitability."
+}

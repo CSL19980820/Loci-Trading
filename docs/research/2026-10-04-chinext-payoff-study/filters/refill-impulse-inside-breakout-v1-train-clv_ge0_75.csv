@@ -1,0 +1,10 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,impulse-inside-breakout-v1,clv_ge0_75,2024-03-12,300427,closed,-0.4657544757033292
+train,impulse-inside-breakout-v1,clv_ge0_75,2024-03-18,300131,closed,11.759111969111968
+train,impulse-inside-breakout-v1,clv_ge0_75,2024-05-20,300359,closed,1.132281879194629
+train,impulse-inside-breakout-v1,clv_ge0_75,2024-10-18,300283,closed,0.1318803418803406
+train,impulse-inside-breakout-v1,clv_ge0_75,2024-10-21,300177,closed,-13.002397660818712
+train,impulse-inside-breakout-v1,clv_ge0_75,2024-10-24,300399,closed,-6.210000000000005
+train,impulse-inside-breakout-v1,clv_ge0_75,2025-02-14,301370,closed,-3.1729629629629783
+train,impulse-inside-breakout-v1,clv_ge0_75,2025-02-25,300093,closed,-6.210000000000005
+train,impulse-inside-breakout-v1,clv_ge0_75,2025-03-07,300443,closed,0.180625

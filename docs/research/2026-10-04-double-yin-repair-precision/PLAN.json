@@ -1,0 +1,151 @@
+{
+  "created_at": "2026-10-04T15:12:01.759622+08:00",
+  "sources": {
+    "tools/research_double_yin_repair.py": "afc40939bc0315cdbeec8821104bf70bb0a2b82679d5244cec1eb91a6279e29d",
+    "tools/research_double_yin_redesign.py": "0f9f304e153b07ea0d2d9053f7ed51999b9cad3a75fa7864b4335910879a3e21",
+    "tools/research_double_yin_scoring_proxy.py": "e2bfd7c19039790a622109420dbb80b48a296400f2233d39b6802163848edbdb",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "src/strategy/application/double_yin_low_open.py": "c111f1662dcc013b7518d822952cd381e5b776d0bfebcdc85a6983e7c2826833",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "src/market/domain/universe.py": "343d04424b01a90a0c85be724582421ffbda181df68363c8ceaf2d67f40ad2fb",
+    "tools/research_double_yin_repair_precision.py": "2db638168285c4acd6c6e772781546fbe069426c04e7cd8cd3d689ce100cb2c6"
+  },
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc",
+  "original_frozen_artifacts": {
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-corrected_baseline-events.csv": "9dedca8ce6e64f05337717b7dd57ac918798652b5767597778c673aefc22e926",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-corrected_baseline-trades.csv": "f24138f7d8af3e140441d9583c6ee63acfe60d3430ec22b44f65248baaadf558",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-entry_calendar-budget.csv": "136bad2a32ef8135e22494a9d6dcc4a27599b0f1f167eafdb78726fc482858c4",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-one_dry_fixed-events.csv": "88a732d5b42df6a9dbbada0fc8bf4406e0d4ff76d60e2c94441be4b8027faf98",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-one_dry_fixed-trades.csv": "3233905431d5d7cf9a7a1ecc39585f316bb5acbd71085ab7ddeeb6c53adfe39e",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-one_dry_fixed-transitions.csv": "7328cd92b663dc4a84a426995cc0642dabb8954c362848d484d4ea7b39d69b3d",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-one_dry_structural-events.csv": "d68b858b88a18318f5067f4e692ab77f54c0a4cd342561fa639202297bcf7283",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-one_dry_structural-trades.csv": "5a8ead2547c4071feac84846f95368daa34b02059ed9e13bd37dd6124d7cc0f6",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-one_dry_structural-transitions.csv": "550490a41a31050095d5215b97be0869556cf21ca99befc96b0b950df3b54c7a",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-origin-membership.csv": "6e5b4cb7c9325c4002007fdc78c7716eb8c1cb045cd0e8874cc5eb27f2d20ab0",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-origin_calendar-budget.csv": "fa20daacde9ff08057ab3266029d42dbf59a787f2c53136c0ff461f0172a1958",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-original_baseline-events.csv": "ab31aa8cfde838df9fbcfd603f328364f994531a1147a2473df745c799ac40cc",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-original_baseline-trades.csv": "187ef92ed6481b4a742efc339c4b857b160b4b502cadccdf5dbc0ae1cb445499",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-corrected_baseline-events.csv": "e1c33fe729d889a8c31d224e52a6f70005f0e5006806d369e1273372923e6d33",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-corrected_baseline-trades.csv": "f23c5417050ec02c2bf3064a6be43e650caee2c8578d3af81eb6e9aba677d311",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-entry_calendar-budget.csv": "1b9669a580d7d55f83b6bead225812bca5362915531f08be3d3b6b701df99127",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-one_dry_fixed-events.csv": "06bd3082af1af741ce1ab18c338337298b6f4174f49ab4e4812faff3fe5cdf6a",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-one_dry_fixed-trades.csv": "cadd61108c59512ebddb4bb1b37f53d879882516c22fdeb242d83adae67354ac",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-one_dry_fixed-transitions.csv": "3451b1a4ecd83f6adc75376e447a59c137258599c247299093cf71baf8bacb92",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-one_dry_structural-events.csv": "e54038e4bdb2938d55b28f7a51cbe561268630fe543747261383f2f60e9ba08a",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-one_dry_structural-trades.csv": "dbbc022ca4f984e9c778540dae415199469b7dc816b7dc32e6b2416490f85117",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-one_dry_structural-transitions.csv": "7d850128c76edd212e97669b2525d8700dd2c098396210069e40a3a1082bb1c4",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-origin-membership.csv": "588e016bebb38d21a2ff11de35401b3c9f92ccceca8761c9de67ab516c38b547",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-origin_calendar-budget.csv": "6b2af7d874a5dffbae14f766a2de0959e93aaee93d9f090109641661732c4859",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-original_baseline-events.csv": "4907ef4c209144cf9f252c231fb7bb345f9bf4a4d79f3a9a0435462096e47b7e",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-original_baseline-trades.csv": "cdd85a2d5111b31d5fca2b4cc75a02ae9abd85de1dff51eeb12284ab7beeea22",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-two_dry_fixed-events.csv": "aa466e5c75b2551e80044f5459d8fdda890410a2054bbd71600d88e2fdea0684",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-two_dry_fixed-trades.csv": "1d342d5278b90ce1cd298ba503c5cbb0e7bc9639d34c5d076e21938faf31a878",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-two_dry_fixed-transitions.csv": "f6927dd5a5d2d06757859112bd3362d7ce713a1c3228f8fb48d16bc586c9639b",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-two_dry_structural-events.csv": "6921d2c94299e0cbeb8037c37d72433d63baae6e5edc3ebff4e588c438bdf780",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-two_dry_structural-trades.csv": "9559d68cd6958c4413713525166cad16b4dea63f668a36f5bc373bdd279ab7b6",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-two_dry_structural-transitions.csv": "87e1091183caa6d12c290fd0ceb4b478123a44cebea54668d8b863d7fa1cd7fd",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-corrected_baseline-events.csv": "28a3085326b9aaa6fbc3c2ef683b428c964dbc722565624bd2de91a31a0ccc5e",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-corrected_baseline-trades.csv": "43dffd63e111da154aed4f056c15072bc640be6131e59dba8e14f8f6b721d932",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-entry_calendar-budget.csv": "37efcbeb2c7e5098dc10a43c415d01bd2bca1f0940d65561bf46e48b97652818",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-one_dry_fixed-events.csv": "ed9cde93101737778cb3e26befe87aabb9e43dc794240dfeb43c81a880914084",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-one_dry_fixed-trades.csv": "3977f2c4838145ed972ccf538469ceda9c59bbf30ae21cee78c13fd927d0aced",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-one_dry_fixed-transitions.csv": "dbba2e56d5fe56a6afaa1e07b442c59ed78f2e1de2308623180aaf40bb54a523",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-one_dry_structural-events.csv": "03c08c0fcebb33495a66cb43733fd74f3114b3ad71d012938b6497f49580e2b2",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-one_dry_structural-trades.csv": "0d94e35d2b6468e91e9d9aef7b5242c5fe18586ab23f44b9845f9f7be595f530",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-one_dry_structural-transitions.csv": "54779bb85dd75a5e867a39b74433cd8cfa8a154b559959562c766449d7632f97",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-origin-membership.csv": "3e9ccff07c1beb1f1f2689d8eb9ebb75e7a763f610471f7168e8b1bcc0c0df35",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-origin_calendar-budget.csv": "e802ef005c5b3cf4086b7349fec0469a04e400c7e23125241bad0edf93655c5f",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-original_baseline-events.csv": "28a3085326b9aaa6fbc3c2ef683b428c964dbc722565624bd2de91a31a0ccc5e",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-original_baseline-trades.csv": "43dffd63e111da154aed4f056c15072bc640be6131e59dba8e14f8f6b721d932",
+    "docs\\research\\2026-10-04-double-yin-repair\\industry-groups.json": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc",
+    "docs\\research\\2026-10-04-double-yin-repair\\observed_2026-summary.json": "a12bb2c54382cbb27917935c7c28137070915cafecc49f455280418302a573cf",
+    "docs\\research\\2026-10-04-double-yin-repair\\PLAN.json": "beabeee791283d2b8ae0e7b83ac6c54e2a27f741615826ca86525c94bc60b045",
+    "docs\\research\\2026-10-04-double-yin-repair\\preflight-density.json": "a2e8633d041488666c0c1d304feae16eaca3cdd9ded9ff8502b853458534dc91",
+    "docs\\research\\2026-10-04-double-yin-repair\\self-check.json": "47eb325e68c3334c6ff11c8966ecce187e0524f69a247f66d4b9ecddc864c085",
+    "docs\\research\\2026-10-04-double-yin-repair\\summary.json": "4548cba389d92efe118b215a55dea71b54786499d49d5f5b36ef2e147e4de3b7",
+    "docs\\research\\2026-10-04-double-yin-repair\\train-summary.json": "6767abdfe58adfc666c587556ee162a1996b5247a4805dea0ca760bc19a1532d",
+    "docs\\research\\2026-10-04-double-yin-repair\\training-shortlist.json": "d01fbffa75f2513740a70f9343fd22df8de75502ffcd8648e87a9292fe5f4fdd",
+    "docs\\research\\2026-10-04-double-yin-repair\\validation_2025h2-summary.json": "b3430e6b63c6e3c4d7a6642b873c8c5a457ed326b5739bfab7405f10cc471a25",
+    "docs\\research\\2026-10-04-double-yin-repair\\verification.json": "bd0b46f2ce95ff49bb57d7fef6d62bfc3fb25f5438ab0f015ca054c05c78f015"
+  },
+  "prior_plan_sha256": "beabeee791283d2b8ae0e7b83ac6c54e2a27f741615826ca86525c94bc60b045",
+  "regime_plan_sha256": "a40f0bb20071e0c810bd2df4a099386bb898244835d14b3d7c442818fe976773",
+  "old_shortlist_sha256": "d01fbffa75f2513740a70f9343fd22df8de75502ffcd8648e87a9292fe5f4fdd",
+  "purpose": "Numerical correction only; reuse exact four frozen repair rules and old two controls. No search, no new nomination, no changed parameters or state transitions.",
+  "numeric_contract": "Use frozen regime.corrected_inputs(ctx, readonly_store): direct stored hfq_factor <=actual panel/phase cutoff, forward alignment only, no quotient reconstruction. Normalize only signal OHLC to10 significant decimal digits. Synchronize ctx.execution_panels factors; unchanged execution_arrays uses exact unquantized raw*direct factor for entry basis, state comparisons, stops, exits and PnL. Same raw price with same stored factor is naturally equal; original stable-factor cancellation remains.",
+  "runs": {
+    "train": [
+      "original_baseline",
+      "corrected_baseline",
+      "one_dry_fixed",
+      "one_dry_structural",
+      "two_dry_fixed",
+      "two_dry_structural"
+    ],
+    "validation_2025h2": [
+      "original_baseline",
+      "corrected_baseline",
+      "one_dry_fixed",
+      "one_dry_structural"
+    ],
+    "observed_2026": [
+      "original_baseline",
+      "corrected_baseline",
+      "one_dry_fixed",
+      "one_dry_structural"
+    ]
+  },
+  "variants": {
+    "one_dry_fixed": {
+      "base": "one",
+      "exit": "fixed"
+    },
+    "one_dry_structural": {
+      "base": "one",
+      "exit": "structural"
+    },
+    "two_dry_fixed": {
+      "base": "two",
+      "exit": "fixed"
+    },
+    "two_dry_structural": {
+      "base": "two",
+      "exit": "structural"
+    }
+  },
+  "old_selected": [
+    "one_dry_fixed",
+    "one_dry_structural"
+  ],
+  "old_selection_status": "diagnostic_only_no_qualified_candidate",
+  "no_reselection": "Training results may change; do not call shortlist or add nominees. Later runs retain old one_dry_fixed/one_dry_structural diagnostic-only status regardless of revised training statistics.",
+  "unchanged": "Exact original repair origin/formation/first-break consumption/quota/industry/dedup/cooldown/entry/exit/maturity/budget rules and control raw shapes. Existing real industry receipt only; no new metadata or production requests.",
+  "audit": "Compare every formal trade and selected order against old artifacts; distinguish numerical-only factor drift from entry/exit/price/return/terminal-state changes. Reconcile all origins so previously unfilled paths may legitimately create new orders. Verify all3 flat-open false candidates disappear, but only002868/2024-09-25 was previously an actual corrected-control fill; other2 were unselected.",
+  "flat_cases": [
+    [
+      "2024-09-25",
+      "002868"
+    ],
+    [
+      "2025-04-03",
+      "600851"
+    ],
+    [
+      "2025-06-11",
+      "601956"
+    ]
+  ],
+  "no_2023h2_outcomes": true,
+  "prior_repair_trade_records": 250,
+  "limitations": [
+    "All outcomes are already-observed history; this is a same-rule numeric correction, not another validation sample.",
+    "Current factor revisions and real industry receipt are not historical PIT; daily-open proxy is not09:25queue proof.",
+    "Independent event slots remain distinct from fixed-total-capital NAV."
+  ]
+}

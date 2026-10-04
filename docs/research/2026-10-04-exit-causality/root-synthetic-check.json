@@ -1,0 +1,41 @@
+{
+  "passed": true,
+  "real_market_returns_computed": false,
+  "canonical_sources_unchanged": true,
+  "source_sha256": {
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7"
+  },
+  "synthetic_checks": [
+    {
+      "kind": "intraday_touch_proxy",
+      "opening": 9.8,
+      "late_close": 9.0,
+      "model_exit_index": 3,
+      "model_exit_price": 9.6
+    },
+    {
+      "kind": "intraday_touch_proxy",
+      "opening": 9.8,
+      "late_close": 9.2,
+      "model_exit_index": 2,
+      "model_exit_price": 9.399999999999999
+    },
+    {
+      "kind": "gap_open_proxy",
+      "opening": 9.3,
+      "late_close": 9.0,
+      "model_exit_index": 3,
+      "model_exit_price": 9.6
+    },
+    {
+      "kind": "gap_open_proxy",
+      "opening": 9.3,
+      "late_close": 9.2,
+      "model_exit_index": 2,
+      "model_exit_price": 9.3
+    }
+  ],
+  "scope": "Proves future closing-mask dependence of current daily proxy; does not establish own-order fills or a production correction."
+}

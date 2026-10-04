@@ -24,7 +24,7 @@ from src.ops.application.skill_watch.market_regime import (
     fetch_market_snapshot,
     today_trade_date,
 )
-from src.ops.application.skill_watch.paper_eligibility import filter_openable_picks
+from src.ops.application.signal_policy.eligibility import filter_openable_picks
 from src.ops.application.skill_watch.tuning import section, stage_enabled
 
 

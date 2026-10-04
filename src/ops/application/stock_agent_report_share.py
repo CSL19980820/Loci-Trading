@@ -10,7 +10,7 @@ def stock_agent_document(profile: dict, run: dict, brief: str) -> dict | None:
     detail = run['detail']
     summary = str(detail.get('summary') or run.get('summary') or '').strip()
     research = str(detail.get('research_plan') or '').strip()
-    extra = any(detail.get(key) for key in ('decisions', 'fills', 'rejects', 'deferred', 'error'))
+    extra = any(detail.get(key) for key in ('decisions', 'fills', 'rejects', 'deferred', 'error', 'learning'))
     if not (research and research != summary or extra or summary and summary != brief.strip()):
         return None
     sections = trading_run_sections(detail, summary=summary, status=run.get('status', ''))

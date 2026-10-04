@@ -16,7 +16,7 @@ Loci v2「群龙」是包含行情、账本、策略工坊、研究、智能体�
 ## 数据与环境事实
 
 当前多租户实现通过 `src/shared/tenancy.py` 的 ContextVar 和 `src/shared/paths.py` 解析数据根。
-每租户拥有 `palace.db`、`ops.db`、`skills/`、`research_runs/`；行情库 `market.db` / `market_hot.db` 和身份、社区库全局共享。
+每租户拥有 `palace.db`、`ops.db`、`skills/`、`research_runs/`；行情库 `market.db` / `market_hot.db` 和身份库 `identity.db` 全局共享；社区模块已退役，不再创建 `community.db`。
 主租户 `__primary__` 使用原 `data/`。导入时缓存租户路径可能串租户，存储改动需要考虑这一点。
 行情、交易和回测的可核实事实与模型分析、假设应当区分。
 

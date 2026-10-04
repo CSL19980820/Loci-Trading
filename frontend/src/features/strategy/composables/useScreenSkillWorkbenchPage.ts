@@ -501,6 +501,7 @@ export function useScreenSkillWorkbenchPage() {
   )
 
   // 进度槽按「租户 × 战法」分片：只认自己这一个，别的战法并行跑着与本页无关
+  watch(currentSlug, slug => { void screenRun.ensureResultFor(slug) }, { immediate: true })
   watch(
     () => screenRun.resultFor(currentSlug.value),
     (result) => {

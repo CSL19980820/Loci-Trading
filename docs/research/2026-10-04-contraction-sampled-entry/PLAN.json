@@ -1,0 +1,92 @@
+{
+  "created_at": "2026-10-04T17:39:39.605586+08:00",
+  "sources": {
+    "tools/research_contraction_sampled_entry.py": "6a7668e02374d78ae72000a2b95c2c8a232bc06303b48fe35bd432663b39bb2f",
+    "src/strategy/application/contraction_rebreakout.py": "613d676689ff913e566e2a3be92ab4849e0d55b5e5bdef7a3dfd58f52c535121",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/market/infrastructure/tdx_minute.py": "372132bfc229b54949533e72e47206cae9c541448160487d7f477a3a5d901fb2",
+    "src/formula/domain/board.py": "fa785c9aa4af8adda4b184348d8c970f376554a8fbdf3c6ebd91482f911d26d4",
+    "tools/research_contraction_learned_rank.py": "7bd8b3c40ca03c14a886ffc24334f5535ae784317fd43f3677cdedee3651ab1c",
+    "tools/research_contraction_structure.py": "d00803a241ad8adcf32aa4f4521bb828df789bd1baed2212f9ec82c057348d69",
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a"
+  },
+  "protected_files": {
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\PLAN.md": "562894becaf299519dba8c2cabb0ffaec36ab40f97a433ce4bfcef280c6bba5a",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\INPUT-QC.md": "147ab695cc15fde4740d354b63d0997d165b169a164e4a147761b170076921bd",
+    "docs\\research\\2026-10-04-contraction-intraday-feasibility\\prepool\\potential-code-days.csv": "1c10a46e52f3b0de37d8742baa2c34fea6a36348ea9d376beb052deb21ac3211",
+    "docs\\research\\2026-10-04-contraction-intraday-feasibility\\prepool\\PLAN.json": "38a825a4561757447d855a6367b1e01666aa1197fdacc0e609b027b9d12aeb30",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\data-evidence\\official-halt-receipt.json": "d5d2dbd21c6a9082f3ed99d287db0cf10bb4b3e9dff33caa6cd216d72025ff47",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\data-evidence\\300506-2025-05-19-halt.pdf": "8d17cee2ca025b73938d04d07e33fc40d1608f043610baf939d44d72e91095fc",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\data-evidence\\300959-2025-06-20-halt.pdf": "46229a873963e609d8537ea01eb7eaa37472e145c10c39338db67bec81b6d998",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\inputs\\observed_2026-full-prepool-ledger.csv": "3ce806e76745e9119713a5e267c4f0df4d9cb03d2f77387debb5d08b16b8e371",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\inputs\\summary.json": "695b57040e30e8e8d99135d7e2d76bb21a7a2b5b13626434223f6cd3a783a990",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\inputs\\train-full-prepool-ledger.csv": "e7352dec2d94d498a814e787d515bbd98f3e6fc28f57a9e08e596dd0bd2c4308",
+    "docs\\research\\2026-10-04-contraction-sampled-entry\\inputs\\validation_2025h2-full-prepool-ledger.csv": "282c7c34bb5d44a753eacb9fdde257f2797eb8897c5c2082081ab0e4f2cc4ce5",
+    "docs\\research\\2026-10-04-contraction-intraday-feasibility\\minute-probes\\tdx-2024-01-05-300707-source-decoded.json": "d43113b936b5bc525f1b55d96835793c85d38ee62dc20dc0ac6aee78b0fa080f",
+    "docs\\research\\2026-10-04-contraction-intraday-feasibility\\minute-probes\\tdx-2024-01-05-300707-request.json": "878cafcee70b8832e57b74a38b35fb3a674f0742515a41dcacdd02a38497818f",
+    "docs\\research\\2026-10-04-contraction-intraday-feasibility\\minute-probes\\tdx-2024-01-05-300707-receipt.json": "68e968a3d679f8e848c4ca8e45c0d878c61be9c001f2e33008c3c7d1ba03784e"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "sdk": {
+    "version": "0.2.7",
+    "files": {
+      "hq": {
+        "path": "E:\\my_space\\stock-analyzer\\.venv\\Lib\\site-packages\\tdxpy\\hq.py",
+        "sha256": "cd3a51572f195bfb04b41ee08a7f744fbca0f6671983a7359614363ec8e3fb0e"
+      },
+      "history_parser": {
+        "path": "E:\\my_space\\stock-analyzer\\.venv\\Lib\\site-packages\\tdxpy\\parser\\std\\get_history_minute_time_data.py",
+        "sha256": "62afb02ca83b9f1d590af4dd59914119a428c34b416d25eb4448756d44a8c282"
+      }
+    }
+  },
+  "arms": [
+    "sampled_early",
+    "sampled_next_open",
+    "original_eod"
+  ],
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "decision_point_1based": 225,
+  "entry_point_1based": 235,
+  "price_QA_tolerance": 0.01000001,
+  "volume_QA": "max(100 shares,dailyV*.001)",
+  "synthetic_checks": {
+    "passed": true,
+    "synthetic_only": true,
+    "no_requests_or_returns_from_real_data": true,
+    "checks": [
+      "240-row QA",
+      "frozen price/volume tolerances",
+      "expanded high includes QA boundary",
+      "point225/235 one-based indexing",
+      "80point score solely from prefix225",
+      "future-tail mutation invariance",
+      "same-list different four-session expiry",
+      "T+1/no-entry-day sell",
+      "zero-volume235 cancellation after ranking",
+      "235limit cancellation",
+      "holding unknown not zero",
+      "rank-unknown preserves budget",
+      "lexical tie",
+      "transport-only retry classification",
+      "actual incomplete-pool path selects no residual Top2"
+    ]
+  }
+}

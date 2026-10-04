@@ -1,0 +1,27 @@
+{
+  "scope": "Only research artifacts; no deployed signal or entry change",
+  "variants": {
+    "baseline": "Original signal T; next market day T+1 open",
+    "next_day_strength": "Original selected T; T+1 completed close > T close; enter T+2 open",
+    "next_day_platform_retest": "Original selected T; T+1 low <= original breakout level, close >= level, close > open; enter T+2 open"
+  },
+  "exit": "Same 4 sessions including entry, -6% stop, no take profit, strict T+1/limit/economic execution; 0.21% cost",
+  "pool": "Carry original actual Top2; no stock discovery or same-day confirmation-price fill",
+  "cohort": "All rules share original T opportunities with next_open offset + 20 sessions + one confirmation-delay buffer. Actual entry and exit must fit the segment.",
+  "selection": "Freeze every predeclared nonbaseline rule with >=80 training closed trades, finite payoff, PF>1, mean>0; at most 2 per strategy. No validation tuning.",
+  "limitations": "Daily signals and next-open model, not tail fill. Current membership/factor revision and 2026-known base-score selection biases remain.",
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  }
+}

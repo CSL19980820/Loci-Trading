@@ -134,7 +134,7 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearTimeout(timer) })
       </template>
     </PageHeader>
 
-    <div class="page-scroll agents-scroll">
+    <div class="page-scroll agents-scroll" data-agent-workspace-scroll role="region" aria-label="智能体列表" tabindex="0">
       <Alert v-if="error" variant="destructive">
         <CircleAlert aria-hidden="true" />
         <div class="flex min-w-0 flex-wrap items-center gap-2">
@@ -238,6 +238,13 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearTimeout(timer) })
 .agents-scroll {
   padding-top: var(--gap-4);
 }
+.agents-scroll > * {
+  flex-shrink: 0;
+}
+.agents-scroll:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--seal));
+  outline-offset: -2px;
+}
 
 .agents-kpis {
   margin-bottom: 0;
@@ -249,6 +256,11 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearTimeout(timer) })
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-2) var(--gap-3);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--gap-2) 0;
+  background: var(--paper);
 }
 
 .agents-search {
@@ -282,6 +294,8 @@ onUnmounted(() => { disposed = true; controller?.abort(); clearTimeout(timer) })
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: var(--gap-4);
+  min-width: 0;
+  align-content: start;
 }
 
 .agents-empty {

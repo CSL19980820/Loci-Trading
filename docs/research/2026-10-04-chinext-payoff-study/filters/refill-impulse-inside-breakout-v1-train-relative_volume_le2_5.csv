@@ -1,0 +1,3 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,impulse-inside-breakout-v1,relative_volume_le2_5,2025-02-25,300093,closed,-6.210000000000005
+train,impulse-inside-breakout-v1,relative_volume_le2_5,2025-03-07,300443,closed,0.180625

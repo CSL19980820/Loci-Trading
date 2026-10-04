@@ -1,8 +1,8 @@
-import type { AgentAction, AgentSummary, GuardianCard, GuardianSummary } from '@/shared/types/stock_agents'
+import type { AgentAction, AgentKind, AgentSummary, GuardianCard, GuardianSummary } from '@/shared/types/stock_agents'
 import { phaseName, statusName } from './agentFormat'
 
 export interface AgentCardData {
-  id: string; name: string; kind: 'guardian' | 'leader' | 'custom'; subtitle: string
+  id: string; name: string; kind: 'guardian' | AgentKind; subtitle: string
   enabled: boolean; running: boolean; failed: boolean; status: string; model: string
   summary: string; at: string | null; phase: string; actions: AgentAction[]
   equity: number; pnl: number; positions: number; watchCount?: number; totalRuns?: number
@@ -59,7 +59,7 @@ export function stockAgentCard(value: AgentSummary): AgentCardData {
   const failed = ['failed', 'interrupted'].includes(value.latest_status || '')
   return {
     id: value.id, name: value.config.name, kind: value.config.kind,
-    subtitle: value.config.kind === 'leader' ? (value.config.description || '龙头选手 · 接力研究') : (value.config.description || '自定义研判 · 独立账户'),
+    subtitle: value.config.description || ({ leader: '龙头选手 · 接力研究', falcon: '量化与技能候选 · 超短自主择时', custom: '自定义研判 · 独立账户' })[value.config.kind],
     enabled: value.config.enabled,
     running: value.running, failed, status: value.running ? '正在研究' : failed ? statusName(value.latest_status) : value.config.enabled ? '运行中' : '已暂停',
     model: value.config.model, summary: value.latest_summary || '暂无工作记录，启用后将按日程自动研判。', at: value.latest_at,

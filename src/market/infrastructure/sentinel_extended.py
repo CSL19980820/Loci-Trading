@@ -143,8 +143,10 @@ def check_capabilities_runtime() -> Finding:
     missing: list[str] = []
     if not _probe_import("pandas"):
         missing.append("pandas")
-    if not _probe_import("akshare"):
-        missing.append("akshare")
+    if not _probe_import("tdxpy"):
+        missing.append("tdxpy")
+    if not _probe_import("requests"):
+        missing.append("requests")
     if missing:
         return _F(
             "capabilities_runtime",

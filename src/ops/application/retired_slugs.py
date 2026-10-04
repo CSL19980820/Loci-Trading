@@ -8,9 +8,14 @@ from __future__ import annotations
 from typing import Any
 
 
-RETIRED_STRATEGY_SLUGS = frozenset({"yixian-auction"})
+RETIRED_STRATEGY_SLUGS = frozenset({
+    "yixian-auction", "chinext-gap-repair-v1", "tail-micro-right-v1",
+})
 # 历史报告可能保存展示名称而不是 slug；生成新报告时两种标识都视为退役引用。
-RETIRED_STRATEGY_MARKERS = frozenset({"yixian-auction", "一线定乾坤"})
+RETIRED_STRATEGY_MARKERS = frozenset({
+    "yixian-auction", "一线定乾坤", "chinext-gap-repair-v1", "创业板跳空修复",
+    "tail-micro-right-v1", "尾盘微右侧",
+})
 
 
 def canonical_strategy_slug(value: Any) -> str:

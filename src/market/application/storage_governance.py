@@ -44,6 +44,12 @@ class StoragePolicy:
 
 DEFAULT_POLICY = StoragePolicy()
 
+# 旧部署把普通日 K 的地板用于稀疏因子；只移除读回后精确识别的这条历史规则。
+_LEGACY_FACTOR_FLOOR_TRIGGER = (
+    "CREATE TRIGGER adjust_factors_floor BEFORE INSERT ON adjust_factors "
+    "WHEN NEW.trade_date < '2023-01-01' BEGIN SELECT RAISE(IGNORE); END"
+)
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -198,6 +204,37 @@ def _count(conn: sqlite3.Connection, table: str, where: str = "", params: tuple[
     return int(row[0] or 0) if row else 0
 
 
+def _retire_legacy_factor_floor(conn: sqlite3.Connection, *, dry_run: bool) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "name": "adjust_factors_floor", "present": False, "recognized": False, "removed": False,
+    }
+    if not dry_run:
+        # 判定和 DROP 使用同一写事务，防止读回后触发器被另一个连接替换。
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'trigger' "
+            "AND name = ? AND tbl_name = ?", ("adjust_factors_floor", "adjust_factors"),
+        ).fetchone()
+        if row is not None:
+            result["present"] = True
+            actual = " ".join(str(row[0]).strip().rstrip(";").split()).casefold()
+            expected = " ".join(_LEGACY_FACTOR_FLOOR_TRIGGER.split()).casefold()
+            result["recognized"] = actual == expected
+            if not result["recognized"]:
+                result["error"] = "adjust_factors_floor 与已知旧定义不同；保留该触发器并停止维护，请人工核查"
+            elif not dry_run:
+                conn.execute("DROP TRIGGER adjust_factors_floor")
+                result["removed"] = True
+        if not dry_run:
+            conn.commit()
+    except Exception:
+        if not dry_run:
+            conn.rollback()
+        raise
+    return result
+
+
 def _delete_orphan_attempts(conn: sqlite3.Connection, *, batch_size: int) -> int:
     if not table_exists(conn, "source_route_attempts"):
         return 0
@@ -229,10 +266,6 @@ def _delete_orphan_attempts(conn: sqlite3.Connection, *, batch_size: int) -> int
     return total
 
 
-def _count_floor(conn: sqlite3.Connection, table: str, floor: str) -> int:
-    return _count(conn, table, "trade_date < ?", (floor,))
-
-
 def run_storage_maintenance(
     db_path: Path | str,
     *,
@@ -262,6 +295,7 @@ def run_storage_maintenance(
     vacuum_report: dict[str, Any] = {"vacuumed": False, "skipped_reason": "未执行"}
     page_count = 0
     freelist_pages = 0
+    factor_floor_trigger: dict[str, Any] = {}
 
     conn = (
         sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=120.0)
@@ -271,13 +305,36 @@ def run_storage_maintenance(
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=120000")
     try:
+        factor_floor_trigger = _retire_legacy_factor_floor(conn, dry_run=dry_run)
+        if factor_floor_trigger.get("error"):
+            raise RuntimeError(str(factor_floor_trigger["error"]))
         for table in ("quotes_daily", "adjust_factors"):
-            count = _count_floor(conn, table, policy.history_floor)
-            if count and not dry_run:
-                deleted[table] = delete_in_batches(
-                    conn, table, where="trade_date < ?", params=(policy.history_floor,),
-                    batch=policy.batch_size,
+            where = "trade_date < ?"
+            params = (policy.history_floor,)
+            if table == "adjust_factors":
+                # 累计因子是稀疏事件，行情截断日之前的最后已知值仍是后续复权
+                # 的锚点。仅删除另有更晚、且仍早于截断日的因子，绝不取未来值。
+                where += (
+                    " AND EXISTS (SELECT 1 FROM adjust_factors AS newer "
+                    "WHERE newer.code = adjust_factors.code "
+                    "AND newer.trade_date > adjust_factors.trade_date "
+                    "AND newer.trade_date < ?)"
                 )
+                params = (policy.history_floor, policy.history_floor)
+            count = _count(conn, table, where, params)
+            if count and not dry_run:
+                if table == "adjust_factors":
+                    # 因子表 WITHOUT ROWID；按真实复合主键分批，不能使用 rowid。
+                    deleted[table] = delete_in_batches(
+                        conn, table, params=params, batch=policy.batch_size,
+                        key="(code, trade_date)",
+                        subquery=("SELECT code, trade_date FROM adjust_factors WHERE "
+                                  + where + f" LIMIT {max(1, int(policy.batch_size))}"),
+                    )
+                else:
+                    deleted[table] = delete_in_batches(
+                        conn, table, where=where, params=params, batch=policy.batch_size,
+                    )
             else:
                 deleted[table] = count
 
@@ -403,6 +460,7 @@ def run_storage_maintenance(
         },
         "before": before,
         "deleted": deleted,
+        "factor_floor_trigger": factor_floor_trigger,
         "archive_batches": archive_batches,
         "archive_cleanup": archive_cleanup,
         "sqlite_pages": {"page_count": page_count, "freelist_pages": freelist_pages},

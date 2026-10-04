@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "synthetic_only": true,
+  "checks": [
+    "TDX units and missing/range exclusion",
+    "decimal cent floor",
+    "open branch independent of tick-through",
+    "intraday touch vs tick-through",
+    "stable Top2/code tie",
+    "A/B identical names",
+    "strictT+1/4sessions",
+    "factor-change cancellation",
+    "unknown not zero",
+    "known suspension zero",
+    "unknown holding quote prevents false closed return",
+    "unknown blocks calendar metrics"
+  ],
+  "created_at": "2026-10-04T16:19:33.210463+08:00",
+  "source_sha256": "ba57ed30e5480ce9c7204b8dc3f5d2758349074b151888dc05f4866ebe588e11"
+}

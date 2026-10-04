@@ -1,0 +1,35 @@
+{
+  "created_at": "2026-10-04T07:18:18.059595+00:00",
+  "plan_sha256": "ef68ec03a7371c39a104e9fd89242803c12f0ca06019048ebcae316acd4588fc",
+  "independent_verification_passed": true,
+  "formal_trades_verified": 2132,
+  "direct_factor_date_points_verified": 2183,
+  "repair_trades_verified": 250,
+  "repair_selected_orders_verified": 496,
+  "new_or_removed_repair_trades": 0,
+  "new_or_removed_repair_orders": 0,
+  "repair_semantic_state_records_changed": 32,
+  "distinct_changed_origins": 10,
+  "flat_false_candidates_removed": 3,
+  "false_control_fills_removed": 1,
+  "removed_fill": [
+    "2024-09-25",
+    "002868"
+  ],
+  "new_control_fill_replacements": 0,
+  "source_snapshot_groups_and_old_artifacts_unchanged": true,
+  "checks": [
+    "Direct stored factors for every entry/exit match CSV within1e-12",
+    "Raw/economic gross, fees, 4 per-phase stress aggregations",
+    "Both full calendar budgets and trade/event accounting",
+    "T+1, actual phase boundaries, raw6yuan gate, no samecode repair overlap",
+    "496 selected orders obey daily and origin quotas",
+    "All3 equal raw price/same factor cases cannot pass corrected low-open",
+    "Original 250 repair trades unchanged; whole origin replay produced no new orders",
+    "All original JSON/CSV/source hashes preserved and old shortlist reused"
+  ],
+  "limitations": [
+    "Existing250 raw-bar execution audit reused because actual trade keys/fills/exits unchanged; this check does not claim independent rederivation of every new state transition.",
+    "No new2023H2 returns, no production or live09:25execution validation."
+  ]
+}

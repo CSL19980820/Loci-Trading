@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "checks": [
+    "breadth_excludes_insufficient_history",
+    "today_index_close_not_used",
+    "today_stock_close_not_used",
+    "market_Tminus1_and_stock_Tminus2",
+    "relative_returns_same_endpoints",
+    "full_score_economic_scale_invariance",
+    "full_score_prefix_causal",
+    "same_raw_and_factor_equal_price",
+    "floating_point_noise_is_not_price_break",
+    "normalized_score_scale_invariance",
+    "factor_cutoff_no_future_backfill"
+  ]
+}

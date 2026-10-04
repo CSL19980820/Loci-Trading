@@ -1,0 +1,89 @@
+{
+  "verified_at": "2026-10-04T14:45:09.769948+08:00",
+  "status": "passed",
+  "method": "Independent CSV economic return/cost/PF/common-slot/legacy-plus-new accounting and same-code overlap reconstruction, no research metrics imported",
+  "checks": {
+    "train": {
+      "legacy_original4": {
+        "closed": 213,
+        "orders": 213,
+        "common_daily_slots": 678,
+        "same_code_overlap": true
+      },
+      "baseline_flat4": {
+        "closed": 213,
+        "orders": 213,
+        "common_daily_slots": 678,
+        "same_code_overlap": false
+      },
+      "compact3_fixed4": {
+        "closed": 86,
+        "orders": 194,
+        "common_daily_slots": 678,
+        "same_code_overlap": false
+      },
+      "compact3_structure10": {
+        "closed": 86,
+        "orders": 194,
+        "common_daily_slots": 678,
+        "same_code_overlap": false
+      },
+      "shelf5_fixed4": {
+        "closed": 51,
+        "orders": 161,
+        "common_daily_slots": 678,
+        "same_code_overlap": false
+      },
+      "shelf5_structure10": {
+        "closed": 51,
+        "orders": 161,
+        "common_daily_slots": 678,
+        "same_code_overlap": false
+      },
+      "base8_fixed4": {
+        "closed": 12,
+        "orders": 96,
+        "common_daily_slots": 678,
+        "same_code_overlap": false
+      },
+      "base8_structure10": {
+        "closed": 12,
+        "orders": 96,
+        "common_daily_slots": 678,
+        "same_code_overlap": false
+      }
+    },
+    "validation_2025h2": {
+      "legacy_original4": {
+        "closed": 103,
+        "orders": 103,
+        "common_daily_slots": 212,
+        "same_code_overlap": true
+      },
+      "baseline_flat4": {
+        "closed": 103,
+        "orders": 103,
+        "common_daily_slots": 212,
+        "same_code_overlap": false
+      }
+    },
+    "observed_2026": {
+      "legacy_original4": {
+        "closed": 167,
+        "orders": 167,
+        "common_daily_slots": 322,
+        "same_code_overlap": true
+      },
+      "baseline_flat4": {
+        "closed": 167,
+        "orders": 167,
+        "common_daily_slots": 322,
+        "same_code_overlap": false
+      }
+    }
+  },
+  "total_trades": 1264,
+  "no_new_shape_later_returns_evaluated": true,
+  "withheld_2023h2_not_evaluated": true,
+  "source_hashes_match": true
+}

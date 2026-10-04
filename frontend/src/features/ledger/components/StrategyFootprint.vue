@@ -83,6 +83,7 @@ const rows = computed(() =>
 
 const activeCount = computed(() => props.lanes.filter((lane) => lane.active).length)
 const windowTotal = computed(() => rows.value.reduce((sum, row) => sum + row.placed.length, 0))
+const windowBackfill = computed(() => rows.value.reduce((sum, row) => sum + row.placed.filter(pick => pick.backfill).length, 0))
 const rangeLabel = computed(() => RANGES.find((item) => item.name === range.value)?.label ?? '')
 
 const ticks = computed(() => {
@@ -120,6 +121,10 @@ function scoreText(value: number | null): string {
       <PageTabs v-model="range" :items="RANGES" variant="pill" dense :sticky="false" aria-label="足迹区间" class="fp__range" />
     </header>
 
+    <p v-if="windowBackfill" class="fp__history-note">
+      其中 {{ windowBackfill }} 次为历史回填，非当日实时选出；在候选池开启“包含历史回填”可查看。
+    </p>
+
     <div v-if="loading && !lanes.length" class="fp__skeleton" aria-hidden="true">
       <Skeleton v-for="n in 2" :key="n" class="h-5 w-full" />
     </div>
@@ -145,7 +150,7 @@ function scoreText(value: number | null): string {
                   class="fp__dot"
                   :class="[`is-${pick.tone}`, { 'is-backfill': pick.backfill, 'is-focus': pick.date === focusDate }]"
                   :style="{ left: `${pick.left}%` }"
-                  :aria-label="`${lane.name} ${pick.date} ${pick.decisionText}`"
+                  :aria-label="`${lane.name} ${pick.date} ${pick.decisionText}${pick.backfill ? ' 历史回填' : ''}`"
                   @click="emit('pick', pick.date)"
                 />
               </TooltipTrigger>
@@ -155,7 +160,7 @@ function scoreText(value: number | null): string {
                   <span class="fp-tip__tag" :class="`is-${pick.tone}`">{{ pick.decisionText }}</span>
                   <span v-if="scoreText(pick.score)" class="fp-tip__score">{{ scoreText(pick.score) }}</span>
                 </span>
-                <span class="fp-tip__lane">{{ lane.name }}<template v-if="pick.backfill"> · 回填</template></span>
+                <span class="fp-tip__lane">{{ lane.name }}<template v-if="pick.backfill"> · 历史回填（非当日实时选出）</template></span>
                 <span v-if="pick.reason" class="fp-tip__reason">{{ pick.reason }}</span>
               </TooltipContent>
             </Tooltip>
@@ -178,6 +183,14 @@ function scoreText(value: number | null): string {
 </template>
 
 <style scoped>
+.fp__history-note {
+  margin:0;
+  color:var(--text-tertiary);
+  font-size:var(--fs-aux);
+  line-height:1.6;
+  overflow-wrap:anywhere;
+}
+
 .fp {
   --fp-name-w: minmax(96px, 168px);
   --fp-meta-w: 96px;

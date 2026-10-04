@@ -28,32 +28,12 @@ const router = createRouter({
       ...navRoute('screen-history'),
       component: () => import('@/features/strategy/ScreenHistoryView.vue'),
     },
-    // 旧独立市场入口 → 工坊「市场」Tab（?tab=installed 映射为 ?shelf=）
-    {
-      path: '/market',
-      redirect: (to) => {
-        const legacyTab = String(to.query.tab || '')
-        const shelf =
-          legacyTab === 'installed' || legacyTab === 'publish'
-            ? legacyTab
-            : typeof to.query.shelf === 'string'
-              ? to.query.shelf
-              : undefined
-        return {
-          path: '/quant',
-          query: {
-            tab: 'market',
-            ...(shelf ? { shelf } : {}),
-            ...(to.query.kind ? { kind: to.query.kind } : {}),
-          },
-        }
-      },
-    },
+    { path: '/market', redirect: '/quant' },
     { ...navRoute('ops'), component: () => import('@/features/ops/OpsView.vue') },
     // 旧运维「技能包」入口 → 工坊市场·已装
     {
       path: '/ops/skills',
-      redirect: { path: '/quant', query: { tab: 'market', shelf: 'installed', kind: 'skill' } },
+      redirect: { path: '/quant', query: { tab: 'install' } },
     },
     { ...navRoute('archive'), component: () => import('@/features/ledger/ArchiveView.vue') },
     { ...navRoute('account'), component: () => import('@/features/auth/AccountView.vue') },

@@ -3,6 +3,8 @@ from collections.abc import Mapping
 
 
 def phase_prompt(config: Mapping, phase: str, default: str = "") -> str:
+    if phase == "weekly_review":
+        return str(config.get("weekly_review_prompt") or "").strip() or str(config.get("review_prompt") or "").strip() or default
     if phase == "weekly":
         from src.ops.application.guardian_weekly_prompt import DEFAULT_WEEKLY_PROMPT
         return str(config.get("weekly_prompt") or "").strip() or default or DEFAULT_WEEKLY_PROMPT

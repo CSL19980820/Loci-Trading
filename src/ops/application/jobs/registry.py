@@ -9,6 +9,7 @@ from typing import Any
 
 from src import market as market_pkg
 
+from src.ops.application.jobs.alert_scan import execute_alert_scan
 from src.ops.application.jobs.backtest import execute_backtest
 from src.ops.application.jobs.compare import execute_compare
 from src.ops.application.jobs.context import (
@@ -22,7 +23,6 @@ from src.ops.application.jobs.context import (
 from src.ops.application.jobs.data_quality import execute_data_quality
 from src.ops.application.jobs.hot_rebuild import execute_hot_rebuild
 from src.ops.application.jobs.intraday_capture import execute_intraday_capture
-from src.ops.application.jobs.intel_brief import execute_intel_brief
 from src.ops.application.jobs.intel_fetch import execute_intel_fetch
 from src.ops.application.jobs.market_gate import (
     market_heavy_slot,
@@ -32,14 +32,10 @@ from src.ops.application.jobs.market_gate import (
 from src.ops.application.jobs.notify import _maybe_push_wecom, execute_notify
 from src.ops.application.jobs.optimize import execute_optimize
 from src.ops.application.jobs.outcome import execute_outcome
-from src.ops.application.jobs.paper_quant import (
-    execute_alert_scan,
-    execute_paper_eod,
-    execute_strategy_monitor,
-)
 from src.ops.application.jobs.prune import execute_prune
 from src.ops.application.jobs.prune_tenant import execute_prune_tenant
 from src.ops.application.jobs.screen import execute_screen
+from src.ops.application.jobs.screen_prepare import execute_screen_prepare
 from src.ops.application.jobs.skill import execute_skill
 from src.ops.application.jobs.guardian import execute_guardian
 from src.ops.application.jobs.stock_agent import execute_stock_agent
@@ -82,6 +78,7 @@ EXECUTORS: dict[str, Executor] = {
     "exchange_calendar": execute_exchange_calendar,
     "sync": execute_sync,
     "screen": execute_screen,
+    "screen_prepare": execute_screen_prepare,
     "backtest": execute_backtest,
     "compare": execute_compare,
     "optimize": execute_optimize,
@@ -93,78 +90,12 @@ EXECUTORS: dict[str, Executor] = {
     "hot_rebuild": execute_hot_rebuild,
     "data_quality": execute_data_quality,
     "intel_fetch": execute_intel_fetch,
-    "intel_brief": execute_intel_brief,
     "intraday_capture": execute_intraday_capture,
     "skill_watch": execute_skill_watch,
     "alert_scan": execute_alert_scan,
-    "strategy_monitor": execute_strategy_monitor,
-    "paper_eod": execute_paper_eod,
 }
 
 
-def _maybe_seed_nextday_plan(
-    *,
-    store: OpsStore,
-    job: dict[str, Any],
-    result: dict[str, Any],
-) -> None:
-    """选股/技能成功且启用 paper_quant 时，自动写次日预案。
-
-    仅 ``screen`` / ``skill``（收盘选股链路）种子并可推企微。
-    ``skill_watch`` 盘中监测只推监测摘要，禁止改写/推送「次日预案」。
-    """
-    kind = str(job.get("kind") or "")
-    if kind not in {"screen", "skill"}:
-        return
-    picks = result.get("picks")
-    if not isinstance(picks, list) or not picks:
-        return
-    config = dict(job.get("config") or {})
-    # skill 任务存 config.skill；runner 出口带 result.slug。
-    # 禁止落到「监测·龙回头」这类中文任务名去建错舱。
-    slug = str(
-        config.get("slug")
-        or config.get("skill")
-        or result.get("slug")
-        or result.get("skill")
-        or result.get("strategy")
-        or ""
-    ).strip()
-    if slug.startswith("screen:"):
-        slug = slug[len("screen:") :]
-    if slug.startswith("监测·") or ("·" in slug and any("\u4e00" <= c <= "\u9fff" for c in slug)):
-        logger.warning("refuse seeding nextday plan with non-slug key %r", slug)
-        return
-    if not slug or "/" in slug or " " in slug:
-        return
-    from src.ops.application.retired_slugs import is_retired_strategy_slug
-    from src.ops.application.retire_dragon_return import is_retired_paper_cabin
-
-    if is_retired_paper_cabin(slug) or is_retired_strategy_slug(slug):
-        return
-    cabin = store.ensure_paper_cabin(slug)
-    from src.ops.application.jobs.paper_quant_support import _paper_quant_config
-
-    paper = _paper_quant_config(cabin.get("config") if isinstance(cabin.get("config"), dict) else {})
-    if not (paper.get("enabled") or config.get("paper_quant_enabled")):
-        return
-    try:
-        from src.ops.application.jobs.paper_quant import generate_nextday_plan
-
-        plan = generate_nextday_plan(
-            store,
-            slug=slug,
-            picks=[p for p in picks if isinstance(p, dict)],
-            source=kind,
-            notify=False,
-        )
-        result["nextday_plan"] = {
-            "slug": slug,
-            "plan_date": plan.get("plan_date"),
-            "id": plan.get("id"),
-        }
-    except Exception:
-        logger.exception("seed nextday plan failed for %s", slug)
 
 
 def _job_timeout_seconds(job: dict[str, Any]) -> float | None:
@@ -277,6 +208,16 @@ def run_job(
     executor = EXECUTORS.get(kind)
     if executor is None:
         raise OpsError(f"没有 {kind} 类型的执行器")
+    realtime_screen = False
+    if kind == "screen":
+        try:
+            from src.strategy import get as get_strategy
+            realtime_screen = bool(getattr(get_strategy(str((job.get("config") or {}).get("strategy") or "")),
+                                           "requires_realtime_inputs", False))
+        except Exception:
+            pass
+    if realtime_screen or kind == "screen_prepare":
+        job = {**job, "config": {**(job.get("config") or {}), "push_wecom": False}}
 
     if idempotency_key and not run_id:
         existing = store.get_run_by_idempotency(idempotency_key)
@@ -348,10 +289,14 @@ def run_job(
             job_label = str(job.get("name") or job.get("id") or "")
             gate = (
                 nullcontext()
-                if str(kind) == "screen" and market_pkg.in_live_screen_clock()
-                else market_heavy_slot(str(kind), job_label)
+                if realtime_screen or (str(kind) == "screen" and market_pkg.in_live_screen_clock())
+                else market_heavy_slot("screen" if kind == "screen_prepare" else str(kind), job_label)
             )
-            with HeartbeatPump(ctx), screen_memory_slot(str(kind), job_label), gate:
+            memory_slot = (
+                nullcontext() if realtime_screen
+                else screen_memory_slot("screen" if kind == "screen_prepare" else str(kind), job_label)
+            )
+            with HeartbeatPump(ctx), memory_slot, gate:
                 ctx.check_cancelled()
                 result = executor(dict(job.get("config") or {}), ctx)
             # 泵已停（stop 会 join 心跳线程），最后一拍补在这里：不让心跳线程和紧
@@ -437,65 +382,19 @@ def run_job(
         )
         return {"run_id": run_id, "status": "failed", "error": str(exc)}
 
-    # 先定最终 status，再推企微 / 种子预案，避免库内红、企微绿
     status = "success"
     if kind in {"guardian", "guardian_delivery"} and isinstance(result, dict) and result.get("status") == "failed":
         status = "failed"
-    if (
-        isinstance(result, dict)
-        and result.get("skipped")
-        and kind in {
-            "notify",
-            "intel_fetch",
-            # 简报「悟道未装配 / 这一档还没出稿 / 今天已推过」都走 skipped：
-            # 记 failed 会让四档任务每天在运维页刷红，而什么都没坏。
-            "intel_brief",
-            "skill_watch",
-            "strategy_monitor",
-            "paper_eod",
-        }
-    ):
-        status = "skipped"
-    elif (
-        isinstance(result, dict)
-        and kind == "intel_fetch"
-        and not result.get("skipped")
-        and int((result.get("stats") or {}).get("failed") or 0) > 0
-    ):
-        # 部分 MCP 失败不得假绿
-        status = "failed"
-    elif (
-        isinstance(result, dict)
-        and kind == "skill_watch"
-        and isinstance(result.get("paper_monitor"), dict)
-        and result["paper_monitor"].get("status") == "failed"
-    ):
-        # 统一盘中任务里纸面动作是同一职责，失败不能被扫描成功掩盖。
-        status = "failed"
-    elif (
-        isinstance(result, dict)
-        and kind == "sync"
-        and int(result.get("failed") or 0) > 0
-    ):
-        # 历史日 K 硬失败不得假绿（现价软跳过不计入 failed）
-        status = "failed"
-    elif (
-        isinstance(result, dict)
-        and kind == "intel_brief"
-        and not result.get("skipped")
-        and str(result.get("push_error") or "").strip()
-    ):
-        # 简报取回来了但一条都没发出去（webhook 坏/网络断）不得假绿：这条任务的
-        # 全部价值就是「发到人手上」。刻意没发（安静时段/限流/开关关闭/已推过）走
-        # skipped 或 push_skipped，不落这里。
-        status = "failed"
-
     if isinstance(result, dict):
+        if result.get("skipped") and kind in {"notify", "intel_fetch", "skill_watch"}:
+            status = "skipped"
+        elif kind == "intel_fetch" and int((result.get("stats") or {}).get("failed") or 0) > 0:
+            status = "failed"
+        elif kind == "sync" and int(result.get("failed") or 0) > 0:
+            status = "failed"
         push_meta = _maybe_push_wecom(store=store, job=job, status=status, result=result)
         if push_meta:
             result = {**result, **push_meta}
-        if status == "success":
-            _maybe_seed_nextday_plan(store=store, job=job, result=result)
 
     duration = int((time.monotonic() - started) * 1000)
     try:

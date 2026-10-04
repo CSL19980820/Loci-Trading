@@ -6,6 +6,7 @@ from src.ledger.infrastructure.store import (
     normalize_date,
 )
 from src.ledger.infrastructure.store_types import normalize_decision
+from src.ledger.infrastructure.candidates_sql import EXCLUDE_BACKFILL_SQL, EXCLUDE_STALE_API_SCREEN_SQL
 from src.ledger.infrastructure.guardian_store import GuardianStore
 from src.ledger.infrastructure.stock_agent_store import StockAgentStore
 from src.ledger.infrastructure.stock_agent_history import StockAgentConflict
@@ -36,4 +37,8 @@ __all__ = [
     "normalize_code",
     "normalize_date",
     "normalize_decision",
+    "EXCLUDE_BACKFILL_SQL",
+    "EXCLUDE_STALE_API_SCREEN_SQL",
 ]
+
+from src.ledger.infrastructure.agent_activity import read_agent_activity as read_agent_activity

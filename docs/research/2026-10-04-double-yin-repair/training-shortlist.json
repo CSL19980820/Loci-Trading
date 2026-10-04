@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-10-04T14:43:24.978740+08:00",
+  "selected": [
+    "one_dry_fixed",
+    "one_dry_structural"
+  ],
+  "qualified": [],
+  "status": "diagnostic_only_no_qualified_candidate",
+  "train_sha256": "6767abdfe58adfc666c587556ee162a1996b5247a4805dea0ca760bc19a1532d",
+  "plan_sha256": "beabeee791283d2b8ae0e7b83ac6c54e2a27f741615826ca86525c94bc60b045"
+}

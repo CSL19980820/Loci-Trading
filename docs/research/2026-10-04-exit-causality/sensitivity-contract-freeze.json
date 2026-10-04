@@ -1,0 +1,11 @@
+{
+  "frozen_at_utc": "2026-10-04T10:04:52.921374+00:00",
+  "new_counterfactual_returns_computed": false,
+  "incidence_result_seen": false,
+  "phase": "contract_only_before_incidence",
+  "sha256": {
+    "SENSITIVITY-PLAN.md": "343cfa43cbd4ba804116458389a0e73140670ee907b1d291addd4b16e426dce6",
+    "method-review.md": "e60dddafbadb47a8d60c8f448a1b7d27898b60f892793dbd3ca298c6d2d8698a",
+    "root-synthetic-check.json": "47564fe61ef9b42aecb7299b3d1d0c89043bf336cc5ac086027c867be1472144"
+  }
+}

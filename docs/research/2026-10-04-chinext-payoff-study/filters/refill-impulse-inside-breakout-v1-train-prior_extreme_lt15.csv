@@ -1,0 +1,2 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,impulse-inside-breakout-v1,prior_extreme_lt15,2024-10-18,301028,closed,5.592357207615594

@@ -1,0 +1,15 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,contraction-rebreakout-v1,clv_ge0_75,2024-04-23,301176,closed,10.001591536338548
+train,contraction-rebreakout-v1,clv_ge0_75,2024-05-14,300856,closed,-6.210000000000016
+train,contraction-rebreakout-v1,clv_ge0_75,2024-06-18,300449,closed,-6.210000000000005
+train,contraction-rebreakout-v1,clv_ge0_75,2024-10-18,300217,closed,-3.050909090909105
+train,contraction-rebreakout-v1,clv_ge0_75,2024-12-05,300058,closed,-1.4942465753424623
+train,contraction-rebreakout-v1,clv_ge0_75,2025-01-23,300708,closed,-6.210000000000016
+train,contraction-rebreakout-v1,clv_ge0_75,2025-01-23,300837,closed,0.5271007371007155
+train,contraction-rebreakout-v1,clv_ge0_75,2025-02-14,301302,closed,-2.070465116279064
+train,contraction-rebreakout-v1,clv_ge0_75,2025-02-26,301029,closed,-6.210000000000005
+train,contraction-rebreakout-v1,clv_ge0_75,2025-02-26,301608,closed,13.04287356321838
+train,contraction-rebreakout-v1,clv_ge0_75,2025-03-14,300947,closed,-1.6842014742014753
+train,contraction-rebreakout-v1,clv_ge0_75,2025-04-17,300004,closed,-3.5792722371967742
+train,contraction-rebreakout-v1,clv_ge0_75,2025-05-09,301259,closed,9.380120861797156
+train,contraction-rebreakout-v1,clv_ge0_75,2025-05-16,301076,closed,-6.209999999999995

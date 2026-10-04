@@ -55,4 +55,11 @@ __all__ = [
     "save_provider",
     "update_provider_models",
     "validate",
+    "start_grpc_from_env",
 ]
+
+
+async def start_grpc_from_env():
+    """Start the optional gateway only when requested by the application lifespan."""
+    from src.ai.infrastructure.grpc_gateway import start_from_env
+    return await start_from_env()

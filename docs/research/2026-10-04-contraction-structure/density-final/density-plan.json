@@ -1,0 +1,49 @@
+{
+  "created_at": "2026-10-04T14:35:57.482329+08:00",
+  "shapes": {
+    "compact3": {
+      "push": 5,
+      "pause": 3,
+      "min_push_pct": 8.0,
+      "max_width_pct": 8.0,
+      "max_tr_ratio": 0.75,
+      "max_volume_ratio": 0.8,
+      "lifetime": 5
+    },
+    "shelf5": {
+      "push": 10,
+      "pause": 5,
+      "min_push_pct": 10.0,
+      "max_width_pct": 10.0,
+      "max_tr_ratio": 0.7,
+      "max_volume_ratio": 0.75,
+      "lifetime": 7
+    },
+    "base8": {
+      "push": 15,
+      "pause": 8,
+      "min_push_pct": 12.0,
+      "max_width_pct": 12.0,
+      "max_tr_ratio": 0.7,
+      "max_volume_ratio": 0.7,
+      "lifetime": 10
+    }
+  },
+  "sources": {
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/strategy_chinext_review.py": "09a77ef333095aff5bd8dc61a149be70af03e9f7c3f39ba4299a05095f2e1d4a",
+    "src/backtest/application/runner.py": "3b02872ff4c18aa49d6fa713fdb6921035d777f6264aa0ad7b48771dafc69f6a",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/metrics.py": "485fcabd1dbf8306ef03847c1e86228be98752d8dc072b02063396b3ae1f2390",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/strategy/application/contraction_rebreakout.py": "fce8a5068bd9ddce16cd112f95312f4c5efb7d3751b87c500181f694cd3a6f74",
+    "src/strategy/application/impulse_inside_breakout.py": "f1b78a41f5bf53489bf22733218f650296732afee34e2df154d106c1fcd582c3",
+    "tools/research_contraction_structure.py": "7da50821a87f07b33431d1ce63caa0ef318ca201870d817e871f6f97c8b7be5c",
+    "tools/research_chinext_payoff_filters.py": "0952a0bae6e53dabd69791d41e76061af30a17e45d9d6f8253d0e7e95fd6903d",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b"
+  },
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "scope": "Training signal density only; 2023 warmup; no forward prices/returns or 2023H2 performance"
+}

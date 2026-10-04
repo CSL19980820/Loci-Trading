@@ -1,4 +1,5 @@
-.guardian-workspace { display: flex; flex-direction: column; width: 100%; min-width: 0; gap: 12px; color: var(--ink); }
+.guardian-workspace { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; height: 100%; overflow: hidden; gap: 8px; color: var(--ink); }
+.guardian-workspace > :not(.guardian-workspace-body) { flex-shrink: 0; }
 
 /* ─── 身份与动作 ─── */
 .guardian-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 10px 0 2px; }
@@ -67,13 +68,10 @@
 .guardian-ledger .gain, .guardian-ledger__facts dd.gain { color: var(--up); }
 .guardian-ledger .loss, .guardian-ledger__facts dd.loss { color: var(--down); }
 
-/* ─── 分区页签 ─── */
-.guardian-tabs-row { flex-shrink: 0; min-width: 0; }
-.guardian-tabs { margin: 0; }
-.guardian-tabs :deep(.page-tabs__item) { height: 38px; font-size: var(--fs-ui); }
-.guardian-tabs :deep(.page-tabs__trailing) { min-width: 0; max-width: 42%; }
-
-.guardian-content-area { display: flex; flex-direction: column; width: 100%; min-width: 0; }
+/* 工作区导航独立于页头；内容根据剩余高度展示，长内容在区域内滚动。 */
+.guardian-workspace-body { display: grid; grid-template-columns: 160px minmax(0, 1fr); flex: 1 1 0%; min-width: 0; min-height: 0; gap: 12px; overflow: hidden; }
+.guardian-content-area { display: flex; flex-direction: column; width: 100%; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.guardian-content-area > :deep(*) { min-width: 0; }
 .gain { color: var(--up); }
 .loss { color: var(--down); }
 
@@ -564,12 +562,9 @@
   .guardian-identity h1 { font-size: 17px; }
 }
 
-.guardian-inline-tabs { flex:0 1 auto; }
-.guardian-inline-tabs :deep(.page-tabs__row) { border-bottom:0; }
-.guardian-history-summary { font-family:var(--font); font-size:11px; color:var(--text-tertiary); white-space:nowrap; }
+.guardian-history-summary { display: block; font-family:var(--font); font-size:11px; line-height:1.6; color:var(--text-tertiary); overflow-wrap:anywhere; }
 
 .guardian-storage-menu { display:none; }
-.guardian-history-summary { flex:0 1 180px; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 @media(min-width:1024px) {
   .guardian-header,.guardian-identity,.guardian-actions { flex-wrap:nowrap; }
   .guardian-actions { flex-shrink:0; }

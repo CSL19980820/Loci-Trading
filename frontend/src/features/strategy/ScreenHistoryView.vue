@@ -99,6 +99,7 @@ const enginePercent = computed(() => screenRun.percentFor(engineSlug.value))
 const engineResult = computed(() => screenRun.resultFor(engineSlug.value))
 const engineElapsed = computed(() => screenRun.elapsedTextFor(engineSlug.value))
 const engineAbandoned = computed(() => screenRun.abandonedFor(engineSlug.value))
+watch(engineSlug, slug => { void screenRun.ensureResultFor(slug) }, { immediate: true })
 
 /** 并行跑着的**其它**战法：只是告知，不阻塞本页开跑 */
 const parallelRuns = computed(() =>
@@ -336,8 +337,9 @@ watch(
 
 
 async function refreshAll(): Promise<void> {
-  await loadCatalog()
+  // Restore the deep-link selection before the catalog can choose and write a default.
   readQueryState()
+  await loadCatalog()
   if (selected.value?.kind === 'engine') void refetchHistory()
   try {
     const [providerList, session] = await Promise.all([

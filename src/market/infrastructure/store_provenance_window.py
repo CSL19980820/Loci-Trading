@@ -29,6 +29,7 @@ class _EvidenceWindow:
     dates: list[str]
     fetched: list[str]
     sources: dict[str, str]
+    scope_codes: frozenset[str] | None = None
 
     def aggregate(self, codes: Sequence[str], start: str, end: str) -> list[dict[str, Any]]:
         first, last = bisect_left(self.dates, start), bisect_right(self.dates, end)
@@ -68,16 +69,21 @@ class _EvidenceWindow:
         return result
 
 
-def _load(state: _PanelWindow) -> _EvidenceWindow | None:
+def _load(state: _PanelWindow, codes: frozenset[str] | None) -> _EvidenceWindow | None:
     # Reserve 48 bytes/row for packed storage, slice/mask and aggregation scratch.
     # Metadata gets the remaining budget; it cannot grow with arbitrary string IDs.
     max_rows = max(0, state.max_evidence_bytes // 48)
     if not max_rows:
         return None
+    where = "trade_date >= ? AND trade_date <= ?"
+    params: list[Any] = [state.start, state.end]
+    if codes is not None:
+        ordered_codes = sorted(codes)
+        where += " AND code IN (" + ",".join("?" for _ in ordered_codes) + ")"
+        params.extend(ordered_codes)
     count = state.conn.execute(
         "SELECT COUNT(*) FROM (SELECT 1 FROM quotes_daily "
-        "WHERE trade_date >= ? AND trade_date <= ? LIMIT ?)",
-        (state.start, state.end, max_rows + 1),
+        "WHERE " + where + " LIMIT ?)", [*params, max_rows + 1],
     ).fetchone()[0]
     if count > max_rows:
         return None
@@ -91,8 +97,7 @@ def _load(state: _PanelWindow) -> _EvidenceWindow | None:
     cursor = state.conn.execute(
         "SELECT code, trade_date, receipt_id, CASE WHEN receipt_id IS NULL "
         "THEN COALESCE(NULLIF(source, ''), 'unknown') ELSE '' END, fetched_at, " + flags
-        + " FROM quotes_daily WHERE trade_date >= ? AND trade_date <= ? LIMIT ?",
-        (state.start, state.end, max_rows + 1),
+        + " FROM quotes_daily WHERE " + where + " LIMIT ?", [*params, max_rows + 1],
     )
     offset = 0
     try:
@@ -139,7 +144,7 @@ def _load(state: _PanelWindow) -> _EvidenceWindow | None:
             if budget < 0:
                 return None
             sources[receipt_id] = source
-    return _EvidenceWindow(packed, list(groups), axes[0], axes[1], sources)
+    return _EvidenceWindow(packed, list(groups), axes[0], axes[1], sources, codes)
 
 
 def cached_quote_evidence(
@@ -147,21 +152,32 @@ def cached_quote_evidence(
 ) -> list[dict[str, Any]] | None:
     state = _ACTIVE_WINDOW.get()
     if (state is None or state.store is not store or state.conn is not store.conn
-            or not start or not end or start < state.start or end > state.end
+            or not start or not end or start > end or start < state.start or end > state.end
             or not state.refresh()):
         return None
     version = state.version
-    if state.evidence is None:
-        if state.evidence_declined:
+    requested = frozenset(codes) if codes else None
+    cached = state.evidence
+    scope = requested
+    if cached is not None:
+        if cached.scope_codes is None or (requested is not None and requested.issubset(cached.scope_codes)):
+            scope = cached.scope_codes
+        else:
+            scope = None if requested is None else requested | cached.scope_codes
+    if cached is None or scope != cached.scope_codes:
+        if state.evidence_declined and state.evidence_declined_request == scope:
             return None
         state.evidence_declined = True
-        candidate = _load(state)
+        state.evidence_declined_request = scope
+        candidate = _load(state, scope)
         if state.conn.in_transaction or version != state.current_version():
             state.clear()
             return None
-        state.evidence = candidate
         if candidate is None:
             return None
+        state.evidence = candidate
+        state.evidence_declined = False
+        state.evidence_declined_request = None
     result = state.evidence.aggregate(codes, start, end)
     if state.conn.in_transaction or version != state.current_version():
         state.clear()

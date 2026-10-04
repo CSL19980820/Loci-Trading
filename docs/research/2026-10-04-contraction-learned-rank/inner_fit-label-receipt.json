@@ -1,0 +1,11 @@
+{
+  "candidate_rows": 248,
+  "corrected_rows": 248,
+  "label_status_counts": {
+    "closed": 245,
+    "unresolved": 3
+  },
+  "model_training_rows": 245,
+  "actual_maturity_not_planned_maturity": true,
+  "maximum_used_label_date": "2024-12-26"
+}

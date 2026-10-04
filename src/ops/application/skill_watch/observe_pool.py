@@ -23,7 +23,7 @@ from src.ops.application.skill_watch.observe_format import (
     score_of as _score,
     text_of as _text,
 )
-from src.ops.application.skill_watch.paper_eligibility import is_observe_intent
+from src.ops.application.signal_policy.eligibility import is_observe_intent
 
 
 def _theme_key(row: dict[str, Any]) -> tuple[str, str] | None:

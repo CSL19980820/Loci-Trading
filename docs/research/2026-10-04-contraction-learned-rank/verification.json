@@ -1,0 +1,30 @@
+{
+  "created_at": "2026-10-04T07:58:41.467864+00:00",
+  "plan_sha256": "4606f7b3ec08b038ae5704a8cb79cfdf9eae836c2c7c092983cf0a7d9cadc232",
+  "passed": true,
+  "training_candidates": 248,
+  "training_used_labels": 245,
+  "training_unresolved_excluded": 3,
+  "training_decision_days": 92,
+  "inner_candidate_rows": 196,
+  "inner_formal_trade_records_verified": 436,
+  "inner_common_days": 113,
+  "inner_common_slots": 226,
+  "independent_augmented_matrix_ridge_solution_matches": true,
+  "nominees": [],
+  "later_not_read": true,
+  "checks": [
+    "Frozen root/core/adapter/snapshot hashes;failed-preflight source and plan preserved",
+    "2024actualexit maturity and no2023labels;unresolved targets missing",
+    "Independent weighted augmented ridge normal equations match intercept/scaler/coefficients",
+    "Predicted round10/signed Top2/positive gate and all3control selection reconstructed from features only",
+    "Preselected receipts match final orders;no future label-status filtering",
+    "Raw factor economic returns,0.21/0.42costs,same-winner4stress metrics",
+    "All113market dates and226slots retained;daily sums reconcile",
+    "Candidate density and actual added/removed selected names independently counted"
+  ],
+  "limits": [
+    "No repeated full raw-bar exit replay; unchanged Executor and prior execution checks reused.",
+    "Six-month descriptive intervals are not independent future validation;nofixedcapitalNAVclaim."
+  ]
+}

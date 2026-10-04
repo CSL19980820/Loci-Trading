@@ -13,7 +13,7 @@ export interface Candidate {
   /** 精确的战法 slug（与 `screen:{slug}` 定时任务同一个键） */
   strategy_slug?: string
   /** `slim` 列表不返回 */
-  evidence: Record<string, string>
+  evidence?: Record<string, unknown>
   source: string
   created_at: string
 }

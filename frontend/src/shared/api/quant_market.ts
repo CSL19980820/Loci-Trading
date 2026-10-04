@@ -1,11 +1,6 @@
 /** 行情：覆盖率 / 实时条 / 看板 / K 线 / 同步 / 引导 / 股票池 / 体检。 */
 import { quantRequest, query } from '@/shared/api/quant_client'
 import type {
-  AkshareBatchProbeResult,
-  AkshareCatalog,
-  AkshareCatalogProbeResult,
-  AkshareCatalogSource,
-  AkshareVersionInfo,
   Capabilities,
   Instrument,
   MarketBoard,
@@ -351,52 +346,4 @@ export function repairMarketTurnover(since?: string): Promise<{
   dates_scanned: number
 }> {
   return quantRequest(`/market/repair/turnover${query({ since })}`, { method: 'POST' })
-}
-
-export function getAkshareCatalog(
-  filters: { q?: string; category?: string; source?: string } = {},
-): Promise<AkshareCatalog> {
-  const query = new URLSearchParams()
-  if (filters.q) query.set('q', filters.q)
-  if (filters.category) query.set('category', filters.category)
-  if (filters.source) query.set('source', filters.source)
-  const search = query.toString()
-  const suffix = search ? `?${search}` : ''
-  return quantRequest<AkshareCatalog>(`/market/akshare/catalog${suffix}`)
-}
-
-/** 只要每个来源挂了多少接口。整份目录几千条，货架列表不该为一个数字全量拉。 */
-export function getAkshareSources(): Promise<{
-  sources: AkshareCatalogSource[]
-  total?: number
-  akshare_version?: string
-}> {
-  return quantRequest('/market/akshare/sources')
-}
-
-export function getAkshareVersion(fetchLatest = true): Promise<AkshareVersionInfo> {
-  const suffix = fetchLatest ? '' : '?fetch_latest=false'
-  return quantRequest(`/market/akshare/version${suffix}`)
-}
-
-export function probeAkshareCatalog(
-  name: string,
-  params: Record<string, unknown>,
-): Promise<AkshareCatalogProbeResult> {
-  return quantRequest(`/market/akshare/catalog/${encodeURIComponent(name)}/probe`, {
-    method: 'POST',
-    body: JSON.stringify({ params }),
-  })
-}
-
-/** 一键/分页批量探测；不传 names 则按目录全量续跑。 */
-export function probeAkshareCatalogBatch(payload: {
-  names?: string[]
-  offset?: number
-  limit?: number
-}): Promise<AkshareBatchProbeResult> {
-  return quantRequest('/market/akshare/catalog/probe-batch', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
 }

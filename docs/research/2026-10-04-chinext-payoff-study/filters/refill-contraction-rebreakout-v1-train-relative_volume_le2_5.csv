@@ -1,0 +1,3 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+train,contraction-rebreakout-v1,relative_volume_le2_5,2024-05-14,300856,closed,-6.210000000000016
+train,contraction-rebreakout-v1,relative_volume_le2_5,2025-01-23,300940,closed,5.701330049261077

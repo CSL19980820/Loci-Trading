@@ -1,0 +1,11 @@
+segment,strategy,variant,signal_date,code,status,realized_net_return_pct
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-01-29,300448,closed,-6.210000000000005
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-01-30,301235,closed,-2.51040595399188
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-02-12,300602,closed,11.93876033057852
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-04-13,300501,closed,1.573840503672618
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-04-17,300626,closed,-1.5484994716449385
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-05-06,300798,closed,-6.209999999999995
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-07-31,301584,closed,9.15073059360729
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-08-12,300382,closed,5.466020408163263
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-08-27,301550,closed,-6.210000000000005
+observed_2026,contraction-rebreakout-v1,clv_ge0_75,2026-09-01,300773,closed,-0.21

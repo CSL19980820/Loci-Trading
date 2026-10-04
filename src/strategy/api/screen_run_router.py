@@ -26,7 +26,7 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 
@@ -56,6 +56,9 @@ def build_screen_run_router(
             max_length=64,
             description="只看这一个战法的槽；省略则返回聚合快照（含 runs 字典）",
         ),
+        view: Literal["full", "progress"] = Query(
+            "full", description="progress 只返回进度和日志；完成结果按 strategy 单独读取",
+        ),
     ) -> dict[str, Any]:
         """即时选股进度（轮询）。
 
@@ -70,8 +73,8 @@ def build_screen_run_router(
 
         slug = str(strategy or "").strip()
         if slug:
-            return screen_run_snapshot(slug)
-        return screen_run_snapshot_all()
+            return screen_run_snapshot(slug, include_results=view == "full")
+        return screen_run_snapshot_all(include_results=view == "full")
 
     @router.post("/api/screen/run", tags=["strategy"], status_code=202)
     def screen_run_start(payload: ScreenRequest, _write: None = write_guard) -> dict[str, Any]:

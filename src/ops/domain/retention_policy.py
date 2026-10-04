@@ -10,7 +10,6 @@ class RetentionPolicy(BaseModel):
     job_days: int = Field(default=15, ge=0, le=3650)
     job_keep_min: int = Field(default=5, ge=1, le=100000)
     job_keep_max: int = Field(default=200, ge=1, le=100000)
-    monitor_days: int = Field(default=15, ge=0, le=3650)
     alert_days: int = Field(default=15, ge=0, le=3650)
     decision_days: int = Field(default=15, ge=0, le=3650)
     leader_days: int = Field(default=15, ge=0, le=3650)
@@ -21,7 +20,6 @@ class RetentionPolicy(BaseModel):
     skill_days: int = Field(default=15, ge=0, le=3650)
     research_days: int = Field(default=15, ge=0, le=3650)
     intraday_days: int = Field(default=60, ge=0, le=3650)
-    community_days: int = Field(default=15, ge=0, le=3650)
     notification_days: int = Field(default=15, ge=0, le=3650)
     usage_days: int = Field(default=15, ge=0, le=3650)
 

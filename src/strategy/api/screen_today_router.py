@@ -12,6 +12,7 @@ from src.shared.api_deps import (
     missing_dependency,
     should_sync_today,
 )
+from src.shared.evidence_compact import compact_job_result
 from src.shared.paths import market_hot_db
 from src.shared.screen_capacity import ScreenCapacityBusy, screen_capacity_permit
 
@@ -57,6 +58,28 @@ def build_screen_today_router(
             from src.strategy.domain.base import StrategyError
         except ImportError as exc:
             raise missing_dependency(exc) from exc
+
+        from src.strategy import get as get_strategy
+
+        try:
+            engine = get_strategy(strategy)
+        except StrategyError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if getattr(engine, "requires_realtime_inputs", False):
+            from src.strategy.application.screen_run import execute_realtime_screen
+
+            try:
+                body = execute_realtime_screen(
+                    engine, {"strategy": strategy, "date": date,
+                             "record_candidates": record_candidates, "top_n": top_n},
+                    palace_db=palace_db, source="api:screen_today",
+                )
+            except ScreenCapacityBusy as exc:
+                raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
+            except StrategyError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            body.update(synced=False, sync_note="使用盘后候选池及今日现场竞价行情")
+            return body
 
         synced = False
         sync_note = ""
@@ -162,6 +185,7 @@ def build_screen_today_router(
                 top_n=top_n,
                 source="api:screen_today",
             )
+        compact_job_result(body)
         return body
 
     return router

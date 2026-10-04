@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "independent_augmented_normal_equation": true,
+  "model": "inner-model.json",
+  "training_rows": 245,
+  "training_dates": 92,
+  "max_coefficient_difference": 4.884981308350689e-15,
+  "normal_equation_residual": 4.884981308350689e-15,
+  "max_label_available_date": "2024-12-26",
+  "unresolved_rows_excluded": 3,
+  "scope": "Fit coefficients/scaler/time only; evaluation profitability verified separately."
+}

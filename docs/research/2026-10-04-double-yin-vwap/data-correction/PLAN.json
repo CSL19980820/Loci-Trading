@@ -1,0 +1,266 @@
+{
+  "created_at": "2026-10-04T16:42:08.149982+08:00",
+  "kind": "official_suspension_execution_evidence_correction",
+  "policy_contract": "Original frozen A/B, thresholds, score, group Top2, costs, exits, splits and acceptance unchanged. Reuse original training identity and original B-only shortlist. Replay only B plus all three controls in the two later periods; no A later.",
+  "overlay_contract": "Only the ten named confirmed suspension market dates, restricted to each execution period. Copy data['volume'] before assigning0; no original ndarray/pandas/database writes. All other execution arrays and raw QC stay identical. Stop date inclusive, resumption date excluded. Retain original preselection and do not refill cancelled slots.",
+  "interpretation": "Official announcements resolve execution status retrospectively; this is not a new opening predictor. Missing raw quotes remain missing in original data/QC. 002036 opening order is already selected then confirmed cancelled0;605389 remains held through known suspension under the unchanged delayed-exit contract.",
+  "sources": [
+    {
+      "code": "605389",
+      "event": "suspension",
+      "effective_date": "2025-07-04",
+      "effective_session": "opening",
+      "url": "https://static.cninfo.com.cn/finalpage/2025-07-04/1224071231.PDF",
+      "file": "announcements/605389-suspension-2025-07-04.pdf",
+      "sha256": "7d42146b6c36649ae9dfe33fb84a048edd72ab1f7aaeb780e5c707c5a20d9408"
+    },
+    {
+      "code": "605389",
+      "event": "resumption",
+      "effective_date": "2025-07-11",
+      "effective_session": "opening",
+      "url": "https://static.cninfo.com.cn/finalpage/2025-07-11/1224131661.PDF",
+      "file": "announcements/605389-resumption-2025-07-11.pdf",
+      "sha256": "10753b0da5ad7c0220ab74e259f255ad554a0df5824e38a63659c19735bb13cc"
+    },
+    {
+      "code": "002036",
+      "event": "suspension",
+      "effective_date": "2026-07-23",
+      "effective_session": "opening",
+      "url": "https://static.cninfo.com.cn/finalpage/2026-07-23/1225437970.PDF",
+      "file": "announcements/002036-suspension-2026-07-23.pdf",
+      "sha256": "0a3d3fa3a878a4fc7963090ed39fc7efe11dfc86df09e963c0c4522d00614c66"
+    },
+    {
+      "code": "002036",
+      "event": "resumption",
+      "effective_date": "2026-07-30",
+      "effective_session": "opening",
+      "url": "https://static.cninfo.com.cn/finalpage/2026-07-30/1225447271.PDF",
+      "file": "announcements/002036-resumption-2026-07-30.pdf",
+      "sha256": "d2be3f800ca3f301a529c4dd1acbbea398a6acafe495fb2bdd220d999e0e10d5"
+    }
+  ],
+  "suspension_dates": {
+    "605389": [
+      "2025-07-04",
+      "2025-07-07",
+      "2025-07-08",
+      "2025-07-09",
+      "2025-07-10"
+    ],
+    "002036": [
+      "2026-07-23",
+      "2026-07-24",
+      "2026-07-27",
+      "2026-07-28",
+      "2026-07-29"
+    ]
+  },
+  "snapshot_rows": [
+    {
+      "code": "605389",
+      "date": "2025-07-04",
+      "snapshot_rows": [
+        {
+          "code": "605389",
+          "trade_date": "2025-07-04",
+          "volume": null,
+          "source": "baostock"
+        }
+      ]
+    },
+    {
+      "code": "605389",
+      "date": "2025-07-07",
+      "snapshot_rows": [
+        {
+          "code": "605389",
+          "trade_date": "2025-07-07",
+          "volume": null,
+          "source": "baostock"
+        }
+      ]
+    },
+    {
+      "code": "605389",
+      "date": "2025-07-08",
+      "snapshot_rows": [
+        {
+          "code": "605389",
+          "trade_date": "2025-07-08",
+          "volume": null,
+          "source": "baostock"
+        }
+      ]
+    },
+    {
+      "code": "605389",
+      "date": "2025-07-09",
+      "snapshot_rows": [
+        {
+          "code": "605389",
+          "trade_date": "2025-07-09",
+          "volume": null,
+          "source": "baostock"
+        }
+      ]
+    },
+    {
+      "code": "605389",
+      "date": "2025-07-10",
+      "snapshot_rows": [
+        {
+          "code": "605389",
+          "trade_date": "2025-07-10",
+          "volume": null,
+          "source": "baostock"
+        }
+      ]
+    },
+    {
+      "code": "002036",
+      "date": "2026-07-23",
+      "snapshot_rows": [
+        {
+          "code": "002036",
+          "trade_date": "2026-07-23",
+          "volume": null,
+          "source": "tencent"
+        }
+      ]
+    },
+    {
+      "code": "002036",
+      "date": "2026-07-24",
+      "snapshot_rows": [
+        {
+          "code": "002036",
+          "trade_date": "2026-07-24",
+          "volume": null,
+          "source": "tencent"
+        }
+      ]
+    },
+    {
+      "code": "002036",
+      "date": "2026-07-27",
+      "snapshot_rows": [
+        {
+          "code": "002036",
+          "trade_date": "2026-07-27",
+          "volume": null,
+          "source": "tencent"
+        }
+      ]
+    },
+    {
+      "code": "002036",
+      "date": "2026-07-28",
+      "snapshot_rows": [
+        {
+          "code": "002036",
+          "trade_date": "2026-07-28",
+          "volume": null,
+          "source": "tencent"
+        }
+      ]
+    },
+    {
+      "code": "002036",
+      "date": "2026-07-29",
+      "snapshot_rows": [
+        {
+          "code": "002036",
+          "trade_date": "2026-07-29",
+          "volume": null,
+          "source": "tencent"
+        }
+      ]
+    }
+  ],
+  "training_identity": {
+    "status": "identical_by_disjoint_execution_dates",
+    "training_end": "2025-06-30",
+    "first_corrected_date": "2025-07-04",
+    "original_training_evidence_reused": true,
+    "no_renomination": true,
+    "original_shortlist_sha256": "9c654d0ae979b14e2ee0d241f2cfc54d9cf0ab4f5ca55aa2be7565bda397b6b9"
+  },
+  "selected": [
+    "yin_close_and_open_above_vwap"
+  ],
+  "controls": [
+    "corrected_low_open",
+    "full_shape",
+    "vwap_eligible_full_shape"
+  ],
+  "original_plan_sha256": "a22f4980c5772e1d789eb83182d7b39d8141d5ef802edcef0cbeba290c884dd0",
+  "original_files_sha256": {
+    "ABORTED-PLAN.json": "d7e13f35c01428718c6528d72c687afe493f92bb22bbaa484ef4624492366141",
+    "ABORTED-SOURCE.py": "9b8d6599460fd1de511700f731c5cde754717c1cf54a448919bdd8c6bbfdf572",
+    "freeze-revision-receipt.json": "fb7200e179dad4ba7c3defc371f1f69efc42924542eefc0e666baa05c4ec7b72",
+    "observed_2026-corrected_low_open-events.csv": "fc0de20f48624b72214241032c01ce0f24c93991ee5defc2914449e1559e1aa3",
+    "observed_2026-corrected_low_open-labels.csv": "515eca432452953483aef619da06d0f835c4fad73791b4850e810ec45db7a3c1",
+    "observed_2026-corrected_low_open-trades.csv": "50ff8274394eabe0f6995ba357004175276706470a6bd7cc3c40cb9cae7c45a0",
+    "observed_2026-full-candidates-and-selection.csv": "d46c5653907d3669ce2ab106ecd2c06bba2af0b58c2d1c3e471908d46158cac9",
+    "observed_2026-full_shape-events.csv": "ac5de5c3f9c22879b941a75e95b70669e58812ea24a7ed200d486c637432d01b",
+    "observed_2026-full_shape-labels.csv": "8bbd48c10660fcd4c5a667d21b67d21cf55133fc8886e5d8f80c2585e886895d",
+    "observed_2026-full_shape-trades.csv": "d1daa6ded61aba049f247d6d17b4c3b24941d9d0bfa4632b0883b6c2b63d4a98",
+    "observed_2026-paired-calendar.csv": "a752c7f9bd6920484b94ddf8b9bd8746aec7bca45071e628b01e1e47d79861df",
+    "observed_2026-postdecision-qc-not-eligibility.csv": "ca71c8b2268b71987a4e52d9efcbb55314f55bb2c20855f703955bff9c39313b",
+    "observed_2026-summary.json": "81c67d10e0649655e5f71655bb816004744a3273ab3956032203a073fd2e9ba6",
+    "observed_2026-vwap_eligible_full_shape-events.csv": "ac5de5c3f9c22879b941a75e95b70669e58812ea24a7ed200d486c637432d01b",
+    "observed_2026-vwap_eligible_full_shape-labels.csv": "8bbd48c10660fcd4c5a667d21b67d21cf55133fc8886e5d8f80c2585e886895d",
+    "observed_2026-vwap_eligible_full_shape-trades.csv": "d1daa6ded61aba049f247d6d17b4c3b24941d9d0bfa4632b0883b6c2b63d4a98",
+    "observed_2026-yin_close_and_open_above_vwap-events.csv": "40bd7764153f9094e207148eb46c8b050c5a47c747f2a0e4d266b38bab6af117",
+    "observed_2026-yin_close_and_open_above_vwap-labels.csv": "1223cee68c582360ecbec2548353cc266d79f8d47f15a3a15567043ce5ebfc10",
+    "observed_2026-yin_close_and_open_above_vwap-trades.csv": "2c9d9c9207d168afdf0d1137737cb9390d9345e7eed20bd8bc82695a81ac74c1",
+    "PLAN.json": "a22f4980c5772e1d789eb83182d7b39d8141d5ef802edcef0cbeba290c884dd0",
+    "report.md": "db1dbdc8c2aaa725f3a0e03aca9b67e49e538b051c368f26c674ae2800cc38bc",
+    "self-check.json": "5497fe8df648308a693d9721cab563d65bd21f2e984bde509ab3d3fda6dbfa12",
+    "summary.json": "84144e448a83197a526cd4d37d1139f90212e70280080595f33d2cea7223b728",
+    "train-corrected_low_open-events.csv": "e915c0d7880fb505406963e69e75af288284838ca2ceaba5b60d08ec8ffb8236",
+    "train-corrected_low_open-labels.csv": "3496af27406de52fb460a5203f26065fa76f368bab01838993a0a3f2770b037f",
+    "train-corrected_low_open-trades.csv": "b605ceff3e9ddd252c2d3f7bc81b40b1ec5ea11ebaf947b2defda0f839154e7a",
+    "train-full-candidates-and-selection.csv": "70456a362010937c4a891722a906815fddaadb3b67282251bed92ffa57f57d1a",
+    "train-full_shape-events.csv": "eb0746e01a9ee38581373b740e8a7e95c9b8b603b3fe7b2825081d0f6e228495",
+    "train-full_shape-labels.csv": "f0f4bfa66486d838768fb5d1da8585bd3d66967928a43e71af82075c71728565",
+    "train-full_shape-trades.csv": "e571dee2c065fbca75d3e9350aee6bae4b8a5116de1b9afb951ada5c5a9bd26e",
+    "train-paired-calendar.csv": "a5c59418c80a95c0fcb57cb3100ddbc38035ac1a1b7c4935b84bc12e9e292c17",
+    "train-postdecision-qc-not-eligibility.csv": "4736b516f25f512620da556e8b59e7dea562fd122ad569c29a18fa4eda72b832",
+    "train-summary.json": "bc1b6cc0bbd6b11f8ed88573ff4f8f7ed5e0808cf9c2553c398800962076c6de",
+    "train-vwap_eligible_full_shape-events.csv": "eb0746e01a9ee38581373b740e8a7e95c9b8b603b3fe7b2825081d0f6e228495",
+    "train-vwap_eligible_full_shape-labels.csv": "f0f4bfa66486d838768fb5d1da8585bd3d66967928a43e71af82075c71728565",
+    "train-vwap_eligible_full_shape-trades.csv": "e571dee2c065fbca75d3e9350aee6bae4b8a5116de1b9afb951ada5c5a9bd26e",
+    "train-yin_close_above_vwap-events.csv": "69a8b07908aa4737e2a7ec8f4921839cee283655941c5fb17f1d468d835a5005",
+    "train-yin_close_above_vwap-labels.csv": "5b8cec8cd2b42a1bac8ca9125617adbbe7b484f92c9799e973efa0991637a3c6",
+    "train-yin_close_above_vwap-trades.csv": "bec1057e0fb75b47177f1ec4d3222e4ff9f1a723449b2b100f04a8811c9153e2",
+    "train-yin_close_and_open_above_vwap-events.csv": "62896a9d81c52d07805aab00915db30bb64505216941d4fa6e456914dd617924",
+    "train-yin_close_and_open_above_vwap-labels.csv": "927a4e7c93b8c3ae16b36981981c129f531fea0db3e3ebf442794aaf5b78e83e",
+    "train-yin_close_and_open_above_vwap-trades.csv": "d16817387a7bdba40528ad186808e1f25a01de4628e23f1b7fb6683c88b0b8a1",
+    "training-shortlist.json": "9c654d0ae979b14e2ee0d241f2cfc54d9cf0ab4f5ca55aa2be7565bda397b6b9",
+    "validation_2025h2-corrected_low_open-events.csv": "20dda627af6b8a6f54ba5d80e170f013d7611bba94e83563ea039f00318c05b3",
+    "validation_2025h2-corrected_low_open-labels.csv": "28a95ca65f62d09475164926ac90ea0d493899ea2ad1ebb5778bc332ce5d763a",
+    "validation_2025h2-corrected_low_open-trades.csv": "bcf09d5ae45505e122733127a29be0e44f9c90d162a5d8edc156e1e4e5ab4ef0",
+    "validation_2025h2-full-candidates-and-selection.csv": "4f060137517744150529ddf356a18fb8bf16ad5764a6ae1df12feb999e5ad806",
+    "validation_2025h2-full_shape-events.csv": "4718c95d30cbb7da743f06ddf1fd7f3f5d4f488ea907a1869d8d02c90e28f9ec",
+    "validation_2025h2-full_shape-labels.csv": "dd57ba3f7d9554d77cf4d930843a5dccc037a718f04f996ed63a85a1e54898c2",
+    "validation_2025h2-full_shape-trades.csv": "44cf994aace9b1d60141d3b721b12576e7dd995ec70ea5b28fce28d1954e1783",
+    "validation_2025h2-paired-calendar.csv": "c657cc97a19c2a9f3c6026dbbc669ca0f9e1a6ab4cd84f8e5d39391c8358d6cd",
+    "validation_2025h2-postdecision-qc-not-eligibility.csv": "6af3674c24fd88a56e2ed50b56365e5220d7e7400368669c7c2a6fa6b5cc14d4",
+    "validation_2025h2-summary.json": "e0012e034d31eeba544c5d79077f9e1a44e7dec524fa05f175e018e5233e3665",
+    "validation_2025h2-vwap_eligible_full_shape-events.csv": "4718c95d30cbb7da743f06ddf1fd7f3f5d4f488ea907a1869d8d02c90e28f9ec",
+    "validation_2025h2-vwap_eligible_full_shape-labels.csv": "dd57ba3f7d9554d77cf4d930843a5dccc037a718f04f996ed63a85a1e54898c2",
+    "validation_2025h2-vwap_eligible_full_shape-trades.csv": "44cf994aace9b1d60141d3b721b12576e7dd995ec70ea5b28fce28d1954e1783",
+    "validation_2025h2-yin_close_and_open_above_vwap-events.csv": "3affc0812274fa39c2c5dcbe31115c52ee1fed2ce5ab981654e08651b8dc291d",
+    "validation_2025h2-yin_close_and_open_above_vwap-labels.csv": "86f12e90c43e56de5206f73b2eada0ff5046f1e172cffc5bdb68fb82818c63e2",
+    "validation_2025h2-yin_close_and_open_above_vwap-trades.csv": "f6387583ddf8e595fc70815cbf9735937ed0e525e9118bc0b73a8b17b114dfbd",
+    "verification.json": "e847711c0295ecbbaaa7acfe3cad59a69d071d6ecddb2db4a3f84c90d16ce8f7"
+  },
+  "wrapper_sha256": "ca8adb85cdab8df1baa4dc44a6e536e38a5ccddb834d6af048cd21632b3abf35",
+  "source_snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc",
+  "limits": "No inferred zero for other missing quotes. No new policy nomination or capital acceptance; report complete restored evidence and unchanged failures. All periods previously observed."
+}

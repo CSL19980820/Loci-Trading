@@ -1,11 +1,12 @@
 /**
  * 定时任务归属：战法/技能绑定 vs 本机任务。
- * 绑定权威键与后端一致：`screen:{slug}` / `skill:{slug}`。
+ * 绑定权威键与后端一致：`screen:{slug}` / `screen-prepare:{slug}` / `skill:{slug}`。
  */
 import type { Job } from '@/shared/types/quant'
 
 export function isStrategyBoundJob(job: Pick<Job, 'name' | 'kind'>): boolean {
-  return job.kind === 'screen' && job.name.startsWith('screen:')
+  return (job.kind === 'screen' && job.name.startsWith('screen:')) ||
+    (job.kind === 'screen_prepare' && job.name.startsWith('screen-prepare:'))
 }
 
 export function isSkillBoundJob(job: Pick<Job, 'name' | 'kind'>): boolean {
@@ -18,7 +19,9 @@ export function isBoundManagedJob(job: Pick<Job, 'name' | 'kind'>): boolean {
 }
 
 export function strategySlugFromBoundJob(job: Pick<Job, 'name'>): string {
-  return job.name.startsWith('screen:') ? job.name.slice('screen:'.length) : ''
+  if (job.name.startsWith('screen:')) return job.name.slice('screen:'.length)
+  if (job.name.startsWith('screen-prepare:')) return job.name.slice('screen-prepare:'.length)
+  return ''
 }
 
 export function skillSlugFromBoundJob(job: Pick<Job, 'name'>): string {
@@ -28,7 +31,7 @@ export function skillSlugFromBoundJob(job: Pick<Job, 'name'>): string {
 /** 禁止本机新建/改名占用绑定前缀 */
 export function isReservedStrategyJobName(name: string): boolean {
   const lower = name.trim().toLowerCase()
-  return lower.startsWith('screen:') || lower.startsWith('skill:')
+  return lower.startsWith('screen:') || lower.startsWith('screen-prepare:') || lower.startsWith('skill:')
 }
 
 export function jobOriginLabel(job: Pick<Job, 'name' | 'kind'>): '战法' | '技能' | '本机' {

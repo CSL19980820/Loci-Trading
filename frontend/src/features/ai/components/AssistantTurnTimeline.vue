@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { normalizeArtifacts } from '../assistantArtifactState'
-import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/shared/components/ui/message'
+import { Message, MessageContent, MessageHeader } from '@/shared/components/ui/message'
 import { Bubble, BubbleContent } from '@/shared/components/ui/bubble'
-import { Avatar, AvatarFallback } from '@/shared/components/ui/avatar'
 import { Attachment, AttachmentMedia, AttachmentTrigger } from '@/shared/components/ui/attachment'
 import RecordDetailsDialog from '@/shared/components/ui/RecordDetailsDialog.vue'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/components/ui/collapsible'
 import { Button } from '@/shared/components/ui/button'
-import { TriangleAlert, ChartNoAxesCombined, ChevronDown } from '@lucide/vue'
+import { TriangleAlert, ChartNoAxesCombined, ChevronDown, Sparkles } from '@lucide/vue'
 
 import { messagePlainText } from '../assistantMessageActions'
 import { renderAssistantMarkdown } from '../assistantMarkdown'
@@ -41,7 +40,8 @@ const emit = defineEmits<{
 }>()
 
 const isUser = computed(() => props.message.role === 'user')
-const initials = computed(() => props.assistantLabel === 'Loci' ? 'LC' : props.assistantLabel.slice(0, /^[a-z]/i.test(props.assistantLabel) ? 2 : 1))
+const isLoci = computed(() => props.assistantLabel === 'Loci')
+const initials = computed(() => props.assistantLabel.slice(0, /^[a-z]/i.test(props.assistantLabel) ? 2 : 1))
 const streaming = computed(() => props.message.status === 'streaming')
 const tools = computed(() => props.message.tool_receipts ?? [])
 const artifactRows = computed(() => props.message.artifacts)
@@ -154,7 +154,7 @@ function onRerun(): void {
 
     <template v-else>
       <MessageContent class="assistant-turn__flow">
-        <MessageHeader class="assistant-turn__identity"><MessageAvatar class="assistant-message-avatar"><Avatar class="size-6"><AvatarFallback class="assistant-avatar-fallback">{{ initials }}</AvatarFallback></Avatar></MessageAvatar><span>{{ assistantLabel }}</span><span v-if="message.meta" class="assistant-turn__meta">{{ message.meta }}</span></MessageHeader>
+        <MessageHeader class="assistant-turn__identity"><span class="assistant-turn__avatar" aria-hidden="true"><Sparkles v-if="isLoci" /><template v-else>{{ initials }}</template></span><span>{{ assistantLabel }}</span><span v-if="message.meta" class="assistant-turn__meta">{{ message.meta }}</span></MessageHeader>
         <!-- Keep the answer readable; chart evidence is available without pushing it below several screens. -->
         <AssistantThinkingBlock
           :content="message.thinking ?? ''"
@@ -557,9 +557,9 @@ function onRerun(): void {
 .assistant-evidence-chevron { margin-left:auto; transition:transform .15s; }.assistant-evidence-chevron.is-open { transform:rotate(180deg); }
 .assistant-turn__evidence-content { display:flex; flex-direction:column; gap:12px; padding:0 8px 8px; }
 .assistant-user-content { align-items:flex-end; }
-.assistant-message-avatar { min-width:0; width:24px; flex:0 0 auto; align-self:center; margin-top:0; transform:none; translate:none; background:transparent; }
-.assistant-avatar-fallback { border-radius:8px; background:var(--ai-disc-face); color:var(--ai-disc-ribbon); box-shadow:inset 0 0 0 1px var(--ai-disc-edge); font:650 10px var(--mono); }
-.assistant-message-avatar :deep([data-slot="avatar"]) { border-radius:8px; }
+/* 身份行头像：与面板顶栏品牌标同一套 disc 配色。不用 MessageAvatar——它的 -translate-y-8 会把头像顶出可视区。 */
+.assistant-turn__avatar { display:grid; place-items:center; flex:0 0 auto; width:24px; height:24px; border-radius:8px; background:var(--ai-disc-face); color:var(--ai-disc-ribbon); box-shadow:inset 0 0 0 1px var(--ai-disc-edge), 0 4px 10px -6px color-mix(in oklab, var(--seal) 60%, transparent); font:650 10px var(--mono); }
+.assistant-turn__avatar :deep(svg) { width:13px; height:13px; }
 .assistant-image-attachment { width:auto; padding:0; min-width:0; border:0; background:transparent; }
 .assistant-image-media { width:auto; height:auto; background:transparent; }
 .assistant-full-image { display:block; max-width:100%; max-height:72dvh; margin:auto; object-fit:contain; }

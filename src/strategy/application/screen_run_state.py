@@ -267,23 +267,26 @@ def _state_locked() -> dict[str, Any]:
     return _slot_locked()
 
 
-def _snapshot_of(slot: dict[str, Any]) -> dict[str, Any]:
+def _snapshot_of(slot: dict[str, Any], *, include_results: bool = True) -> dict[str, Any]:
     snap = dict(slot)
     snap["log"] = list(slot.get("log") or [])
+    if not include_results:
+        snap.pop("result", None)
+        snap["result_omitted"] = True
     return snap
 
 
-def screen_run_snapshot(strategy: str | None = None) -> dict[str, Any]:
+def screen_run_snapshot(strategy: str | None = None, *, include_results: bool = True) -> dict[str, Any]:
     """单个战法槽的快照。
 
     ``strategy`` 省略时给「当前这一个」（最近开跑 > 最近碰过），保持无参调用方
     与历史测试的语义；点名查询时槽不存在返回 idle 空白态，且不建槽。
     """
     with _LOCK:
-        return _snapshot_of(_slot_locked(strategy, create=strategy is None))
+        return _snapshot_of(_slot_locked(strategy, create=strategy is None), include_results=include_results)
 
 
-def screen_run_snapshot_all() -> dict[str, Any]:
+def screen_run_snapshot_all(*, include_results: bool = True) -> dict[str, Any]:
     """聚合快照：顶层兼容单槽形状，``runs`` 是本租户全部战法槽。
 
     顶层平铺「当前这一个」是为了**滚动升级**：老前端（以及任何直接读 ``status``
@@ -292,10 +295,11 @@ def screen_run_snapshot_all() -> dict[str, Any]:
     """
     with _LOCK:
         slots = _tenant_slots_locked()
-        runs = {key: _snapshot_of(slot) for key, slot in slots.items()}
+        runs = {key: _snapshot_of(slot, include_results=include_results) for key, slot in slots.items()}
         primary_key = _primary_key_locked(slots)
         primary = (
-            _snapshot_of(slots[primary_key]) if primary_key is not None else _blank_state()
+            _snapshot_of(slots[primary_key] if primary_key is not None else _blank_state(),
+                         include_results=include_results)
         )
         running = [
             key for key, slot in slots.items() if key and slot.get("status") == "running"

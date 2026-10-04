@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-10-04T15:46:24.561121+08:00",
+  "selected": [
+    "positive_only"
+  ],
+  "failures": {
+    "rank_only": [
+      "net_mean_not_positive",
+      "PF_not_above_one",
+      "combined_stress_not_positive"
+    ],
+    "positive_only": []
+  },
+  "status": "qualified_inner_policies",
+  "plan_sha256": "af4d58fdc3d0c77e0062c570015cf2ebf8bf613cfe9632b6bdb79f7c1b6fd867",
+  "model_sha256": "88d4f77a22b90e47252ccde73689a9af5330f2779ef58b91a80a2576f1b4771e",
+  "inner_summary_sha256": "4a661ce02b30f5b3df835c161810e4ae758167dc0bc23bc9e24d4f1035f92f62",
+  "fit_labels_sha256": "68c68bc542b160126acf5b2aef730bbe1f2ecff5bf19ea6f33c20835b3a09003"
+}

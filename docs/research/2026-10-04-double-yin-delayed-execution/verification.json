@@ -1,0 +1,564 @@
+{
+  "verified": true,
+  "method": "independent CSV/raw JSON/sqlite checks without experiment imports",
+  "frozen_input_files": 43,
+  "snapshot_hash_unchanged": true,
+  "cached_files": 3204,
+  "requests": 1068,
+  "retries": 0,
+  "fixed_keys": 1069,
+  "quality_counts": {
+    "valid": 1068,
+    "official_suspension": 1
+  },
+  "exact_numeric_pairs": 506,
+  "tail_exact_numeric": 903,
+  "volume_exact_numeric": 602,
+  "volume_max_abs_delta_shares": 100.0,
+  "volume_max_abs_relative_delta": 4.8074611797509735e-05,
+  "tail_max_abs_delta_yuan": 2.8421709430404014e-14,
+  "zero_volume_fifth_slots": 0,
+  "calendar_days": {
+    "train": 356,
+    "validation_2025h2": 123,
+    "observed_2026": 178
+  },
+  "arms": [
+    {
+      "segment": "train",
+      "policy": "corrected_low_open",
+      "selected": 513,
+      "old_closed": 513,
+      "new_closed": 512,
+      "events": {
+        "closed": 512,
+        "upper_limit_at_slot": 1
+      },
+      "old_metrics": {
+        "trades": 513,
+        "avg_net_return": -0.8496787673632324,
+        "win_rate": 38.79142300194932,
+        "profit_factor": 0.7453199684325372,
+        "payoff_ratio": 1.1760325130041038,
+        "avg_win": 6.410131167527074,
+        "avg_loss": -5.450641114634477,
+        "worst_net": -21.27072252113759
+      },
+      "new_metrics": {
+        "base": {
+          "trades": 512,
+          "avg_net_return": -0.971968250650719,
+          "win_rate": 37.5,
+          "profit_factor": 0.7010351859771373,
+          "payoff_ratio": 1.1683919766285622,
+          "avg_win": 6.077718058212184,
+          "avg_loss": -5.201780035968461,
+          "worst_net": -19.958858447488584
+        },
+        "double_cost": {
+          "trades": 512,
+          "avg_net_return": -1.1819682506507192,
+          "win_rate": 36.71875,
+          "profit_factor": 0.6506505801433476,
+          "payoff_ratio": 1.1213339785449183,
+          "avg_win": 5.99522818693175,
+          "avg_loss": -5.34651433171709,
+          "worst_net": -20.168858447488585
+        },
+        "largest_winner_removed": {
+          "trades": 511,
+          "avg_net_return": -1.0320815880033896,
+          "win_rate": 37.37769080234833,
+          "profit_factor": 0.6831651330031547,
+          "payoff_ratio": 1.144569856340364,
+          "avg_win": 5.953800628482595,
+          "avg_loss": -5.201780035968461,
+          "worst_net": -19.958858447488584
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 511,
+          "avg_net_return": -1.2420815880033897,
+          "win_rate": 36.59491193737769,
+          "profit_factor": 0.6336001571925259,
+          "payoff_ratio": 1.0977885076490823,
+          "avg_win": 5.8693419893401355,
+          "avg_loss": -5.34651433171709,
+          "worst_net": -20.168858447488585
+        }
+      },
+      "old_slot_mean": -0.6121983253614302,
+      "new_slot_mean": -0.6989434611420902,
+      "both_closed": 512,
+      "entry_change_mean_pct": 0.10633678188697888,
+      "entry_change_median_pct": 0.0,
+      "exit_dates_changed": 75,
+      "old_filled_new_cancelled": 1,
+      "old_cancelled_new_filled": 0
+    },
+    {
+      "segment": "train",
+      "policy": "yin_close_and_open_above_vwap",
+      "selected": 58,
+      "old_closed": 58,
+      "new_closed": 56,
+      "events": {
+        "closed": 56,
+        "upper_limit_at_slot": 2
+      },
+      "old_metrics": {
+        "trades": 58,
+        "avg_net_return": 2.5371425432471466,
+        "win_rate": 50.0,
+        "profit_factor": 2.19388760431632,
+        "payoff_ratio": 2.19388760431632,
+        "avg_win": 9.324505181040028,
+        "avg_loss": -4.250220094545736,
+        "worst_net": -17.705183044315977
+      },
+      "new_metrics": {
+        "base": {
+          "trades": 56,
+          "avg_net_return": 1.8731757731546985,
+          "win_rate": 53.57142857142857,
+          "profit_factor": 1.9244375463370291,
+          "payoff_ratio": 1.667845873492092,
+          "avg_win": 7.278997157776611,
+          "avg_loss": -4.364310439870584,
+          "worst_net": -15.317057890563047
+        },
+        "double_cost": {
+          "trades": 56,
+          "avg_net_return": 1.6631757731546981,
+          "win_rate": 50.0,
+          "profit_factor": 1.7815353652577994,
+          "payoff_ratio": 1.7815353652577994,
+          "avg_win": 7.58252688293304,
+          "avg_loss": -4.2561753366236434,
+          "worst_net": -15.527057890563048
+        },
+        "largest_winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.3663981120018036,
+          "win_rate": 52.72727272727272,
+          "profit_factor": 1.662294212211199,
+          "payoff_ratio": 1.4903327419824544,
+          "avg_win": 6.504274744714979,
+          "avg_loss": -4.364310439870584,
+          "worst_net": -15.317057890563047
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 55,
+          "avg_net_return": 1.1563981120018039,
+          "win_rate": 49.09090909090909,
+          "profit_factor": 1.5336942470124026,
+          "payoff_ratio": 1.5904977376424918,
+          "avg_win": 6.7694372439096755,
+          "avg_loss": -4.2561753366236434,
+          "worst_net": -15.527057890563048
+        }
+      },
+      "old_slot_mean": 0.20667734200608778,
+      "new_slot_mean": 0.14732843159643697,
+      "both_closed": 56,
+      "entry_change_mean_pct": -0.17586780685946174,
+      "entry_change_median_pct": -0.42739921186854546,
+      "exit_dates_changed": 5,
+      "old_filled_new_cancelled": 2,
+      "old_cancelled_new_filled": 0
+    },
+    {
+      "segment": "validation_2025h2",
+      "policy": "corrected_low_open",
+      "selected": 190,
+      "old_closed": 190,
+      "new_closed": 188,
+      "events": {
+        "closed": 188,
+        "upper_limit_at_slot": 2
+      },
+      "old_metrics": {
+        "trades": 190,
+        "avg_net_return": 1.5148218088792822,
+        "win_rate": 46.31578947368421,
+        "profit_factor": 1.5962653599531154,
+        "payoff_ratio": 1.8502166672183835,
+        "avg_win": 8.755843437023376,
+        "avg_loss": -4.7323341055979755,
+        "worst_net": -12.575591397849475
+      },
+      "new_metrics": {
+        "base": {
+          "trades": 188,
+          "avg_net_return": 0.8935937969864481,
+          "win_rate": 43.61702127659575,
+          "profit_factor": 1.3540177115136178,
+          "payoff_ratio": 1.7503155782980913,
+          "avg_win": 7.8358027899052445,
+          "avg_loss": -4.476794291875263,
+          "worst_net": -13.795155732273036
+        },
+        "double_cost": {
+          "trades": 188,
+          "avg_net_return": 0.6835937969864482,
+          "win_rate": 43.08510638297872,
+          "profit_factor": 1.2586003932340064,
+          "payoff_ratio": 1.662595581185663,
+          "avg_win": 7.721996950283333,
+          "avg_loss": -4.644543169528016,
+          "worst_net": -14.005155732273037
+        },
+        "largest_winner_removed": {
+          "trades": 187,
+          "avg_net_return": 0.7138940482617199,
+          "win_rate": 43.31550802139038,
+          "profit_factor": 1.2813211366471595,
+          "payoff_ratio": 1.6767906232666532,
+          "avg_win": 7.506646690910117,
+          "avg_loss": -4.476794291875263,
+          "worst_net": -13.795155732273036
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 187,
+          "avg_net_return": 0.5038940482617197,
+          "win_rate": 42.780748663101605,
+          "profit_factor": 1.1896068633171588,
+          "payoff_ratio": 1.5910991796867,
+          "avg_win": 7.389928827055492,
+          "avg_loss": -4.644543169528016,
+          "worst_net": -14.005155732273037
+        }
+      },
+      "old_slot_mean": 1.169984323931153,
+      "new_slot_mean": 0.6829090806237897,
+      "both_closed": 188,
+      "entry_change_mean_pct": 0.47209037503198387,
+      "entry_change_median_pct": 0.13485931556170835,
+      "exit_dates_changed": 34,
+      "old_filled_new_cancelled": 2,
+      "old_cancelled_new_filled": 0
+    },
+    {
+      "segment": "validation_2025h2",
+      "policy": "yin_close_and_open_above_vwap",
+      "selected": 19,
+      "old_closed": 19,
+      "new_closed": 19,
+      "events": {
+        "closed": 19
+      },
+      "old_metrics": {
+        "trades": 19,
+        "avg_net_return": 2.2379839186124912,
+        "win_rate": 52.63157894736842,
+        "profit_factor": 2.336283334791892,
+        "payoff_ratio": 2.1026550013127028,
+        "avg_win": 7.434256159051555,
+        "avg_loss": -3.5356519040975787,
+        "worst_net": -6.210000000000005
+      },
+      "new_metrics": {
+        "base": {
+          "trades": 19,
+          "avg_net_return": 1.3398601380671578,
+          "win_rate": 57.89473684210527,
+          "profit_factor": 1.7217315968783342,
+          "payoff_ratio": 1.252168434093334,
+          "avg_win": 5.520902955239923,
+          "avg_loss": -4.409073735545395,
+          "worst_net": -6.929437115215488
+        },
+        "double_cost": {
+          "trades": 19,
+          "avg_net_return": 1.1298601380671576,
+          "win_rate": 57.89473684210527,
+          "profit_factor": 1.5809428429902852,
+          "payoff_ratio": 1.1497766130838438,
+          "avg_win": 5.310902955239922,
+          "avg_loss": -4.619073735545395,
+          "worst_net": -7.139437115215488
+        },
+        "largest_winner_removed": {
+          "trades": 18,
+          "avg_net_return": 0.3643923538054949,
+          "win_rate": 55.55555555555556,
+          "profit_factor": 1.1859535234016552,
+          "payoff_ratio": 0.9487628187213241,
+          "avg_win": 4.183165225286206,
+          "avg_loss": -4.409073735545395,
+          "worst_net": -6.929437115215488
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 18,
+          "avg_net_return": 0.15439235380549476,
+          "win_rate": 55.55555555555556,
+          "profit_factor": 1.0752061594923525,
+          "payoff_ratio": 0.860164927593882,
+          "avg_win": 3.9731652252862064,
+          "avg_loss": -4.619073735545395,
+          "worst_net": -7.139437115215488
+        }
+      },
+      "old_slot_mean": 0.17285241647820054,
+      "new_slot_mean": 0.10348513261494309,
+      "both_closed": 19,
+      "entry_change_mean_pct": 0.5264972187570846,
+      "entry_change_median_pct": -0.3636363636363549,
+      "exit_dates_changed": 2,
+      "old_filled_new_cancelled": 0,
+      "old_cancelled_new_filled": 0
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "corrected_low_open",
+      "selected": 263,
+      "old_closed": 263,
+      "new_closed": 263,
+      "events": {
+        "closed": 263
+      },
+      "old_metrics": {
+        "trades": 263,
+        "avg_net_return": -0.1936291473175771,
+        "win_rate": 41.06463878326996,
+        "profit_factor": 0.9430912073507867,
+        "payoff_ratio": 1.3535105290682587,
+        "avg_win": 7.814065546812042,
+        "avg_loss": -5.773184160001442,
+        "worst_net": -34.569805510534856
+      },
+      "new_metrics": {
+        "base": {
+          "trades": 263,
+          "avg_net_return": -0.7778613589992734,
+          "win_rate": 37.6425855513308,
+          "profit_factor": 0.7786118946013116,
+          "payoff_ratio": 1.2898217243900516,
+          "avg_win": 7.2675746647314625,
+          "avg_loss": -5.634557495275754,
+          "worst_net": -38.44080833756991
+        },
+        "double_cost": {
+          "trades": 263,
+          "avg_net_return": -0.9878613589992737,
+          "win_rate": 36.88212927756654,
+          "profit_factor": 0.7289634319141576,
+          "payoff_ratio": 1.247504429873713,
+          "avg_win": 7.203737273362197,
+          "avg_loss": -5.774518391162301,
+          "worst_net": -38.65080833756991
+        },
+        "largest_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -0.8923548352909861,
+          "win_rate": 37.404580152671755,
+          "profit_factor": 0.7469914429921382,
+          "payoff_ratio": 1.2500673127623536,
+          "avg_win": 7.043576146724339,
+          "avg_loss": -5.634557495275754,
+          "worst_net": -38.44080833756991
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -1.1023548352909862,
+          "win_rate": 36.6412213740458,
+          "profit_factor": 0.6987001983187942,
+          "payoff_ratio": 1.2081690929262483,
+          "avg_win": 6.976594646736497,
+          "avg_loss": -5.774518391162301,
+          "worst_net": -38.65080833756991
+        }
+      },
+      "old_slot_mean": -0.14304625209135613,
+      "new_slot_mean": -0.5746560039798002,
+      "both_closed": 263,
+      "entry_change_mean_pct": 0.41897114408880765,
+      "entry_change_median_pct": 0.1303780964797996,
+      "exit_dates_changed": 46,
+      "old_filled_new_cancelled": 0,
+      "old_cancelled_new_filled": 0
+    },
+    {
+      "segment": "observed_2026",
+      "policy": "yin_close_and_open_above_vwap",
+      "selected": 61,
+      "old_closed": 60,
+      "new_closed": 60,
+      "events": {
+        "closed": 60,
+        "official_suspension": 1
+      },
+      "old_metrics": {
+        "trades": 60,
+        "avg_net_return": 4.148683331333311,
+        "win_rate": 60.0,
+        "profit_factor": 2.7364252838387677,
+        "payoff_ratio": 1.8242835225591785,
+        "avg_win": 10.896487617560547,
+        "avg_loss": -5.973023098007548,
+        "worst_net": -15.79117793705204
+      },
+      "new_metrics": {
+        "base": {
+          "trades": 60,
+          "avg_net_return": 3.200035959828463,
+          "win_rate": 55.00000000000001,
+          "profit_factor": 2.3033289667525687,
+          "payoff_ratio": 1.8845418818884656,
+          "avg_win": 10.282390442192051,
+          "avg_loss": -5.456175074171476,
+          "worst_net": -14.18268974277548
+        },
+        "double_cost": {
+          "trades": 60,
+          "avg_net_return": 2.990035959828463,
+          "win_rate": 55.00000000000001,
+          "profit_factor": 2.1726648520732375,
+          "payoff_ratio": 1.7776348789690128,
+          "avg_win": 10.072390442192049,
+          "avg_loss": -5.666175074171476,
+          "worst_net": -14.392689742775481
+        },
+        "largest_winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.7441369658792683,
+          "win_rate": 54.23728813559322,
+          "profit_factor": 2.09902035078465,
+          "payoff_ratio": 1.7710484209745483,
+          "avg_win": 9.663150249672082,
+          "avg_loss": -5.456175074171476,
+          "worst_net": -14.18268974277548
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.5341369658792687,
+          "win_rate": 54.23728813559322,
+          "profit_factor": 1.9773009980421807,
+          "payoff_ratio": 1.66834771709809,
+          "avg_win": 9.453150249672083,
+          "avg_loss": -5.666175074171476,
+          "worst_net": -14.392689742775481
+        }
+      },
+      "old_slot_mean": 0.699216291797749,
+      "new_slot_mean": 0.5393319033418759,
+      "both_closed": 60,
+      "entry_change_mean_pct": 0.49936090088525137,
+      "entry_change_median_pct": 0.43844411149474016,
+      "exit_dates_changed": 8,
+      "old_filled_new_cancelled": 0,
+      "old_cancelled_new_filled": 0
+    }
+  ],
+  "paired": [
+    {
+      "segment": "train",
+      "comparison": "corrected_low_open_vs_original_open",
+      "months": 18,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.2785385706110336,
+        0.08546399582874661
+      ],
+      "point_delta_per_opportunity": -0.08674513578066007
+    },
+    {
+      "segment": "train",
+      "comparison": "yin_close_and_open_above_vwap_vs_original_open",
+      "months": 18,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.1963328119630723,
+        0.036192156392843365
+      ],
+      "point_delta_per_opportunity": -0.05934891040965074
+    },
+    {
+      "segment": "train",
+      "comparison": "B_vs_low_at_fifth_slot",
+      "months": 18,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        0.34862826445611894,
+        1.4664122831601805
+      ],
+      "point_delta_per_opportunity": 0.8462718927385271
+    },
+    {
+      "segment": "validation_2025h2",
+      "comparison": "corrected_low_open_vs_original_open",
+      "months": 6,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.9912171068434035,
+        0.04660322946732488
+      ],
+      "point_delta_per_opportunity": -0.48707524330736324
+    },
+    {
+      "segment": "validation_2025h2",
+      "comparison": "yin_close_and_open_above_vwap_vs_original_open",
+      "months": 6,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.12243373639187777,
+        -0.008590257037104943
+      ],
+      "point_delta_per_opportunity": -0.06936728386325745
+    },
+    {
+      "segment": "validation_2025h2",
+      "comparison": "B_vs_low_at_fifth_slot",
+      "months": 6,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -1.2023753149775291,
+        0.052046684174586674
+      ],
+      "point_delta_per_opportunity": -0.5794239480088467
+    },
+    {
+      "segment": "observed_2026",
+      "comparison": "corrected_low_open_vs_original_open",
+      "months": 9,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.7226606861447348,
+        -0.11495646196306361
+      ],
+      "point_delta_per_opportunity": -0.4316097518884444
+    },
+    {
+      "segment": "observed_2026",
+      "comparison": "yin_close_and_open_above_vwap_vs_original_open",
+      "months": 9,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.3488061879356611,
+        -0.010576557662800643
+      ],
+      "point_delta_per_opportunity": -0.1598843884558731
+    },
+    {
+      "segment": "observed_2026",
+      "comparison": "B_vs_low_at_fifth_slot",
+      "months": 9,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        0.23905224638931963,
+        2.031636902726691
+      ],
+      "point_delta_per_opportunity": 1.113987907321676
+    }
+  ],
+  "original_B_strict_pass": false,
+  "no_new_nomination": true
+}

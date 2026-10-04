@@ -1,0 +1,24 @@
+{
+  "frozen_at": "2026-10-04T07:37:23.148553+00:00",
+  "plan_path": "docs/research/2026-10-04-learned-rank/PLAN.md",
+  "plan_sha256": "8097c29ce9160a342026c244ca6907e9bc0b7b2291b1bf54a933749afc74c15d",
+  "core_path": "tools/research_regularized_rank_core.py",
+  "core_sha256": "aedd4b984d55d00e5a2b014aafd647f8e419d9720033a0add25bb5784bcefbe6",
+  "self_check_sha256": "0e5311a710316149df19d0da9096e0cc28d701dfdbbaa20bd6589a199d5d1e54",
+  "self_check_count": 10,
+  "lambda": 1.0,
+  "z_clip": 5.0,
+  "training_start": "2024-01-01",
+  "inner_fit_end": "2024-12-31",
+  "inner_validation": [
+    "2025-01-01",
+    "2025-06-30"
+  ],
+  "refit_end": "2025-06-30",
+  "policies": [
+    "rank_only",
+    "positive_only"
+  ],
+  "no_candidate_returns_read_before_freeze": true,
+  "no_2023h2_outcomes": true
+}

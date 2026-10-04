@@ -413,6 +413,10 @@ def _build_generate_prompt(
         "引用 references 中存在的 id；title 与 explanation 用中文。\n"
         "data.fields 列出行情字段（open/high/low/close/volume/amount/turnover），"
         "adjust 为 qfq/hfq/none，universe 给股票池对象。\n"
+        "股票范围统一写入 data.universe（boards、exclude_st、exclude_delisting、"
+        "min_list_days、codes_include/codes_exclude 等）；公式与 compute 方法只计算形态、"
+        "评分及必要行情有效性，不能再按板块、证券代码、ST/退市名称、绝对股价或股本重复限制范围。"
+        "保留真实涨跌停规则、指标所需历史长度及成交活跃度条件；涨跌幅和量价形态不是股票范围。\n"
         + citation_rule
         + syntax
         + f"目标 runtime={desired_runtime}，dialect={desired_dialect}，"

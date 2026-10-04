@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 from threading import Lock
 from zoneinfo import ZoneInfo
@@ -19,6 +20,7 @@ from src.ops.application.stock_agent_policy import simulate_stock_agent, closing
 from src.ops.application.guardian_risk import evaluate_risk_plans
 from src.ops.application.stock_agent_prompts import PHASE_NAMES
 from src.ops.application.stock_agent_service import agent_time
+from src.ops.application.falcon_watch_pool import reconcile_falcon_watch_pool, sync_falcon_watch_pools
 from src.ops.infrastructure.store import OpsStore
 from src.shared.paths import palace_db
 from src.shared.tenancy import current_tenant, tenant_scope
@@ -28,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 def phase_allowed(phase: str, now: datetime) -> bool:
     clock = now.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%H:%M")
+    if phase == "research":
+        return True
     if phase == "intraday":
         return session_clock(now).phase == "regular" and clock < "14:57"
     if phase == "closeout":
@@ -36,13 +40,13 @@ def phase_allowed(phase: str, now: datetime) -> bool:
         return "09:25" <= clock < "09:30"
     if phase == "premarket":
         return "06:00" <= clock < "09:15"
-    return phase == "review" and "15:00" <= clock <= "23:59"
+    return phase in {"review", "weekly_review"} and "15:00" <= clock <= "23:59"
 
 
 def require_phase(phase: str, now: datetime) -> None:
     if phase not in PHASE_NAMES or not phase_allowed(phase, now):
         raise ValueError("当前不在所选工作阶段；竞价研判限09:25—09:30，盘前和盘后不模拟成交")
-    if not calendar_trading_day(now.date().isoformat()):
+    if phase not in {"research", "weekly_review"} and not calendar_trading_day(now.date().isoformat()):
         raise ValueError("交易所休市；保留记录，不生成虚构交易")
 
 
@@ -55,6 +59,9 @@ def execute_stock_agent(cfg: dict, context: JobContext) -> dict:
         raise JobSkipped(str(exc)) from exc
     with StockAgentStore(path) as ledger:
         profile = ledger.get(str(cfg.get("agent_id") or ""))
+        if profile["config"].get("kind") == "falcon":
+            sync_falcon_watch_pools(context.ops_store, path, as_of=now, agent_id=profile["id"])
+            profile = ledger.get(profile["id"])
         if cfg.get("revision") != profile["revision"]:
             raise JobSkipped("旧日程已失效，等待新的智能体日程")
         minute = now.minute // profile["config"]["schedule"]["intraday_minutes"] * profile["config"]["schedule"]["intraday_minutes"]
@@ -68,9 +75,9 @@ def execute_stock_agent(cfg: dict, context: JobContext) -> dict:
 def research_scope(phase: str, now: datetime, research_date: str | None = None) -> dict:
     target = date.fromisoformat(research_date) if research_date else now.date()
     if research_date:
-        if phase != "review" or target > now.date() or (target == now.date() and now.hour < 15):
+        if phase not in {"review", "weekly_review"} or target > now.date() or (target == now.date() and now.hour < 15):
             raise ValueError("指定日期仅用于已收盘交易日的复盘，不回填历史成交")
-        if not calendar_trading_day(target.isoformat()):
+        if phase != "weekly_review" and not calendar_trading_day(target.isoformat()):
             raise ValueError("所选研究日期不是交易日")
     else:
         require_phase(phase, now)
@@ -129,6 +136,18 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str, resea
         checkpoint()
         with StockAgentStore(path) as ledger:
             recent = ledger.history(agent_id, limit=12)["items"]
+            review_evidence = {}
+            if config["kind"] == "falcon" and phase in {"review", "weekly_review"}:
+                from src.ops.application.falcon_review_evidence import falcon_review_evidence
+                review_evidence = falcon_review_evidence(ledger, agent_id, phase, scope, checkpoint=deadline_check)
+        candidate_scope = None
+        learning_evidence = {}
+        if config["kind"] == "falcon":
+            from src.ops.application.falcon_candidates import load_falcon_candidates
+            from src.ops.application.falcon_review_evidence import falcon_learning_evidence
+            candidate_scope = load_falcon_candidates(path, context.ops_store, as_of=datetime.fromisoformat(scope["research_cutoff"]),
+                                                     research_date=scope["research_date"], historical_review=scope["historical_review"])
+            learning_evidence = falcon_learning_evidence(candidate_scope, review_evidence)
         analysis_only = phase not in {"intraday", "closeout"}
         decision = None
         risk_events = []
@@ -139,31 +158,96 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str, resea
             decision = closing_stock_agent_decision(profile["state"], agent_time(), config)
             if risk_orders and decision is None:
                 decision = GuardianDecision.model_validate({"summary": "优先执行本账户已确认并触发的止损/止盈合同。", "orders": risk_orders})
+        watch_quotes = {}
+        watch_codes = list(dict.fromkeys(row["code"] for key in ("watchlist", "positions") for row in profile["state"].get(key, [])))
+        allowed_research = leader_research_codes(profile["state"], config, phase)
+        if allowed_research is not None:
+            watch_codes = [code for code in watch_codes if code in allowed_research]
+        if decision is None and watch_codes and not scope["historical_review"]:
+            from src.ops.application.stock_agent_workbench import research_quotes, capture_observation_prices
+            watch_quotes = research_quotes(watch_codes, force_refresh=True, now=agent_time(), checkpoint=checkpoint, deadline=deadline)
+            profile["state"] = capture_observation_prices(profile["state"], quotes=watch_quotes, now=agent_time())
         payload = {"as_of": started.isoformat(), "phase": phase, "phase_name": PHASE_NAMES[phase],
                    "analysis_only": analysis_only, "portfolio": profile["state"],
                    "recent_work": recent, "research_plan": profile["state"].get("research_plan", ""),
                    "execution_deadline": (started + timedelta(seconds=budget)).isoformat(),
-                   "independent_research": True, **scope}
+                   "independent_research": True,
+                   "watch_snapshot": {"quotes": watch_quotes, "missing_codes": [code for code in watch_codes if not watch_quotes.get(code) or watch_quotes[code].get("error")]},
+                   **scope}
+        if candidate_scope is not None:
+            from src.ops.application.falcon_learning import falcon_learning_context
+            payload.update(candidate_scope=candidate_scope, review_evidence=review_evidence,
+                           learning_evidence=learning_evidence,
+                           learning=falcon_learning_context(profile["state"], agent_id=agent_id, research_date=scope["research_date"]))
+            payload["portfolio"] = {key: value for key, value in profile["state"].items() if key != "falcon_learning"}
+            if scope["historical_review"]:
+                # 当前持仓、近期日记和计划包含研究日后的事实，不能供历史研判。
+                payload["portfolio"] = {"positions": [], "watchlist": [], "historical_snapshot_available": False,
+                                        "note": "未保存该历史时点的完整账户快照；仅按本窗口原始成交与决策研究，不用当前仓位代替历史仓位。"}
+                payload["watch_snapshot"] = {"quotes": {}, "missing_codes": []}
+                payload["recent_work"] = [{key: row.get(key) for key in (
+                    "id", "phase", "started_at", "finished_at", "status", "summary", "actions")}
+                    for row in review_evidence.get("runs", [])[:12]]
+                payload["research_plan"] = next((row["research_plan"] for row in review_evidence.get("runs", [])
+                                                 if row.get("research_plan")), "")
         usage = {"model": "已保存的执行计划", "input_tokens": 0, "output_tokens": 0}
         if decision is None:
             decision, usage = decide_stock_agent(context.ops_store, profile, payload, palace_path=path,
                                                  checkpoint=checkpoint, deadline=deadline)
         checkpoint()
+        from src.ops.application.stock_agent_decision import StockAgentDecision
+        from src.ops.application.agent_workbench_skill import normalize_stock_agent_research
+        decision, research_metadata = normalize_stock_agent_research(
+            StockAgentDecision.model_validate(decision.model_dump(mode="json")), payload, kind=config["kind"])
+        for key, value in research_metadata.items():
+            usage.setdefault(key, value)
         codes = list(dict.fromkeys([p["code"] for p in profile["state"]["positions"]] + [o.code for o in decision.orders]))
         research_codes = leader_research_codes(profile["state"], config, phase)
         if research_codes is not None:
             codes = [code for code in codes if code in research_codes]
+        if candidate_scope is not None:
+            permitted = set(candidate_scope["candidate_codes"]) | {p["code"] for p in profile["state"]["positions"]}
+            codes = [code for code in codes if code in permitted]
         quotes = snapshot(codes, force_refresh=True, check_cancelled=checkpoint, deadline=deadline,
                           require_order_book=True).quotes if codes and not analysis_only else {}
         now = agent_time()
         decision = bind_execution_references(decision, quotes, now)
         state, fills, rejects = simulate_stock_agent(profile["state"], decision, quotes, now, config,
-                                                    analysis_only=analysis_only, phase=phase)
+                                                    analysis_only=analysis_only, phase=phase,
+                                                    **({"candidate_codes": candidate_scope["candidate_codes"],
+                                                        "auto_observe_codes": candidate_scope.get("auto_observe_codes", [])}
+                                                       if candidate_scope is not None else {}))
+        if candidate_scope is not None and scope["historical_review"]:
+            # 历史复盘保存研究日记，不把旧观察/旧计划写回今天的执行状态。
+            state = deepcopy(profile["state"])
         plan = getattr(decision, "research_plan", None)
-        if plan is not None:
-            state.update(research_plan=plan, research_plan_date=scope["research_date"], research_plan_at=now.isoformat())
+        if (plan is not None or decision.research_plan_structured is not None) and not (candidate_scope is not None and scope["historical_review"]):
+            if plan is not None:
+                state["research_plan"] = plan
+            state.update(research_plan_date=scope["research_date"], research_plan_at=now.isoformat())
+        learning_changes = []
+        if candidate_scope is not None:
+            from src.ops.application.falcon_learning import apply_falcon_learning
+            evidence_ids = {row["evidence_id"] for key in ("candidates", "runs") for row in learning_evidence.get(key, [])}
+            previous_learning = deepcopy(state.get("falcon_learning"))
+            state = apply_falcon_learning(state, decision, phase, scope["research_date"], agent_id=agent_id,
+                                          evidence_ids=evidence_ids,
+                                          executed_trade_ids={row["evidence_id"] for row in learning_evidence.get("trades", [])})
+            if state.get("falcon_learning") != previous_learning:
+                learning_changes = (state.get("falcon_learning") or {}).get("last_changes", [])
+                state["falcon_learning"].pop("last_changes", None)
         from src.ops.application.guardian_risk_execution import finish_risk_execution
         state, risk_events = finish_risk_execution(state, risk_events, fills, quotes, now)
+        if candidate_scope is not None and not scope["historical_review"]:
+            state, _ = reconcile_falcon_watch_pool(state, candidate_scope, as_of=now, agent_id=agent_id)
+            pool_rejects = [row["code"] for row in rejects if row.get("reject_code") == "falcon_source_watch_pool"]
+            if pool_rejects:
+                decision = decision.model_copy(update={"summary": "来源观察池校验：" + "、".join(pool_rejects)
+                    + "仍有有效公式产出，撤观察请求未执行。\n" + decision.summary})
+        from src.ops.application.stock_agent_workbench import apply_workbench_research, valuation_snapshot
+        if not scope["historical_review"]:
+            state = apply_workbench_research(state, decision, quotes={**watch_quotes, **quotes}, now=now,
+                                              coverage=usage.get("assessment_coverage"))
         # 以实际成交/接受观察标识动作；被拒绝的买单不能显示成“已买入”。
         rejected_codes = {(item.get("code"), item.get("action")) for item in rejects}
         actions = [{"code": order.code, "name": str(quotes.get(order.code, {}).get("name") or order.name),
@@ -173,11 +257,26 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str, resea
                                else "rejected" if order.action in TRADE_ACTIONS else "recorded")}
                    for order in decision.orders]
         result = {"summary": decision.summary, "phase": phase, "analysis_only": analysis_only, "risk_events": risk_events,
-                  **scope, "research_plan": state.get("research_plan", ""), "workshop_access": False,
+                  **scope, "research_plan": plan if plan is not None else state.get("research_plan", ""), "workshop_access": candidate_scope is not None,
                   "actions": actions, "decisions": [o.model_dump(mode="json") for o in decision.orders],
                   "fills": fills, "rejects": rejects, "usage": usage,
+                  "assessments": [item.model_dump(mode="json") for item in decision.assessments],
+                  "research_plan_structured": decision.research_plan_structured.model_dump(mode="json") if decision.research_plan_structured else None,
+                  "detail": decision.detail.model_dump(mode="json") if decision.detail else None,
+                  "assessment_coverage": usage.get("assessment_coverage"),
+                  "valuation_snapshot": valuation_snapshot(state, now),
+                  "learning_changes": learning_changes,
+                  "watch_snapshot": {"as_of": started.isoformat(),
+                      "quotes": {code: {key: value.get(key) for key in ("name", "price", "trade_date", "trade_time", "source", "error", "research_reference", "quote_received_at", "quote_age_seconds")}
+                                 for code, value in payload["watch_snapshot"]["quotes"].items()},
+                      "missing_codes": payload["watch_snapshot"]["missing_codes"]},
                   "quotes": {code: {k: q.get(k) for k in ("name", "price", "trade_date", "trade_time", "source", "error", "order_book", "order_book_error")}
-                             for code, q in quotes.items()}, "as_of": now.isoformat()}
+                             for code, q in {**watch_quotes, **quotes}.items()}, "as_of": now.isoformat()}
+        if candidate_scope is not None:
+            result.update(candidate_scope=candidate_scope,
+                          learning=decision.learning.model_dump(mode="json") if getattr(decision, "learning", None) is not None else None,
+                          review_window={key: value for key, value in review_evidence.items() if key not in {"runs", "trades"}},
+                          review_sample_counts={"runs": len(review_evidence.get("runs", [])), "trades": len(review_evidence.get("trades", []))})
 
         def final_check():
             deadline_check()
@@ -198,6 +297,13 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str, resea
                         raise ValueError(error)
         with context.ops_store.guardian_commit_guard(context.run_id):
             with StockAgentStore(path) as ledger:
+                if candidate_scope is not None and not scope["historical_review"]:
+                    from src.ops.application.falcon_candidates import load_falcon_candidates
+                    latest_scope = load_falcon_candidates(path, context.ops_store, as_of=agent_time())
+                    ledger.update_falcon_watch_pool(agent_id, lambda current: reconcile_falcon_watch_pool(
+                        current, latest_scope, as_of=now, agent_id=agent_id)[0], now=now)
+                    state, _ = reconcile_falcon_watch_pool(state, latest_scope, as_of=now, agent_id=agent_id)
+                    result["candidate_scope_at_commit"] = latest_scope
                 ledger.finish_run(agent_id, run_id, state, result, before_commit=final_check)
         committed = True
         from src.ops.application.stock_agent_notify import notify_stock_agent

@@ -34,13 +34,12 @@ class SinaAdapter(MarketAdapter):
             LANE_SPOT_BATCH,
             LANE_ADJUST_FACTOR,
             LANE_MINUTE,
-            # 资金流回退位：注册表里本适配器排在东财之后，天然是第二顺位，
-            # 不要为此调顺序。只覆盖主力 / 超大单两组，缺大中小单拆分。
+            # 只覆盖主力 / 超大单两组；缺少大中小单时明确不提供。
             LANE_CAPITAL_FLOW,
         ),
         description=(
             "一次拉全历史，自带流通股本与换手率（小数）；分钟线直连 quotes.sina.cn；"
-            "日 K / 复权不经 akshare；资金流为东财的回退源（仅主力 / 超大单）。"
+            "日 K / 复权不经 akshare；资金流仅提供主力 / 超大单，不伪造其他细分。"
         ),
         base_url="https://finance.sina.com.cn",
         probe_hints={LANE_HIST_DAILY: ProbeHint(note="full")},
@@ -128,7 +127,7 @@ class SinaAdapter(MarketAdapter):
             ) from exc
 
     def fetch_capital_flow(self, code: str) -> pd.DataFrame:
-        """个股资金流（东财之后的回退源）。
+        """个股资金流（主力与超大单）。
 
         新浪只有主力（``netamount`` / ``ratioamount``）与超大单（``r0_net`` /
         ``r0_ratio``）两组，大 / 中 / 小单六列**整列缺席**——上游看到的是这几个

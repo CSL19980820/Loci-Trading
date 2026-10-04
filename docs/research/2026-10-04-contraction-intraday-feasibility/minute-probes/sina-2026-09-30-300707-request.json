@@ -1,0 +1,8 @@
+{
+  "provider": "sina",
+  "code": "300707",
+  "requested_date": "2026-09-30",
+  "started_at": "2026-10-04T09:01:55.738636+00:00",
+  "max_http_requests": 1,
+  "trade_date_semantics": "local filter of latest1970 records, not source historical date parameter"
+}

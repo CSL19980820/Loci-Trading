@@ -1,0 +1,93 @@
+{
+  "reviewed_at": "2026-10-04T18:47:23.329263+08:00",
+  "scope": "Bounded synthetic regression of repaired plan-pool binding and response evidence paths; no real network or future observations",
+  "synthetic_only": true,
+  "real_HTTP_requests": 0,
+  "tested_script": "tools/research_forward_quote_capture.py",
+  "tested_script_sha256": "b6fee3e0c7c91b6640dbd77cace1aba9db5dcf31eb6f091e2e5387041e819f43",
+  "prepared_manifest": "docs/research/2026-10-04-next-evidence/contraction-prepared/manifest.json",
+  "prepared_manifest_sha256": "c14e253e1e0c44a90c92800c2c88e655b3e9d935f0467ec99360a72abf61b94d",
+  "future_quote_values_are_generated_fixtures": true,
+  "final_capture_plan_not_yet_available": true,
+  "cases": [
+    {
+      "case": "partial_pool_bound_to98_manifest",
+      "passed": true,
+      "refused_before_HTTP_and_output": true,
+      "real_HTTP_requests": 0
+    },
+    {
+      "case": "wrong_target_session",
+      "passed": true,
+      "refused_before_HTTP_and_output": true,
+      "real_HTTP_requests": 0
+    },
+    {
+      "case": "pool_manifest_missing_from_bindings",
+      "passed": true,
+      "refused_before_HTTP_and_output": true,
+      "real_HTTP_requests": 0
+    },
+    {
+      "case": "actual_date_before_target",
+      "passed": true,
+      "refused_before_HTTP_and_output": true,
+      "real_HTTP_requests": 0
+    },
+    {
+      "case": "full_complete",
+      "passed": true,
+      "fake_HTTP_calls": 1,
+      "real_HTTP_requests": 0,
+      "terminal_rows": 98,
+      "accepted": 98,
+      "rejected": 0,
+      "complete_input_coverage": true,
+      "request_and_receive_times_present": true,
+      "available_raw_bodies_preserved": true,
+      "completion_hashes_match": true
+    },
+    {
+      "case": "missing_one",
+      "passed": true,
+      "fake_HTTP_calls": 16,
+      "real_HTTP_requests": 0,
+      "terminal_rows": 98,
+      "accepted": 97,
+      "rejected": 1,
+      "complete_input_coverage": false,
+      "request_and_receive_times_present": true,
+      "available_raw_bodies_preserved": true,
+      "completion_hashes_match": true
+    },
+    {
+      "case": "incomplete_body",
+      "passed": true,
+      "fake_HTTP_calls": 16,
+      "real_HTTP_requests": 0,
+      "terminal_rows": 98,
+      "accepted": 0,
+      "rejected": 98,
+      "complete_input_coverage": false,
+      "request_and_receive_times_present": true,
+      "available_raw_bodies_preserved": true,
+      "completion_hashes_match": true
+    },
+    {
+      "case": "http_error_body",
+      "passed": true,
+      "fake_HTTP_calls": 16,
+      "real_HTTP_requests": 0,
+      "terminal_rows": 98,
+      "accepted": 0,
+      "rejected": 98,
+      "complete_input_coverage": false,
+      "request_and_receive_times_present": true,
+      "available_raw_bodies_preserved": true,
+      "completion_hashes_match": true
+    }
+  ],
+  "all_passed": true,
+  "temporary_outputs_removed": true,
+  "source_and_prepared_inputs_unchanged": true
+}

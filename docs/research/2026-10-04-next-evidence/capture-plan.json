@@ -1,0 +1,268 @@
+{
+  "format_version": 1,
+  "purpose": "research_quote_evidence_only",
+  "prepared_at_utc": "2026-10-04T10:47:45.597315+00:00",
+  "target_trade_date": "2026-10-08",
+  "capture_script_sha256": "c1ed0bd3fdbf14c64d59f1d7312fc4b5cc2d5e5b0ebadc4099dbd83141cd6649",
+  "pools": {
+    "double_yin": [
+      "000036",
+      "000068",
+      "002074",
+      "002494",
+      "002799",
+      "600032",
+      "600152",
+      "600189",
+      "600982",
+      "603328"
+    ],
+    "contraction": [
+      "300097",
+      "300110",
+      "300112",
+      "300153",
+      "300179",
+      "300203",
+      "300227",
+      "300257",
+      "300259",
+      "300260",
+      "300281",
+      "300290",
+      "300308",
+      "300321",
+      "300323",
+      "300324",
+      "300331",
+      "300345",
+      "300352",
+      "300397",
+      "300398",
+      "300488",
+      "300502",
+      "300515",
+      "300534",
+      "300537",
+      "300553",
+      "300554",
+      "300562",
+      "300568",
+      "300576",
+      "300623",
+      "300638",
+      "300652",
+      "300669",
+      "300706",
+      "300708",
+      "300715",
+      "300731",
+      "300741",
+      "300749",
+      "300802",
+      "300820",
+      "300821",
+      "300827",
+      "300842",
+      "300862",
+      "300863",
+      "300868",
+      "300870",
+      "300895",
+      "300897",
+      "300950",
+      "300952",
+      "300953",
+      "300990",
+      "301000",
+      "301008",
+      "301013",
+      "301021",
+      "301045",
+      "301046",
+      "301071",
+      "301072",
+      "301095",
+      "301099",
+      "301161",
+      "301182",
+      "301189",
+      "301193",
+      "301235",
+      "301237",
+      "301252",
+      "301259",
+      "301321",
+      "301323",
+      "301335",
+      "301338",
+      "301339",
+      "301356",
+      "301360",
+      "301381",
+      "301386",
+      "301392",
+      "301396",
+      "301448",
+      "301575",
+      "301580",
+      "301583",
+      "301595",
+      "301600",
+      "301601",
+      "301611",
+      "301626",
+      "301666",
+      "301677",
+      "301707",
+      "301717"
+    ]
+  },
+  "pool_sources": {
+    "double_yin": {
+      "manifest_path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/manifest.json",
+      "manifest_sha256": "7cedd28a8ad5159d1109f492f355c5d9dc6ba6bf0cee0e81fad1fb78c933c299",
+      "target_date_field": "planned_target_trade_date"
+    },
+    "contraction": {
+      "manifest_path": "docs/research/2026-10-04-next-evidence/contraction-prepared/manifest.json",
+      "manifest_sha256": "c14e253e1e0c44a90c92800c2c88e655b3e9d935f0467ec99360a72abf61b94d",
+      "target_date_field": "planned_target_date"
+    }
+  },
+  "bindings": [
+    {
+      "path": "docs/research/2026-10-04-next-evidence/contraction-prepared/PLAN.json",
+      "sha256": "0347e40cd19a96dbf334a62309a7737db89319109863c9141afad8bc96fe4ca6"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/contraction-prepared/all-codes.csv",
+      "sha256": "600ea13f9d01159eb171a9e57dfd5a2211889352b7050ad9fc03c4e7bbf43393"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/contraction-prepared/calendar-evidence.json",
+      "sha256": "47f175ddaa6c12021109b04e9f1dcb1c46e5ed1523978165a04c914a69f67d10"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/contraction-prepared/daily-inputs.csv",
+      "sha256": "bfe7bee040ce2d60eca6adc2cd14c7e1f27adf8166767d8068ba462d34e19616"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/contraction-prepared/manifest.json",
+      "sha256": "c14e253e1e0c44a90c92800c2c88e655b3e9d935f0467ec99360a72abf61b94d"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/contraction-prepared/necessary-pool.csv",
+      "sha256": "02d3b259a3aee3f4023b354f40de3900a9112941df42a3af9ab72a04c8252cc1"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/PLAN.md",
+      "sha256": "66f23a1b2ee8b339007c66416b636534acf21562f703622b2296815424dd8a56"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/daily-factor-alignment.csv",
+      "sha256": "049a0249124a1be1cd86c6e501d9a069940bbea8b252f8c5927029325740d3ba"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/existing-raw-pool.json",
+      "sha256": "43fbf0a1a4c6596ac765f4fe2fe2570beab67a196aa9ba0688ad2ff44ffef855"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/factor-observations.csv",
+      "sha256": "d1a3963a621776de38058359fe7de0b850a374a0b614724c9b19446e9e6480f2"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/industry-request.json",
+      "sha256": "d2bead3d6415a442649aa98e861b05f734a3c47f3a8e5fe555eb6bd8a95409f4"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/industry-response.json",
+      "sha256": "531e6119bfae780c592f64af6b3264ff6cc153badd76b26a2fc5097c1a5cf79a"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/manifest.json",
+      "sha256": "7cedd28a8ad5159d1109f492f355c5d9dc6ba6bf0cee0e81fad1fb78c933c299"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/market-calendar.csv",
+      "sha256": "4ce84eb53b10d292052f9e7b7af82915369b24f1a906396cd27c84aaff8bac21"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/raw-history.csv",
+      "sha256": "3d8213346ffccb51d86307671f7daf68a35c2cb36ee9f88e439b3895562a4bda"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/raw-pool-comparison.json",
+      "sha256": "b1d4d5496e41ea4e3f7cf5e128dcb516e88747e4fe1b5b597a49f1edfb0d2b8d"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/self-check.json",
+      "sha256": "bc505e9c4ad38a27b24c151e77bf518d7638768d8c1a6396f9dcd6a673b517c3"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/shape-candidates.json",
+      "sha256": "a1eea079be2e571e034f828d961d8cd7cb9b98678eb3d685c825f1188125d391"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/double-yin-prepared/universe-status.csv",
+      "sha256": "7537a87b19266e5105cc6a628bae7ebb1019fd62b00d18145f323b89abede674"
+    },
+    {
+      "path": "docs/research/2026-10-04-next-evidence/exchange-session-evidence.json",
+      "sha256": "6550cabfb855f3a101fd645db094f031e3a196410361faa5ebd656c250d9a1c6"
+    }
+  ],
+  "phases": {
+    "double_yin_open": {
+      "pool": "double_yin",
+      "start": "09:25:00",
+      "end": "09:30:00",
+      "max_quote_age_seconds": 300,
+      "require_intraday_ohlcv": false,
+      "purpose": "Full prepared pool raw auction opening evidence; no ranking or order"
+    },
+    "double_yin_later_quote": {
+      "pool": "double_yin",
+      "start": "09:35:00",
+      "end": "09:36:00",
+      "max_quote_age_seconds": 10,
+      "require_intraday_ohlcv": true,
+      "purpose": "Separate later raw quote evidence; not an execution or implied fill"
+    },
+    "contraction_prefix": {
+      "pool": "contraction",
+      "start": "14:45:00",
+      "end": "14:46:00",
+      "max_quote_age_seconds": 10,
+      "require_intraday_ohlcv": true,
+      "purpose": "Full necessary pool actual running OHLCV and source timestamps, no final daily bar"
+    },
+    "contraction_later_quote": {
+      "pool": "contraction",
+      "start": "14:55:00",
+      "end": "14:56:00",
+      "max_quote_age_seconds": 10,
+      "require_intraday_ohlcv": true,
+      "purpose": "Separate later quote for complete prepared pool; no post hoc selection or fill claim"
+    }
+  },
+  "automatic_schedule_created": false,
+  "on_day_calendar_identity_and_factor_validation_pending": true,
+  "can_generate_rankings_or_trades": false,
+  "capture_contract": {
+    "request_budget_seconds": 20,
+    "batch_size_max": 400,
+    "future_source_clock_tolerance_seconds": 5,
+    "raw_prev_close_never_filled": true,
+    "all_pool_codes_required_for_complete_coverage": true,
+    "source_freshness_measured_at_receive": true,
+    "source_timestamps_may_differ_between_codes": true,
+    "unknown_or_failed_members_retained": true
+  },
+  "limits": [
+    "Manual data evidence only; the four windows are not four trading instructions",
+    "Observe actual per-code source/request/receive timestamps; not an exact common-time snapshot",
+    "Target-day factors and identity are not inferred from old snapshot",
+    "No profit hypothesis, ranking, order, realized fill, or strategy-success claim follows from capture completion"
+  ]
+}

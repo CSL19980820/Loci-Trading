@@ -7,44 +7,13 @@ from __future__ import annotations
 from typing import Iterable
 
 from src.market.infrastructure.adapters.base import MarketAdapter
-from src.market.infrastructure.adapters.baostock_adapter import BaostockAdapter
-from src.market.infrastructure.adapters.eastmoney_adapter import EastmoneyAdapter
 from src.market.infrastructure.adapters.exchange_list_adapter import ExchangeListAdapter
-from src.market.infrastructure.adapters.hithink_adapter import (
-    HithinkAdapter,
-    hithink_adapter_enabled,
-)
 from src.market.infrastructure.adapters.sina_adapter import SinaAdapter
 from src.market.infrastructure.adapters.tdx_adapter import TdxAdapter
-from src.market.infrastructure.adapters.tencent_adapter import TencentAdapter
-from src.market.infrastructure.adapters.wudao_adapter import WudaoAdapter, wudao_adapter_enabled
 
 
-def _build_default() -> list[MarketAdapter]:
-    adapters: list[MarketAdapter] = [
-        TdxAdapter(),
-        HithinkAdapter(),
-        WudaoAdapter(),
-    ]
-    adapters.extend(
-        [
-            TencentAdapter(),
-            EastmoneyAdapter(),
-            BaostockAdapter(),
-            SinaAdapter(),
-            ExchangeListAdapter(),
-        ]
-    )
-    return adapters
 
 
-def _runtime_enabled(adapter: MarketAdapter) -> bool:
-    """运行时可选源判定；配置变化无需重启进程或重建注册表。"""
-    if adapter.meta.id == WudaoAdapter.meta.id:
-        return wudao_adapter_enabled()
-    if adapter.meta.id == HithinkAdapter.meta.id:
-        return hithink_adapter_enabled()
-    return True
 
 
 #: 进程内默认实例；测试可 ``register_adapter`` / 替换。
@@ -65,7 +34,7 @@ def reset_registry(adapters: Iterable[MarketAdapter] | None = None) -> None:
 
 
 def all_adapters() -> list[MarketAdapter]:
-    return [adapter for adapter in _registry() if _runtime_enabled(adapter)]
+    return list(_registry())
 
 
 def get_adapter(adapter_id: str) -> MarketAdapter:
@@ -76,7 +45,7 @@ def get_adapter(adapter_id: str) -> MarketAdapter:
 
 
 def adapters_for_lane(lane: str) -> list[MarketAdapter]:
-    return [a for a in _registry() if lane in a.meta.lanes and _runtime_enabled(a)]
+    return [a for a in _registry() if lane in a.meta.lanes]
 
 
 def _config(config: dict | None) -> dict:
@@ -169,14 +138,12 @@ def lane_route_policy(lane: str, *, config: dict | None = None) -> dict[str, obj
     }
 
 
-def list_catalog() -> list[dict]:
-    """给 API 用的名片列表（id / label / lanes / description）。
 
-    ``wudao`` 日 K 适配器与悟道 MCP 同源，不单独占一张数据源牌——目录只露
-    ``mcp:wudao``；路由层仍可通过 ``enabled_adapter_ids`` 使用它。
-    """
-    return [
-        adapter.catalog_entry()
-        for adapter in all_adapters()
-        if adapter.meta.id != WudaoAdapter.meta.id
-    ]
+
+def _build_default() -> list[MarketAdapter]:
+    return [TdxAdapter(), SinaAdapter(), ExchangeListAdapter()]
+
+
+def list_catalog() -> list[dict]:
+    """仅返回实际可运行的三个基础行情接入；悟道由情报目录单独提供。"""
+    return [adapter.catalog_entry() for adapter in all_adapters()]

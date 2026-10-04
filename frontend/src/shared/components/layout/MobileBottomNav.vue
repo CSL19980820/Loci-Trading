@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChartColumn, Cpu, Gauge, LayoutDashboard, LayoutGrid, MessageCircle, Search, Sparkles, Target, TrendingUp } from '@lucide/vue'
+import { ChartColumn, Cpu, Gauge, LayoutDashboard, LayoutGrid, ListFilter, MessageCircle, Search, Sparkles, Target, TrendingUp } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -15,13 +15,13 @@ const drawerOpen = ref(false)
 const themeOpen = ref(false)
 const primaryTabs: NavMenuItem[] = [
   navMenuItem('pulse', Gauge),
+  navMenuItem('screen-history', ListFilter),
   navMenuItem('pool', Target),
-  navMenuItem('screen-history', Search),
+  navMenuItem('quant', ChartColumn),
   navMenuItem('agents', Cpu),
+  navMenuItem('winrate', TrendingUp),
 ]
 const moreItems: NavMenuItem[] = [
-  navMenuItem('winrate', TrendingUp),
-  navMenuItem('quant', ChartColumn),
   navMenuItem('data-query', LayoutDashboard),
   navMenuItem('strategy-converter', Sparkles),
 ]
@@ -80,7 +80,7 @@ function openTheme(): void {
 <style scoped>
 .mobile-bottom-nav { display: none; }
 @media (max-width: 767px) {
-  .mobile-bottom-nav { position: fixed; inset: auto 0 0; z-index: var(--z-mobile-nav); display: flex; height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0)); padding: 0 8px env(safe-area-inset-bottom, 0); border-top: 1px solid var(--border-subtle); background: color-mix(in oklab, var(--surface-raised) 92%, transparent); backdrop-filter: blur(12px); }
+  .mobile-bottom-nav { position: fixed; inset: auto 0 0; z-index: var(--z-mobile-nav); display: flex; height: calc(var(--mobile-nav-h) + env(safe-area-inset-bottom, 0)); padding: 0 4px env(safe-area-inset-bottom, 0); border-top: 1px solid var(--border-subtle); background: color-mix(in oklab, var(--surface-raised) 92%, transparent); backdrop-filter: blur(12px); }
   .nav-tab { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; min-height: 44px; padding: 6px 2px; border: 0; background: transparent; color: var(--text-tertiary); font: 500 var(--fs-micro)/1.2 var(--font); text-decoration: none; -webkit-tap-highlight-color: transparent; transition: color var(--dur-fast) var(--ease); }
   .nav-tab__icon-wrap { display: grid; place-items: center; width: 44px; height: 28px; border-radius: var(--radius-pill); transition: background-color var(--dur-fast) var(--ease); }
   .nav-tab__icon { width: 22px; height: 22px; stroke-width: 1.8; }

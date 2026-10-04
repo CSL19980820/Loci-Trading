@@ -16,7 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 PACKAGES = (
     "src.identity",
-    "src.community",
     "src.ops",
     "src.ai",
     "src.market",

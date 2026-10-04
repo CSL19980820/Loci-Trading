@@ -63,7 +63,7 @@ def build_ledger_router(
         ),
         slim: bool = Query(
             default=False,
-            description="true 时不回 evidence / effective_params，给只画时间轴的调用方",
+            description="true 时不读取/返回 evidence 和 effective_params，供列表和时间轴",
         ),
     ) -> list[dict[str, Any]]:
         """跨日期候选列表。按战法/裁决/股票代码过滤，点进详情看单条。"""
@@ -75,11 +75,8 @@ def build_ledger_router(
             end=end,
             limit=limit,
             include_backfill=include_backfill,
+            slim=slim,
         )
-        if slim:
-            for row in rows:
-                row.pop("evidence", None)
-                row.pop("effective_params", None)
         return rows
 
     @router.get("/api/plans", tags=["plans"])
@@ -170,6 +167,13 @@ def build_ledger_router(
         payload: CandidateInput, store: Store, _: WriteAccess
     ) -> dict[str, str]:
         return {"id": store.record_candidate(**payload.model_dump())}
+
+    @router.get("/api/candidates/{candidate_id}", tags=["candidates"])
+    def candidate_detail(candidate_id: str, store: Store) -> dict[str, Any]:
+        row = store.candidate_payload(candidate_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"未找到候选：{candidate_id}")
+        return row
 
     @router.delete("/api/candidates/{candidate_id}", tags=["candidates"])
     def delete_candidate(

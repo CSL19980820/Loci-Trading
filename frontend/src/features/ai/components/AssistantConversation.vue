@@ -111,7 +111,7 @@ const showGlobalConfirm = computed(() => {
 <style scoped>
 .assistant-conversation { flex:1 1 0%; height:auto; min-height:0; width:100%; }
 .assistant-conversation__viewport { padding:var(--gap-4) 0 var(--gap-3); overflow-x:hidden; scrollbar-width:thin; }
-.assistant-conversation__content { width:100%; max-width:860px; margin:0 auto; gap:var(--gap-5); }
+.assistant-conversation__content { width:100%; margin:0 auto; gap:var(--gap-5); }
 .assistant-conversation__status { margin:var(--gap-1) 0 0; color:var(--mist); font-size:var(--ai-fs-aux); }
 .assistant-conversation__viewport:focus-visible { outline:2px solid var(--seal); outline-offset:-2px; }
 </style>

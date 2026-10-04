@@ -55,7 +55,9 @@ def _chooses(order: GuardianOrder, held: set[str]) -> bool:
 
 def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quotes: dict,
                          now: datetime, config: dict, *, analysis_only: bool = False,
-                         phase: str | None = None) -> tuple[dict, list, list]:
+                         phase: str | None = None,
+                         candidate_codes: list[str] | set[str] | None = None,
+                         auto_observe_codes: list[str] | set[str] | None = None) -> tuple[dict, list, list]:
     """逐笔预检：越过数量或组合约束的意图单独拒绝并写明原因，其余意图照常撮合。
 
     原先任一约束（入选/观察/临时持仓上限、锁仓数、留仓名单、单股仓位）都会抛错让整轮失败，
@@ -65,6 +67,9 @@ def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quot
     """
     current = copy.deepcopy(state)
     is_leader = config.get("kind") == "leader"
+    is_falcon = config.get("kind") == "falcon"
+    falcon_candidates = set(candidate_codes or [])
+    automatic = set(auto_observe_codes or []) & falcon_candidates if is_falcon else set()
     if is_leader:
         current["watchlist"] = pending_watchlist(current)
     day = now.date().isoformat()
@@ -72,12 +77,28 @@ def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quot
     chosen_before = set(selected.get("codes", [])) if selected.get("date") == day else set()
     chosen = set(chosen_before)
     watched = {item["code"] for item in current.get("watchlist", [])}
+    # 来源暂不可读时保留上次已核实的自动观察；该名单仅防删除，不授权新增或免名额。
+    protected_auto = automatic | (set((current.get("falcon_watch_pool") or {}).get("auto_observe_codes") or []) & watched) if is_falcon else set()
     positions = {item["code"]: item["quantity"] for item in current["positions"]}
     held = set(positions)
     errors: list[dict] = []
     accepted = []
     for order in decision.orders:
         scope_problem = ""
+        if is_falcon:
+            if order.action == "unwatch" and order.code in protected_auto:
+                errors.append(_reject(order, "该股仍有已开启公式的近5交易日合格产出，自动观察池由来源管理；可暂不交易并调整择时条件，不能主动删除有效来源观察。", "falcon_source_watch_pool"))
+                continue
+            if order.action in BUY_ACTIONS | {"watch"} and order.code not in falcon_candidates:
+                scope_problem = "猎隼仅可观察、买入或加仓系统已输出且仍具入选/观察资格的个股；持仓保留用于管理退出，不自动授权加仓"
+            elif order.code not in falcon_candidates | held and not (order.action == "unwatch" and order.code in watched):
+                scope_problem = "猎隼不得对系统候选及现有持仓之外的股票生成决策"
+            if scope_problem:
+                errors.append(_reject(order, scope_problem, "falcon_candidate_scope"))
+                continue
+            if order.action == "watch" and order.code in held:
+                errors.append(_reject(order, "已持仓不进入观察池；请使用hold更新持仓择时计划", "falcon_held_watch"))
+                continue
         if leader_watch_only(config, phase) and order.action == "watch" and order.code not in watched:
             scope_problem = "龙头选手盘中不得新增或替换观察股；原观察股不合适就放弃，不临时另选"
         if config.get("kind") == "leader" and order.action in BUY_ACTIONS:
@@ -107,7 +128,7 @@ def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quot
                 errors.append(_reject(order, "当前报价没有可成交的对手盘，不按最新价虚构模拟成交", "missing_executable_depth"))
                 continue
         next_chosen, next_watched, next_positions = set(chosen), set(watched), dict(positions)
-        if _chooses(order, held):
+        if _chooses(order, held) and not (is_falcon and order.action == "watch" and order.code in automatic):
             next_chosen.add(order.code)
         if order.action == "watch":
             next_watched.add(order.code)
@@ -122,7 +143,7 @@ def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quot
         if _grew_past(config["daily_selection_limit"], len(chosen), len(next_chosen)):
             errors.append(_reject(order, "超过每日累计入选上限；取消观察不会重置当天名额"))
             continue
-        if not is_leader and _grew_past(config["watch_limit"], len(watched), len(next_watched)):
+        if not is_leader and _grew_past(config["watch_limit"], len(watched - automatic), len(next_watched - automatic)):
             errors.append(_reject(order, "超过当前观察上限；先撤出观察再新增"))
             continue
         if _grew_past(config["temporary_position_limit"], len(positions), len(next_positions)):
@@ -199,7 +220,8 @@ def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quot
     elif config.get("kind") == "leader" and phase == "review":
         projected.pop("leader_watch_date", None)  # 复盘候选不能冒充次日已经确认的盘前池。
     projected["selected_today"] = {"date": day, "codes": sorted(
-        chosen_before | {o.code for o in accepted if _chooses(o, held)})}
+        chosen_before | {o.code for o in accepted if _chooses(o, held)
+                         and not (is_falcon and o.action == "watch" and o.code in automatic)})}
     return projected, fills, [*errors, *rejected]
 
 

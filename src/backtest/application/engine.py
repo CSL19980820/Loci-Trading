@@ -87,7 +87,7 @@ class BacktestResult:
             f"胜率 {m['win_rate']:.1f}%  "
             f"净收益均值 {m['avg_net_return']:+.2f}%  "
             f"期望 {m['expectancy']:+.2f}%  "
-            f"盈亏比 {m['profit_factor']}  "
+            f"盈亏比 {m.get('payoff_ratio')}  利润因子 PF {m['profit_factor']}  "
             f"MFE均值 {m['avg_mfe']:+.2f}%  MAE均值 {m['avg_mae']:+.2f}%"
         )
 

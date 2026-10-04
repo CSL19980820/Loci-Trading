@@ -1,10 +1,14 @@
 """选股结果写入账本候选池（API 与 Job 共用）。"""
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import Any
 
 from src.shared.evidence_compact import compact_job_result
 from src.strategy.application.score_percentile import SCORE_PERCENTILE
+
+logger = logging.getLogger(__name__)
 
 #: 盘后/当日真选写入源（首页「昨选今涨 / 今日选股」只认这些）
 LIVE_SCREEN_SOURCES: frozenset[str] = frozenset(
@@ -141,7 +145,8 @@ def persist_screen_candidates(
 
     written, formal_written, watch_written = 0, 0, 0
     failed, skipped = [], 0
-    with PalaceStore(palace_db or str(default_palace_db())) as palace:
+    resolved_palace = palace_db or str(default_palace_db())
+    with PalaceStore(resolved_palace) as palace:
         # 回填先取该池真选 code 集：record_candidate 按 (occurred_on, pool_id, code)
         # 幂等 upsert，不跳过会把真选行整体改写成回填行、从「仅真选」视图消失。
         protected_codes: set[str] = set()
@@ -221,6 +226,17 @@ def persist_screen_candidates(
             except PalaceError as exc:
                 failed.append({"code": code, "error": str(exc)[:200]})
 
+    watch_sync = None
+    if is_live_screen_source(resolved_source):
+        # 整批候选写完并释放账本事务后再同步；同租户两库位于同一数据目录。
+        try:
+            from src.ops import OpsStore, sync_falcon_watch_pools
+            with OpsStore(Path(resolved_palace).with_name("ops.db")) as ops:
+                watch_sync = sync_falcon_watch_pools(ops, resolved_palace)
+        except Exception:  # noqa: BLE001 — 保留已成功落库的选股结果，由维护任务重试
+            logger.exception("选股落库后同步猎隼观察池失败（strategy=%s）", result.strategy_slug)
+            watch_sync = {"success": False, "pending_retry": True}
+
     return {
         "pool_id": resolved_pool,
         "written": written,
@@ -230,4 +246,5 @@ def persist_screen_candidates(
         "skipped": skipped,
         "failed": failed,
         "trade_date": result.trade_date,
+        "falcon_watch_sync": watch_sync,
     }

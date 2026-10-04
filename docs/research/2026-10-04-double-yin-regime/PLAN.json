@@ -1,0 +1,79 @@
+{
+  "created_at": "2026-10-04T15:05:06.671132+08:00",
+  "controls": [
+    "corrected_low_open",
+    "full_shape"
+  ],
+  "variants": [
+    "market_permission",
+    "stock_permission",
+    "market_and_stock"
+  ],
+  "nominatable": [
+    "full_shape",
+    "market_permission",
+    "stock_permission",
+    "market_and_stock"
+  ],
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "prior_evidence": "Old low-open selector and subsequent repair variants were already observed; repair did not generalize. This new family is frozen before its own returns; no untouched OOS claim.",
+  "universe": "Full corrected historical strong-up then double-volume-yin candidates; no low-open condition for full_shape/M/S/intersection. All require actual raw T opening>6 and valid opening. Retain original main-board/nonST/name/history/recent-gain identities. corrected_low_open independently retains original low-open gate.",
+  "score": "Recompute for EVERY full shape from economic OHLC=raw*hfq factor:60*(1-clipped position of current O in previous60 high-low range)+40*clipped(1-min distance to previousMA5/10/20/0.03), rounded4. Never fill the old low-open-only masked score. Full-pool low-open rows must exactly match corrected original score.",
+  "numeric_contract": "Read sparse hfq_factor directly from immutable snapshot with factor date<=phase cutoff; forward-align only. Positive quoted price without prior known factor fails; no future backfill or adjusted_close/raw_close reconstruction. For SIGNAL geometry and comparisons, economic prices and compared moving averages use10 significant decimal digits; observed quantization error must be<0.0001raw tick. Relative20d return difference rounded to10 decimals in percentage points before strict>0. Actual execution/returns use unquantized raw prices*direct stored factor. Same raw price with same factor must compare equal. All5 arms share this technical correction.",
+  "market_permission": "M: at T-1 CSI300 C>MA60 AND above-MA20 main-stock breadth>=0.50. No current-day index/stock close is used.",
+  "stock_permission": "S: at T-2 stock C>MA60 AND MA20>MA60 AND stock20-session return>CSI30020-session return. Stock and index use the same market-date endpoints, T-22 through T-2 inclusive endpoints.",
+  "market_and_stock": "M AND S. Exactly3 new mechanisms; no window/threshold/exit grid.",
+  "breadth": {
+    "universe": "Every stored instrument_type=STOCK with six-digit 00/60 code, independent of double-yin shape, current name/ST/status, and candidate industry coverage; INDEX excluded explicitly.",
+    "eligible": "On observation day,20 consecutive market sessions with finite positive economic close AND raw volume>0. New listings/missing/suspensions lacking that history are outside denominator; future listings cannot enter historical denominator.",
+    "above_ma": "fraction of eligible names with C>MA20 on observation day, then shifted1 for T permission.",
+    "advancing": "fraction of same eligible names with C>prior C; diagnostic-only fixed split50%, not an extra trading gate.",
+    "missing": "No index forward fill or denominator guess. Any missing/nonpositive benchmark session fails preparation; no partially imputed run. Empty breadth denominator disables the market gate."
+  },
+  "rank_and_execution": "Filter complete full-shape pool BEFORE original60/40 ranking and greedy group-intersection Top2. T daily-open proxy, raw limits/economic returns; original4-session including entry exit with-6% stop,strictT+1,gap worse-open,blocked exit delay. No additional duplicate/cooldown/repair state or exit parameters; independent events match controls.",
+  "comparison": "Common origin T+3<=end for all5 arms. Primary every eligible market day*2 INCLUDING empty days; filtered/unfilled/unused slots0,censored fills unresolved and mean/CI unavailable. Compare mechanisms to BOTH full_shape causal control and corrected_low_open original-behavior control. All full-shape candidates independently executed for diagnostic conditional tables only; not a sixth tradable strategy or capital return.",
+  "diagnostics": "Training only, pre-fixed boolean splits: CSI300 aboveMA60, breadth aboveMA20>=50%,advancing>=50%,stockC>MA60,stockMA20>MA60,positive20d relative return, and4 cells of M/S. Show all-candidate and each control's selected trade statistics; no alternate thresholds selected from these groups.",
+  "cost_pct": 0.21,
+  "double_cost_pct": 0.42,
+  "nomination": {
+    "full_shape_role": "full_shape is both the causal control for environmental gates AND a separately nominatable simple removal of the low-open gate. It competes within the same maximum2 quota; being displayed later as a control does not grant a retrospective nomination.",
+    "eligible": "Train>=20 closed,>=6 active entry months,net mean>0,PF>1,double-cost+largest-winner-removed mean>0,and fixed calendar-slot mean greater than corrected_low_open; M/S/intersection must additionally beat full_shape. No censoring. This prevents fewer trades alone from qualifying.",
+    "rank": "Among eligible only, calendar-slot mean descending,PF descending,lexical id; maximum2. If none eligible, STOP this family with diagnosis; no diagnostic fallback, more windows, thresholds, or exit rescues.",
+    "later": "Only frozen maximum2 qualifiers plus two controls in already-observed2025H2/2026. Each later segment>=12 closed,>=4 active months,positive net mean,PF>1,slot mean>corrected_low_open; M/S/intersection additionally beat full_shape. Combined later>=40 and positive double-cost+largest-winner-removed mean. full_shape can only pass if training-nominated. Publish opportunity increment and lost frequency even when failing."
+  },
+  "limitations": [
+    "Current catalog/current real EM2016/current revised factors, not historical PIT reconstruction.",
+    "Raw volume ratios may be affected by share changes; this convention is shared by controls and variants.",
+    "Daily-open proxy, no historical09:25execution/queue proof; slot means are not shared-capital portfolio NAV.",
+    "20/60 and0/50% fixed ex ante; finite multiple hypotheses still permit data snooping. Month-block intervals descriptive.",
+    "2023H2 is warmup only, no returns computed."
+  ],
+  "sources": {
+    "tools/research_double_yin_regime.py": "0af74abeff0c26e80808980997bfda4fb696dc352c924a8c1c541c86053faa4e",
+    "tools/research_double_yin_repair.py": "afc40939bc0315cdbeec8821104bf70bb0a2b82679d5244cec1eb91a6279e29d",
+    "tools/research_double_yin_redesign.py": "0f9f304e153b07ea0d2d9053f7ed51999b9cad3a75fa7864b4335910879a3e21",
+    "tools/research_double_yin_scoring_proxy.py": "e2bfd7c19039790a622109420dbb80b48a296400f2233d39b6802163848edbdb",
+    "tools/research_chinext_payoff_exits.py": "7b1e7006677c11234bdc609c2f2c03e24f6b1a8f9dd416d8d6d11ec2796751cd",
+    "tools/research_impulse_scoring.py": "b4326a4706a669a45717fc48288ee07706496738f98f1f6b649da9d343feac4b",
+    "src/strategy/application/double_yin_low_open.py": "c111f1662dcc013b7518d822952cd381e5b776d0bfebcdc85a6983e7c2826833",
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/market/infrastructure/store_panel.py": "00366d2fd2ecb6bd548dcf6bba3475b5656f59df4222ee58b4ed85cdd2c55369",
+    "src/market/domain/universe.py": "343d04424b01a90a0c85be724582421ffbda181df68363c8ceaf2d67f40ad2fb"
+  },
+  "snapshot_sha256": "8dce54b28b7a1627e0f77b15251f1fa05e72800f9d85d6d4a4a341781a648c3c",
+  "groups_sha256": "373337cb07dcf6649e70490f2cd7e1e1499dc375a5088949fde0fb8c6d8bd2cc"
+}

@@ -1,0 +1,166 @@
+{
+  "segment": "observed_2026",
+  "completed_at": "2026-10-04T17:34:48.036694+08:00",
+  "runs": {
+    "corrected_low_open": {
+      "metrics": {
+        "base": {
+          "trades": 263,
+          "avg_net_return": -0.7778613589992733,
+          "win_rate": 37.6425855513308,
+          "profit_factor": 0.7786118946013116,
+          "payoff_ratio": 1.2898217243900516,
+          "avg_win": 7.2675746647314625,
+          "avg_loss": -5.634557495275754,
+          "worst_net": -38.44080833756991
+        },
+        "double_cost": {
+          "trades": 263,
+          "avg_net_return": -0.9878613589992735,
+          "win_rate": 36.88212927756654,
+          "profit_factor": 0.7289634319141576,
+          "payoff_ratio": 1.247504429873713,
+          "avg_win": 7.203737273362197,
+          "avg_loss": -5.774518391162301,
+          "worst_net": -38.65080833756991
+        },
+        "largest_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -0.892354835290986,
+          "win_rate": 37.404580152671755,
+          "profit_factor": 0.7469914429921382,
+          "payoff_ratio": 1.2500673127623536,
+          "avg_win": 7.043576146724339,
+          "avg_loss": -5.634557495275754,
+          "worst_net": -38.44080833756991
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -1.102354835290986,
+          "win_rate": 36.6412213740458,
+          "profit_factor": 0.6987001983187942,
+          "payoff_ratio": 1.2081690929262483,
+          "avg_win": 6.976594646736497,
+          "avg_loss": -5.774518391162301,
+          "worst_net": -38.65080833756991
+        }
+      },
+      "selected_orders": 263,
+      "execution_accounting": {
+        "closed": 263
+      },
+      "label_accounting": {
+        "closed": 263
+      },
+      "unresolved_selected": 0,
+      "slots": 356,
+      "slot_mean": -0.5746560039798002,
+      "original_open_slot_mean": -0.14304625209135613,
+      "active_months": 9
+    },
+    "yin_close_and_open_above_vwap": {
+      "metrics": {
+        "base": {
+          "trades": 60,
+          "avg_net_return": 3.200035959828463,
+          "win_rate": 55.0,
+          "profit_factor": 2.3033289667525687,
+          "payoff_ratio": 1.8845418818884656,
+          "avg_win": 10.282390442192051,
+          "avg_loss": -5.456175074171476,
+          "worst_net": -14.18268974277548
+        },
+        "double_cost": {
+          "trades": 60,
+          "avg_net_return": 2.9900359598284636,
+          "win_rate": 55.0,
+          "profit_factor": 2.1726648520732375,
+          "payoff_ratio": 1.7776348789690128,
+          "avg_win": 10.072390442192049,
+          "avg_loss": -5.666175074171476,
+          "worst_net": -14.392689742775481
+        },
+        "largest_winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.744136965879268,
+          "win_rate": 54.23728813559322,
+          "profit_factor": 2.0990203507846505,
+          "payoff_ratio": 1.7710484209745487,
+          "avg_win": 9.663150249672084,
+          "avg_loss": -5.456175074171476,
+          "worst_net": -14.18268974277548
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 59,
+          "avg_net_return": 2.5341369658792683,
+          "win_rate": 54.23728813559322,
+          "profit_factor": 1.9773009980421807,
+          "payoff_ratio": 1.66834771709809,
+          "avg_win": 9.453150249672083,
+          "avg_loss": -5.666175074171476,
+          "worst_net": -14.392689742775481
+        }
+      },
+      "selected_orders": 61,
+      "execution_accounting": {
+        "closed": 60,
+        "official_suspension": 1
+      },
+      "label_accounting": {
+        "closed": 60,
+        "cancelled": 1
+      },
+      "unresolved_selected": 0,
+      "slots": 356,
+      "slot_mean": 0.5393319033418759,
+      "original_open_slot_mean": 0.699216291797749,
+      "active_months": 9
+    }
+  },
+  "paired_comparisons": {
+    "corrected_low_open_vs_original_open": {
+      "months": 9,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.7226606861447348,
+        -0.11495646196306361
+      ],
+      "point_delta_per_opportunity": -0.4316097518884444
+    },
+    "yin_close_and_open_above_vwap_vs_original_open": {
+      "months": 9,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        -0.3488061879356611,
+        -0.010576557662800643
+      ],
+      "point_delta_per_opportunity": -0.1598843884558731
+    },
+    "B_vs_low_at_fifth_slot": {
+      "months": 9,
+      "replicates": 5000,
+      "seed": 20261004,
+      "ci95_delta_per_opportunity": [
+        0.23905224638931963,
+        2.031636902726691
+      ],
+      "point_delta_per_opportunity": 1.113987907321676
+    }
+  },
+  "fixed_preselection_identity": "passed",
+  "sensitivity_only": true,
+  "original_B_strict_pass": false,
+  "artifact_sha256": {
+    "observed_2026-corrected_low_open-events.csv": "6117a1076070d2cf5494f8785beea444b3a56d5c649a4809ea94f5e2d54ee79e",
+    "observed_2026-corrected_low_open-labels.csv": "f2e13c4ee8b94642d26e9c06a9247471d57ca23728b0afd5271bb65c6c2faf30",
+    "observed_2026-corrected_low_open-trades.csv": "5e0b8385bfa0e467ecda43145839f8210c859192c43b3491524efeb2145aaef8",
+    "observed_2026-execution-changes.csv": "80b11f8efc136fced070663518bdab1b149bb8c971d70282b9bb21dcadbbd2f0",
+    "observed_2026-official-overlay.json": "c5e2be7930581ab38d897effccbd0826748c94229cc8604db6349ee342dbd5a1",
+    "observed_2026-paired-calendar.csv": "208899dca0823b0b2d4598f6fc3359a559195259fd48d865297fa92b2602f04b",
+    "observed_2026-yin_close_and_open_above_vwap-events.csv": "653ddea2bb9c20cfc79f7744408bf87f638328d27c8b487e1507ef6293e56e27",
+    "observed_2026-yin_close_and_open_above_vwap-labels.csv": "42d036dc8c41196633ea85c8519426b6064abed476c9e56bd33d9f44b9cad624",
+    "observed_2026-yin_close_and_open_above_vwap-trades.csv": "4cd8de38e16226eab0871f06ab8703ceda1f1a911de1f5da051992741907f557"
+  }
+}

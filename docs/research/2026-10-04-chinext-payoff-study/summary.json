@@ -1,0 +1,54 @@
+{
+  "study_date": "2026-10-04",
+  "scope": "Research and isolated backtest only; do not change deployed strategies or Falcon",
+  "decision": "No frozen candidate produced positive expectancy and PF above 1 in 2025H2; do not replace defaults based on this study",
+  "training_runs_including_controls": {
+    "exits": 120,
+    "filters": 19,
+    "entries": 6,
+    "total": 145
+  },
+  "frozen_candidates": {
+    "exits": 4,
+    "filters": 6,
+    "entries": 1
+  },
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "parameter_selection_validation": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "already_observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "unseen_strategy_oos_claim": false,
+  "model_selection_bias": "Current base score was calibrated to known 2026-09-29 cases; base strategy not frozen as of training start",
+  "snapshot_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "evidence_sha256": {
+    "exits/freeze-receipt.json": "f406714c89f5dd2aebd82b4d22b2daf8c606132bd0da0f91b3846ea2a986cd5e",
+    "exits/summary.json": "718bda78f432f3fb92d8a569a811958572852f46453b33db8b9fb7cebc3f0bf8",
+    "filters/training-freeze.json": "4acbcd74f17ed73d84c876d8bc4c9fe5085cf4fa1f186d16548ef2cddb13898c",
+    "filters/validation-summary.json": "2f9de7fbeec84df5072981b0636d322b3e2ecebf1f07384d18a73596ad89e89d",
+    "entries/freeze-receipt.json": "386fe949357f97ceeddd72979ca37a8c3a9a1a8a8bc7704a5629772d73406422",
+    "entries/evaluation-summary.json": "1f81ccff4eb42e2ec5ed00c865832bc1012a9297b97ef0ae55150a7be1c73a4d",
+    "filters/opportunity-summary.json": "ae1837ec4f3019e6af8f07003a7e9d1f71c43e12c47cf5c4c1482c9b60c6fd31",
+    "filters/opportunity_analysis.py": "48eed11f30137b93750c7f316f250813ef1011233addaff2c7094c7a7078edeb"
+  },
+  "tail_entry_decision": "Needs contemporaneous full-pool OHLCV/ranking, later recheck and actual execution evidence; sparse minutes insufficient for long-run tail backtest",
+  "production_mutation": false,
+  "orders_placed": false,
+  "audit": "../../../.local/chinext-payoff-20261004/no-change-and-cleanup-audit.json",
+  "compiled_cache_removed": [
+    "tools\\__pycache__\\research_chinext_payoff_entries.cpython-312.pyc",
+    "tools\\__pycache__\\research_chinext_payoff_exits.cpython-312.pyc"
+  ],
+  "updated_at": "2026-10-04T01:00:52.838204+08:00",
+  "report_sha256": "b8238fba141cdfb7124ad457ab9697febb5eab523cb5a92a85a2e15b084cc2e7",
+  "independent_reviews": "Frozen selection, later trades, economic returns, costs, 74 opportunity CSV inputs, refill attribution and report conclusions verified"
+}

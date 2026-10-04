@@ -14,16 +14,14 @@ import PageTabs from '@/shared/components/ui/PageTabs.vue'
 import UiBadge from '@/shared/components/ui/UiBadge.vue'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/components/ui/tooltip'
 
-import AkshareToolTable from './components/AkshareToolTable.vue'
 import LanePurposeBoard from './components/LanePurposeBoard.vue'
 import McpToolListDrawer from './components/McpToolListDrawer.vue'
 import SourceCardGrid from './components/SourceCardGrid.vue'
 import SourceDetailDrawer from './components/SourceDetailDrawer.vue'
-import { useAkshareTools } from './composables/useAkshareTools'
 import { useDataSources } from './composables/useDataSources'
 
 const props = defineProps<{
-  /** 深链进来时的初始视图（sources / purpose / interfaces） */
+  /** 深链进来时的初始视图（sources / purpose） */
   initialView?: string
 }>()
 
@@ -53,27 +51,9 @@ const {
   savePolicy,
 } = useDataSources()
 
-const {
-  catalog: akshareCatalog,
-  versionInfo: akshareVersion,
-  loading: akshareLoading,
-  busy: akshareBusy,
-  error: akshareError,
-  notice: akshareNotice,
-  probeResult: akshareProbeResult,
-  batchOpen: akshareBatchOpen,
-  batchProgress: akshareBatchProgress,
-  batchResults: akshareBatchResults,
-  load: loadAkshare,
-  checkVersion: checkAkshareVersion,
-  probeAll: probeAllAkshare,
-  stopBatch: stopAkshareBatch,
-  probe: probeAkshare,
-} = useAkshareTools()
+type PanelView = 'sources' | 'purpose'
 
-type PanelView = 'sources' | 'purpose' | 'interfaces'
-
-const VIEWS: PanelView[] = ['sources', 'purpose', 'interfaces']
+const VIEWS: PanelView[] = ['sources', 'purpose']
 
 function parseView(raw: string | undefined): PanelView {
   return VIEWS.includes(raw as PanelView) ? (raw as PanelView) : 'sources'
@@ -90,22 +70,13 @@ const viewTab = computed({
 const detailId = ref('')
 const detailOpen = ref(false)
 const mcpOpen = ref(false)
-const interfaceSource = ref('')
 
 const viewItems = [
   { name: 'sources', label: '按数据源' },
   { name: 'purpose', label: '按用途' },
-  { name: 'interfaces', label: '按接口' },
 ]
 
 const detailRow = computed(() => sources.value.find((row) => row.id === detailId.value) ?? null)
-
-function openInterfaces(id: string): void {
-  // 目录里的 provider 就是来源 id（东财=eastmoney…），可以直接当筛选值
-  interfaceSource.value = id
-  view.value = 'interfaces'
-  detailOpen.value = false
-}
 
 const brokenText = computed(() =>
   brokenRequiredLanes.value.map((row) => row.label).join('、'),
@@ -117,26 +88,15 @@ function openDetail(id: string): void {
 }
 
 // 成功回执是一次性反馈，不配占一条常驻横条：弹 toast 后立刻把 notice 清干净
-watch([notice, akshareNotice], ([main, akshare]) => {
-  const text = main || akshare
+watch(notice, text => {
   if (!text) return
   toast.success(text)
   notice.value = ''
-  akshareNotice.value = ''
 })
 
 watch(
   () => stats.value.total,
   (total) => emit('count-changed', total),
-  { immediate: true },
-)
-
-// 目录有几千条，进「按接口」再拉，别拖慢首屏
-watch(
-  view,
-  (next) => {
-    if (next === 'interfaces' && !akshareCatalog.value) void loadAkshare()
-  },
   { immediate: true },
 )
 
@@ -151,9 +111,7 @@ onMounted(() => {
   void load()
 })
 
-function setAkshareBatchOpen(open: boolean): void {
-  akshareBatchOpen.value = open
-}
+defineExpose({ load })
 const panelId = `datasource-panel-${useId()}`
 </script>
 
@@ -184,7 +142,7 @@ const panelId = `datasource-panel-${useId()}`
           <Wrench />
           MCP 工具清单
         </Button>
-        <template v-if="view !== 'interfaces'">
+
           <Input
             v-model="code"
             class="ds-code"
@@ -211,10 +169,9 @@ const panelId = `datasource-panel-${useId()}`
                 探测线路
               </Button>
             </TooltipTrigger>
-            <TooltipContent>探测所有行情线路的连通性（不是 AkShare 接口全测）</TooltipContent>
+            <TooltipContent>探测所有行情线路的连通性</TooltipContent>
           </Tooltip>
-        </template>
-        <Button access="read" variant="outline" size="sm" :disabled="loading" aria-label="刷新" @click="view === 'interfaces' ? loadAkshare() : load()">
+        <Button access="read" variant="outline" size="sm" :disabled="loading" aria-label="刷新" @click="load()">
           <RefreshCw :class="loading ? 'animate-spin' : ''" />
           刷新
         </Button>
@@ -241,34 +198,10 @@ const panelId = `datasource-panel-${useId()}`
       </div>
     </Alert>
 
-    <Alert v-if="akshareError" class="ds-alert text-warn">
-      <TriangleAlert />
-      <div class="flex w-full min-w-0 items-start justify-between gap-2">
-        <AlertTitle class="line-clamp-none min-w-0">{{ akshareError }}</AlertTitle>
-        <Button access="read" variant="ghost" size="icon-xs" aria-label="关闭提示" class="shrink-0" @click="akshareError = ''">
-          <X class="size-3.5" />
-        </Button>
-      </div>
-    </Alert>
+
 
     <div :id="panelId" class="ds-body" role="tabpanel" tabindex="0" :aria-labelledby="`${panelId}-tab-${viewTab}`">
-      <AkshareToolTable
-        v-if="view === 'interfaces'"
-        :catalog="akshareCatalog"
-        :busy="akshareBusy || akshareLoading"
-        :probe-result="akshareProbeResult"
-        :version-info="akshareVersion"
-        :batch-open="akshareBatchOpen"
-        :batch-progress="akshareBatchProgress"
-        :batch-results="akshareBatchResults"
-        :source="interfaceSource"
-        @probe="probeAkshare"
-        @probe-all="probeAllAkshare()"
-        @stop-batch="stopAkshareBatch()"
-        @check-version="checkAkshareVersion()"
-        @update:batch-open="setAkshareBatchOpen"
-      />
-      <PageBusy v-else-if="loading && !sources.length" label="加载数据源…" />
+      <PageBusy v-if="loading && !sources.length" label="加载数据源…" />
       <template v-else-if="sources.length">
         <SourceCardGrid
           v-if="view === 'sources'"
@@ -277,7 +210,7 @@ const panelId = `datasource-panel-${useId()}`
           @open="openDetail"
           @probe="probeSource"
           @toggle="({ id, enabled }) => toggleSource(id, enabled)"
-          @interfaces="openInterfaces"
+
         />
         <LanePurposeBoard
           v-else
@@ -309,7 +242,7 @@ const panelId = `datasource-panel-${useId()}`
       @probe="probeSource"
       @toggle-source="({ id, enabled }) => toggleSource(id, enabled)"
       @toggle-tool="({ id, lane, enabled }) => toggleTool(id, lane, enabled)"
-      @interfaces="openInterfaces"
+
     />
   </div>
 </template>

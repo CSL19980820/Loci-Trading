@@ -14,6 +14,7 @@ export type CandidatesFilter = {
   start?: string
   end?: string
   limit?: number
+  include_backfill?: boolean
 }
 
 export function useCandidatesQuery(filters: MaybeRefOrGetter<CandidatesFilter> = {}) {
@@ -21,12 +22,13 @@ export function useCandidatesQuery(filters: MaybeRefOrGetter<CandidatesFilter> =
     key: () => {
       const f = toValue(filters)
       return [
-        'candidates-list',
+        'candidates-list-slim',
         f.strategy ?? '',
         f.decision ?? '',
         f.start ?? '',
         f.end ?? '',
         f.limit ?? 1000,
+        f.include_backfill ?? false,
       ] as const
     },
     query: () => {
@@ -37,6 +39,8 @@ export function useCandidatesQuery(filters: MaybeRefOrGetter<CandidatesFilter> =
         start: f.start,
         end: f.end,
         limit: f.limit ?? 1000,
+        include_backfill: f.include_backfill ?? false,
+        slim: true,
       })
     },
     staleTime: 30_000,

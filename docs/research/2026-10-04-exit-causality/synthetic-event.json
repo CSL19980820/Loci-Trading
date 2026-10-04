@@ -1,0 +1,106 @@
+{
+  "kind": "one_synthetic_event_with_late_close_intervention",
+  "real_market_data_read": false,
+  "alternative_real_returns_computed": false,
+  "production_or_frozen_source_changed": false,
+  "source_sha256": {
+    "src/backtest/application/engine.py": "1ef1133a316725821db8bc4ec9ff41fa60a2fcc6d42ab7378567ab1f54ac7fc5",
+    "src/backtest/application/execution_contract.py": "549651f13ec2dcca06636cab03a110ffb4240da34cbd5b32f85cd7911e9c03ae",
+    "src/backtest/domain/models.py": "0a3b46c38f6e6ee823c7e47060fa84ff2bac2b6d68a0b1381454919d4e8771b7"
+  },
+  "days": [
+    "T-1",
+    "T",
+    "T+1",
+    "T+2",
+    "T+3"
+  ],
+  "bars": {
+    "open": [
+      10.0,
+      10.0,
+      9.8,
+      9.7,
+      9.6
+    ],
+    "high": [
+      10.2,
+      10.2,
+      10.0,
+      9.8,
+      9.7
+    ],
+    "low": [
+      9.8,
+      9.8,
+      9.0,
+      9.3,
+      9.5
+    ],
+    "close": [
+      10.0,
+      10.0,
+      9.0,
+      9.6,
+      9.6
+    ],
+    "volume": [
+      1000.0,
+      1000.0,
+      1000.0,
+      1000.0,
+      1000.0
+    ]
+  },
+  "entry_day": "T",
+  "entry_basis": 10.0,
+  "stop_trigger": 9.4,
+  "known_T_plus_1_lower_limit": 9.0,
+  "planned_expiry": "T+3",
+  "compatible_synthetic_intraday_prefix": [
+    9.8,
+    10.0,
+    9.4,
+    9.0
+  ],
+  "intervention": "Keep T+1 open/high/low and all other days equal; only its final close is9.0 or9.2.",
+  "current_results": [
+    {
+      "late_close_T_plus_1": 9.0,
+      "mask": "strict_current_close_mask",
+      "T_plus_1_blocked": true,
+      "native_one_word_on_T_plus_1": false,
+      "exit_day": "T+2",
+      "exit_price": 9.6,
+      "exit_reason": "stop_loss"
+    },
+    {
+      "late_close_T_plus_1": 9.0,
+      "mask": "native_one_word_mask",
+      "T_plus_1_blocked": false,
+      "native_one_word_on_T_plus_1": false,
+      "exit_day": "T+1",
+      "exit_price": 9.399999999999999,
+      "exit_reason": "stop_loss"
+    },
+    {
+      "late_close_T_plus_1": 9.2,
+      "mask": "strict_current_close_mask",
+      "T_plus_1_blocked": false,
+      "native_one_word_on_T_plus_1": false,
+      "exit_day": "T+1",
+      "exit_price": 9.399999999999999,
+      "exit_reason": "stop_loss"
+    },
+    {
+      "late_close_T_plus_1": 9.2,
+      "mask": "native_one_word_mask",
+      "T_plus_1_blocked": false,
+      "native_one_word_on_T_plus_1": false,
+      "exit_day": "T+1",
+      "exit_price": 9.399999999999999,
+      "exit_reason": "stop_loss"
+    }
+  ],
+  "interpretation": "Current strict close mask changes the earlier stop's simulated execution. Native OHLC fills are still proxies, not evidence of real fillability."
+}

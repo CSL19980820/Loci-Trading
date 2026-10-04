@@ -210,6 +210,8 @@ export function entryTimingLabel(value: string): string {
 
 /** 候选/历史里出现的战法 slug → 中文名（含旧别名）。 */
 const STRATEGY_LABELS: Record<string, string> = {
+  'contraction-rebreakout-v1': '缩量回调后二次突破',
+  'impulse-inside-breakout-v1': '大阳三日缩量突破',
   'impulse-pullback-tail-v1': '涨停大涨回落转强·十日',
   潜龙: '潜龙出海',
   qianlong: '潜龙出海',
@@ -315,12 +317,14 @@ export function strategyShortLabel(
  * `placeholder="qianlong-close-v3"`，等于把内部编码摊到用户脸上。配合
  * `filterable` + `allow-create` 仍可手填自定义 skill 的 slug。
  *
- * 只列现役三档；已下线的版本不进选项（但 `strategyLabel` 仍认得，历史数据照常显示中文）。
+ * 只列现役战法；已下线的版本不进选项（但 `strategyLabel` 仍认得，历史数据照常显示中文）。
  */
 export const BUILTIN_STRATEGY_OPTIONS: readonly { label: string; value: string }[] = [
   { label: strategyLabel('qianlong-close-v3'), value: 'qianlong-close-v3' },
   { label: strategyLabel('sanyuan-tail-v1'), value: 'sanyuan-tail-v1' },
   { label: strategyLabel('yangshi-tail-v1'), value: 'yangshi-tail-v1' },
+  { label: strategyLabel('impulse-inside-breakout-v1'), value: 'impulse-inside-breakout-v1' },
+  { label: strategyLabel('contraction-rebreakout-v1'), value: 'contraction-rebreakout-v1' },
 ]
 
 export function timingLabel(value: string | null | undefined): string {

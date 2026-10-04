@@ -1,0 +1,8 @@
+{
+  "created_at": "2026-10-04T08:38:54.504604+00:00",
+  "plan_sha256": "024784c5414b06b202a1a0444fc005b5d78d537ceba8ed13cf2685b29b94e4a6",
+  "capital_tool_sha256": "f9eb200eadb7f21c65e202101f1fd17154610b79f9c2b74715963a4f592e4602",
+  "status": "posthoc diagnostic frozen before its capital results",
+  "original_acceptance_changed": false,
+  "three_policies_three_periods": 9
+}

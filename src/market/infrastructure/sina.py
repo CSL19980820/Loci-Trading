@@ -68,7 +68,7 @@ HEADERS = {
     "Referer": "https://finance.sina.com.cn/",
 }
 
-DEFAULT_TIMEOUT = 20
+DEFAULT_TIMEOUT = 8
 
 #: 全局唯一的 JS 运行时与它的锁。整个进程只此一份。
 _JS_LOCK = threading.Lock()
@@ -106,7 +106,8 @@ def _decode_kline(payload: str) -> list[dict[str, Any]]:
         if _JS_RUNTIME is None:
             try:
                 import py_mini_racer
-                from akshare.stock.cons import hk_js_decode
+                from pathlib import Path
+                decoder = Path(__file__).with_name("sina_history_decode.js").read_text(encoding="utf-8")
             except ImportError as exc:  # pragma: no cover - 依赖缺失路径
                 raise SinaFetchError(f"缺少解码依赖：{exc.name}") from exc
             try:
@@ -117,20 +118,20 @@ def _decode_kline(payload: str) -> list[dict[str, Any]]:
                     "请重新全量打包 Loci（需包含 py_mini_racer）。"
                     f" 原始错误：{type(exc).__name__}: {exc}"
                 ) from exc
-            runtime.eval(hk_js_decode)
+            runtime.eval(decoder)
             _JS_RUNTIME = runtime
         return _JS_RUNTIME.call("d", payload)
 
 
 def _get(url: str, session: requests.Session | None = None) -> str:
-    from src.market.infrastructure.http_client import market_get, market_session
+    from src.market.infrastructure.http_client import market_get
 
     try:
         response = market_get(
             url,
             headers=HEADERS,
             timeout=DEFAULT_TIMEOUT,
-            session=session or market_session(),
+            session=session,
         )
     except Exception as exc:
         raise SinaFetchError(f"请求失败：{type(exc).__name__}: {exc}") from exc
@@ -247,46 +248,26 @@ def fetch_spot(
     return pd.DataFrame(rows)
 
 
-def fetch_live_hq(
-    symbols: Sequence[str], *, session: requests.Session | None = None
-) -> list[dict[str, Any]]:
-    """批量实时行情（富字段：名称/昨收/涨跌幅），供顶栏 / 列表 live 用。
-
-    ``symbols`` 已是 sh/sz 前缀。停牌空串跳过；单批失败不抛，继续下一批。
-    """
+def fetch_live_hq(symbols: Sequence[str], *, session: requests.Session | None = None) -> list[dict[str, Any]]:
+    """富行情批量读取。连接池由 HTTP 层管理，调用方的 Session 不会被改写或关闭。"""
     clean = [str(symbol).strip().lower() for symbol in symbols if str(symbol).strip()]
-    if not clean:
-        return []
-
-    from src.market.infrastructure.http_client import market_session
-
-    own_session = session is None
-    sess = session or market_session()
-    if own_session:
-        sess.headers.update(HEADERS)
-
     out: list[dict[str, Any]] = []
     failures: list[str] = []
     batches = 0
-    try:
-        for start in range(0, len(clean), SPOT_BATCH_SIZE):
-            batch = clean[start : start + SPOT_BATCH_SIZE]
-            batches += 1
-            try:
-                text = _get(SPOT_URL.format(",".join(batch)), sess)
-            except SinaFetchError as exc:
-                failures.append(str(exc))
-                logger.warning("实时行情批次失败：%s", exc)
-                continue
-            for chunk in text.split(";"):
-                row = _parse_hq_line(chunk)
-                if row:
-                    out.append(row)
-    finally:
-        if own_session:
-            sess.close()
+    for start in range(0, len(clean), SPOT_BATCH_SIZE):
+        batch = clean[start:start + SPOT_BATCH_SIZE]
+        batches += 1
+        try:
+            text = _get(SPOT_URL.format(",".join(batch)), session)
+        except SinaFetchError as exc:
+            failures.append(str(exc))
+            logger.warning("实时行情批次失败：%s", exc)
+            continue
+        for chunk in text.split(";"):
+            row = _parse_hq_line(chunk)
+            if row:
+                out.append(row)
     if batches and len(failures) == batches:
-        # 全批失败还返回空表，上层只会报「行情为空」，把真正的网络原因吞掉。
         raise SinaFetchError(f"实时行情 {batches} 批全部失败 -> {failures[-1]}")
     return out
 
@@ -438,7 +419,7 @@ def fetch_minute(
     datetime/open/high/low/close/volume/amount/avg_price。
     接口一次最多约 ``MINUTE_DATALEN`` 根；``trade_date`` / ``days`` 在本地裁剪。
     """
-    from src.market.infrastructure.http_client import market_get, market_session
+    from src.market.infrastructure.http_client import market_get
 
     sym = str(symbol).strip().lower()
     scale = str(period).strip()
@@ -458,7 +439,7 @@ def fetch_minute(
             },
             headers=HEADERS,
             timeout=DEFAULT_TIMEOUT,
-            session=session or market_session(),
+            session=session,
         )
     except Exception as exc:
         raise SinaFetchError(f"分钟线请求失败：{type(exc).__name__}: {exc}") from exc

@@ -1,0 +1,77 @@
+{
+  "segment": "validation_2025h2",
+  "candidate_and_raw_qc_identity": "byte_identical",
+  "existing_closed_trades": "unchanged",
+  "changed_labels": [
+    {
+      "policy": "corrected_low_open",
+      "decision_date": "2025-07-02",
+      "code": "605389",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "unresolved_holding_path",
+        "entry_date": "2025-07-02",
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "closed",
+        "label_available_date": "2025-07-11",
+        "label_available_at": "2025-07-11T15:00:00+08:00",
+        "net_return_pct": -1.22271785209609,
+        "execution_reason": "closed",
+        "entry_date": "2025-07-02",
+        "exit_date": "2025-07-11"
+      }
+    },
+    {
+      "policy": "full_shape",
+      "decision_date": "2025-07-02",
+      "code": "605389",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "unresolved_holding_path",
+        "entry_date": "2025-07-02",
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "closed",
+        "label_available_date": "2025-07-11",
+        "label_available_at": "2025-07-11T15:00:00+08:00",
+        "net_return_pct": -1.22271785209609,
+        "execution_reason": "closed",
+        "entry_date": "2025-07-02",
+        "exit_date": "2025-07-11"
+      }
+    },
+    {
+      "policy": "vwap_eligible_full_shape",
+      "decision_date": "2025-07-02",
+      "code": "605389",
+      "before": {
+        "label_status": "unresolved",
+        "label_available_date": null,
+        "label_available_at": null,
+        "net_return_pct": null,
+        "execution_reason": "unresolved_holding_path",
+        "entry_date": "2025-07-02",
+        "exit_date": null
+      },
+      "after": {
+        "label_status": "closed",
+        "label_available_date": "2025-07-11",
+        "label_available_at": "2025-07-11T15:00:00+08:00",
+        "net_return_pct": -1.22271785209609,
+        "execution_reason": "closed",
+        "entry_date": "2025-07-02",
+        "exit_date": "2025-07-11"
+      }
+    }
+  ],
+  "changed_label_count": 3
+}

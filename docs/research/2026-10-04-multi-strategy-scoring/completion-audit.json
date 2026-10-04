@@ -1,0 +1,26 @@
+{
+  "contraction-rebreakout-v1": {
+    "all_runs_complete": true,
+    "source_snapshot_hash_check_at_completion": true,
+    "source_drift_since_completion": [],
+    "freeze_receipt_matches": true
+  },
+  "double-volume-yin-low-open-v1": {
+    "all_runs_complete": true,
+    "source_snapshot_hash_check_at_completion": true,
+    "source_drift_since_completion": [],
+    "freeze_receipt_matches": true
+  },
+  "qianlong-close-v3": {
+    "all_runs_complete": true,
+    "source_snapshot_hash_check_at_completion": true,
+    "source_drift_since_completion": [],
+    "freeze_receipt_matches": true
+  },
+  "yangshi-tail-v1": {
+    "all_runs_complete": true,
+    "source_snapshot_hash_check_at_completion": true,
+    "source_drift_since_completion": [],
+    "freeze_receipt_matches": true
+  }
+}

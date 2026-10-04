@@ -1,0 +1,111 @@
+{
+  "checked_at": "2026-10-04T09:43:45.706881+00:00",
+  "passed": true,
+  "cases": 12,
+  "checks": [
+    "source input identity",
+    "ending from independently summed accepted net returns",
+    "daily close peak drawdown",
+    "cash nonnegative",
+    "max10 and max2day",
+    "zero ending positions"
+  ],
+  "proofs": [
+    {
+      "phase": "validation_2025h2",
+      "arm": "low",
+      "cost": "base",
+      "ending_from_accepted_trades": 1174699.5240658317,
+      "ending_difference": -6.984919309616089e-10,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "validation_2025h2",
+      "arm": "low",
+      "cost": "double_cost",
+      "ending_from_accepted_trades": 1135772.0484076322,
+      "ending_difference": 1.1641532182693481e-09,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "observed_2026",
+      "arm": "low",
+      "cost": "base",
+      "ending_from_accepted_trades": 795585.9937881605,
+      "ending_difference": -1.0477378964424133e-09,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "observed_2026",
+      "arm": "low",
+      "cost": "double_cost",
+      "ending_from_accepted_trades": 745115.8926378912,
+      "ending_difference": 1.979060471057892e-09,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "pooled",
+      "arm": "low",
+      "cost": "base",
+      "ending_from_accepted_trades": 970285.5178539922,
+      "ending_difference": -2.2118911147117615e-09,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "pooled",
+      "arm": "low",
+      "cost": "double_cost",
+      "ending_from_accepted_trades": 876379.539005866,
+      "ending_difference": 1.280568540096283e-09,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "validation_2025h2",
+      "arm": "B",
+      "cost": "base",
+      "ending_from_accepted_trades": 1025436.9930288529,
+      "ending_difference": -1.1641532182693481e-10,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "validation_2025h2",
+      "arm": "B",
+      "cost": "double_cost",
+      "ending_from_accepted_trades": 1021433.0497436861,
+      "ending_difference": 2.3283064365386963e-10,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "observed_2026",
+      "arm": "B",
+      "cost": "base",
+      "ending_from_accepted_trades": 1191848.6786467903,
+      "ending_difference": -4.656612873077393e-10,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "observed_2026",
+      "arm": "B",
+      "cost": "double_cost",
+      "ending_from_accepted_trades": 1179115.5726734302,
+      "ending_difference": 6.984919309616089e-10,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "pooled",
+      "arm": "B",
+      "cost": "base",
+      "ending_from_accepted_trades": 1217285.6716756434,
+      "ending_difference": -4.656612873077393e-10,
+      "daily_close_dd_difference": 0.0
+    },
+    {
+      "phase": "pooled",
+      "arm": "B",
+      "cost": "double_cost",
+      "ending_from_accepted_trades": 1200548.6224171163,
+      "ending_difference": 6.984919309616089e-10,
+      "daily_close_dd_difference": 0.0
+    }
+  ]
+}

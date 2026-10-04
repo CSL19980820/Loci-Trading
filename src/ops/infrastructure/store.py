@@ -48,8 +48,6 @@ from src.ops.infrastructure.store_retention import OpsRetentionMixin
 from src.ops.infrastructure.store_strategy import OpsStrategyMixin
 from src.ops.infrastructure.store_ai_decisions import OpsAiDecisionsMixin
 from src.ops.infrastructure.store_alerts import OpsAlertsMixin
-from src.ops.infrastructure.store_paper import OpsPaperMixin
-from src.ops.infrastructure.store_paper_mem import OpsPaperMemMixin
 from src.ops.infrastructure.store_quota import OpsQuotaMixin
 from src.ops.infrastructure.store_signals import OpsSignalsMixin
 from src.ops.infrastructure.store_watch import OpsWatchMixin
@@ -79,15 +77,13 @@ class OpsStore(
     OpsProvidersMixin,
     OpsStrategyMixin,
     OpsAlertsMixin,
-    OpsPaperMixin,
-    OpsPaperMemMixin,
     OpsWatchMixin,
     OpsQuotaMixin,
     OpsAiDecisionsMixin,
     OpsSignalsMixin,
     OpsRetentionMixin,
 ):
-    """任务 / LLM 供应商 / 提醒 / 纸面量化舱 / 记忆图 / 龙头留痕 / 实时信号 的读写。每个请求或任务持有独立连接。"""
+    """任务、模型、提醒、策略监测留痕与实时信号；每个请求或任务持有独立连接。"""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         # 不传路径 = 用**当前租户**的 ops.db，每次构造重新解析。

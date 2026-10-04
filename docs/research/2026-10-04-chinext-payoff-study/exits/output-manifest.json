@@ -1,0 +1,575 @@
+{
+  "source_database_sha256": "c571588631c5a3bf475b1aaeabf650d475e979dba5adea8a9c17eb3556ea3d0c",
+  "freeze_sha256": "f406714c89f5dd2aebd82b4d22b2daf8c606132bd0da0f91b3846ea2a986cd5e",
+  "source_verification": "all current source hashes match freeze; training-only selection reproducible",
+  "files": {
+    "contraction-rebreakout-v1-observed_2026-H04-S06-Tnone-trades.csv": {
+      "bytes": 30596,
+      "sha256": "d6d310d1ad4b1783d1fc72de73dc6024b3b54b5442e99050873857d00e4a4d19"
+    },
+    "contraction-rebreakout-v1-observed_2026-H07-Snone-Tnone-trades.csv": {
+      "bytes": 30313,
+      "sha256": "b82ab4c7ebbf12fcba9e4184ee73aa9bc1f3a17e6a568ab015e22bf141a3d8b3"
+    },
+    "contraction-rebreakout-v1-observed_2026-H10-S04-Tnone-trades.csv": {
+      "bytes": 30720,
+      "sha256": "fd5585b498fcca989fda922d9b4cefadf032b7db8fb6c0832f9ef67f1816ab4d"
+    },
+    "contraction-rebreakout-v1-train-grid.csv": {
+      "bytes": 7908,
+      "sha256": "ab59d653bbaf80f0d26efd90d7e3344504a7939bfea64ab67c933e85806f4696"
+    },
+    "contraction-rebreakout-v1-train-H04-S04-T12-trades.csv": {
+      "bytes": 39135,
+      "sha256": "95bd31235ec15347636fde8463c3865fbaa6d1e323f645a8c129a483a56dd0aa"
+    },
+    "contraction-rebreakout-v1-train-H04-S04-T20-trades.csv": {
+      "bytes": 38942,
+      "sha256": "fe2f953b874339e51676e9dc9dfc914484e00630733b6a673e80d33749bc88ef"
+    },
+    "contraction-rebreakout-v1-train-H04-S04-Tnone-trades.csv": {
+      "bytes": 38827,
+      "sha256": "7a4dd069d8eb155b9c08758afb17b655cc142c98c17f6e4a90caf16ed603b8a5"
+    },
+    "contraction-rebreakout-v1-train-H04-S06-T12-trades.csv": {
+      "bytes": 39143,
+      "sha256": "e7a30c0ef550683165bc8a245d4137c3dffd172cdaf4473096eaaa62fa9dfb20"
+    },
+    "contraction-rebreakout-v1-train-H04-S06-T20-trades.csv": {
+      "bytes": 38941,
+      "sha256": "2aefaf5c4b0f325d38cd82753c51612bee0e33c4e07d059600e453ca3ed26662"
+    },
+    "contraction-rebreakout-v1-train-H04-S06-Tnone-trades.csv": {
+      "bytes": 38826,
+      "sha256": "5176f750082c3bc7a897a7518ae5350cfc08b0c05809d2b1081b026510956d15"
+    },
+    "contraction-rebreakout-v1-train-H04-S08-T12-trades.csv": {
+      "bytes": 38934,
+      "sha256": "12bf4e107013bed8dea96433305e5670e728a41994851827744ab2ab3c6316e9"
+    },
+    "contraction-rebreakout-v1-train-H04-S08-T20-trades.csv": {
+      "bytes": 38730,
+      "sha256": "3e95b574cd4fd057cd62cd9c7195e8027c172fb2a76d16e545ea309caf78b977"
+    },
+    "contraction-rebreakout-v1-train-H04-S08-Tnone-trades.csv": {
+      "bytes": 38615,
+      "sha256": "c3a1250d155edf093818dd5be1c65650681334152116a23d244f1e55380dbd3b"
+    },
+    "contraction-rebreakout-v1-train-H04-Snone-T12-trades.csv": {
+      "bytes": 38844,
+      "sha256": "faa96308263e4c109fbfff7dced8332011dee4fc561caee41d18d384022c7d17"
+    },
+    "contraction-rebreakout-v1-train-H04-Snone-T20-trades.csv": {
+      "bytes": 38640,
+      "sha256": "986cd9299211ce27908d5427fd0ed0d11ad68e24b313e10b2e91391f2ee21b62"
+    },
+    "contraction-rebreakout-v1-train-H04-Snone-Tnone-trades.csv": {
+      "bytes": 38525,
+      "sha256": "c17d38c61cba5386930b75c9453c4aeeddba22a3623779663e35adcaad332680"
+    },
+    "contraction-rebreakout-v1-train-H05-S04-T12-trades.csv": {
+      "bytes": 39158,
+      "sha256": "d802d0ae7b95264899efdf45093d298fdc7e527a0620e3808be76208c032ff45"
+    },
+    "contraction-rebreakout-v1-train-H05-S04-T20-trades.csv": {
+      "bytes": 38981,
+      "sha256": "5b23d0d6dbb5f4378e89509a0f50ec01928dd542e130d49b27ec92c1229d63eb"
+    },
+    "contraction-rebreakout-v1-train-H05-S04-Tnone-trades.csv": {
+      "bytes": 38875,
+      "sha256": "2357dcbaedda7c75a1d25fd6de9577329a25cf8d7b0b0a51e5dc8a2e28575666"
+    },
+    "contraction-rebreakout-v1-train-H05-S06-T12-trades.csv": {
+      "bytes": 39179,
+      "sha256": "1ff879c66d7fc10fbb748bdc1e909e4568fc3942fe0ed2554a955d0d31ffbd7a"
+    },
+    "contraction-rebreakout-v1-train-H05-S06-T20-trades.csv": {
+      "bytes": 38991,
+      "sha256": "55f024cd2ec78fbb73caab67c73d2c652b5232f32bffd549e9d27fa4ee747757"
+    },
+    "contraction-rebreakout-v1-train-H05-S06-Tnone-trades.csv": {
+      "bytes": 38885,
+      "sha256": "b98002bdd63a4b59772c2155b12065db85c423600866478b2c4e905c85133445"
+    },
+    "contraction-rebreakout-v1-train-H05-S08-T12-trades.csv": {
+      "bytes": 39019,
+      "sha256": "5ad8b2da80d3e003c2cec7dd92abdba1e6ca8c920ba506c8858be90bd504213e"
+    },
+    "contraction-rebreakout-v1-train-H05-S08-T20-trades.csv": {
+      "bytes": 38843,
+      "sha256": "30eab34e3724a8e75e5dd6095ed186d6525c4db5898b9f2fd4821f2c41e06353"
+    },
+    "contraction-rebreakout-v1-train-H05-S08-Tnone-trades.csv": {
+      "bytes": 38725,
+      "sha256": "c3735292657cfda106486acc9ec274aa5b461fe5d33b58496b805bf9a0e33e07"
+    },
+    "contraction-rebreakout-v1-train-H05-Snone-T12-trades.csv": {
+      "bytes": 38824,
+      "sha256": "8f1b19171954838e5baeb2fdd312522d3dfd88d94dbd69fa050be786be3e4e8f"
+    },
+    "contraction-rebreakout-v1-train-H05-Snone-T20-trades.csv": {
+      "bytes": 38664,
+      "sha256": "d6bccfbf8573c8de8db0af0c6eab13d59c1ad230599445e636c764b2c37f0c3b"
+    },
+    "contraction-rebreakout-v1-train-H05-Snone-Tnone-trades.csv": {
+      "bytes": 38531,
+      "sha256": "96d5b74e3d07ca0cc5365aa300238633cd142e06002df4d72eeb088beef7accb"
+    },
+    "contraction-rebreakout-v1-train-H07-S04-T12-trades.csv": {
+      "bytes": 39284,
+      "sha256": "eff306c3190479eef3b7ce5d9d86a9fc92ac40f822a545b65b8abad9fb8f88f6"
+    },
+    "contraction-rebreakout-v1-train-H07-S04-T20-trades.csv": {
+      "bytes": 39075,
+      "sha256": "55113abdcf40acafa6031feaae552dc203ee02f25ecbdafd75858e39762f9e06"
+    },
+    "contraction-rebreakout-v1-train-H07-S04-Tnone-trades.csv": {
+      "bytes": 38931,
+      "sha256": "fd984219b3c698c668b3c7377056d9e28a1efec99a8e4737d4d2f333470a1fe9"
+    },
+    "contraction-rebreakout-v1-train-H07-S06-T12-trades.csv": {
+      "bytes": 39253,
+      "sha256": "6f1adab9620926e182377138c020737a14913b4e97e24c04643d5f56732e0b61"
+    },
+    "contraction-rebreakout-v1-train-H07-S06-T20-trades.csv": {
+      "bytes": 39055,
+      "sha256": "7434a791a7b22dd24e13a1f9888262cd4c99d3e99a57e00577c206029303e9c3"
+    },
+    "contraction-rebreakout-v1-train-H07-S06-Tnone-trades.csv": {
+      "bytes": 38896,
+      "sha256": "7172861cc9b41f3fcfd32ea4cb34870afa75dc1f7c7dbfc7ab01ad4d5ea1cce8"
+    },
+    "contraction-rebreakout-v1-train-H07-S08-T12-trades.csv": {
+      "bytes": 39145,
+      "sha256": "e5e4e10ead45c0470b9141d592011d184f48b166647a528672e811131f624679"
+    },
+    "contraction-rebreakout-v1-train-H07-S08-T20-trades.csv": {
+      "bytes": 38925,
+      "sha256": "b60bcc57234707a92c22126f3117c1bd8c8f15cf553ddda4113a1753b910af07"
+    },
+    "contraction-rebreakout-v1-train-H07-S08-Tnone-trades.csv": {
+      "bytes": 38743,
+      "sha256": "5a87d1c28ddbd1b7b8c0b047a6e4776b96223e638d131be4d4f48cd14557c854"
+    },
+    "contraction-rebreakout-v1-train-H07-Snone-T12-trades.csv": {
+      "bytes": 38989,
+      "sha256": "ee26d7c20aa2408cefc08259444c8dde773be7bb314453df03c17f16b1b04f15"
+    },
+    "contraction-rebreakout-v1-train-H07-Snone-T20-trades.csv": {
+      "bytes": 38769,
+      "sha256": "4ed42d3e6f39dac80b69bcb82b67f97b8c36dbebc4b9ece8540c2924b498dd09"
+    },
+    "contraction-rebreakout-v1-train-H07-Snone-Tnone-trades.csv": {
+      "bytes": 38573,
+      "sha256": "cf1b4b575c94c3387208eba3e697a489bb402eed654f7968aaa84010407ed539"
+    },
+    "contraction-rebreakout-v1-train-H10-S04-T12-trades.csv": {
+      "bytes": 39384,
+      "sha256": "f23e7510ad81d561ca2e42aa64f9b93a03c99f4a1300f1e007f7ff0d8314de70"
+    },
+    "contraction-rebreakout-v1-train-H10-S04-T20-trades.csv": {
+      "bytes": 39211,
+      "sha256": "2bf1b48ee822000859ce7c253b3c5256f6ac7a159a2cd9e862cf47d2b3338ebf"
+    },
+    "contraction-rebreakout-v1-train-H10-S04-Tnone-trades.csv": {
+      "bytes": 39006,
+      "sha256": "4479e3ed1d0801d2a4b518e9c657f9e10c0d85854abf8015f67fbefdf8ce366e"
+    },
+    "contraction-rebreakout-v1-train-H10-S06-T12-trades.csv": {
+      "bytes": 39402,
+      "sha256": "4b279bc9ae1167e78ee89da79aec8ffb8e3df0c92b7f321898da22c188d2b3eb"
+    },
+    "contraction-rebreakout-v1-train-H10-S06-T20-trades.csv": {
+      "bytes": 39243,
+      "sha256": "080529044513e7f7e609cbe0d08d74432cf6610744a491f1e34f2d9eeeb23ca9"
+    },
+    "contraction-rebreakout-v1-train-H10-S06-Tnone-trades.csv": {
+      "bytes": 39007,
+      "sha256": "83ee1a934f698f885bc3167f9edd4f28c063daf282ef55e6d5aa946bc328f285"
+    },
+    "contraction-rebreakout-v1-train-H10-S08-T12-trades.csv": {
+      "bytes": 39323,
+      "sha256": "54f474cebdaba03c9253da291f9527c410ea9c1e12cfddac44d60e9545665af4"
+    },
+    "contraction-rebreakout-v1-train-H10-S08-T20-trades.csv": {
+      "bytes": 39172,
+      "sha256": "f5661adb8c03eb61582f7b279e33db418ad11de2d828d9b1c42351b7849c6d0b"
+    },
+    "contraction-rebreakout-v1-train-H10-S08-Tnone-trades.csv": {
+      "bytes": 38926,
+      "sha256": "72af4a99edc388223c225472e64a68220fc9f33d684eaee90c129fcabb6ca950"
+    },
+    "contraction-rebreakout-v1-train-H10-Snone-T12-trades.csv": {
+      "bytes": 39113,
+      "sha256": "8256767be70d5e94413147f1c5d9243e764ea1414c59a24d8810306612d81943"
+    },
+    "contraction-rebreakout-v1-train-H10-Snone-T20-trades.csv": {
+      "bytes": 38924,
+      "sha256": "8bba978827ec105eb7f220b35e5dcc9808ff3c15a30088633d54b8b138886cee"
+    },
+    "contraction-rebreakout-v1-train-H10-Snone-Tnone-trades.csv": {
+      "bytes": 38651,
+      "sha256": "cf70ef4b5c098d38b9cc5968acc78fde4df9fa7faae9f93dc7eff0ef832440ba"
+    },
+    "contraction-rebreakout-v1-train-H20-S04-T12-trades.csv": {
+      "bytes": 39463,
+      "sha256": "dd4dd8e307d5426b650633c27eb97fa9020b178f4e86c91ffb83ec82a741948b"
+    },
+    "contraction-rebreakout-v1-train-H20-S04-T20-trades.csv": {
+      "bytes": 39341,
+      "sha256": "832a1b9524001242d03515cb355f4f9cbf7d392d6912262a4606cf911d90eaf6"
+    },
+    "contraction-rebreakout-v1-train-H20-S04-Tnone-trades.csv": {
+      "bytes": 39127,
+      "sha256": "1ecb5f2a067b82884ae828dc30c73167b316f74d40d1e357de6014032e324008"
+    },
+    "contraction-rebreakout-v1-train-H20-S06-T12-trades.csv": {
+      "bytes": 39480,
+      "sha256": "4b8b1d23d5d078e3188d8f287a0a990db2357ad0de47c1073f58a0edd60e875a"
+    },
+    "contraction-rebreakout-v1-train-H20-S06-T20-trades.csv": {
+      "bytes": 39377,
+      "sha256": "bc7881d5b560def32ad730cf3e45462dc324ec67cfac2bded3f92d88fefcbd24"
+    },
+    "contraction-rebreakout-v1-train-H20-S06-Tnone-trades.csv": {
+      "bytes": 39109,
+      "sha256": "49f0674e2441f72d571633c04e89ac41a759989af17fd85530650e3fdd794d81"
+    },
+    "contraction-rebreakout-v1-train-H20-S08-T12-trades.csv": {
+      "bytes": 39548,
+      "sha256": "b66bef58fca683f4bdd452904f178ca9aa37c0dad438fcc8902302e3b3f563ce"
+    },
+    "contraction-rebreakout-v1-train-H20-S08-T20-trades.csv": {
+      "bytes": 39528,
+      "sha256": "6462bd8341b447877562bf810a9eb6193b2980921b15862443a551379ae1b355"
+    },
+    "contraction-rebreakout-v1-train-H20-S08-Tnone-trades.csv": {
+      "bytes": 39247,
+      "sha256": "c4f975a000f85f7bdfe9b6b0f9833cad57bfb3e91a7940b8e1885cbdba68c8d5"
+    },
+    "contraction-rebreakout-v1-train-H20-Snone-T12-trades.csv": {
+      "bytes": 39398,
+      "sha256": "fc6a11bf0db030769e683a90d1c514b07339205f5b1ee7c768037fbdc9b9ae4a"
+    },
+    "contraction-rebreakout-v1-train-H20-Snone-T20-trades.csv": {
+      "bytes": 39182,
+      "sha256": "f7c361a0159a87bb2f2eadc04b5ab0b8b0b4d2d9158a1508c85112ae7c4d94de"
+    },
+    "contraction-rebreakout-v1-train-H20-Snone-Tnone-trades.csv": {
+      "bytes": 38850,
+      "sha256": "0bfab32c4523bcc561024ae8b34bfebdda9e2361efa64b2232bcce64f159e95c"
+    },
+    "contraction-rebreakout-v1-validation-H04-S06-Tnone-trades.csv": {
+      "bytes": 18924,
+      "sha256": "e139b7e62577dbaaf6120030fb57c5422ce76467cbbe7182a4fb56a23140f20e"
+    },
+    "contraction-rebreakout-v1-validation-H07-Snone-Tnone-trades.csv": {
+      "bytes": 18868,
+      "sha256": "8f849cf72779573766683ef16f9e16d66013924bb9e28a449ec83b11f65fcd25"
+    },
+    "contraction-rebreakout-v1-validation-H10-S04-Tnone-trades.csv": {
+      "bytes": 19136,
+      "sha256": "0a14e4d4b5afc9d53e036f6d68b1b4a3b009db75567d990dbf9c62bbc9899558"
+    },
+    "findings.md": {
+      "bytes": 5846,
+      "sha256": "ed38161c38719c20ee2d3f6bc2d90aff569a2c856d31d34274e725f8c690ce98"
+    },
+    "freeze-receipt.json": {
+      "bytes": 5275,
+      "sha256": "f406714c89f5dd2aebd82b4d22b2daf8c606132bd0da0f91b3846ea2a986cd5e"
+    },
+    "freeze-receipt.sha256": {
+      "bytes": 66,
+      "sha256": "03127958b63245aa76db81a02fdad5d81a8681573019ad5d1c9f3b521f22ef25"
+    },
+    "impulse-inside-breakout-v1-observed_2026-H04-S04-Tnone-trades.csv": {
+      "bytes": 20343,
+      "sha256": "39940d4fc835e51369eb7df69cf1471dfd2f357e60c7c2311fec69f1692e23b2"
+    },
+    "impulse-inside-breakout-v1-observed_2026-H04-S06-Tnone-trades.csv": {
+      "bytes": 20314,
+      "sha256": "9d5ea00fe6830f8ee37de4fb158054fca124d68060ea03786ed20c8f3c8e5830"
+    },
+    "impulse-inside-breakout-v1-observed_2026-H04-Snone-Tnone-trades.csv": {
+      "bytes": 20184,
+      "sha256": "99bd374b4fa224a8ccf232d404157e6cfb7b5452677315e22766af66c312a50b"
+    },
+    "impulse-inside-breakout-v1-train-grid.csv": {
+      "bytes": 7985,
+      "sha256": "29c49c11ddfebda8e2b9ea4f2d171fb4119a6100a0f43289f8d561f142686dcd"
+    },
+    "impulse-inside-breakout-v1-train-H04-S04-T12-trades.csv": {
+      "bytes": 28655,
+      "sha256": "f60b3ea896628ce1ccc748fec513261d132dec1cbe72bc767f2f7031d798ed5f"
+    },
+    "impulse-inside-breakout-v1-train-H04-S04-T20-trades.csv": {
+      "bytes": 28586,
+      "sha256": "fcf3252c5488a241c8760934dc4fe2607a49f851ac43682d827771acc56fcf79"
+    },
+    "impulse-inside-breakout-v1-train-H04-S04-Tnone-trades.csv": {
+      "bytes": 28519,
+      "sha256": "940ddf733fa27264fabd4a35e4621fd71316501d3f121108121c9d9efa8e56d4"
+    },
+    "impulse-inside-breakout-v1-train-H04-S06-T12-trades.csv": {
+      "bytes": 28681,
+      "sha256": "30b7457455782a7ea343e7a826b75353f4a204c219239c37676934bda5ab9737"
+    },
+    "impulse-inside-breakout-v1-train-H04-S06-T20-trades.csv": {
+      "bytes": 28576,
+      "sha256": "dbfd6bcd14e1eb105da4fd5ac4ba63380efd43d41796ea9cb3f68fbb999a31ca"
+    },
+    "impulse-inside-breakout-v1-train-H04-S06-Tnone-trades.csv": {
+      "bytes": 28510,
+      "sha256": "e7b17db1d7c98a1fd29f234a102f55de5ccd9374f7b76d509dbfb3d0f75f2408"
+    },
+    "impulse-inside-breakout-v1-train-H04-S08-T12-trades.csv": {
+      "bytes": 28637,
+      "sha256": "346ec317276caa8854fb955d435378a01ae14b0958dfff93ec18e3a149cefaa7"
+    },
+    "impulse-inside-breakout-v1-train-H04-S08-T20-trades.csv": {
+      "bytes": 28544,
+      "sha256": "9d8acbdbdb7a9914a3f222ee3ae304f2015fa61b3e596010a0bf87b48b474304"
+    },
+    "impulse-inside-breakout-v1-train-H04-S08-Tnone-trades.csv": {
+      "bytes": 28478,
+      "sha256": "a142812daba6d2724781211be417b5dff8f384627e25ce66fb098439b6d62fcc"
+    },
+    "impulse-inside-breakout-v1-train-H04-Snone-T12-trades.csv": {
+      "bytes": 28527,
+      "sha256": "fd7ffc5196295bbfde8a804aa098403c5e26f0a3a4ba032d7084163a1f20b8d3"
+    },
+    "impulse-inside-breakout-v1-train-H04-Snone-T20-trades.csv": {
+      "bytes": 28422,
+      "sha256": "207cc00cf8df78b3435e6eebfbbc65cf91ecebd0296f4299da8cbd3bcf135606"
+    },
+    "impulse-inside-breakout-v1-train-H04-Snone-Tnone-trades.csv": {
+      "bytes": 28355,
+      "sha256": "7253b0a573db000905ef36c70feb1f10a88d615190948131cf65c17f307c4a33"
+    },
+    "impulse-inside-breakout-v1-train-H05-S04-T12-trades.csv": {
+      "bytes": 28698,
+      "sha256": "fcb74706367d801ac4288602835745e74dfe2bd012d8893f2d41fbe8f6e3fe31"
+    },
+    "impulse-inside-breakout-v1-train-H05-S04-T20-trades.csv": {
+      "bytes": 28627,
+      "sha256": "9cde698875c058c89b593ad4cf04b19260fd860cb1fd94a16985e0f463a51f7c"
+    },
+    "impulse-inside-breakout-v1-train-H05-S04-Tnone-trades.csv": {
+      "bytes": 28595,
+      "sha256": "f96690194e62b51e2c7685d5a568fb064fbcd3ada9d6fb8c953d2feb33df3bc0"
+    },
+    "impulse-inside-breakout-v1-train-H05-S06-T12-trades.csv": {
+      "bytes": 28684,
+      "sha256": "bd118ca8f26fd5331e9f6a7ce3fac720673218b833591deb43293590bf8394b7"
+    },
+    "impulse-inside-breakout-v1-train-H05-S06-T20-trades.csv": {
+      "bytes": 28575,
+      "sha256": "fa4533e0c7bca9d3d056aea7d811889e41709d948ea77589d0b5e18b2104ad06"
+    },
+    "impulse-inside-breakout-v1-train-H05-S06-Tnone-trades.csv": {
+      "bytes": 28541,
+      "sha256": "b39fb1d1cae605d6a4f440376f97587950bfe32d8e0653a98c7bd5312ba29e30"
+    },
+    "impulse-inside-breakout-v1-train-H05-S08-T12-trades.csv": {
+      "bytes": 28711,
+      "sha256": "b76769c913f14a4927ef05fc21a6b8a3a2a74cb124ff58cf105664b014e50758"
+    },
+    "impulse-inside-breakout-v1-train-H05-S08-T20-trades.csv": {
+      "bytes": 28617,
+      "sha256": "c836e68b1f70eeeeb23f176190e56e59fbb12922f6959070c905ad625a0ec24e"
+    },
+    "impulse-inside-breakout-v1-train-H05-S08-Tnone-trades.csv": {
+      "bytes": 28583,
+      "sha256": "33a56c45470c88ff4c0caedec9db7c84345291df8e32eeda4e845cbff11bf0ad"
+    },
+    "impulse-inside-breakout-v1-train-H05-Snone-T12-trades.csv": {
+      "bytes": 28510,
+      "sha256": "0af6ee9ceb66a09eb4aacf0e2ef13003cecae4d1091ad364cff435ca075b1362"
+    },
+    "impulse-inside-breakout-v1-train-H05-Snone-T20-trades.csv": {
+      "bytes": 28405,
+      "sha256": "3bf0d4e9e47268681c0cb7f105a9cebc959eb16b77fd81fcba7d5950f0c403b8"
+    },
+    "impulse-inside-breakout-v1-train-H05-Snone-Tnone-trades.csv": {
+      "bytes": 28371,
+      "sha256": "8581b304a1a75d07e46fcf37500b34b34b853753a7d923e0c3df8351430d1e7e"
+    },
+    "impulse-inside-breakout-v1-train-H07-S04-T12-trades.csv": {
+      "bytes": 28825,
+      "sha256": "2d8245c44125b2e157078ca9b1da869a726d8437a3e2a44a50167fa4de94ae2b"
+    },
+    "impulse-inside-breakout-v1-train-H07-S04-T20-trades.csv": {
+      "bytes": 28726,
+      "sha256": "6a2261bb01c49068cf54b8afbfb1c35644660000844cb58e4e196e26dbdfd13c"
+    },
+    "impulse-inside-breakout-v1-train-H07-S04-Tnone-trades.csv": {
+      "bytes": 28652,
+      "sha256": "9749c8f1de5d0fa6e0c7b3cd6a9d745e9d449ff7acb90e210b0462a12970291f"
+    },
+    "impulse-inside-breakout-v1-train-H07-S06-T12-trades.csv": {
+      "bytes": 28791,
+      "sha256": "1c90398e1f4a7cb40971f8058606b67fa9da4b13405d9321682cdb2d7558e6ea"
+    },
+    "impulse-inside-breakout-v1-train-H07-S06-T20-trades.csv": {
+      "bytes": 28653,
+      "sha256": "5af5914e90b0be5ed7db6597ebb489b5cf3d69ad595da85bcd44e0cd6526c809"
+    },
+    "impulse-inside-breakout-v1-train-H07-S06-Tnone-trades.csv": {
+      "bytes": 28579,
+      "sha256": "ec108faac2ae3b77c08ee80bdce6761db27ff0adec6c9c8d460a11d72b39291e"
+    },
+    "impulse-inside-breakout-v1-train-H07-S08-T12-trades.csv": {
+      "bytes": 28820,
+      "sha256": "aa3a0e706cef4a5f8ca587a1df6715179af270b1a2f61071f7c86ab04b53e2ae"
+    },
+    "impulse-inside-breakout-v1-train-H07-S08-T20-trades.csv": {
+      "bytes": 28694,
+      "sha256": "856f42fa2287d7674c0deb1146f8c2b769c2cc184607de72f1ccc3b4d13d1c03"
+    },
+    "impulse-inside-breakout-v1-train-H07-S08-Tnone-trades.csv": {
+      "bytes": 28620,
+      "sha256": "0dc8abdde1ea6734f76110886d08a724eaa502dc53f818795bb92a684b3cca79"
+    },
+    "impulse-inside-breakout-v1-train-H07-Snone-T12-trades.csv": {
+      "bytes": 28612,
+      "sha256": "10b73dd0dc609cd42e4a82a9099bece2e6f08e2c8ece748750b329d4a4ba0daf"
+    },
+    "impulse-inside-breakout-v1-train-H07-Snone-T20-trades.csv": {
+      "bytes": 28468,
+      "sha256": "c1db8a3e817d03231bc600cd1f8e438d94dec9b1f37ef3b4b9fe137604bf3521"
+    },
+    "impulse-inside-breakout-v1-train-H07-Snone-Tnone-trades.csv": {
+      "bytes": 28396,
+      "sha256": "7d346ab7599aff3f9d74facb616ce9d018c9ddb230902bba5974b22c92500221"
+    },
+    "impulse-inside-breakout-v1-train-H10-S04-T12-trades.csv": {
+      "bytes": 28884,
+      "sha256": "3fc65fa350aa6cce5bcd705494deeac13c246bf0bc5f4091ea870d2fc5c71674"
+    },
+    "impulse-inside-breakout-v1-train-H10-S04-T20-trades.csv": {
+      "bytes": 28797,
+      "sha256": "036c86f95db9907e7ffd40b2d0e581c1d884f34b7e47a46ead7892f553472479"
+    },
+    "impulse-inside-breakout-v1-train-H10-S04-Tnone-trades.csv": {
+      "bytes": 28696,
+      "sha256": "ba20b4d30ae58643abf4e3bc1ac50e974b3e64fe71c2fdd5d5708a22800a9ac1"
+    },
+    "impulse-inside-breakout-v1-train-H10-S06-T12-trades.csv": {
+      "bytes": 28869,
+      "sha256": "d559b45715f9639ef90fa690eefa5caa3b3963a14dd893b5a1627a417449f618"
+    },
+    "impulse-inside-breakout-v1-train-H10-S06-T20-trades.csv": {
+      "bytes": 28754,
+      "sha256": "8012e9103633234b3e9d39a262989c1ad0b954d060d6cdc8f3e1abc76a0131a9"
+    },
+    "impulse-inside-breakout-v1-train-H10-S06-Tnone-trades.csv": {
+      "bytes": 28665,
+      "sha256": "3f477bc76157efc98ff11ec7460197c30c48fe8ef01bc0f908496efa1ebda4d9"
+    },
+    "impulse-inside-breakout-v1-train-H10-S08-T12-trades.csv": {
+      "bytes": 28950,
+      "sha256": "f8ca63aae27fa140f431c371549198d935f4e7e47e2e482c1e4bc8cfc88401c8"
+    },
+    "impulse-inside-breakout-v1-train-H10-S08-T20-trades.csv": {
+      "bytes": 28851,
+      "sha256": "cba876e3c6f77830a30fbe96fb44f929dbe3314ecee7b5bc3e23bafb4bb81bb5"
+    },
+    "impulse-inside-breakout-v1-train-H10-S08-Tnone-trades.csv": {
+      "bytes": 28724,
+      "sha256": "345f0d5d7314403766d1442e96e0f4e80a91931cfd06541047d5d52479eb561c"
+    },
+    "impulse-inside-breakout-v1-train-H10-Snone-T12-trades.csv": {
+      "bytes": 28761,
+      "sha256": "a81ca185aed159526e3d1caa99c15369d171fbace611702541febb3f36219c7e"
+    },
+    "impulse-inside-breakout-v1-train-H10-Snone-T20-trades.csv": {
+      "bytes": 28584,
+      "sha256": "316f10346574a1487983823e5542821e69655d5c5c7247cdbedd63b2f00bbe07"
+    },
+    "impulse-inside-breakout-v1-train-H10-Snone-Tnone-trades.csv": {
+      "bytes": 28455,
+      "sha256": "cde1f5aee1ad5326966a2bd8e1994653c9a3a196797c9bc0ae75930e8261cc9d"
+    },
+    "impulse-inside-breakout-v1-train-H20-S04-T12-trades.csv": {
+      "bytes": 28984,
+      "sha256": "31ddd3654ed4af70acdde66ae8e05f2ffb61ad90de6ee86785511ea8d8a8c285"
+    },
+    "impulse-inside-breakout-v1-train-H20-S04-T20-trades.csv": {
+      "bytes": 28922,
+      "sha256": "c6c5457d082c30dd5e1f29daee37262b9b1218e6fe1e7779672ba1e1b787fa5a"
+    },
+    "impulse-inside-breakout-v1-train-H20-S04-Tnone-trades.csv": {
+      "bytes": 28770,
+      "sha256": "66c139b90dd84744ab5b65d2e85f49282b577c73b02cb964dd8b03ff2334046e"
+    },
+    "impulse-inside-breakout-v1-train-H20-S06-T12-trades.csv": {
+      "bytes": 28989,
+      "sha256": "cab16005f5ebd46b3ada198bcce118346aefe29388e5753fa3813b76816fa4ac"
+    },
+    "impulse-inside-breakout-v1-train-H20-S06-T20-trades.csv": {
+      "bytes": 28908,
+      "sha256": "fdf8ee68e7679675947f2851e3000ee03e2120c152946e71f807ef132e3f3501"
+    },
+    "impulse-inside-breakout-v1-train-H20-S06-Tnone-trades.csv": {
+      "bytes": 28750,
+      "sha256": "e5f4bd05f5b416cb91a5a2eebd53bc3805b3db21bb51c475cf67370d9f54b3bc"
+    },
+    "impulse-inside-breakout-v1-train-H20-S08-T12-trades.csv": {
+      "bytes": 29156,
+      "sha256": "b9ea50f782a1818b26812555b5ce4c9df0f7af56eb227896fc0b68b7e5ae4c29"
+    },
+    "impulse-inside-breakout-v1-train-H20-S08-T20-trades.csv": {
+      "bytes": 29052,
+      "sha256": "92aa1e584388cb51e946a5129fb05e3775dea0d50270f2d30a6c221f11d9ee21"
+    },
+    "impulse-inside-breakout-v1-train-H20-S08-Tnone-trades.csv": {
+      "bytes": 28817,
+      "sha256": "d5b0c357ea387cf1ca640b4dcc6b3f6f13cbaddf16d9693146c9f799487b9bb2"
+    },
+    "impulse-inside-breakout-v1-train-H20-Snone-T12-trades.csv": {
+      "bytes": 29040,
+      "sha256": "b3bdba55a859a3c059650aadcfee4b39fb88a5b930799011d78c1224c06d13d2"
+    },
+    "impulse-inside-breakout-v1-train-H20-Snone-T20-trades.csv": {
+      "bytes": 28830,
+      "sha256": "a736bd7528931203bb37f8dce1fd99a7d739c179629a6b05cda2bdd88c898b97"
+    },
+    "impulse-inside-breakout-v1-train-H20-Snone-Tnone-trades.csv": {
+      "bytes": 28568,
+      "sha256": "14e659bf2823381198e6f717e6f7f4a7557918dfb5604e2c2760ea5930f87be9"
+    },
+    "impulse-inside-breakout-v1-validation-H04-S04-Tnone-trades.csv": {
+      "bytes": 18206,
+      "sha256": "757ac312dcee77015bdde972e11d4241f1b70025e34ca5262c3538084328e58f"
+    },
+    "impulse-inside-breakout-v1-validation-H04-S06-Tnone-trades.csv": {
+      "bytes": 18086,
+      "sha256": "17fd951a3925b980a7cfa9e3a9c8fa479e6905826e5328fa1e469cf988d341a8"
+    },
+    "impulse-inside-breakout-v1-validation-H04-Snone-Tnone-trades.csv": {
+      "bytes": 17973,
+      "sha256": "32307baa93ac76e070792bc7222494e2df416d97839ba0e9ad81c8f62546abd7"
+    },
+    "methodology.md": {
+      "bytes": 3946,
+      "sha256": "58cdbf5bda682a33a6741e2f72f5e44d850fcd258535cf32ef00e0c345a4b7b8"
+    },
+    "report.md": {
+      "bytes": 21985,
+      "sha256": "7c60721bbef7834decd64de3c36a69cbef69ba0357cee6c657721baffb2af000"
+    },
+    "summary.json": {
+      "bytes": 2300394,
+      "sha256": "718bda78f432f3fb92d8a569a811958572852f46453b33db8b9fb7cebc3f0bf8"
+    },
+    "train-coverage.csv": {
+      "bytes": 7937,
+      "sha256": "29e3d4e49fc6874c2c28d7139ecb68100a50dacf524b3044f49ce90f7588349c"
+    },
+    "training-summary.json": {
+      "bytes": 17202765,
+      "sha256": "7e88fa509c3220123604ba9b434079aed9d2021665a682eb8fec1c7f6575e26d"
+    }
+  }
+}

@@ -84,12 +84,12 @@ def _merge_live_observes(
     if not stage_enabled(tuning, "paper_candidates"):
         return current_picks, {}
 
-    from src.ops.application.jobs.paper_quant_support import load_live_pool
+    from src.ops.application.skill_watch.live_pool import load_live_pool
     from src.ops.application.skill_watch.observe_pool import (
         merge_observe_pool,
         split_observe_upgraded_to_buy,
     )
-    from src.ops.application.skill_watch.paper_eligibility import is_observe_intent
+    from src.ops.application.signal_policy.eligibility import is_observe_intent
 
     previous = load_live_pool(store, slug=slug, trade_date=trade_date)
     if previous is None:
@@ -177,17 +177,8 @@ def _merge_live_observes(
     buy_rows = [row for row in current_picks if not is_observe_intent(row)]
     fresh_observes = [row for row in current_picks if is_observe_intent(row)]
     previous_observes, upgraded = split_observe_upgraded_to_buy(previous_observes, buy_rows)
+    # 策略观察池只描述候选；独立纸面舱已移除，不再读取它的持仓。
     held_codes: set[str] = set()
-    try:
-        cabin = store.get_paper_cabin(slug) if hasattr(store, "get_paper_cabin") else None
-        if isinstance(cabin, dict) and hasattr(store, "list_paper_positions"):
-            held_codes = {
-                str(row.get("code") or "").strip()
-                for row in store.list_paper_positions(str(cabin.get("id") or ""))
-                if str(row.get("code") or "").strip()
-            }
-    except Exception as exc:  # noqa: BLE001 — 持仓读取失败不应清空观察池
-        logger.warning("load held codes failed for %s: %s", slug, exc)
     pool, report = merge_observe_pool(
         held_codes=held_codes,
         fresh_observes=fresh_observes,
@@ -279,11 +270,11 @@ def _ai_summary(
         from src.ai import ChatMessage, chat, record_llm_usage, resolve_config
         from dataclasses import replace
 
-        from src.ops.application.jobs.paper_quant_support import paper_llm_timeout_sec
+        from src.ops.application.skill_watch.live_pool import watch_llm_timeout_sec
 
         provider = resolve_config(store, provider_name, model=str(config.get("model") or ""))
         # 扫描摘要与纸面决策共用慢推理预算，避免同一轮先在摘要阶段被短超时截断。
-        provider = replace(provider, timeout=paper_llm_timeout_sec(config))
+        provider = replace(provider, timeout=watch_llm_timeout_sec(config))
         compact = [
             {
                 "type": s.get("type"),
@@ -366,7 +357,7 @@ def run_skill_watch(
         store=store if persist else None, slug=slug, tuning=tuning, result=result
     )
 
-    from src.ops.application.skill_watch.paper_eligibility import filter_openable_picks
+    from src.ops.application.signal_policy.eligibility import filter_openable_picks
 
     raw_picks = result.get("picks") if isinstance(result.get("picks"), list) else []
     # 幂等二次过滤：扫描器可能已滤过；空 auction_excluded 也不能跳过防御
@@ -395,7 +386,7 @@ def run_skill_watch(
     unified_snapshot: dict[str, Any] | None = None
     if persist and store is not None:
         try:
-            from src.ops.application.jobs.paper_quant_support import save_live_pool
+            from src.ops.application.skill_watch.live_pool import save_live_pool
             from src.ops.application.unified_monitor_pool import get_unified_monitor_pool
 
             if not pool_merge_warning:

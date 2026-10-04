@@ -1,0 +1,59 @@
+{
+  "study": "candidate filters, fixed existing shape/ranking and fixed 4-session/-6% exit",
+  "splits": {
+    "train": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "validation_2025h2": [
+      "2025-07-01",
+      "2025-12-31"
+    ],
+    "observed_2026": [
+      "2026-01-01",
+      "2026-09-30"
+    ]
+  },
+  "filters": {
+    "baseline": "原完整形态候选、原评分，创业板每日前2",
+    "index_ma20": "沪深300信号日收盘严格高于当日20日均线；缺失不填充",
+    "breadth_50": "所有当日有效创业板股票的上涨比例>=50%；平盘计入分母",
+    "stock_ma20_rising": "个股C>MA(C,20)且MA(C,20)>REF(MA(C,20),5)",
+    "momentum_0_30": "个股10交易日收盘动量严格>0且严格<30%",
+    "breakout_volume_le3": "原策略定义的突破量比<=3，保留原放量下限",
+    "relative_volume_le2_5": "V/MA(V,5)<=2.5，5日均量包含信号日",
+    "clv_ge0_75": "收盘位置(C-L)/(H-L)>=0.75",
+    "prior_extreme_lt15": "T-10至T-1最大单日复权收盘涨幅严格<15%；不含T"
+  },
+  "historical_score_control": {
+    "id": "historical_equal_four",
+    "strategy": "contraction-rebreakout-v1",
+    "definition": "原四项等权25/25/25/25，保留当前收盘涨停过滤，仅重排完整原形态候选",
+    "already_seen": true
+  },
+  "selection": {
+    "max_per_strategy": 3,
+    "eligibility": "closed>=80 AND payoff_ratio>1 AND profit_factor>1 AND mean_net>0; both wins and losses required",
+    "ranking": "training unrounded payoff descending, PF descending, mean descending, scenario id ascending",
+    "baseline_is_control_not_shortlist": true,
+    "no_validation_based_retuning": true
+  },
+  "max_hold_including_entry_for_every_cohort": 20,
+  "fixed_exit": {
+    "key": "H04-S06-Tnone",
+    "sessions_including_entry": 4,
+    "hold_days": 3,
+    "stop_loss_pct": -6.0,
+    "take_profit_pct": null
+  },
+  "round_trip_cost_pct": 0.21,
+  "stress_round_trip_cost_pct": 0.42,
+  "breadth_definition": "current catalog six-digit 300/301 STOCK; same-day and prior market-day finite positive qfq closes plus same-day volume>0; no ST/status narrowing, no forward-fill, no future quote membership",
+  "filter_before_top2": true,
+  "limitations": [
+    "当前证券目录、名称/状态存在幸存者及历史成员偏差，非严格PIT证券池。",
+    "2026-09-29案例与2026年结果已经观察且参与当前五项评分校准，2026仅后验检验。",
+    "2025H2是本轮过滤选择未开启的留出期；基底策略本身并非2024年事前冻结设计。",
+    "每笔独立事件交易，不模拟组合容量、资金占用或组合净值。"
+  ]
+}

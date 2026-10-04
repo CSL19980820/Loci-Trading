@@ -1,0 +1,15 @@
+{
+  "completed_at": "2026-10-04T18:13:35.822730+08:00",
+  "artifacts_sha256": {
+    "all-orders-new.csv": "c9862df4dfe1196f4c8575e5ef329cb528233f0f9a9555ea13a567f1f10d89bf",
+    "all-orders-old.csv": "0be7b0c987daa296072f3ad7895415e2ca62388074bd13db578bd75e3876bf74",
+    "changed-orders.csv": "208f5472c93fdc2f4d2906b544cf01b03f2a6681336204780c642100482b9089",
+    "daily-budget.csv": "c7465ed8f9722c3a0ac34b3a8d7b5d44157074591519f372cbc97720e42dd2f4",
+    "eligible-orders.csv": "166da532961a0d276e2f3fbbfc16c954c6ad0fcfde464a51346d11f387e020c3",
+    "freeze-receipt.json": "cb52a6fa2e3ca3b67cce2ead90df5b2128f9461a631a79a67869d6368db61847",
+    "schema-manifest.json": "224465ccd048b497ec2c8de2b32650881457af3621925c097d3c21a77edacbd0",
+    "sql-validation.csv": "851e6138e72ec456f46a51c7f8ae2c928400904e6ee1fa9f2ff4a38abc57e587",
+    "summary.json": "e2b5b01ec7ae0190726612e056cc98c32660ede49a8775eb8625ce2a78e26719"
+  },
+  "protected_sources_unchanged": true
+}

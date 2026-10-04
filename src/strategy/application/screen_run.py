@@ -18,6 +18,7 @@ from contextlib import ExitStack
 from datetime import date
 from typing import Any, Callable
 
+from src.shared.evidence_compact import compact_job_result
 from src.shared.screen_capacity import (
     ScreenCapacityBusy,
     screen_capacity_permit,
@@ -69,7 +70,7 @@ def _capacity_label(opts: dict[str, Any]) -> str:
 
 
 def _result_body(result: Any, recorded: dict[str, Any] | None) -> dict[str, Any]:
-    return {
+    body = {
         "strategy": result.strategy_slug,
         "strategy_revision": result.strategy_revision,
         "trade_date": result.trade_date,
@@ -86,6 +87,61 @@ def _result_body(result: Any, recorded: dict[str, Any] | None) -> dict[str, Any]
         "data_snapshot": result.data_snapshot,
         "recorded": recorded,
     }
+    compact_job_result(body)
+    return body
+
+
+def execute_realtime_screen(
+    engine: Any,
+    opts: dict[str, Any],
+    *,
+    palace_db: str | None,
+    source: str,
+    on_progress: Callable[[str, float, str], None] | None = None,
+    before_persist: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """实时战法的统一入口：现场取数，按引擎最终精选原样留档。"""
+    from src.strategy.application.double_yin_realtime import screen_live_double_yin
+    from src.strategy.application.persist import persist_screen_candidates
+    from src.strategy.domain.base import StrategyError
+
+    first, last = resolve_from_opts(opts)
+    if first and last and first != last:
+        raise StrategyError("本战法只支持当天 09:25 实时单日筛选，不支持历史或区间补跑")
+    params = dict(opts.get("params") or {})
+    if int(opts.get("top_n") or 0) > 0 and "top_n" not in params:
+        params["top_n"] = int(opts["top_n"])
+    with screen_capacity_permit(label=_capacity_label(opts), wait_sec=0):
+        result = screen_live_double_yin(
+            engine,
+            trade_date=last or opts.get("date"),
+            params=params or None,
+            codes=opts.get("codes"),
+            universe=opts.get("universe"),
+            on_progress=on_progress,
+        )
+        status = str(result.data_snapshot.get("status") or "")
+        skipped = status.startswith("skipped")
+        recorded = None
+        if before_persist is not None:
+            before_persist()
+        if opts.get("record_candidates", True) and not skipped:
+            names = dict(result.data_snapshot.get("instrument_names") or {})
+            names.update({str(pick["code"]): str(pick["name"])
+                          for pick in [*result.picks, *result.watch_picks]
+                          if pick.get("code") and pick.get("name")})
+            recorded = persist_screen_candidates(
+                result,
+                palace_db=palace_db,
+                names=names,
+                pool_id=opts.get("pool_id"),
+                source=source,
+                top_n=0,
+            )
+        body = _result_body(result, recorded)
+        if skipped:
+            body.update(skipped=True, reason=str(result.data_snapshot.get("reason") or status))
+        return body
 
 
 def execute_screen_run(
@@ -125,6 +181,45 @@ def _execute_screen_run(
     ``requires_full_history`` 或未配置热库时回退全量库。
     """
     try:
+        from src.strategy import get as get_strategy
+
+        engine = get_strategy(str(opts.get("strategy") or ""))
+        if getattr(engine, "requires_realtime_inputs", False):
+            if screen_run_cancel_requested():
+                screen_run_update(status="cancelled", phase="cancelled", message="已取消实时选股")
+                return
+
+            def realtime_progress(phase: str, percent: float, message: str) -> None:
+                if screen_run_cancel_requested():
+                    from src.strategy.domain.base import StrategyError
+                    raise StrategyError("实时选股已取消")
+                screen_run_update(phase=phase, percent=percent, message=message, log_line=message)
+
+            def check_realtime_cancelled() -> None:
+                if screen_run_cancel_requested():
+                    from src.strategy.domain.base import StrategyError
+                    raise StrategyError("实时选股已取消")
+
+            try:
+                body = execute_realtime_screen(
+                    engine, opts, palace_db=palace_db, source="api:screen_run",
+                    on_progress=realtime_progress, before_persist=check_realtime_cancelled,
+                )
+            except Exception:
+                if screen_run_cancel_requested():
+                    screen_run_update(status="cancelled", phase="cancelled", message="已取消实时选股")
+                    return
+                raise
+            if screen_run_cancel_requested():
+                screen_run_update(status="cancelled", phase="cancelled", message="已取消实时选股")
+                return
+            screen_run_update(
+                status="done", phase="done", percent=100,
+                message=body.get("reason") or f"完成 · 正式精选 {len(body['picks'])} 只",
+                trade_date=body["trade_date"], result=body,
+                log_line=body.get("reason") or f"■ 实时选股结束 · {len(body['picks'])} 只",
+            )
+            return
         from src.market import DataQualityError
         from src.strategy import screen
         from src.strategy.application.persist import persist_screen_candidates

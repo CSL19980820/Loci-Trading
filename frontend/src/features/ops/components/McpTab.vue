@@ -28,7 +28,6 @@ import type { McpQuotaSnapshot, McpServer } from '@/shared/types/quant'
 import McpServerRow from './McpServerRow.vue'
 import McpToolsDialog from './McpToolsDialog.vue'
 import WudaoMcpDialog from './WudaoMcpDialog.vue'
-import HithinkMcpDialog from './HithinkMcpDialog.vue'
 import type { ReceiptPair } from './SettingsPanel.vue'
 import SettingsPanel from './SettingsPanel.vue'
 import { useOpsFeedback } from '../composables/useOpsFeedback'
@@ -41,7 +40,6 @@ const mcpServers = ref<McpServer[]>([])
 const quotaSnap = ref<McpQuotaSnapshot | null>(null)
 const mcpFormOpen = ref(false)
 const wudaoOpen = ref(false)
-const hithinkOpen = ref(false)
 
 const mcpForm = reactive({
   name: '',
@@ -73,10 +71,6 @@ const wudaoServer = computed(
       (s) => s.name === 'wudao' || s.name === 'wudao-a-stock',
     ) ?? null,
 )
-const hithinkServer = computed(() =>
-  mcpServers.value.find((s) => s.name === 'hithink-finance-a-share') ?? null,
-)
-
 const inactiveCount = computed(() => mcpServers.value.filter((s) => !s.is_active).length)
 const totalTools = computed(() => mcpServers.value.reduce((n, s) => n + toolCount(s), 0))
 
@@ -142,8 +136,7 @@ function openWudaoConfig(): void {
 }
 
 function openResidentConfig(server: McpServer): void {
-  if (server.name.startsWith('hithink-finance-')) hithinkOpen.value = true
-  else openWudaoConfig()
+  if (isResident(server)) openWudaoConfig()
 }
 
 async function submitMcp(): Promise<void> {
@@ -217,10 +210,6 @@ onUnmounted(() => {
       <Button v-if="wudaoServer" variant="outline" size="sm" :disabled="busy" @click="openWudaoConfig">
         <Plug />
         配置悟道
-      </Button>
-      <Button v-if="hithinkServer" variant="outline" size="sm" :disabled="busy" @click="hithinkOpen = true">
-        <Plug />
-        配置同花顺
       </Button>
       <Button size="sm" :disabled="busy" @click="mcpFormOpen = true">
         <Plus />
@@ -347,7 +336,6 @@ onUnmounted(() => {
 
   <McpToolsDialog v-model="detailOpen" :server="detailServer" @refreshed="onDetailRefreshed" />
   <WudaoMcpDialog v-model="wudaoOpen" :server="wudaoServer" @saved="() => writeAndRefresh(async () => true)" />
-  <HithinkMcpDialog v-model="hithinkOpen" :server="hithinkServer" @saved="() => writeAndRefresh(async () => true)" />
 </template>
 
 <style scoped>

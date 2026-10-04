@@ -77,7 +77,7 @@ def snapshot(codes: list[str], *, include_minute: bool = False, force_refresh: b
     from src.ai.application.agent_execution import reraise_stop
     from src.intel import call_mcp_tool
     from src.market.application.live_cache import build_monitor_snapshot
-    from src.market.infrastructure.adapters.tencent_adapter import TencentAdapter
+    from src.market import get_adapter, lane_provider_enabled, LANE_SPOT_BATCH
 
     def checkpoint() -> None:
         if check_cancelled:
@@ -172,6 +172,12 @@ def snapshot(codes: list[str], *, include_minute: bool = False, force_refresh: b
         direct_codes = unique if require_order_book else failed
         books: dict[str, dict] = {}
         book_errors: dict[str, str] = {}
+        if direct_codes and not lane_provider_enabled("sina", LANE_SPOT_BATCH):
+            for code in direct_codes:
+                book_errors[code] = "新浪现价已停用，不绕过来源设置"
+                if code in failed:
+                    record(code, {}, book_errors[code], "direct")
+            direct_codes = []
         if direct_codes and time.monotonic() < end:
             checkpoint()
             direct_end = min(time.monotonic() + _DIRECT_QUOTE_SECONDS,
@@ -189,11 +195,13 @@ def snapshot(codes: list[str], *, include_minute: bool = False, force_refresh: b
                     if require_order_book:
                         if problem:
                             book_errors[code] = problem
-                        else:
+                        elif all(q.get(key) is not None for key in ("bid_price", "ask_price", "bid_quantity", "ask_quantity", "limit_up", "limit_down")):
                             books[code] = dict(q)
+                        else:
+                            book_errors[code] = "保留源未提供完整盘口及涨跌停价格，严格盘口模拟不虚构成交"
                     if code in failed:
                         record(code, q, problem, "direct")
-            task = backup_pool.submit(copy_context().run, TencentAdapter().fetch_live_quotes, direct_codes)
+            task = backup_pool.submit(copy_context().run, get_adapter("sina").fetch_live_quotes, direct_codes)
             collect({task: "direct"}, direct_end, accept_direct)
 
         failed = missing()

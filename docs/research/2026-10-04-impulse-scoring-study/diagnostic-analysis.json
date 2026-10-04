@@ -1,0 +1,19 @@
+{
+  "snapshot_path": "E:\\my_space\\stock-analyzer\\.local\\chinext-payoff-20261004\\market.db",
+  "post_train_nominee_paired_bootstrap": {
+    "months": 15,
+    "replicates": 5000,
+    "seed": 20261004,
+    "ci95_delta_per_opportunity": [
+      -0.01455317762199218,
+      0.2624865230716676
+    ],
+    "point_delta_per_opportunity": 0.1155157345274148
+  },
+  "nominee_months_positive": 11,
+  "nominee_months_negative": 4,
+  "nominee_months_unchanged": 18,
+  "nominee_changed_days": 25,
+  "all_shape_days_over_two": 59,
+  "derived_only_from_frozen_results": true
+}

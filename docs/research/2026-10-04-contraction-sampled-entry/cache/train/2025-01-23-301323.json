@@ -1,0 +1,51 @@
+{
+  "code": "301323",
+  "requested_date": "2025-01-23",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-01-23-301323.attempt1.raw.json",
+  "raw_sha256": "ad90f84ef6c4efa7f0e2b74caf22facf33a51dbba77a8ca33510c1ee1a1aeb5c",
+  "attempts": [
+    {
+      "code": "301323",
+      "requested_date": "2025-01-23",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:42:03.574486+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 36258.0,
+        "sampled_share_sum": 3625800.0,
+        "daily_volume": 3625700.0,
+        "volume_signed_diff": 100.0,
+        "volume_abs_diff": 100.0,
+        "volume_relative_diff": 2.758088093333701e-05,
+        "volume_tolerance": 3625.7000000000003,
+        "final_price_signed_diff": 0.0,
+        "final_price_abs_diff": 0.0,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 3,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": false,
+        "raw_positive_min": 40.660000000000004,
+        "raw_positive_max": 42.9,
+        "match_class": "within_frozen_tolerance"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-01-23-301323.attempt1.raw.json",
+      "raw_sha256": "ad90f84ef6c4efa7f0e2b74caf22facf33a51dbba77a8ca33510c1ee1a1aeb5c",
+      "completed_at": "2026-10-04T17:42:03.699819+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:42:03.701416+08:00"
+}

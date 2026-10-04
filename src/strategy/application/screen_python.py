@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import threading
-from typing import Any
+from typing import Any, ClassVar
 
 import pandas as pd
 
@@ -41,6 +41,7 @@ from src.strategy.application.screen_python_load import (
 
 @dataclass(slots=True)
 class PythonScreenEngine:
+    source_evidence_summary: ClassVar[bool] = True
     slug: str
     name: str
     description: str
@@ -67,6 +68,7 @@ class PythonScreenEngine:
     _lock: threading.RLock = field(
         default_factory=threading.RLock, init=False, repr=False
     )
+    _worker_metadata: tuple[str, dict[str, Any]] | None = field(default=None, init=False, repr=False)
 
     def default_params(self) -> dict[str, Any]:
         return dict(self.default_param_values)
@@ -80,26 +82,76 @@ class PythonScreenEngine:
     @property
     def history_bars(self):
         """包入口可按运行参数声明实际历史需求，避免调大周期后被截短。"""
-        return getattr(self._load_callable(), "history_bars", None)
+        from src.strategy.application.compute_worker import in_compute_worker
+
+        if in_compute_worker():
+            return getattr(self._load_callable(), "history_bars", None)
+        if not self._metadata_snapshot()["history_bars"]:
+            return None
+        return lambda params: self._remote_attribute("history_bars", (params,))
 
     @property
     def live_candidate_codes(self):
         """可选的昨日预筛；未声明的包保持原全池实时路径。"""
-        return getattr(self._load_callable(), "live_candidate_codes", None)
+        from src.strategy.application.compute_worker import in_compute_worker
+
+        if in_compute_worker():
+            return getattr(self._load_callable(), "live_candidate_codes", None)
+        if not self._metadata_snapshot()["live_candidate_codes"]:
+            return None
+        return lambda panels, today, params: self._remote_attribute(
+            "live_candidate_codes", (panels, today, params),
+        )
 
     @property
     def strict_live_ohlcv(self) -> bool:
-        return getattr(self._load_callable(), "strict_live_ohlcv", False) is True
+        from src.strategy.application.compute_worker import in_compute_worker
+
+        if in_compute_worker():
+            return getattr(self._load_callable(), "strict_live_ohlcv", False) is True
+        return self._metadata_snapshot()["strict_live_ohlcv"]
 
     def validate(self) -> None:
         """导入模块并解析入口点，不执行选股函数。"""
-        self._load_callable()
+        from src.strategy.application.compute_worker import in_compute_worker
+
+        if in_compute_worker():
+            self._load_callable()
+        else:
+            self._metadata_snapshot()
+
+    def _metadata_snapshot(self) -> dict[str, Any]:
+        from src.strategy.application.compute_worker import ComputeWorkerError, inspect_python_in_worker
+
+        with self._lock:
+            if self._worker_metadata is None or self._worker_metadata[0] != self.strategy_revision:
+                try:
+                    snapshot = inspect_python_in_worker(self)
+                except ComputeWorkerError as exc:
+                    raise ScreenPythonError.simple(exc.code, str(exc)) from exc
+                self._worker_metadata = (self.strategy_revision, snapshot)
+            return self._worker_metadata[1]
+
+    def _remote_attribute(self, name: str, arguments: tuple[Any, ...]) -> Any:
+        from src.strategy.application.compute_worker import ComputeWorkerError, call_python_attribute_in_worker
+
+        try:
+            return call_python_attribute_in_worker(self, name, arguments)
+        except ComputeWorkerError as exc:
+            raise ScreenPythonError.simple(exc.code, str(exc)) from exc
 
     def compute(
         self,
         panels: dict[str, pd.DataFrame],
         params: dict[str, Any] | None = None,
     ) -> SignalResult:
+        from src.strategy.application.compute_worker import ComputeWorkerError, compute_in_worker, in_compute_worker
+
+        if not in_compute_worker():
+            try:
+                return compute_in_worker(self, panels, params)
+            except ComputeWorkerError as exc:
+                raise ScreenPythonError.simple(exc.code, str(exc)) from exc
         resolved = _resolve_runtime_params(self.param_specs, params)
         package_root = self._package_root()
         source_path = _entrypoint_source_path(package_root, self.entrypoint)
@@ -119,7 +171,20 @@ class PythonScreenEngine:
             ) from exc
         return _coerce_signal_result(outcome)
 
+    def compute_audited(self, panels, params=None) -> SignalResult:
+        """One bounded child performs the baseline and genuine truncation probes."""
+        from src.strategy.application.compute_worker import ComputeWorkerError, compute_in_worker
+
+        try:
+            return compute_in_worker(self, panels, params, audit=True)
+        except ComputeWorkerError as exc:
+            raise ScreenPythonError.simple(exc.code, str(exc)) from exc
+
     def _load_callable(self):
+        from src.strategy.application.compute_worker import in_compute_worker
+
+        if not in_compute_worker():
+            raise ScreenPythonError.simple("E_PYTHON_PARENT_LOAD", "Python 策略源码只能在受限计算进程加载")
         with self._lock:
             if self._callable is not None:
                 return self._callable

@@ -1,0 +1,9 @@
+{
+  "created_at": "2026-10-04T13:47:28.241064+08:00",
+  "nominees": [
+    "decisive_breakout_gate",
+    "thrust_quality"
+  ],
+  "plan_sha256": "32bfc571fa006008b0eec90aa0bd9c6ac4ad609103d8e5e9f9939c69b29de369",
+  "training_sha256": "9b94cfeaff613e77bd74471118039a3a4a236578a910b0bd39a7ccf661908ef4"
+}

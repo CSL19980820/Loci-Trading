@@ -24,15 +24,16 @@ onBeforeRouteLeave(async () => {
   </section>
 </template>
 <style scoped>
-.guardian-studio { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.guardian-studio { display: flex; flex-direction: column; flex: 1 1 0%; gap: 8px; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+.guardian-studio :deep(.guardian-workspace) { flex: 1 1 0%; min-height: 0; height: 100%; }
+.guardian-studio :deep(.guardian-workspace > :not(.guardian-workspace-body)) { flex-shrink: 0; }
+.guardian-studio :deep(.guardian-workspace-body) { flex: 1 1 0%; min-height: 0; }
 @media(max-width:767px) {
   .guardian-studio { flex:1 1 0%; min-height:0; height:100%; gap:0; overflow:hidden; }
 }
 @media (min-width: 1024px) and (min-height: 600px) {
   .guardian-studio { flex: 1 1 0%; min-height: 0; gap: 6px; }
-  .guardian-studio :deep(.guardian-workspace) { flex: 1 1 0%; min-height: 0; }
-  .guardian-studio :deep(.guardian-workspace > :not(.guardian-content-area)) { flex-shrink: 0; }
-  .guardian-studio :deep(.guardian-content-area) { flex: 1 1 0%; min-height: 0; overflow: hidden; }
+  .guardian-studio :deep(.guardian-content-area) { min-height: 0; }
   .guardian-studio :deep(.guardian-content-area > :not(.review-panel):not(.research-workspace):not(.consult-panel)) { flex: 1 1 0%; min-height: 0; overflow: hidden; }
 }
 </style>

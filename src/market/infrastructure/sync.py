@@ -86,7 +86,7 @@ def _fetch_daily_for_sync(
     recent_bars: int | None = None,
     authoritative_only: bool = False,
 ) -> tuple[pd.DataFrame, str]:
-    """显式 source 走串行降级链；日终正式日 K 只允许 TDX 和扶摇。"""
+    """显式 source 走串行降级链；日终正式日 K 使用启用的通达信；不绕过来源开关。"""
     if sources is not None:
         return fetch_with_fallback(list(sources), code, instrument_type=instrument_type, receipt=receipt)
     from src.market.infrastructure.adapters import (
@@ -96,14 +96,7 @@ def _fetch_daily_for_sync(
     )
 
     try:
-        authority_ids = ["tdx"]
-        if authoritative_only:
-            from src.market.infrastructure.adapters.hithink_adapter import (
-                hithink_adapter_enabled,
-            )
-
-            if hithink_adapter_enabled() and lane_provider_enabled("hithink", "hist_daily"):
-                authority_ids.append("hithink")
+        authority_ids = [aid for aid in ("tdx",) if lane_provider_enabled(aid, "hist_daily")]
         frame, source_name = fetch_daily_routed(
             code,
             instrument_type=instrument_type,
@@ -111,15 +104,6 @@ def _fetch_daily_for_sync(
             recent_bars=recent_bars,
             **({"adapter_ids": authority_ids, "cross_check": False} if authoritative_only else {}),
         )
-        if authoritative_only and source_name == "hithink":
-            # 扶摇返回 date_ms；当前交易日缺失时不能把旧 K 线算成日终定稿。
-            valid, _rejected = partition_valid_ohlc_rows(frame)
-            last_date = (
-                str(pd.to_datetime(valid["date"]).max().date()) if not valid.empty else ""
-            )
-            if last_date != date.today().isoformat():
-                raise SourceError(f"同花顺扶摇未返回当日正式日 K（最新 {last_date}）")
-            frame = valid
         return frame, source_name
     except AdapterError as exc:
         raise SourceError(str(exc)) from exc

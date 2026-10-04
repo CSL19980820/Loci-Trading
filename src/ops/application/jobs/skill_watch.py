@@ -28,48 +28,4 @@ def execute_skill_watch(config: dict[str, Any], context: JobContext) -> dict[str
         finally:
             market_store.close()
 
-    # 扫描任务只有显式声明 paper_monitor_slug 才接管纸面舱；不再默认 dragon-return。
-    slug = str(config.get("skill") or config.get("slug") or "").strip()
-    if "paper_monitor_slug" in config:
-        paper_slug = str(config.get("paper_monitor_slug") or "").strip()
-    else:
-        paper_slug = ""
-
-    cabin = context.ops_store.get_paper_cabin(paper_slug) if paper_slug else None
-    if paper_slug and isinstance(cabin, dict):
-        from src.ops.application.jobs.paper_quant_support import _paper_quant_config
-
-        paper_cfg = _paper_quant_config(cabin.get("config") or {})
-        if paper_cfg.get("enabled", True):
-            from src.ops.application.jobs.paper_quant_monitor import execute_strategy_monitor
-
-            # 扫描摘要要推企微时，纸面动作并进那一条，避免同一轮发两遍；
-            # 扫描摘要不推时，动作必须自己出声，否则成交回执就丢了。
-            monitor = execute_strategy_monitor(
-                {
-                    "slug": paper_slug,
-                    "trigger": "skill_watch",
-                    "collect_follow": True,
-                    "emit_follow": not bool(config.get("push_wecom")),
-                    # 集成通知的持仓清单由执行后的统一池负责；这里仅返回本轮成交、
-                    # 拒单、开盘纪律和异常，避免成本/层数在同一条消息里复读。
-                    "include_position_lines": paper_slug == slug,
-                },
-                context,
-            )
-            result = {**result, "paper_monitor": monitor}
-            action_body = str(monitor.get("follow_body") or "").strip()
-            if result.get("skipped") and not monitor.get("skipped"):
-                result["scan_skipped"] = True
-                result["scan_reason"] = result.get("reason")
-                result.pop("skipped", None)
-                result.pop("reason", None)
-        else:
-            action_body = ""
-    else:
-        action_body = ""
-
-    if action_body:
-        summary = str(result.get("summary") or "").strip()
-        result["summary"] = f"{summary}\n\n{action_body}".strip()
     return result

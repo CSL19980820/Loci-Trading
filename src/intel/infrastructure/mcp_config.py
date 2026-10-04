@@ -318,7 +318,7 @@ def _set_token(cfg: dict[str, Any], name: str, token: str) -> None:
     headers = dict(cfg.get("headers") or {}) if isinstance(cfg.get("headers"), dict) else {}
     for key, value in list(headers.items()):
         if (str(key).casefold() == "authorization" and str(value).casefold().startswith("bearer ")) or (
-            name == "hithink-finance-a-share" and str(key).casefold() == "x-api-key"
+            str(key).casefold() == "x-api-key"
         ):
             headers.pop(key)
     if headers:

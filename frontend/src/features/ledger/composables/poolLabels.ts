@@ -9,6 +9,8 @@ import { computed, type Ref } from 'vue'
 
 import { strategyLabel as formatStrategyLabel, decisionLabel } from '@/shared/lib/format'
 import type { StrategyInfo } from '@/shared/types/quant'
+import type { Candidate } from '@/shared/types/palace'
+import { isHistoricalCandidate } from '@/shared/lib/candidateSource'
 
 /** 战法名与池号：都要查目录，所以绑在同一份索引上。 */
 export function usePoolLabels(strategies: Ref<StrategyInfo[]>) {
@@ -62,4 +64,9 @@ export function sourceLabel(value: string | null | undefined): string {
 
 export function decisionType(decision: string): 'info' | 'danger' {
   return decisionLabel(decision) === '精选' ? 'danger' : 'info'
+}
+
+/** 兼容历史重放及异日写入的旧 API 选股，保留原始来源供审计。 */
+export function candidateSourceLabel(row: Candidate | null | undefined): string {
+  return isHistoricalCandidate(row) ? '历史回填' : sourceLabel(row?.source)
 }

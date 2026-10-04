@@ -30,7 +30,6 @@ DEFAULT_INTRADAY_KEEP_DAYS = 60
 #: identity.db / community.db 的保留天数。两个库都是**跨租户全局唯一**的，
 #: 所以清理只能挂在系统级 prune 上（主租户一份）；按租户各跑一份会让 N 个
 #: 线程同时删同一个文件。
-DEFAULT_COMMUNITY_KEEP_DAYS = 15
 
 
 def execute_prune(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
@@ -100,10 +99,7 @@ def execute_prune(config: dict[str, Any], context: JobContext) -> dict[str, Any]
                                     login_days=policy.login_days, audit_days=policy.audit_days)
                     if policy is not None else _purge_identity())
 
-    community: dict[str, Any] = {"skipped": "未启用"}
-    community_days = policy.community_days if policy else int(config.get("community_keep_days", DEFAULT_COMMUNITY_KEEP_DAYS))
-    if community_days > 0:
-        community = _purge_community(community_days)
+
 
     return {
         "removed": removed,
@@ -112,7 +108,6 @@ def execute_prune(config: dict[str, Any], context: JobContext) -> dict[str, Any]
         "leader_role_keep_days": keep_days,
         "intraday": intraday,
         "identity": identity,
-        "community": community,
     }
 
 
@@ -139,30 +134,5 @@ def _purge_identity(*, notify_read_days: int = 15, usage_keep_days: int = 15, lo
                 "usage_counters": int(store.purge_usage_counters(keep_days=usage_keep_days) or 0) if usage_keep_days > 0 else 0,
                 "logs": store.purge_audit_logs(login_days=login_days, audit_days=audit_days),
             }
-    except Exception as exc:  # noqa: BLE001 — 单段失败不带走整轮
-        return {"error": f"{type(exc).__name__}: {exc}"[:300]}
-
-
-def _purge_community(keep_days: int) -> dict[str, Any]:
-    """清 community.db 的动态流 / 榜单快照 / 当日信号广播。**不存在就不建**。
-
-    只清这三张可重建的派生表。发布物、版本、评论、收藏、克隆留痕、订阅、关注
-    都是用户作品，一条都不删（口径见 ``src/community/application/retention``）。
-    """
-    from src.shared.paths import community_db
-
-    if not community_db().is_file():
-        return {"skipped": "community.db 不存在"}
-    try:
-        from src.community import CommunityStore, purge_expired
-
-        with CommunityStore() as store:
-            result = purge_expired(
-                store,
-                feed_days=keep_days,
-                board_days=keep_days,
-                broadcast_days=keep_days,
-            )
-        return {"keep_days": keep_days, "tables": result}
     except Exception as exc:  # noqa: BLE001 — 单段失败不带走整轮
         return {"error": f"{type(exc).__name__}: {exc}"[:300]}

@@ -1,0 +1,303 @@
+{
+  "segment": "observed_2026",
+  "completed_at": "2026-10-04T15:50:04.402243+08:00",
+  "model_sha256": "6997266af7399e33b5422b3aae7c0c4ec7cb65c198eddd3f05d610a6d94bc278",
+  "preselection_sha256": "73150baccaf6e3fce09021236ac41e20d94a558663c2b5e4ef4a79a6d05b4b5a",
+  "runs": {
+    "full_shape": {
+      "metrics": {
+        "base": {
+          "trades": 311,
+          "avg_net_return": -0.06112968625054035,
+          "win_rate": 40.51446945337621,
+          "profit_factor": 0.9819539106160934,
+          "payoff_ratio": 1.4417577259045815,
+          "avg_win": 8.210129560503068,
+          "avg_loss": -5.694527875931376,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost": {
+          "trades": 311,
+          "avg_net_return": -0.2711296862505405,
+          "win_rate": 40.51446945337621,
+          "profit_factor": 0.9228065315885504,
+          "payoff_ratio": 1.35491435193557,
+          "avg_win": 8.000129560503066,
+          "avg_loss": -5.904527875931374,
+          "worst_net": -34.77980551053486
+        },
+        "largest_winner_removed": {
+          "trades": 310,
+          "avg_net_return": -0.15768398952453155,
+          "win_rate": 40.32258064516129,
+          "profit_factor": 0.9535998011693743,
+          "payoff_ratio": 1.411327705730674,
+          "avg_win": 8.036844962357597,
+          "avg_loss": -5.694527875931376,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 310,
+          "avg_net_return": -0.3676839895245317,
+          "win_rate": 40.32258064516129,
+          "profit_factor": 0.8956531105402797,
+          "payoff_ratio": 1.3255666035996139,
+          "avg_win": 7.826844962357595,
+          "avg_loss": -5.904527875931374,
+          "worst_net": -34.77980551053486
+        }
+      },
+      "closed": 311,
+      "active_months": 9,
+      "selected_orders": 312,
+      "execution_accounting": {
+        "closed": 311,
+        "suspended_entry": 1
+      },
+      "label_accounting": {
+        "closed": 311,
+        "unresolved": 1
+      },
+      "unresolved_selected": 1,
+      "slots": 356,
+      "slot_mean": null,
+      "month_blocks_vs_full_shape": null,
+      "month_blocks_vs_feature_eligible_full_shape": null,
+      "month_blocks_vs_corrected_low_open": null
+    },
+    "feature_eligible_full_shape": {
+      "metrics": {
+        "base": {
+          "trades": 311,
+          "avg_net_return": -0.06112968625054035,
+          "win_rate": 40.51446945337621,
+          "profit_factor": 0.9819539106160934,
+          "payoff_ratio": 1.4417577259045815,
+          "avg_win": 8.210129560503068,
+          "avg_loss": -5.694527875931376,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost": {
+          "trades": 311,
+          "avg_net_return": -0.2711296862505405,
+          "win_rate": 40.51446945337621,
+          "profit_factor": 0.9228065315885504,
+          "payoff_ratio": 1.35491435193557,
+          "avg_win": 8.000129560503066,
+          "avg_loss": -5.904527875931374,
+          "worst_net": -34.77980551053486
+        },
+        "largest_winner_removed": {
+          "trades": 310,
+          "avg_net_return": -0.15768398952453155,
+          "win_rate": 40.32258064516129,
+          "profit_factor": 0.9535998011693743,
+          "payoff_ratio": 1.411327705730674,
+          "avg_win": 8.036844962357597,
+          "avg_loss": -5.694527875931376,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 310,
+          "avg_net_return": -0.3676839895245317,
+          "win_rate": 40.32258064516129,
+          "profit_factor": 0.8956531105402797,
+          "payoff_ratio": 1.3255666035996139,
+          "avg_win": 7.826844962357595,
+          "avg_loss": -5.904527875931374,
+          "worst_net": -34.77980551053486
+        }
+      },
+      "closed": 311,
+      "active_months": 9,
+      "selected_orders": 312,
+      "execution_accounting": {
+        "closed": 311,
+        "suspended_entry": 1
+      },
+      "label_accounting": {
+        "closed": 311,
+        "unresolved": 1
+      },
+      "unresolved_selected": 1,
+      "slots": 356,
+      "slot_mean": null,
+      "month_blocks_vs_full_shape": null,
+      "month_blocks_vs_feature_eligible_full_shape": null,
+      "month_blocks_vs_corrected_low_open": null
+    },
+    "corrected_low_open": {
+      "metrics": {
+        "base": {
+          "trades": 263,
+          "avg_net_return": -0.19362914731757713,
+          "win_rate": 41.06463878326996,
+          "profit_factor": 0.9430912073507868,
+          "payoff_ratio": 1.3535105290682587,
+          "avg_win": 7.814065546812043,
+          "avg_loss": -5.773184160001442,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost": {
+          "trades": 263,
+          "avg_net_return": -0.40362914731757715,
+          "win_rate": 40.68441064638783,
+          "profit_factor": 0.8855412906210949,
+          "payoff_ratio": 1.2910695452045868,
+          "avg_win": 7.675637620534243,
+          "avg_loss": -5.945177507318506,
+          "worst_net": -34.77980551053486
+        },
+        "largest_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -0.30837851172980724,
+          "win_rate": 40.83969465648855,
+          "profit_factor": 0.9097102833867485,
+          "payoff_ratio": 1.317804616120991,
+          "avg_win": 7.607928735766486,
+          "avg_loss": -5.773184160001442,
+          "worst_net": -34.569805510534856
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 262,
+          "avg_net_return": -0.5183785117298073,
+          "win_rate": 40.458015267175576,
+          "profit_factor": 0.8535602909248485,
+          "payoff_ratio": 1.2561830696629845,
+          "avg_win": 7.4682313308346915,
+          "avg_loss": -5.945177507318506,
+          "worst_net": -34.77980551053486
+        }
+      },
+      "closed": 263,
+      "active_months": 9,
+      "selected_orders": 263,
+      "execution_accounting": {
+        "closed": 263
+      },
+      "label_accounting": {
+        "closed": 263
+      },
+      "unresolved_selected": 0,
+      "slots": 356,
+      "slot_mean": -0.1430462520913561,
+      "month_blocks_vs_full_shape": null,
+      "month_blocks_vs_feature_eligible_full_shape": null,
+      "month_blocks_vs_corrected_low_open": {
+        "months": 9,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.0,
+          0.0
+        ],
+        "point_delta_per_opportunity": 0.0
+      }
+    },
+    "positive_only": {
+      "metrics": {
+        "base": {
+          "trades": 57,
+          "avg_net_return": -0.7641878648155,
+          "win_rate": 38.59649122807018,
+          "profit_factor": 0.7205404933310082,
+          "payoff_ratio": 1.146314421208422,
+          "avg_win": 5.104953801954538,
+          "avg_loss": -4.453362626785238,
+          "worst_net": -9.712788104089212
+        },
+        "double_cost": {
+          "trades": 57,
+          "avg_net_return": -0.9741878648155005,
+          "win_rate": 36.8421052631579,
+          "profit_factor": 0.6599048875259393,
+          "payoff_ratio": 1.131265521473039,
+          "avg_win": 5.130730822826834,
+          "avg_loss": -4.535390432606863,
+          "worst_net": -9.922788104089213
+        },
+        "largest_winner_removed": {
+          "trades": 56,
+          "avg_net_return": -1.2131024651262015,
+          "win_rate": 37.5,
+          "profit_factor": 0.5641576698632667,
+          "payoff_ratio": 0.9402627831054442,
+          "avg_win": 4.18733113763886,
+          "avg_loss": -4.453362626785238,
+          "worst_net": -9.712788104089212
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 56,
+          "avg_net_return": -1.4231024651262019,
+          "win_rate": 35.714285714285715,
+          "profit_factor": 0.5119020118231661,
+          "payoff_ratio": 0.921423621281699,
+          "avg_win": 4.179015876338987,
+          "avg_loss": -4.535390432606863,
+          "worst_net": -9.922788104089213
+        }
+      },
+      "closed": 57,
+      "active_months": 9,
+      "selected_orders": 57,
+      "execution_accounting": {
+        "closed": 57
+      },
+      "label_accounting": {
+        "closed": 57
+      },
+      "unresolved_selected": 0,
+      "slots": 356,
+      "slot_mean": -0.12235592217551547,
+      "month_blocks_vs_full_shape": null,
+      "month_blocks_vs_feature_eligible_full_shape": null,
+      "month_blocks_vs_corrected_low_open": {
+        "months": 9,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.43773946879795905,
+          0.498583419683826
+        ],
+        "point_delta_per_opportunity": 0.020690329915840633
+      }
+    }
+  },
+  "audit": {
+    "full_candidates": 757,
+    "feature_complete": 757,
+    "missing_features": 0,
+    "common_mature_days": 178,
+    "environment": {
+      "main_stock_catalog_codes": 3195,
+      "breadth_panel_codes": 3192,
+      "index_excluded": true,
+      "benchmark_coverage": 908,
+      "benchmark_sources": [
+        {
+          "source": "tdx",
+          "observations": 908,
+          "first_date": "2023-01-03",
+          "last_date": "2026-09-30"
+        }
+      ]
+    },
+    "predictions_use_no_label_fields": true,
+    "prefix_causality": "passed",
+    "full_candidate_days": {
+      "0": 9,
+      "1": 22,
+      "2": 28,
+      "more_than2": 119
+    },
+    "actual_selection_changes_vs_feature_control": {
+      "positive_only": {
+        "changed_days": 163,
+        "added_names": 17,
+        "removed_names": 272,
+        "replacement_pairs": 17,
+        "industry_or_missing_group_displacements": 2
+      }
+    }
+  }
+}

@@ -78,6 +78,7 @@ export function buildTradeSummaryText(input: {
     trades?: number
     win_rate?: number
     avg_net_return?: number
+    payoff_ratio?: number | null
     profit_factor?: number | null
     expectancy?: number
     avg_hold_days?: number
@@ -97,7 +98,7 @@ export function buildTradeSummaryText(input: {
     `Loci 成交回测 · ${input.strategy}`,
     `区间 ${input.range}`,
     `笔数 ${m.trades ?? 0} · 胜率 ${m.win_rate?.toFixed(1) ?? '—'}% · 均值 ${formatSignedPct(m.avg_net_return)} · 期望 ${formatSignedPct(m.expectancy)}`,
-    `PF ${m.profit_factor == null ? '—' : m.profit_factor === Infinity ? '∞' : m.profit_factor.toFixed(2)} · 均持仓 ${m.avg_hold_days?.toFixed(1) ?? '—'} 日`,
+    `盈亏比 ${m.payoff_ratio == null ? '—' : m.payoff_ratio === Infinity ? '∞' : m.payoff_ratio.toFixed(2)} · 利润因子 PF ${m.profit_factor == null ? '—' : m.profit_factor === Infinity ? '∞' : m.profit_factor.toFixed(2)} · 均持仓 ${m.avg_hold_days?.toFixed(1) ?? '—'} 日`,
   ]
   if (p?.available) {
     lines.push(

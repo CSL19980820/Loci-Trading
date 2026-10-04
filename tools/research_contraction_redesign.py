@@ -1,0 +1,491 @@
+"""Train-first mechanism study for contraction rebreakout; never changes live code.
+
+Use tools/isolated_check.py. Diagnose reads training only; run freezes all
+mechanisms before comparing them, nominates at most two using training only,
+then evaluates only those nominees and baseline in the later observed periods.
+"""
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import math
+import sys
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from tools.research_chinext_payoff_exits import (  # noqa: E402
+    BASELINE,
+    CutoffMarketStore,
+    common_maturity_mask,
+    context_evidence,
+    execute_split_context,
+    prepare,
+    sha256,
+    source_hashes,
+)
+from tools.research_chinext_payoff_filters import (  # noqa: E402
+    SPLITS,
+    independent_metrics,
+)
+from tools.research_impulse_scoring import (  # noqa: E402
+    keys,
+    now,
+    paired_bootstrap,
+    trade_key,
+)
+from tools.strategy_chinext_review import write_json  # noqa: E402
+
+SLUG = "contraction-rebreakout-v1"
+OUTPUT = ROOT / "docs/research/2026-10-04-contraction-redesign"
+VARIANTS = {
+    "baseline": {"mechanism": "original", "score": "S0", "entry": "next_open"},
+    "shape_without_momentum": {
+        "mechanism": "remove the 40-point momentum preference",
+        "score": "100*(15*C+15*D+10*V+20*L)/60", "entry": "next_open",
+    },
+    "support_efficiency": {
+        "mechanism": "prefer nearby support and small breakout extension",
+        "score": "45*clip(1-risk/12)+30*clip(1-extension/5)+25*C", "entry": "next_open",
+    },
+    "quiet_breakout": {
+        "mechanism": "contraction quality and moderate expansion instead of maximum volume",
+        "score": "35*C+25*D+25*clip(min(vr-1,(5-vr)/3))+15*L", "entry": "next_open",
+    },
+    "thrust_quality": {
+        "mechanism": "a decisive bullish body and expansion against prior volatility, not ten-day momentum",
+        "score": "45*body_efficiency+35*clip(range_atr-1)+20*C",
+        "entry": "next_open",
+    },
+    "decisive_breakout_gate": {
+        "mechanism": "reject indecisive candles and marginal breakouts, refill from full pool",
+        "score": "S0", "gate": "body_efficiency>=0.6 AND extension>=1", "entry": "next_open",
+    },
+    "close_cap_limit": {
+        "mechanism": "keep original picks but refuse a fill above prior close plus 1%",
+        "score": "S0", "entry": "next_dip", "limit": "raw_C(T)*1.01",
+    },
+    "platform_retest_limit": {
+        "mechanism": "one-session resting limit near the already-known breakout platform",
+        "score": "S0", "entry": "next_dip", "limit": "raw_C(T)*min(1,prior5high(T)/C(T)*1.005)",
+    },
+    "thrust_close_cap_limit": {
+        "mechanism": "decisive-breakout ranking plus the prior-close cap",
+        "score": "45*body_efficiency+35*clip(range_atr-1)+20*C",
+        "entry": "next_dip", "limit": "raw_C(T)*1.01",
+    },
+}
+BINS = {
+    "momentum": [-math.inf, 5, 10, 20, 30, math.inf],
+    "extension": [-math.inf, 1, 3, 5, math.inf],
+    "risk": [-math.inf, 5, 8, 12, math.inf],
+    "next_open_gap": [-math.inf, -1, 1, 3, math.inf],
+    "volume_ratio": [-math.inf, 2, 3, 5, math.inf],
+    "body_efficiency": [-math.inf, .3, .6, .8, math.inf],
+    "range_atr": [-math.inf, 1, 1.5, 2, math.inf],
+    "day_return": [-math.inf, 5, 8, 12, math.inf],
+}
+
+
+def sources() -> dict[str, str]:
+    paths = ["tools/research_contraction_redesign.py", "tools/research_chinext_payoff_filters.py",
+             "tools/research_impulse_scoring.py"]
+    return {**source_hashes(), **{p: sha256(ROOT / p) for p in paths}}
+
+
+def features(panels: dict, computed: Any) -> dict[str, pd.DataFrame]:
+    c, o, h, l = (panels[k] for k in ("close", "open", "high", "low"))
+    f = computed.factors
+    prior_support = l.shift(1).rolling(2).min()
+    true_range = pd.DataFrame(np.maximum.reduce([
+        (h-l).to_numpy(), (h-c.shift(1)).abs().to_numpy(), (l-c.shift(1)).abs().to_numpy(),
+    ]), index=c.index, columns=c.columns)
+    return {
+        "momentum": f["10日动量(%)"], "extension": f["突破幅度(%)"],
+        "risk": (c/prior_support-1)*100, "volume_ratio": f["突破量比"],
+        "body_efficiency": ((c-o)/(h-l).where(h.gt(l))).clip(0, 1),
+        "range_atr": (h-l)/true_range.rolling(14).mean().shift(1),
+        "day_return": f["当日涨幅(%)"], "C": f["回调缩量分(15)"]/15,
+        "D": f["回调深度分(15)"]/15, "V": f["再突破放量分(10)"]/10,
+        "L": f["收盘位置分(20)"]/20, "prior_high": f["前五日最高价"],
+        "prior_support": prior_support, "score": f["score"],
+    }
+
+
+def rank(candidates: pd.DataFrame, score: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    filtered = score.where(candidates & np.isfinite(score)).round(4)
+    ranks = filtered.reindex(columns=sorted(filtered.columns)).rank(axis=1, ascending=False, method="first").reindex(columns=filtered.columns)
+    return (ranks.le(2) & candidates).fillna(False).astype(bool), ranks
+
+
+def design(ctx: dict, computed: Any, f: dict, variant: str) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
+    candidates = computed.factors["条件候选"].fillna(False).astype(bool)
+    clip = lambda x: x.clip(0, 1)
+    old = f["score"]
+    support = 45*clip(1-f["risk"]/12)+30*clip(1-f["extension"]/5)+25*f["C"]
+    thrust = 45*f["body_efficiency"]+35*clip(f["range_atr"]-1)+20*f["C"]
+    scores = {
+        "baseline": old,
+        "shape_without_momentum": (15*f["C"]+15*f["D"]+10*f["V"]+20*f["L"])*100/60,
+        "support_efficiency": support,
+        "quiet_breakout": 35*f["C"]+25*f["D"]+25*clip(np.minimum(f["volume_ratio"]-1, (5-f["volume_ratio"])/3))+15*f["L"],
+        "thrust_quality": thrust,
+        "decisive_breakout_gate": old, "close_cap_limit": old,
+        "platform_retest_limit": old, "thrust_close_cap_limit": thrust,
+    }
+    score = scores[variant].where(np.isfinite(scores[variant]), old).where(candidates).clip(0, 100).round(4)
+    if variant == "decisive_breakout_gate":
+        candidates = candidates & f["body_efficiency"].ge(.6) & f["extension"].ge(1)
+    selected, _ = rank(candidates, score)
+    limit = None
+    if VARIANTS[variant]["entry"] == "next_dip":
+        raw = ctx["execution_panels"]["close"]
+        ratio = 1.01 if variant in {"close_cap_limit","thrust_close_cap_limit"} else (f["prior_high"]/ctx["panels"]["close"]*1.005).clip(upper=1)
+        limit = np.floor(raw*ratio*100+1e-9)/100
+    return selected, score, limit
+
+
+def prepare_context(db: Path, start: str, end: str):
+    store = CutoffMarketStore(db, end)
+    try:
+        ctx = prepare(store, SLUG, start, end)
+        computed = ctx["engine"].compute(ctx["panels"], ctx["resolved_params"])
+        f = features(ctx["panels"], computed)
+        baseline, _, _ = design(ctx, computed, f, "baseline")
+        pd.testing.assert_frame_equal(baseline.loc[start:end], ctx["signals"].loc[start:end].fillna(False).astype(bool))
+        return store, ctx, computed, f
+    except Exception:
+        store.close()
+        raise
+
+
+def bundles(trades: list, opportunities: int, censored: int = 0) -> dict:
+    winner = max(trades, key=lambda t: t.net_return_pct) if trades else None
+    reduced = [t for t in trades if t is not winner]
+    result = {}
+    for name, rows, cost in (("base", trades, .21), ("double_cost", trades, .42),
+                            ("winner_removed", reduced, .21), ("double_cost_winner_removed", reduced, .42)):
+        metrics = independent_metrics(rows, cost)
+        metrics["original_opportunity_mean"] = sum(t.gross_return_pct-cost for t in rows)/opportunities if opportunities and not censored else None
+        result[name] = metrics
+    result["largest_winner"] = winner.to_dict(include_factors=True) if winner else None
+    result["worst_net_return"] = min((t.net_return_pct for t in trades), default=None)
+    result["stop_rate_pct"] = 100*sum(t.exit_reason == "stop_loss" for t in trades)/len(trades) if trades else None
+    return result
+
+
+def diagnostics(db: Path, output: Path) -> None:
+    output.mkdir(parents=True, exist_ok=True)
+    if (output/"diagnosis.json").exists():
+        raise FileExistsError("Preserve the previous diagnosis")
+    before, dbhash = sources(), sha256(db)
+    write_json(output/"diagnosis-plan.json", {
+        "created_at": now(), "sources": before, "snapshot_sha256": dbhash,
+        "period": SPLITS["train"], "fixed_bins": {k: [str(x) for x in v] for k,v in BINS.items()},
+        "contract": "Only training prices/returns; original 4-session -6% exit and all shape candidates. Next-open gap is descriptive outcome information, never a signal feature.",
+        "prior_failed_work": "No repeat of exit grid, MA20/index filters, breakout_volume<=3 filter or T+1 close confirmation/T+2 open entry. Current historical observations are not untouched OOS.",
+    })
+    start, end = SPLITS["train"]
+    store, ctx, computed, f = prepare_context(db, start, end)
+    try:
+        candidates = computed.factors["条件候选"] & f["score"].notna()
+        run = execute_split_context({**ctx, "signals": candidates}, BASELINE.config(end), start, end, max_hold=4)
+        mature=common_maturity_mask(ctx["signals"].index,start,end,max_hold=4)
+        baseline = keys(ctx["signals"].where(mature,False,axis=0))
+        raw = ctx["execution_panels"]
+        factors = raw["__adjust_factor"]
+        gap = (raw["open"].shift(-1)*factors.shift(-1)/(raw["close"]*factors)-1)*100
+        rows = []
+        for t in run["closed_trades"]:
+            row = t.to_dict(include_factors=True)
+            row.update({k: float(v.at[t.signal_date,t.code]) for k,v in f.items()})
+            row["next_open_gap"] = float(gap.at[t.signal_date,t.code])
+            row["baseline_selected"] = trade_key(t) in baseline
+            rows.append(row)
+        frame = pd.DataFrame(rows)
+        frame.to_csv(output/"training-diagnostic-events.csv",index=False)
+        groups = []
+        for cohort in ("all_shape", "baseline_top2"):
+            subset = frame if cohort == "all_shape" else frame[frame.baseline_selected]
+            for feature, edges in BINS.items():
+                bins = pd.cut(subset[feature], edges, right=False)
+                for interval, data in subset.groupby(bins,observed=False):
+                    v = data.net_return_pct.to_numpy()
+                    wins, losses = v[v>0], v[v<=0]
+                    groups.append(dict(cohort=cohort,feature=feature,interval=str(interval),trades=len(v),
+                        mean_net=float(v.mean()) if len(v) else None,
+                        win_rate=float((v>0).mean()*100) if len(v) else None,
+                        profit_factor=float(wins.sum()/abs(losses.sum())) if len(wins) and len(losses) and losses.sum()<0 else None,
+                        stop_rate=float(data.exit_reason.eq("stop_loss").mean()*100) if len(v) else None))
+        pd.DataFrame(groups).to_csv(output/"training-diagnostic-buckets.csv",index=False)
+        baseline_trades = [t for t in run["closed_trades"] if trade_key(t) in baseline]
+        result = dict(completed_at=now(),context=context_evidence(ctx),all_shape_accounting=run["accounting"],
+            baseline=bundles(baseline_trades,len(baseline)),buckets=groups,
+            caution="Associations within the used training data, not proven causes; buckets prespecified and not searched for optimal thresholds.")
+        if sources()!=before or sha256(db)!=dbhash:
+            raise AssertionError("Diagnosis sources/snapshot changed")
+        write_json(output/"diagnosis.json",result)
+        print(json.dumps({"training_candidates":len(rows),"baseline":result["baseline"]["base"],"output":str(output)}),flush=True)
+    finally:
+        store.close()
+
+
+def evaluate(db: Path, output: Path, segment: str, variants: list[str]) -> tuple[dict, dict, list]:
+    start,end = SPLITS[segment]
+    store,ctx,computed,f = prepare_context(db,start,end)
+    try:
+        mature = common_maturity_mask(ctx["signals"].index,start,end,max_hold=4)
+        baseline_mask,_,_ = design(ctx,computed,f,"baseline")
+        baseline_keys = keys(baseline_mask.where(mature,False,axis=0))
+        candidates = computed.factors["条件候选"] & f["score"].notna()
+        _,original_ranks = rank(candidates,f["score"])
+        # Test formulas on an independently recomputed prefix, including source scores.
+        cutoff = ctx["signals"].index[len(ctx["signals"])//2]
+        prefix = {k:v.loc[:cutoff] if isinstance(v,pd.DataFrame) else v for k,v in ctx["panels"].items()}
+        prefix_computed = ctx["engine"].compute(prefix,ctx["resolved_params"])
+        prefix_f = features(prefix,prefix_computed)
+        prefix_ctx = {**ctx,"panels":prefix,"execution_panels":{k:v.loc[:cutoff] if isinstance(v,pd.DataFrame) else v for k,v in ctx["execution_panels"].items()}}
+        for name in f:
+            pd.testing.assert_frame_equal(prefix_f[name],f[name].loc[:cutoff])
+        source_records=[]
+        for d,c in sorted(keys(candidates.where(mature,False,axis=0))):
+            source_records.append({"signal_date":d,"code":c,"original_rank":float(original_ranks.at[d,c]),**{k:float(v.at[d,c]) for k,v in f.items()}})
+        pd.DataFrame(source_records).to_csv(output/f"{segment}-candidates.csv",index=False)
+        rows,closed,dailies = {},{},[]
+        for variant in variants:
+            selected,score,limit = design(ctx,computed,f,variant)
+            prefix_selected,prefix_score,prefix_limit = design(prefix_ctx,prefix_computed,prefix_f,variant)
+            pd.testing.assert_frame_equal(prefix_selected,selected.loc[:cutoff])
+            pd.testing.assert_frame_equal(prefix_score,score.loc[:cutoff])
+            if limit is not None:
+                pd.testing.assert_frame_equal(prefix_limit,limit.loc[:cutoff])
+            planned = selected.where(mature,False,axis=0)
+            planned_keys = keys(planned)
+            engine = copy.copy(ctx["engine"])
+            engine.entry_timing = VARIANTS[variant]["entry"]
+            executable = planned.copy()
+            event_cancelled = set()
+            if limit is not None:
+                # Execution-only cancellation: never use later OHLC to select/refill.
+                # Without historical corporate-action announcement timestamps, avoid
+                # guessing the raw limit-price conversion across overnight factor changes.
+                factors = ctx["execution_panels"]["__adjust_factor"]
+                stable = np.isfinite(factors) & np.isfinite(factors.shift(-1)) & (factors-factors.shift(-1)).abs().le(1e-10)
+                executable &= stable
+                event_cancelled = planned_keys-keys(executable)
+            run = execute_split_context({**ctx,"engine":engine,"signals":executable,"entry_price_panel":limit},BASELINE.config(end),start,end,max_hold=4)
+            closed[variant] = run["closed_trades"]
+            outcomes = {trade_key(t):t for t in closed[variant]}
+            base_outcomes = {trade_key(t):t for t in closed["baseline"]}
+            censored = run["accounting"]["data_end"]+run["accounting"]["boundary_excluded"]
+            if censored:
+                raise AssertionError("Unknown open outcomes: do not zero-fill opportunity returns")
+            if len(planned_keys) != len(run["all_trades"])+sum(run["accounting"]["skipped"].values())+len(event_cancelled):
+                raise AssertionError("Planned signal/execution/cancellation accounting mismatch")
+            if variant == "baseline":
+                prior = ROOT/f"docs/research/2026-10-04-multi-strategy-scoring/{SLUG}/{segment}-baseline-trades.csv"
+                old = pd.read_csv(prior,dtype={"code":str,"signal_date":str})
+                old_map={(r.signal_date,r.code):r.net_return_pct for r in old.itertuples() if r.exit_reason!="data_end"}
+                if old_map.keys()!=outcomes.keys() or any(not np.isclose(old_map[k],outcomes[k].net_return_pct,atol=1e-9,rtol=0) for k in old_map):
+                    raise AssertionError("Baseline differs from previous four-session study")
+            signals=[]
+            for d,c in sorted(planned_keys):
+                t=outcomes.get((d,c))
+                entry_row=ctx["signals"].index.get_loc(d)+1
+                raw=ctx["execution_panels"]
+                entry_day=str(raw["open"].index[entry_row])
+                next_open=float(raw["open"].iloc[entry_row][c])
+                next_low=float(raw["low"].iloc[entry_row][c])
+                target=float(limit.at[d,c]) if limit is not None else None
+                fill_kind=("open" if t and (target is None or next_open<=target) else
+                    "limit_touch" if t else "factor_change_cancelled" if (d,c) in event_cancelled else "unfilled")
+                signals.append(dict(signal_date=d,code=c,score=float(score.at[d,c]),original_rank=float(original_ranks.at[d,c]),
+                    baseline_selected=(d,c) in baseline_keys,closed=t is not None,
+                    event_cancelled=(d,c) in event_cancelled,target_price=target,
+                    entry_day=entry_day,entry_day_open=next_open,entry_day_high=float(raw["high"].iloc[entry_row][c]),
+                    entry_day_low=next_low,fill_kind=fill_kind,
+                    limit_only_touched=(fill_kind=="limit_touch" and next_low>target-.01+1e-9) if target is not None else False,
+                    net_pct=t.net_return_pct if t else 0.))
+            pd.DataFrame(signals,columns=["signal_date","code","score","original_rank","baseline_selected","closed","event_cancelled","target_price","entry_day","entry_day_open","entry_day_high","entry_day_low","fill_kind","limit_only_touched","net_pct"]).to_csv(output/f"{segment}-{variant}-signals.csv",index=False)
+            pd.DataFrame([t.to_dict(include_factors=True) for t in run["all_trades"]]).to_csv(output/f"{segment}-{variant}-trades.csv",index=False)
+            opportunities=[]
+            for d,c in sorted(baseline_keys):
+                t=outcomes.get((d,c));base_t=base_outcomes.get((d,c))
+                opportunities.append(dict(signal_date=d,code=c,planned=(d,c) in planned_keys,closed=t is not None,
+                    net_pct=t.net_return_pct if t else 0.,baseline_net_pct=base_t.net_return_pct if base_t else 0.))
+            pd.DataFrame(opportunities).to_csv(output/f"{segment}-{variant}-original-opportunities.csv",index=False)
+            refill_keys=planned_keys-baseline_keys
+            pd.DataFrame([s for s in signals if (s["signal_date"],s["code"]) in refill_keys],columns=list(signals[0]) if signals else ["signal_date","code","net_pct"]).to_csv(output/f"{segment}-{variant}-refills.csv",index=False)
+            daily=[]
+            for d in sorted({d for d,c in baseline_keys}):
+                n=sum(date==d for date,c in baseline_keys)
+                total=sum(t.net_return_pct for t in closed[variant] if t.signal_date==d)
+                base_total=sum(t.net_return_pct for t in closed["baseline"] if t.signal_date==d)
+                daily.append(dict(segment=segment,variant=variant,signal_date=d,opportunities=n,
+                    net_sum=total,base_net_sum=base_total,delta_net_sum=total-base_total))
+            daily_frame=pd.DataFrame(daily)
+            assert np.isclose(daily_frame.net_sum.sum(),sum(t.net_return_pct for t in closed[variant]))
+            dailies.append(daily_frame)
+            bundle=bundles(closed[variant],len(baseline_keys),censored)
+            rows[variant]=dict(definition=VARIANTS[variant],metrics=bundle,accounting=run["accounting"],
+                original_opportunities=len(baseline_keys),planned_signals=len(planned_keys),event_cancelled=len(event_cancelled),
+                selected_retention_pct=100*len(planned_keys)/len(baseline_keys),filled_retention_pct=100*len(closed[variant])/len(baseline_keys),
+                selected_months=len({d[:7] for d,c in planned_keys}),closed_months=len({t.signal_date[:7] for t in closed[variant]}),
+                same_original_code_mean=sum(t.net_return_pct for k,t in outcomes.items() if k in baseline_keys)/len(baseline_keys),
+                refill_picks=len(refill_keys),refill_trades=sum(k in outcomes for k in refill_keys),
+                refill_net_sum=sum(outcomes[k].net_return_pct for k in refill_keys if k in outcomes),
+                limit_only_touched_trades=sum(s["limit_only_touched"] for s in signals),
+                one_tick_penetration_stress_opportunity=(sum(s["net_pct"] for s in signals if not s["limit_only_touched"])/len(baseline_keys)),
+                paired_bootstrap=paired_bootstrap(daily_frame),low_frequency_warning=len(closed[variant])<30)
+            print(f"{segment}/{variant}: n={len(closed[variant])} mean={bundle['base']['avg_net_return']} opportunity={bundle['base']['original_opportunity_mean']} PF={bundle['base']['profit_factor']}",flush=True)
+        return dict(context=context_evidence(ctx),prefix_cutoff=str(cutoff),baseline_reproduced=True,
+            raw_candidates=len(source_records),runs=rows),closed,dailies
+    finally:
+        store.close()
+
+
+def nominate(result: dict) -> list[str]:
+    runs=result["runs"];base=runs["baseline"]["metrics"]["base"]
+    budget=[];quality=[]
+    for variant,row in runs.items():
+        if variant=="baseline":
+            continue
+        m=row["metrics"];b=m["base"]
+        pf_ok=(b["profit_factor"] is not None and b["profit_factor"]>1) or (b["losses"]==0 and b["wins"]>0)
+        if (b["trades"]>=20 and row["closed_months"]>=4 and pf_ok and b["avg_net_return"]>0
+                and m["double_cost"]["original_opportunity_mean"]>0
+                and m["winner_removed"]["original_opportunity_mean"]>0):
+            if b["original_opportunity_mean"]>base["original_opportunity_mean"]:
+                budget.append(variant)
+            if b["avg_net_return"]>base["avg_net_return"] and (b["profit_factor"] or math.inf)>(base["profit_factor"] or math.inf):
+                quality.append(variant)
+    budget.sort(key=lambda v:(-runs[v]["metrics"]["base"]["original_opportunity_mean"],
+        -(runs[v]["metrics"]["base"]["profit_factor"] or math.inf),v))
+    selected=budget[:1]
+    quality.sort(key=lambda v:(-runs[v]["metrics"]["double_cost_winner_removed"]["avg_net_return"],
+        -runs[v]["metrics"]["base"]["original_opportunity_mean"],v))
+    selected.extend([v for v in quality if v not in selected][:1])
+    return selected
+
+
+def run_study(db: Path,output: Path) -> None:
+    if not (output/"diagnosis.json").exists():
+        raise ValueError("Run training diagnosis first")
+    if (output/"PLAN.json").exists():
+        raise FileExistsError("Use a new directory; do not overwrite frozen research")
+    before,dbhash=sources(),sha256(db)
+    plan=dict(created_at=now(),strategy=SLUG,variants=VARIANTS,splits=SPLITS,source_sha256=before,
+        snapshot_sha256=dbhash,diagnosis_sha256=sha256(output/"diagnosis.json"),
+        features="C,D,V,L are original contraction/depth/volume/close-location components normalized 0..1; momentum/extension/risk are percentages; risk=C(T)/min(L(T-2),L(T-1))-1; body_efficiency=(C-O)/(H-L); range_atr=(H-L)/prior14-session average true range. clip=[0,1]. No long-trend factor.",
+        exit=BASELINE.to_dict(),cost_pct=.21,stress_cost_pct=.42,maturity_sessions=4,
+        selection="Only original complete shape candidates, gates unchanged except named decisive-breakout gate. Round4 then code ascending Top2; gated stocks allow rank3+ refill. Equal original Top2 opportunity budget with unfilled/filtered=0; censored outcomes forbidden from zero-fill.",
+        diagnosis_decision="Training buckets did not support assuming high gaps, high momentum or distant pullback support were inherently bad. Retain support-efficiency and no-momentum as narrow controls. Replace provisional moderate-momentum/risk-gate/support-limit designs with body/ATR thrust score, body>=0.6 and extension>=1 gate, and thrust+close-limit before freezing. No candidate performance or later-period results used for this decision.",
+        entry="next_open or one-session next_dip conditional-order proxy. Limits computed from T-known raw coordinates and floored to 0.01. T+1 O<=limit fills at O, else L<=limit fills at limit; otherwise cancelled. No T+1 close/high signal input. Overnight economic-factor changes cancel conditional orders without replacement; strict open-at-limit guard retained.",
+        nomination="At most 2, train-only; at least 20 closed trades across 4 closed-trade months, PF>1 (or no losses), mean>0, double-cost and winner-removed opportunity means>0; <30 flagged low-frequency. Budget representative: opportunity mean>baseline, highest opportunity mean then PF/id. Quality representative: trade mean and PF>baseline, highest double-cost-and-winner-removed trade mean then opportunity mean/id; choose a distinct candidate. Quality nominee need not beat budget baseline; opportunity sacrifice must be reported. Later run only baseline and nominees, no rescue/tuning.",
+        limitations=["All periods previously observed, retrospective only; multiple mechanism search and training selection bias remain",
+            "Current catalog/names/status and factor revisions; not strict point-in-time or survivor-free",
+            "Daily touch is conditional-order proxy, no queue/partial fills/order timestamps; T+1 risk remains",
+            "Independent overlapping trade events, no account NAV, funding/capacity, minimum commission or portfolio max drawdown",
+            "Month-block bootstrap descriptive only; no multiple-testing correction",
+            "Known prior failed exits/filters/delayed confirmation are not re-searched"])
+    write_json(output/"PLAN.json",plan)
+    write_json(output/"freeze-receipt.json",dict(created_at=now(),plan_sha256=sha256(output/"PLAN.json")))
+    summary=dict(plan_sha256=sha256(output/"PLAN.json"),segments={})
+    all_trades={};all_daily=[];nominees=[]
+    for segment in SPLITS:
+        if sources()!=before:
+            raise AssertionError("Sources changed after freeze")
+        variants=list(VARIANTS) if segment=="train" else ["baseline",*nominees]
+        result,closed,daily=evaluate(db,output,segment,variants)
+        summary["segments"][segment]=result
+        write_json(output/f"{segment}-summary.json",result)
+        for variant,trades in closed.items():
+            all_trades.setdefault(variant,[]).extend(trades)
+        all_daily.extend(daily)
+        if segment=="train":
+            nominees=nominate(result)
+            summary["training_nominees"]=nominees
+            write_json(output/"training-nomination.json",dict(created_at=now(),nominees=nominees,
+                plan_sha256=summary["plan_sha256"],training_sha256=sha256(output/"train-summary.json")))
+    daily=pd.concat(all_daily,ignore_index=True)
+    daily.to_csv(output/"paired-daily-results.csv",index=False)
+    summary["pooled"]={}
+    for variant in ["baseline",*nominees]:
+        frame=daily[daily.variant.eq(variant)];later=frame[frame.segment.ne("train")]
+        opportunities=int(frame.opportunities.sum())
+        post_trades=[t for t in all_trades[variant] if t.signal_date>="2025-07-01"]
+        summary["pooled"][variant]=dict(metrics=bundles(all_trades[variant],opportunities),
+            original_opportunities=opportunities,paired_bootstrap=paired_bootstrap(frame),
+            post_train_metrics=bundles(post_trades,int(later.opportunities.sum())),post_train_bootstrap=paired_bootstrap(later))
+    if sources()!=before or sha256(db)!=dbhash:
+        raise AssertionError("Source or snapshot changed during study")
+    summary.update(completed_at=now(),source_and_snapshot_unchanged=True)
+    write_json(output/"summary.json",summary)
+    table=[]
+    for segment,data in summary["segments"].items():
+        for variant,row in data["runs"].items():
+            table.append(dict(segment=segment,variant=variant,**row["metrics"]["base"],
+                filled_retention_pct=row["filled_retention_pct"],refill_trades=row["refill_trades"],
+                double_cost_opportunity=row["metrics"]["double_cost"]["original_opportunity_mean"],
+                winner_removed_opportunity=row["metrics"]["winner_removed"]["original_opportunity_mean"]))
+    pd.DataFrame(table).to_csv(output/"metrics.csv",index=False)
+    print(json.dumps({"output":str(output),"nominees":nominees,"unchanged":True}),flush=True)
+
+
+def self_check() -> None:
+    from src.backtest.application.engine import run_backtest
+
+    dates=pd.bdate_range("2025-01-01",periods=8).strftime("%Y-%m-%d")
+    codes=["300001","300002","300003"]
+    p={name:pd.DataFrame(v,index=dates,columns=codes) for name,v in
+       {"open":10.,"high":10.5,"low":9.5,"close":10.,"volume":100.}.items()}
+    p["__adjust_factor"]=pd.DataFrame(1.,index=dates,columns=codes)
+    signals=pd.DataFrame(False,index=dates,columns=codes);signals.iloc[1]=True
+    target=pd.DataFrame(9.8,index=dates,columns=codes)
+    p["open"].iloc[2,0]=9.7
+    p["low"].iloc[2,2]=9.9
+    result=run_backtest(signals,p,entry_timing="next_dip",entry_price_panel=target,config=BASELINE.config(dates[-1]))
+    found={t.code:t for t in result.trades}
+    assert found["300001"].entry_price==9.7 and found["300002"].entry_price==9.8
+    assert "300003" not in found and result.skipped["次日低吸未触价"]==1
+    assert all(t.entry_date==dates[2] and t.exit_date==dates[5] for t in found.values())
+    assert all(np.isclose(t.gross_return_pct-t.net_return_pct,.21) for t in found.values())
+    candidates=pd.DataFrame([[True,True,True]],columns=["300003","300002","300001"])
+    score=pd.DataFrame([[80.00001,80.00002,80.00003]],columns=candidates.columns)
+    selected,_=rank(candidates,score)
+    assert set(selected.columns[selected.iloc[0]])=={"300001","300002"}
+    fake={"runs":{}}
+    for key_,op,trades in (("baseline",.2,100),("small_sample",.3,25),("worse_opportunity",.1,90)):
+        fake["runs"][key_] = {"closed_months":4,"metrics": {"base":dict(profit_factor=1.5,losses=3,wins=trades-3,trades=trades,avg_net_return=1.,original_opportunity_mean=op),
+            "double_cost":dict(original_opportunity_mean=op-.05),"winner_removed":dict(original_opportunity_mean=op-.03),
+            "double_cost_winner_removed":dict(avg_net_return=.5)}}
+    assert nominate(fake)==["small_sample"]
+    print("Passed: next-day open-better/limit-touch/unfilled, four-day holding, cost, rounded code ties, low-frequency nomination and opportunity requirement",flush=True)
+
+
+def main() -> None:
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("phase",choices=["diagnose","run","self-check"])
+    parser.add_argument("--db",type=Path)
+    parser.add_argument("--output",type=Path,default=OUTPUT)
+    args=parser.parse_args()
+    if args.phase=="self-check":
+        self_check()
+        return
+    if args.db is None:
+        parser.error("--db is required")
+    db=args.db.resolve(strict=True);output=args.output.resolve()
+    if args.phase=="diagnose":
+        diagnostics(db,output)
+    else:
+        run_study(db,output)
+
+
+if __name__=="__main__":
+    main()

@@ -1,0 +1,51 @@
+{
+  "code": "300507",
+  "requested_date": "2025-02-25",
+  "status": "valid",
+  "accepted_attempt": 1,
+  "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-02-25-300507.attempt1.raw.json",
+  "raw_sha256": "d606a84a55f985bf3f2d23ccb45270046a81ee9065b0bfa3f1a8454e839f7f5a",
+  "attempts": [
+    {
+      "code": "300507",
+      "requested_date": "2025-02-25",
+      "provider": "tdx",
+      "attempt": 1,
+      "started_at": "2026-10-04T17:42:13.066839+08:00",
+      "method": "get_history_minute_time_data",
+      "reused_existing_probe": false,
+      "source_timestamp_present": false,
+      "sdk_auto_retry": false,
+      "status": "valid",
+      "response_received": true,
+      "retryable_transport_failure": false,
+      "endpoint": "110.41.147.114:7709",
+      "quality": {
+        "passed": true,
+        "reason": "QA_pass",
+        "source_timestamp_present": false,
+        "date_evidence": "request-date binding plus QA; source dates absent; not a date proof",
+        "raw_volume_sum": 647598.0,
+        "sampled_share_sum": 64759800.0,
+        "daily_volume": 64759800.0,
+        "volume_signed_diff": 0.0,
+        "volume_abs_diff": 0.0,
+        "volume_relative_diff": 0.0,
+        "volume_tolerance": 64759.8,
+        "final_price_signed_diff": 8.881784197001252e-16,
+        "final_price_abs_diff": 8.881784197001252e-16,
+        "outside_expanded_daily_range_points": 0,
+        "zero_volume_points": 2,
+        "price_exact_at_raw_cent": true,
+        "volume_exact": true,
+        "raw_positive_min": 7.59,
+        "raw_positive_max": 7.930000000000001,
+        "match_class": "exact"
+      },
+      "raw_file": "docs\\research\\2026-10-04-contraction-sampled-entry\\cache\\train\\2025-02-25-300507.attempt1.raw.json",
+      "raw_sha256": "d606a84a55f985bf3f2d23ccb45270046a81ee9065b0bfa3f1a8454e839f7f5a",
+      "completed_at": "2026-10-04T17:42:13.189203+08:00"
+    }
+  ],
+  "completed_at": "2026-10-04T17:42:13.190243+08:00"
+}

@@ -1,0 +1,1420 @@
+{
+  "verified_at": "2026-10-04T13:08:45.019525+08:00",
+  "status": "passed",
+  "method": "Independent stdlib/numpy reconstruction from CSV; no research metric/bootstrap/ranking helpers imported",
+  "scope": "All 15 segment-variant bundles, original-candidate Top1 reranking, pooled metrics and stress diagnostics, paired month-block CIs, nomination/freeze receipts",
+  "round_trip_cost_pct": 0.31,
+  "stress_cost_pct": 0.62,
+  "segments": {
+    "train": {
+      "baseline": {
+        "opportunities": 208,
+        "closed": 207,
+        "skipped": {
+          "入场日涨停开盘买不进": 1
+        },
+        "metrics": {
+          "base": {
+            "trades": 207,
+            "wins": 103,
+            "losses": 104,
+            "win_rate": 49.75845410628019,
+            "avg_net_return": 0.7009998832419323,
+            "profit_factor": 1.3222377554268148,
+            "payoff_ratio": 1.3350750151882402,
+            "avg_win": 5.780750115613041,
+            "avg_loss": -4.3299065968948405
+          },
+          "double_cost": {
+            "trades": 207,
+            "wins": 97,
+            "losses": 110,
+            "win_rate": 46.85990338164252,
+            "avg_net_return": 0.39099988324193197,
+            "profit_factor": 1.167307914387249,
+            "payoff_ratio": 1.3237512431195606,
+            "avg_win": 5.821624418074396,
+            "avg_loss": -4.397823570201241
+          },
+          "largest_winner_removed": {
+            "trades": 206,
+            "wins": 102,
+            "losses": 104,
+            "win_rate": 49.51456310679612,
+            "avg_net_return": 0.5823812973769482,
+            "profit_factor": 1.2664175146981211,
+            "payoff_ratio": 1.2912492306725942,
+            "avg_win": 5.590988562124653,
+            "avg_loss": -4.3299065968948405
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 206,
+            "wins": 96,
+            "losses": 110,
+            "win_rate": 46.601941747572816,
+            "avg_net_return": 0.27238129737694816,
+            "profit_factor": 1.1159882555623546,
+            "payoff_ratio": 1.2787365428318647,
+            "avg_win": 5.6236577081436225,
+            "avg_loss": -4.397823570201241
+          }
+        },
+        "opportunity_mean": 0.6976296914955766,
+        "added": 0,
+        "removed": 0,
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            0.0,
+            0.0
+          ],
+          "point_delta_per_opportunity": 0.0
+        }
+      },
+      "low80": {
+        "opportunities": 208,
+        "closed": 207,
+        "skipped": {
+          "入场日涨停开盘买不进": 1
+        },
+        "metrics": {
+          "base": {
+            "trades": 207,
+            "wins": 106,
+            "losses": 101,
+            "win_rate": 51.20772946859904,
+            "avg_net_return": 0.7675902130772525,
+            "profit_factor": 1.366637572360509,
+            "payoff_ratio": 1.30217353592841,
+            "avg_win": 5.587406860909816,
+            "avg_loss": -4.290831219301478
+          },
+          "double_cost": {
+            "trades": 207,
+            "wins": 101,
+            "losses": 106,
+            "win_rate": 48.792270531400966,
+            "avg_net_return": 0.4575902130772524,
+            "profit_factor": 1.2033951387621658,
+            "payoff_ratio": 1.26296915553257,
+            "avg_win": 5.548727318759239,
+            "avg_loss": -4.393398915921622
+          },
+          "largest_winner_removed": {
+            "trades": 206,
+            "wins": 105,
+            "losses": 101,
+            "win_rate": 50.970873786407765,
+            "avg_net_return": 0.612157559025935,
+            "profit_factor": 1.2909830095761552,
+            "payoff_ratio": 1.2418027044494446,
+            "avg_win": 5.328365812464684,
+            "avg_loss": -4.290831219301478
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 206,
+            "wins": 100,
+            "losses": 106,
+            "win_rate": 48.54368932038835,
+            "avg_net_return": 0.302157559025935,
+            "profit_factor": 1.133657760479193,
+            "payoff_ratio": 1.2016772261079447,
+            "avg_win": 5.279447422470346,
+            "avg_loss": -4.393398915921622
+          }
+        },
+        "opportunity_mean": 0.7638998755143811,
+        "added": 71,
+        "removed": 71,
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.5591375453319318,
+            0.9251087293376135
+          ],
+          "point_delta_per_opportunity": 0.06627018401880437
+        }
+      },
+      "context70": {
+        "opportunities": 208,
+        "closed": 207,
+        "skipped": {
+          "入场日涨停开盘买不进": 1
+        },
+        "metrics": {
+          "base": {
+            "trades": 207,
+            "wins": 111,
+            "losses": 96,
+            "win_rate": 53.62318840579711,
+            "avg_net_return": 0.6042367651542371,
+            "profit_factor": 1.2669789226164325,
+            "payoff_ratio": 1.0957655546952927,
+            "avg_win": 5.34745239761112,
+            "avg_loss": -4.8801063098740345
+          },
+          "double_cost": {
+            "trades": 207,
+            "wins": 102,
+            "losses": 105,
+            "win_rate": 49.275362318840585,
+            "avg_net_return": 0.2942367651542373,
+            "profit_factor": 1.1218188962652635,
+            "payoff_ratio": 1.15481356968483,
+            "avg_win": 5.498892148617176,
+            "avg_loss": -4.761714178781191
+          },
+          "largest_winner_removed": {
+            "trades": 206,
+            "wins": 110,
+            "losses": 96,
+            "win_rate": 53.398058252427184,
+            "avg_net_return": 0.4851484554150412,
+            "profit_factor": 1.2133248050638568,
+            "payoff_ratio": 1.0589016480557294,
+            "avg_win": 5.167552614212779,
+            "avg_loss": -4.8801063098740345
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 206,
+            "wins": 101,
+            "losses": 105,
+            "win_rate": 49.029126213592235,
+            "avg_net_return": 0.1751484554150413,
+            "profit_factor": 1.0721640518135815,
+            "payoff_ratio": 1.1146259944596641,
+            "avg_win": 5.307530401856668,
+            "avg_loss": -4.761714178781191
+          }
+        },
+        "opportunity_mean": 0.6013317807063803,
+        "added": 73,
+        "removed": 73,
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.7542598029227318,
+            0.6117314566550435
+          ],
+          "point_delta_per_opportunity": -0.09629791078919629
+        }
+      },
+      "trend80": {
+        "opportunities": 208,
+        "closed": 207,
+        "skipped": {
+          "入场日涨停开盘买不进": 1
+        },
+        "metrics": {
+          "base": {
+            "trades": 207,
+            "wins": 103,
+            "losses": 104,
+            "win_rate": 49.75845410628019,
+            "avg_net_return": 0.33093765499803535,
+            "profit_factor": 1.1378345164583477,
+            "payoff_ratio": 1.1488814535113414,
+            "avg_win": 5.490354957475483,
+            "avg_loss": -4.778869865724823
+          },
+          "double_cost": {
+            "trades": 207,
+            "wins": 95,
+            "losses": 112,
+            "win_rate": 45.893719806763286,
+            "avg_net_return": 0.020937654998035293,
+            "profit_factor": 1.0081630073869605,
+            "payoff_ratio": 1.1885711244983113,
+            "avg_win": 5.634499541099724,
+            "avg_loss": -4.740565730534647
+          },
+          "largest_winner_removed": {
+            "trades": 206,
+            "wins": 102,
+            "losses": 104,
+            "win_rate": 49.51456310679612,
+            "avg_net_return": 0.2105226505493432,
+            "profit_factor": 1.0872584523757216,
+            "payoff_ratio": 1.1085772455595595,
+            "avg_win": 5.2977463926328054,
+            "avg_loss": -4.778869865724823
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 206,
+            "wins": 94,
+            "losses": 112,
+            "win_rate": 45.63106796116505,
+            "avg_net_return": -0.09947734945065698,
+            "profit_factor": 0.9614039171398716,
+            "payoff_ratio": 1.1455025395709109,
+            "avg_win": 5.430330083330269,
+            "avg_loss": -4.740565730534647
+          }
+        },
+        "opportunity_mean": 0.3293466085797755,
+        "added": 51,
+        "removed": 51,
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.744250151469304,
+            0.010590560984873066
+          ],
+          "point_delta_per_opportunity": -0.3682830829158012
+        }
+      },
+      "context80": {
+        "opportunities": 208,
+        "closed": 207,
+        "skipped": {
+          "入场日涨停开盘买不进": 1
+        },
+        "metrics": {
+          "base": {
+            "trades": 207,
+            "wins": 102,
+            "losses": 105,
+            "win_rate": 49.275362318840585,
+            "avg_net_return": 0.27569793005661386,
+            "profit_factor": 1.1142759226407113,
+            "payoff_ratio": 1.14704874389485,
+            "avg_win": 5.455589553277518,
+            "avg_loss": -4.7561967896436945
+          },
+          "double_cost": {
+            "trades": 207,
+            "wins": 93,
+            "losses": 114,
+            "win_rate": 44.927536231884055,
+            "avg_net_return": -0.03430206994338619,
+            "profit_factor": 0.9867004147036423,
+            "payoff_ratio": 1.2095037341528518,
+            "avg_win": 5.664413336606868,
+            "avg_loss": -4.683254112129119
+          },
+          "largest_winner_removed": {
+            "trades": 206,
+            "wins": 101,
+            "losses": 105,
+            "win_rate": 49.029126213592235,
+            "avg_net_return": 0.1550147716033518,
+            "profit_factor": 1.0639427324025792,
+            "payoff_ratio": 1.1060790782403052,
+            "avg_win": 5.260729761018596,
+            "avg_loss": -4.7561967896436945
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 206,
+            "wins": 92,
+            "losses": 114,
+            "win_rate": 44.66019417475729,
+            "avg_net_return": -0.1549852283966483,
+            "profit_factor": 0.9401994809492593,
+            "payoff_ratio": 1.1650297916110388,
+            "avg_win": 5.4561305623153284,
+            "avg_loss": -4.683254112129119
+          }
+        },
+        "opportunity_mean": 0.2743724592390339,
+        "added": 55,
+        "removed": 55,
+        "bootstrap": {
+          "months": 18,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.8909521867797902,
+            0.1188729426186747
+          ],
+          "point_delta_per_opportunity": -0.42325723225654277
+        }
+      }
+    },
+    "validation_2025h2": {
+      "baseline": {
+        "opportunities": 76,
+        "closed": 76,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 76,
+            "wins": 34,
+            "losses": 42,
+            "win_rate": 44.73684210526316,
+            "avg_net_return": 0.6064135435592327,
+            "profit_factor": 1.2878243743589002,
+            "payoff_ratio": 1.590841874208053,
+            "avg_win": 6.065025606000654,
+            "avg_loss": -3.812462887940967
+          },
+          "double_cost": {
+            "trades": 76,
+            "wins": 32,
+            "losses": 44,
+            "win_rate": 42.10526315789473,
+            "avg_net_return": 0.2964135435592328,
+            "profit_factor": 1.1300186276616075,
+            "payoff_ratio": 1.5537756130347107,
+            "avg_win": 6.118453758326796,
+            "avg_loss": -3.9377975217262677
+          },
+          "largest_winner_removed": {
+            "trades": 75,
+            "wins": 33,
+            "losses": 42,
+            "win_rate": 44.0,
+            "avg_net_return": 0.2205387546979147,
+            "profit_factor": 1.1032978461412375,
+            "payoff_ratio": 1.4041972587252114,
+            "avg_win": 5.353449936238309,
+            "avg_loss": -3.812462887940967
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 75,
+            "wins": 31,
+            "losses": 44,
+            "win_rate": 41.333333333333336,
+            "avg_net_return": -0.08946124530208521,
+            "profit_factor": 0.9612751142748455,
+            "payoff_ratio": 1.3643904847772002,
+            "avg_win": 5.3726934696225594,
+            "avg_loss": -3.9377975217262677
+          }
+        },
+        "opportunity_mean": 0.6064135435592329,
+        "added": 0,
+        "removed": 0,
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            0.0,
+            0.0
+          ],
+          "point_delta_per_opportunity": 0.0
+        }
+      },
+      "low80": {
+        "opportunities": 76,
+        "closed": 76,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 76,
+            "wins": 29,
+            "losses": 47,
+            "win_rate": 38.15789473684211,
+            "avg_net_return": 0.3903428646220057,
+            "profit_factor": 1.1881448725687378,
+            "payoff_ratio": 1.9256141038182992,
+            "avg_win": 6.460094192263179,
+            "avg_loss": -3.354822848177868
+          },
+          "double_cost": {
+            "trades": 76,
+            "wins": 27,
+            "losses": 49,
+            "win_rate": 35.526315789473685,
+            "avg_net_return": 0.08034286462200545,
+            "profit_factor": 1.0354248880311192,
+            "payoff_ratio": 1.8791044264268464,
+            "avg_win": 6.610088194002496,
+            "avg_loss": -3.5176800719754078
+          },
+          "largest_winner_removed": {
+            "trades": 75,
+            "wins": 28,
+            "losses": 47,
+            "win_rate": 37.333333333333336,
+            "avg_net_return": 0.001587133374857744,
+            "profit_factor": 1.0007549309621833,
+            "payoff_ratio": 1.6798386341150933,
+            "avg_win": 5.635561030981217,
+            "avg_loss": -3.354822848177868
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 75,
+            "wins": 26,
+            "losses": 49,
+            "win_rate": 34.66666666666667,
+            "avg_net_return": -0.3084128666251425,
+            "profit_factor": 0.8658034555497731,
+            "payoff_ratio": 1.631706512382265,
+            "avg_win": 5.739821481919587,
+            "avg_loss": -3.5176800719754078
+          }
+        },
+        "opportunity_mean": 0.3903428646220055,
+        "added": 16,
+        "removed": 16,
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.7047720032756936,
+            0.6171484996258543
+          ],
+          "point_delta_per_opportunity": -0.2160706789372273
+        }
+      },
+      "context70": {
+        "opportunities": 76,
+        "closed": 76,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 76,
+            "wins": 34,
+            "losses": 42,
+            "win_rate": 44.73684210526316,
+            "avg_net_return": 0.7346650878445482,
+            "profit_factor": 1.4016184780431875,
+            "payoff_ratio": 1.7314110611121727,
+            "avg_win": 5.731129286724766,
+            "avg_loss": -3.3100916445822937
+          },
+          "double_cost": {
+            "trades": 76,
+            "wins": 32,
+            "losses": 44,
+            "win_rate": 42.10526315789473,
+            "avg_net_return": 0.4246650878445482,
+            "profit_factor": 1.212104393921806,
+            "payoff_ratio": 1.6666435416424832,
+            "avg_win": 5.763688919096161,
+            "avg_loss": -3.4582613348838978
+          },
+          "largest_winner_removed": {
+            "trades": 75,
+            "wins": 33,
+            "losses": 42,
+            "win_rate": 44.0,
+            "avg_net_return": 0.35050031957370104,
+            "profit_factor": 1.18908643476219,
+            "payoff_ratio": 1.5133827351518783,
+            "avg_win": 5.00943554668133,
+            "avg_loss": -3.3100916445822937
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 75,
+            "wins": 31,
+            "losses": 44,
+            "win_rate": 41.333333333333336,
+            "avg_net_return": 0.040500319573700976,
+            "profit_factor": 1.019962237943278,
+            "payoff_ratio": 1.4476883377259429,
+            "avg_win": 5.00648460331997,
+            "avg_loss": -3.4582613348838978
+          }
+        },
+        "opportunity_mean": 0.7346650878445482,
+        "added": 21,
+        "removed": 21,
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.14365202530821475,
+            0.4773727679873484
+          ],
+          "point_delta_per_opportunity": 0.12825154428531535
+        }
+      },
+      "trend80": {
+        "opportunities": 76,
+        "closed": 76,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 76,
+            "wins": 34,
+            "losses": 42,
+            "win_rate": 44.73684210526316,
+            "avg_net_return": 0.6565910355774394,
+            "profit_factor": 1.3167973958570647,
+            "payoff_ratio": 1.6266320772351976,
+            "avg_win": 6.100521756683834,
+            "avg_loss": -3.7504005005563092
+          },
+          "double_cost": {
+            "trades": 76,
+            "wins": 32,
+            "losses": 44,
+            "win_rate": 42.10526315789473,
+            "avg_net_return": 0.3465910355774392,
+            "profit_factor": 1.1543505417522801,
+            "payoff_ratio": 1.5872319949093852,
+            "avg_win": 6.156168418427673,
+            "avg_loss": -3.878556151950004
+          },
+          "largest_winner_removed": {
+            "trades": 75,
+            "wins": 33,
+            "losses": 42,
+            "win_rate": 44.0,
+            "avg_net_return": 0.27138527994303063,
+            "profit_factor": 1.1292172852619222,
+            "payoff_ratio": 1.437185635787901,
+            "avg_win": 5.390021727851281,
+            "avg_loss": -3.7504005005563092
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 75,
+            "wins": 31,
+            "losses": 44,
+            "win_rate": 41.333333333333336,
+            "avg_net_return": -0.03861472005696943,
+            "profit_factor": 0.983029626754647,
+            "payoff_ratio": 1.3952678573291766,
+            "avg_win": 5.411624731662178,
+            "avg_loss": -3.878556151950004
+          }
+        },
+        "opportunity_mean": 0.6565910355774394,
+        "added": 9,
+        "removed": 9,
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.07926863036866996,
+            0.18311491990995027
+          ],
+          "point_delta_per_opportunity": 0.050177492018206385
+        }
+      },
+      "context80": {
+        "opportunities": 76,
+        "closed": 76,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 76,
+            "wins": 32,
+            "losses": 44,
+            "win_rate": 42.10526315789473,
+            "avg_net_return": 0.5110181440822281,
+            "profit_factor": 1.2431511073725185,
+            "payoff_ratio": 1.7093327726372132,
+            "avg_win": 6.205083123408353,
+            "avg_loss": -3.630120022700409
+          },
+          "double_cost": {
+            "trades": 76,
+            "wins": 30,
+            "losses": 46,
+            "win_rate": 39.473684210526315,
+            "avg_net_return": 0.20101814408222815,
+            "profit_factor": 1.0880617059477051,
+            "payoff_ratio": 1.668361282453148,
+            "avg_win": 6.292076987050082,
+            "avg_loss": -3.7714115361141993
+          },
+          "largest_winner_removed": {
+            "trades": 75,
+            "wins": 31,
+            "losses": 44,
+            "win_rate": 41.333333333333336,
+            "avg_net_return": 0.12387141656121656,
+            "profit_factor": 1.0581645947591727,
+            "payoff_ratio": 1.5019110377226967,
+            "avg_win": 5.452117330351911,
+            "avg_loss": -3.630120022700409
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 75,
+            "wins": 29,
+            "losses": 46,
+            "win_rate": 38.666666666666664,
+            "avg_net_return": -0.1861285834387835,
+            "profit_factor": 0.919533969292316,
+            "payoff_ratio": 1.458571123705053,
+            "avg_win": 5.500871962184288,
+            "avg_loss": -3.7714115361141993
+          }
+        },
+        "opportunity_mean": 0.511018144082228,
+        "added": 13,
+        "removed": 13,
+        "bootstrap": {
+          "months": 6,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.1853259310458687,
+            -0.010371281854070229
+          ],
+          "point_delta_per_opportunity": -0.09539539947700484
+        }
+      }
+    },
+    "observed_2026": {
+      "baseline": {
+        "opportunities": 101,
+        "closed": 101,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 101,
+            "wins": 55,
+            "losses": 46,
+            "win_rate": 54.45544554455446,
+            "avg_net_return": 1.0931678689962123,
+            "profit_factor": 1.7239806741054948,
+            "payoff_ratio": 1.4418747456155048,
+            "avg_win": 4.780253874873766,
+            "avg_loss": -3.3153045293356467
+          },
+          "double_cost": {
+            "trades": 101,
+            "wins": 54,
+            "losses": 47,
+            "win_rate": 53.46534653465347,
+            "avg_net_return": 0.7831678689962122,
+            "profit_factor": 1.4738072995728557,
+            "payoff_ratio": 1.2827582051837818,
+            "avg_win": 4.556395678274614,
+            "avg_loss": -3.5520300395364184
+          },
+          "largest_winner_removed": {
+            "trades": 100,
+            "wins": 54,
+            "losses": 46,
+            "win_rate": 54.0,
+            "avg_net_return": 0.7804668744188475,
+            "profit_factor": 1.5117681055507253,
+            "payoff_ratio": 1.287802460283951,
+            "avg_win": 4.269457329468972,
+            "avg_loss": -3.3153045293356467
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 100,
+            "wins": 53,
+            "losses": 47,
+            "win_rate": 53.0,
+            "avg_net_return": 0.4704668744188477,
+            "profit_factor": 1.2818088075510694,
+            "payoff_ratio": 1.136698376507552,
+            "avg_win": 4.0375867792471025,
+            "avg_loss": -3.5520300395364184
+          }
+        },
+        "opportunity_mean": 1.0931678689962123,
+        "added": 0,
+        "removed": 0,
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            0.0,
+            0.0
+          ],
+          "point_delta_per_opportunity": 0.0
+        }
+      },
+      "low80": {
+        "opportunities": 101,
+        "closed": 101,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 101,
+            "wins": 53,
+            "losses": 48,
+            "win_rate": 52.475247524752476,
+            "avg_net_return": 0.8167559975190927,
+            "profit_factor": 1.4949179292394426,
+            "payoff_ratio": 1.3538879359149667,
+            "avg_win": 4.701343674714057,
+            "avg_loss": -3.47247622938368
+          },
+          "double_cost": {
+            "trades": 101,
+            "wins": 53,
+            "losses": 48,
+            "win_rate": 52.475247524752476,
+            "avg_net_return": 0.5067559975190927,
+            "profit_factor": 1.2819050308445257,
+            "payoff_ratio": 1.1609705939724004,
+            "avg_win": 4.391343674714057,
+            "avg_loss": -3.7824762293836804
+          },
+          "largest_winner_removed": {
+            "trades": 100,
+            "wins": 52,
+            "losses": 48,
+            "win_rate": 52.0,
+            "avg_net_return": 0.501290884226957,
+            "profit_factor": 1.3007525292668511,
+            "payoff_ratio": 1.2006946424001703,
+            "avg_win": 4.169383604482929,
+            "avg_loss": -3.47247622938368
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 100,
+            "wins": 52,
+            "losses": 48,
+            "win_rate": 52.0,
+            "avg_net_return": 0.19129088422695692,
+            "profit_factor": 1.1053602590749823,
+            "payoff_ratio": 1.020332546838445,
+            "avg_win": 3.8593836044829293,
+            "avg_loss": -3.7824762293836804
+          }
+        },
+        "opportunity_mean": 0.8167559975190928,
+        "added": 13,
+        "removed": 13,
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.47928458310465444,
+            -0.07046826731802257
+          ],
+          "point_delta_per_opportunity": -0.27641187147711954
+        }
+      },
+      "context70": {
+        "opportunities": 101,
+        "closed": 101,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 101,
+            "wins": 51,
+            "losses": 50,
+            "win_rate": 50.495049504950494,
+            "avg_net_return": 0.8260065881699773,
+            "profit_factor": 1.4937503440095932,
+            "payoff_ratio": 1.4644611215780325,
+            "avg_win": 4.948861685710271,
+            "avg_loss": -3.379305611321123
+          },
+          "double_cost": {
+            "trades": 101,
+            "wins": 49,
+            "losses": 52,
+            "win_rate": 48.51485148514851,
+            "avg_net_return": 0.5160065881699774,
+            "profit_factor": 1.2821414169382448,
+            "payoff_ratio": 1.3606398710365046,
+            "avg_win": 4.83336537572502,
+            "avg_loss": -3.552273807795351
+          },
+          "largest_winner_removed": {
+            "trades": 100,
+            "wins": 50,
+            "losses": 50,
+            "win_rate": 50.0,
+            "avg_net_return": 0.5106339807843503,
+            "profit_factor": 1.3022123711295353,
+            "payoff_ratio": 1.3022123711295353,
+            "avg_win": 4.400573572889823,
+            "avg_loss": -3.379305611321123
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 100,
+            "wins": 48,
+            "losses": 52,
+            "win_rate": 48.0,
+            "avg_net_return": 0.2006339807843502,
+            "profit_factor": 1.108616227044419,
+            "payoff_ratio": 1.2010009126314538,
+            "avg_win": 4.266284085079026,
+            "avg_loss": -3.552273807795351
+          }
+        },
+        "opportunity_mean": 0.8260065881699773,
+        "added": 14,
+        "removed": 14,
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.6271143090640655,
+            0.023377384248641976
+          ],
+          "point_delta_per_opportunity": -0.267161280826235
+        }
+      },
+      "trend80": {
+        "opportunities": 101,
+        "closed": 101,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 101,
+            "wins": 52,
+            "losses": 49,
+            "win_rate": 51.48514851485149,
+            "avg_net_return": 0.9472464104671371,
+            "profit_factor": 1.5895833324507294,
+            "payoff_ratio": 1.4978766017324179,
+            "avg_win": 4.9604274394247625,
+            "avg_loss": -3.311639579447078
+          },
+          "double_cost": {
+            "trades": 101,
+            "wins": 51,
+            "losses": 50,
+            "win_rate": 50.495049504950494,
+            "avg_net_return": 0.6372464104671368,
+            "profit_factor": 1.3623128573603551,
+            "payoff_ratio": 1.3356008405493678,
+            "avg_win": 4.745169222722737,
+            "avg_loss": -3.552834858033575
+          },
+          "largest_winner_removed": {
+            "trades": 100,
+            "wins": 51,
+            "losses": 49,
+            "win_rate": 51.0,
+            "avg_net_return": 0.6330862013044816,
+            "profit_factor": 1.3901428959063082,
+            "payoff_ratio": 1.3356274882237078,
+            "avg_win": 4.423116853399117,
+            "avg_loss": -3.311639579447078
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 100,
+            "wins": 50,
+            "losses": 50,
+            "win_rate": 50.0,
+            "avg_net_return": 0.32308620130448173,
+            "profit_factor": 1.18187515840987,
+            "payoff_ratio": 1.1818751584098697,
+            "avg_win": 4.199007260642539,
+            "avg_loss": -3.552834858033575
+          }
+        },
+        "opportunity_mean": 0.9472464104671371,
+        "added": 8,
+        "removed": 8,
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.4343412971375558,
+            0.07485672382547019
+          ],
+          "point_delta_per_opportunity": -0.14592145852907523
+        }
+      },
+      "context80": {
+        "opportunities": 101,
+        "closed": 101,
+        "skipped": {},
+        "metrics": {
+          "base": {
+            "trades": 101,
+            "wins": 52,
+            "losses": 49,
+            "win_rate": 51.48514851485149,
+            "avg_net_return": 0.9383371928227584,
+            "profit_factor": 1.580817291894091,
+            "payoff_ratio": 1.4896162942848166,
+            "avg_win": 4.9604274394247625,
+            "avg_loss": -3.330003477040593
+          },
+          "double_cost": {
+            "trades": 101,
+            "wins": 51,
+            "losses": 50,
+            "win_rate": 50.495049504950494,
+            "avg_net_return": 0.6283371928227582,
+            "profit_factor": 1.3554469421022095,
+            "payoff_ratio": 1.3288695510805977,
+            "avg_win": 4.745169222722737,
+            "avg_loss": -3.57083147767522
+          },
+          "largest_winner_removed": {
+            "trades": 100,
+            "wins": 51,
+            "losses": 49,
+            "win_rate": 51.0,
+            "avg_net_return": 0.6240878914836592,
+            "profit_factor": 1.382476705178044,
+            "payoff_ratio": 1.328261932425964,
+            "avg_win": 4.423116853399117,
+            "avg_loss": -3.330003477040593
+          },
+          "double_cost_largest_winner_removed": {
+            "trades": 100,
+            "wins": 50,
+            "losses": 50,
+            "win_rate": 50.0,
+            "avg_net_return": 0.31408789148365907,
+            "profit_factor": 1.1759186304071372,
+            "payoff_ratio": 1.1759186304071372,
+            "avg_win": 4.199007260642539,
+            "avg_loss": -3.57083147767522
+          }
+        },
+        "opportunity_mean": 0.9383371928227584,
+        "added": 7,
+        "removed": 7,
+        "bootstrap": {
+          "months": 9,
+          "replicates": 5000,
+          "seed": 20261004,
+          "ci95_delta_per_opportunity": [
+            -0.4412234618225371,
+            0.05978333203706028
+          ],
+          "point_delta_per_opportunity": -0.15483067617345395
+        }
+      }
+    }
+  },
+  "pooled": {
+    "baseline": {
+      "metrics": {
+        "base": {
+          "trades": 384,
+          "wins": 192,
+          "losses": 192,
+          "win_rate": 50.0,
+          "avg_net_return": 0.7854280205994768,
+          "profit_factor": 1.3953197565009148,
+          "payoff_ratio": 1.3953197565009148,
+          "avg_win": 5.54449008140741,
+          "avg_loss": -3.973634040208457
+        },
+        "double_cost": {
+          "trades": 384,
+          "wins": 183,
+          "losses": 201,
+          "win_rate": 47.65625,
+          "avg_net_return": 0.47542802059947675,
+          "profit_factor": 1.2215669991741278,
+          "payoff_ratio": 1.3417211302404355,
+          "avg_win": 5.500182816647557,
+          "avg_loss": -4.099348734011462
+        },
+        "largest_winner_removed": {
+          "trades": 383,
+          "wins": 191,
+          "losses": 192,
+          "win_rate": 49.869451697127936,
+          "avg_net_return": 0.7029793540038287,
+          "profit_factor": 1.352900479263055,
+          "payoff_ratio": 1.359983727845584,
+          "avg_win": 5.404077635096806,
+          "avg_loss": -3.973634040208457
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 383,
+          "wins": 182,
+          "losses": 201,
+          "win_rate": 47.51958224543081,
+          "avg_net_return": 0.3929793540038287,
+          "profit_factor": 1.1826659439035172,
+          "payoff_ratio": 1.306131069915423,
+          "avg_win": 5.354286747910826,
+          "avg_loss": -4.099348734011462
+        }
+      },
+      "opportunities": 385,
+      "opportunity_mean": 0.7833879478186989,
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.0,
+          0.0
+        ],
+        "point_delta_per_opportunity": 0.0
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          0.0,
+          0.0
+        ],
+        "point_delta_per_opportunity": 0.0
+      }
+    },
+    "low80": {
+      "metrics": {
+        "base": {
+          "trades": 384,
+          "wins": 188,
+          "losses": 196,
+          "win_rate": 48.95833333333333,
+          "avg_net_return": 0.7058583009575313,
+          "profit_factor": 1.357712867939029,
+          "payoff_ratio": 1.4154878835960087,
+          "avg_win": 5.472229114850626,
+          "avg_loss": -3.865966765429723
+        },
+        "double_cost": {
+          "trades": 384,
+          "wins": 181,
+          "losses": 203,
+          "win_rate": 47.13541666666667,
+          "avg_net_return": 0.39585830095753133,
+          "profit_factor": 1.1854622551055944,
+          "payoff_ratio": 1.3295515899803079,
+          "avg_win": 5.368149476202185,
+          "avg_loss": -4.037563879925632
+        },
+        "largest_winner_removed": {
+          "trades": 383,
+          "wins": 187,
+          "losses": 196,
+          "win_rate": 48.825065274151434,
+          "avg_net_return": 0.6220962679374501,
+          "profit_factor": 1.3144431819199731,
+          "payoff_ratio": 1.3777051532423248,
+          "avg_win": 5.326162334996091,
+          "avg_loss": -3.865966765429723
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 383,
+          "wins": 180,
+          "losses": 203,
+          "win_rate": 46.99738903394256,
+          "avg_net_return": 0.3120962679374501,
+          "profit_factor": 1.145838404663564,
+          "payoff_ratio": 1.2922510897039083,
+          "avg_win": 5.217546323583038,
+          "avg_loss": -4.037563879925632
+        }
+      },
+      "opportunities": 385,
+      "opportunity_mean": 0.704024902773226,
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.44715896008248396,
+          0.3955783314325814
+        ],
+        "point_delta_per_opportunity": -0.07936304504547285
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.5105206114147327,
+          0.10565576708458406
+        ],
+        "point_delta_per_opportunity": -0.25050265886112066
+      }
+    },
+    "context70": {
+      "metrics": {
+        "base": {
+          "trades": 384,
+          "wins": 196,
+          "losses": 188,
+          "win_rate": 51.041666666666664,
+          "avg_net_return": 0.6883807876778137,
+          "profit_factor": 1.340431754486719,
+          "payoff_ratio": 1.2857202543035877,
+          "avg_win": 5.310293662523981,
+          "avg_loss": -4.130209230778829
+        },
+        "double_cost": {
+          "trades": 384,
+          "wins": 183,
+          "losses": 201,
+          "win_rate": 47.65625,
+          "avg_net_return": 0.37838078767781375,
+          "profit_factor": 1.1736227360372322,
+          "payoff_ratio": 1.2890610379425338,
+          "avg_win": 5.3669942512598645,
+          "avg_loss": -4.1634911717028595
+        },
+        "largest_winner_removed": {
+          "trades": 383,
+          "wins": 195,
+          "losses": 188,
+          "win_rate": 50.91383812010444,
+          "avg_net_return": 0.6056787340510386,
+          "profit_factor": 1.2987522585209612,
+          "payoff_ratio": 1.2521303825740546,
+          "avg_win": 5.171560464245987,
+          "avg_loss": -4.130209230778829
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 383,
+          "wins": 182,
+          "losses": 201,
+          "win_rate": 47.51958224543081,
+          "avg_net_return": 0.29567873405103856,
+          "profit_factor": 1.1353209875529036,
+          "payoff_ratio": 1.2538435082315034,
+          "avg_win": 5.220366377218806,
+          "avg_loss": -4.1634911717028595
+        }
+      },
+      "opportunities": 385,
+      "opportunity_mean": 0.6865927856318974,
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.4712352671910727,
+          0.29997523149062705
+        ],
+        "point_delta_per_opportunity": -0.09679516218680155
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.3690011028040586,
+          0.1553250087089151
+        ],
+        "point_delta_per_opportunity": -0.09737950281223598
+      }
+    },
+    "trend80": {
+      "metrics": {
+        "base": {
+          "trades": 384,
+          "wins": 189,
+          "losses": 195,
+          "win_rate": 49.21875,
+          "avg_net_return": 0.5574919290251551,
+          "profit_factor": 1.262095518616789,
+          "payoff_ratio": 1.302162043017322,
+          "avg_win": 5.454320249721231,
+          "avg_loss": -4.1886647510341195
+        },
+        "double_cost": {
+          "trades": 384,
+          "wins": 178,
+          "losses": 206,
+          "win_rate": 46.35416666666667,
+          "avg_net_return": 0.24749192902515502,
+          "profit_factor": 1.108089634753257,
+          "payoff_ratio": 1.2823958694335447,
+          "avg_win": 5.4734745851293205,
+          "avg_loss": -4.268162987414366
+        },
+        "largest_winner_removed": {
+          "trades": 383,
+          "wins": 188,
+          "losses": 195,
+          "win_rate": 49.08616187989556,
+          "avg_net_return": 0.4744481290311407,
+          "profit_factor": 1.222472993698926,
+          "payoff_ratio": 1.2679906051664391,
+          "avg_win": 5.311187552503085,
+          "avg_loss": -4.1886647510341195
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 383,
+          "wins": 177,
+          "losses": 206,
+          "win_rate": 46.21409921671018,
+          "avg_net_return": 0.1644481290311406,
+          "profit_factor": 1.0716340482304263,
+          "payoff_ratio": 1.2472125081099878,
+          "avg_win": 5.323306264555289,
+          "avg_loss": -4.268162987414366
+        }
+      },
+      "opportunities": 385,
+      "opportunity_mean": 0.5560438980406741,
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.44981395994898843,
+          -0.0037009029469177116
+        ],
+        "point_delta_per_opportunity": -0.2273440497780248
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.2589137773477438,
+          0.08695339136012713
+        ],
+        "point_delta_per_opportunity": -0.061720779198039054
+      }
+    },
+    "context80": {
+      "metrics": {
+        "base": {
+          "trades": 384,
+          "wins": 186,
+          "losses": 198,
+          "win_rate": 48.4375,
+          "avg_net_return": 0.496559653507987,
+          "profit_factor": 1.231885939425291,
+          "payoff_ratio": 1.3113624516462776,
+          "avg_win": 5.446102264696032,
+          "avg_loss": -4.153010678214115
+        },
+        "double_cost": {
+          "trades": 384,
+          "wins": 174,
+          "losses": 210,
+          "win_rate": 45.3125,
+          "avg_net_return": 0.1865596535079869,
+          "profit_factor": 1.0808640862201002,
+          "payoff_ratio": 1.3044911385415001,
+          "avg_win": 5.503197587786212,
+          "avg_loss": -4.21865463489397
+        },
+        "largest_winner_removed": {
+          "trades": 383,
+          "wins": 185,
+          "losses": 198,
+          "win_rate": 48.30287206266319,
+          "avg_net_return": 0.41335676141079464,
+          "profit_factor": 1.192528745873649,
+          "payoff_ratio": 1.276328063151257,
+          "avg_win": 5.30060407517151,
+          "avg_loss": -4.153010678214115
+        },
+        "double_cost_largest_winner_removed": {
+          "trades": 383,
+          "wins": 173,
+          "losses": 210,
+          "win_rate": 45.16971279373368,
+          "avg_net_return": 0.1033567614107946,
+          "profit_factor": 1.0446832135183435,
+          "payoff_ratio": 1.2681125713228445,
+          "avg_win": 5.349728976578429,
+          "avg_loss": -4.21865463489397
+        }
+      },
+      "opportunities": 385,
+      "opportunity_mean": 0.4952698881742,
+      "bootstrap": {
+        "months": 33,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.5605861542667296,
+          0.013179722664600196
+        ],
+        "point_delta_per_opportunity": -0.288118059644499
+      },
+      "post_train_bootstrap": {
+        "months": 15,
+        "replicates": 5000,
+        "seed": 20261004,
+        "ci95_delta_per_opportunity": [
+          -0.3073388147447891,
+          0.005240302357355473
+        ],
+        "point_delta_per_opportunity": -0.1293104443715888
+      }
+    }
+  },
+  "training_nomination": {
+    "recorded": "low80",
+    "recomputed": "low80",
+    "eligible": [
+      "low80"
+    ],
+    "receipts_match": true
+  },
+  "findings": [
+    {
+      "type": "interpretation",
+      "detail": "The training nominee low80 has lower mean net return and PF in both post-training segments, and worse pooled mean/PF. Do not switch to a different later-period winner."
+    },
+    {
+      "type": "accounting",
+      "detail": "Baseline and each variant have 385 original opportunities and 384 closed trades; the one training entry skip is retained as zero in opportunity mean."
+    },
+    {
+      "type": "scope",
+      "detail": "Historical observed-period comparison only, independent trade events, not a portfolio NAV or strict point-in-time/live execution validation."
+    }
+  ],
+  "input_sha256": {
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\PLAN.json": "ceafa75a7d657621a4cded6097f735f6013e6dfa3bddbdf164f46862d9882dd0",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\summary.json": "1dede513827e97fdfab593e10b95f977b0ab1371e92ae6123833eaa116d49a7c",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\freeze-receipt.json": "6fe275deab12fb36d6717ed11bf5be08e97eed99f6ac3c7d664c3930a6074726",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\training-nomination.json": "dc304cada7db44bc95d4651e8c4614416d081c20b47f56cf6dc06eb08d1e3132",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\metrics.csv": "88d25a9bf59fd643ce3795a72238852c1ce82202c8c9fc53e21f85f8541ee289",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\paired-daily-results.csv": "128277b53dae39f44df26414e7034c87e2712d360607d4df928115074bb2b9a6",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-summary.json": "377da2c76edcd564bf9093a5db5f0b8f3ec6a8783f3444c4a31f941dcdb26f02",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-candidates.csv": "837c2395cd52b46f27730955a5172ebf8cc0a59099408fafdd1ecc9378985e98",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-baseline-trades.csv": "cbcbe99e85cac9035327454b52239505da64ce70bdcf21a3478d2c02a3531d1d",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-baseline-signals.csv": "001c9d109ec0788560e4c449fb65a98d0ca4bae85d5f38ef1f8fb0df8c0c9e99",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-baseline-replacements.csv": "376db489db569e5eeb9ba5b6aa1bbf554366f47a6574033105cfd2d213683475",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-low80-trades.csv": "cc4a13eb187056ab79b06c587edd444313afaccbe46dc33f6c912b2357dd944f",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-low80-signals.csv": "76159f971d8adfbf3ce63fc31c148f17c61b06e39a2c38ed13f0b642fce2162f",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-low80-replacements.csv": "de49fd9b3677a9f352db419927a108dde90ef1db8a6753dcc7ebb130d88b5ef4",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-context70-trades.csv": "ba72b39e11b820e27453f23037b565a59da26ca8968e13b58f702e2724a762ae",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-context70-signals.csv": "7d4f9300bae1d4f9aab7e098ea01932a9edaa9c381128a5efe609300966a5760",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-context70-replacements.csv": "9188a910914b766ba4174f5b79aacf3700cc0cd1e9fda8f4d8174b33b37e29e5",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-trend80-trades.csv": "12de793a440ebb9f8fc6fb570085338fe7a01d9edd95f210ce2f89ae0c4dc4b3",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-trend80-signals.csv": "f430fe2557534afc019950d5adea3ad7455c1f18c3ab33587b3ef4df5c1a4128",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-trend80-replacements.csv": "a11b0100973258c4eb8d87082b9bf5d457c36dbba901a71079323fb571f6a855",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-context80-trades.csv": "cd4a661c3927ad4947914b400cb032a65e103cb2c9f03dc929d09b9d19ca1c96",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-context80-signals.csv": "460d8710e694268173006e6edfa22ba29a62deb24a3c810fc51e37b18d12be89",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\train-context80-replacements.csv": "27c215134db45fcc1ec1efd4a35364eb2ccfc15f98b214c3f8c3f2369b821f39",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-summary.json": "63fdbbc3626909caf44c831232320d6c76f21a2ba03a477c411be18db6d506de",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-candidates.csv": "aab81aec0bd502436c802b74c724cb72c3f5260ba5e6b7e3f7b2cd3254cecb18",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-baseline-trades.csv": "02b765caa6850cb76ed932a43f066619421a14180babb9d53d3ce916aec5506a",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-baseline-signals.csv": "2b209c19cc1c2b66157621cf11540e6eb2bf3323b55d7dc89c13fefb0459d6ec",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-baseline-replacements.csv": "376db489db569e5eeb9ba5b6aa1bbf554366f47a6574033105cfd2d213683475",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-low80-trades.csv": "a6e7e035d4a696852f22eac41cf6659de850ad061c8b1354b5693995947c71dd",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-low80-signals.csv": "4990c0fa5368da78c89b283e2829f2a6409aa0032f26c5e6f514a3efd967d49d",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-low80-replacements.csv": "874eec61cba741b9a5b9edad51427c780dd5cbf92da9b2d2902626184dbceb32",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-context70-trades.csv": "4b5dc17b1eb40e9c03cccddd437efd12205bc03f39da8926e85188cfb09e627a",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-context70-signals.csv": "5deab6223171577320a4cea21dc84dfd13ed5579a82cc830f572ec781242845c",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-context70-replacements.csv": "156b9da4cbc1ac443156ade65ee96d288c4ac1c6bd5908fa1f2bab2ebf8e47c1",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-trend80-trades.csv": "3c4a03ad6277f0de864b7425b532ddcc7d74f5aca0bdbbe43edc8cdca4937d84",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-trend80-signals.csv": "aa2b3b447f815380b17c3e569338e493ed44e0a15214ff0cbca0da433465bfee",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-trend80-replacements.csv": "4e745d131715a6dfd6f4fec475fe14b78bfe9e3fb65925235bd31c5c551cb5f0",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-context80-trades.csv": "1103818255a563c909e1d5c42b0c1c134bbde357bccd9e4b06e74a62f7c174f8",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-context80-signals.csv": "ffea0af67d53671b985b99144cf3d5c5940991a8057cac7dbaba868e03b84d26",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\validation_2025h2-context80-replacements.csv": "7117f850db3f13d45375867dcf9a9e677d20b4a12d6df5c0f0b79ff4d92bed5d",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-summary.json": "61daaa56194df549b8e1d247910f00a7bad08c1da62abc3a39b6a1b4be03dbfe",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-candidates.csv": "ffa52af6a91b1596fcfd71fc3f5678f9d0e4712d8692f3aba4beb49e96f6a406",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-baseline-trades.csv": "264689b77c90500b0fedb353aab241d2bc33b10a207fc77ba97ebdbdc8ea15c2",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-baseline-signals.csv": "48d252c1876b47d1a78de617d67bbcaaa05c9bff433ae959f6b41ef000bbea72",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-baseline-replacements.csv": "376db489db569e5eeb9ba5b6aa1bbf554366f47a6574033105cfd2d213683475",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-low80-trades.csv": "aa7424ce6c46cdc24a27a33ad4785be8d4bc694b5ddd2dd079c3ec27221dced2",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-low80-signals.csv": "e75965f3521a4634d52889b9f59987d3f609d8877167471ca9fc2c117256f6a4",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-low80-replacements.csv": "72caa546b0e250329ad4eb49ffaf9ccd545b287c09f205abfe3ef84037910912",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-context70-trades.csv": "f04959ac97740099476fcfae4e5631c559c6f96355427cb8402d38d03c7a780b",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-context70-signals.csv": "17edbab2a54319c05ad2499fadd51dfb471ff1c1c050a9f2101a0ceff62e65e6",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-context70-replacements.csv": "d569a0b6d4669159c04bf454306b8d482f6c1f5118b717a4a23679e0713a9367",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-trend80-trades.csv": "1e0294bd9dc76cc8525286aae10f2e0e79c4dd082a21987427206bca7083e2d0",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-trend80-signals.csv": "fba387d306dc14ace39dd3a54beba9fbb5a9954083f6cfac7fe7e12e8f03d9a7",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-trend80-replacements.csv": "9e9d3057adb0b05133340d30484b845b1a66c26caf4417f5927424708d8a750d",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-context80-trades.csv": "d89434f6ef51c8705a5bbefcb1163a85129507597fded94a98a86c2847df44e8",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-context80-signals.csv": "77009e987e62f5ee54e5795a95c5dbed9c503cad599e88c429a069ad2e1672af",
+    "docs\\research\\2026-10-04-multi-strategy-scoring\\yangshi-tail-v1\\observed_2026-context80-replacements.csv": "9c9969448335e359eda570c4c5bd2d0c2a7b8bea5917193bc722797386f4b9f5"
+  },
+  "inputs_unchanged_during_verification": true
+}

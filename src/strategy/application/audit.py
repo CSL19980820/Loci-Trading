@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass, field
+from copy import deepcopy
 import inspect
 from typing import Any
 
@@ -53,7 +54,7 @@ CURRENT_BAR_INCLUSIVE_CALLS = frozenset(LAGGING_CALLS) - {"REF"}
 @dataclass
 class AuditFinding:
     check: str
-    severity: str      # "block" | "warn"
+    severity: str      # "block" | "warn" | "info"
     message: str
     detail: Any = None
 
@@ -81,7 +82,10 @@ class AuditReport:
         if blockers:
             return "；".join(blockers)
         warns = [item.message for item in self.findings if item.severity == "warn"]
-        return "；".join(warns) if warns else "未发现前视偏差"
+        if warns:
+            return "；".join(warns)
+        information = [item.message for item in self.findings if item.severity == "info"]
+        return "；".join(information) if information else "未发现前视偏差"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -262,11 +266,27 @@ def audit_engine_source(engine: Any) -> AuditReport:
             AuditFinding("source", "warn", "取不到策略源码，跳过静态检查")
         )
         return report
-    return audit_source(
-        code,
-        entry_timing=str(getattr(engine, "entry_timing", "next_open")),
-        strategy=str(getattr(engine, "slug", "")),
-    )
+    from src.strategy.application.compute_runtime import _SCOPE
+
+    scope = _SCOPE.get()
+    timing, slug = str(getattr(engine, "entry_timing", "next_open")), str(getattr(engine, "slug", ""))
+    key = (code, timing, slug)
+    if scope is not None and key in scope.source_audits:
+        scope.source_audits.move_to_end(key)
+        return deepcopy(scope.source_audits[key])
+    report = audit_source(code, entry_timing=timing, strategy=slug)
+    # Share only exact source checks within this task. Changed source/timing
+    # always revalidates, and callers cannot append dynamic findings to the
+    # cached static report. Real numerical truncation audits are unaffected.
+    size = len(code.encode("utf-8")) + 1024 + len(report.findings) * 1024
+    if scope is not None and size <= 2_000_000:
+        while scope.source_audits and (len(scope.source_audits) >= 64
+                                      or scope.source_audit_bytes + size > 2_000_000):
+            previous, old = scope.source_audits.popitem(last=False)
+            scope.source_audit_bytes -= len(previous[0].encode("utf-8")) + 1024 + len(old.findings) * 1024
+        scope.source_audits[key] = deepcopy(report)
+        scope.source_audit_bytes += size
+    return report
 
 
 # --------------------------------------------------------------------------
@@ -279,6 +299,7 @@ def audit_truncation(
     *,
     params: dict[str, Any] | None = None,
     probe_dates: int = 3,
+    baseline: Any = None,
 ) -> AuditReport:
     """把面板截断到某一天再跑，信号应与全量一致。
 
@@ -307,7 +328,9 @@ def audit_truncation(
         )
         return report
 
-    full = engine.compute(panels, params)
+    from src.strategy.application.compute_runtime import compute_result, project_result, truncate_panels
+
+    full = baseline if baseline is not None else compute_result(engine, panels, params, audit=True)
     dates = list(reference.index)
     # 留出足够的历史给指标窗口；探针只在尾部取。
     min_bars = int(getattr(engine, "min_bars", lambda: 30)())
@@ -334,46 +357,69 @@ def audit_truncation(
         return report
 
     # 截断比较只需要探针日的代码集合，不必同时持有全量和截断结果的所有因子矩阵。
-    expected_by_date = {
-        cutoff: (set(full.picks_on(cutoff)), set(full.watch_picks_on(cutoff)))
-        for cutoff in probes
-    }
+    expected_by_date = {cutoff: project_result(full, [cutoff]) for cutoff in probes}
     del full
     mismatches: list[dict[str, Any]] = []
     for cutoff in probes:
         # 元数据（`__instrument_names__` 等）没有时间轴，原样传下去；
         # 只截 DataFrame。与 audit_sampling 的分片逻辑保持同一约定。
-        truncated = {
-            name: (frame.loc[:cutoff] if isinstance(frame, pd.DataFrame) else frame)
-            for name, frame in panels.items()
-            if not (isinstance(frame, pd.DataFrame) and frame.empty)
-        }
-        partial = engine.compute(truncated, params)
+        truncated = truncate_panels(panels, cutoff)
+        partial = compute_result(engine, truncated, params, dates=[cutoff], audit=True)
         if cutoff not in partial.signals.index:
             mismatches.append({"date": cutoff, "issue": "截断后该日信号消失"})
             del partial
             continue
 
-        expected_formal, expected_watch = expected_by_date[cutoff]
+        expected_result = expected_by_date[cutoff]
+        for channel, expected_frame, actual_frame in (
+            ("formal", expected_result.signals, partial.signals),
+            ("watch", expected_result.watch_signals, partial.watch_signals),
+        ):
+            try:
+                if (expected_frame is None) != (actual_frame is None):
+                    raise AssertionError("channel presence changed")
+                if expected_frame is not None:
+                    if cutoff not in actual_frame.index:
+                        raise AssertionError("missing signal row")
+                    pd.testing.assert_series_equal(expected_frame.loc[cutoff], actual_frame.loc[cutoff],
+                                                   check_exact=True)
+            except AssertionError:
+                mismatches.append({"date": cutoff, "channel": channel,
+                                   "issue": "截断后信号值、类型或股票轴变化"})
+        rank = getattr(engine, "screen_rank_factor", None)
         signal_sets = (
-            ("formal", expected_formal, set(partial.picks_on(cutoff))),
+            ("formal", expected_result.picks_on(cutoff, rank_by=rank),
+             partial.picks_on(cutoff, rank_by=rank)),
             (
                 "watch",
-                expected_watch,
-                set(partial.watch_picks_on(cutoff)),
+                expected_result.watch_picks_on(cutoff, rank_by=rank),
+                partial.watch_picks_on(cutoff, rank_by=rank),
             ),
         )
-        del partial
         for channel, expected, actual in signal_sets:
             if expected != actual:
                 mismatches.append(
                     {
                         "date": cutoff,
                         "channel": channel,
-                        "only_in_full": sorted(expected - actual)[:10],
-                        "only_in_truncated": sorted(actual - expected)[:10],
+                        "only_in_full": sorted(set(expected) - set(actual))[:10],
+                        "only_in_truncated": sorted(set(actual) - set(expected))[:10],
+                        "order_changed": set(expected) == set(actual),
                     }
                 )
+        if expected_result.factors.keys() != partial.factors.keys():
+            mismatches.append({"date": cutoff, "issue": "截断后因子集合变化"})
+        for name, expected in expected_result.factors.items():
+            actual = partial.factors.get(name)
+            try:
+                if actual is None or cutoff not in actual.index:
+                    raise AssertionError("missing factor row")
+                pd.testing.assert_series_equal(expected.loc[cutoff], actual.loc[cutoff],
+                                               check_exact=False, rtol=1e-12, atol=1e-12)
+            except AssertionError:
+                mismatches.append({"date": cutoff, "factor": name,
+                                   "issue": "截断后因子值或股票轴变化"})
+        del partial
 
     if mismatches:
         report.findings.append(
@@ -408,6 +454,7 @@ def guard_strategy(
     panels: dict[str, pd.DataFrame] | None = None,
     *,
     params: dict[str, Any] | None = None,
+    baseline: Any = None,
 ) -> AuditReport:
     """审计并在发现 block 级问题时抛 ``LookAheadError``。"""
     report = audit_engine_source(engine)
@@ -416,9 +463,48 @@ def guard_strategy(
     if panels:
         from src.strategy.application.audit_sampling import iter_guard_panel_shards
 
-        for shard in iter_guard_panel_shards(panels):
-            dynamic = audit_truncation(engine, shard, params=params)
+        from src.strategy.application.compute_runtime import execution_profile, project_result
+        independent = execution_profile(engine, params).column_mode == "independent"
+        shards = iter_guard_panel_shards(panels) if independent else [panels]
+        for shard in shards:
+            expected = baseline
+            if baseline is not None and independent:
+                reference = next(value for value in shard.values()
+                                 if isinstance(value, pd.DataFrame) and not value.empty)
+                expected = project_result(baseline, list(baseline.signals.index), reference.columns)
+            dynamic = audit_truncation(engine, shard, params=params, baseline=expected)
             report.findings.extend(dynamic.findings)
             if dynamic.failed:
                 raise LookAheadError(report)
     return report
+
+
+def guard_runtime_strategy(
+    engine: Any,
+    panels: dict[str, pd.DataFrame] | None = None,
+    *,
+    params: dict[str, Any] | None = None,
+    baseline: Any = None,
+) -> AuditReport:
+    """Use release validation for controlled built-ins; retain full auditing for unknown code."""
+    from src.strategy.application.audit_policy import runtime_audit_mode
+
+    mode = runtime_audit_mode(engine, params)
+    if mode == "dynamic":
+        return guard_strategy(engine, panels, params=params, baseline=baseline)
+    engine_type = type(engine)
+    return AuditReport(
+        strategy=str(getattr(engine, "slug", "")),
+        entry_timing=str(getattr(engine, "entry_timing", "")),
+        findings=[AuditFinding(
+            "runtime_audit_policy", "info",
+            "受控内置实现按发布前版本验证执行；本次未重复静态或动态截断检查",
+            detail={
+                "mode": mode,
+                "implementation": f"{engine_type.__module__}.{engine_type.__qualname__}",
+                "strategy_revision": str(getattr(engine, "strategy_revision", "")),
+                "basis": "exact_builtin_type_and_canonical_methods",
+                "dynamic_truncation_ran": False,
+            },
+        )],
+    )

@@ -30,10 +30,6 @@ from src.ops.application.ensure_prune_tenant_job import ensure_prune_tenant_job
 from src.ops.application.ensure_guardian_review_jobs import ensure_guardian_review_jobs, ensure_exchange_calendar_job
 from src.ops.application.jobs.guardian_delivery import ensure_guardian_delivery_job
 from src.ops.application.stock_agent_service import ensure_stock_agent_jobs
-from src.ops.application.retire_dragon_pool import retire_dragon_pool
-from src.ops.application.retire_dragon_return import retire_dragon_return
-from src.ops.application.retire_second_wave import retire_second_wave
-from src.ops.application.retire_yixian_auction import retire_yixian_auction
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +73,6 @@ def ensure_tenant_jobs(store: Any) -> None:
         ("托管情报采集", store.ensure_managed_intel_jobs),
         # 简报推送：四档，各比悟道出稿晚 10 分钟。没配悟道/企微、或这一档还没出稿都是
         # skipped，所以「默认挂上」不会给没用这个功能的安装制造噪音。
-        ("托管简报推送", store.ensure_managed_intel_brief_jobs),
         # 价格提醒扫描：用户已经建了启用中的规则才挂，避免给没用这个功能的
         # 安装每天塞 48 条空 run（见 ensure_alert_scan_job 模块注释）。
         ("托管价格提醒扫描", lambda: ensure_managed_alert_scan_job(store)),
@@ -92,56 +87,8 @@ def ensure_tenant_jobs(store: Any) -> None:
     ):
         _ensure_step(label, ensure)
 
-    _retire_removed_playbooks(store)
 
 
-def _retire_removed_playbooks(store: Any) -> None:
-    """退役已撤玩法。按租户执行：任务行在各自的 ops.db 里。"""
-    # 先退役龙池，再退役龙回头纸面舱。后者以前会在这里被 reconcile 重新挂上
-    # 监测/日终任务，删舱等于白删。
-    try:
-        pool_plan = retire_dragon_pool(store)
-        if pool_plan.get("removed_jobs") or pool_plan.get("removed_skill"):
-            logger.info("龙池已退役：%s", pool_plan)
-    except Exception as exc:  # noqa: BLE001 — 清理失败也不该拦住启动
-        logger.warning("龙池退役清理失败：%s", exc)
-
-    try:
-        paper_plan = retire_dragon_return(store)
-        if (
-            paper_plan.get("removed_jobs")
-            or paper_plan.get("removed_skill")
-            or paper_plan.get("removed_cabin")
-        ):
-            logger.info("龙回头纸面舱已退役：%s", paper_plan)
-    except Exception as exc:  # noqa: BLE001 — 清理失败不阻断应用启动
-        logger.warning("龙回头纸面舱退役失败：%s", exc)
-
-    # 二波监测 2026-08 退役。它曾是**系统托管**任务：只删源码的话，用户 ops.db 里
-    # 那条 `*/5 9-14` 的任务照样触发，执行器找不到技能就每 5 分钟推一条失败。
-    try:
-        wave_plan = retire_second_wave(store)
-        if wave_plan.get("removed_jobs") or wave_plan.get("removed_skill"):
-            logger.info("二波监测已退役：%s", wave_plan)
-    except Exception as exc:  # noqa: BLE001 — 清理失败不阻断应用启动
-        logger.warning("二波监测退役清理失败：%s", exc)
-
-    try:
-        yixian_plan = retire_yixian_auction(store)
-        if any(
-            yixian_plan.get(key)
-            for key in (
-                "removed_jobs",
-                "removed_job_runs",
-                "removed_skill",
-                "removed_skill_history",
-                "removed_cabin",
-                "removed_candidates",
-            )
-        ):
-            logger.info("一线定乾坤已退役：%s", yixian_plan)
-    except Exception as exc:  # noqa: BLE001 — 清理失败不阻断应用启动
-        logger.warning("一线定乾坤退役清理失败：%s", exc)
 
 
 def ensure_all_managed_jobs(store: Any) -> None:

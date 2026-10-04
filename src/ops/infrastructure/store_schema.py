@@ -1,7 +1,16 @@
 """运维库 schema DDL 与进程内建表缓存。"""
 from __future__ import annotations
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 15
+
+# Dedicated retired cabin storage only. Guardian and stock-agent accounts live
+# in palace.db and are deliberately outside this migration.
+RETIRED_OPS_TABLES = (
+    "paper_mem_edges", "paper_mem_nodes", "paper_positions", "paper_fills",
+    "paper_rejects", "paper_lessons", "paper_style_profiles", "nextday_plans",
+    "monitor_runs", "paper_cabins",
+)
+RETIRED_JOB_KINDS = ("strategy_monitor", "paper_eod", "intel_brief")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -206,132 +215,6 @@ _MIGRATIONS: list[str] = [
     )""",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_hits_rule_bucket ON alert_hits(rule_id, trigger_bucket)",
     "CREATE INDEX IF NOT EXISTS idx_alert_hits_time ON alert_hits(trigger_time DESC)",
-    """CREATE TABLE IF NOT EXISTS paper_cabins (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL DEFAULT '',
-        max_layers REAL NOT NULL DEFAULT 4,
-        max_layers_per_name REAL NOT NULL DEFAULT 0,
-        config_json TEXT NOT NULL DEFAULT '{}',
-        enabled INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    )""",
-    """CREATE TABLE IF NOT EXISTS paper_positions (
-        cabin_id TEXT NOT NULL,
-        code TEXT NOT NULL,
-        name TEXT NOT NULL DEFAULT '',
-        layers REAL NOT NULL DEFAULT 0,
-        mark_cost REAL NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY (cabin_id, code),
-        FOREIGN KEY(cabin_id) REFERENCES paper_cabins(id) ON DELETE CASCADE
-    )""",
-    """CREATE TABLE IF NOT EXISTS paper_fills (
-        id TEXT PRIMARY KEY,
-        cabin_id TEXT NOT NULL,
-        code TEXT NOT NULL,
-        action TEXT NOT NULL,
-        layers REAL NOT NULL DEFAULT 0,
-        mark_price REAL NOT NULL DEFAULT 0,
-        source TEXT NOT NULL DEFAULT '',
-        reason TEXT NOT NULL DEFAULT '',
-        decided_by TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(cabin_id) REFERENCES paper_cabins(id) ON DELETE CASCADE
-    )""",
-    "ALTER TABLE paper_fills ADD COLUMN decided_by TEXT NOT NULL DEFAULT ''",
-    "CREATE INDEX IF NOT EXISTS idx_paper_fills_cabin ON paper_fills(cabin_id, created_at DESC)",
-    """CREATE TABLE IF NOT EXISTS paper_rejects (
-        id TEXT PRIMARY KEY,
-        cabin_id TEXT NOT NULL,
-        code TEXT NOT NULL DEFAULT '',
-        action TEXT NOT NULL DEFAULT '',
-        layers REAL NOT NULL DEFAULT 0,
-        reason TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(cabin_id) REFERENCES paper_cabins(id) ON DELETE CASCADE
-    )""",
-    """CREATE TABLE IF NOT EXISTS nextday_plans (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL,
-        plan_date TEXT NOT NULL,
-        body_text TEXT NOT NULL DEFAULT '',
-        items_json TEXT NOT NULL DEFAULT '[]',
-        config_snapshot_json TEXT NOT NULL DEFAULT '{}',
-        source TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(slug, plan_date)
-    )""",
-    "CREATE INDEX IF NOT EXISTS idx_nextday_plans_slug_date ON nextday_plans(slug, plan_date DESC)",
-    """CREATE TABLE IF NOT EXISTS monitor_runs (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT '',
-        trigger_source TEXT NOT NULL DEFAULT '',
-        snapshot_json TEXT NOT NULL DEFAULT '{}',
-        orders_json TEXT NOT NULL DEFAULT '[]',
-        fills_json TEXT NOT NULL DEFAULT '[]',
-        rejects_json TEXT NOT NULL DEFAULT '[]',
-        notes TEXT NOT NULL DEFAULT '',
-        follow_pushed INTEGER NOT NULL DEFAULT 0,
-        started_at TEXT NOT NULL,
-        finished_at TEXT NOT NULL DEFAULT '',
-        duration_ms INTEGER NOT NULL DEFAULT 0,
-        error_text TEXT NOT NULL DEFAULT ''
-    )""",
-    "CREATE INDEX IF NOT EXISTS idx_monitor_runs_slug ON monitor_runs(slug, started_at DESC)",
-    """CREATE TABLE IF NOT EXISTS paper_style_profiles (
-        slug TEXT PRIMARY KEY,
-        style_md TEXT NOT NULL DEFAULT '',
-        watch_hints_json TEXT NOT NULL DEFAULT '[]',
-        buy_rules_json TEXT NOT NULL DEFAULT '{}',
-        revision INTEGER NOT NULL DEFAULT 1,
-        updated_at TEXT NOT NULL
-    )""",
-    """CREATE TABLE IF NOT EXISTS paper_lessons (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL,
-        trade_date TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        title TEXT NOT NULL DEFAULT '',
-        content TEXT NOT NULL DEFAULT '',
-        evidence_json TEXT NOT NULL DEFAULT '{}',
-        absorbed INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
-    )""",
-    "CREATE INDEX IF NOT EXISTS idx_paper_lessons_slug_date ON paper_lessons(slug, trade_date DESC, created_at DESC)",
-    """CREATE TABLE IF NOT EXISTS paper_mem_nodes (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        key TEXT NOT NULL DEFAULT '',
-        title TEXT NOT NULL DEFAULT '',
-        body TEXT NOT NULL DEFAULT '',
-        props_json TEXT NOT NULL DEFAULT '{}',
-        weight REAL NOT NULL DEFAULT 1.0,
-        active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE(slug, kind, key)
-    )""",
-    "CREATE INDEX IF NOT EXISTS idx_paper_mem_nodes_slug_kind ON paper_mem_nodes(slug, kind, active)",
-    """CREATE TABLE IF NOT EXISTS paper_mem_edges (
-        id TEXT PRIMARY KEY,
-        slug TEXT NOT NULL,
-        src_id TEXT NOT NULL,
-        dst_id TEXT NOT NULL,
-        rel TEXT NOT NULL,
-        weight REAL NOT NULL DEFAULT 1.0,
-        props_json TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(src_id) REFERENCES paper_mem_nodes(id) ON DELETE CASCADE,
-        FOREIGN KEY(dst_id) REFERENCES paper_mem_nodes(id) ON DELETE CASCADE
-    )""",
-    "CREATE INDEX IF NOT EXISTS idx_paper_mem_edges_slug ON paper_mem_edges(slug, rel)",
-    "CREATE INDEX IF NOT EXISTS idx_paper_mem_edges_src ON paper_mem_edges(src_id)",
-    "CREATE INDEX IF NOT EXISTS idx_paper_mem_edges_dst ON paper_mem_edges(dst_id)",
     # 龙头角色留痕：**只追加**。intel_snapshots 是按 (日, 工具) 覆盖的缓存，
     # 盘中角色演进会被抹掉；这里一次扫描写一批，便于回看「谁从龙头掉下来」。
     # 可整表清空重建（重扫即可再生），保留天数由 prune_leader_roles 控制。
@@ -393,7 +276,6 @@ _MIGRATIONS: list[str] = [
     # leader_role_snapshots 的三条复合索引都以 slug 打头，全表按 trade_date
     # 截断用不上，故单独补一条。
   "CREATE INDEX IF NOT EXISTS idx_ai_decisions_created ON ai_decisions(created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_monitor_runs_started ON monitor_runs(started_at)",
     "CREATE INDEX IF NOT EXISTS idx_leader_roles_trade_date ON leader_role_snapshots(trade_date)",
     # 实时信号（大屏推流）的两张表。行情与研究产物**不**落这里——见
     # src/market/application/realtime_signals.py 的模块 docstring 第 1 条：
@@ -440,4 +322,9 @@ _MIGRATIONS: list[str] = [
     # 先按租户收窄，再按 triggered_at 倒序。缺这条索引三处都是全表扫。
   "CREATE INDEX IF NOT EXISTS idx_signal_journal_tenant_time"
     " ON signal_journal(tenant, triggered_at DESC)",
+    # No disabled rows or orphan history are left for retired features.
+    "DELETE FROM job_runs WHERE kind IN ('strategy_monitor','paper_eod','intel_brief') "
+    "OR job_id IN (SELECT id FROM jobs WHERE kind IN ('strategy_monitor','paper_eod','intel_brief'))",
+    "DELETE FROM jobs WHERE kind IN ('strategy_monitor','paper_eod','intel_brief')",
+    *[f'DROP TABLE IF EXISTS "{name}"' for name in RETIRED_OPS_TABLES],
 ]

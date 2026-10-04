@@ -1,0 +1,34 @@
+{
+  "execution": {
+    "closed": 858,
+    "data_end": 1
+  },
+  "label_status": {
+    "closed": 858,
+    "unresolved": 1
+  },
+  "feature_missing": 0,
+  "eligible_rows": 858,
+  "eligible_dates": 212,
+  "segment": "fit_2024",
+  "decision_start": "2024-01-01",
+  "label_cutoff": "2024-12-31",
+  "common_mature_decision_days": 239,
+  "environment": {
+    "main_stock_catalog_codes": 3195,
+    "breadth_panel_codes": 3133,
+    "index_excluded": true,
+    "benchmark_coverage": 484,
+    "benchmark_sources": [
+      {
+        "source": "tdx",
+        "observations": 484,
+        "first_date": "2023-01-03",
+        "last_date": "2024-12-31"
+      }
+    ]
+  },
+  "candidate_rows_sha256": "68c68bc542b160126acf5b2aef730bbe1f2ecff5bf19ea6f33c20835b3a09003",
+  "prefix_features": "passed",
+  "source_score_parity": "passed"
+}

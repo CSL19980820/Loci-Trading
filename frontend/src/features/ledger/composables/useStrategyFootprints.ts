@@ -17,6 +17,7 @@ import {
   type DecisionTone,
 } from '@/shared/lib/format'
 import { useUserStore } from '@/shared/stores/user'
+import { isHistoricalCandidate } from '@/shared/lib/candidateSource'
 import type { Candidate } from '@/shared/types/palace'
 import type { Job, StrategyInfo } from '@/shared/types/quant'
 
@@ -97,7 +98,7 @@ function toPick(row: Candidate): FootprintPick {
     tone: decisionTone(row.decision),
     score,
     reason: String(row.reason || ''),
-    backfill: String(row.source || '').includes('backfill'),
+    backfill: isHistoricalCandidate(row),
   }
 }
 
@@ -175,7 +176,11 @@ export function useStrategyFootprints(code: MaybeRefOrGetter<string>) {
 
   watch(
     () => [toValue(code), scope.value] as const,
-    ([value]) => void load(value),
+    ([value]) => {
+      // 工作台复用时，等待新票记录不能继续展示上一只的选股标记。
+      candidates.value = []
+      void load(value)
+    },
     { immediate: true },
   )
 
