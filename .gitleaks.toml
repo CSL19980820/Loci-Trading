@@ -24,5 +24,19 @@ regexes = [
   '''^(victim|walk-in|analyst)-secret-2026$''',
   # 不是凭据：一个缓存键名与一个前端字段名，被 `key=` / `key:` 的正则误伤
   '''^quotes_daily_rows_v1$''',
+  '''^quotes_daily_rows_v2$''',
+  '''^retention\.policy\.v1$''',
   '''^volume_ratio20$''',
 ]
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  description = "2026-10-04 研究产物中的 SHA-256 摘要，不排除其他密钥"
+  condition = "AND"
+  paths = ['''(^|/)docs/research/2026-10-04-[^/]+/.+\.json$''']
+  regexTarget = "match"
+  regexes = [
+    '''(selected_signal_keys_sha256|keyset_sha256|selection_key|order-keys\.csv)"\s*:\s*"[0-9a-fA-F]{64}"''',
+  ]

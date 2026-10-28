@@ -10,6 +10,11 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT/'deploy/server/retire_slim_state.py'
+RESTORE_SCRIPT = ROOT/'deploy/server/restore_slim_state.py'
+pytestmark = pytest.mark.skipif(
+    not SCRIPT.is_file() or not RESTORE_SCRIPT.is_file(),
+    reason='offline deployment cleanup tools are not included in the checkout',
+)
 
 
 def seed(root):
@@ -82,8 +87,7 @@ def test_preview_apply_preserves_core_and_backups_legacy(tmp_path):
     again=json.loads(invoke(root).stdout)
     assert all(not row['drop_tables'] and row['retired_jobs']==0 for row in again['databases'])
     assert again['files']==again['configs']==[]
-    restore_script = ROOT/'deploy/server/restore_slim_state.py'
-    restored = subprocess.run([sys.executable, str(restore_script), '--data-root', str(root),
+    restored = subprocess.run([sys.executable, str(RESTORE_SCRIPT), '--data-root', str(root),
                                '--backup-dir', str(backup), '--application-stopped'],
                               capture_output=True, text=True, encoding='utf-8')
     assert restored.returncode == 0, restored.stderr
