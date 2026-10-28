@@ -49,7 +49,8 @@ from src.shared.observability import (
     metric as observation_metric,
     span as observation_span,
 )
-from src.shared.paths import ensure_data_dir, palace_db
+from src.shared.paths import ensure_data_dir, identity_db, palace_db
+from src.shared.postgres import create_identity_auth_pool, postgres_enabled, uses_primary_path
 
 # 必须在任何 logger 取用前执行：容器绕过 cli/serve.py 直起 uvicorn，没这一行应用自己的 INFO 在生产上一条都不输出（见 logging_setup）。
 configure_logging()
@@ -194,10 +195,12 @@ def create_app(
         # 身份库建不起来不该让整个应用起不来：Agent Bearer 通道仍可用，
         # 运维还有机会进容器排查。
         logger.exception("初始化身份库失败（登录功能将不可用）")
+    auth_pool_box: dict[str, Any] = {"instance": None}
     auth_dependency = build_auth_dependency(
         identity_db_path,
         # 桌面/本地形态自动以主租户管理员身份运行，保持单机零登录体验。
         auto_login_primary=not require_write_auth,
+        connection_pool=lambda: auth_pool_box["instance"],
     )
     # 调度器实例存在这里，供关闭钩子与 /api/jobs/schedule 取用。
     scheduler_box: dict[str, Any] = {"instance": None}
@@ -276,8 +279,14 @@ def create_app(
             from src.ai import start_grpc_from_env
             gateway = await start_grpc_from_env()
         try:
+            if postgres_enabled() and uses_primary_path(identity_db_path, identity_db()):
+                auth_pool_box["instance"] = create_identity_auth_pool()
             yield
         finally:
+            auth_pool = auth_pool_box["instance"]
+            auth_pool_box["instance"] = None
+            if auth_pool is not None:
+                await run_in_threadpool(auth_pool.close)
             for executor in executors:
                 await run_in_threadpool(executor.shutdown)
             if gateway is not None:

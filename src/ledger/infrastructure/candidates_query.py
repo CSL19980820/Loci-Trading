@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from itertools import groupby
 from typing import Any
 
 from src.ledger.infrastructure.candidates_sql import (
@@ -415,33 +416,55 @@ class CandidateQueryMixin:
         visible_where = " AND ".join((*EXCLUDE_BACKFILL_SQL, EXCLUDE_STALE_API_SCREEN_SQL))
         rows = self.conn.execute(
             f"""
-            SELECT occurred_on AS date, pool_id
-            FROM candidate_reviews
-            WHERE {visible_where}
-            GROUP BY occurred_on, pool_id
-            ORDER BY occurred_on DESC, pool_id ASC
+            SELECT occurred_on, pool_id, score, decision
+            FROM (
+                SELECT occurred_on, pool_id, score, decision, created_at,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY occurred_on, pool_id, code
+                           ORDER BY created_at DESC, id DESC
+                       ) AS rn
+                FROM candidate_reviews
+                WHERE {visible_where}
+            ) ranked
+            WHERE rn = 1
+            ORDER BY occurred_on DESC, pool_id ASC, score DESC NULLS LAST, created_at ASC
             """
-        ).fetchall()
-        result: list[dict[str, Any]] = []
-        for row in rows:
-            day = str(row["date"])
-            pool_id = str(row["pool_id"])
-            candidates = self.candidates_payload(day)
-            pool_candidates = [item for item in candidates if item["pool_id"] == pool_id]
-            selected = [item for item in pool_candidates if self._is_selected_decision(str(item["decision"]))]
-            scored = [item for item in pool_candidates if item["score"] is not None]
-            avg_score = round(sum(float(item["score"]) for item in scored) / len(scored), 2) if scored else None
-            result.append(
-                {
-                    "date": day,
-                    "pool_id": pool_id,
-                    "total": len(pool_candidates),
-                    "selected": len(selected),
-                    "filtered": max(len(pool_candidates) - len(selected), 0),
-                    "scored": len(scored),
-                    "avg_score": avg_score,
-                }
+        )
+
+        def summarize(candidates: Any) -> dict[str, Any]:
+            total = selected = 0
+            scores = []
+            for candidate in candidates:
+                total += 1
+                decision = _normalize_decision(str(candidate["decision"]))
+                selected += self._is_selected_decision(decision)
+                if candidate["score"] is not None:
+                    scores.append(float(candidate["score"]))
+            return {
+                "total": total,
+                "selected": selected,
+                "filtered": max(total - selected, 0),
+                "scored": len(scores),
+                "avg_score": round(sum(scores) / len(scores), 2) if scores else None,
+            }
+
+        summaries = {
+            key: summarize(group)
+            for key, group in groupby(
+                rows, key=lambda row: (str(row["occurred_on"]), str(row["pool_id"]))
             )
+        }
+        result: list[dict[str, Any]] = []
+        for day, pool_id in summaries:
+            if day:
+                summary = summaries.get((normalize_date(day), pool_id))
+            else:
+                # 空日期在原有接口中表示最新日期，保留历史异常记录的行为。
+                summary = summarize(
+                    candidate for candidate in self.candidates_payload(day)
+                    if candidate["pool_id"] == pool_id
+                )
+            result.append({"date": day, "pool_id": pool_id, **(summary or summarize(()))})
         return result
 
     def pool_day_payload(self, occurred_on: str | None = None, pool_id: str | None = None) -> dict[str, Any]:

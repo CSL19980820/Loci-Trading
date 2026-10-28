@@ -70,6 +70,44 @@ def test_cancel_watch_raises_once_run_is_cancelled(run):
     watch.close()
 
 
+def test_postgres_cancel_watch_reuses_autocommit_connection(monkeypatch):
+    created = []
+
+    class Connection:
+        def __init__(self, *, autocommit=False):
+            self.autocommit = autocommit
+            self.raw = self
+            self.cancelled = False
+            self.in_transaction = False
+            self.closed = False
+            created.append(self)
+
+        def execute(self, sql, _params=None):
+            if sql.startswith("SELECT"):
+                self.in_transaction = not self.autocommit
+            return self
+
+        def fetchone(self):
+            return {"status": "running", "cancel_requested": self.cancelled}
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(executor, "uses_primary_path", lambda *_args: True)
+    monkeypatch.setattr(executor, "CompatConnection", Connection)
+    watch = RunCancelWatch("unused", "run-1", interval=0)
+    watch()
+    assert len(created) == 1
+    assert not created[0].in_transaction
+    created[0].cancelled = True
+    with pytest.raises(CancelledError):
+        watch()
+    assert len(created) == 1
+    assert not created[0].in_transaction
+    watch.close()
+    assert created[0].closed
+
+
 class Host(AssistantRunExecutorMixin):
     def __init__(self, ops_db):
         self.ops_db = ops_db

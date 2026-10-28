@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -11,7 +12,143 @@ from psycopg._queries import _query2pg
 
 from src.ledger import PalaceStore
 from src.ledger.api.router import build_ledger_router
+from src.ledger.infrastructure.candidates_query import CandidateQueryMixin
 from src.shared.postgres import translate_sql
+
+
+def _pool_dates_store(*, days=30, pools=5, candidates=20):
+    """构造可复现的内存账本，不访问本地或远程真实数据库。"""
+    store = CandidateQueryMixin()
+    store.conn = sqlite3.connect(":memory:")
+    store.conn.row_factory = sqlite3.Row
+    store.conn.execute(
+        """CREATE TABLE candidate_reviews (
+            id TEXT PRIMARY KEY, occurred_on TEXT NOT NULL, pool_id TEXT NOT NULL,
+            code TEXT NOT NULL, name TEXT NOT NULL, score REAL, decision TEXT NOT NULL,
+            timing TEXT NOT NULL, reason TEXT NOT NULL, rule_version TEXT NOT NULL,
+            strategy_slug TEXT NOT NULL, strategy_revision TEXT NOT NULL,
+            effective_params_json TEXT NOT NULL, evidence_json TEXT NOT NULL,
+            tier TEXT NOT NULL, source TEXT NOT NULL, created_at TEXT NOT NULL
+        )"""
+    )
+    store.conn.execute(
+        "CREATE UNIQUE INDEX idx_candidates_day_pool_code "
+        "ON candidate_reviews(occurred_on, pool_id, code)"
+    )
+    evidence = json.dumps({"trace": "x" * 4096})
+    rows = []
+    for day_index in range(days):
+        day = (date(2026, 10, 1) + timedelta(days=day_index)).isoformat()
+        for pool_index in range(pools):
+            for candidate_index in range(candidates):
+                rows.append((
+                    f"{day_index:03d}-{pool_index:02d}-{candidate_index:03d}", day,
+                    f"pool-{pool_index:02d}", f"{candidate_index:06d}", "测试标的",
+                    None if candidate_index % 7 == 0 else (candidate_index * 7 + pool_index) % 101 + 0.125,
+                    ("selected", "观察", "剔除", "买入")[candidate_index % 4],
+                    "", "测试理由", "测试战法", "fixture", "", "{}", evidence,
+                    "core", "manual", f"{day}T15:30:{candidate_index % 60:02d}",
+                ))
+    store.conn.executemany(
+        "INSERT INTO candidate_reviews VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    return store
+
+
+def test_pool_dates_summarizes_normalized_decisions_and_null_scores():
+    store = _pool_dates_store(days=1, pools=2, candidates=4)
+    try:
+        assert store.pool_dates_payload() == [
+            {"date": "2026-10-01", "pool_id": "pool-00", "total": 4,
+             "selected": 2, "filtered": 2, "scored": 3, "avg_score": 14.12},
+            {"date": "2026-10-01", "pool_id": "pool-01", "total": 4,
+             "selected": 2, "filtered": 2, "scored": 3, "avg_score": 15.12},
+        ]
+    finally:
+        store.conn.close()
+
+
+def test_pool_dates_uses_one_query_for_multiple_dates_and_pools():
+    store = _pool_dates_store(days=3, pools=3, candidates=4)
+    queries = []
+    try:
+        store.conn.set_trace_callback(queries.append)
+        result = store.pool_dates_payload()
+        assert len(result) == 9
+        assert len(queries) == 1
+        assert "evidence_json" not in queries[0]
+    finally:
+        store.conn.close()
+
+
+def test_pool_dates_filters_before_deduplication_and_preserves_order():
+    store = _pool_dates_store(days=2, pools=2, candidates=3)
+    try:
+        # 模拟尚未建立唯一索引的历史库，验证同时间按 ID 决胜及过滤顺序。
+        store.conn.execute("DROP INDEX idx_candidates_day_pool_code")
+        for candidate_id, score, decision, source, created in (
+            ("v-a", 99, "buy", "manual", "2026-10-02T16:00:00"),
+            ("v-b", 70, "reject", "manual", "2026-10-02T16:00:00"),
+            ("z-backfill", 999, "精选", "api:screen_backfill", "2026-10-02T18:00:00"),
+            ("z-history", 999, "精选", "job:screen:history", "2026-10-02T19:00:00"),
+            ("z-stale", 999, "精选", "api:screen", "2026-10-03T20:00:00"),
+        ):
+            store.conn.execute(
+                """INSERT INTO candidate_reviews
+                   SELECT ?, occurred_on, pool_id, code, name, ?, ?, timing, reason,
+                          rule_version, strategy_slug, strategy_revision, effective_params_json,
+                          evidence_json, tier, ?, ?
+                   FROM candidate_reviews WHERE id = ?""",
+                (candidate_id, score, decision, source, created, "001-00-000"),
+            )
+        store.conn.execute(
+            "UPDATE candidate_reviews SET score = NULL WHERE occurred_on = ? AND pool_id = ?",
+            ("2026-10-02", "pool-01"),
+        )
+        store.conn.execute(
+            """INSERT INTO candidate_reviews
+               SELECT 'hidden-pool', occurred_on, 'hidden', code, name, score, decision, timing, reason,
+                      rule_version, strategy_slug, strategy_revision, effective_params_json,
+                      evidence_json, tier, 'job:screen:history', created_at
+               FROM candidate_reviews WHERE id = '001-00-000'"""
+        )
+        assert store.pool_dates_payload() == [
+            {"date": "2026-10-02", "pool_id": "pool-00", "total": 3,
+             "selected": 0, "filtered": 3, "scored": 3, "avg_score": 30.42},
+            {"date": "2026-10-02", "pool_id": "pool-01", "total": 3,
+             "selected": 1, "filtered": 2, "scored": 0, "avg_score": None},
+            {"date": "2026-10-01", "pool_id": "pool-00", "total": 3,
+             "selected": 1, "filtered": 2, "scored": 2, "avg_score": 10.62},
+            {"date": "2026-10-01", "pool_id": "pool-01", "total": 3,
+             "selected": 1, "filtered": 2, "scored": 2, "avg_score": 11.62},
+        ]
+    finally:
+        store.conn.close()
+
+
+def test_pool_dates_preserves_legacy_date_normalization():
+    store = _pool_dates_store(days=1, pools=1, candidates=4)
+    try:
+        for candidate_id, day in (("compact", "20261001"), ("empty", "")):
+            store.conn.execute(
+                """INSERT INTO candidate_reviews
+                   SELECT ?, ?, pool_id, code, name, score, decision, timing, reason,
+                          rule_version, strategy_slug, strategy_revision, effective_params_json,
+                          evidence_json, tier, source, created_at
+                   FROM candidate_reviews WHERE id = '000-00-001'""",
+                (candidate_id, day),
+            )
+        assert store.pool_dates_payload() == [
+            {"date": "20261001", "pool_id": "pool-00", "total": 4,
+             "selected": 2, "filtered": 2, "scored": 3, "avg_score": 14.12},
+            {"date": "2026-10-01", "pool_id": "pool-00", "total": 4,
+             "selected": 2, "filtered": 2, "scored": 3, "avg_score": 14.12},
+            {"date": "", "pool_id": "pool-00", "total": 1,
+             "selected": 0, "filtered": 1, "scored": 1, "avg_score": 7.12},
+        ]
+    finally:
+        store.conn.close()
 
 
 @pytest.fixture

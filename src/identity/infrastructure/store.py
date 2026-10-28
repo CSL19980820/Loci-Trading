@@ -1,7 +1,7 @@
 """IdentityStore：identity.db 的唯一读写口。
 
-连接策略与 ops/palace 对齐：每次构造开一条新连接，WAL + busy_timeout，
-用完 close。不做连接池——SQLite 的并发瓶颈在写锁，不在连接创建。
+SQLite 每次构造开一条新连接；PostgreSQL 的短暂鉴权查询可使用应用连接池。
+其他身份操作仍使用独立连接。
 
 **这里的 SQL 是全仓唯一能读到 password_hash 与 session id 的地方。**
 任何「顺手在别处查一下 users 表」的写法都要挡回来：绕过这里就绕过了
@@ -16,6 +16,8 @@ import hashlib
 import json
 import secrets
 import sqlite3
+
+from psycopg_pool import ConnectionPool
 
 from src.identity.domain.models import (
     ConflictError,
@@ -93,7 +95,9 @@ def _user_filters(keyword: str = "", status: str = "", role: str = "") -> tuple[
 class IdentityStore(AuthTicketsMixin, PlatformMixin):
     """identity.db 门面。用作上下文管理器：``with IdentityStore(path) as store:``。"""
 
-    def __init__(self, db_path: Path | str | None = None) -> None:
+    def __init__(
+        self, db_path: Path | str | None = None, *, pool: ConnectionPool | None = None,
+    ) -> None:
         from src.shared.paths import identity_db
 
         resolved = Path(db_path) if db_path else identity_db()
@@ -103,9 +107,13 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
             and uses_primary_path(db_path, identity_db())
         )
         if self._use_postgres:
-            self.conn = CompatConnection()
-            self.conn.raw.execute("SET search_path TO identity, public")
-            self.conn.raw.commit()
+            self.conn = CompatConnection(pool=pool)
+            try:
+                self.conn.raw.execute("SET search_path TO identity, public")
+                self.conn.raw.commit()
+            except BaseException:
+                self.conn.close()
+                raise
             return
         resolved.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(resolved), timeout=30)

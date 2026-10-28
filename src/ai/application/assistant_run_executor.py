@@ -95,9 +95,10 @@ class RunCancelWatch:
             try:
                 if uses_primary_path(self._ops_db, _default_ops_db()):
                     if self._conn is None:
-                        self._conn = CompatConnection()
+                        # This dedicated connection only polls cancellation.
+                        # Autocommit keeps each read from holding an idle transaction.
+                        self._conn = CompatConnection(autocommit=True)
                         self._conn.raw.execute("SET search_path TO ops, public")
-                        self._conn.raw.commit()
                     conn = self._conn
                 else:
                     conn = sqlite3.connect(self._ops_db, timeout=5)

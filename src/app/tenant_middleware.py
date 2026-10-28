@@ -14,8 +14,10 @@ from __future__ import annotations
 from typing import Any
 import logging
 
+from psycopg_pool import PoolTimeout
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from src.identity import AuthContext
 from src.shared.tenancy import reset_current_tenant, set_current_tenant
@@ -41,6 +43,19 @@ class TenantResolverMiddleware:
         request = Request(scope, receive=receive)
         try:
             context = await run_in_threadpool(self._resolver, request)
+        except PoolTimeout:
+            # A busy pool says nothing about whether an existing session is valid.
+            # Avoid sending the session-expired 401 that makes the client log out.
+            logger.warning("身份连接池繁忙，暂时无法解析会话")
+            path = scope.get("path", "")
+            if path.startswith("/api/") and path != "/api/health":
+                await JSONResponse(
+                    {"detail": "身份服务繁忙，请稍后重试", "code": "auth_unavailable"},
+                    status_code=503,
+                    headers={"Retry-After": "1"},
+                )(scope, receive, send)
+                return
+            context = AuthContext()
         except Exception:
             # 身份库暂时不可用不能让整站 500：退化成匿名，鉴权层会给 401。
             logger.exception("解析当前用户失败（按匿名处理）")

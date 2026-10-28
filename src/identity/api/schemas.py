@@ -7,10 +7,11 @@
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
+from psycopg_pool import ConnectionPool
 
 from src.identity.domain.models import AuthContext, IdentityError
 from src.identity.infrastructure.store import IdentityStore
@@ -143,6 +144,7 @@ def build_auth_dependency(
     identity_db: str | None = None,
     *,
     auto_login_primary: bool = False,
+    connection_pool: Callable[[], ConnectionPool | None] | None = None,
 ):
     """返回 FastAPI 依赖：``Request -> AuthContext``。
 
@@ -161,11 +163,15 @@ def build_auth_dependency(
             return cached
         context = AuthContext()
         token = request.cookies.get(SESSION_COOKIE, "")
-        with IdentityStore(identity_db) as store:
-            if token:
-                context = accounts.resolve_session(store, token)
-            if not context.authenticated and auto_login_primary and not token and not request.headers.get("Authorization"):
-                context = _primary_admin_context(store)
+        desktop_login = auto_login_primary and not token and not request.headers.get("Authorization")
+        if token or desktop_login:
+            pool = connection_pool() if connection_pool is not None else None
+            store = IdentityStore(identity_db, pool=pool) if pool is not None else IdentityStore(identity_db)
+            with store:
+                if token:
+                    context = accounts.resolve_session(store, token)
+                if desktop_login:
+                    context = _primary_admin_context(store)
         request.state.loci_auth = context
         return context
 

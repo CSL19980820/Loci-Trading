@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import sqlite3
@@ -440,10 +441,14 @@ class OpsRunsMixin:
 
 
     def is_cancel_requested(self, run_id: str) -> bool:
-        row = self.conn.execute(
-            "SELECT cancel_requested FROM job_runs WHERE id = ?",
-            (run_id,),
-        ).fetchone()
+        # A polling read on a long-running job must not leave its own PostgreSQL
+        # transaction open. Never finish a transaction owned by the caller.
+        scope = self.conn if self._use_postgres and not self.conn.in_transaction else nullcontext()
+        with scope:
+            row = self.conn.execute(
+                "SELECT cancel_requested FROM job_runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
         return bool(row and row["cancel_requested"])
 
     def heartbeat_run(self, run_id: str) -> bool:

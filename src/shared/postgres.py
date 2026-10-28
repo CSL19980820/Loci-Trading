@@ -16,6 +16,7 @@ from typing import Any, Iterable, Iterator
 import psycopg
 from psycopg import errors as pg_errors
 from psycopg.rows import dict_row, tuple_row
+from psycopg_pool import ConnectionPool
 
 
 DEFAULT_DSN = "postgresql://loci@127.0.0.1:5432/loci"
@@ -360,10 +361,25 @@ class CompatCursor:
 class CompatConnection:
     """Small psycopg connection wrapper used by the existing stores."""
 
-    def __init__(self, url: str | None = None, *, autocommit: bool = False) -> None:
+    def __init__(
+        self, url: str | None = None, *, autocommit: bool = False,
+        pool: ConnectionPool | None = None,
+    ) -> None:
+        if pool is not None and (url is not None or autocommit):
+            raise ValueError("pooled connections use the pool URL and transaction mode")
         self.url = url or database_url()
-        self.raw = psycopg.connect(self.url, row_factory=dict_row, autocommit=autocommit)
+        self._pool = pool
         self._closed = False
+        self._raw = (
+            pool.getconn() if pool is not None
+            else psycopg.connect(self.url, row_factory=dict_row, autocommit=autocommit)
+        )
+
+    @property
+    def raw(self) -> Any:
+        if self._closed:
+            raise psycopg.OperationalError("the connection is closed")
+        return self._raw
 
     @property
     def total_changes(self) -> int:
@@ -375,7 +391,7 @@ class CompatConnection:
 
     @property
     def closed(self) -> bool:
-        return self._closed or self.raw.closed
+        return self._closed or self._raw.closed
 
     def execute(self, sql: str, params: Any = None) -> CompatCursor:
         cur = self.raw.cursor()
@@ -411,8 +427,16 @@ class CompatConnection:
 
     def close(self) -> None:
         if not self._closed:
-            self.raw.close()
+            raw = self._raw
             self._closed = True
+            if self._pool is None:
+                raw.close()
+            else:
+                try:
+                    if not raw.closed and raw.info.transaction_status:
+                        raw.rollback()
+                finally:
+                    self._pool.putconn(raw)
 
     def __enter__(self) -> CompatConnection:
         return self
@@ -425,6 +449,29 @@ class CompatConnection:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.raw, name)
+
+
+def _reset_identity_connection(conn: psycopg.Connection) -> None:
+    """Restore the session state a freshly opened identity connection has."""
+    conn.autocommit = True
+    try:
+        conn.execute("DISCARD ALL")
+    finally:
+        conn.autocommit = False
+
+
+def create_identity_auth_pool() -> ConnectionPool:
+    """Keep only short-lived authentication lookups in a small per-app pool."""
+    return ConnectionPool(
+        database_url(),
+        kwargs={"row_factory": dict_row, "prepare_threshold": None},
+        min_size=1,
+        max_size=4,
+        timeout=3,
+        check=ConnectionPool.check_connection,
+        reset=_reset_identity_connection,
+        open=True,
+    )
 
 
 def connect(url: str | None = None, **_: Any) -> CompatConnection:
