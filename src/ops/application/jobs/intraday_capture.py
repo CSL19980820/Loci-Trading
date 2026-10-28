@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.ops.application.jobs.context import JobContext, JobError
+from src.ops.application.jobs.context import JobContext
 
 
 def execute_intraday_capture(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
@@ -23,33 +23,10 @@ def execute_intraday_capture(config: dict[str, Any], context: JobContext) -> dic
     - ``datasets``：只采这几个（列表）。缺省采 `default_specs()` 全部。
     - ``trade_date``：覆盖交易日，仅补采历史目录时用。
     """
-    from src.market import capture_snapshots, default_specs
-    from src.shared.paths import data_dir
-
-    specs = default_specs()
-    wanted = config.get("datasets")
-    if isinstance(wanted, (list, tuple)) and wanted:
-        names = {str(item).strip() for item in wanted if str(item).strip()}
-        specs = [item for item in specs if item.dataset in names]
-        if not specs:
-            raise JobError(f"没有匹配的数据集：{sorted(names)}")
-
-    trade_date = str(config.get("trade_date") or "").strip() or None
-    report = capture_snapshots(data_dir(), specs, trade_date=trade_date)
-    body = report.to_dict()
-
-    if not report.captured:
-        raise JobError(
-            f"盘中留存全部失败（{body['failure_count']} 项）："
-            + "；".join(f"{item['dataset']}:{item['error'][:60]}" for item in body["failures"])
-        )
-
-    body["status"] = "ok" if report.ok else "partial"
-    body["summary"] = (
-        f"{body['trade_date']} 采集 {body['captured_count']} 项"
-        f"（失败 {body['failure_count']}）｜加密 {body['protection']}"
-    )
-    return body
+    return {
+        "status": "skipped",
+        "reason": "durable minute and intraday tape storage is disabled; minute data is fetched from online APIs",
+    }
 
 
 __all__ = ["execute_intraday_capture"]

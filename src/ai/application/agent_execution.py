@@ -1,6 +1,7 @@
 """按模型请求顺序执行工具；仅显式白名单内的独立只读工具可并发。"""
 from __future__ import annotations
 
+import json
 import time
 from asyncio import CancelledError as AsyncCancelledError
 from collections.abc import Callable, Collection
@@ -54,15 +55,15 @@ def not_executed(call: ToolCall, reason: str) -> ToolOutcome:
     )
 
 
-def reraise_stop(error: BaseException) -> None:
+def reraise_stop(error: BaseException, *, include_timeouts: bool = True) -> None:
     """客户端会包装回调异常，沿显式原因链还原协作式终止。"""
     from src.ops import JobCancelled, JobTimedOut
 
     seen: set[int] = set()
     cause: BaseException | None = error
     while cause is not None and id(cause) not in seen:
-        if isinstance(cause, (TimeoutError, CancelledError, AsyncCancelledError,
-                              JobCancelled, JobTimedOut)):
+        if isinstance(cause, (CancelledError, AsyncCancelledError, JobCancelled, JobTimedOut)) or (
+                include_timeouts and isinstance(cause, TimeoutError)):
             raise cause
         seen.add(id(cause))
         cause = cause.__cause__
@@ -77,12 +78,15 @@ def _invoke(call: ToolCall, executor: ToolExecutor, aborted: Event) -> ToolOutco
         text = str(outcome.get("text", ""))
         failed = bool(outcome.get("is_error"))
         meta = outcome.get("meta") if isinstance(outcome.get("meta"), dict) else {}
-    except (TimeoutError, CancelledError):
+    except CancelledError:
         raise
     except Exception as exc:
         # 运维的协作式终止是控制流，不能伪装成可恢复的工具取数失败。
-        reraise_stop(exc)
-        text = f"工具调用失败：{type(exc).__name__}: {exc}"
+        # 单工具超时属于工具反馈；真正整轮到期由调用线程的checkpoint检查。
+        reraise_stop(exc, include_timeouts=False)
+        text = json.dumps({"tool": call.name, "error_type": type(exc).__name__,
+                           "error": str(exc), "recoverable": True,
+                           "note": "工具调用未成功；可调整参数、查询其他证据或据已知事实继续判断。"}, ensure_ascii=False)
         failed = True
         meta = {}
     return ToolOutcome(

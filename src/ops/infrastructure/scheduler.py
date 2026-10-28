@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -383,6 +383,8 @@ class JobScheduler:
         tenant_job_total = 0
 
         with self._lock:
+            auction_retries = [item for item in self._scheduler.get_jobs()
+                               if item.id.endswith(":auction-inputs")]
             self._scheduler.remove_all_jobs()
             # 闸门在这里重建：改了 LOCI_TENANT_JOB_CONCURRENCY 后 reload 即生效，
             # 不用重启进程（线程池宽度仍是进程启动时那个，闸门只会更严不会更松）。
@@ -431,6 +433,16 @@ class JobScheduler:
                     if not primary:
                         tenant_job_total += 1
 
+            # 来源写入期间管理页刷新日程，不应丢失仍在等输入的当日竞价。
+            for retry in auction_retries:
+                tenant_id, job_id = retry.args
+                if tenant_job_key(tenant_id, job_id) not in index:
+                    continue
+                self._scheduler.add_job(
+                    self._run_tenant, trigger=retry.trigger, args=retry.args, id=retry.id,
+                    name=retry.name, replace_existing=True, executor=retry.executor,
+                )
+                index[retry.id] = (tenant_id, job_id)
             self._job_index = index
             self._tenant_stats = {
                 "count": len(tenant_ids),
@@ -479,10 +491,15 @@ class JobScheduler:
             )
             return
         try:
+            context = self._context_factory()
+            with tenant_scope(tenant_id), OpsStore(None) as store:
+                job = store.get_job(job_id)
+                if job and self._defer_falcon_auction(tenant_id, store, job, context, now=now):
+                    return
             run_tenant_job(
                 tenant_id,
                 job_id,
-                context=self._context_factory(),
+                context=context,
                 trigger="schedule",
                 now=now,
                 timezone=self.timezone,
@@ -499,7 +516,7 @@ class JobScheduler:
         try:
             with OpsStore(self.db_path) as store:
                 job = store.get_job(job_id)
-                if job is None:
+                if job is None or not job.get("enabled"):
                     logger.warning("调度任务 %s 已不存在，跳过本次触发", job_id)
                     return
                 config = job.get("config")
@@ -508,9 +525,53 @@ class JobScheduler:
                 if not is_interval_run_allowed(schedule, now=clock):
                     logger.debug("任务 %s 当前不在 interval 执行窗口内，跳过", job.get("name"))
                     return
-                run_job(store, job, context=self._context_factory(), trigger="schedule")
+                context = self._context_factory()
+                if self._defer_falcon_auction(PRIMARY_TENANT, store, job, context, now=clock):
+                    return
+                run_job(store, job, context=context, trigger="schedule")
         except Exception:
             logger.exception("调度执行任务 %s 时发生未捕获异常", job_id)
+
+    def _defer_falcon_auction(self, tenant_id, store, job, context, *, now=None) -> bool:
+        """依赖未齐时释放执行线程；只重试输入检查，不重跑已认领的智能体轮次。"""
+        config = job.get("config") or {}
+        if job.get("kind") != "stock_agent" or config.get("phase") != "auction":
+            return False
+        if not job.get("enabled"):
+            return True
+        from src.ledger import StockAgentStore
+        from src.market import calendar_trading_day
+        from src.ops.application.falcon_auction_inputs import falcon_auction_inputs
+        from src.shared.paths import palace_db
+
+        clock = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+        boundary = clock.replace(hour=9, minute=29, second=50, microsecond=0)
+        if not clock.replace(hour=9, minute=25, second=0, microsecond=0) <= clock < boundary:
+            return False
+        try:
+            trading_day = calendar_trading_day(clock.date().isoformat())
+        except (ValueError, LookupError):
+            return False  # 交由执行器落下日历不可用的 skipped 记录。
+        if not trading_day:
+            return False
+        with StockAgentStore(context.palace_db or palace_db()) as ledger:
+            profile = ledger.get(str(config.get("agent_id") or ""))
+        if (profile["config"].get("kind") != "falcon" or not profile["config"].get("enabled")
+                or profile["archived"] or config.get("revision") != profile["revision"]):
+            return False
+        inputs = falcon_auction_inputs(store, now=clock)
+        if not inputs["pending"] or inputs["failed"]:
+            return False
+        key = tenant_job_key(tenant_id, job["id"]) + ":auction-inputs"
+        # 两秒是就绪轮询频率，放行条件始终是来源的成功终态。
+        with self._lock:
+            self._scheduler.add_job(
+                self._run_tenant, trigger="date", run_date=min(clock + timedelta(seconds=2), boundary),
+                args=[tenant_id, job["id"]], id=key, name=job["name"] + " · 等待竞价选股",
+                replace_existing=True, executor=SYSTEM_EXECUTOR if tenant_id == PRIMARY_TENANT else TENANT_EXECUTOR,
+            )
+            self._job_index[key] = (tenant_id, str(job["id"]))
+        return True
 
     # ---- 观测 -----------------------------------------------------
 

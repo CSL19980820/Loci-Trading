@@ -64,7 +64,9 @@ def test_opening_parser_rejects_forbidden_plan_and_all_phases_explain_scope(monk
         with pytest.raises(ValueError, match="不可买入意图"):
             kwargs["decision_parser"](json.dumps(bad))
         assert kwargs["payload"]["position_policy"]["buyable_boards"] == ["沪深主板", "创业板"]
-        assert "仅主板和创业板可买入" in kwargs["system"]
+        assert "position_policy/current_position_policy" in kwargs["system"]
+        assert kwargs["payload"]["execution_policy"] == {
+            "mode": "paper_quote", "phase": "auction", "analysis_only": True, "price_tolerance_pct": 2}
         return GuardianDecision(summary="等待", orders=[]), {"tools": []}
 
     monkeypatch.setattr(guardian_agent, "complete_decision", complete)
@@ -72,6 +74,6 @@ def test_opening_parser_rejects_forbidden_plan_and_all_phases_explain_scope(monk
     guardian_agent.decide(None, cfg, {"as_of": "2026-09-23T09:25:00+08:00", "portfolio": {"positions": []}})
     for phase in ("premarket", "daily", "weekly"):
         prompt = review_system(cfg, phase, {})
-        assert "禁止买入或加仓科创板" in prompt
-        assert "不凭股价判断市值" in prompt
-        assert "不设市值硬门槛" in prompt
+        assert "position_policy/current_position_policy" in prompt
+        assert "手册不扩大权限" in prompt
+        assert "偏好中小盘" in prompt

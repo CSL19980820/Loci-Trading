@@ -24,6 +24,7 @@ from src.market.infrastructure.store import MarketStore
 from src.market.infrastructure.storage_health import require_rebuild_headroom
 from src.market.infrastructure.store_row_count import note_trim_below, track_hot_window_rewrite
 from src.shared.paths import market_hot_db as _default_hot_db
+from src.shared.postgres import explicit_postgres_required
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,10 @@ _SQL_IN_CHUNK = 900
 
 def open_market_hot(hot_db: str | None = None) -> MarketStore:
     """打开热库；路径默认 ``data_dir()/market_hot.db``。"""
+    if explicit_postgres_required():
+        # PostgreSQL already serves the bounded three-year dataset from memory
+        # and avoids a duplicated SQLite source of truth.
+        return MarketStore(None)
     # 热库必须留 idx_quotes_receipt：_purge_orphan_receipts 的 NOT EXISTS 靠它逐行探测。
     return MarketStore(Path(hot_db) if hot_db else _default_hot_db(), keep_receipt_index=True)
 
@@ -106,6 +111,25 @@ def _copy_small_tables(full: MarketStore, hot: MarketStore, *, force: bool = Fal
             )
 
 
+def _copy_quote_meta(full: MarketStore, hot: MarketStore) -> None:
+    """在日 K 窗口成功落库后同步行情新鲜度与版本。
+
+    只能在行情复制和裁剪都成功后调用；否则热库还没换成新窗口，却先宣称
+    全量库的 revision，后续一致性判断会被错误的“新鲜”元数据骗过。
+    """
+    with hot._transaction() as cursor:
+        for key in ("market_revision", "quotes_revision"):
+            source = full.conn.execute(
+                "SELECT value, updated_at FROM meta WHERE key = ?", (key,)
+            ).fetchone()
+            if source is None:
+                continue
+            cursor.execute(
+                "INSERT INTO meta(key, value, updated_at) VALUES(?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value,"
+                " updated_at = excluded.updated_at",
+                (key, str(source["value"]), str(source["updated_at"] or "")),
+            )
 def _purge_orphan_receipts(cursor: sqlite3.Cursor) -> None:
     """删掉热库里已经没有日 K 指向的回执及其 attempts。
 
@@ -325,6 +349,8 @@ def mirror_to_hot(
     window_trading_days: int = HOT_WINDOW_TRADING_DAYS,
 ) -> dict[str, int]:
     """全量重建热库：清空行情窗口并重灌近 N 交易日（幂等，可随时重跑）。"""
+    if explicit_postgres_required():
+        return {"quotes": 0, "start": "", "end": "", "mode": "postgres-direct"}
     hot = hot or open_market_hot()
     start_date = _window_start(full, window_trading_days)
     if not start_date:
@@ -336,6 +362,7 @@ def mirror_to_hot(
     written = _copy_quotes_window(full, hot, start_date, force=True)
     # 裁掉窗外旧行（rebuild 的 copy start 即窗口起点；仍显式 trim 保证幂等）。
     _trim_hot_before(hot, start_date)
+    _copy_quote_meta(full, hot)
     end_date = hot.conn.execute("SELECT MAX(trade_date) FROM quotes_daily").fetchone()[0] or ""
     return {
         "quotes": written,
@@ -472,6 +499,9 @@ def open_screen_store(
     """
     with ExitStack() as stack:
         full = stack.enter_context(MarketStore(market_db))
+        if explicit_postgres_required():
+            yield full
+            return
         try:
             hot = stack.enter_context(open_market_hot(hot_db))
             reason = hot_fallback_reason(
@@ -499,6 +529,8 @@ def mirror_recent_to_hot(
     若热库为空或窗口明显偏浅，升级为 ``mirror_to_hot`` 全量重灌，避免
     「只有近两周」却一直增量补齐、选股面板被 min_bars 滤空。
     """
+    if explicit_postgres_required():
+        return {"quotes": 0, "start": "", "end": "", "mode": "postgres-direct"}
     hot = hot or open_market_hot()
     if hot_window_shallow(full, hot, window_trading_days=window_trading_days):
         return mirror_to_hot(full, hot, window_trading_days=window_trading_days)
@@ -510,6 +542,7 @@ def mirror_recent_to_hot(
     # 增量 copy 起点可能是近几天；裁窗外必须按全量库当前 700 日窗口起点。
     keep_from = _window_start(full, window_trading_days)
     _trim_hot_before(hot, keep_from)
+    _copy_quote_meta(full, hot)
     end_date = hot.conn.execute("SELECT MAX(trade_date) FROM quotes_daily").fetchone()[0] or ""
     return {
         "quotes": written,

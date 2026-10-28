@@ -118,6 +118,30 @@ def test_unchanged_quotes_still_refresh_receipt_corrections(mirrors):
     assert_window_matches(full, hot)
 
 
+def test_mirror_copies_quote_freshness_metadata(mirrors):
+    full, hot = mirrors
+    updated_at = "2026-10-23 08:29:12"
+    full.conn.executemany(
+        "UPDATE meta SET value=?, updated_at=? WHERE key=?",
+        [("42", updated_at, "market_revision"), ("43", updated_at, "quotes_revision")],
+    )
+    full.conn.commit()
+
+    store_hot.mirror_recent_to_hot(full, hot, window_trading_days=4)
+
+    mirrored = {
+        row["key"]: (row["value"], row["updated_at"])
+        for row in hot.conn.execute(
+            "SELECT key, value, updated_at FROM meta"
+            " WHERE key IN ('market_revision', 'quotes_revision')"
+        )
+    }
+    assert mirrored == {
+        "market_revision": ("42", updated_at),
+        "quotes_revision": ("43", updated_at),
+    }
+
+
 def test_bypass_quote_edits_and_hot_gaps_are_repaired(mirrors):
     full, hot = mirrors
     # Direct SQL deliberately does not bump a revision: value comparison remains

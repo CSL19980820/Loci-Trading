@@ -189,7 +189,10 @@ def prepare_independent_range(
     result: dict[str, IndependentScreen] = {}
     used = 0
     conn = store.conn
-    version = (conn.total_changes, conn.execute("PRAGMA data_version").fetchone()[0])
+    if getattr(store, "_use_postgres", False):
+        version = store.market_revision()
+    else:
+        version = (conn.total_changes, conn.execute("PRAGMA data_version").fetchone()[0])
     with computation_scope(store, sorted(seen), max_bytes=max_result_bytes):
         for codes, group in groups.items():
             group.sort(key=lambda request: (request.end, request.start, request.day))
@@ -242,7 +245,11 @@ def prepare_independent_range(
             for request in group:
                 result[request.day] = _join(parts.pop(request.day), axes[request.day], fields,
                                             signal_rows=3 if dynamic_validation else 1)
-    if (conn.total_changes, conn.execute("PRAGMA data_version").fetchone()[0]) != version:
+    if getattr(store, "_use_postgres", False):
+        current_version = store.market_revision()
+    else:
+        current_version = (conn.total_changes, conn.execute("PRAGMA data_version").fetchone()[0])
+    if current_version != version:
         raise StrategyError("行情库在分批选股期间发生变化，请重新执行")
     return result
 

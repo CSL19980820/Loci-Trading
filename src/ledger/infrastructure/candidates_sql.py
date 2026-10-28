@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 #: 排除区间回填 / 历史重放（不要求 created_at 同日）
-EXCLUDE_BACKFILL_SQL = (
-    "IFNULL(source, '') NOT LIKE '%backfill%'",
-    "IFNULL(source, '') NOT LIKE '%:history'",
+EXCLUDE_BACKFILL_PATTERNS = ("%backfill%", "%:history")
+EXCLUDE_BACKFILL_SQL = tuple(
+    f"IFNULL(source, '') NOT LIKE '{pattern}'" for pattern in EXCLUDE_BACKFILL_PATTERNS
 )
 # 旧版曾在启动时把过期 API 选股改写成 backfill；当前版本在读取时派生该口径，
 # 避免为了展示过滤而改写审计事实。手工补录的历史记录不受影响。

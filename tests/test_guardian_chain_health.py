@@ -168,12 +168,31 @@ def test_checkpoint_invalidated_by_changed_inputs(changed):
     assert review_fingerprint(cfg, source) != before
 
 
-@pytest.mark.parametrize('rule', ['AUTONOMY_RULES', 'POSITION_RULES', 'EXPERIENCE_RULES', 'DEFAULT_REVIEW_PROMPT'])
+@pytest.mark.parametrize('rule', ['AUTONOMY_RULES', 'EXPERIENCE_RULES', 'DEFAULT_REVIEW_PROMPT'])
 def test_checkpoint_binds_effective_shared_prompt_rules(monkeypatch, rule):
     from src.ops.application import guardian_review_prompts as prompts
     source = facts()
     before = review_fingerprint({}, source)
     monkeypatch.setattr(prompts, rule, getattr(prompts, rule) + '\n规则更新')
+    assert review_fingerprint({}, source) != before
+
+
+@pytest.mark.parametrize('change', ['body', 'version'])
+def test_checkpoint_binds_actual_default_skill_and_fingerprint(tmp_path, monkeypatch, change):
+    from src.ops.application import trading_operations_skill as operations
+    source = facts()
+    text = (operations.PROJECT_ROOT / 'templates' / 'agent-workbench' / operations.SKILL_SLUG / 'SKILL.md').read_text(encoding='utf-8')
+    target = tmp_path / 'templates' / 'agent-workbench' / operations.SKILL_SLUG / 'SKILL.md'
+    target.parent.mkdir(parents=True)
+    target.write_text(text, encoding='utf-8')
+    monkeypatch.setattr(operations, 'PROJECT_ROOT', tmp_path)
+    before = review_fingerprint({}, source)
+    _, prior_receipt = operations.load_trading_operations_skill()
+    changed = text + '\n更新本轮操作方法。' if change == 'body' else text.replace(
+        'version: ' + prior_receipt['version'], 'version: ' + prior_receipt['version'] + '.changed', 1)
+    target.write_text(changed, encoding='utf-8')
+    _, receipt = operations.load_trading_operations_skill()
+    assert receipt['sha256'] != prior_receipt['sha256']
     assert review_fingerprint({}, source) != before
 
 
@@ -310,9 +329,8 @@ def test_actual_job_reaches_model_after_locked_risk_and_keeps_other_research(tmp
     monkeypatch.setattr(guardian, 'datetime', Clock)
     monkeypatch.setattr(guardian, 'get_config', lambda _: cfg)
     monkeypatch.setattr(guardian, 'calendar_trading_day', lambda _: True)
-    monkeypatch.setattr(guardian, 'PalaceStore', MagicMock())
-    monkeypatch.setattr(guardian, 'observe', lambda *_: [])
-    monkeypatch.setattr(guardian, 'strategy_sources', lambda _: [])
+    monkeypatch.setattr('src.ledger.PalaceStore.candidates_payload',
+                        MagicMock(side_effect=AssertionError('不应自动读取量化候选')))
     monkeypatch.setattr(guardian, 'build_monitor_snapshot', lambda *a, **k: SimpleNamespace(quotes=quotes))
     monkeypatch.setattr(guardian, 'decide', decide)
     monkeypatch.setattr(guardian, 'data_source', lambda: {'label':'test'})

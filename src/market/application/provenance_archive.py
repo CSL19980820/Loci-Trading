@@ -286,12 +286,14 @@ def query_archived_attempts(root: Path, receipt_ids: Sequence[str]) -> list[dict
 def query_archived_receipt_metadata(root: Path, receipt_ids: Sequence[str]) -> list[dict[str, Any]]:
     """消费摘要仅取归档回执的事实字段，不读取覆盖 JSON 与完整凭证。"""
     return _query_archive(root, _RECEIPT_TABLE, receipt_ids,
-                          select="receipt_id, code, state, unresolved, generated_at, selected_source")
+                          select="receipt_id, code, state, unresolved, generated_at, selected_source",
+                          bulk=True)
 
 
 def query_archived_attempt_counts(root: Path, receipt_ids: Sequence[str]) -> list[dict[str, Any]]:
     return _query_archive(root, _ATTEMPT_TABLE, receipt_ids,
-                          select="receipt_id, COUNT(*) AS total", suffix=" GROUP BY receipt_id")
+                          select="receipt_id, COUNT(*) AS total", suffix=" GROUP BY receipt_id",
+                          bulk=True)
 
 
 def query_archived_attempt_sample(root: Path, receipt_id: str, limit: int) -> list[dict[str, Any]]:
@@ -301,6 +303,7 @@ def query_archived_attempt_sample(root: Path, receipt_id: str, limit: int) -> li
 
 def _query_archive(
     root: Path, table: str, receipt_ids: Sequence[str], *, select: str = "*", suffix: str = "",
+    bulk: bool = False,
 ) -> list[dict[str, Any]]:
     if not receipt_ids or not _files(root, table):
         return []
@@ -310,6 +313,16 @@ def _query_archive(
     db = duckdb.connect()
     try:
         parquet = _sql_string(_parquet_glob(root, table))
+        # Compact summaries can involve tens of thousands of unique receipts.
+        # Scan the archive once instead of rescanning it for every 900 IDs.
+        # Keep the old chunk semantics for duplicate IDs and ordered/full reads.
+        if bulk and len(receipt_ids) > _IN_CHUNK and len(set(receipt_ids)) == len(receipt_ids):
+            rows = db.execute(
+                "SELECT " + select + " FROM read_parquet(" + parquet + ") "
+                "WHERE receipt_id IN (SELECT UNNEST(?))" + suffix,
+                [list(receipt_ids)],
+            ).fetchdf()
+            return rows.to_dict(orient="records")
         for offset in range(0, len(receipt_ids), _IN_CHUNK):
             chunk = list(receipt_ids[offset : offset + _IN_CHUNK])
             placeholders = ",".join("?" for _ in chunk)

@@ -10,6 +10,7 @@ from src.ledger import guardian_account_at, guardian_position_policy, mark_guard
 from src.market import scheduled_trading_days
 from src.ops.application.retired_slugs import RETIRED_STRATEGY_MARKERS
 from src.ops.application.guardian_opening_plans import fold_opening_plans
+from src.ops.application.guardian_memory import current_research
 
 TZ = ZoneInfo("Asia/Shanghai")
 PERIOD_LABELS = {"premarket": "盘前计划", "daily": "日复盘", "weekly": "周复盘"}
@@ -286,7 +287,13 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
     preopen = ledger.report("premarket", day)
     memory_cutoff = min(now, datetime.combine(date.fromisoformat(day), time(23, 59, 59), TZ))
     experience = ledger.experience(as_of=memory_cutoff.isoformat(), day=day)
+    if not current_research(experience, current):
+        # 更正旧日期报告也不能自动复活重置前的经验；原版本仍可显式回查。
+        experience = {**experience, 'items': [], 'origins': {}, 'text': '', 'characters': 0}
     daily_learning = ledger.daily_learning(start, end, memory_cutoff.isoformat()) if period == 'weekly' else []
+    if current.get('research_reset_at'):
+        daily_learning = [row for row in daily_learning
+                          if current_research(ledger.report('daily', row['report_key'].split(':', 1)[1]) or {}, current)]
     from src.ops.application.guardian_evidence import cycle_evidence
     cycle_rows = [{k: v for k, v in cycle_evidence(c).items() if k not in {"input_candidates", "account_before"}}
                   for c in cycles]
@@ -299,7 +306,7 @@ def build_review_facts(ledger: Any, market: Any, period: str, day: str, now: dat
         earlier = [r for r in earlier if r["period"] != "premarket" or r["trade_date"] == day]
     # 旧报告仍是审计历史；已退役战法不再作为新复盘的研究输入，避免名称/观点
     # 从盘前或旧日复盘的 analysis 原文重新污染当前计划。
-    earlier = [r for r in earlier if not _contains_retired_strategy_reference(r)]
+    earlier = [r for r in earlier if current_research(r, current) and not _contains_retired_strategy_reference(r)]
     next_trade_date = None
     for offset in range(1, 16):
         candidate = (date.fromisoformat(day) + timedelta(days=offset)).isoformat()

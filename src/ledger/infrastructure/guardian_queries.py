@@ -95,8 +95,8 @@ class GuardianQueriesMixin:
                       "success": r["notify_success"], "skipped": r["notify_skipped"]}}}
                  for r in rows]
         total = self.conn.execute(
-            "SELECT count(*) FROM guardian_cycles WHERE slot>=? AND slot<?", bounds
-        ).fetchone()[0]
+            "SELECT count(*) AS count FROM guardian_cycles WHERE slot>=? AND slot<?", bounds
+        ).fetchone()["count"]
         return {"items": items, "total": total}
 
     def cycle_detail(self, slot: str) -> dict[str, Any] | None:
@@ -137,8 +137,8 @@ class GuardianQueriesMixin:
             item["notify"] = {"success": item.pop("notify_success"), "skipped": item.pop("notify_skipped")}
             items.append(item)
         total = self.conn.execute(
-            "SELECT count(*) FROM guardian_reports WHERE trade_date BETWEEN ? AND ?", (start, end)
-        ).fetchone()[0]
+            "SELECT count(*) AS count FROM guardian_reports WHERE trade_date BETWEEN ? AND ?", (start, end)
+        ).fetchone()["count"]
         return {"items": items, "total": total}
 
     def trade_page(self, *, start: str, end: str, limit: int, offset: int, keyword: str = "") -> dict[str, Any]:
@@ -155,8 +155,8 @@ class GuardianQueriesMixin:
             ORDER BY occurred_at DESC,id DESC LIMIT ? OFFSET ?
         """, (*params, limit, offset)).fetchall()
         total = self.conn.execute(
-            f"SELECT count(*) FROM guardian_trades WHERE {where}", params
-        ).fetchone()[0]
+            f"SELECT count(*) AS count FROM guardian_trades WHERE {where}", params
+        ).fetchone()["count"]
         return {"items": [{**json.loads(r["detail_json"]), "id": r["id"], "slot": r["slot"]} for r in rows],
                 "total": total}
 
@@ -164,11 +164,13 @@ class GuardianQueriesMixin:
         # Cumulative P&L must still aggregate the complete ledger, only when this tab is opened.
         rows = self.conn.execute("""SELECT code,
             max(json_extract(detail_json,'$.name')) AS name,
-            sum(CASE WHEN json_extract(detail_json,'$.side')='buy' THEN json_extract(detail_json,'$.quantity') ELSE 0 END) AS bought_quantity,
-            sum(CASE WHEN json_extract(detail_json,'$.side')='sell' THEN json_extract(detail_json,'$.quantity') ELSE 0 END) AS sold_quantity,
-            sum(json_extract(detail_json,'$.realized_pnl_cents')) AS realized_pnl_cents,
-            sum(json_extract(detail_json,'$.fees_cents')) AS fees_cents,
+            sum(CASE WHEN json_extract(detail_json,'$.side')='buy' THEN CAST(json_extract(detail_json,'$.quantity') AS REAL) ELSE CAST(0 AS REAL) END) AS bought_quantity,
+            sum(CASE WHEN json_extract(detail_json,'$.side')='sell' THEN CAST(json_extract(detail_json,'$.quantity') AS REAL) ELSE CAST(0 AS REAL) END) AS sold_quantity,
+            sum(CAST(json_extract(detail_json,'$.realized_pnl_cents') AS REAL)) AS realized_pnl_cents,
+            sum(CAST(json_extract(detail_json,'$.fees_cents') AS REAL)) AS fees_cents,
             count(*) AS trade_count FROM guardian_trades GROUP BY code ORDER BY code LIMIT ? OFFSET ?
         """, (limit, offset)).fetchall()
-        total = self.conn.execute("SELECT count(DISTINCT code) FROM guardian_trades").fetchone()[0]
+        total = self.conn.execute(
+            "SELECT count(DISTINCT code) AS count FROM guardian_trades"
+        ).fetchone()["count"]
         return {"items": [dict(row) for row in rows], "total": total}

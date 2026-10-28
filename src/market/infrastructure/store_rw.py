@@ -7,6 +7,7 @@ import sqlite3
 
 import pandas as pd
 
+from src.market.infrastructure.history_floor import trade_date_floor
 from src.market.infrastructure.store_codes import MarketError, guess_market, normalize_code
 from src.market.infrastructure.store_quote_payload import (
     partition_valid_ohlc_rows,
@@ -15,6 +16,41 @@ from src.market.infrastructure.store_quote_payload import (
     write_quote_payload,
 )
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
+
+
+def _postgres_write_quote_payload(cursor: Any, payload: list[tuple[Any, ...]]) -> int:
+    """Bulk upsert quotes with native PG placeholders and one round trip per batch."""
+    if not payload:
+        return 0
+    cursor.raw.executemany(
+        """
+        INSERT INTO market.quotes_daily(
+            trade_date, code, open, high, low, close, volume, amount,
+            outstanding_share, turnover, source, receipt_id, fetched_at
+        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
+        ON CONFLICT (trade_date, code) DO UPDATE SET
+            open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
+            close=EXCLUDED.close,
+            volume=COALESCE(EXCLUDED.volume, quotes_daily.volume),
+            amount=COALESCE(EXCLUDED.amount, quotes_daily.amount),
+            outstanding_share=COALESCE(EXCLUDED.outstanding_share, quotes_daily.outstanding_share),
+            turnover=COALESCE(EXCLUDED.turnover, quotes_daily.turnover),
+            source=EXCLUDED.source,
+            receipt_id=COALESCE(EXCLUDED.receipt_id, quotes_daily.receipt_id),
+            fetched_at=EXCLUDED.fetched_at
+        WHERE quotes_daily.source <> 'tdx' OR EXCLUDED.source = 'tdx'
+           OR (quotes_daily.trade_date = CURRENT_DATE::text
+               AND CURRENT_TIME < TIME '15:00:00')
+        """,
+        payload,
+    )
+    trade_dates = list(dict.fromkeys(row[0] for row in payload))
+    cursor.executemany(
+        "INSERT INTO market.trading_calendar(trade_date, updated_at) "
+        "VALUES(%s,CURRENT_TIMESTAMP) ON CONFLICT(trade_date) DO NOTHING",
+        [(trade_date,) for trade_date in trade_dates],
+    )
+    return len(payload)
 
 class MarketRwMixin:
     """instruments / quotes / factors / watermark / calendar / history。"""
@@ -25,6 +61,16 @@ class MarketRwMixin:
     def _bump_revisions(cursor: sqlite3.Cursor, *scopes: str) -> None:
         keys = ("market_revision", *(f"{scope}_revision" for scope in scopes))
         for key in keys:
+            if hasattr(cursor, "raw"):
+                cursor.raw.execute(
+                    "INSERT INTO market.meta(key,value,updated_at) "
+                    "VALUES(%s,'1',CURRENT_TIMESTAMP) "
+                    "ON CONFLICT(key) DO UPDATE "
+                    "SET value=(COALESCE(meta.value,'0')::bigint+1)::text,"
+                    "updated_at=EXCLUDED.updated_at",
+                    (key,),
+                )
+                continue
             cursor.execute(
                 "INSERT INTO meta(key, value, updated_at) VALUES(?, '1', datetime('now'))"
                 " ON CONFLICT(key) DO UPDATE SET value = CAST(meta.value AS INTEGER) + 1,"
@@ -206,6 +252,15 @@ class MarketRwMixin:
         cursor: sqlite3.Cursor | None = None,
     ) -> int:
         if not payload: return 0
+        if getattr(self, "_use_postgres", False):
+            if cursor is not None:
+                written = _postgres_write_quote_payload(cursor, payload)
+                self._bump_revisions(cursor, "quotes")
+                return written
+            with self._transaction() as tx:
+                written = _postgres_write_quote_payload(tx, payload)
+                self._bump_revisions(tx, "quotes")
+                return written
         if cursor is None:
             with self._transaction() as tx:
                 return self._write_quote_payload(payload, cursor=tx)
@@ -271,7 +326,11 @@ class MarketRwMixin:
                 "INSERT INTO trading_calendar(trade_date, updated_at)"
                 " SELECT DISTINCT trade_date, datetime('now') FROM quotes_daily"
             )
-        return int(self.conn.execute("SELECT COUNT(*) FROM trading_calendar").fetchone()[0])
+        return int(
+            self.conn.execute(
+                "SELECT COUNT(*) AS count FROM trading_calendar"
+            ).fetchone()["count"]
+        )
 
     @staticmethod
     def _prepare_quote_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -300,7 +359,11 @@ class MarketRwMixin:
             source_column = columns.get(field)
             data[field] = frame[source_column] if source_column is not None else None
         out = pd.DataFrame(data, index=frame.index)
-        return out.drop_duplicates(subset=["trade_date"], keep="last")
+        # 与批量 spot 入口使用同一历史下限；否则 SQLite 地板触发器会忽略旧行，
+        # 行数缓存却把这些尝试当成新增，且交易日历也会写入被忽略的日期。
+        return out.loc[out["trade_date"] >= trade_date_floor()].drop_duplicates(
+            subset=["trade_date"], keep="last"
+        )
 
     def upsert_adjust_factors(self, code: str, frame: pd.DataFrame, *, source: str = "") -> int:
         """写入稀疏的后复权因子。frame 需含 date 与 hfq_factor 两列。"""
@@ -485,7 +548,15 @@ class MarketRwMixin:
             params.append(int(limit))
         else:
             sql = f"SELECT * FROM quotes_daily WHERE {where} ORDER BY trade_date"
-        frame = pd.read_sql_query(sql, self.conn, params=params)
+        if getattr(self, "_use_postgres", False):
+            cursor = self.conn.execute(sql, params)
+            try:
+                columns = [str(item[0]) for item in cursor.description]
+                frame = pd.DataFrame.from_records(cursor.fetchall(), columns=columns)
+            finally:
+                cursor.close()
+        else:
+            frame = pd.read_sql_query(sql, self.conn, params=params)
         if frame.empty or adjust == "none":
             return frame
         factors = self._factor_series(code, frame["trade_date"])

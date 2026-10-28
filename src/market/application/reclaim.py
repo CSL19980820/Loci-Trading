@@ -2,8 +2,8 @@
 
 `DROP INDEX` 只把页归还给 SQLite 的库内空闲链，文件大小纹丝不动——下次写入会
 复用这些页，但用户看到的 `market.db` 还是 5.7 GB。要真正把空间还给操作系统只有
-`VACUUM`，而 `VACUUM` 需要**约等于当前库大小的额外磁盘**（把整库重写到临时文件
-再换回），在 5.7 GB 的库上是分钟级操作且全程持写锁。
+`VACUUM`，而 `VACUUM` 最多需要**当前库大小两倍的额外磁盘**（临时重写文件
+以及回写时的 journal/WAL），在大库上是分钟级操作且全程持写锁。
 
 所以这件事必须是**显式命令**，不能塞进启动迁移里：否则用户某天双击 Loci，会看到
 它卡住几分钟且磁盘暴涨一倍。
@@ -16,13 +16,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import sqlite3
 
-#: `VACUUM` 需要的额外磁盘倍数（保守取 1.1×；官方文档口径是「约等于库大小」）。
-VACUUM_HEADROOM_RATIO = 1.1
+#: SQLite 官方峰值：临时库和回写 journal/WAL 最多占原库大小的两倍。
+VACUUM_HEADROOM_RATIO = 2.0
 
 #: 权威库上确认无热路径消费者、可安全删除的索引。
 #: `idx_quotes_receipt` 唯一的 `NOT EXISTS` 探测消费者只跑在热库
 #: （`store_hot._purge_orphan_receipts`），schema v8 起权威库不再建它。
-RECLAIMABLE_INDEXES = ("idx_quotes_receipt",)
+#: `idx_source_attempts_source` 没有仓内独立消费者，新建库不再创建。
+RECLAIMABLE_INDEXES = ("idx_quotes_receipt", "idx_source_attempts_source")
 
 
 @dataclass

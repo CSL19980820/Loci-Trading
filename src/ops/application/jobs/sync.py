@@ -291,8 +291,10 @@ def _finalize_today_with_authoritative(
     代价：通达信本地二进制近窗 20 根，全市场约 2 分钟（ADR-013 实测增量
     43.1 票/秒）。排在 spot 之后，不影响 15:30 选股吃当日快照。
 
-    通达信优先重新取数；仅在其失败且扶摇返回当日未复权日 K 时允许兜底定稿，
-    两者均失败进入任务 failed，不能把陈旧数据称为定稿。
+    通达信优先重新取数。通达信若整源或部分失败，只剩失败标的走 15:00 后的
+    同日收盘快照定稿；快照必须自报目标交易日，零成交停牌行明确标
+    ``close_snapshot/no_trade``。两者仍失败才进入任务 failed，不能把陈旧数据
+    称为定稿。
     """
     from src.market import MarketStore, sync_quotes
 
@@ -312,14 +314,64 @@ def _finalize_today_with_authoritative(
     except Exception as exc:
         logger.warning("日终定稿（权威源重写当日）失败：%s", exc)
         return {"status": "failed", "failed": len(codes), "error": f"{type(exc).__name__}: {exc}"[:500]}
-    return {
-        "status": "failed" if report.failed else "ok",
-        "succeeded": report.succeeded,
-        "skipped": report.skipped,
-        "failed": report.failed,
-        "rows_written": report.rows_written,
+
+    fallback: dict[str, Any] = {}
+    remaining_failed = list(report.unresolved_codes)
+    fallback_succeeded = 0
+    fallback_rows = 0
+    if report.failed:
+        from src.market import finalize_close_snapshot
+
+        try:
+            with MarketStore(context.market_db) as store:
+                fallback = finalize_close_snapshot(
+                    store,
+                    report.unresolved_codes,
+                    instrument_types=types,
+                )
+        except Exception as exc:
+            fallback = {
+                "status": "failed",
+                "source": "sina_close",
+                "failed": report.failed,
+                "failed_codes": list(report.unresolved_codes),
+                "error": f"{type(exc).__name__}: {exc}"[:500],
+            }
+            logger.warning("日终收盘快照兜底失败：%s", exc)
+        finalized = set(fallback.get("finalized_codes") or [])
+        remaining_failed = [
+            code for code in report.unresolved_codes if code not in finalized
+        ]
+        fallback_succeeded = len(finalized)
+        fallback_rows = int(fallback.get("rows_written") or 0)
+
+    payload = {
+        "status": "failed" if remaining_failed else "ok",
+        "source": "tdx" if not fallback_succeeded else "tdx+sina_close",
+        "succeeded": int(report.succeeded) + fallback_succeeded,
+        "skipped": int(report.skipped),
+        "failed": len(remaining_failed),
+        "rows_written": int(report.rows_written) + fallback_rows,
         "elapsed_seconds": round(report.elapsed_seconds, 2),
+        "failed_codes": remaining_failed,
     }
+    if fallback:
+        payload["fallback"] = {
+            key: fallback.get(key)
+            for key in (
+                "status",
+                "source",
+                "succeeded",
+                "failed",
+                "rows_written",
+                "no_trade",
+                "failed_codes",
+                "elapsed_seconds",
+                "error",
+            )
+            if key in fallback
+        }
+    return payload
 
 
 def _execute_sync_locked(

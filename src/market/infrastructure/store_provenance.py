@@ -222,9 +222,24 @@ class MarketProvenanceMixin(MarketProvenanceQueryMixin):
         if requested_state in {"selected", "failed", "skipped"}:
             state = requested_state
         else:
-            state = "failed" if unresolved else "skipped" if any(
-                isinstance(item, dict) and item.get("state") == "skipped" for item in attempts
-            ) else "selected"
+            # 有源成功命中就是有效回执。路由在主源命中后会把**没请求过的**后备源
+            # 记成 skipped（「本轮未抽中交叉校验」），旧推导一看到 skipped 就把整条
+            # 成功回执降级成 skipped；收盘定稿据此判定期时，盘中每次增量同步都会把
+            # 前一交易日的定稿证明抹掉，选股从此永久被阻断。只有整轮请求都没发生
+            # （watermark 跳过）才是 skipped。
+            attempt_states = [
+                str(item.get("state") or "")
+                for item in attempts
+                if isinstance(item, dict)
+            ]
+            if unresolved:
+                state = "failed"
+            elif "selected" in attempt_states:
+                state = "selected"
+            elif attempt_states and all(value == "skipped" for value in attempt_states):
+                state = "skipped"
+            else:
+                state = "selected"
         receipt_id = str(receipt.get("receipt_id") or uuid4().hex)
         dates = sorted({str(value)[:10] for value in trade_dates if value})
         coverage_start = str(receipt.get("coverage_start") or (dates[0] if dates else ""))[:10]

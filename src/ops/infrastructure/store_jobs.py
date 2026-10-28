@@ -191,7 +191,7 @@ class OpsJobsMixin:
                     # 见下面的 ``updated_at = excluded.updated_at``。
                     moment,
                     moment,
-                    1 if config is not None else 0,
+                    bool(config is not None),
                 ),
             )
             row = cursor.execute("SELECT id FROM jobs WHERE name = ?", (name,)).fetchone()

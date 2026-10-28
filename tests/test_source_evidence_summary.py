@@ -6,7 +6,12 @@ from copy import copy
 import pandas as pd
 import pytest
 
-from src.market import MarketStore
+from src.market import MarketStore, panel_read_window
+from src.market.infrastructure.store_provenance_query import (
+    _SUMMARY_METRIC_FIELDS,
+    _aggregate_source_summary_scopes,
+)
+from src.market.infrastructure.store_panel_window import _ACTIVE_WINDOW
 from src.backtest.application.runner import prepare_backtest_context
 from src.strategy import get, screen
 from src.shared.evidence_compact import compact_source_evidence
@@ -76,6 +81,25 @@ def test_summary_matches_full_quote_facts_with_the_same_code_and_date_scope(evid
     assert summary["attempt_observation_status"] == "not_evaluated"
 
 
+def test_postgres_direct_source_summary_matches_the_portable_aggregate(evidence_store):
+    store, dates = evidence_store
+    where, params = store._quote_where(
+        CODES, start=dates[1], end=dates[4], alias="q",
+    )
+    portable = [
+        dict(row) for row in store.conn.execute(
+            store._quote_source_summary_sql(where), params,
+        )
+    ]
+    direct = [
+        dict(row) for row in store.conn.execute(
+            store._quote_source_summary_direct_sql(where), params,
+        )
+    ]
+    sort_key = lambda row: (row["code"], str(row["source_id"] or ""))
+    assert sorted(direct, key=sort_key) == sorted(portable, key=sort_key)
+
+
 def test_summary_never_materializes_quote_receipt_or_attempt_details(evidence_store, monkeypatch):
     store, dates = evidence_store
 
@@ -108,6 +132,131 @@ def test_summary_preserves_all_snapshot_version_and_watermark_metadata(evidence_
     assert summary["market_revision"] == store.market_revision()
     assert full["source_evidence"]["receipts"]
     assert "receipt_details_omitted" not in full["source_evidence"]
+
+
+def test_range_batch_summary_matches_each_rolling_window_with_one_data_scan(
+        evidence_store, monkeypatch):
+    store, dates = evidence_store
+    scopes = [(dates[0], dates[2]), (dates[1], dates[3]), (dates[2], dates[4])]
+    expected = [
+        store.source_evidence(codes=CODES, start=first, end=last, summary_only=True)
+        for first, last in scopes
+    ]
+    original = store._iter_source_summary_batch_rows
+    calls = []
+
+    def observed(*args, **kwargs):
+        calls.append((tuple(args[0]), kwargs["scopes"]))
+        yield from original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_iter_source_summary_batch_rows", observed)
+    with panel_read_window(store, start=dates[0], end=dates[-1]):
+        _ACTIVE_WINDOW.get().source_summary_scopes = tuple(scopes)
+        actual = [
+            store.source_evidence(codes=CODES, start=first, end=last, summary_only=True)
+            for first, last in scopes
+        ]
+        extra = store.source_evidence(
+            codes=[*CODES, "600001"], start=dates[0], end=dates[2], summary_only=True,
+        )
+    assert actual == expected
+    expected_extra = store.source_evidence(
+        codes=[*CODES, "600001"], start=dates[0], end=dates[2], summary_only=True,
+    )
+    assert extra == expected_extra
+    assert calls == [(tuple(CODES), tuple(scopes)), (("600001",), tuple(scopes))]
+
+
+def test_rolling_daily_aggregate_matches_overlapping_scope_semantics():
+    def daily(day, code, source, **overrides):
+        row = {
+            "trade_date": day,
+            "code": code,
+            "source_id": source,
+            "last_fetched_at": "",
+            **{name: 0 for name in _SUMMARY_METRIC_FIELDS},
+        }
+        row.update(overrides)
+        return row
+
+    rows = [
+        daily("2026-09-28", "600001", "tdx", rows=1, open_rows=1,
+              high_rows=1, low_rows=1, close_rows=1, legacy_rows=1,
+              last_fetched_at="2026-09-28 15:30:00+08"),
+        daily("2026-09-29", "600001", "tdx", rows=1, open_rows=1,
+              high_rows=0, low_rows=1, close_rows=1,
+              last_fetched_at="2026-09-29 15:30:00+08"),
+        daily("2026-09-29", "600002", "sina", rows=1, close_rows=1,
+              invalid_ohlc=1, last_fetched_at="2026-09-29 15:20:00+08"),
+        daily("2026-09-30", "600001", "tdx", rows=2, close_rows=2,
+              missing_receipt_metadata_rows=2,
+              unresolved_source_rows=2,
+              last_fetched_at="2026-09-30 15:30:00+08"),
+    ]
+    actual = _aggregate_source_summary_scopes(
+        rows,
+        [
+            ("2026-09-28", "2026-09-29"),
+            ("2026-09-29", "2026-09-30"),
+        ],
+    )
+    by_key = {
+        (row["window_start"], row["code"], row["source_id"]): row
+        for row in actual
+    }
+
+    first = by_key[("2026-09-28", "600001", "tdx")]
+    assert first["first_date"] == "2026-09-28"
+    assert first["last_date"] == "2026-09-29"
+    assert first["rows"] == 2
+    assert first["open_rows"] == 2
+    assert first["high_rows"] == 1
+    assert first["legacy_rows"] == 1
+    assert first["last_fetched_at"] == "2026-09-29 15:30:00+08"
+
+    second = by_key[("2026-09-29", "600001", "tdx")]
+    assert second["rows"] == 3
+    assert second["close_rows"] == 3
+    assert second["missing_receipt_metadata_rows"] == 2
+    assert second["unresolved_source_rows"] == 2
+    assert second["last_fetched_at"] == "2026-09-30 15:30:00+08"
+
+    other = by_key[("2026-09-29", "600002", "sina")]
+    assert other["first_date"] == other["last_date"] == "2026-09-29"
+    assert other["invalid_ohlc"] == 1
+
+
+def test_range_batch_prefetches_universe_union_without_second_scan(
+        evidence_store, monkeypatch):
+    store, dates = evidence_store
+    scopes = [(dates[0], dates[2]), (dates[1], dates[3])]
+    all_codes = (*CODES, "600001")
+    expected = [
+        store.source_evidence(
+            codes=current_codes, start=dates[0], end=dates[2], summary_only=True,
+        )
+        for current_codes in (CODES, all_codes)
+    ]
+    calls = []
+    original = store._iter_source_summary_batch_rows
+
+    def observed(*args, **kwargs):
+        calls.append(tuple(args[0]))
+        yield from original(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_iter_source_summary_batch_rows", observed)
+    with panel_read_window(store, start=dates[0], end=dates[-1]):
+        window = _ACTIVE_WINDOW.get()
+        window.source_summary_scopes = tuple(scopes)
+        window.source_summary_codes = all_codes
+        actual = [
+            store.source_evidence(
+                codes=current_codes, start=dates[0], end=dates[2], summary_only=True,
+            )
+            for current_codes in (CODES, all_codes)
+        ]
+    assert actual == expected
+    assert calls == [all_codes]
 
 
 def test_default_and_existing_include_details_false_keep_their_full_linked_evidence(evidence_store):
@@ -263,7 +412,7 @@ def test_only_explicit_engine_opt_in_uses_summary_in_screen_and_backtest(tmp_pat
         )
         store.conn.commit()
         store.rebuild_calendar()
-        baseline = get("yangshi-tail-v1")
+        baseline = get("qianlong-close-v3")
         summary_engine = copy(baseline)
         summary_engine.source_evidence_summary = True
         for engine, summary_only in [(summary_engine, True), (baseline, False)]:
@@ -273,6 +422,10 @@ def test_only_explicit_engine_opt_in_uses_summary_in_screen_and_backtest(tmp_pat
             context = prepare_backtest_context(store, engine, start=dates[-10], end=dates[-1], codes=CODES)
             assert context["data_snapshot"]["source_evidence"].get("attempt_details_omitted", False) is summary_only
     assert flags == [True, True, False, False]
+
+
+def test_yangshi_uses_bounded_source_evidence_summary():
+    assert get("yangshi-tail-v1").source_evidence_summary is True
 
 
 @pytest.mark.parametrize("end_offset,failed_counts,unlinked_names", [
@@ -344,7 +497,9 @@ def test_ordinary_screen_reads_compact_evidence_and_preserves_full_reader(
         result = screen(store, engine, trade_date=day, codes=[code], extra_bars=0,
                         health_check=False, live_overlay=False)
         assert all(ids <= linked_ids for ids, _ in attempt_requests)
-        assert any(options.get("max_rows") for _, options in attempt_requests)
+        # Two attempts per receipt: the complete first 25 receipts fill the
+        # 50-row sample and are fetched together without touching later IDs.
+        assert any(len(ids) == 25 and not options.get("max_rows") for ids, options in attempt_requests)
         evidence = result.data_snapshot["source_evidence"]
         scope = {"codes": [code], "start": start, "end": day}
         assert result.data_snapshot["start"] == start and result.data_snapshot["end"] == day

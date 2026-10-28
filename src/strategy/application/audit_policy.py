@@ -5,6 +5,7 @@ from typing import Any
 
 from src.strategy.application.execution_profile import ExecutionProfile
 from src.strategy.application.contraction_rebreakout import ContractionRebreakoutV1
+from src.strategy.application.first_wave_strategy import FirstWavePullbackV1
 from src.strategy.application.impulse_inside_breakout import ImpulseInsideBreakoutV1
 from src.strategy.application.qianlong import QianlongCloseePickerV3
 from src.strategy.application.tail_resonance import SanyuanTailResonance
@@ -16,7 +17,7 @@ _METHODS = (
     "default_params", "required_fields", "min_bars",
 )
 _BUILTINS = (
-    ContractionRebreakoutV1, ImpulseInsideBreakoutV1, QianlongCloseePickerV3,
+    ContractionRebreakoutV1, FirstWavePullbackV1, ImpulseInsideBreakoutV1, QianlongCloseePickerV3,
     SanyuanTailResonance, YangshiTailPickerV1,
 )
 # Capture the shipped functions once. A later class or instance override does not

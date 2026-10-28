@@ -30,6 +30,8 @@ from src.market.infrastructure.store_schema import (
     _SCHEMA,
     _SCHEMA_READY,
 )
+from src.shared.postgres import CompatConnection, explicit_postgres_required, uses_primary_path
+from src.shared.paths import market_db as _default_market_db
 
 __all__ = [
     "DEFAULT_DB",
@@ -70,14 +72,20 @@ class MarketStore(
         见 docs/research/2026-08-mainstream-quant-benchmark.md §2.1。
         """
         self._keep_receipt_index = bool(keep_receipt_index)
+        self._use_postgres = (
+            explicit_postgres_required()
+            and uses_primary_path(db_path, _default_market_db())
+        )
         self.db_path = Path(db_path or DEFAULT_DB)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        # 选股与同步可能并发碰同一 market.db；60s busy 比默认 30s 更扛得住短写锁。
+        if self._use_postgres:
+            self.conn = CompatConnection()
+            self.conn.raw.execute("SET search_path TO market, public")
+            self.conn.raw.commit()
+            return
         self.conn = sqlite3.connect(self.db_path, timeout=60.0)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA busy_timeout=60000")
-        # 已是 WAL 就不要再 PRAGMA journal_mode=WAL（那是写锁）；否则同步占库时
-        # 连「只读打开选股」都会在 init 阶段卡死。
         mode = ""
         try:
             mode = str(self.conn.execute("PRAGMA journal_mode").fetchone()[0] or "").lower()
@@ -89,19 +97,23 @@ class MarketStore(
         self.conn.execute("PRAGMA temp_store=MEMORY")
         key = str(self.db_path.resolve())
         if key not in _SCHEMA_READY:
-            # schema 已是当前版本则跳过迁移写事务，避免与长同步抢写锁。
             if not self._schema_is_current():
                 self.init_schema()
             _SCHEMA_READY.add(key)
 
     def _schema_is_current(self) -> bool:
-        try:
-            row = self.conn.execute(
-                "SELECT value FROM meta WHERE key = ?", ("schema_version",)
-            ).fetchone()
-            return bool(row) and str(row[0]) == str(SCHEMA_VERSION)
-        except sqlite3.Error:
-            return False
+        if not self._use_postgres:
+            try:
+                row = self.conn.execute(
+                    "SELECT value FROM meta WHERE key = ?", ("schema_version",)
+                ).fetchone()
+                return bool(row) and str(row[0]) == str(SCHEMA_VERSION)
+            except sqlite3.Error:
+                return False
+        row = self.conn.execute(
+            "SELECT value FROM meta WHERE key = ?", ("schema_version",)
+        ).fetchone()
+        return bool(row) and str(row["value"]) == str(SCHEMA_VERSION)
 
     def close(self) -> None:
         self.conn.close()
@@ -166,7 +178,7 @@ class MarketStore(
             # IMMEDIATE：所有 _transaction 都是写事务。用默认的 DEFERRED 时，
             # WAL 下「先读后写」的事务在别的连接中途提交后升级写锁会直接
             # SQLITE_BUSY，且 busy_timeout 对这种快照失效无效。
-            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute("BEGIN IMMEDIATE" if not self._use_postgres else "BEGIN")
             yield cursor
             self.conn.commit()
         except Exception:
@@ -181,6 +193,9 @@ class MarketStore(
             self.conn.execute(sql)
 
     def init_schema(self) -> None:
+        if self._use_postgres:
+            # PostgreSQL schema is owned by the cutover importer.
+            return
         with self._transaction() as cursor:
             cursor.executescript(_SCHEMA)
             self._migrate_schema(cursor)

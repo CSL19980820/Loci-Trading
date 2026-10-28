@@ -107,7 +107,10 @@ def listing_day_skip_receipt(
 def _rows(store: Any, sql: str, params: tuple = ()) -> list[tuple]:
                 """预热是纯加速：库形态异常时返回空，让调用方退回逐票点查。"""
                 try:
-                                return list(store.conn.execute(sql, params).fetchall())
+                                return [
+                                                tuple(row.values()) if hasattr(row, "values") else tuple(row)
+                                                for row in store.conn.execute(sql, params).fetchall()
+                                ]
                 except Exception:
                                 return []
 

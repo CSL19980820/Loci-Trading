@@ -42,6 +42,9 @@ PAGE_BARS = 800
 _MAX_BARS = 16000
 #: 日线类别号（0=5分钟 … 9=日线）。
 _CATEGORY_DAY = 9
+# tdxpy.helper.get_volume(0) decodes a zero wire value as 2**-127.
+# Correct this protocol sentinel before converting lots to shares.
+_TDX_DECODED_ZERO = 2.0 ** -127
 #: 指数所在市场。中证/沪深系列指数（000300 / 000905 / 000852）在 TDX 全部
 #: 挂在 market 1，且必须用 ``get_index_bars``——用 ``get_security_bars`` 问
 #: 同一个代码拿到的是深市同号**股票**，静默串号。
@@ -410,8 +413,10 @@ def _rows_to_frame(rows: list[dict]) -> pd.DataFrame:
     out = pd.DataFrame({"date": stamp.dt.strftime("%Y-%m-%d")})
     for column in ("open", "high", "low", "close"):
         out[column] = pd.to_numeric(frame.get(column), errors="coerce")
-    out["volume"] = pd.to_numeric(frame.get("vol"), errors="coerce") * 100.0
-    out["amount"] = pd.to_numeric(frame.get("amount"), errors="coerce")
+    volume = pd.to_numeric(frame.get("vol"), errors="coerce")
+    amount = pd.to_numeric(frame.get("amount"), errors="coerce")
+    out["volume"] = volume.mask(volume == _TDX_DECODED_ZERO, 0.0) * 100.0
+    out["amount"] = amount.mask(amount == _TDX_DECODED_ZERO, 0.0)
     out = out.dropna(subset=["date", "close"])
     # 翻页边界可能重复同一天；保留最后一条（最新那次返回）。
     out = out.drop_duplicates(subset=["date"], keep="last")

@@ -15,7 +15,8 @@ class OpsQuotaMixin:
             (trade_date,),
         ).fetchall()
         out = {"structured": 0, "skill": 0}
-        for pool, count in rows:
+        for row in rows:
+            pool, count = row["pool"], row["call_count"]
             if pool in out:
                 out[str(pool)] = int(count or 0)
         return out
@@ -32,7 +33,7 @@ class OpsQuotaMixin:
             INSERT INTO mcp_quota(trade_date, pool, call_count, updated_at)
             VALUES(?, ?, 1, ?)
             ON CONFLICT(trade_date, pool) DO UPDATE SET
-                call_count = call_count + 1,
+                call_count = mcp_quota.call_count + 1,
                 updated_at = excluded.updated_at
             """,
             (trade_date, pool, updated_at),

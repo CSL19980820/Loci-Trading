@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from src.market import calendar_trading_day, resolve_universe, scheduled_trading_days
+from src.shared.jsonify import jsonable
 from src.strategy.application.double_yin_pool import (
     load_prepared_pool, save_prepared_pool, selection_key,
 )
@@ -142,8 +143,9 @@ def prepare_double_yin_pool(engine, *, store=None, as_of: str | None = None,
         snapshot_options["source_evidence_mode"] = "compact"
     elif "source_summary_only" in inspect.signature(store.data_snapshot).parameters:
         snapshot_options["source_summary_only"] = True
-    snapshot = store.data_snapshot(codes=list(reference.columns), start=start, end=closed_day,
-                                   **snapshot_options)
+    # 来源回执中的未知数值可能以 NaN 表示；快照和哈希都使用严格 JSON 的 null。
+    snapshot = jsonable(store.data_snapshot(codes=list(reference.columns), start=start, end=closed_day,
+                                          **snapshot_options))
     if store.market_revision() != version:
         raise StrategyError("行情在样本准备期间变化，未覆盖原有样本，请重试")
     missing_industries = [item["code"] for item in candidates if not item["industry"].get("groups")]
@@ -261,9 +263,10 @@ def screen_live_double_yin(engine, *, trade_date: str | None = None,
               "factors": output.explain(day, code), "live_quote": quotes[code]}
              for code in selected]
     candidate_mask = output.factors["条件候选"].loc[day]
+    opening_mask = output.factors["基础开盘候选"].loc[day]
     reviews = [{"code": code, "name": names[code], "selected": code in selected,
                 "industry": by_code[code]["industry"], "factors": output.explain(day, code)}
-               for code in target_codes if bool(candidate_mask.get(code, False))]
+               for code in target_codes if bool(opening_mask.get(code, False))]
     snapshot = {**payload["data_snapshot"], "status": "completed", "prepared_pool_sha256": digest,
                 "prepared_at": payload["prepared_at"], "prepared_as_of": prior,
                 "live_quotes": quote_snapshot, "local_market_read": False,
@@ -277,5 +280,6 @@ def screen_live_double_yin(engine, *, trade_date: str | None = None,
                         elapsed_seconds=time.monotonic() - started,
                         universe_funnel={"prepared_candidates": len(samples),
                                          "valid_live_quotes": len(quotes),
-                                         "opening_candidates": int(candidate_mask.sum()),
+                                         "opening_candidates": int(opening_mask.sum()),
+                                         "quality_candidates": int(candidate_mask.sum()),
                                          "signals_true": len(picks)}, data_snapshot=snapshot)

@@ -21,6 +21,7 @@ from src.ledger.infrastructure.stock_agent_history import (
 )
 from src.ledger.infrastructure.stock_agent_schema import SCHEMA
 from src.shared.paths import palace_db
+from src.shared.postgres import CompatConnection, explicit_postgres_required, uses_primary_path
 
 
 def _exceeds_agent_limits(cfg: dict[str, Any], previous: dict[str, Any], state: dict[str, Any],
@@ -51,12 +52,21 @@ def _exceeds_agent_limits(cfg: dict[str, Any], previous: dict[str, Any], state: 
 class StockAgentStore(StockAgentHistoryMixin):
     def __init__(self, db_path: str | Path | None = None):
         self.db_path = Path(db_path or palace_db())
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(self.db_path), timeout=15, isolation_level=None)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA foreign_keys=ON")
-        self.conn.execute("PRAGMA journal_mode=WAL")
-        self.conn.executescript(SCHEMA)
+        self._use_postgres = (
+            explicit_postgres_required()
+            and uses_primary_path(db_path, palace_db())
+        )
+        if self._use_postgres:
+            self.conn = CompatConnection()
+            self.conn.raw.execute("SET search_path TO ledger, public")
+            self.conn.raw.commit()
+        else:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.conn = sqlite3.connect(str(self.db_path), timeout=15, isolation_level=None)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA foreign_keys=ON")
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            self.conn.executescript(SCHEMA)
 
     def __enter__(self) -> StockAgentStore:
         return self
@@ -69,7 +79,7 @@ class StockAgentStore(StockAgentHistoryMixin):
 
     @contextmanager
     def _write(self) -> Iterator[None]:
-        self.conn.execute("BEGIN IMMEDIATE")
+        self.conn.execute("BEGIN" if self._use_postgres else "BEGIN IMMEDIATE")
         try:
             yield
             self.conn.commit()
@@ -95,7 +105,7 @@ class StockAgentStore(StockAgentHistoryMixin):
         return self._profile(row)
 
     def list_profiles(self, *, include_archived: bool = False) -> list[dict[str, Any]]:
-        rows = self.conn.execute("SELECT * FROM stock_agent_profiles WHERE archived=0 OR ? ORDER BY created_at,id",
+        rows = self.conn.execute("SELECT * FROM stock_agent_profiles WHERE archived=0 OR ?=1 ORDER BY created_at,id",
                                  (int(include_archived),)).fetchall()
         return [self._profile(row) for row in rows]
 
@@ -110,7 +120,11 @@ class StockAgentStore(StockAgentHistoryMixin):
         check_guardian_account(state)
         agent_id = "agent-" + uuid4().hex
         with self._write():
-            total, active = self.conn.execute("SELECT COUNT(*),COALESCE(SUM(archived=0),0) FROM stock_agent_profiles").fetchone()
+            counts = self.conn.execute(
+                "SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN archived=0 THEN 1 ELSE 0 END),0) AS active "
+                "FROM stock_agent_profiles"
+            ).fetchone()
+            total, active = int(counts["total"]), int(counts["active"])
             if active >= 20 or total >= 100:
                 raise ValueError("每个租户最多20个在用智能体、100个含归档智能体")
             if self.conn.execute("SELECT 1 FROM stock_agent_profiles WHERE archived=0 AND json_extract(config_json,'$.name')=?",
@@ -210,7 +224,11 @@ class StockAgentStore(StockAgentHistoryMixin):
                 return None
             if self.conn.execute("SELECT 1 FROM stock_agent_runs WHERE agent_id=? AND slot=?", (agent_id, slot)).fetchone():
                 return None
-            active = self.conn.execute("SELECT COUNT(*) FROM stock_agent_profiles WHERE active_run IS NOT NULL AND lease_until>?", (timestamp,)).fetchone()[0]
+            active = self.conn.execute(
+                "SELECT COUNT(*) AS count FROM stock_agent_profiles "
+                "WHERE active_run IS NOT NULL AND lease_until>?",
+                (timestamp,),
+            ).fetchone()["count"]
             if active >= 2:
                 return None
             if profile["active_run"]:
@@ -269,7 +287,9 @@ class StockAgentStore(StockAgentHistoryMixin):
                         raise ValueError("未核实当前来源时仍需保留已有自动观察；当前持仓单独管理")
             if cfg.get("kind") == "leader":
                 state = {**state, "watchlist": pending_watchlist(state)}
-                phase = self.conn.execute("SELECT phase FROM stock_agent_runs WHERE id=?", (run_id,)).fetchone()[0]
+                phase = self.conn.execute(
+                    "SELECT phase FROM stock_agent_runs WHERE id=?", (run_id,),
+                ).fetchone()["phase"]
                 if phase in {"intraday", "closeout"}:
                     held = {p["code"] for p in profile["state"]["positions"] if p["quantity"] > 0}
                     if state["watchlist"] != profile["state"].get("watchlist", []) or any(
@@ -294,11 +314,12 @@ class StockAgentStore(StockAgentHistoryMixin):
             if before_commit:
                 before_commit()
 
-    def fail_run(self, agent_id: str, run_id: str, message: str, *, cancelled: bool = False, now: datetime | None = None) -> None:
+    def fail_run(self, agent_id: str, run_id: str, message: str, *, cancelled: bool = False,
+                 now: datetime | None = None, detail: dict[str, Any] | None = None) -> None:
         timestamp, status = agent_now(now).isoformat(), "cancelled" if cancelled else "failed"
         with self._write():
-            changed = self.conn.execute("UPDATE stock_agent_runs SET status=?,finished_at=?,summary=? WHERE id=? AND agent_id=? AND status='running'",
-                                        (status, timestamp, message[:2000], run_id, agent_id)).rowcount
+            changed = self.conn.execute("UPDATE stock_agent_runs SET status=?,finished_at=?,summary=?,detail_json=? WHERE id=? AND agent_id=? AND status='running'",
+                                        (status, timestamp, message[:2000], encode_agent_json(detail or {}), run_id, agent_id)).rowcount
             if changed:
                 self.conn.execute("""UPDATE stock_agent_profiles SET active_run=NULL,lease_until=NULL,latest_status=?,
                     latest_summary=?,latest_actions_json='[]' WHERE id=? AND active_run=?""", (status, message[:2000], agent_id, run_id))
@@ -310,7 +331,7 @@ class StockAgentStore(StockAgentHistoryMixin):
                                     (run_id, agent_id)).fetchone()
             if row is None:
                 raise ValueError("只能分享已完成的智能体工作")
-            detail = json.loads(row[0])
+            detail = json.loads(row["detail_json"])
             token = detail.get('share_token')
             if not token:
                 token = secrets.token_urlsafe(32)
@@ -325,7 +346,7 @@ class StockAgentStore(StockAgentHistoryMixin):
                                     (run_id, agent_id)).fetchone()
             if row is None:
                 raise ValueError("只能保存已完成研究的推送回执")
-            detail = json.loads(row[0])
+            detail = json.loads(row["detail_json"])
             detail["notify"] = receipt
             self.conn.execute("UPDATE stock_agent_runs SET detail_json=? WHERE id=? AND agent_id=?",
                               (encode_agent_json(detail), run_id, agent_id))

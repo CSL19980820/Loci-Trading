@@ -135,6 +135,8 @@ class StrategyJobConfig(QuantModel):
     schedule_mode: Literal["off", "once", "interval"] | None = None
     run_hour: int = Field(default=15, ge=0, le=23)
     run_minute: int = Field(default=30, ge=0, le=59)
+    prepare_hour: int | None = Field(default=None, ge=15, le=23)
+    prepare_minute: int | None = Field(default=None, ge=0, le=59)
     interval_minutes: int = Field(default=10, ge=1, le=60)
     window_start_hour: int = Field(default=9, ge=0, le=23)
     window_start_minute: int = Field(default=30, ge=0, le=59)

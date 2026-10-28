@@ -31,6 +31,7 @@ import logging
 import os
 import re
 import socket
+import time
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -56,10 +57,21 @@ _LOOPBACK_HTTP_ALLOWLIST_ENV = "PALACE_MCP_LOOPBACK_HTTP_HOSTS"
 #: Clash / Surge Fake-IP 常用段（RFC 2544 基准测试网）。DNS 名经代理解析到
 #: 这里时仍是出站公网 HTTPS，不能当 SSRF 内网拦掉，否则悟道等 MCP 全挂。
 _PROXY_FAKE_IP_NETWORKS = (ip_network("198.18.0.0/15"),)
+_RATE_LIMIT_RETRIES = 2
 
 
 class McpError(RuntimeError):
     """MCP 调用失败。消息可以给用户看，但不含任何凭据。"""
+
+
+def _rate_limit_retry_delay(exc: McpError) -> float | None:
+    """Return a bounded retry delay for Wudao's documented rate-limit code."""
+    message = str(exc)
+    if "-32028" not in message:
+        return None
+    match = re.search(r"建议等待\s+(\d+)\s+毫秒", message)
+    requested = int(match.group(1)) / 1000.0 if match else 1.0
+    return min(5.0, max(1.0, requested))
 
 
 def _loopback_http_allowlist() -> set[str]:
@@ -532,7 +544,28 @@ class McpClient:
         bare = name.split("__", 1)[1] if name.startswith(f"{self.name}__") else name
         if "__" in bare:
             raise McpError("MCP 工具名称不允许包含 __")
-        result = self._rpc("tools/call", {"name": bare, "arguments": _bounded_arguments(arguments)})
+        for attempt in range(_RATE_LIMIT_RETRIES + 1):
+            try:
+                result = self._rpc(
+                    "tools/call",
+                    {"name": bare, "arguments": _bounded_arguments(arguments)},
+                )
+                break
+            except McpError as exc:
+                delay = _rate_limit_retry_delay(exc)
+                if delay is None or attempt >= _RATE_LIMIT_RETRIES:
+                    raise
+                deadline = active_deadline()
+                if deadline is not None and deadline - time.monotonic() <= delay:
+                    raise
+                logger.info(
+                    "%s MCP 触发限流，%.1f 秒后重试（%s/%s）",
+                    self.name,
+                    delay,
+                    attempt + 1,
+                    _RATE_LIMIT_RETRIES,
+                )
+                time.sleep(delay)
 
         blocks = result.get("content") or []
         if not isinstance(blocks, list):

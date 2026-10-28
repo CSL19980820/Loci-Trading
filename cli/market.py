@@ -28,16 +28,19 @@ from src.market import (
     MarketWriteBusy,
     market_write_lock,
     reclaim_market_db,
+    rebuild_quote_row_count,
     sync_instruments,
     sync_quotes,
 )
 from src.market.application.storage_governance import (
     StoragePolicy,
     report_text,
+    run_postgres_retention,
     run_storage_maintenance,
     storage_check,
     storage_report,
 )
+from src.shared.postgres import postgres_enabled
 from cli.market_intraday import (
     cmd_intraday_capture,
     cmd_intraday_prune,
@@ -134,6 +137,24 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     print(f"行数        {data['rows']:,}")
     print(f"日期区间    {data['first_date']} ~ {data['last_date']}")
     print(f"同步失败    {data['failed_codes']} 只")
+    return 0
+
+
+def cmd_repair_row_count(args: argparse.Namespace) -> int:
+    """一次精确重建 quotes_daily_rows_v2；不改变行情事实。"""
+    db_path = Path(args.db)
+    if not db_path.exists():
+        print(f"行情库不存在：{db_path}", file=sys.stderr)
+        return 1
+    try:
+        with market_write_lock(db_path, label="storage:repair-row-count"):
+            with MarketStore(db_path) as store:
+                with store._transaction() as cursor:
+                    payload = rebuild_quote_row_count(cursor)
+    except MarketWriteBusy as exc:
+        print(f"行数缓存修复未开始：{exc}", file=sys.stderr)
+        return 3
+    print(json.dumps({"db_path": str(db_path), **payload}, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -480,6 +501,9 @@ def build_parser() -> argparse.ArgumentParser:
     sync.set_defaults(func=cmd_sync)
 
     sub.add_parser("coverage", help="查看行情仓现状").set_defaults(func=cmd_coverage)
+    sub.add_parser("repair-row-count", help="精确重建 quotes_daily_rows_v2").set_defaults(
+        func=cmd_repair_row_count
+    )
     sub.add_parser("strategies", help="列出已注册战法").set_defaults(func=cmd_strategies)
 
     scr = sub.add_parser("screen", help="跑一次选股")
@@ -562,6 +586,20 @@ def build_parser() -> argparse.ArgumentParser:
     maintenance.add_argument("--dry-run", action="store_true", help="只统计候选，不改数据库")
     maintenance.add_argument("--json", action="store_true", help="输出 JSON")
     maintenance.set_defaults(func=cmd_storage_maintenance)
+
+    pg_retention = sub.add_parser(
+        "postgres-retention",
+        help="执行 PostgreSQL 日线与来源回执保留期",
+    )
+    pg_retention.add_argument("--years", type=int, default=3)
+    pg_retention.add_argument(
+        "--receipt-days",
+        type=int,
+        default=3,
+        help="在线保留来源回执与尝试明细的自然日数",
+    )
+    pg_retention.add_argument("--json", action="store_true")
+    pg_retention.set_defaults(func=cmd_postgres_retention)
 
     cap = sub.add_parser("intraday-capture", help="采集今日盘中快照（加密落盘）")
     cap.add_argument("--date", help="交易日 YYYY-MM-DD，默认今天")
@@ -680,6 +718,28 @@ def cmd_storage_maintenance(args: argparse.Namespace) -> int:
         for error in payload.get("errors", []):
             print(f"  ⚠ {error}", file=sys.stderr)
     return 1 if payload.get("errors") or payload.get("integrity") not in {"ok", "not_run"} else 0
+
+
+def cmd_postgres_retention(args: argparse.Namespace) -> int:
+    if not postgres_enabled():
+        print("LOCI_DATABASE_BACKEND=postgres 时才可执行 PostgreSQL 保留期维护", file=sys.stderr)
+        return 2
+    payload = run_postgres_retention(
+        years=max(1, int(args.years)),
+        receipt_days=max(1, int(args.receipt_days)),
+    )
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(
+            f"PostgreSQL 保留期：{payload['cutoff']}，"
+            f"删除日线 {payload['deleted']['quotes_daily']:,} 行，"
+            f"回执窗口截止 {payload['receipt_cutoff']}，"
+            f"删除回执 {payload['deleted']['source_route_receipts']:,} 条、"
+            f"尝试 {payload['deleted']['source_route_attempts']:,} 条，"
+            f"当前 {payload['quotes_daily_rows']:,} 行"
+        )
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

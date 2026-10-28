@@ -9,16 +9,16 @@ import hashlib
 from typing import Any
 
 #: review 端点只读这几张表；每条 SQL 的口径必须覆盖「这张表被 review 读到的列」。
-#: 只增不改的表（plans / reviews）用 条数 + 最大 rowid + 最大 created_at 就够；
+#: 只增不改的表（plans / reviews）用条数 + 最大 id + 最大 created_at 就够；
 #: candidate_reviews 的改判是不刷新任何时间戳的原地 UPDATE，只能逐行摘要。
 _REVIEW_FINGERPRINT_SQL = (
-    "SELECT COUNT(*), MAX(rowid), MAX(created_at) FROM plans",
-    "SELECT COUNT(*), MAX(rowid), MAX(created_at) FROM reviews",
+    "SELECT COUNT(*) AS item_count, MAX(id) AS last_id, MAX(created_at) AS last_created FROM plans",
+    "SELECT COUNT(*) AS item_count, MAX(id) AS last_id, MAX(created_at) AS last_created FROM reviews",
     (
-        "SELECT COUNT(*), MAX(rowid), MAX(created_at), GROUP_CONCAT("
-        "  rowid || '|' || IFNULL(name, '') || '|' || IFNULL(score, '') || '|' ||"
+        "SELECT COUNT(*) AS item_count, MAX(id) AS last_id, MAX(created_at) AS last_created, GROUP_CONCAT("
+        "  id || '|' || IFNULL(name, '') || '|' || IFNULL(CAST(score AS TEXT), '') || '|' ||"
         "  decision || '|' || tier || '|' || strategy_slug || '|' ||"
-        "  rule_version || '|' || source, char(10))"
+        "  rule_version || '|' || source, '\n') AS content"
         " FROM candidate_reviews"
     ),
 )
@@ -40,9 +40,13 @@ class QueryMixin:
         if granularity == "week":
             # 用本周周一日期作为 period key（YYYY-MM-DD），避免 strftime('%W') 的
             # W00 边界问题（年初第一个周一之前的天数会落到 W00）。
-            period_expr = "date(reviewed_on, 'weekday 0', '-6 days')"
+            period_expr = (
+                "to_char(date_trunc('week', CAST(reviewed_on AS date)), 'YYYY-MM-DD')"
+                if self._use_postgres
+                else "date(reviewed_on, 'weekday 0', '-6 days')"
+            )
         else:
-            period_expr = "strftime('%Y-%m', reviewed_on)"
+            period_expr = "substr(reviewed_on, 1, 7)"
 
         params: list[Any] = []
         where = "return_pct IS NOT NULL"
@@ -114,9 +118,9 @@ class QueryMixin:
         就得常驻一条探针连接，Windows 上会一直占住 palace.db 的句柄，临时库删不掉。
 
         为什么 candidate_reviews 要逐行摘要：改判走 record_candidate 的原地 UPDATE，
-        不刷新 created_at、不改 rowid、不改条数——只看 COUNT/MAX(rowid)/MAX(created_at)
+        不刷新 created_at、不改 id、不改条数——只看 COUNT/MAX(id)/MAX(created_at)
         的话「精选→落选」这种**等长改判**查不出来，缓存就会喂出陈数据。plans / reviews
-        在全仓内只有 INSERT，条数 + 最大 rowid + 时间戳足够。
+        在全仓内只有 INSERT，条数 + 最大 id + 时间戳足够。
 
         成本是每张表一次索引扫描（实测 720 条候选约 1ms），相对被缓存的端点
         （200~700ms）可以忽略。
@@ -124,6 +128,6 @@ class QueryMixin:
         parts: list[str] = []
         for sql in _REVIEW_FINGERPRINT_SQL:
             row = self.conn.execute(sql).fetchone()
-            parts.append("|".join("" if value is None else str(value) for value in tuple(row)))
+            parts.append("|".join("" if row[index] is None else str(row[index]) for index in range(len(row))))
         digest = hashlib.blake2b("\n".join(parts).encode("utf-8"), digest_size=16)
         return digest.hexdigest()

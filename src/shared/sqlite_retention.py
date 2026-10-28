@@ -36,6 +36,8 @@ import sqlite3
 import time
 from typing import Any, Callable, Sequence
 
+from src.shared.postgres import PG_PRIMARY_KEYS
+
 #: 单批删除行数。5000 行是「一次事务足够短」与「批次开销不喧宾夺主」的折中。
 DEFAULT_BATCH = 5000
 
@@ -50,10 +52,17 @@ def table_exists(conn: sqlite3.Connection, table: str) -> bool:
     典型场景：用户从没打开过 AI 助手，``ai_agent_events`` 就不存在；子租户的
     ops.db 可能还没跑过任何纸面舱，``monitor_runs`` 也没有。
     """
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?",
-        (table,),
-    ).fetchone()
+    if getattr(conn, "raw", None) is not None:
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = ANY(current_schemas(false)) AND table_name = ?",
+            (table,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?",
+            (table,),
+        ).fetchone()
     return row is not None
 
 
@@ -71,6 +80,22 @@ def age_param(days: int, *, date_only: bool = False, today: str = "") -> str:
     ``today`` 仅供测试注入，留空则取当天（与 ``julianday('now')`` 同轴）。
     """
     count = max(0, int(days))
+    if not date_only:
+        return f"-{count} days"
+    base = date.fromisoformat(today) if today else date.today()
+    return (base - timedelta(days=count)).isoformat()
+
+
+def age_param_for(conn: Any, days: int, *, date_only: bool = False, today: str = "") -> str:
+    """Return a backend-specific age modifier.
+
+    PostgreSQL translates the SQLite expression to
+    ``CURRENT_TIMESTAMP + ?::interval``; its PostgreSQL interval value has no
+    leading minus sign.  SQLite retains the historical ``-N days`` form.
+    """
+    count = max(0, int(days))
+    if not date_only and getattr(conn, "raw", None) is not None:
+        return f"{count} days"
     if not date_only:
         return f"-{count} days"
     base = date.fromisoformat(today) if today else date.today()
@@ -114,8 +139,18 @@ def delete_in_batches(
     if not table_exists(conn, table):
         return 0
     size = max(1, int(batch))
+    is_postgres = getattr(conn, "raw", None) is not None
+    if is_postgres:
+        configured_key = PG_PRIMARY_KEYS.get(table, "")
+        if not configured_key:
+            raise ValueError(f"PostgreSQL 表 {table} 没有配置稳定主键，拒绝用 ctid 删除")
+        if not subquery:
+            key = configured_key
     if subquery:
-        sql = f"DELETE FROM {table} WHERE {key} IN ({subquery})"
+        if is_postgres:
+            sql = f"DELETE FROM {table} WHERE {key} IN ({subquery})"
+        else:
+            sql = f"DELETE FROM {table} WHERE {key} IN ({subquery})"
     else:
         sql = (
             f"DELETE FROM {table} WHERE {key} IN "
@@ -123,6 +158,8 @@ def delete_in_batches(
         )
     total = 0
     for _ in range(MAX_BATCHES):
+        if is_postgres and key.startswith("("):
+            raise ValueError("PostgreSQL 复合主键需传 scalar key 或改用显式 SQL")
         cursor = conn.execute(sql, tuple(params))
         removed = int(cursor.rowcount or 0)
         conn.commit()
@@ -161,6 +198,7 @@ __all__ = [
     "DEFAULT_BATCH",
     "MAX_BATCHES",
     "age_param",
+    "age_param_for",
     "age_predicate",
     "count_rows",
     "delete_in_batches",

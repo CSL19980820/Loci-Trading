@@ -45,6 +45,11 @@ class ClosedStore:
             field: pd.DataFrame(value, index=self.days, columns=CODES, dtype=float)
             for field, value in {"open": 10, "high": 12, "low": 8, "close": 10, "volume": 100}.items()
         }
+        # 大阳之前缓慢上行；成功流应满足趋势与支撑，而不是依靠弱形态补位。
+        trend = [round(10 - (len(self.days) - 3 - pos) * 0.01, 2)
+                 for pos in range(len(self.days) - 2)]
+        for field, offset in {"open": 0, "high": 0.1, "low": -0.1, "close": 0}.items():
+            self.panels[field].iloc[:-2] = [[round(price + offset, 2)] * len(CODES) for price in trend]
         for field, value in {"open": 10, "high": 11.3, "low": 9.9, "close": 11.2, "volume": 100}.items():
             self.panels[field].iloc[-2] = value
         for field, value in {"open": 11.1, "high": 11.2, "low": 10.9, "close": 11.0, "volume": 200}.items():
@@ -119,8 +124,8 @@ def flow(request, tmp_path, monkeypatch):
     quote_calls = []
     live_names = {code: "今日名称" + code for code in CODES}
     quotes = {
-        code: VerifiedOpening(code=code, name=live_names[code], open=10.44 if code != "600001" else 5.22,
-                              price=10.44 if code != "600001" else 5.22,
+        code: VerifiedOpening(code=code, name=live_names[code], open=10.64 if code != "600001" else 5.32,
+                              price=10.64 if code != "600001" else 5.32,
                               prev_close=11.0 if code != "600001" else 5.5,
                               trade_date=target, trade_time="09:25:01", source="sina",
                               high=9999, low=-9999, close=9999, volume=-9999)
@@ -182,11 +187,117 @@ def test_complete_eod_pool_then_next_opening_diversifies_adjacent_consumers(flow
     assert result.data_snapshot["full_market_live_scan"] is False
     assert result.data_snapshot["live_requested_codes"] == 5
     assert result.data_snapshot["prepared_pool_sha256"] == envelope["sha256"]
+    assert result.universe_funnel["opening_candidates"] == 4
+    assert result.universe_funnel["quality_candidates"] == 4
     retail = next(row for row in result.data_snapshot["candidate_reviews"] if row["code"] == "000002")
     assert retail["factors"]["同板块排除"] == 1
     assert retail["industry"]["industry_l1"] != result.picks[0]["industry"].split("-")[0]
     assert "family:consumer" in retail["industry"]["groups"]
     assert len(flow.computed) == 2 and flow.computed[0].isna().all()
+
+
+@pytest.mark.parametrize("failure,reason", [
+    ("declining_pretrend", "历史趋势合格"),
+    ("broken_support", "支撑质量合格"),
+    ("low_quality", "最低评分合格"),
+])
+def test_quality_rejects_preserve_opening_reviews_without_filling_two_slots(flow, failure, reason):
+    if failure == "declining_pretrend":
+        trend = [round(10 + (len(flow.store.days) - 3 - pos) * 0.01, 2)
+                 for pos in range(len(flow.store.days) - 2)]
+        for field, offset in {"open": 0, "high": 0.1, "low": -0.1, "close": 0}.items():
+            prices = [[round(price + offset, 2) * (0.5 if code == "600001" else 1)
+                       for code in CODES] for price in trend]
+            flow.store.panels[field].iloc[:-2] = prices
+    else:
+        opening = 9.99 if failure == "broken_support" else 10.99
+        if failure == "low_quality":
+            flow.store.panels["low"].iloc[-1] = [9.8 * (0.5 if code == "600001" else 1)
+                                                for code in CODES]
+        for code, quote in flow.quotes.items():
+            quote["open"] = quote["price"] = opening * (0.5 if code == "600001" else 1)
+    report = prepare(flow)
+    assert report["candidate_count"] == 5
+    before = flow.path.read_bytes()
+    result = morning(flow)
+    assert result.picks == []
+    assert result.data_snapshot["status"] == "completed"
+    assert result.universe_funnel["opening_candidates"] == 4
+    assert result.universe_funnel["quality_candidates"] == 0
+    assert result.universe_funnel["signals_true"] == 0
+    reviews = result.data_snapshot["candidate_reviews"]
+    assert {row["code"] for row in reviews} == set(MAIN_CODES) - {"600001"}
+    assert all(not row["selected"] and row["factors"][reason] == 0 for row in reviews)
+    assert all(row["factors"]["基础开盘候选"] == 1 for row in reviews)
+    assert all(row["factors"]["条件候选"] == 0 and row["factors"]["score"] is None for row in reviews)
+    assert all(row["factors"]["开盘距最近均线(%)"] is not None for row in reviews)
+    if failure == "low_quality":
+        assert all(row["factors"]["开盘距最近均线(%)"] > 3 for row in reviews)
+        assert all(row["factors"]["临近均线分(20)"] == 0 for row in reviews)
+        assert all(row["factors"]["开盘质量总分"] < 50 for row in reviews)
+        assert all(row["factors"]["趋势方向合格"] == row["factors"]["支撑质量合格"] == 1
+                   for row in reviews)
+    assert flow.path.read_bytes() == before
+    assert flow.quote_calls == [sorted(MAIN_CODES)]
+    assert len(flow.store.loads) == 1
+
+
+@pytest.mark.parametrize("opening,shadow_break", [(10.44, False), (10.64, True), (10.99, False)])
+def test_midpoint_shadow_and_distance_are_scored_in_live_flow_instead_of_individual_vetoes(
+    flow, opening, shadow_break,
+):
+    if shadow_break:
+        flow.store.panels["low"].iloc[-1] = [9.8 * (0.5 if code == "600001" else 1)
+                                            for code in CODES]
+    for code, quote in flow.quotes.items():
+        quote["open"] = quote["price"] = opening * (0.5 if code == "600001" else 1)
+    prepare(flow)
+    result = morning(flow)
+    assert [pick["code"] for pick in result.picks] == ["000001", "600003"]
+    assert result.universe_funnel["opening_candidates"] == 4
+    assert result.universe_funnel["quality_candidates"] == 4
+    reviews = result.data_snapshot["candidate_reviews"]
+    assert all(row["factors"]["开盘质量总分"] >= 50 for row in reviews)
+    assert all(row["factors"]["最低评分合格"] == 1 for row in reviews)
+    if opening < 10.6:
+        assert all(row["factors"]["开盘守住大阳实体中点"] == 0 for row in reviews)
+        assert all(row["factors"]["大阳实体保留比例"] < 0.5 for row in reviews)
+    if shadow_break:
+        assert all(row["factors"]["昨日未跌破大阳低点"] == 0 for row in reviews)
+        assert all(row["factors"]["支撑分(30)"] < 20 for row in reviews)
+    if opening == 10.99:
+        assert all(row["factors"]["均线距离合格"] == 0 for row in reviews)
+        assert all(row["factors"]["临近均线分(20)"] == 0 for row in reviews)
+
+
+@pytest.mark.parametrize("unknown", [float("nan"), float("inf"), float("-inf")])
+def test_unknown_source_coverage_is_saved_as_null_and_morning_can_load_pool(flow, monkeypatch, unknown):
+    original = flow.store.data_snapshot
+
+    def snapshot(**kwargs):
+        payload = original(**kwargs)
+        payload["source_evidence"]["receipts"] = [{
+            "receipt_id": "source-receipt", "coverage": {"unknown": unknown, "rows": 42},
+            "attempts": [{"coverage": {"ratio": unknown, "valid_ratio": 0.95}}],
+        }]
+        payload["source_evidence"]["attempts"] = [{"rows": unknown, "state": "skipped"}]
+        return payload
+
+    monkeypatch.setattr(flow.store, "data_snapshot", snapshot)
+    report = prepare(flow)
+    raw = flow.path.read_text(encoding="utf-8")
+    assert "NaN" not in raw and "Infinity" not in raw
+    envelope = json.loads(raw)
+    receipts = envelope["payload"]["data_snapshot"]["source_evidence"]["receipts"]
+    assert receipts[0]["coverage"] == {"unknown": None, "rows": 42}
+    assert receipts[0]["attempts"][0]["coverage"] == {"ratio": None, "valid_ratio": 0.95}
+    assert report["data_snapshot"]["source_evidence"]["receipts"] == receipts
+    assert envelope["payload"]["data_snapshot"]["source_evidence"]["attempts"] == [
+        {"rows": None, "state": "skipped"},
+    ]
+    result = morning(flow)
+    assert [pick["code"] for pick in result.picks] == ["000001", "600003"]
+    assert result.data_snapshot["prepared_pool_sha256"] == envelope["sha256"]
 
 
 def test_explicit_legacy_growth_scope_cannot_include_chinext_in_either_stage(flow):
@@ -231,6 +342,19 @@ def test_changed_position_window_requires_new_preparation_before_quote_fetch(flo
     assert not flow.quote_calls
     prepare(flow, params={"position_lookback": 20})
     assert morning(flow, params={"position_lookback": 20}).picks
+
+
+def test_old_hard_filter_v3_pool_is_invalidated_by_new_quality_revision_before_quotes(flow, monkeypatch):
+    with monkeypatch.context() as prior_version:
+        prior_version.setattr(flow.engine, "strategy_revision", "builtin:double-volume-yin-low-open-v1:3")
+        prepare(flow)
+    assert flow.engine.strategy_revision == "builtin:double-volume-yin-low-open-v1:3.1"
+    with pytest.raises(StrategyError, match="不可用|版本"):
+        morning(flow)
+    assert not flow.quote_calls
+    assert len(flow.store.loads) == 1
+    prepare(flow)
+    assert morning(flow).picks
 
 
 @pytest.mark.parametrize("wanted", [None, CODES])

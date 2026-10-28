@@ -7,7 +7,7 @@ import sqlite3
 
 import pandas as pd
 
-from src.market.infrastructure.history_floor import MIN_TRADE_DATE
+from src.market.infrastructure.history_floor import trade_date_floor
 from src.market.infrastructure.store_codes import MarketError, normalize_code
 from src.market.infrastructure.store_schema import PANEL_FIELDS
 from src.market.infrastructure.store_row_count import track_quote_upsert
@@ -83,9 +83,9 @@ def quote_payload_from_bars(
     frame["trade_date"] = pd.to_datetime(
         frame["trade_date"], format="ISO8601"
     ).dt.strftime("%Y-%m-%d")
-    # 防回填地板：早于 MIN_TRADE_DATE 的 bar 一律不落库（与 market.db 的
+    # 防回填地板：早于当前保留起点的 bar 一律不落库（与 market.db 的
     # quotes_daily_floor 触发器同口径，代码侧再兜一层）。YYYY-MM-DD 字典序即时间序。
-    frame = frame[frame["trade_date"] >= MIN_TRADE_DATE]
+    frame = frame[frame["trade_date"] >= trade_date_floor()]
     if frame.empty:
         return []
     frame = frame[["code", "trade_date", *PANEL_FIELDS]].drop_duplicates(
@@ -154,9 +154,22 @@ def write_quote_payload(cursor: sqlite3.Cursor, payload: list[tuple[Any, ...]]) 
         written = cursor.rowcount
     # 一批里同一交易日会重复上千次（全市场 spot 是 5500 行同一天）。日历表只关心
     # 有哪些交易日，去重后再喂：5500 条 DO NOTHING 降到 1 条（实测 4.83 → 0.25 ms）。
+    trade_dates = list(dict.fromkeys(row[0] for row in payload))
+    if written != len(payload):
+        # 数据库触发器可以忽略部分插入；日历只收实际存在行情的日期。
+        existing_dates: set[str] = set()
+        for offset in range(0, len(trade_dates), 900):
+            chunk = trade_dates[offset:offset + 900]
+            existing_dates.update(
+                row[0] for row in cursor.execute(
+                    "SELECT DISTINCT trade_date FROM quotes_daily WHERE trade_date IN ("
+                    + ",".join("?" for _ in chunk) + ")", chunk,
+                )
+            )
+        trade_dates = [day for day in trade_dates if day in existing_dates]
     cursor.executemany(
         "INSERT INTO trading_calendar(trade_date, updated_at)"
         " VALUES(?, datetime('now')) ON CONFLICT(trade_date) DO NOTHING",
-        [(trade_date,) for trade_date in dict.fromkeys(row[0] for row in payload)],
+        [(trade_date,) for trade_date in trade_dates],
     )
     return written

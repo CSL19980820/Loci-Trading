@@ -43,6 +43,7 @@ def run_accounted_agent(provider: Any, store: Any, usage: dict, **arguments: Any
 def complete_decision(provider: Any, store: Any, *, system: str, payload: dict, schemas: list,
                       execute: Any, archive: Any, checkpoint: Any, deadline: float, config: dict,
                       decision_parser: Any = parse_decision,
+                      request_instruction: Any = None,
                       available_tool_names: list[str] | None = None) -> tuple[GuardianDecision, dict]:
     from src.ai import ChatMessage
     from src.ai.application.agent_messages import messages_from_json
@@ -94,6 +95,8 @@ def complete_decision(provider: Any, store: Any, *, system: str, payload: dict, 
                      retry_stream_failures=True,
                      recover_interrupted_generation=True,
                      max_parallel_tools=int(config.get("parallel_tools", 4)), parallel_tool_names=parallel)
+    if request_instruction is not None:
+        arguments["request_instruction"] = request_instruction
     def accepted(decision: GuardianDecision, result: Any) -> tuple[GuardianDecision, dict]:
         usage.update(raw=result.text, elapsed_ms=int((time.monotonic() - started) * 1000),
                      **evidence_snapshot(archive),

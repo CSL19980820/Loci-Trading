@@ -132,7 +132,9 @@ def write_snapshot(
     同一天同一 dataset 反复写是**覆盖**语义：盘中多次采样应当在 ``dataset`` 里带上
     时点（如 ``spot_1450``），否则后一次会盖掉前一次。
     """
-    dataset = validate_dataset(dataset)
+    raise IntradayArchiveError(
+        "分钟级与盘中留存已停用；分钟行情由在线接口实时获取，不落长期存储"
+    )
     target_dir = day_dir(data_dir, trade_date)
     target_dir.mkdir(parents=True, exist_ok=True)
     material = key or load_or_create_key(intraday_root(data_dir))

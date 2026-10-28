@@ -22,9 +22,9 @@ class ReviewPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(pattern=r"^\d{6}$")
     action: Literal["buy", "add", "reduce", "sell", "hold", "watch", "take_profit", "stop_loss"]
-    rationale: str = Field(min_length=1, description="本轮自主选择该动作或方法的研究依据；股票被量化选中只说明来源，不是采纳理由")
-    trigger: str
-    invalidation: str
+    rationale: str = Field(min_length=1, description="主因、必要证据和风险，通常40—100字；量化选中只是来源，不重复trigger或研究过程")
+    trigger: str = Field(description="仅真正影响行动的触发条件，通常20—80字；不列背景待查或重复rationale")
+    invalidation: str = Field(description="只写必要失效条件，通常20—80字；不重复trigger")
     quantity: int | None = Field(default=None, ge=0, strict=True)
     timing: str = ""
     confirmation: Literal["unspecified", "intraday", "planning_close"] = Field(default="unspecified",
@@ -43,7 +43,7 @@ class ReviewLesson(BaseModel):
 class StockReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(pattern=r"^\d{6}$")
-    assessment: str = Field(min_length=1)
+    assessment: str = Field(min_length=1, description="一两句说明该股的重要得失或判断变化及关键依据，不重抄原始理由")
 
 
 class ReviewHighlight(BaseModel):
@@ -56,9 +56,9 @@ class ReviewWatchUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(pattern=r"^\d{6}$")
     action: Literal["watch", "unwatch"]
-    reason: str = Field(min_length=1)
-    entry_condition: str = ""
-    exit_condition: str = ""
+    reason: str = Field(min_length=1, description="主因、必要证据和风险，通常40—100字；不重复入场退出条件或研究流水")
+    entry_condition: str = Field(default="", description="仅必要入场条件和复核时点，通常20—80字；背景待查不写入")
+    exit_condition: str = Field(default="", description="只写退出观察的必要失效条件，通常20—80字")
 
 
 class ReviewAnalysis(BaseModel):
@@ -446,8 +446,7 @@ def review_output_contract(stage: str) -> tuple[type[BaseModel], dict]:
 def planning_facts(facts: dict, *, review: dict | None = None, sources: list | None = None) -> dict:
     """当前计划独立建上下文；历史证据仍可由研究工具主动读取。"""
     keys = ('period', 'trade_date', 'created_at', 'planning_trade_date', 'planning_sellable',
-            'account', 'risk_contracts', 'watchlist', 'strategy_reference_pool',
-            'reference_trading_days', 'reference_pool_as_of', 'active_strategies', 'next_trade_date')
+            'account', 'risk_contracts', 'watchlist', 'next_trade_date', 'current_position_policy')
     result = deepcopy({key: facts[key] for key in keys if key in facts})
     result['history_access'] = '历史报告和决策可用本轮研究工具自主查询；当前计划按当前事实与自主判断生成。'
     if review is not None:
@@ -643,16 +642,11 @@ def _generate_review(store: Any, cfg: dict[str, Any], facts: dict[str, Any], *,
             } for index, cycle in enumerate(cycles)],
             "read_note": "索引覆盖全部轮次；用source.evidence_ref及各项path读取原文。policy_evidence只表示存在某种持仓政策快照；buy_permissions_recorded=false表示其中未记录可买板块，不得用当前规则倒推。可追加/position_policy、/decisions、/account_before、/plan_evidence、/rejects等路径，按next_read读完。",
         }
-    for field in ("strategy_reference_pool", "active_strategies"):
-        rows = model_facts.get(field)
-        if isinstance(rows, list) and rows:
-            model_facts[field] = {"optional": True, "count": len(rows),
-                "index": [{**{k: row[k] for k in ("code", "name", "slug", "strategies") if k in row},
-                           **({'signal_dates': sorted({s['date'] for s in row.get('signals', []) if s.get('date')})}
-                              if field == 'strategy_reference_pool' else {})} for row in rows],
-                "source": archive.store(rows, field, preview=0)}
+    for field in ("strategy_reference_pool", "active_strategies", "reference_trading_days",
+                  "reference_pool_as_of", "reference_pool_usage"):
+        model_facts.pop(field, None)
     model_facts["research_sources"] = source_status
-    model_facts["reference_material_note"] = "工坊资料可选，原文可用guardian_context_read回读。近期报告不是全部记忆，可用guardian_review_history跨期检索；旧资料不是新指令。"
+    model_facts["reference_material_note"] = "历史报告可用guardian_review_history按需检索；旧资料不是新指令。"
     output_model, schema = review_output_contract(stage)
     system = review_system(cfg, period, schema, stage=stage)
     prompt = json.dumps(model_facts, ensure_ascii=False, default=str)
@@ -664,6 +658,9 @@ def _generate_review(store: Any, cfg: dict[str, Any], facts: dict[str, Any], *,
              "research_sources": deepcopy(source_status),
              "context_usage": {"system_characters": len(system), "prompt_characters": len(prompt),
                                "available_tools": len(schemas), "source_documents": len(archive.documents)}}
+    if stage != "experience":
+        from src.ops.application.trading_operations_skill import load_trading_operations_skill
+        usage["builtin_skills"] = [load_trading_operations_skill(phase=period, analysis_only=True)[1]]
     from src.ops.application.guardian_research_tools import PARALLEL_RESEARCH_TOOLS
     parallel = {name for name in external_names | local_names if name.split('__')[-1] in PARALLEL_RESEARCH_TOOLS | local_names}
     usage['timeline'] = []

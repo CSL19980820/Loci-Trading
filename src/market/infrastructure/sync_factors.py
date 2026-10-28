@@ -34,7 +34,8 @@ def _factor_fetched_at(
         "SELECT MAX(fetched_at) FROM adjust_factors WHERE code = ?",
         (normalize_code(code),),
     ).fetchone()
-    return str(row[0] or "") if row else ""
+    value = row[0] if row and not hasattr(row, "keys") else (next(iter(row.values())) if row else "")
+    return str(value or "")
 
 
 def _factor_is_fresh(latest: str, stale_days: int) -> bool:

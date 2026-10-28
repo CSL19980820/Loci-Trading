@@ -195,6 +195,7 @@ class _ComputeScope:
     store: Any
     days: tuple[str, ...] = ()
     max_bytes: int = 64_000_000
+    window_start: str | None = None
     results: OrderedDict = field(default_factory=OrderedDict)
     result_refs: dict[int, tuple[int, int]] = field(default_factory=dict)
     bytes_used: int = 0
@@ -213,8 +214,15 @@ class _ComputeScope:
         conn = getattr(self.store, "conn", None)
         if conn is None:
             return True
-        version = (conn.total_changes, conn.execute("PRAGMA data_version").fetchone()[0])
-        if conn.in_transaction or self.version != version:
+        if getattr(self.store, "_use_postgres", False):
+            # SELECT starts a transaction on PostgreSQL; application market
+            # writes atomically bump this revision, including factor changes.
+            version = ("postgres", str(self.store.market_revision()))
+            in_transaction = False
+        else:
+            version = (conn.total_changes, conn.execute("PRAGMA data_version").fetchone()[0])
+            in_transaction = conn.in_transaction
+        if in_transaction or self.version != version:
             self.results.clear()
             self.result_refs.clear()
             self.engines.clear()
@@ -223,7 +231,7 @@ class _ComputeScope:
             self.primed = False
             self.primed_layouts.clear()
             self.version = version
-        return not conn.in_transaction
+        return not in_transaction
 
     def put(self, key: Any, result: SignalResult) -> None:
         frames = [result.signals, *result.factors.values()]
@@ -291,9 +299,13 @@ def computation_scope(store: Any, days: list[str] | None = None,
             formula_budget = 180.0
     except ValueError:
         formula_budget = 180.0
-    token = _SCOPE.set(_ComputeScope(store, tuple(days or ()), max_bytes,
-                                   unknown_deadline=time.monotonic() + budget,
-                                   formula_deadline=time.monotonic() + formula_budget))
+    token = _SCOPE.set(_ComputeScope(
+        store=store,
+        days=tuple(days or ()),
+        max_bytes=max_bytes,
+        unknown_deadline=time.monotonic() + budget,
+        formula_deadline=time.monotonic() + formula_budget,
+    ))
     try:
         yield
     finally:
@@ -337,9 +349,29 @@ def range_compute_end(engine: Any = None, panels: dict | None = None,
     return scope.days[-1]
 
 
+def range_reuse_active() -> bool:
+    """Whether this call belongs to a multi-day task-local compute scope."""
+    scope = _SCOPE.get()
+    return bool(scope is not None and len(scope.days) > 1 and scope.refresh())
+
+
+def set_range_compute_start(start: str | None) -> None:
+    """Freeze one warmup origin so exact-input keys can serve every range day."""
+    scope = _SCOPE.get()
+    if scope is not None and len(scope.days) > 1:
+        scope.window_start = str(start) if start else None
+
+
+def range_compute_start() -> str | None:
+    scope = _SCOPE.get()
+    if scope is None or len(scope.days) <= 1 or not scope.refresh():
+        return None
+    return scope.window_start
+
+
 def compute_result(engine: Any, panels: dict, params: dict | None = None,
                    *, dates: list[str] | None = None, audit: bool = False,
-                   reuse: bool = True) -> SignalResult:
+                   reuse: bool = True, range_namespace: Any = None) -> SignalResult:
     """Hash inputs only when a caller can actually reuse this computation.
 
     One-shot daily execution can bypass caching; real audits and shared range
@@ -358,6 +390,36 @@ def compute_result(engine: Any, panels: dict, params: dict | None = None,
         reusable = id(engine) in scope.engines or len(scope.engines) < 64
         if reusable:
             scope.engines[id(engine)] = engine
+    range_keys: list[Any] | None = None
+    if (
+        reusable and not audit and range_namespace is not None
+        and profile.range_adjustment_anchor_invariant
+        and range_reuse_active()
+    ):
+        # This capability is deliberately opt-in and is granted only after the
+        # strategy proves that every published output is invariant to a common
+        # per-stock qfq scale change. A classified finite range then needs one
+        # real calculation, not one complete-panel digest per target day.
+        namespace = (
+            id(engine),
+            str(getattr(engine, "strategy_revision", "")),
+            json.dumps(params or {}, sort_keys=True, separators=(",", ":"),
+                       allow_nan=False, default=str),
+            repr(range_namespace),
+        )
+        range_keys = [(*namespace, day) for day in requested]
+        if range_keys and all(key in scope.results for key in range_keys):
+            rows = [scope.results[key][0] for key in range_keys]
+            combined = SignalResult(
+                pd.concat([row.signals for row in rows]),
+                {
+                    name: pd.concat([row.factors[name] for row in rows])
+                    for name in rows[0].factors
+                },
+                pd.concat([row.watch_signals for row in rows])
+                if rows[0].watch_signals is not None else None,
+            )
+            return project_result(combined, requested)
     certified_version = scope.version if reusable else None
     exact_digest = None
     exact_ready = False
@@ -376,7 +438,7 @@ def compute_result(engine: Any, panels: dict, params: dict | None = None,
         return digest.digest()
 
     keys: list[Any] = []
-    if reusable:
+    if reusable and range_keys is None:
         causal_days = [day for day in requested if not audit and profile.causal
                        and (profile.causal_from is None or str(day) >= profile.causal_from)]
         causal_keys = _causal_input_keys(engine, panels, params, profile, causal_days)
@@ -398,6 +460,11 @@ def compute_result(engine: Any, panels: dict, params: dict | None = None,
     result = (projector(panels, params, requested) if callable(projector)
               else engine.compute(panels, params))
     if reusable and scope.refresh() and scope.version == certified_version:
+        if range_keys is not None:
+            for day, key in zip(requested, range_keys, strict=True):
+                if day in result.signals.index:
+                    scope.put(key, project_result(result, [day]))
+            return project_result(result, requested)
         for day, key in zip(requested, keys):
             if key is not None and day in result.signals.index:
                 row = project_result(result, [day])

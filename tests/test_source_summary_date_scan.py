@@ -79,6 +79,39 @@ def _scans(queries):
     return [sql for sql in queries if "GROUP BY q.code, source_id" in sql]
 
 
+def test_postgres_array_scans_match_chunked_summary_and_receipt_groups(large_summary_store):
+    store, codes = large_summary_store
+    expected_summary = _oracle_rows(store, codes, start=DAYS[0], end=DAYS[-1])
+    expected_groups = [dict(row) for row in store._quote_evidence_rows(
+        codes, start=DAYS[0], end=DAYS[-1],
+    )]
+    conn = store.conn
+
+    class ArrayConnection:
+        def __init__(self):
+            self.scans = []
+
+        def execute(self, sql, params):
+            self.scans.append(sql)
+            # Emulate PostgreSQL's bound array on the isolated SQLite fixture.
+            sql = sql.replace("= ANY(?)", "IN (SELECT value FROM json_each(?))")
+            return conn.execute(sql, [json.dumps(params[0]), *params[1:]])
+
+    adapter = ArrayConnection()
+    store.conn = adapter
+    store._use_postgres = True
+    try:
+        summary = list(store._iter_source_summary_rows(codes, start=DAYS[0], end=DAYS[-1]))
+        groups = store._quote_evidence_rows(codes, start=DAYS[0], end=DAYS[-1])
+    finally:
+        store.conn = conn
+        store._use_postgres = False
+    assert len(adapter.scans) == 2 and all("= ANY(?)" in sql for sql in adapter.scans)
+    assert _canonical(summary) == _canonical(expected_summary)
+    key = lambda row: (row["code"], str(row["receipt_id"]))
+    assert sorted((dict(row) for row in groups), key=key) == sorted(expected_groups, key=key)
+
+
 @pytest.mark.parametrize("start,after", [(DAYS[0], None), (None, DAYS[1]), (DAYS[0], DAYS[1])])
 def test_one_parameterized_date_scan_matches_every_chunked_field(large_summary_store, start, after):
     store, codes = large_summary_store
@@ -88,7 +121,7 @@ def test_one_parameterized_date_scan_matches_every_chunked_field(large_summary_s
     scans = _scans(queries)
     assert len(scans) == 1
     assert "INDEXED BY sqlite_autoindex_quotes_daily_1" in scans[0]
-    assert "q.code IN (SELECT value FROM json_each(" in scans[0]
+    assert "q.code IN (SELECT CAST(value AS TEXT) FROM json_each(" in scans[0]
     assert _canonical(actual) == _canonical(expected)
     assert all(set(row.keys()) == FIELDS for row in actual)
     assert store._aggregate_quote_rows(actual) == store._aggregate_quote_rows(expected)
@@ -132,7 +165,7 @@ class CapabilityConnection:
         return getattr(self.conn, name)
 
     def execute(self, sql, parameters=()):
-        if self.missing == "json" and sql.startswith("SELECT value FROM json_each"):
+        if self.missing == "json" and sql.startswith("SELECT CAST(value AS TEXT) FROM json_each"):
             raise sqlite3.OperationalError("no such table: json_each")
         if self.missing == "index" and sql.startswith("SELECT 1 FROM quotes_daily INDEXED BY"):
             raise sqlite3.OperationalError("no such index: sqlite_autoindex_quotes_daily_1")

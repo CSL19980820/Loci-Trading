@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from collections.abc import Callable
 from concurrent.futures import wait, FIRST_COMPLETED
@@ -60,9 +61,30 @@ def minute_quote(payload: dict[str, Any], code: str) -> dict[str, Any]:
         stamp = stamp.astimezone(ZoneInfo("Asia/Shanghai"))
     if isinstance(last.get("price"), bool):
         raise ValueError("行情价格不能是布尔值")
-    return {"code": code, "name": stock.get("name", code), "price": float(last["price"]),
+    quote = {"code": code, "name": stock.get("name", code), "price": float(last["price"]),
             "trade_date": stamp.date().isoformat(), "trade_time": stamp.strftime("%H:%M:%S"),
             "source": "wudao", "high": last.get("high"), "low": last.get("low")}
+    for key in ("prev_close", "limit_up"):
+        for row in (last, stock, data):
+            if key in row:
+                quote[key] = row[key]
+                break
+    return quote
+
+
+def _positive_reference(value: Any) -> bool:
+    return (not isinstance(value, bool) and isinstance(value, (int, float))
+            and math.isfinite(value) and value > 0)
+
+
+def _has_limit_reference(code: str, quote: dict[str, Any], now: datetime) -> bool:
+    if any(_positive_reference(quote.get(key)) for key in ("prev_close", "limit_up")):
+        return True
+    reference = quote.get("limit_reference")
+    return (isinstance(reference, dict) and reference.get("code") == code
+            and isinstance(reference.get("source"), str) and bool(reference["source"].strip())
+            and str(reference.get("trade_date") or "").replace("-", "") == now.strftime("%Y%m%d")
+            and any(_positive_reference(reference.get(key)) for key in ("prev_close", "limit_up")))
 
 
 _PRIMARY_QUOTE_SECONDS = 4.0
@@ -169,12 +191,17 @@ def snapshot(codes: list[str], *, include_minute: bool = False, force_refresh: b
                 record(code, {}, discovery.get("error") or "主源未启用或发现超时", "primary")
 
         failed = missing()
-        direct_codes = unique if require_order_book else failed
+        reference_codes = [code for code in unique if code not in failed
+                           and not _has_limit_reference(code, quotes[code], current_time())]
+        direct_codes = unique if require_order_book else list(dict.fromkeys(failed + reference_codes))
         books: dict[str, dict] = {}
         book_errors: dict[str, str] = {}
+        reference_errors: dict[str, str] = {}
         if direct_codes and not lane_provider_enabled("sina", LANE_SPOT_BATCH):
             for code in direct_codes:
                 book_errors[code] = "新浪现价已停用，不绕过来源设置"
+                if code in reference_codes:
+                    reference_errors[code] = book_errors[code]
                 if code in failed:
                     record(code, {}, book_errors[code], "direct")
             direct_codes = []
@@ -192,6 +219,23 @@ def snapshot(codes: list[str], *, include_minute: bool = False, force_refresh: b
                     problem = error or ("直连源未返回该股票" if q is None else quote_error(code, q, current_time()))
                     if not problem and not q.get("source"):
                         problem = "直连报价缺少来源"
+                    if code in reference_codes:
+                        reference_problem = problem
+                        if not reference_problem and (q.get("code") != code or q.get("source") != "sina"):
+                            reference_problem = "涨停参考股票代码或行情来源不匹配"
+                        if not reference_problem and str(q.get("trade_date") or "").replace("-", "") != current_time().strftime("%Y%m%d"):
+                            reference_problem = "涨停参考不属于当前交易日"
+                        if not reference_problem and not _has_limit_reference(code, q, current_time()):
+                            reference_problem = "直连源未提供有效昨收或涨停价"
+                        attempts[code].append({"stage": "limit_reference", "error": reference_problem or "",
+                                               "checked_at": current_time().isoformat()})
+                        if reference_problem:
+                            reference_errors[code] = reference_problem
+                        else:
+                            # 补同日静态价格参考；主源的现价、时间与来源保持原样，不读取盘口。
+                            quotes[code]["limit_reference"] = {key: q[key] for key in (
+                                "code", "name", "prev_close", "limit_up", "trade_date", "trade_time", "source"
+                            ) if key in q}
                     if require_order_book:
                         if problem:
                             book_errors[code] = problem
@@ -223,6 +267,8 @@ def snapshot(codes: list[str], *, include_minute: bool = False, force_refresh: b
             if problem:
                 row["error"] = problem
             row["quote_attempts"] = attempts[code]
+            if not _has_limit_reference(code, row, current_time()):
+                row["limit_reference_error"] = reference_errors.get(code, "缺少当日昨收或涨停参考")
             if require_order_book:
                 if code in books:
                     row["order_book"] = books[code]

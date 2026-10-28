@@ -22,3 +22,8 @@ class ExecutionProfile:
     metadata_fields: tuple[str, ...] = ()
     causal: bool = False
     causal_from: str | None = None
+    #: Signals, watch signals and every published factor are unchanged when a
+    #: common per-stock price scale changes between equivalent adjustment
+    #: anchors. This permits one certified range computation to serve daily
+    #: ask prices without re-hashing the complete panel for every target day.
+    range_adjustment_anchor_invariant: bool = False

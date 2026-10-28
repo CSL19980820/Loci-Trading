@@ -21,6 +21,7 @@ from src.ops.application.guardian_risk import evaluate_risk_plans
 from src.ops.application.stock_agent_prompts import PHASE_NAMES
 from src.ops.application.stock_agent_service import agent_time
 from src.ops.application.falcon_watch_pool import reconcile_falcon_watch_pool, sync_falcon_watch_pools
+from src.ops.application.falcon_auction_inputs import auction_inputs_reason, falcon_auction_inputs
 from src.ops.infrastructure.store import OpsStore
 from src.shared.paths import palace_db
 from src.shared.tenancy import current_tenant, tenant_scope
@@ -60,7 +61,21 @@ def execute_stock_agent(cfg: dict, context: JobContext) -> dict:
     with StockAgentStore(path) as ledger:
         profile = ledger.get(str(cfg.get("agent_id") or ""))
         if profile["config"].get("kind") == "falcon":
+            if phase == "auction":
+                reason = auction_inputs_reason(falcon_auction_inputs(context.ops_store, now=now))
+                if reason:
+                    raise JobSkipped(reason)
+                if now >= now.replace(hour=9, minute=29, second=50, microsecond=0):
+                    raise JobSkipped("竞价输入就绪时已到研判截止时间，本轮不再认领")
             sync_falcon_watch_pools(context.ops_store, path, as_of=now, agent_id=profile["id"])
+            # 来源同步可能取价；认领时重读真实时钟，不能拿等待前的时刻跨窗执行。
+            now = agent_time()
+            try:
+                require_phase(phase, now)
+            except (ValueError, LookupError) as exc:
+                raise JobSkipped(str(exc)) from exc
+            if phase == "auction" and now >= now.replace(hour=9, minute=29, second=50, microsecond=0):
+                raise JobSkipped("竞价输入就绪时已到研判截止时间，本轮不再认领")
             profile = ledger.get(profile["id"])
         if cfg.get("revision") != profile["revision"]:
             raise JobSkipped("旧日程已失效，等待新的智能体日程")
@@ -209,7 +224,7 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str, resea
             permitted = set(candidate_scope["candidate_codes"]) | {p["code"] for p in profile["state"]["positions"]}
             codes = [code for code in codes if code in permitted]
         quotes = snapshot(codes, force_refresh=True, check_cancelled=checkpoint, deadline=deadline,
-                          require_order_book=True).quotes if codes and not analysis_only else {}
+                          require_order_book=config["kind"] != "falcon").quotes if codes and not analysis_only else {}
         now = agent_time()
         decision = bind_execution_references(decision, quotes, now)
         state, fills, rejects = simulate_stock_agent(profile["state"], decision, quotes, now, config,
@@ -287,7 +302,8 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str, resea
                 if analysis_only or not phase_allowed("intraday", current):
                     raise ValueError("成交前已离开连续交易时段")
                 for fill in fills:
-                    executable_quote(fill["code"], fill["action"], fill["quantity"], quotes.get(fill["code"], {}), current)
+                    executable_quote(fill["code"], fill["action"], fill["quantity"], quotes.get(fill["code"], {}), current,
+                                     paper=config["kind"] == "falcon")
                     error = quote_error(fill["code"], quotes.get(fill["code"], {}), current)
                     if error:
                         raise ValueError(error)
@@ -317,8 +333,10 @@ def run_claimed(profile: dict, phase: str, context: JobContext, path: str, resea
                 "notify": notification}
     except Exception as exc:
         if not committed:
+            from src.ops.application.stock_agent_decide import stock_agent_failure_detail
             with StockAgentStore(path) as ledger:
-                ledger.fail_run(agent_id, run_id, str(exc), cancelled=isinstance(exc, (JobCancelled, StockAgentConflict)))
+                ledger.fail_run(agent_id, run_id, str(exc), cancelled=isinstance(exc, (JobCancelled, StockAgentConflict)),
+                                detail=stock_agent_failure_detail(exc))
         raise
     finally:
         try:

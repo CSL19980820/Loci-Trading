@@ -34,7 +34,7 @@ from typing import Any
 from src.ops.infrastructure.store_runs import RUN_ORDER_SQL
 from src.shared.sqlite_retention import (
     DEFAULT_BATCH,
-    age_param,
+    age_param_for,
     age_predicate,
     count_rows,
     delete_in_batches,
@@ -79,7 +79,7 @@ class OpsRetentionMixin:
             self.conn,
             table,
             where=age_predicate(column, date_only=date_only),
-            params=(age_param(days, date_only=date_only),),
+            params=(age_param_for(self.conn, days, date_only=date_only),),
             batch=batch,
             pause=pause,
         )
@@ -114,17 +114,37 @@ class OpsRetentionMixin:
         size = max(1, int(batch))
         # rn > floor 是保底闸；括号里是「超硬上限 或 够老」。两个闸门都过才删。
         aged = age_predicate("started_at") if days > 0 else "0"
-        subquery = (
-            "SELECT rowid FROM ("
-            " SELECT rowid AS rowid,"
-            f" ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY {RUN_ORDER_SQL}) AS rn,"
-            " started_at AS started_at"
-            " FROM job_runs WHERE status <> 'running'"
-            f" ) WHERE rn > ? AND (rn > ? OR {aged}) LIMIT {size}"
+        id_column = (
+            "ctid"
+            if not hasattr(self.conn, "raw")
+            else "id"
         )
+        run_order_sql = (
+            RUN_ORDER_SQL
+            if not hasattr(self.conn, "raw")
+            else "started_at DESC, id DESC"
+        )
+        if hasattr(self.conn, "raw"):
+            subquery = (
+                "SELECT id FROM ("
+                " SELECT id,"
+                f" ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY {run_order_sql}) AS rn,"
+                " started_at AS started_at"
+                " FROM job_runs WHERE status <> 'running'"
+                f" ) AS ranked WHERE rn > ? AND (rn > ? OR {aged}) LIMIT {size}"
+            )
+        else:
+            subquery = (
+                "SELECT rowid FROM ("
+                " SELECT rowid AS rowid,"
+                f" ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY {run_order_sql}) AS rn,"
+                " started_at AS started_at"
+                " FROM job_runs WHERE status <> 'running'"
+                f" ) WHERE rn > ? AND (rn > ? OR {aged}) LIMIT {size}"
+            )
         params: tuple[Any, ...] = (floor, ceiling)
         if days > 0:
-            params = (floor, ceiling, age_param(days))
+            params = (floor, ceiling, age_param_for(self.conn, days))
         deleted = delete_in_batches(
             self.conn,
             "job_runs",
@@ -132,6 +152,7 @@ class OpsRetentionMixin:
             params=params,
             batch=size,
             pause=pause,
+            key=id_column,
         )
         return {
             "table": "job_runs",

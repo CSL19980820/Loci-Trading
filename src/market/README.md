@@ -6,6 +6,8 @@
 
 选股行情门禁按目标交易日检查：未指定日期时，上海时区盘中/盘后使用当天，休市及开盘前使用上一已收盘交易日；显式历史日期保持原值。历史日覆盖未达 90% 仍阻断，并提示补齐该日历史行情，绝不调用今日现价或按盘中降级放行。`resolve_screen_trade_date` 与选股任务共用日期解析，回执 `coverage.trade_date` 标识实际检查日。
 
+当日 15:00 起，手动和定时选股必须确认全部正常标的的正式日 K 已定稿：实际读库中每个标的均须关联一票成功的 `hist_daily` 回执，且回执取数与行情落库时间均不早于目标日的上海收盘时刻。定稿证据取回执里真实命中的选源尝试（`source_route_attempts` 的 `selected` 且源名与行情一致），不认 `source_route_receipts.state` 这个推导字段：主源命中后后备源会被记成 `skipped`，而旧推导曾把这种成功回执整条写成 `skipped`，拿它当证明会让盘中每轮增量同步抹掉前一收盘日的定稿。覆盖率 100%、来源标记 `tdx` 或补刷 spot 均不能替代定稿证明；未全部完成时阻断，提示等待“行情日终重刷”。最终计算入口也执行该只读检查，关闭刷新/体检、缩小选股范围或读取旧热库均不能绕过。下一交易日收盘前或休市期间读取最近收盘日，同样需要定稿证明；更早的历史日期沿用原覆盖率检查。成功结果的 `data_snapshot.eod_finalization` 保留核验日期、数量与时刻。
+
 ## 职责
 标的、日 K、同步编排、数据线路适配器、股票池。
 
@@ -32,9 +34,10 @@
 
 - `tdx_daily` 建连后必须真正取到一根日 K 才采用该节点；握手成功但只回数量头的节点会关闭并换台。排序超时保留已成功的节点，候选池见 `tdx_servers.py`，包含生产验证过的公开券商节点。连接起点按计数器轮询，不能用线程 ID 取模（线程 ID 的内存对齐会让所有线程挤在同一台）。
 - `sync_quotes(authoritative_only=True)` 仅请求通达信、关闭交叉合并与回退，并绕过当天水位和上市日跳过；仍按增量近窗取数，`force=True` 才全历史重拉。不能同时传自定义 `sources`。
+- 日终 `today_refresh` 仍先走上述通达信严格定稿；通达信整源或部分失败时，只有失败标的回退到 **15:00 后的同日收盘快照**（当前为 `sina_close`）。快照必须自报目标交易日，有成交标的保存收盘 OHLCV；源明确今日零量额且昨收有效的停牌标的生成 `volume=0` 平价行。每条都写正式 `hist_daily` 回执并标 `close_snapshot/no_trade`，盘中 `_spot` 仍不得冒充收盘数据。
 - 已入库的 `source='tdx'` 正式日 K 只能被正式通达信数据更新，回退源和盘中 spot 不得覆盖；当日 15:00 前仍允许现价刷新，防止把盘中累计值冻结。写入数按实际更新行数返回，失败回执照常留存。
 - 腾讯历史日 K / flashdata 未提供成交额时 `amount` 留空，禁止再用 `close×volume` 合成；腾讯现价仍使用接口真实成交额。历史遗留假值须用权威源重写，不通过改阈值或清空数据消除告警。
-- 回退源水位不阻止同日重试；日终定稿和 `scripts/resync_market_authoritative.py` 均使用严格权威模式。回归：`tests/market/test_authoritative_integrity.py`。
+- 回退源水位不阻止同日重试；`scripts/resync_market_authoritative.py` 仍使用严格权威模式，不启用收盘快照兜底。回归：`tests/test_close_snapshot_finalization.py`、`tests/test_screen_close_finalization.py`。
 
 `load_panel` 的原生 SQL 读取与区间预读共用分块数组装载器，每批最多 16,384 行，直接填入数值面板，避免同时保留 SQL 行对象、长表及宽表。普通读取不按缓存预算截断；区间缓存超预算时回退完整普通读取。装载前后复核行情版本，变更时重试，持续变化则明确失败。缓存输出使用独立数组，调用方修改不能污染后续读取。
 返回值仍是按日期排序、按证券对齐的 pandas 数值面板，缺失值、复权与 `min_bars` 口径不变。
@@ -123,7 +126,7 @@
 | `duckdb_panel.py` | 可选 DuckDB 只读旁路（`LOCI_MARKET_DUCKDB=1`；失败回退 pandas） |
 | `polars_panel.py` | 可选 Polars 只读 POC（`LOCI_MARKET_POLARS=1`；未安装/失败回退 pandas 或 DuckDB） |
 | `sync.py` / `sync_spot.py` | 历史日 K / 当日 spot 同步；后者维护单飞（key = **代码集合 sha1 指纹**＋交易日＋batch_size，board/screen/sync/ops 请求同一批代码时能合流；**失败只负缓存 3s**、成功才留 30s，一次抽风不会被重放半分钟）、**跨进程 spot 文件锁**、逐代码回执与失败终态；写库遇 locked/busy 有限退避，错误用人话中文 |
-| `application/screen_spot.py` | **收盘后**选股前「当日行情就绪」：覆盖率≥门禁下限则**跳过 spot**；spot 失败但覆盖已够则软放行；真正不足才阻断 |
+| `application/screen_spot.py` | **收盘后**选股须全部正常标的具备收盘后获取的正式日 K 回执，未定稿即阻断；盘中保留覆盖率检查与 spot 补数 |
 | `application/screen_live.py` | **盘中**选股（09:15–15:00 选今天）：自己拉 `spot_batch` 叠内存面板，**不写** `market.db`、不拿写锁。历史只读热库。拉不到实时就中止，不回退昨日本地日 K |
 | `em_industry.py` | 东财行业板块 → `code→行业名`:磁盘缓存 + 7 天 TTL + **失败兑现旧缓存** + **30 分钟失败冷却**。从 `sources.py` 拆出——那边是「证券列表与回退链」,行业名只是路上一步锦上添花,却带着自己一整套缓存/冷却/并发取数 |
 | `application/data_quality.py` | 行情库体检（阈值与 `Finding` 见下一行的 `data_quality_thresholds.py`，本文件是判据与编排）:权威源占比(全库)、**最后一个交易日的权威源占比**、合成成交额、缺回执、当日覆盖、基准指数量级、非权威源水位。**只读只判不改库**;由运维托管任务 `data_quality`(工作日 16:30)天天跑,超阈值出中文告警。合成成交额判据有**两道排除**,都是为了不把真数据报成假值:①只在会合成的源上算(`FABRICATING_SOURCES`),通达信给的是真实成交额;②**跳过 `high == low` 的单一价格成交日**——整天只成交在一个价位时 `amount = close×volume` 是算术恒等。②是实测逼出来的:生产库曾报 8128 行,其中 **7721 行(95%)当日 `high==low`**(1990 年代薄成交、北交所/新三板低流动性个股),而通达信自己的单一价格日里也有 33% 满足该等式——**是物理规律,不是某个源在造假**;且它给的处置建议(跑 resync)实测**修正 0 行**,因为 98.4% 的日期通达信根本够不到。**当日覆盖判据用比率不用绝对行数**(`min_last_day_coverage=0.95`,分母取 `instruments` 里的 STOCK 只数):曾写死 `min_last_day_rows=5000`(注释称「全市场约 5540」),而生产库实际只有 4932 只,覆盖 4935 行已是 **100.1%** 却天天报警。**天天响、照着做又没用的告警比没有告警更糟**,它会把整张体检表训练成噪音。`instruments` 读不到时退回绝对地板 `min_last_day_rows_floor=500` 并写明,不让空库蒙混过关;辅助探测走 `_scalar_optional`(容错),主判据仍走严格的 `_scalar` |
@@ -252,6 +255,10 @@
 `idx_quotes_receipt` 只服务热库 `_purge_orphan_receipts` 的 `NOT EXISTS` 逐行探测，
 在权威库上实测占 **1,049 MB** 却没有热路径消费者。**schema v8 起权威库不再建它**
 （`MarketStore(..., keep_receipt_index=True)` 只有 `open_market_hot()` 传）。
+
+`idx_source_attempts_source(source_id,state)` 没有仓内独立消费者；attempts 的读取都先按
+`receipt_id` 关联，收盘定稿也在回执范围内筛选。新建库不再创建它；既有库由显式
+`reclaim` 删除，避免旧版和新版共用数据库时反复重建索引。历史基准约占 127 MB。
 
 `DROP INDEX` 只把页归还库内空闲链，要真正缩小文件得 `VACUUM`：
 `python -m cli.market reclaim`。生产库实测 **5,740.2 MB → 4,172.3 MB（释放 1,567.9 MB）**，

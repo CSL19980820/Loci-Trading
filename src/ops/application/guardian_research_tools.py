@@ -266,7 +266,7 @@ class GuardianResearchTools:
 RESEARCH_WORKBENCH_RULES = """【可自主调用的研究工作台】
 悟道、同花顺扶摇与system__前缀的本地系统工具同时可用。可自主查询全市场、网页资讯、历史行情、策略与研究证据，不必遵循固定工具调用次序。扶摇工具先按需发现，超长回执按next_offset继续读取。
 guardian_account_read提供实际现金、费用、可卖与锁定股数和集中度；guardian_quotes提供带来源和时点的主备报价；guardian_scenario按你设定的情景算组合损益，不替你决定可接受风险。
-guardian_preflight使用真实账本算法在副本上预演完整决策：费用、股数、现金、价格容差及T+1；不产生任何成交，也不限制持仓只数或各股仓位。可以自主调整股票、方向、股数和组合后再次预演，不受最终一次修正的收缩限制。
+guardian_preflight使用真实账本算法在副本上预演完整决策：费用、股数、现金、价格容差及T+1；不产生任何成交，也不限制持仓只数或各股仓位。研究阶段可以自主调整股票、方向、股数和组合后再次预演。正式预检受阻后，仅重新判断受阻股票和动作；价格条件失效时可根据新证据明确给出新的价格授权，程序不会自动移动参考价。
 预演回传decision_with_fixed_references；保留相同意图的reference_price，最终JSON沿用该固定基准，不把新报价重新当成基准叠加2%。预演有错误时自主修改，不必盲目提交再等拒单。
 guardian_calculate可核对费用、收益比例与仓位算术，数值来源仍须有证据。
 历史疑问可用guardian_decision_history分页核对原始理由，长材料用guardian_context_read取回全文；缺失证据不能自行补造。

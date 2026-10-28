@@ -44,6 +44,7 @@ _FACTOR_ZH: dict[str, str] = {
     "concentration": "集中度",
 }
 _RULE_LABELS: dict[str, str] = {
+    "first-wave-pullback-v1": "首波回调D2买点",
     "qianlong": "潜龙",
     "qianlong-auction": "潜龙",
     "qianlong-close": "潜龙",

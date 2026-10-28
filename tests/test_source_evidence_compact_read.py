@@ -130,6 +130,28 @@ def test_compact_cold_reads_restore_sources_counts_and_sample_order(compact_stor
     assert actual["attempts"][-1]["payload_sha256"] == "digest-1-49"
 
 
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_bulk_archive_summaries_match_chunked_queries(compact_store, duplicate):
+    from src.market.application.provenance_archive import (
+        _query_archive, query_archived_attempt_counts, query_archived_receipt_metadata,
+    )
+
+    store, _ = compact_store
+    root = default_archive_root(store.db_path)
+    archive_selected_batch(store.conn, root, cutoff="2025-01-01", batch_size=1000)
+    ids = [f"missing-{i}" for i in range(1000)] + [f"receipt-{i:03}" for i in range(1, 121)]
+    if duplicate:
+        ids.append("receipt-001")
+    metadata_columns = "receipt_id, code, state, unresolved, generated_at, selected_source"
+    expected_metadata = _query_archive(root, "receipts", ids, select=metadata_columns)
+    expected_counts = _query_archive(root, "attempts", ids,
+                                     select="receipt_id, COUNT(*) AS total",
+                                     suffix=" GROUP BY receipt_id")
+    sort = lambda rows: sorted(rows, key=lambda row: str(row["receipt_id"]))
+    assert sort(query_archived_receipt_metadata(root, ids)) == sort(expected_metadata)
+    assert sort(query_archived_attempt_counts(root, ids)) == sort(expected_counts)
+
+
 @pytest.mark.parametrize("scope", [
     dict(codes=["600999"], start=DAYS[0], end=DAYS[-1]),
     dict(codes=["600001"], start="2025-01-01", end="2025-01-02"),

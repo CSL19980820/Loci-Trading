@@ -114,23 +114,12 @@ class ResearchContext:
     def compact(self, payload: dict[str, Any], *, on_demand: bool = False) -> tuple[dict[str, Any], dict[str, int]]:
         result = copy.deepcopy(payload)
         original_chars = len(json.dumps(payload, ensure_ascii=False, default=str))
-        if on_demand and "candidates" in result:
-            # 完整混合输入只存一份，工坊目录不夹带持仓或自主观察的决策。
-            candidates = result.pop("candidates")
-            index = [{"code": row["code"], "name": row.get("name", ""),
-                      "strategies": row.get("strategies", []),
-                      "signal_count": len(row.get("signals", [])), "path": f"/{i}/signals"}
-                     for i, row in enumerate(candidates) if row.get("signals")]
-            result["reference_pool"] = {
-                "optional": True, "count": len(index), "index": index,
-                "source": self.store(candidates, "原始候选输入（含工坊资料）", preview=0),
-            }
-            result["research_input_roles"] = {
-                "portfolio.positions": "真实持仓及当前执行条件，不限制研究其他股票。",
-                "portfolio.watchlist": "模型明确选择的自主观察，不包含未选择的工坊参考。",
-                "reference_pool": "可选工坊目录；不要求研究、覆盖或加入观察，不是全市场范围。",
-                "history": "历史、旧计划和经验均为可查询材料，不是当前指令。",
-            }
+        if on_demand:
+            # 旧调用方传入的策略资料也不进入默认上下文或证据目录。
+            for field in ("candidates", "active_strategies", "strategy_rules", "reference_pool",
+                          "strategy_reference_pool", "trading_days", "reference_history_note",
+                          "reference_trading_days", "reference_pool_as_of", "reference_pool_usage"):
+                result.pop(field, None)
         for candidate in result.get("candidates", []):
             signals = []
             for signal in candidate.get("signals", []):

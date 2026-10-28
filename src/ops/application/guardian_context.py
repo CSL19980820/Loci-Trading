@@ -1,4 +1,4 @@
-"""量化候选来源与自主观察上下文。"""
+"""自主观察上下文与保留的按需策略查询。"""
 from __future__ import annotations
 
 from typing import Any
@@ -37,7 +37,8 @@ def strategy_sources(store: Any) -> list[dict[str, str]]:
 
 def premarket_plan_context(report: dict[str, Any] | None, state: dict[str, Any]) -> dict[str, Any] | None:
     """成交后旧计划数量作废，条件仍供模型参考；原报告保持不变。"""
-    if not report or report['status'] != 'success':
+    from src.ops.application.guardian_memory import current_research
+    if not report or report['status'] != 'success' or not current_research(report, state):
         return None
     result = report['result']
     from src.ops.application.guardian_memory import MEMORY_NOTE
@@ -65,15 +66,22 @@ def premarket_plan_context(report: dict[str, Any] | None, state: dict[str, Any])
 def observation_snapshot(state: dict[str, Any]) -> dict[str, Any]:
     from datetime import datetime
     from zoneinfo import ZoneInfo
-    from src.ledger import PalaceStore
-    from src.shared.paths import palace_db
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
-    with PalaceStore(palace_db()) as palace:
-        days = reference_days(reference_target_day(datetime.now(ZoneInfo("Asia/Shanghai"))))
-        candidates = observe(palace, days, state, [])
-        return {"watchlist": candidates, "watchlist_as_of": today,
-                **observation_groups(candidates, state),
-                "watchlist_note": "行情日历尚未准备好" if not days else "工坊仅为参考；自主观察以模型明确选择为准"}
+    candidates = autonomous_observations(state)
+    return {"watchlist": candidates, "watchlist_as_of": today,
+            **observation_groups(candidates, state),
+            "watchlist_note": "仅持仓与自主观察；策略资料由交易员按需查询"}
+
+
+def autonomous_observations(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """不读取候选库，也不把持仓历史策略标签当作研究入口。"""
+    rows = {}
+    for field, role in (("positions", "position"), ("watchlist", "watch")):
+        for item in state.get(field, []):
+            row = rows.setdefault(item['code'], {'code': item['code'], 'name': item['name'],
+                                                 'signals': [], 'strategies': []})
+            row[role] = deepcopy(item)
+    return list(rows.values())
 
 
 def review_memory_context(reports: list[dict[str, Any]], state: dict[str, Any], as_of) -> list[dict[str, Any]]:

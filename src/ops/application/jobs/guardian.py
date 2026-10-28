@@ -7,15 +7,18 @@ import time
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.ledger import GuardianStore, PalaceStore, mark_guardian_account
+from src.ledger import GuardianStore, mark_guardian_account
 from src.market import calendar_trading_day
 from src.ops.application.guardian_tools import data_source, snapshot as build_monitor_snapshot
 from src.ops.application.guardian_agent import decide
 from src.ops.application.guardian_evidence import decision_context
 from src.ops.application.guardian_risk import evaluate_risk_plans
-from src.ops.application.guardian_risk_execution import risk_decision, risk_rejections, finish_risk_execution
+from src.ops.application.guardian_risk_execution import (
+    risk_decision, risk_rejections, finish_risk_execution, reauthorize_risk_events,
+)
 from src.ops.application.guardian_config import get_config
-from src.ops.application.guardian_context import reference_days, reference_target_day, strategy_sources, quant_reference_candidates, observe, premarket_plan_context
+from src.ops.application.guardian_context import autonomous_observations, premarket_plan_context
+from src.ops.application.guardian_memory import current_research
 from src.ops.application.guardian_decision import TRADE_ACTIONS, render_digest, simulate, bind_execution_references
 from src.ops.application.jobs.context import JobContext, JobError, JobSkipped, JobCancelled, JobTimedOut
 from src.ops.application.guardian_quotes import executable_quote, validated_quotes, quote_error
@@ -31,7 +34,6 @@ from src.ops.application.guardian_opening_plans import (build_opening_plans, pen
 from src.ops.application.notify_dispatch import dispatch_text
 from src.ops.application.session_clock import session_clock
 from src.ops.application.guardian_session import in_review_window, is_opening_review, review_slot, recover_finished_runs
-from src.shared.paths import palace_db
 
 
 def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, Any]:
@@ -115,21 +117,18 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             decision = risk_decision(risk_orders, risk_events)
             risk_only = decision is not None
             if decision is None:
-                days = reference_days(reference_target_day(now))
-                with PalaceStore(context.palace_db or palace_db()) as palace:
-                    candidates = quant_reference_candidates(observe(palace, days, state, []))
+                days = []
+                candidates = autonomous_observations(state)
                 codes = [item["code"] for item in candidates]
-                payload = {"as_of": now.isoformat(), "trading_days": days, "candidates": candidates,
+                payload = {"as_of": now.isoformat(),
                            "execution_deadline": (now + timedelta(seconds=300)).isoformat(),
                            "analysis_only": session_clock(now).phase != 'regular', "cadence_minutes": 5,
                            "review_phase": "opening_auction" if is_opening_review(now) else "intraday",
                            "pending_opening_plans": opening_plans_pending,
-                           "reference_history_note": '' if len(days) >= 3 else '本地参考池历史不足三个交易日，可通过研究工具自主查询，不限制交易范围。',
-                           "portfolio": state, "risk_events": risk_events, "account_units": "人民币现金账户，金额字段 *_cents 单位为分，quantity 为股。初始本金20万元。参考池不限制买卖范围，空池也可自主发现股票；清仓后可重新买入。",
-                           "active_strategies": strategy_sources(store),
+                           "portfolio": state, "risk_events": risk_events, "account_units": "人民币现金账户，金额字段 *_cents 单位为分，quantity 为股。初始本金20万元。全市场自主研究；清仓后可重新买入。",
                            "recent_trades": ledger.trades(), "stock_performance": ledger.performance(),
                            "recent_runs": [{"status": run["status"], "slot": run["slot"], "body": run["result"].get("analysis"), "fills": run["result"].get("fills", []), "orders": run['result'].get('decisions', []), "rejects": run["result"].get("rejects", []), "deferred": run['result'].get('deferred', [])}
-                                           for run in ledger.recent() if run["status"] != "running"]}
+                                           for run in ledger.recent() if run["status"] != "running" and current_research(run, state)]}
                 premarket = ledger.report("premarket", now.date().isoformat())
                 payload["preopen_plan"] = premarket_plan_context(premarket, state)
                 from src.ops.application.guardian_context import review_memory_context
@@ -177,29 +176,55 @@ def execute_guardian(config: dict[str, Any], context: JobContext) -> dict[str, A
             updated, fills, rejects = simulate(state, executable, candidates, quotes, finished,
                                                require_execution_terms=True, risk_only=risk_only)
             initial_rejects, withdrawn = list(rejects), []
-            if can_execute and rejects and not risk_only:
+            retried = False
+            for _attempt in range(2):
+                if not can_execute or not rejects:
+                    break
+                context.check_cancelled()
+                if get_config(store) != cfg:
+                    raise ValueError("修正前交易员设置已变更，本轮未提交")
+                finished = datetime.now(ZoneInfo("Asia/Shanghai"))
+                can_execute = execution_window(now, finished, time.monotonic() - started)
+                if not can_execute:
+                    break
                 failure_stage = "preflight_repair"
                 corrected = repair_preflight(store, cfg, decision, meta, state, quotes, rejects,
-                    check_cancelled=context.check_cancelled, deadline=started + 270)
-                if corrected is not decision:
-                    withdrawn = withdrawn_orders(decision, corrected, rejects)
-                    decision = corrected
-                    # 修正撤回竞价计划的关联订单是程序受阻（opening_plan_updates记blocked），不是整轮失败。
+                    check_cancelled=context.check_cancelled, deadline=started + 270,
+                    execution_deadline=now + timedelta(seconds=300), preflight_fills=fills,
+                    retry_payload={"as_of": finished.isoformat(), "portfolio": state,
+                        "preflight_portfolio": updated, "risk_events": risk_events, "risk_only": risk_only,
+                        "execution_deadline": (now + timedelta(seconds=300)).isoformat(),
+                        "analysis_only": False, "review_phase": "intraday", "pending_opening_plans": [],
+                        "palace_db_path": str(context.palace_db) if context.palace_db else None})
+                if corrected is decision:
+                    if meta.get("preflight_repair", {}).get("status") == "failed":
+                        continue
+                    break
+                retried = True
+                withdrawn.extend(withdrawn_orders(decision, corrected, rejects))
+                decision = corrected
+                # 已通过的只是预检；保留其意图，每次从同一账本副本重新核价，最终仅提交一次。
+                if not risk_only:
                     validate_opening_reviews(decision, opening_plans_pending, withdrawn_plan_ids={
                         item["opening_plan_id"] for item in withdrawn if item.get("opening_plan_id")})
-                    failure_stage = "final_quotes"
-                    execution_codes = list(dict.fromkeys([p["code"] for p in state["positions"]] + [o.code for o in decision.orders if o.action in TRADE_ACTIONS]))
-                    quotes = build_monitor_snapshot(execution_codes, include_minute=False, force_refresh=True,
-                        check_cancelled=context.check_cancelled, deadline=started + 300, require_order_book=False).quotes if execution_codes else {}
-                    context.check_cancelled()
-                    finished = datetime.now(ZoneInfo("Asia/Shanghai"))
-                    can_execute = execution_window(now, finished, time.monotonic() - started)
-                    # 已绑定的参考价由修正沿用；首次取价未能绑定的市价意图按本次首个有效报价绑定。
-                    decision = bind_execution_references(decision, quotes, finished)
-                    deferred = [o.model_dump(mode="json") for o in decision.orders if o.action in TRADE_ACTIONS] if not can_execute else []
-                    executable = decision if can_execute else decision.model_copy(update={"orders": [o for o in decision.orders if o.action not in TRADE_ACTIONS]})
-                    failure_stage = "preflight"
-                    updated, fills, rejects = simulate(state, executable, candidates, quotes, finished, require_execution_terms=True)
+                context.check_cancelled()
+                if get_config(store) != cfg:
+                    raise ValueError("修正后交易员设置已变更，本轮未提交")
+                failure_stage = "final_quotes"
+                execution_codes = list(dict.fromkeys([p["code"] for p in state["positions"]] + [o.code for o in decision.orders if o.action in TRADE_ACTIONS]))
+                quotes = build_monitor_snapshot(execution_codes, include_minute=False, force_refresh=True,
+                    check_cancelled=context.check_cancelled, deadline=started + 300, require_order_book=False).quotes if execution_codes else {}
+                context.check_cancelled()
+                finished = datetime.now(ZoneInfo("Asia/Shanghai"))
+                can_execute = execution_window(now, finished, time.monotonic() - started)
+                decision = bind_execution_references(decision, quotes, finished)
+                deferred = [o.model_dump(mode="json") for o in decision.orders if o.action in TRADE_ACTIONS] if not can_execute else []
+                executable = decision if can_execute else decision.model_copy(update={"orders": [o for o in decision.orders if o.action not in TRADE_ACTIONS]})
+                failure_stage = "preflight"
+                updated, fills, rejects = simulate(state, executable, candidates, quotes, finished,
+                                                   require_execution_terms=True, risk_only=risk_only)
+            if risk_only and retried:
+                risk_events = reauthorize_risk_events(risk_events, decision)
             timings["execution_preflight_ms"] = int((time.monotonic() - quote_started) * 1000)
             saved_risk_events = risk_events
             if session_clock(now).phase == "regular":

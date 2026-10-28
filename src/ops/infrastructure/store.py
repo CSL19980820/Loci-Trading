@@ -42,7 +42,6 @@ from src.ops.infrastructure.store_schema import (
     SCHEMA_VERSION,
     _MIGRATIONS,
     _SCHEMA,
-    _SCHEMA_READY,
 )
 from src.ops.infrastructure.store_retention import OpsRetentionMixin
 from src.ops.infrastructure.store_strategy import OpsStrategyMixin
@@ -51,6 +50,7 @@ from src.ops.infrastructure.store_alerts import OpsAlertsMixin
 from src.ops.infrastructure.store_quota import OpsQuotaMixin
 from src.ops.infrastructure.store_signals import OpsSignalsMixin
 from src.ops.infrastructure.store_watch import OpsWatchMixin
+from src.shared.postgres import CompatConnection, explicit_postgres_required, uses_primary_path
 
 __all__ = [
     "DEFAULT_DB",
@@ -91,45 +91,53 @@ class OpsStore(
         # 「最先 import 本模块的那个租户」的库上，供应商 / 会话 / 用量全串味，而且
         # 不报错（``src/community/infrastructure/store.py`` 的注释里点过这个名）。
         # 常量本身保留，只为兼容 ``from src.ops import DEFAULT_DB`` 的旧引用。
+        self._use_postgres = (
+            explicit_postgres_required()
+            and uses_primary_path(db_path, _current_ops_db())
+        )
         self.db_path = Path(db_path) if db_path else _current_ops_db()
+        if self._use_postgres:
+            self.conn = CompatConnection()
+            self.conn.raw.execute("SET search_path TO ops, public")
+            self.conn.raw.commit()
+            return
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(self.db_path, timeout=30.0)
         self.conn.row_factory = sqlite3.Row
-        try:
-            self.conn.execute("PRAGMA busy_timeout=30000")
-            self.conn.execute("PRAGMA journal_mode=WAL")
-            self.conn.execute("PRAGMA foreign_keys=ON")
-            if not self._schema_is_current():
-                # 旧库：CREATE TABLE IF NOT EXISTS 不会补列，但 _SCHEMA 里依赖新列的
-                # INDEX 会先于 ADD COLUMN 失败。先尽量建表 → 迁移补列 → 再补索引。
-                self._apply_schema_compat()
-                with self.conn:
-                    self.conn.execute(
-                        "INSERT INTO meta(key,value,updated_at) VALUES('schema_fingerprint',?,?) "
-                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
-                        (self._schema_fingerprint(), _now()),
-                    )
-            # 仅兼容旧测试/诊断；是否迁移以当前连接中的持久化指纹为准，不信任路径缓存。
-            _SCHEMA_READY.add(str(self.db_path.resolve()))
-        except Exception:
-            self.conn.close()
-            raise
+        self.conn.execute("PRAGMA busy_timeout=30000")
+        self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA foreign_keys=ON")
+        if not self._schema_is_current():
+            self._apply_schema_compat()
+            with self.conn:
+                self.conn.execute(
+                    "INSERT INTO meta(key,value,updated_at) VALUES('schema_fingerprint',?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+                    (self._schema_fingerprint(), _now()),
+                )
 
     def _schema_fingerprint(self) -> str:
         # DDL 内容也入指纹，防止新增迁移时漏改 SCHEMA_VERSION。SQLite 的 schema cookie
         # 检出删表/删索引；普通业务写入不改它，因此读取不会排队等业务写锁。
         digest = sha256((str(SCHEMA_VERSION) + _SCHEMA + "\n".join(_MIGRATIONS)).encode()).hexdigest()
+        if self._use_postgres:
+            return digest
         cookie = self.conn.execute("PRAGMA schema_version").fetchone()[0]
         return f"{digest}:{cookie}"
 
     def _schema_is_current(self) -> bool:
-        try:
-            row = self.conn.execute("SELECT value FROM meta WHERE key='schema_fingerprint'").fetchone()
-        except sqlite3.OperationalError as exc:
-            if "no such table: meta" not in str(exc).lower():
-                raise
-            return False
-        return bool(row and row[0] == self._schema_fingerprint())
+        if not self._use_postgres:
+            try:
+                row = self.conn.execute(
+                    "SELECT value FROM meta WHERE key='schema_fingerprint'"
+                ).fetchone()
+            except sqlite3.OperationalError as exc:
+                if "no such table: meta" not in str(exc).lower():
+                    raise
+                return False
+            return bool(row and row[0] == self._schema_fingerprint())
+        row = self.conn.execute("SELECT value FROM meta WHERE key='schema_fingerprint'").fetchone()
+        return bool(row and row["value"] == self._schema_fingerprint())
 
     def _apply_schema_compat(self) -> None:
         """兼容已有 ops.db：允许首轮 schema 因缺列失败，迁移后再补齐。"""
@@ -161,7 +169,7 @@ class OpsStore(
     def _transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Cursor]:
         cursor = self.conn.cursor()
         try:
-            cursor.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
+            cursor.execute("BEGIN IMMEDIATE" if not self._use_postgres else "BEGIN")
             yield cursor
             self.conn.commit()
         except Exception:
@@ -181,6 +189,8 @@ class OpsStore(
             yield
 
     def init_schema(self) -> None:
+        if self._use_postgres:
+            return
         with self._transaction() as cursor:
             cursor.executescript(_SCHEMA)
             cursor.execute(

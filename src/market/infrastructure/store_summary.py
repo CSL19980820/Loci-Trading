@@ -33,7 +33,7 @@ class MarketSummaryMixin:
             return {}
 
         days = [
-            str(row[0])
+            str(row["trade_date"])
             for row in self.conn.execute(
                 "SELECT trade_date FROM trading_calendar"
                 " ORDER BY trade_date DESC LIMIT ?",
@@ -204,8 +204,8 @@ class MarketSummaryMixin:
                 " FROM quotes_daily"
             ).fetchone()
             failed = self.conn.execute(
-                "SELECT COUNT(*) FROM ingest_watermark WHERE status <> 'ok'"
-            ).fetchone()[0]
+                "SELECT COUNT(*) AS count FROM ingest_watermark WHERE status <> 'ok'"
+            ).fetchone()["count"]
             return {
                 "rows": int(row["rows"] or 0),
                 "codes": int(row["codes"] or 0),
@@ -216,11 +216,12 @@ class MarketSummaryMixin:
                 "db_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
             }
 
-        codes = int(self.conn.execute("SELECT COUNT(*) FROM instruments").fetchone()[0])
+        codes_row = self.conn.execute("SELECT COUNT(*) AS count FROM instruments").fetchone()
+        codes = int(codes_row["count"])
         failed = int(
             self.conn.execute(
-                "SELECT COUNT(*) FROM ingest_watermark WHERE status <> 'ok'"
-            ).fetchone()[0]
+                "SELECT COUNT(*) AS count FROM ingest_watermark WHERE status <> 'ok'"
+            ).fetchone()["count"]
         )
         rows = self._cached_quote_row_count(last_date)
         return {
@@ -230,7 +231,11 @@ class MarketSummaryMixin:
             "last_date": last_date,
             "failed_codes": failed,
             "db_path": str(self.db_path),
-            "db_bytes": self.db_path.stat().st_size if self.db_path.exists() else 0,
+            "db_bytes": (
+                self.db_path.stat().st_size
+                if not getattr(self, "_use_postgres", False) and self.db_path.exists()
+                else 0
+            ),
         }
 
     def _cached_quote_row_count(self, last_date: str) -> int:
@@ -245,15 +250,15 @@ class MarketSummaryMixin:
         """全市场真实涨跌分布统计（跌停/各跌幅档/平/各涨幅档/涨停以及总家数）。"""
         if not trade_date:
             cal = self.conn.execute(
-                "SELECT trade_date FROM trading_calendar ORDER BY trade_date DESC LIMIT 2"
+                "SELECT trade_date AS value FROM trading_calendar ORDER BY trade_date DESC LIMIT 2"
             ).fetchall()
-            dates = [str(r[0]) for r in cal if r[0]]
+            dates = [str(r["value"]) for r in cal if r["value"]]
         else:
             cal = self.conn.execute(
-                "SELECT trade_date FROM trading_calendar WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 2",
+                "SELECT trade_date AS value FROM trading_calendar WHERE trade_date <= ? ORDER BY trade_date DESC LIMIT 2",
                 (trade_date,),
             ).fetchall()
-            dates = [str(r[0]) for r in cal if r[0]]
+            dates = [str(r["value"]) for r in cal if r["value"]]
 
         if len(dates) < 2:
             return {

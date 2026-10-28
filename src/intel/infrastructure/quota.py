@@ -16,6 +16,7 @@ from typing import Any, Literal
 from src.intel.infrastructure.wudao_settings import wudao_quota_config
 from src.ops import OpsStore
 from src.shared.paths import ops_db
+from src.shared.postgres import explicit_postgres_required
 
 McpQuotaPool = Literal["structured", "skill"]
 
@@ -124,7 +125,7 @@ def _tenant() -> str:
 
 def _read_counts(trade_date: str) -> dict[str, int]:
     path = ops_db()
-    if not path.is_file():
+    if not explicit_postgres_required() and not path.is_file():
         return {"structured": 0, "skill": 0}
     with OpsStore(path) as store:
         return store.read_mcp_quota_counts(trade_date)

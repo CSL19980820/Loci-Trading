@@ -218,9 +218,10 @@ class PlatformMixin:
         """只追加。审计写失败不能带走业务——调用方一律不捕获也不重试。"""
         from src.identity.infrastructure.store import new_id
 
+        detail_column = "detail" if getattr(self, "_use_postgres", False) else "detail_json"
         self.conn.execute(
-            """INSERT INTO audit_log
-            (id, occurred_at, actor_id, actor_name, action, target, outcome, detail_json, ip)
+            f"""INSERT INTO audit_log
+            (id, occurred_at, actor_id, actor_name, action, target, outcome, {detail_column}, ip)
             VALUES (?,?,?,?,?,?,?,?,?)""",
             (
                 new_id("aud"),

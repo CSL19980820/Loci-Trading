@@ -85,6 +85,37 @@ def test_full_five_day_system_outputs_keep_rejected_evidence_without_buy_permiss
     assert rejected["evidence_id"].startswith("candidate:CA-")
 
 
+def test_quant_candidates_read_postgres_and_bind_like_patterns(tmp_path, monkeypatch):
+    from psycopg._queries import _query2pg
+    from src.ops.application import falcon_candidates as module
+    from src.shared.postgres import translate_sql
+
+    path = str(tmp_path / "palace.db")
+    with PalaceStore(path) as ledger:
+        record(ledger, "600001")
+        record(ledger, "600002", source="api:screen_backfill")
+
+    class PostgresCheckedConnection:
+        def __init__(self):
+            self.sqlite = sqlite3.connect(path)
+            self.sqlite.row_factory = sqlite3.Row
+            self.raw = SimpleNamespace(execute=lambda sql: None)
+
+        def execute(self, sql, params):
+            _query2pg(translate_sql(sql).encode(), "utf-8")
+            return self.sqlite.execute(sql, params)
+
+        def close(self):
+            self.sqlite.close()
+
+    monkeypatch.setattr(module, "explicit_postgres_required", lambda: True)
+    monkeypatch.setattr(module, "uses_primary_path", lambda *_: True)
+    monkeypatch.setattr(module, "CompatConnection", PostgresCheckedConnection)
+
+    rows = module._quant_candidates(path, NOW, ["2026-09-29"], {"test-strategy"})
+    assert [row["code"] for row in rows] == ["600001"]
+
+
 def test_quant_candidate_removes_nested_full_pool_snapshot_but_keeps_own_signal_and_score(tmp_path):
     path = str(tmp_path / "palace.db")
     target, outside = "301180", "600099"

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.market.application.data_quality_thresholds import (  # noqa: F401 - 兼容 re-export
@@ -25,9 +25,19 @@ from src.market.application.data_quality_thresholds import (  # noqa: F401 - 兼
 )
 
 
+_RECENT_AUTHORITATIVE_REPAIR = (
+    "先运行 scripts/check_lane_readiness.py --lanes hist_daily --tdx-servers，确认通达信能返回实际日 K，"
+    "并核对该线路的源启用配置及失败回执；恢复后运行 "
+    "scripts/resync_market_authoritative.py --no-force 重写近期窗口（至少最近 20 根日 K）。"
+    "若故障超出近期窗口，再按影响范围安排历史修复"
+)
+
+
 def _scalar(store: Any, sql: str, params: tuple = ()) -> Any:
     row = store.conn.execute(sql, params).fetchone()
-    return row[0] if row else None
+    if not row:
+        return None
+    return next(iter(row.values())) if hasattr(row, "values") else row[0]
 
 
 def _scalar_optional(store: Any, sql: str, params: tuple = ()) -> Any:
@@ -42,14 +52,28 @@ def _scalar_optional(store: Any, sql: str, params: tuple = ()) -> Any:
         row = store.conn.execute(sql, params).fetchone()
     except sqlite3.OperationalError:
         return None
-    return row[0] if row else None
+    return next(iter(row.values())) if hasattr(row, "values") else row[0]
 
 
 def _source_mix(store: Any) -> list[tuple[str, int]]:
     rows = store.conn.execute(
-        "SELECT source, COUNT(*) FROM quotes_daily GROUP BY 1 ORDER BY 2 DESC"
+        "SELECT source, COUNT(*) AS count FROM quotes_daily GROUP BY 1 ORDER BY 2 DESC"
     ).fetchall()
-    return [(str(source or ""), int(count)) for source, count in rows]
+    return [(str(row["source"] or ""), int(row["count"])) for row in rows]
+
+
+def _describe_sources(mix: list[tuple[str, int]]) -> str:
+    """说明实际来源；权威覆盖与成交额合成是不同的判据。"""
+    sources = "、".join(f"{source or '未标注来源'} {count} 行" for source, count in mix[:5])
+    if len(mix) > 5:
+        sources += "、其他来源 %d 行" % sum(count for _s, count in mix[5:])
+    detail = f"来源：{sources}。"
+    if any(source == "sina_close" for source, _count in mix):
+        detail += (
+            "sina_close 是新浪同日收盘快照回退，保留源端 OHLCV 和真实成交额，"
+            "仍不计入通达信权威源覆盖。"
+        )
+    return detail + "合成成交额由独立体检项按已知合成来源及实际行值判定。"
 
 
 def _check_authoritative(mix: list[tuple[str, int]], limits: QualityThresholds) -> Finding:
@@ -74,23 +98,22 @@ def _check_authoritative(mix: list[tuple[str, int]], limits: QualityThresholds) 
     return Finding(
         "authoritative_ratio",
         "block",
-        "权威源（通达信）占比只有 %.1f%%，低于 %.0f%% 下限——主源可能长期失联，"
-        "库在靠回退源续命，而回退源的成交额是 close×volume 合成的假值。"
-        % (ratio * 100, limits.min_authoritative_ratio * 100),
+        "权威源（通达信）占比只有 %.1f%%，低于 %.0f%% 下限，主源覆盖不足，"
+        "需核查连通性与路由选源。%s"
+        % (ratio * 100, limits.min_authoritative_ratio * 100, _describe_sources(mix)),
         observed,
-        remediation="先查通达信连通性（scripts/check_lane_readiness.py），"
-        "恢复后跑 scripts/resync_market_authoritative.py 重写",
+        remediation=_RECENT_AUTHORITATIVE_REPAIR,
     )
 
 
 def _last_day_source_mix(store: Any, day: str) -> list[tuple[str, int]]:
     """最后一个交易日的分源行数。走 ``trade_date`` 等值，不扫全表。"""
     rows = store.conn.execute(
-        "SELECT source, COUNT(*) FROM quotes_daily WHERE trade_date = ?"
+        "SELECT source, COUNT(*) AS count FROM quotes_daily WHERE trade_date = ?"
         " GROUP BY 1 ORDER BY 2 DESC",
         (day,),
     ).fetchall()
-    return [(str(source or ""), int(count)) for source, count in rows]
+    return [(str(row["source"] or ""), int(row["count"])) for row in rows]
 
 
 def _last_day_settled(day: str, now: datetime, limits: QualityThresholds) -> bool:
@@ -220,21 +243,8 @@ def _check_last_day_authoritative(
                 % (day, provisional, total),
                 observed,
             )
-        # 后果分两档:全是权威源内容 → 数值可用,只缺定稿这一步;掺了回退源 →
-        # 那部分的成交额是合成假值,当天吃成交额/量比的战法真会算错。
-        if provisional_fallback:
-            impact = (
-                "其中 %d 行来自回退源(``%s`` 这类),它们的成交额是 close×volume 合成的"
-                "假值——当天吃成交额/量比/换手的战法会算错;另 %d 行是权威源的当日 bar,"
-                "数值本身可用。"
-                % (provisional_fallback, "tencent_spot", provisional_authoritative)
-            )
-        else:
-            impact = (
-                "这些行的内容是权威源(通达信)自己的当日 bar——成交额是真值、回执与换手"
-                "齐全,所以**当天的选股/回测读到的数字是对的**;缺的是日终定稿这一步:"
-                "source 停在临时标记上,严格 PIT 与逐日溯源会把这一天认成未定稿。"
-            )
+        # 来源标签不能替代合成判据，也不能证明收盘后的正式日 K 回执齐全。
+        impact = _describe_sources(provisional_rows_list)
         return Finding(
             "last_day_authoritative",
             "warn",
@@ -249,10 +259,9 @@ def _check_last_day_authoritative(
                 impact,
             ),
             observed,
-            remediation="看运维「执行历史」里当天的「行情日终重刷」是否失败或被跳过"
-            "（最常见的是被选股/同步占着 market.db 写锁）；重跑该任务即可，它会在 spot"
-            "之后用权威源把当日重写成正式日 K。不要上来就跑 --force：那是忽略 watermark"
-            "全量重灌三十年历史（实测约 50 分钟），补当天用不上",
+            remediation="检查运维「执行历史」中当天「行情日终重刷」的失败或跳过原因，"
+            "重跑后核对正式日 K 及收盘后的 hist_daily 回执。"
+            + _RECENT_AUTHORITATIVE_REPAIR,
         )
     ratio = authoritative / settled_rows
     if ratio >= limits.min_last_day_authoritative_ratio:
@@ -268,19 +277,17 @@ def _check_last_day_authoritative(
         "last_day_authoritative",
         "warn",
         "最后交易日 %s 的权威源（通达信）占比只有 %.1f%%（%d / %d 行已定稿），"
-        "低于 %.0f%% 下限——主源当天基本没写进来，这一天是回退源记的，而回退源的"
-        "成交额是 close×volume 合成的假值。全库占比看不见这种单天回落：十六年历史"
-        "会把它整个稀释掉，等全库跌破下限已经是几十个交易日之后。"
+        "低于 %.0f%% 下限，主源当天覆盖不足；历史占比可能掩盖单日回落。%s"
         % (
             day,
             ratio * 100,
             authoritative,
             settled_rows,
             limits.min_last_day_authoritative_ratio * 100,
+            _describe_sources(settled),
         ),
         observed,
-        remediation="先查通达信连通性（scripts/check_lane_readiness.py），恢复后跑 "
-        "scripts/resync_market_authoritative.py 重写该交易日",
+        remediation=_RECENT_AUTHORITATIVE_REPAIR,
     )
 
 
@@ -302,38 +309,40 @@ def _check_fabricated(store: Any, limits: QualityThresholds) -> Finding:
     一条天天响、照着做又没用的告警,会把整张体检表训练成噪音。
     """
     placeholders = ",".join("?" * len(FABRICATING_SOURCES))
-    count = int(
-        _scalar(
-            store,
-            "SELECT COUNT(*) FROM quotes_daily WHERE source IN (%s)" % placeholders
-            + " AND amount IS NOT NULL AND volume > 0 AND close > 0"
-            "   AND high <> low"
-            "   AND ABS(amount - close*volume) < ?",
-            tuple(FABRICATING_SOURCES) + (_SYNTH_EPSILON,),
-        )
-        or 0
-    )
-    observed = {"rows": count, "limit": limits.max_fabricated_rows}
+    rows = store.conn.execute(
+        "SELECT source, COUNT(*) AS count FROM quotes_daily WHERE source IN (%s)" % placeholders
+        + " AND amount IS NOT NULL AND volume > 0 AND close > 0"
+        "   AND high <> low"
+        "   AND ABS(amount - close*volume) < ?"
+        " GROUP BY source ORDER BY COUNT(*) DESC, source",
+        tuple(FABRICATING_SOURCES) + (_SYNTH_EPSILON,),
+    ).fetchall()
+    sources = [(str(row["source"]), int(row["count"])) for row in rows]
+    count = sum(count for _source, count in sources)
+    observed = {"rows": count, "limit": limits.max_fabricated_rows, "sources": sources}
     if count <= limits.max_fabricated_rows:
         return Finding("fabricated_amount", "ok", "合成成交额 %d 行" % count, observed)
     return Finding(
         "fabricated_amount",
         "warn",
-        "合成成交额 %d 行，超过 %d 行上限。这些行的 amount 是 close×volume 算出来的，"
-        "不是真实成交额；任何按成交额筛选/排序的策略都会被它带偏。"
-        % (count, limits.max_fabricated_rows),
+        "合成成交额 %d 行，超过 %d 行上限。来源：%s。"
+        "这些行来自已知合成成交额的源，非一字、有量且 amount 与 close×volume 相等"
+        "（容差 %.1f 元），按成交额筛选/排序的策略会受影响。"
+        % (count, limits.max_fabricated_rows,
+           "、".join(f"{source} {rows} 行" for source, rows in sources), _SYNTH_EPSILON),
         observed,
-        remediation="跑 scripts/resync_market_authoritative.py 用通达信重写",
+        remediation=_RECENT_AUTHORITATIVE_REPAIR,
     )
 
 
 def _check_receipts(store: Any, limits: QualityThresholds) -> Finding:
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=limits.lookback_days)).isoformat()
     count = int(
         _scalar(
             store,
             "SELECT COUNT(*) FROM quotes_daily"
-            " WHERE trade_date >= date('now', ?) AND receipt_id IS NULL",
-            ("-%d day" % limits.lookback_days,),
+            " WHERE trade_date >= ? AND receipt_id IS NULL",
+            (cutoff,),
         )
         or 0
     )
@@ -440,7 +449,7 @@ def _check_index_sanity(store: Any, limits: QualityThresholds) -> Finding:
         "   AND close < ?",
         tuple(limits.index_codes) + (limits.min_index_close,),
     ).fetchall()
-    observed = {"bad_rows": [tuple(r) for r in rows[:10]], "count": len(rows)}
+    observed = {"bad_rows": [tuple(r[index] for index in range(3)) for r in rows[:10]], "count": len(rows)}
     if not rows:
         return Finding("index_sanity", "ok", "基准指数近 5 日收盘量级正常", observed)
     return Finding(
@@ -464,9 +473,20 @@ def _check_watermarks(store: Any) -> Finding:
         " WHERE w.source NOT LIKE 'tdx%'"
     ).fetchall()
     unexplained = [
-        tuple(row) for row in rows if str(row[4] or "") not in ("delisted", "suspended")
+        tuple(row[index] for index in range(5))
+        for row in rows if str(row[4] or "") not in ("delisted", "suspended")
     ]
-    observed = {"non_authoritative": len(rows), "unexplained": unexplained[:10]}
+    source_counts: dict[str, int] = {}
+    for row in unexplained:
+        source = str(row[1] or "")
+        source_counts[source] = source_counts.get(source, 0) + 1
+    sources = sorted(source_counts.items(), key=lambda item: (-item[1], item[0]))
+    observed = {
+        "non_authoritative": len(rows),
+        "unexplained": unexplained[:10],
+        "unexplained_count": len(unexplained),
+        "sources": sources,
+    }
     if not unexplained:
         return Finding(
             "watermark_source",
@@ -477,10 +497,14 @@ def _check_watermarks(store: Any) -> Finding:
     return Finding(
         "watermark_source",
         "warn",
-        "有 %d 只票的水位来自非权威源且不是退市/停牌——说明通达信取不到它们，"
-        "但原因不明。" % len(unexplained),
+        "有 %d 只票的水位来自非权威源且不是退市/停牌。水位来源：%s。"
+        "需结合 hist_daily 路由回执核对通达信失败或选源原因；水位来源不能证明成交额合成。"
+        % (len(unexplained), "、".join(
+            f"{source or '未标注来源'} {count} 条" for source, count in sources
+        )),
         observed,
-        remediation="逐票用 tdx_daily.fetch_daily_bars 手工试一次，确认是代码段不支持还是别的",
+        remediation=_RECENT_AUTHORITATIVE_REPAIR
+        + "；批量恢复后仍有少量残留时，按失败原因及代码段分组抽样核验",
     )
 
 

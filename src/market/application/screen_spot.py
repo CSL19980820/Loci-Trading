@@ -1,11 +1,13 @@
-"""收盘后选股前「当日行情就绪」：覆盖够就跳过 spot，根治与同步抢写。
+"""选股前的当日行情门禁：收盘后必须确认正式日 K 已全部定稿。
 
 盘中选今天走 ``screen_live``：自己拉实时、只叠内存，不进本模块。
 
 旧逻辑：每次选股都全市场 apply_today_spot，raise_on_failure=True。
 盘后同步/日终重刷已写好今日日 K 时，选股再硬写一遍 → SQLite locked → 选股失败。
 
-正确语义（收盘后）：选股要的是「今天有可用日 K」，不是「此刻必须再写一遍 spot」。
+收盘后只读核验所有正常标的关联的 hist_daily 回执：行情与回执均须在收盘后
+获取、落库。盘中 spot 同样可能标为 tdx，覆盖率和来源名称都不能证明定稿。
+未定稿时阻断并等待日终重刷；选股自己补一次 spot 也不能替代正式日 K。
 
 **盘中的覆盖率不足多半不是故障**。收盘门槛（min_coverage_ratio，默认 90%）是按
 「今天已经走完」定的；在 10:30 拿这条线去卡选股，缺的那几个点其实是「今天还没
@@ -49,18 +51,71 @@ class ScreenSpotError(RuntimeError):
     """选股前当日行情无法就绪（用户可见中文）。"""
 
 
+def ensure_closed_day_finalized(
+    store: MarketStore, trade_date: str, *, now: datetime | None = None
+) -> dict[str, Any] | None:
+    """最近收盘日只读确认全市场定稿；盘中与更早历史选股保留原有契约。
+
+    一条 SQL 核验实际读取库里的全部正常标的，不能因覆盖达到 90%、仅部分
+    股票完成同步、刷新开关关闭或热库只有盘中快照而提前放行。
+    fetched_at 的无时区库内文本是 UTC；julianday 同时兼容回执的 ISO 时区。
+
+    认定依据是**回执里的选源尝试**（attempts 有 selected 且源与行情一致），
+    不是 ``source_route_receipts.state`` 这个推导字段：后者历史上有过把「命中了
+    主源、后备源未请求」的成功回执写成 ``skipped`` 的错误（见
+    ``store_provenance._insert_source_receipt``），拿它当定稿证明会让盘中每轮
+    增量同步把前一收盘日的证明抹掉。显式 ``failed`` 与 ``unresolved=1`` 仍按失败
+    处理——矛盾的取证数据不应当放行。
+    """
+    from src.market.application.session import build_session_status
+
+    current = now or datetime.now(_TZ)
+    current = current.replace(tzinfo=_TZ) if current.tzinfo is None else current.astimezone(_TZ)
+    # 用交易时段的应有收盘日，覆盖跨午夜/休市；不能仅以“今天”判定。
+    session = build_session_status(coverage={}, trading_days=store.trading_days(), now=current)
+    if trade_date != session["expected_last_date"]:
+        return None
+    closed_at = datetime.fromisoformat(f"{trade_date}T15:00:00").replace(tzinfo=_TZ).isoformat()
+    row = store.conn.execute(
+        "SELECT COUNT(*) AS required, COALESCE(SUM(CASE WHEN"
+        " r.lane = 'hist_daily' AND r.state <> 'failed' AND r.unresolved = 0"
+        " AND r.selected_source = q.source"
+        " AND EXISTS (SELECT 1 FROM source_route_attempts a"
+        "  WHERE a.receipt_id = r.receipt_id AND a.state = 'selected'"
+        "  AND a.source_id = r.selected_source)"
+        " AND julianday(r.fetched_at) >= julianday(?)"
+        " AND julianday(q.fetched_at) >= julianday(?)"
+        " THEN 1 ELSE 0 END), 0) AS finalized"
+        " FROM instruments i"
+        " LEFT JOIN quotes_daily q ON q.code = i.code AND q.trade_date = ?"
+        " LEFT JOIN source_route_receipts r ON r.receipt_id = q.receipt_id AND r.code = q.code"
+        " WHERE i.status = 'normal' AND (i.list_date = '' OR i.list_date <= ?)",
+        (closed_at, closed_at, trade_date, trade_date),
+    ).fetchone()
+    required, finalized = int(row["required"]), int(row["finalized"])
+    if not required or finalized != required:
+        raise ScreenSpotError(
+            f"选股目标日 {trade_date} 日终行情尚未定稿（已确认 {finalized}/{required} 只），"
+            "已阻断选股；请等待“行情日终重刷”完整完成后重试，不能使用盘中旧数据代替收盘行情"
+        )
+    return {
+        "trade_date": trade_date, "status": "finalized", "required": required,
+        "finalized": finalized, "closed_at": closed_at, "checked_at": current.isoformat(),
+    }
+
+
 def measure_day_coverage(store: MarketStore, trade_date: str) -> dict[str, Any]:
     """目标日有行情票数 / 在册正常标的。"""
     listed = int(
         store.conn.execute(
-            "SELECT COUNT(*) FROM instruments WHERE status = 'normal'"
-        ).fetchone()[0]
+            "SELECT COUNT(*) AS count FROM instruments WHERE status = 'normal'"
+        ).fetchone()["count"]
     )
     present = int(
         store.conn.execute(
-            "SELECT COUNT(DISTINCT code) FROM quotes_daily WHERE trade_date = ?",
+            "SELECT COUNT(DISTINCT code) AS count FROM quotes_daily WHERE trade_date = ?",
             (trade_date,),
-        ).fetchone()[0]
+        ).fetchone()["count"]
     )
     ratio = (present / listed) if listed else 0.0
     return {
@@ -198,7 +253,7 @@ def ensure_today_quotes_for_screen(
     force_refresh: bool = False,
     trade_date: str | None = None,
 ) -> dict[str, Any]:
-    """保证选股可读到目标日日 K；历史日只检查，今日才允许刷新 spot。
+    """历史日查覆盖；今日盘中可补 spot，收盘后必须已完成正式日 K 定稿。
 
     返回字段：
     - status: skipped | refreshed | reused_after_busy | degraded_intraday
@@ -213,7 +268,15 @@ def ensure_today_quotes_for_screen(
     today = datetime.now(_TZ).date().isoformat()
     target = resolve_screen_trade_date(store, trade_date)
     floor = float(min_coverage_ratio)
+    finalization = ensure_closed_day_finalized(store, target)
     before = measure_day_coverage(store, target)
+
+    if finalization is not None:
+        return {
+            "status": "skipped", "written": 0, "requested": len(codes),
+            "coverage": before, "degraded": False, "eod_finalization": finalization,
+            "message": f"{target} 日终行情已全部定稿（{finalization['finalized']} 只），使用正式收盘行情",
+        }
 
     # 现价只能补今天；历史/休市选股不能拿今天的 spot 修补目标日或污染日期。
     if target != today:

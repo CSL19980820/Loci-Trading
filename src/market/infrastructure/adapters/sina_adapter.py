@@ -92,6 +92,25 @@ class SinaAdapter(MarketAdapter):
             fetch_error_type=sina.SinaFetchError,
         )
 
+    def fetch_spot_close(
+        self,
+        codes: list[str],
+        *,
+        instrument_types: dict[str, str] | None = None,
+        batch_size: int = 400,
+    ) -> pd.DataFrame:
+        """收盘后完整快照：保留源自报今日的零成交停牌行。"""
+        from src.market import sina
+
+        return self._spot_via_symbols(
+            codes,
+            lambda symbols: sina.fetch_spot(symbols, include_no_trade=True),
+            instrument_types=instrument_types,
+            batch_size=batch_size,
+            who="新浪",
+            fetch_error_type=sina.SinaFetchError,
+        )
+
     def fetch_adjust_factors(self, code: str) -> pd.DataFrame:
         try:
             return self._source.fetch_adjust_factors(code)

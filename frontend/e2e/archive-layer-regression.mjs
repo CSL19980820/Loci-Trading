@@ -7,7 +7,6 @@ import { routeFixture } from './fixtures/shadcn-route-api.mjs'
 
 const base = process.env.ARCHIVE_LAYER_BASE || 'http://127.0.0.1:5195'
 const output = process.env.ARCHIVE_LAYER_OUT || path.resolve('../.local/archive-layer-regression')
-const baseline = process.argv.includes('--baseline')
 const strategy = { slug: 'archive-layer-fixture', name: '回填弹层验收战法', description: '隔离浏览器夹具', params: {}, required_fields: [], min_bars: 20, entry_timing: 'next_open' }
 const candidate = { id: 'archive-layer-fixture', code: '000001', name: '回填验收标的', date: '2026-09-29', decision: '精选', score: 90, reason: '仅隔离历史回填夹具', strategy_slug: strategy.slug, rule_version: strategy.name, source: 'api:screen_backfill', created_at: '2026-09-30 08:00:00', pool_id: `${strategy.slug}@2026-09-29`, evidence: {} }
 const second = { ...candidate, id: 'archive-layer-second', code: '000002', name: '第二验收标的' }
@@ -73,12 +72,6 @@ try {
         return { foreground: element.contains(hit), topSlot: hit?.getAttribute('data-slot') || hit?.tagName || '', dialogs: [...document.querySelectorAll('[role="dialog"]')].filter(dialog => dialog.getClientRects().length > 0).map(dialog => ({ title: document.getElementById(dialog.getAttribute('aria-labelledby'))?.textContent, zIndex: getComputedStyle(dialog).zIndex })) }
       })
       result.layers = layers
-      if (baseline) {
-        assert.equal(layers.foreground, false, 'Baseline should reproduce the source dialog covering the archive')
-        await page.screenshot({ path: path.join(output, `${source}-${width}-baseline.png`) })
-        result.ok = true
-        continue
-      }
       assert.equal(layers.foreground, true, JSON.stringify(layers))
       assert.equal(layers.dialogs.length, 1, JSON.stringify(layers))
       const archive = page.locator('.archive-overlay')
@@ -122,5 +115,5 @@ try {
     }
   }
 } finally { await browser.close() }
-await fs.writeFile(path.join(output, baseline ? 'baseline.json' : 'results.json'), JSON.stringify(results, null, 2))
+await fs.writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2))
 assert.ok(results.every(result => result.ok), 'Archive overlay regression failed')

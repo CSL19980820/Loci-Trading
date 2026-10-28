@@ -87,7 +87,7 @@ class GuardianReportsMixin:
                                     (f'{period}:{day}', token)).fetchone()
             if row is None:
                 raise RuntimeError('报告租约已过期，拒绝保存研究阶段')
-            result = json.loads(row[0])
+            result = json.loads(row["result_json"])
             result['_research_checkpoint'] = checkpoint
             self.conn.execute('UPDATE guardian_reports SET result_json=? WHERE report_key=? AND token=?',
                               (json.dumps(result, ensure_ascii=False), f'{period}:{day}', token))
@@ -99,7 +99,7 @@ class GuardianReportsMixin:
                 pending = self.conn.execute(
                     "SELECT result_json FROM guardian_reports WHERE report_key=? AND token=? AND status='running'",
                     (key, token)).fetchone()
-                saved = json.loads(pending[0]) if pending else {}
+                saved = json.loads(pending["result_json"]) if pending else {}
                 revision = int(result['revision'])
                 archived = self.conn.execute(
                     'SELECT 1 FROM guardian_report_revisions WHERE report_key=? AND revision=?',
@@ -111,7 +111,7 @@ class GuardianReportsMixin:
             if result['status'] != 'success':
                 row = self.conn.execute('SELECT result_json FROM guardian_reports WHERE report_key=? AND token=?',
                                         (f'{period}:{day}', token)).fetchone()
-                saved = json.loads(row[0]) if row else {}
+                saved = json.loads(row["result_json"]) if row else {}
                 if '_research_checkpoint' in saved:
                     result = {**result, '_research_checkpoint': saved['_research_checkpoint']}
             cursor = self.conn.execute("UPDATE guardian_reports SET status=?,result_json=? WHERE report_key=? AND token=? AND status='running'",
@@ -142,7 +142,7 @@ class GuardianReportsMixin:
     def report_notification(self, period: str, day: str, receipt: dict[str, Any], *, pending: bool = False) -> None:
         with self.conn:
             row = self.conn.execute("SELECT result_json FROM guardian_reports WHERE report_key=?", (f"{period}:{day}",)).fetchone()
-            result = json.loads(row[0])
+            result = json.loads(row["result_json"])
             result["notify"] = receipt
             if pending:
                 result['_notify_started'] = time.time()

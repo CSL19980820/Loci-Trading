@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from src.market import MarketStore, panel_read_window
-from src.market.infrastructure.store_panel_window import _ACTIVE_WINDOW
+from src.market.infrastructure.store_panel_window import _ACTIVE_WINDOW, _PanelWindow
 
 
 CODES = ["300001", "300002", "600001", "600002"]
@@ -275,6 +275,70 @@ def test_factor_revision_change_and_budget_preserve_fallback_values(window_store
     _assert_panels(actual, _panel(store, adjust="qfq"))
 
 
+def test_postgres_window_uses_market_revision_while_connection_stays_in_transaction():
+    class PostgresStore:
+        _use_postgres = True
+
+        def __init__(self):
+            self.revision = "1"
+
+        def market_revision(self):
+            return self.revision
+
+    store = PostgresStore()
+    state = _PanelWindow(
+        store,
+        type("Connection", (), {"in_transaction": True})(),
+        DAYS[0],
+        DAYS[-1],
+        24_000_000,
+    )
+    state.version = state.current_version()
+    state.panels["close"] = pd.DataFrame([[1.0]])
+
+    assert state.refresh()
+    assert state.panels
+
+    store.revision = "2"
+    assert state.refresh()
+    assert not state.panels
+
+
+def test_repeated_adjusted_panel_hit_is_private_and_avoids_factor_recalculation(window_store):
+    store = window_store
+    expected = _panel(store, adjust="qfq")
+    with panel_read_window(store, start=DAYS[0], end=DAYS[-1]):
+        first = _panel(store, adjust="qfq")
+        first["close"].iloc[:, :] = -1
+        queries = []
+        store.conn.set_trace_callback(queries.append)
+        actual = _panel(store, adjust="qfq")
+        store.conn.set_trace_callback(None)
+    _assert_panels(actual, expected)
+    assert not any("FROM adjust_factors" in query for query in queries)
+    assert not _quote_queries(queries)
+
+
+def test_hfq_wide_panel_serves_exact_daily_subwindows_without_rereading(window_store):
+    store = window_store
+    expected = _panel(
+        store, codes=CODES[:2], start=DAYS[2], end=DAYS[8],
+        adjust="hfq", min_bars=5,
+    )
+    with panel_read_window(store, start=DAYS[0], end=DAYS[-1]):
+        _panel(store, codes=CODES[:2], adjust="hfq", min_bars=5)
+        queries = []
+        store.conn.set_trace_callback(queries.append)
+        actual = _panel(
+            store, codes=CODES[:2], start=DAYS[2], end=DAYS[8],
+            adjust="hfq", min_bars=5,
+        )
+        store.conn.set_trace_callback(None)
+    _assert_panels(actual, expected)
+    assert not _quote_queries(queries)
+    assert not any("FROM adjust_factors" in query for query in queries)
+
+
 def test_full_source_receipts_and_attempts_remain_exact_and_preloads_are_code_scoped(window_store):
     store = window_store
     scopes = [(CODES[:1], DAYS[5]), (CODES[:2], DAYS[8]), (CODES[1:2], DAYS[-1])]
@@ -301,3 +365,42 @@ def test_all_empty_and_nonexistent_codes_return_same_axes_as_uncached_reader(win
     assert state.present is None
     assert not state.factor_rows
     assert state.evidence is None
+
+
+def test_evidence_window_reads_mapping_rows_by_position(window_store):
+    from types import SimpleNamespace
+
+    from src.market.infrastructure.store_provenance_window import _load
+    from src.shared.postgres import _CompatRow
+
+    class MappingCursor:
+        def __init__(self, raw):
+            self.raw = raw
+
+        @staticmethod
+        def convert(row):
+            return _CompatRow(tuple(row), tuple(row.keys()))
+
+        def fetchone(self):
+            return self.convert(self.raw.fetchone())
+
+        def fetchmany(self, size):
+            return [self.convert(row) for row in self.raw.fetchmany(size)]
+
+        def __iter__(self):
+            return (self.convert(row) for row in self.raw)
+
+        def close(self):
+            self.raw.close()
+
+    class MappingConnection:
+        def execute(self, sql, params):
+            return MappingCursor(window_store.conn.execute(sql, params))
+
+    opts = dict(start=DAYS[0], end=DAYS[-1], max_evidence_bytes=10_000_000)
+    codes = frozenset(CODES[:2])
+    expected = _load(SimpleNamespace(conn=window_store.conn, **opts), codes)
+    actual = _load(SimpleNamespace(conn=MappingConnection(), **opts), codes)
+    assert actual.aggregate(CODES[:2], DAYS[0], DAYS[-1]) == expected.aggregate(
+        CODES[:2], DAYS[0], DAYS[-1]
+    )

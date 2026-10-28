@@ -150,6 +150,41 @@ class RunHeartbeatWriter:
             logger.debug("心跳连接关闭失败", exc_info=True)
 
 
+class _PostgresHeartbeatWriter:
+    """Thread-owned PostgreSQL connection for a one-row heartbeat update."""
+
+    def __init__(self) -> None:
+        from src.shared.postgres import CompatConnection
+
+        self._conn: CompatConnection | None = None
+
+    def beat(self, run_id: str) -> bool:
+        run = str(run_id or "")
+        if not run:
+            return False
+        if self._conn is None:
+            from src.shared.postgres import CompatConnection
+
+            self._conn = CompatConnection()
+            self._conn.raw.execute("SET search_path TO ops, public")
+            self._conn.raw.commit()
+        cursor = self._conn.execute(HEARTBEAT_SQL, (_now(), run))
+        try:
+            changed = int(cursor.rowcount or 0) == 1
+            self._conn.commit()
+            return changed
+        except BaseException:
+            self._conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
+    def close(self) -> None:
+        conn, self._conn = self._conn, None
+        if conn is not None:
+            conn.close()
+
+
 class OpsRunsMixin:
     """job_runs 生命周期。依赖宿主提供 conn 与 _transaction。"""
 
@@ -423,6 +458,8 @@ class OpsRunsMixin:
         ``JobContext``/``HeartbeatPump`` 只认这个鸭子接口（``beat`` + ``close``）：
         拿不到就回落到主线程 ``heartbeat_run``，旧 store / 测试替身不会因此报错。
         """
+        if getattr(self, "_use_postgres", False):
+            return _PostgresHeartbeatWriter()
         return RunHeartbeatWriter(str(getattr(self, "db_path", "")))
 
     def finish_run(

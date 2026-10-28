@@ -28,6 +28,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 import json
 import logging
+import math
 import threading
 import time
 from typing import Any
@@ -137,6 +138,8 @@ def _get(url: str, session: requests.Session | None = None) -> str:
         raise SinaFetchError(f"请求失败：{type(exc).__name__}: {exc}") from exc
     if response.status_code != 200:
         raise SinaFetchError(f"返回 {response.status_code}")
+    if url.startswith("https://hq.sinajs.cn/"):
+        response.encoding = "gb18030"
     return response.text
 
 
@@ -179,12 +182,18 @@ def fetch_daily(symbol: str, *, session: requests.Session | None = None) -> pd.D
 
 
 def fetch_spot(
-    symbols: Sequence[str], *, session: requests.Session | None = None
+    symbols: Sequence[str],
+    *,
+    session: requests.Session | None = None,
+    include_no_trade: bool = False,
 ) -> pd.DataFrame:
     """批量取实时行情，拼成当日日 K 一行。
 
     返回列：symbol/date/open/high/low/close/volume/amount。
-    停牌、退市、空串会跳过。单次请求过多会被网关截断，调用方应分批。
+    停牌、退市、空串默认跳过。收盘定稿需要证明“正常标的当日无成交”，可传
+    ``include_no_trade=True``：源自报今日且昨收有效、但量额为零的停牌行会以
+    昨收补齐平价 OHLC，``volume=0`` 保留零成交事实。单次请求过多会被网关截断，
+    调用方应分批。
     """
     clean = [str(symbol).strip().lower() for symbol in symbols if str(symbol).strip()]
     if not clean:
@@ -210,6 +219,7 @@ def fetch_spot(
             continue
         try:
             open_ = float(fields[1])
+            prev_close = float(fields[2])
             high = float(fields[4])
             low = float(fields[5])
             close = float(fields[3])
@@ -217,19 +227,26 @@ def fetch_spot(
             amount = float(fields[9])
         except ValueError:
             continue
-        # 未开盘/停牌常见现价为 0；没有可用 OHLC 就别写入假 K 线。
-        if close <= 0 and open_ <= 0:
-            continue
-        # 停牌票会带着昨收、零成交返回。这条通道产出的是**当日日 K**，
-        # 零成交仍落一根 bar 等于凭空多记一个交易日（live 通道不受此限）。
-        if volume <= 0 and amount <= 0:
-            continue
-        if close <= 0:
-            close = open_
-        if high <= 0:
-            high = max(open_, close)
-        if low <= 0:
-            low = min(open_, close) if open_ > 0 else close
+        no_trade = volume <= 0 and amount <= 0
+        if no_trade:
+            if not include_no_trade:
+                continue
+            # 停牌票会自报今日、给昨收和零量额。期货式“无成交日”按昨收
+            # 画平价 bar 是行情惯例；只有源明确给出今日日期时才允许这样做。
+            reference = close if close > 0 else open_ if open_ > 0 else prev_close
+            if reference <= 0:
+                continue
+            open_ = high = low = close = reference
+        else:
+            # 未开盘/停牌常见现价为 0；没有可用 OHLC 就别写入假 K 线。
+            if close <= 0 and open_ <= 0:
+                continue
+            if close <= 0:
+                close = open_
+            if high <= 0:
+                high = max(open_, close)
+            if low <= 0:
+                low = min(open_, close) if open_ > 0 else close
         trade_date = pd.to_datetime(fields[30], errors="coerce")
         if pd.isna(trade_date):
             continue
@@ -300,20 +317,20 @@ def _parse_hq_line(line: str) -> dict[str, Any] | None:
         return None
     if price <= 0:
         price = open_
-    if prev <= 0:
-        prev = open_ if open_ > 0 else price
-    change = price - prev
-    pct = (change / prev * 100.0) if prev else 0.0
+    # 缺失昨收不能以开盘价或现价替代，否则涨停保护会使用虚构的价格基准。
+    valid_prev = math.isfinite(prev) and prev > 0
+    change = price - prev if valid_prev else None
+    pct = change / prev * 100.0 if valid_prev else None
     return {
         "symbol": symbol,
         "name": name,
         "price": round(price, 3),
-        "prev_close": round(prev, 3),
+        "prev_close": round(prev, 3) if valid_prev else None,
         "open": round(open_, 3),
         "high": round(high, 3),
         "low": round(low, 3),
-        "change": round(change, 3),
-        "pct": round(pct, 2),
+        "change": round(change, 3) if change is not None else None,
+        "pct": round(pct, 2) if pct is not None else None,
         "volume": volume,
         "amount": amount,
         "trade_date": fields[30],

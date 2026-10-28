@@ -11,7 +11,7 @@ from typing import Any, Callable, Sequence
 
 import pandas as pd
 
-from src.market.infrastructure.history_floor import MIN_TRADE_DATE
+from src.market.infrastructure.history_floor import trade_date_floor
 from src.market.infrastructure.sources import QuoteSource, SourceError, fetch_with_fallback
 from src.market.infrastructure.store import MarketError, MarketStore, normalize_code
 from src.market.infrastructure.store_quote_payload import partition_valid_ohlc_rows
@@ -38,9 +38,6 @@ from src.market.infrastructure.sync_factors import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_BENCHMARKS = ("000300", "000905", "000852")
-# 全量/强制同步的历史请求起点统一夹到防回填地板，旧行情不再被重新拉取。
-_HISTORICAL_REQUEST_START = MIN_TRADE_DATE
-
 #: 历史日 K 同步默认并发。主源是通达信二进制协议（单票 p50 约 28ms），
 #: 实测 8~16 路才吃得满；旧默认 4 是为逐票 HTTP 源留的，早已不是瓶颈所在。
 DEFAULT_SYNC_WORKERS = sync_engine.env_int("LOCI_SYNC_WORKERS", 12)
@@ -150,7 +147,8 @@ def _finalized_last_date(
         " WHERE code = ? AND source NOT LIKE '%\\_spot' ESCAPE '\\'",
         (code,),
     ).fetchone()
-    return str(row[0] or "")[:10] if row else ""
+    value = row[0] if row and not hasattr(row, "keys") else (next(iter(row.values())) if row else "")
+    return str(value or "")[:10]
 
 
 def _earliest_date(
@@ -162,7 +160,8 @@ def _earliest_date(
     row = store.conn.execute(
         "SELECT MIN(trade_date) FROM quotes_daily WHERE code = ?", (code,)
     ).fetchone()
-    return str(row[0] or "")[:10] if row else ""
+    value = row[0] if row and not hasattr(row, "keys") else (next(iter(row.values())) if row else "")
+    return str(value or "")[:10]
 
 
 def _incremental_bars(
@@ -374,7 +373,7 @@ def sync_quotes(
                 "rows_written": 0,
                 "rejected_ohlc_rows": 0,
             }
-            request_start = _HISTORICAL_REQUEST_START
+            request_start = trade_date_floor()
             try:
                 try:
                     code = normalize_code(raw_code)
@@ -463,6 +462,8 @@ def sync_quotes(
                     receipt={
                         "code": code,
                         "lane": "hist_daily",
+                        # 显式终态：命中一个源就是成功，后备源未请求的 "skipped" 不改写它。
+                        "state": "selected",
                         "requested_sources": [
                             str(item.get("source_id") or "") for item in attempts
                         ],

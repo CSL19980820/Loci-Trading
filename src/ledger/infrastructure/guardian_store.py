@@ -16,51 +16,61 @@ from src.ledger.infrastructure.guardian_reports import GuardianReportsMixin, REP
 from src.ledger.infrastructure.guardian_consults import GuardianConsultMixin, CONSULT_SCHEMA
 from src.ledger.infrastructure.guardian_notices import GuardianNoticesMixin, NOTICE_SCHEMA
 from src.ledger.infrastructure.guardian_experience import GuardianExperienceMixin, EXPERIENCE_SCHEMA
+from src.shared.postgres import CompatConnection, explicit_postgres_required, uses_primary_path
 
 
 class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultMixin, GuardianNoticesMixin, GuardianExperienceMixin):
     def __init__(self, db_path: str | Path | None = None) -> None:
         path = Path(db_path or palace_db())
         self.db_path = path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(str(path), timeout=15)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.executescript(REPORT_SCHEMA)
-        self.conn.executescript(CONSULT_SCHEMA)
-        self.conn.executescript(NOTICE_SCHEMA)
-        self.conn.executescript(EXPERIENCE_SCHEMA)
-        self.conn.executescript("""
-            CREATE TABLE IF NOT EXISTS guardian_portfolio (
-                id INTEGER PRIMARY KEY CHECK(id=1), state_json TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS guardian_cycles (
-                slot TEXT PRIMARY KEY, started REAL NOT NULL, status TEXT NOT NULL,
-                result_json TEXT NOT NULL DEFAULT '{}'
-            );
-            CREATE TABLE IF NOT EXISTS guardian_legacy_accounts (
-                id INTEGER PRIMARY KEY CHECK(id=1), state_json TEXT NOT NULL, archived_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS guardian_trades (
-                id TEXT PRIMARY KEY, slot TEXT NOT NULL, code TEXT NOT NULL,
-                occurred_at TEXT NOT NULL, detail_json TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS ix_guardian_trades_time ON guardian_trades(occurred_at DESC, id DESC);
-            CREATE INDEX IF NOT EXISTS ix_guardian_cycles_started ON guardian_cycles(started DESC);
-        """)
+        self._use_postgres = (
+            explicit_postgres_required()
+            and uses_primary_path(db_path, palace_db())
+        )
+        if self._use_postgres:
+            self.conn = CompatConnection()
+            self.conn.raw.execute("SET search_path TO ledger, public")
+            self.conn.raw.commit()
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.conn = sqlite3.connect(str(path), timeout=15)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.executescript(REPORT_SCHEMA)
+            self.conn.executescript(CONSULT_SCHEMA)
+            self.conn.executescript(NOTICE_SCHEMA)
+            self.conn.executescript(EXPERIENCE_SCHEMA)
+            self.conn.executescript("""
+                CREATE TABLE IF NOT EXISTS guardian_portfolio (
+                    id INTEGER PRIMARY KEY CHECK(id=1), state_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS guardian_cycles (
+                    slot TEXT PRIMARY KEY, started REAL NOT NULL, status TEXT NOT NULL,
+                    result_json TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE TABLE IF NOT EXISTS guardian_legacy_accounts (
+                    id INTEGER PRIMARY KEY CHECK(id=1), state_json TEXT NOT NULL, archived_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS guardian_trades (
+                    id TEXT PRIMARY KEY, slot TEXT NOT NULL, code TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL, detail_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_guardian_trades_time ON guardian_trades(occurred_at DESC, id DESC);
+                CREATE INDEX IF NOT EXISTS ix_guardian_cycles_started ON guardian_cycles(started DESC);
+            """)
         # Existing accounts are a read path: do not queue behind a trading writer.
         row = self.conn.execute("SELECT state_json FROM guardian_portfolio WHERE id=1").fetchone()
-        if row and json.loads(row[0]).get("account_version") == 2:
+        if row and json.loads(row["state_json"]).get("account_version") == 2:
             return
         # Recheck under the lock: two first-time requests must not reset each other's account.
         with self.conn:
-            self.conn.execute("BEGIN IMMEDIATE")
+            self.conn.execute("BEGIN" if self._use_postgres else "BEGIN IMMEDIATE")
             row = self.conn.execute("SELECT state_json FROM guardian_portfolio WHERE id=1").fetchone()
-            old = json.loads(row[0]) if row else None
+            old = json.loads(row["state_json"]) if row else None
             if old and old.get("account_version") not in (None, 1, 2):
                 raise ValueError("无法降级未知版本的守护账户")
             if old is None or old.get("account_version") != 2:
                 if old is not None:
-                    self.conn.execute("INSERT OR IGNORE INTO guardian_legacy_accounts VALUES(1,?,datetime('now'))", (row[0],))
+                    self.conn.execute("INSERT OR IGNORE INTO guardian_legacy_accounts VALUES(1,?,datetime('now'))", (row["state_json"],))
                 self.conn.execute("INSERT INTO guardian_portfolio VALUES(1,?) ON CONFLICT(id) DO UPDATE SET state_json=excluded.state_json",
                                   (json.dumps(new_guardian_account()),))
 
@@ -72,21 +82,63 @@ class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultM
 
     def state(self) -> dict[str, Any]:
         row = self.conn.execute("SELECT state_json FROM guardian_portfolio WHERE id=1").fetchone()
-        return json.loads(row[0])
+        return json.loads(row["state_json"])
+
+    def reset_research_context(self, reset_id: str) -> dict[str, Any]:
+        """显式重置研究工作集，审计历史与账户执行合同保留。调用方先备份。"""
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+
+        if not reset_id.strip():
+            raise ValueError("研究重置必须指定唯一操作编号")
+        with self.conn:
+            self.conn.execute("BEGIN" if self._use_postgres else "BEGIN IMMEDIATE")
+            state = self.state()
+            if state.get('research_reset_id') == reset_id:
+                return {'reset_at': state['research_reset_at'], 'reused': True}
+            for table, statuses in (('guardian_cycles', ('running',)),
+                                    ('guardian_reports', ('running',)),
+                                    ('guardian_consult_turns', ('queued', 'running'))):
+                marks = ','.join('?' for _ in statuses)
+                if self.conn.execute(f'SELECT 1 FROM {table} WHERE status IN ({marks}) LIMIT 1', statuses).fetchone():
+                    raise ValueError("交易员仍有运行中的研判、报告或咨询，暂不能重置研究上下文")
+            now = datetime.now(timezone.utc)
+            experience = self.experience()
+            counts = {'watchlist': len(state.get('watchlist', [])), 'experience': len(experience['items']),
+                      'positions': len(state['positions'])}
+            state.update(research_reset_id=reset_id, research_reset_at=now.isoformat(), watchlist=[])
+            state.pop('reference_dismissals', None)
+            for position in state['positions']:
+                for key in ('strategies', 'holding_plan', 'take_profit_plan', 'stop_loss_plan',
+                            'exit_today_plan', 'exit_plan_date', 'last_review'):
+                    position.pop(key, None)
+                if isinstance(position.get('entry_context'), dict):
+                    position['entry_context'].pop('reason', None)
+            check_guardian_account(state)
+            self._save_experience([], source_report=f'research-reset:{reset_id}', source_revision=1,
+                                  day=now.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(),
+                                  expected_revision=experience['revision'])
+            self.conn.execute('UPDATE guardian_portfolio SET state_json=? WHERE id=1',
+                              (json.dumps(state, ensure_ascii=False),))
+            # 原问答留在 turns 中供显式历史查询，不继续重放旧模型消息与工具回执。
+            self.conn.execute("UPDATE guardian_consultations SET messages_json='[]'")
+            return {'reset_at': state['research_reset_at'], 'reused': False, 'cleared': counts}
 
     def trades(self, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
         rows = self.conn.execute("SELECT id,slot,detail_json FROM guardian_trades ORDER BY occurred_at DESC,id DESC LIMIT ? OFFSET ?",
                                  (limit, offset)).fetchall()
         return {"items": [{**json.loads(r["detail_json"]), "id": r["id"], "slot": r["slot"]} for r in rows],
-                "total": self.conn.execute("SELECT count(*) FROM guardian_trades").fetchone()[0]}
+                "total": self.conn.execute(
+                    "SELECT count(*) AS count FROM guardian_trades"
+                ).fetchone()["count"]}
 
     def performance(self) -> list[dict[str, Any]]:
         rows = self.conn.execute("""SELECT code,
             max(json_extract(detail_json,'$.name')) AS name,
-            sum(CASE WHEN json_extract(detail_json,'$.side')='buy' THEN json_extract(detail_json,'$.quantity') ELSE 0 END) AS bought_quantity,
-            sum(CASE WHEN json_extract(detail_json,'$.side')='sell' THEN json_extract(detail_json,'$.quantity') ELSE 0 END) AS sold_quantity,
-            sum(json_extract(detail_json,'$.realized_pnl_cents')) AS realized_pnl_cents,
-            sum(json_extract(detail_json,'$.fees_cents')) AS fees_cents,
+            sum(CASE WHEN json_extract(detail_json,'$.side')='buy' THEN CAST(json_extract(detail_json,'$.quantity') AS REAL) ELSE CAST(0 AS REAL) END) AS bought_quantity,
+            sum(CASE WHEN json_extract(detail_json,'$.side')='sell' THEN CAST(json_extract(detail_json,'$.quantity') AS REAL) ELSE CAST(0 AS REAL) END) AS sold_quantity,
+            sum(CAST(json_extract(detail_json,'$.realized_pnl_cents') AS REAL)) AS realized_pnl_cents,
+            sum(CAST(json_extract(detail_json,'$.fees_cents') AS REAL)) AS fees_cents,
             count(*) AS trade_count FROM guardian_trades GROUP BY code ORDER BY code""").fetchall()
         return [dict(row) for row in rows]
 
@@ -142,7 +194,7 @@ class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultM
             if before_commit:
                 before_commit()
             saved = self.conn.execute("SELECT result_json FROM guardian_cycles WHERE slot=?", (slot,)).fetchone()
-            context = json.loads(saved[0]).get("decision_context") if saved else None
+            context = json.loads(saved["result_json"]).get("decision_context") if saved else None
             if context is not None:
                 result = {**result, "decision_context": context}
             cursor = self.conn.execute(
@@ -183,6 +235,6 @@ class GuardianStore(GuardianQueriesMixin, GuardianReportsMixin, GuardianConsultM
     def annotate(self, slot: str, fields: dict[str, Any]) -> None:
         with self.conn:
             row = self.conn.execute("SELECT result_json FROM guardian_cycles WHERE slot=?", (slot,)).fetchone()
-            payload = json.loads(row[0])
+            payload = json.loads(row["result_json"])
             payload.update(fields)
             self.conn.execute("UPDATE guardian_cycles SET result_json=? WHERE slot=?", (json.dumps(payload, ensure_ascii=False), slot))

@@ -89,6 +89,8 @@ export interface StrategyJobConfig {
   schedule_mode?: 'off' | 'once' | 'interval' | null
   run_hour?: number
   run_minute?: number
+  prepare_hour?: number
+  prepare_minute?: number
   interval_minutes?: number
   window_start_hour?: number
   window_start_minute?: number
@@ -100,6 +102,7 @@ export interface StrategyJob extends Omit<Job, 'config'> {
   slug: string
   bound: boolean
   next_runs?: string[]
+  prepare_schedule?: StrategyJobSchedule
   config?: Record<string, unknown> & {
     universe?: UniverseSpec
     schedule?: StrategyJobSchedule

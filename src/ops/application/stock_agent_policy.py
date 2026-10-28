@@ -118,7 +118,7 @@ def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quot
             errors.append({"code": order.code, "action": order.action, "reason": "本时段只研究和观察，不执行模拟成交；开市后重新核价研判"})
             continue
         book = quotes.get(order.code, {}).get("order_book")
-        if order.action in TRADE_ACTIONS and isinstance(book, dict):
+        if not is_falcon and order.action in TRADE_ACTIONS and isinstance(book, dict):
             side = "ask" if order.action in BUY_ACTIONS else "bid"
             try:
                 no_depth = float(book.get(side + "_price") or 0) <= 0 or float(book.get(side + "_quantity") or 0) <= 0
@@ -164,7 +164,7 @@ def simulate_stock_agent(state: dict[str, Any], decision: GuardianDecision, quot
         """
         filtered = decision.model_copy(update={"orders": orders})
         projected, fills, rejected = simulate(current, filtered, [], quotes, now,
-                                              require_execution_terms=True, guardian_policy=False)
+                                              require_execution_terms=True, guardian_policy=False, paper=is_falcon)
         buying = [o for o in orders if o.action in BUY_ACTIONS]
         if is_leader:
             # 先按真实成交剔除持仓，再校验整轮最终名单；盘后/盘前换股不受动作排列影响。

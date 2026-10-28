@@ -38,7 +38,8 @@ def test_retrospective_does_not_inject_current_buy_restriction():
     assert "禁止买入或加仓科创板" not in retrospective
     assert "不能倒推历史成交时已有同一权限" in retrospective
     assert "prior_auction_cycles" in retrospective
-    assert "禁止买入或加仓科创板" in planning
+    assert "position_policy/current_position_policy" in planning
+    assert "手册不扩大权限" in planning
 
 
 def test_report_cannot_call_pre_rule_star_fills_a_guard_failure():

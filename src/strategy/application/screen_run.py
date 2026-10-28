@@ -86,6 +86,7 @@ def _result_body(result: Any, recorded: dict[str, Any] | None) -> dict[str, Any]
         "universe_funnel": result.universe_funnel,
         "data_snapshot": result.data_snapshot,
         "recorded": recorded,
+        "cache_hit": bool(getattr(result, "cache_hit", False)),
     }
     compact_job_result(body)
     return body
@@ -324,54 +325,120 @@ def _execute_screen_run(
                 )
                 return
 
-            if not ensure_screen_quotes(full, days, refresh_spot):
-                return
-
-            # 选股读滚动热库（近 700 交易日窗口），与全量写库物理隔离；写操作
-            # （apply_today_spot）只碰全量库。策略要求全历史或未配置热库时回退
-            # 全量库。镜像失败不阻断：热库缺当日由哨兵/重建任务兜底。
-            store = full
-            if hot_db and not needs_full:
-                from src.market import (
-                    hot_fallback_reason,
-                    mirror_recent_to_hot,
-                    open_market_hot,
+            finalizations: dict[str, dict[str, Any] | None] = {}
+            if all(not should_overlay_live(day) for day in days):
+                from src.market.application.screen_spot import (
+                    ScreenSpotError, ensure_closed_day_finalized,
                 )
 
-                # 预热根数在 try 外面算：算不出来是策略契约问题，不该被下面那个
-                # except 归成「镜像热库失败」，那会让人照着错方向查热库。
-                warmup_bars = signal_history_bars(engine, params=opts.get("params"))
                 try:
-                    hot = open_market_hot(hot_db)
-                    stack.enter_context(hot)
-                    if not live_today:
-                        screen_run_update(
-                            phase="prepare", percent=6, message="同步选股热库…",
-                            log_line="· 同步选股热库（行情与来源回执）…",
-                        )
-                        mirror_recent_to_hot(full, hot)
-                    reason = hot_fallback_reason(
-                        full,
-                        hot,
-                        trade_date=days[0],
-                        end=days[-1],
-                        warmup_bars=warmup_bars,
-                        live_overlay=live_today,
-                    )
-                    if reason:
-                        screen_run_update(log_line=f"⚠ {reason}，回退全量库")
-                        store = full
-                    else:
-                        store = hot
-                except Exception as exc:
+                    gate_days = list(days)
+                    if win_end and win_end not in gate_days:
+                        # Preserve the existing guard when a requested single day
+                        # has disappeared from the calendar and `days` falls back.
+                        gate_days.append(win_end)
+                    finalizations = {
+                        day: ensure_closed_day_finalized(full, day)
+                        for day in gate_days
+                    }
+                except ScreenSpotError as exc:
                     screen_run_update(
-                        log_line=f"⚠ 镜像热库失败，回退全量库：{exc}",
+                        status="error", phase="error", message=str(exc), error=str(exc),
+                        log_line=f"✗ 收盘定稿门禁未通过：{exc}",
                     )
-                    store = full
+                    return
 
-            stack.enter_context(range_read_scope(
-                store, engine, days, opts.get("params"), codes=opts.get("codes"), universe=uni,
-            ))
+            # A finalized result is self-contained: once its exact revision and
+            # inputs match, skip hot-store mirroring and panel preparation. This
+            # is the sub-second user path; any miss falls through to the full
+            # preparation below and is recomputed with the regular safeguards.
+            cached_results = None
+            if all(not should_overlay_live(day) for day in days):
+                from src.strategy.application.screen_result_cache import load_screen_result
+                from src.strategy.domain.base import merge_params
+
+                effective_universe = (
+                    uni if uni is not None else getattr(engine, "default_universe", None)
+                )
+                resolved_params = merge_params(engine, opts.get("params"))
+                cache_options = {
+                    "params": resolved_params,
+                    "codes": list(opts.get("codes") or []) or None,
+                    "universe": dict(effective_universe) if effective_universe else None,
+                    "adjust": str(opts.get("adjust") or getattr(engine, "adjust", "qfq") or "qfq"),
+                    "extra_bars": 20,
+                    "health_check": health_check,
+                    "skip_universe_safety": False,
+                }
+                candidates = [
+                    load_screen_result(full, engine, day, **cache_options)
+                    for day in days
+                ]
+                if candidates and all(result is not None and result.cache_hit for result in candidates):
+                    cached_results = [result for result in candidates if result is not None]
+                    screen_run_update(
+                        log_line="· 使用已验证的收盘结果缓存",
+                    )
+
+            store = full
+            if cached_results is None:
+                # During the live window the outer preparation may write today's
+                # spot bars. Closed-day screens only need the finalization gate,
+                # which `screen()` performs exactly once; running it here as well
+                # doubled a whole-market provenance query on every cold request.
+                if live_today and not ensure_screen_quotes(
+                    full, days, refresh_spot, trade_date=win_end,
+                ):
+                    return
+
+                # 选股读滚动热库（近 700 交易日窗口），与全量写库物理隔离；写操作
+                # （apply_today_spot）只碰全量库。策略要求全历史或未配置热库时回退
+                # 全量库。镜像失败不阻断：热库缺当日由哨兵/重建任务兜底。
+                from src.shared.postgres import explicit_postgres_required
+
+                # PostgreSQL already uses the bounded production dataset directly;
+                # opening a second "hot" connection would repeat the same reads and
+                # spend the request budget proving that it is the same database.
+                if hot_db and not needs_full and not explicit_postgres_required():
+                    from src.market import (
+                        hot_fallback_reason,
+                        mirror_recent_to_hot,
+                        open_market_hot,
+                    )
+
+                    # 预热根数在 try 外面算：算不出来是策略契约问题，不该被下面那个
+                    # except 归成「镜像热库失败」，那会让人照着错方向查热库。
+                    warmup_bars = signal_history_bars(engine, params=opts.get("params"))
+                    try:
+                        hot = open_market_hot(hot_db)
+                        stack.enter_context(hot)
+                        if not live_today:
+                            screen_run_update(
+                                phase="prepare", percent=6, message="同步选股热库…",
+                                log_line="· 同步选股热库（行情与来源回执）…",
+                            )
+                            mirror_recent_to_hot(full, hot)
+                        reason = hot_fallback_reason(
+                            full,
+                            hot,
+                            trade_date=days[0],
+                            end=days[-1],
+                            warmup_bars=warmup_bars,
+                            live_overlay=live_today,
+                        )
+                        if reason:
+                            screen_run_update(log_line=f"⚠ {reason}，回退全量库")
+                        else:
+                            store = hot
+                    except Exception as exc:
+                        screen_run_update(
+                            log_line=f"⚠ 镜像热库失败，回退全量库：{exc}",
+                        )
+                        store = full
+
+                stack.enter_context(range_read_scope(
+                    store, engine, days, opts.get("params"), codes=opts.get("codes"), universe=uni,
+                ))
             # 数据证据由 screen 在解析当日股票池与预热窗口后读取。
             # 编排层预取全库快照既扫描无关回执，也不能冻结逐日计算时的行情版本。
             total_days = len(days)
@@ -381,9 +448,17 @@ def _execute_screen_run(
                 percent=8,
             )
 
-            names = {
-                item["code"]: item["name"] for item in store.list_instruments(status="")
-            } if record else {}
+            if record and cached_results is not None:
+                names = {
+                    str(pick["code"]): str(pick["name"])
+                    for result in cached_results
+                    for pick in [*result.picks, *result.watch_picks]
+                    if pick.get("code") and pick.get("name")
+                }
+            else:
+                names = {
+                    item["code"]: item["name"] for item in store.list_instruments(status="")
+                } if record else {}
 
             # 仓内最新交易日：只有跑这一天才算「真选」；更早日期一律回填源，
             # 避免区间重放覆盖 job:screen / 盘后结果污染首页昨选。
@@ -440,30 +515,36 @@ def _execute_screen_run(
                     log_line=f"▷ [{index}/{total_days}] 开始 {day}",
                 )
 
-                try:
-                    result = screen(
-                        store,
-                        str(opts["strategy"]),
-                        trade_date=day,
-                        params=opts.get("params"),
-                        codes=opts.get("codes"),
-                        universe=uni,
-                        health_check=health_check and index == 1,
-                        on_progress=on_progress,
-                        live_overlay=should_overlay_live(day),
-                    )
-                except DataQualityError as exc:
-                    screen_run_update(
-                        status="error", phase="error", message=str(exc), error=str(exc),
-                        log_line=f"✗ 阻断 {day}：{exc}",
-                    )
-                    return
-                except StrategyError as exc:
-                    screen_run_update(
-                        status="error", phase="error", message=str(exc), error=str(exc),
-                        log_line=f"✗ 策略错误 {day}：{exc}",
-                    )
-                    return
+                if cached_results is not None:
+                    result = cached_results[index - 1]
+                else:
+                    try:
+                        result = screen(
+                            store,
+                            str(opts["strategy"]),
+                            trade_date=day,
+                            params=opts.get("params"),
+                            codes=opts.get("codes"),
+                            universe=uni,
+                            health_check=health_check and index == 1,
+                            on_progress=on_progress,
+                            finalization=finalizations.get(day),
+                            finalization_checked=bool(finalizations),
+                            live_overlay=should_overlay_live(day),
+                            result_cache=True,
+                        )
+                    except DataQualityError as exc:
+                        screen_run_update(
+                            status="error", phase="error", message=str(exc), error=str(exc),
+                            log_line=f"✗ 阻断 {day}：{exc}",
+                        )
+                        return
+                    except StrategyError as exc:
+                        screen_run_update(
+                            status="error", phase="error", message=str(exc), error=str(exc),
+                            log_line=f"✗ 策略错误 {day}：{exc}",
+                        )
+                        return
 
                 elapsed_total += float(result.elapsed_seconds or 0)
                 pick_n = len(result.picks)

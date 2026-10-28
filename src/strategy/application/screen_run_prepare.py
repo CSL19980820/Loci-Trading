@@ -7,28 +7,36 @@ from collections.abc import Sequence
 from typing import Any
 
 from src.market import MarketStore, panel_read_window
-from src.strategy.application.compute_runtime import computation_scope
+from src.strategy.application.compute_runtime import (
+    computation_scope,
+    set_range_compute_start,
+)
 from src.strategy.application.screen_run_state import screen_run_update
 from src.strategy.domain.base import signal_history_bars
 
 
-def ensure_screen_quotes(full: Any, days: list[str], refresh_spot: bool) -> bool:
+def ensure_screen_quotes(
+    full: Any, days: list[str], refresh_spot: bool, *, trade_date: str | None = None,
+) -> bool:
     """沿用即时选股的当日行情准备与失败关闭行为。"""
-    if not refresh_spot or date.today().isoformat() not in days:
-        return True
     from src.market.application.screen_spot import (
         ScreenSpotError,
+        ensure_closed_day_finalized,
         ensure_today_quotes_for_screen,
     )
 
-    instruments = full.list_instruments()
-    codes = [item["code"] for item in instruments]
-    types = {item["code"]: item["instrument_type"] for item in instruments}
-    screen_run_update(
-        phase="spot", percent=5, message="检查当日行情…",
-        log_line=f"↻ 准备当日行情（{len(codes)} 只）",
-    )
     try:
+        # 先核验请求日，不能因今日缺日历/行情而回退前一天，或关闭刷新后跳过。
+        ensure_closed_day_finalized(full, trade_date or days[-1])
+        if not refresh_spot or date.today().isoformat() not in days:
+            return True
+        instruments = full.list_instruments()
+        codes = [item["code"] for item in instruments]
+        types = {item["code"]: item["instrument_type"] for item in instruments}
+        screen_run_update(
+            phase="spot", percent=5, message="检查当日行情…",
+            log_line=f"↻ 准备当日行情（{len(codes)} 只）",
+        )
         ensured = ensure_today_quotes_for_screen(full, codes, instrument_types=types or None)
     except Exception as exc:
         message = str(exc) if isinstance(exc, ScreenSpotError) else f"选股前准备当日行情失败，已阻断选股：{exc}"
@@ -57,5 +65,29 @@ def range_read_scope(
             if calendar:
                 bars = signal_history_bars(engine, params=params)
                 start = calendar[0] if getattr(engine, "requires_full_history", False) else calendar[-min(bars, len(calendar))]
-                stack.enter_context(panel_read_window(store, start=start, end=days[-1]))
+                set_range_compute_start(start)
+                full_calendar = store.trading_days(end=days[-1])
+                scopes = []
+                if full_calendar:
+                    positions = {day: index for index, day in enumerate(full_calendar)}
+                    for day in days:
+                        if day not in positions:
+                            continue
+                        eligible = full_calendar[:positions[day] + 1]
+                        source_start = (
+                            eligible[0] if getattr(engine, "requires_full_history", False)
+                            else eligible[-min(bars, len(eligible))]
+                        )
+                        scopes.append((source_start, day))
+                source_codes = (
+                    list(codes) if codes else
+                    [str(item["code"]) for item in store.list_instruments(status="")]
+                )
+                stack.enter_context(panel_read_window(
+                    store,
+                    start=start,
+                    end=days[-1],
+                    source_summary_scopes=tuple(dict.fromkeys(scopes)),
+                    source_summary_codes=source_codes,
+                ))
         yield

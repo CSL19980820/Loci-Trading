@@ -31,6 +31,7 @@ from src.identity.domain.models import (
 from src.identity.infrastructure.schema import apply_schema
 from src.identity.infrastructure.store_platform import PlatformMixin, like_needle
 from src.identity.infrastructure.store_tickets import AuthTicketsMixin
+from src.shared.postgres import CompatConnection, explicit_postgres_required, uses_primary_path
 
 #: 会话滑动窗口与绝对上限。滑动 7 天覆盖「每周用一次」的研究者；
 #: 绝对 30 天确保改密/离职后最长一个月一定掉线。
@@ -96,8 +97,17 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
         from src.shared.paths import identity_db
 
         resolved = Path(db_path) if db_path else identity_db()
-        resolved.parent.mkdir(parents=True, exist_ok=True)
         self.db_path = resolved
+        self._use_postgres = (
+            explicit_postgres_required()
+            and uses_primary_path(db_path, identity_db())
+        )
+        if self._use_postgres:
+            self.conn = CompatConnection()
+            self.conn.raw.execute("SET search_path TO identity, public")
+            self.conn.raw.commit()
+            return
+        resolved.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(resolved), timeout=30)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -105,7 +115,6 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
         try:
             self.conn.execute("PRAGMA journal_mode = WAL")
         except sqlite3.DatabaseError:
-            # 只读挂载或网络盘上 WAL 会失败；退回默认日志模式仍可用。
             pass
         apply_schema(self.conn)
 
@@ -179,7 +188,7 @@ class IdentityStore(AuthTicketsMixin, PlatformMixin):
                     password_hash,
                     password_algo,
                     now if password_hash else None,
-                    1 if must_change_password else 0,
+                    bool(must_change_password),
                     display_name or username,
                     role,
                     status,

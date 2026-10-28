@@ -47,16 +47,16 @@ class GuardianOrder(BaseModel):
     action: Literal["buy", "add", "reduce", "sell", "take_profit", "stop_loss", "hold", "watch", "unwatch"]
     name: str = Field(default="", max_length=64, description="股票名称，尤其用于自主观察股票")
     quantity: int = Field(default=0, ge=0, strict=True, description="本次买入或卖出的整数股数；hold 为 0，卖出必须明确股数")
-    reason: str = Field(min_length=1)
+    reason: str = Field(min_length=1, description="本轮短理由，按主因、证据、风险表达，通常40—100字；最多两个必要证据，不复写条件或研究流水")
     opening_plan_id: str | None = Field(default=None, description="承接竞价计划时填写该计划id；其余订单留空")
     execution: ExecutionTerms | None = Field(default=None, description="买卖意图的价格授权及有效期；历史记录可缺省")
     risk_plans: list[RiskPlan] | None = Field(default=None,
         description="操作后持仓的结构化止损/止盈合同；含触发价、股数、成交价限和有效期。null保留，[]撤回；watch/unwatch不可使用")
-    holding_plan: str = Field(default="", description="自主决定的持有周期或持有/退出条件，不要求固定天数")
-    take_profit_plan: str = Field(default="", description="持仓止盈条件与理由，每轮由模型复核，不是券商挂单")
-    stop_loss_plan: str = Field(default="", description="持仓止损条件与理由，仍遵守T+1")
-    entry_condition: str = Field(default="", description="观察标的等待什么条件才考虑买入")
-    exit_condition: str = Field(default="", description="什么条件下撤出自主观察")
+    holding_plan: str = Field(default="", description="精炼的持有/退出依据，通常20—80字；不要求固定天数，不重复reason")
+    take_profit_plan: str = Field(default="", description="只写必要止盈条件，通常20—80字；不是券商挂单，不重复风险合同")
+    stop_loss_plan: str = Field(default="", description="只写必要失效条件，通常20—80字；仍遵守T+1，不重复风险合同")
+    entry_condition: str = Field(default="", description="仅当前逻辑真正阻碍参与的触发条件和复核时点，通常20—80字；不列背景待查清单")
+    exit_condition: str = Field(default="", description="只写退出自主观察的必要失效条件，通常20—80字；不复写reason或入场条件")
     exit_today_plan: str = Field(default="", description="已有可卖持仓今天计划完全退出、等待的卖点；仅当确实可卖时用于换仓过渡")
     replacement_for: str = Field(default="", pattern=r"^(|\d{6})$", description="可选换仓备注，记录参考替换股票；不是开仓准入条件")
 
@@ -78,7 +78,7 @@ class OpeningPlanReview(BaseModel):
     model_config = ConfigDict(extra="forbid")
     plan_id: str
     decision: Literal['execute', 'wait', 'abandon']
-    reason: str = Field(min_length=1)
+    reason: str = Field(min_length=1, description="执行、等待或放弃的主因与关键证据，一两句；触发及授权留在订单对应字段")
 
 
 class GuardianDecision(BaseModel):
@@ -130,7 +130,9 @@ def bind_execution_references(decision: GuardianDecision, quotes: dict[str, dict
 def simulate(state: dict[str, Any], decision: GuardianDecision, candidates: list[dict[str, Any]],
              quotes: dict[str, dict[str, Any]], now: datetime, *,
              require_execution_terms: bool = False, risk_only: bool = False,
-             guardian_policy: bool = True) -> tuple[dict[str, Any], list[dict], list[dict]]:
+             guardian_policy: bool = True, paper: bool | None = None) -> tuple[dict[str, Any], list[dict], list[dict]]:
+    # 行情价模拟与账户准入规则独立；省略时保留原调用方行为。
+    paper = guardian_policy if paper is None else paper
     updated = copy.deepcopy(state)
     references = {item["code"]: item for item in candidates}
     fills, rejects = [], []
@@ -183,7 +185,7 @@ def simulate(state: dict[str, Any], decision: GuardianDecision, candidates: list
             error_code = "liquidity_unconfirmed"
             depth_key = (item.code, "ask" if item.action in {"buy", "add"} else "bid")
             execution_quote = executable_quote(item.code, item.action, item.quantity, quote, now,
-                                              used_quantity=used_depth.get(depth_key, 0), paper=guardian_policy)
+                                              used_quantity=used_depth.get(depth_key, 0), paper=paper)
             price = execution_quote["price"]
             error_code, problem = execution_error(item.execution, price, now, required=require_execution_terms)
             if problem:

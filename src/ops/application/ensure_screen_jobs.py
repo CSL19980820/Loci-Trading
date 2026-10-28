@@ -24,7 +24,8 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
 
     幂等：已有绑定只合并关键配置（保留 universe / 推送等用户自定义字段），
     不强制改 enabled；战法声明固定时点时同步其 cron，避免旧任务继续在错误时刻执行。
-    ``screen_managed_job=False`` 的战法不建托管任务；残留 ``screen:{slug}`` 会按活动目录收缩删除。
+    ``screen_managed_job=False`` 只关闭自动创建，仍保留用户为活动战法配置的任务。
+    仅活动目录已移除或明确退役的战法清理残留 ``screen:{slug}`` 任务。
     用户明确关闭的战法会记录按租户的 opt-out，启动时不再被默认任务重建。
     """
     from src.strategy import all_strategies
@@ -51,11 +52,14 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
     slugs: list[str] = []
     disabled_slugs: list[str] = []
     job_crons: dict[str, str] = {}
+    active: set[str] = set()
     for engine in all_strategies():
         slug = str(engine.slug)
         if is_retired_strategy_slug(slug):
             continue
         if not _manages_screen_job(engine):
+            if not store.is_screen_job_opted_out(slug):
+                active.add(slug)
             continue
         job_name = f"screen:{slug}"
         if store.is_screen_job_opted_out(slug):
@@ -66,6 +70,7 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
             ensure_screen_prepare_job(store, engine, None)
             continue
         slugs.append(slug)
+        active.add(slug)
         engine_schedule = _schedule_for_engine(engine, default_schedule)
         existing = store.get_job_by_name(job_name)
         prev_cfg = (
@@ -74,7 +79,7 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
             else {}
         )
         # 战法声明了固定时点才覆盖；否则保留用户在详情页保存的 schedule / cron。
-        if _has_schedule_override(engine) or not isinstance(prev_cfg.get("schedule"), dict):
+        if (_has_schedule_override(engine) and not getattr(engine, "screen_schedule_configurable", False)) or not isinstance(prev_cfg.get("schedule"), dict):
             schedule = engine_schedule
             cron = compose_trading_cron(
                 schedule["mode"],
@@ -139,8 +144,8 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
         if isinstance(declared_config, dict):
             config.update(declared_config)
         if getattr(engine, "requires_realtime_inputs", False):
-            config["push_wecom"] = False
             config["use_ai_pick"] = False
+            config["snapshot_time"] = f'{schedule["run_hour"]:02d}:{schedule["run_minute"]:02d}'
         if isinstance(prev_cfg.get("universe"), dict):
             config["universe"] = prev_cfg["universe"]
         else:
@@ -166,7 +171,6 @@ def ensure_managed_screen_jobs(store: Any) -> dict[str, Any]:
         ensure_screen_prepare_job(store, engine, store.get_job_by_name(job_name))
     # ``screen:`` 是战法绑定任务的保留前缀。活动目录收缩后，旧任务不能继续
     # 被调度器执行或发送过时结果；明确退役的战法也清除用户另命名的 screen 任务。
-    active = set(slugs)
     removed_slugs: list[str] = []
     for job in store.list_jobs():
         name = str(job.get("name") or "")
@@ -252,10 +256,15 @@ def ensure_screen_prepare_job(
         "window_start_hour": 9, "window_start_minute": 30,
         "window_end_hour": SCREEN_EOD_HOUR, "window_end_minute": SCREEN_EOD_MINUTE,
     }
+    screen_config = screen_job.get("config") or {}
+    configured = screen_config.get("prepare_schedule")
+    if not isinstance(configured, dict) and existing:
+        configured = (existing.get("config") or {}).get("schedule")
+    if isinstance(configured, dict):
+        schedule.update(configured)
     cron = compose_trading_cron(schedule["mode"], **{key: value for key, value in schedule.items() if key != "mode"})
     config = {"strategy": slug, "push_wecom": False, "schedule": schedule,
               "record_candidates": False, "use_ai_pick": False, "top_n": 0}
-    screen_config = screen_job.get("config") or {}
     for key in ("params", "codes", "universe"):
         if key in screen_config:
             config[key] = screen_config[key]
@@ -273,5 +282,5 @@ def _has_schedule_override(engine: Any) -> bool:
 
 
 def _manages_screen_job(engine: Any) -> bool:
-    """未声明时默认托管；显式 ``screen_managed_job=False`` 的战法只留手跑。"""
+    """未声明时默认托管；显式关闭自动创建不影响用户绑定定时任务。"""
     return bool(getattr(engine, "screen_managed_job", True))

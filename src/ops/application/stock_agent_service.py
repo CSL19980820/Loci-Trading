@@ -136,7 +136,7 @@ def public_profile(profile: dict, *, summary: bool = False, ledger=None, refresh
         if ledger is not None and state["positions"]:
             held = [row["code"] for row in state["positions"]]
             placeholders = ",".join("?" for _ in held)
-            trades = [json.loads(row[0]) for row in ledger.conn.execute(
+            trades = [json.loads(row["detail_json"]) for row in ledger.conn.execute(
                 f"SELECT detail_json FROM stock_agent_trades WHERE agent_id=? AND json_extract(detail_json,'$.code') IN ({placeholders}) ORDER BY at,id", (profile["id"], *held))]
         state = enrich_workbench_state(state, now=now, trades=trades, quotes=quotes)
         if profile["config"].get("kind") == "falcon":

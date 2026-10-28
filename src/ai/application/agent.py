@@ -237,6 +237,7 @@ def run_agent(
     temperature: float = 0.3,
     thinking: str = "",
     messages: list[ChatMessage] | None = None,
+    request_instruction: Callable[[], str] | None = None,
     allow_hitl: bool = False,
     on_event: EventCallback | None = None,
     emit_terminal_event: bool = True,
@@ -253,6 +254,7 @@ def run_agent(
     流式不可用且尚未发出增量时降级为非流式 ``chat``（仅终稿 ``done``）。
     ``parallel_tool_names`` 仅列出独立只读工具，默认串行；其余工具按原顺序隔开。
     ``deadline`` 为 monotonic 绝对时间；``check_cancelled`` 与事件均在调用线程执行。
+    ``request_instruction`` 在每次模型请求前生成临时指令，不累积到消息历史。
     ``retry_stream_failures`` 仅在未输出正文/推理时，对网络故障重发一次当前流式请求。
     ``recover_interrupted_generation`` 允许内部研判丢弃断流残片并续用已完成消息；
     整个 Agent 最多恢复两次，需明确 deadline，可能产生未获用量回执的重复推理费用。
@@ -291,16 +293,22 @@ def run_agent(
     def _call_llm(round_messages: list[ChatMessage]) -> ChatResponse:
         nonlocal round_streamed_think
         checkpoint()
-        kwargs: dict[str, Any] = {
-            "system": system,
-            "max_tokens": output_budget(config, round_messages, system=system,
-                                        tools=tool_schemas, max_tokens=max_tokens, thinking=thinking),
-            "temperature": temperature,
-            "tools": tool_schemas or None,
-            "thinking": thinking,
-        }
+
+        def request_kwargs() -> dict[str, Any]:
+            checkpoint()
+            instruction = request_instruction() if request_instruction is not None else ""
+            request_system = system + "\n" + instruction if instruction else system
+            return {
+                "system": request_system,
+                "max_tokens": output_budget(config, round_messages, system=request_system,
+                                            tools=tool_schemas, max_tokens=max_tokens, thinking=thinking),
+                "temperature": temperature,
+                "tools": tool_schemas or None,
+                "thinking": thinking,
+            }
+
         if not stream:
-            result = usage.record(chat(request_config(config, deadline), round_messages, **kwargs))
+            result = usage.record(chat(request_config(config, deadline), round_messages, **request_kwargs()))
             checkpoint()
             return result
 
@@ -328,7 +336,7 @@ def run_agent(
 
         try:
             result = usage.record(chat_stream(request_config(config, deadline), round_messages,
-                                              on_delta=on_delta, **stream_options, **kwargs))
+                                              on_delta=on_delta, **stream_options, **request_kwargs()))
             checkpoint()
             return result
         except LLMError as exc:
@@ -351,13 +359,13 @@ def run_agent(
                                       "reason": "first_response_timeout" if type(cause).__name__ == "FirstResponseTimeout" else "transport_failure_before_response",
                                       "transport_error": type(cause).__name__})
                         result = usage.record(chat_stream(request_config(config, deadline), round_messages,
-                                                          on_delta=on_delta, **stream_options, **kwargs))
+                                                          on_delta=on_delta, **stream_options, **request_kwargs()))
                         checkpoint()
                         return result
                     seen.add(id(cause))
                     cause = cause.__cause__
             logger.info("流式不可用，降级非流式：%s", exc)
-            result = usage.record(chat(request_config(config, deadline), round_messages, **kwargs))
+            result = usage.record(chat(request_config(config, deadline), round_messages, **request_kwargs()))
             checkpoint()
             return result
 

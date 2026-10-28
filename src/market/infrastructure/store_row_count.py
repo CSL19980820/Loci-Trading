@@ -9,7 +9,7 @@
 - ``base_rows`` = ``COUNT(*) WHERE trade_date < base_date``，**冻结**；
 - 总行数 = ``base_rows`` + ``COUNT(*) WHERE trade_date >= base_date``：主键
   ``(trade_date, code)`` 前缀范围，尾巴只有最近一两个交易日（≈5k 行/日）；
-- 写入路径维护基数：落在基数区（``< base_date``）的行按主键逐对探测是否已存在，
+    - 写入路径维护基数：落在基数区（``< base_date``）的行按主键探测写入前后是否存在，
   只有真正新增的才计入；热库裁窗按实际删掉的行数递减；批内出现更新的交易日就把
   冻结线推进到它（区间计数，便宜）；
 - 只有没有缓存（首次 / 旧格式）时才全表 COUNT 一次。
@@ -32,12 +32,22 @@ REBUILD_INVALIDATE_DAYS = 30
 Conn = sqlite3.Connection | sqlite3.Cursor
 
 
+def _row_value(row: Any) -> Any:
+    """Read the first selected value from sqlite3.Row or dict rows."""
+    if row is None:
+        return None
+    if hasattr(row, "values"):
+        return next(iter(row.values()))
+    return row[0]
+
+
 def read_base(conn: Conn) -> tuple[str, int] | None:
     """读冻结基数 ``(base_date, base_rows)``；缺失或格式不对视为无缓存。"""
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (ROW_COUNT_KEY,)).fetchone()
-    if not row or not row[0]:
+    value = row["value"] if row and hasattr(row, "keys") else (row[0] if row else None)
+    if not value:
         return None
-    parts = str(row[0]).split("|")
+    parts = str(value).split("|")
     if len(parts) != 2 or not parts[0]:
         return None
     try:
@@ -70,7 +80,39 @@ def count_range(conn: Conn, start: str, end: str | None = None) -> int:
             "SELECT COUNT(*) FROM quotes_daily WHERE trade_date >= ? AND trade_date < ?",
             (start, end),
         ).fetchone()
-    return int(row[0] or 0)
+    value = _row_value(row)
+    return int(value or 0)
+
+
+def rebuild_quote_row_count(cursor: Conn, last_date: str | None = None) -> dict[str, int | str]:
+    """用一次精确 COUNT 重建行数缓存，并返回可审计的前缀/尾巴计数。
+
+    这是显式维护动作，不放进稳态读取路径：生产库执行它会完整扫描一次
+    ``quotes_daily``。``last_date`` 为空时取库内最大交易日，避免调用方把
+    非交易日写进冻结线。
+    """
+    date = str(last_date or "").strip()
+    if not date:
+        row = cursor.execute("SELECT MAX(trade_date) FROM quotes_daily").fetchone()
+        date = str(_row_value(row) or "") if row else ""
+    if not date:
+        write_base(cursor, "1970-01-01", 0)
+        return {"base_date": "1970-01-01", "base_rows": 0, "tail_rows": 0, "total_rows": 0}
+    total_row = cursor.execute("SELECT COUNT(*) AS count FROM quotes_daily").fetchone()
+    total = int(
+        total_row["count"] if total_row and hasattr(total_row, "keys") else _row_value(total_row) or 0
+    )
+    tail = count_range(cursor, date)
+    base_rows = total - tail
+    if base_rows < 0:
+        raise RuntimeError(f"quotes_daily 行数缓存重建得到负前缀：total={total}, tail={tail}")
+    write_base(cursor, date, base_rows)
+    return {
+        "base_date": date,
+        "base_rows": base_rows,
+        "tail_rows": tail,
+        "total_rows": total,
+    }
 
 
 def advance_base(cursor: Conn, new_date: str) -> None:
@@ -94,9 +136,8 @@ def quote_row_count(store: Any, last_date: str) -> int:
             if base is None:
                 for key in _LEGACY_KEYS:
                     cursor.execute("DELETE FROM meta WHERE key = ?", (key,))
-                total = int(cursor.execute("SELECT COUNT(*) FROM quotes_daily").fetchone()[0] or 0)
-                write_base(cursor, last_date, total - count_range(cursor, last_date))
-                return total
+                rebuilt = rebuild_quote_row_count(cursor, last_date)
+                return int(rebuilt["total_rows"])
     base_date, base_rows = base
     return base_rows + count_range(store.conn, base_date)
 
@@ -122,7 +163,7 @@ def _count_existing(cursor: Conn, pairs: list[tuple[str, str]]) -> int:
             + ") SELECT COUNT(*) FROM probe JOIN quotes_daily USING (trade_date, code)",
             [value for pair in chunk for value in pair],
         ).fetchone()
-        total += int(row[0] or 0)
+        total += int(_row_value(row) or 0)
     return total
 
 
@@ -132,8 +173,8 @@ def track_quote_upsert(
 ) -> Iterator[None]:
     """包住 ``INSERT ... ON CONFLICT DO UPDATE``（行首两列为 trade_date, code）。
 
-    进入前数出基数区里**真正新增**的行（一次批量主键探测，同一批内去重），退出后
-    记入基数，并按批内最大交易日推进冻结线。没有缓存时什么都不做。
+    同一批内去重；基数区有尚不存在的键时，在写入前后各探测一次，按实际新增数
+    记入基数。这样 SQLite 触发器忽略的插入不会被误记。没有缓存时什么都不做。
     """
     base = read_base(cursor)
     if base is None:
@@ -145,8 +186,10 @@ def track_quote_upsert(
         yield
         return
     below = [pair for pair in pairs if pair[0] < base_date]
-    added = len(below) - _count_existing(cursor, below) if below else 0
+    existing_before = _count_existing(cursor, below) if below else 0
     yield
+    added = (_count_existing(cursor, below) - existing_before
+             if existing_before < len(below) else 0)
     if added:
         write_base(cursor, base_date, base_rows + added)
     advance_base(cursor, max(pair[0] for pair in pairs))
@@ -162,8 +205,9 @@ def note_trim_below(cursor: Conn, keep_from: str) -> None:
         return
     cut = min(keep_from, base[0])
     doomed = cursor.execute(
-        "SELECT COUNT(*) FROM quotes_daily WHERE trade_date < ?", (cut,)
-    ).fetchone()[0]
+        "SELECT COUNT(*) AS count FROM quotes_daily WHERE trade_date < ?", (cut,)
+    ).fetchone()
+    doomed = doomed["count"] if doomed and hasattr(doomed, "keys") else _row_value(doomed)
     if doomed:
         write_base(cursor, base[0], base[1] - int(doomed))
 
@@ -184,10 +228,11 @@ def track_hot_window_rewrite(cursor: sqlite3.Cursor, start_date: str) -> Iterato
     if start_date >= base_date:
         yield
     else:
-        days = cursor.execute(
-            "SELECT COUNT(*) FROM trading_calendar WHERE trade_date >= ? AND trade_date < ?",
+        days_row = cursor.execute(
+            "SELECT COUNT(*) AS count FROM trading_calendar WHERE trade_date >= ? AND trade_date < ?",
             (start_date, base_date),
-        ).fetchone()[0]
+        ).fetchone()
+        days = days_row["count"] if days_row and hasattr(days_row, "keys") else _row_value(days_row)
         if int(days or 0) > REBUILD_INVALIDATE_DAYS:
             invalidate(cursor)
             yield
@@ -197,4 +242,5 @@ def track_hot_window_rewrite(cursor: sqlite3.Cursor, start_date: str) -> Iterato
         after = count_range(cursor, start_date, base_date)
         write_base(cursor, base_date, base_rows + after - before)
     row = cursor.execute("SELECT MAX(trade_date) FROM quotes_daily").fetchone()
-    advance_base(cursor, str(row[0] or "") if row else "")
+    value = _row_value(row) if row else ""
+    advance_base(cursor, str(value or ""))

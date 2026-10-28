@@ -58,9 +58,8 @@ def test_five_minute_notice_tracks_committed_watchlist(tmp_path, monkeypatch, ac
     monkeypatch.setattr(guardian, 'datetime', Clock)
     monkeypatch.setattr(guardian, 'get_config', lambda _: cfg)
     monkeypatch.setattr(guardian, 'calendar_trading_day', lambda _: True)
-    monkeypatch.setattr(guardian, 'PalaceStore', MagicMock())
-    monkeypatch.setattr(guardian, 'observe', lambda *_: [])
-    monkeypatch.setattr(guardian, 'strategy_sources', lambda _: [])
+    monkeypatch.setattr('src.ledger.PalaceStore.candidates_payload',
+                        MagicMock(side_effect=AssertionError('不应自动读取量化候选')))
     monkeypatch.setattr(guardian, 'decide', lambda *a, **k: (GuardianDecision(summary='本轮研判', orders=orders), {}))
     monkeypatch.setattr(guardian, 'data_source', lambda: {'label': 'fixture'})
     monkeypatch.setattr(guardian, 'deliver_pending', lambda *_: {})

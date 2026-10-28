@@ -76,7 +76,7 @@ def load_shares_asof(store: MarketStore, before_date: str) -> dict[str, float]:
         return {}
 
     days = [
-        str(row[0])
+        str(row[0] if not hasattr(row, "keys") else next(iter(row.values())))
         for row in store.conn.execute(
             "SELECT trade_date FROM trading_calendar"
             " WHERE trade_date < ? ORDER BY trade_date DESC LIMIT ?",
@@ -85,7 +85,7 @@ def load_shares_asof(store: MarketStore, before_date: str) -> dict[str, float]:
     ]
     if not days:
         days = [
-            str(row[0])
+            str(row[0] if not hasattr(row, "keys") else next(iter(row.values())))
             for row in store.conn.execute(
                 "SELECT DISTINCT trade_date FROM quotes_daily"
                 " WHERE trade_date < ? ORDER BY trade_date DESC LIMIT ?",
@@ -270,7 +270,7 @@ def backfill_missing_turnover(
             params.append(str(since).strip())
         where = " AND ".join(clauses)
         dates = [
-            str(row[0])
+            str(row[0] if not hasattr(row, "keys") else next(iter(row.values())))
             for row in store.conn.execute(
                 f"SELECT DISTINCT trade_date FROM quotes_daily WHERE {where} ORDER BY trade_date",
                 params,
@@ -404,7 +404,7 @@ def _star_probe_start(store: MarketStore) -> str:
         " SELECT trade_date FROM trading_calendar ORDER BY trade_date DESC LIMIT ?)",
         (_STAR_PROBE_DAYS,),
     ).fetchone()
-    return str(row[0] or "") if row else ""
+    return str(row[0] if row and not hasattr(row, "keys") else (next(iter(row.values())) if row else "") or "")
 
 
 def _inflated_star_codes(store: MarketStore) -> list[str]:
@@ -434,7 +434,7 @@ def _inflated_star_codes(store: MarketStore) -> list[str]:
         span.append(start)
 
     by_turnover = {
-        str(row[0])
+        str(row[0] if not hasattr(row, "keys") else next(iter(row.values())))
         for row in store.conn.execute(
             f"""
             SELECT code FROM quotes_daily
@@ -447,7 +447,7 @@ def _inflated_star_codes(store: MarketStore) -> list[str]:
         )
     }
     by_spot = {
-        str(row[0])
+        str(row[0] if not hasattr(row, "keys") else next(iter(row.values())))
         for row in store.conn.execute(
             f"""
             SELECT h.code FROM (
@@ -501,8 +501,8 @@ def _rescale_star_locked(store: MarketStore, since_s: str) -> dict[str, Any]:
 
     rows = int(
         store.conn.execute(
-            f"SELECT COUNT(*) FROM quotes_daily WHERE {where}", params
-        ).fetchone()[0]
+            f"SELECT COUNT(*) AS count FROM quotes_daily WHERE {where}", params
+        ).fetchone()["count"]
         or 0
     )
     if not rows:
@@ -536,7 +536,7 @@ def repair_inflated_turnover(store: MarketStore, *, since: str) -> dict[str, Any
 
     cleared = store.conn.execute(
         """
-        SELECT COUNT(*) FROM quotes_daily
+        SELECT COUNT(*) AS count FROM quotes_daily
          WHERE trade_date >= ?
            AND (
              source LIKE '%\\_spot' ESCAPE '\\'
@@ -545,7 +545,7 @@ def repair_inflated_turnover(store: MarketStore, *, since: str) -> dict[str, Any
            AND (turnover IS NOT NULL OR outstanding_share IS NOT NULL)
         """,
         (since_s, _INSANE_TURNOVER),
-    ).fetchone()[0]
+    ).fetchone()["count"]
 
     with store._transaction() as cursor:
         cursor.execute(

@@ -7,8 +7,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.ledger import GuardianStore
-from src.ops.application.guardian_context import active_strategies, observation_snapshot
-from src.ops.infrastructure.store import OpsStore
+from src.ops.application.guardian_context import observation_snapshot
 
 
 @dataclass(frozen=True)
@@ -92,10 +91,9 @@ def build_guardian_reads_router() -> APIRouter:
 
     @router.get("/research")
     def get_research() -> dict:
-        with OpsStore(None) as store, GuardianStore() as ledger:
+        with GuardianStore() as ledger:
             state = ledger.state()
-            return {"active_strategies": [{"slug": r["slug"], "name": r.get("name", r["slug"])}
-                                           for r in active_strategies(store)],
+            return {"active_strategies": [],
                     **observation_snapshot(state)}
 
     return router

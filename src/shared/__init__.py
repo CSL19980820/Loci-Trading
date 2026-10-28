@@ -8,6 +8,7 @@ from src.shared.paths import (
     palace_db,
     writable_root,
 )
+from src.shared.postgres import database_url, postgres_enabled
 
 __all__ = [
     "PROJECT_ROOT",
@@ -17,4 +18,6 @@ __all__ = [
     "ops_db",
     "palace_db",
     "writable_root",
+    "database_url",
+    "postgres_enabled",
 ]

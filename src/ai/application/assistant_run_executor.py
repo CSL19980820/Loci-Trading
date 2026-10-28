@@ -43,6 +43,8 @@ from src.ai.application.context_usage import estimate_tokens
 from src.ai.application.quota import record_llm_usage
 from src.ai.application.system_toolbus import build_system_toolbus
 from src.ai.infrastructure.assistant_store import AssistantStore
+from src.shared.paths import ops_db as _default_ops_db
+from src.shared.postgres import CompatConnection, uses_primary_path
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +80,7 @@ class RunCancelWatch:
         self._run_id = run_id
         self._interval = interval
         self._lock = threading.Lock()
-        self._conn: sqlite3.Connection | None = None
+        self._conn: CompatConnection | None = None
         self._last = -math.inf
         self._cancelled = False
 
@@ -91,16 +93,26 @@ class RunCancelWatch:
                 return
             self._last = now
             try:
-                if self._conn is None:
-                    self._conn = sqlite3.connect(self._ops_db, timeout=5, check_same_thread=False)
-                row = self._conn.execute(
-                    "SELECT status, cancel_requested FROM ai_agent_runs WHERE id = ?", (self._run_id,)
-                ).fetchone()
-            except sqlite3.Error as exc:
+                if uses_primary_path(self._ops_db, _default_ops_db()):
+                    if self._conn is None:
+                        self._conn = CompatConnection()
+                        self._conn.raw.execute("SET search_path TO ops, public")
+                        self._conn.raw.commit()
+                    conn = self._conn
+                else:
+                    conn = sqlite3.connect(self._ops_db, timeout=5)
+                    conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                        "SELECT status, cancel_requested FROM ai_agent_runs WHERE id = ?",
+                        (self._run_id,),
+                    ).fetchone()
+                if conn is not self._conn:
+                    conn.close()
+            except Exception as exc:
                 # 读不到标记不能把正常回答判死；下个间隔再看。
                 logger.debug("读取 AI 运行取消标记失败：%s", exc)
                 return
-        if row is not None and (row[1] or str(row[0]) == "cancelled"):
+        if row is not None and (row["cancel_requested"] or str(row["status"]) == "cancelled"):
             self._cancelled = True
             raise CancelledError("AI 运行已取消")
 

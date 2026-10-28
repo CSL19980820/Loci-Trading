@@ -23,9 +23,6 @@ from collections.abc import Callable
 from typing import Any
 
 from src.ops.application.ensure_alert_scan_job import ensure_managed_alert_scan_job
-from src.ops.application.ensure_intraday_capture_job import (
-    ensure_managed_intraday_capture_job,
-)
 from src.ops.application.ensure_prune_tenant_job import ensure_prune_tenant_job
 from src.ops.application.ensure_guardian_review_jobs import ensure_guardian_review_jobs, ensure_exchange_calendar_job
 from src.ops.application.jobs.guardian_delivery import ensure_guardian_delivery_job
@@ -50,11 +47,9 @@ def ensure_system_jobs(store: Any) -> None:
     for label, ensure in (
         ("交易所休市日历", lambda: ensure_exchange_calendar_job(store)),
         ("托管行情同步", store.ensure_managed_market_sync_jobs),
-        ("托管行情热库重建", store.ensure_managed_hot_rebuild_job),
         ("托管行情库体检", store.ensure_managed_market_quality_job),
         ("托管运维清理", store.ensure_managed_prune_job),
         # 上游没有历史：漏一天永久缺一天，必须托管（ADR-014）。
-        ("托管盘中留存采集", lambda: ensure_managed_intraday_capture_job(store)),
     ):
         _ensure_step(label, ensure)
 

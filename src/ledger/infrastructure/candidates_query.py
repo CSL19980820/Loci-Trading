@@ -5,6 +5,7 @@ from datetime import date
 from typing import Any
 
 from src.ledger.infrastructure.candidates_sql import (
+    EXCLUDE_BACKFILL_PATTERNS,
     EXCLUDE_BACKFILL_SQL,
     EXCLUDE_STALE_API_SCREEN_SQL,
     LIVE_CANDIDATE_SQL,
@@ -22,7 +23,9 @@ from src.ledger.infrastructure.store_types import (
 class CandidateQueryMixin:
     def candidate_outcome_rows(self, *, limit: int = 500) -> list[dict[str, Any]]:
         """复盘 T+N 用：跨日去重后的候选裁决行（默认排除 backfill / :history）。"""
-        backfill_where = " AND ".join(EXCLUDE_BACKFILL_SQL)
+        backfill_where = " AND ".join(
+            "IFNULL(source, '') NOT LIKE ?" for _ in EXCLUDE_BACKFILL_PATTERNS
+        )
         rows = self.conn.execute(
             f"""
             SELECT id, occurred_on, code, name, score, decision, tier,
@@ -37,7 +40,7 @@ class CandidateQueryMixin:
             ORDER BY occurred_on DESC, code
             LIMIT ?
             """,
-            (int(limit),),
+            (*EXCLUDE_BACKFILL_PATTERNS, int(limit)),
         )
         return [dict(row) for row in rows]
 
@@ -60,8 +63,10 @@ class CandidateQueryMixin:
         day_clauses = ["occurred_on = ?"]
         params: list[Any] = [target_date]
         if not include_backfill:
-            day_clauses.extend(EXCLUDE_BACKFILL_SQL)
-            day_clauses.append(EXCLUDE_STALE_API_SCREEN_SQL)
+            day_clauses.extend("IFNULL(source, '') NOT LIKE ?" for _ in EXCLUDE_BACKFILL_PATTERNS)
+            params.extend(EXCLUDE_BACKFILL_PATTERNS)
+            day_clauses.append(EXCLUDE_STALE_API_SCREEN_SQL.replace("'api:screen%'", "?"))
+            params.append("api:screen%")
         day_where = " AND ".join(day_clauses)
         rows = self.conn.execute(
             f"""
@@ -126,8 +131,10 @@ class CandidateQueryMixin:
         clauses: list[str] = []
         params: list[Any] = []
         if not include_backfill:
-            clauses.extend(EXCLUDE_BACKFILL_SQL)
-            clauses.append(EXCLUDE_STALE_API_SCREEN_SQL)
+            clauses.extend("IFNULL(source, '') NOT LIKE ?" for _ in EXCLUDE_BACKFILL_PATTERNS)
+            params.extend(EXCLUDE_BACKFILL_PATTERNS)
+            clauses.append(EXCLUDE_STALE_API_SCREEN_SQL.replace("'api:screen%'", "?"))
+            params.append("api:screen%")
         if code and code.strip():
             clauses.append("code = ?")
             params.append(code.strip())
@@ -288,7 +295,9 @@ class CandidateQueryMixin:
             clauses.append("occurred_on <= ?")
             params.append(end)
         if live_only:
-            clauses.extend(LIVE_CANDIDATE_SQL)
+            clauses.extend("IFNULL(source, '') NOT LIKE ?" for _ in EXCLUDE_BACKFILL_PATTERNS)
+            params.extend(EXCLUDE_BACKFILL_PATTERNS)
+            clauses.extend(LIVE_CANDIDATE_SQL[len(EXCLUDE_BACKFILL_PATTERNS):])
         where = " AND ".join(clauses)
         params.append(int(limit))
         rows = self.conn.execute(

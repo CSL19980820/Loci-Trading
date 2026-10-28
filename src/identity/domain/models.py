@@ -84,16 +84,22 @@ def iso(moment: datetime) -> str:
     return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def parse_iso(raw: str | None) -> datetime | None:
+def parse_iso(raw: str | datetime | None) -> datetime | None:
     if not raw:
         return None
+    if isinstance(raw, datetime):
+        return (
+            raw.astimezone(timezone.utc)
+            if raw.tzinfo is not None
+            else raw.replace(tzinfo=timezone.utc)
+        )
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
         return None
 
 
-def is_expired(raw: str | None, *, now: datetime | None = None) -> bool:
+def is_expired(raw: str | datetime | None, *, now: datetime | None = None) -> bool:
     moment = parse_iso(raw)
     if moment is None:
         return True

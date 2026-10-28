@@ -153,8 +153,7 @@ CREATE TABLE IF NOT EXISTS source_route_attempts (
     PRIMARY KEY (receipt_id, attempt_no)
 ) WITHOUT ROWID;
 
-CREATE INDEX IF NOT EXISTS idx_source_attempts_source
-    ON source_route_attempts(source_id, state);
+-- idx_source_attempts_source 无独立消费者，既有库由显式 reclaim 删除。
 """
 
 #: intel 域 MCP 快照缓存（可整表删除重建）；DDL 归属 market.db。

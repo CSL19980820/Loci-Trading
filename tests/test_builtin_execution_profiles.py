@@ -117,3 +117,32 @@ def test_resonance_recursive_ema_keeps_actual_origin_and_existing_warmup():
     assert profile.origin == "sensitive" and profile.lookback_bars is None
     assert profile.metadata_fields == ("__raw_close",)
     assert engine.warmup_bars == 100
+
+
+def test_yangshi_is_opt_in_for_anchor_invariant_range_reuse():
+    engine = YangshiTailPickerV1()
+    assert engine.execution_profile().range_adjustment_anchor_invariant
+    panels = _panels(seed=31)
+    expected = engine.compute(panels)
+    for scale in (0.17, 5.3):
+        equivalent_anchor = {
+            **panels,
+            **{
+                name: panels[name] * pd.Series(
+                    {code: scale for code in panels[name].columns},
+                )
+                for name in ("open", "high", "low", "close")
+            },
+        }
+        actual = engine.compute(equivalent_anchor)
+        pd.testing.assert_frame_equal(actual.signals, expected.signals)
+        pd.testing.assert_frame_equal(actual.watch_signals, expected.watch_signals)
+        for name in expected.factors:
+            pd.testing.assert_frame_equal(
+                actual.factors[name],
+                expected.factors[name],
+                check_exact=False,
+                rtol=1e-12,
+                atol=1e-12,
+                obj=name,
+            )

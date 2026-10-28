@@ -2,6 +2,7 @@
 from __future__ import annotations
 import math
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -51,7 +52,11 @@ def executable_quote(code: str, action: str, quantity: int, quote: dict[str, Any
             raise ValueError(problem)
         if quantity <= 0:
             raise ValueError("模拟申报股数必须为正数")
-        return _paper_price_proxy(code, action, quantity, quote, now)
+        limit_evidence = _paper_buy_limit(code, action, quote, now)
+        execution_quote = _paper_price_proxy(code, action, quantity, quote, now)
+        if limit_evidence:
+            execution_quote["execution_evidence"]["limit_up_check"] = limit_evidence
+        return execution_quote
     book = quote.get("order_book")
     if not isinstance(book, dict) or book.get("code") != code or not book.get("source"):
         raise ValueError("缺少可核验的实时盘口，本轮未成交；分钟价格不能证明可成交")
@@ -91,6 +96,72 @@ def executable_quote(code: str, action: str, quantity: int, quote: dict[str, Any
         **({"liquidity_assumption": "full_quantity_beyond_displayed_depth" if insufficient else "displayed_depth",
             "requested_quantity": quantity, "price_proxy": False} if paper else {}),
         "used_quantity": used_quantity, "book": dict(book)}}
+
+
+def _paper_buy_limit(code: str, action: str, quote: dict[str, Any], now: datetime) -> dict[str, Any] | None:
+    """行情价模拟不能假定涨停排队成交；缺少可靠涨停参考时买入暂不执行。"""
+    if action not in {"buy", "add"}:
+        return None
+
+    def positive(value: Any) -> Decimal | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            return None
+        return Decimal(str(value))
+
+    cent = Decimal("0.01")
+    previous = positive(quote.get("prev_close"))
+    upper = positive(quote.get("limit_up"))
+    reference = "quote_limit_up" if upper is not None else ""
+    reference_quote = quote
+    supplement = quote.get("limit_reference")
+    if (isinstance(supplement, dict) and not supplement.get("error") and supplement.get("code") == code
+            and isinstance(supplement.get("source"), str) and supplement["source"].strip()
+            and str(supplement.get("trade_date") or "").replace("-", "") == now.strftime("%Y%m%d")):
+        if upper is None and positive(supplement.get("limit_up")) is not None:
+            upper, reference = positive(supplement["limit_up"]), "same_day_limit_reference"
+            reference_quote = supplement
+        if previous is None and positive(supplement.get("prev_close")) is not None:
+            previous, reference_quote = positive(supplement["prev_close"]), supplement
+    # 当日同股同源盘口只可提供静态涨停参考，不使用盘口深度或对手价撮合。
+    book = quote.get("order_book")
+    if (upper is None and isinstance(book, dict) and not book.get("error") and book.get("code") == code
+            and book.get("source") == quote.get("source") and fresh_quote(book, now)):
+        upper = positive(book.get("limit_up"))
+        reference = "same_day_limit_up" if upper is not None else ""
+        if upper is not None:
+            reference_quote = book
+
+    expected = None
+    ratio = None
+    if previous is not None:
+        from src.market.domain.universe import classify_board, is_st_name
+        board = classify_board(code)
+        ratio = {"star": Decimal("0.20"), "chi_next": Decimal("0.20"), "bse": Decimal("0.30")}.get(board)
+        if board == "main":
+            # 沪深2026版交易规则自7月6日起将主板风险警示股票也调整为10%。
+            historical_st = now.date().isoformat() < "2026-07-06" and is_st_name(reference_quote.get("name", quote.get("name", "")))
+            ratio = Decimal("0.05") if historical_st else Decimal("0.10")
+        if ratio is not None:
+            expected = (previous * (1 + ratio)).quantize(cent, rounding=ROUND_HALF_UP)
+            expected = max(expected, previous.quantize(cent, rounding=ROUND_HALF_UP) + cent)
+    if upper is not None:
+        if upper != upper.quantize(cent, rounding=ROUND_HALF_UP) or (previous is not None and upper <= previous):
+            raise ValueError("当日涨停参考价无效，本轮不买入或加仓")
+        if expected is not None and upper != expected:
+            raise ValueError("当日涨停参考价与昨收、板块规则不一致，本轮不买入或加仓")
+    elif expected is not None:
+        upper, reference = expected, "prev_close_board_rule"
+    else:
+        raise ValueError("缺少可靠当日涨停价或昨收参考，本轮不买入或加仓；不得用现价或涨幅反推昨收")
+    price = Decimal(str(quote.get("price", quote.get("current_price")))).quantize(cent, rounding=ROUND_HALF_UP)
+    if price >= upper:
+        raise ValueError(f"最新报价{price}已达涨停价{upper}，禁止模拟买入或加仓；等待开板后以新行情重新研判")
+    return {"limit_up": float(upper), "reference": reference,
+            "prev_close": float(previous) if previous is not None else None,
+            "limit_ratio": float(ratio) if ratio is not None else None,
+            "source": reference_quote.get("source"), "trade_date": reference_quote.get("trade_date"),
+            "trade_time": reference_quote.get("trade_time"), "code": code,
+            "checked_at": now.isoformat()}
 
 
 def _paper_price_proxy(code: str, action: str, quantity: int, quote: dict[str, Any], now: datetime) -> dict[str, Any]:

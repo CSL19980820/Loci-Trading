@@ -13,7 +13,7 @@ def test_forward_context_does_not_auto_inherit_old_strategy_trade_templates():
     original=deepcopy(facts)
     result=agent.planning_facts(facts)
     assert 'previous_reviews' not in result and 'cycles' not in result and 'experience' not in result
-    assert result['strategy_reference_pool']==facts['strategy_reference_pool']
+    assert 'strategy_reference_pool' not in result
     assert '历史' in result['history_access']
     assert facts == original
 
@@ -41,7 +41,7 @@ def test_planning_contract_allows_no_buy_and_requires_own_basis():
     assert agent.ForwardPlan().plans == []
     prompt=review_system(DEFAULTS,'daily',schema,stage='planning')
     assert '全部研究工具' in prompt
-    assert '候选只是来源' in prompt
+    assert '系统不预载量化策略' in prompt
 
 
 @pytest.mark.parametrize('period', ['daily', 'weekly'])

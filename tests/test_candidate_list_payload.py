@@ -7,9 +7,11 @@ import sqlite3
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from psycopg._queries import _query2pg
 
 from src.ledger import PalaceStore
 from src.ledger.api.router import build_ledger_router
+from src.shared.postgres import translate_sql
 
 
 @pytest.fixture
@@ -174,3 +176,35 @@ def test_http_static_list_route_and_default_history_scope(ledger_client, candida
     response = ledger_client.get("/api/candidates/list", params={"slim": "true"})
     assert response.status_code == 200
     assert {row["id"] for row in response.json()} == {ids[key] for key in ("live", "lower", "other", "manual")}
+
+
+def test_candidate_page_query_uses_postgres_safe_parameters(candidate_db):
+    path, ids = candidate_db
+
+    class PostgresCheckedConnection:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, sql, params=None):
+            if params is not None:
+                _query2pg(translate_sql(sql).encode(), "utf-8")
+            return self.conn.execute(sql, params or ())
+
+    with PalaceStore(path) as store:
+        sqlite_conn = store.conn
+        store.conn = PostgresCheckedConnection(sqlite_conn)
+        try:
+            rows = store.candidates_list_payload(slim=True)
+            filtered = store.candidates_list_payload(
+                strategy="fixture-gap", decision="观察", start="2026-09-28",
+                end="2026-09-28", include_backfill=True, slim=True,
+            )
+            daily = store.candidates_payload("2026-09-29")
+            history = store.candidates_by_strategy("fixture-gap")
+        finally:
+            store.conn = sqlite_conn
+
+    assert {row["id"] for row in rows} == {ids[key] for key in ("live", "lower", "other", "manual")}
+    assert [row["id"] for row in filtered] == [ids["backfill"]]
+    assert {row["id"] for row in daily} == {ids[key] for key in ("live", "lower", "other")}
+    assert {row["id"] for row in history} == {ids["live"], ids["lower"]}

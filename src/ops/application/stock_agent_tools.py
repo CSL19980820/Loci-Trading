@@ -80,7 +80,7 @@ def stock_agent_tools(protocol: str, *, profile: dict, payload: dict, palace_pat
             if body["name"] in scoped_reads or body["name"].split("__")[-1] in LEADER_STOCK_READS:
                 body["description"] = "仅可查询" + scope_label + "：" + ("、".join(sorted(research_codes)) or "无") + "。" + body.get("description", "")
                 if body["name"] == "guardian_quotes":
-                    body["description"] = "仅查询" + scope_label + "的新鲜报价和盘口，禁止查询范围外股票。"
+                    body["description"] = "仅查询" + scope_label + ("的新鲜行情价，模拟成交不要求盘口确认。" if is_falcon else "的新鲜报价和盘口。") + "禁止查询范围外股票。"
     if is_falcon:
         # 允许读取已存在的选股定义以质疑评分，不提供筛选/预览/回测执行能力。
         schemas.extend([

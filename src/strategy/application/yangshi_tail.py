@@ -98,7 +98,11 @@ class YangshiTailPickerV1:
     # 回测器的 hold_days 从实际买入日计：T+1 买入、T+3 收盘卖出是 2 个持仓日。
     screen_hold_days = 2
     screen_stop_loss_pct = None
-    strategy_revision = 'builtin:yangshi-tail-v1:2'
+    # Selection only consumes quote aggregates. Detailed receipt and attempt
+    # evidence remains available from the market store, but loading the complete
+    # provenance archive for every screen costs more than the strategy itself.
+    source_evidence_summary = True
+    strategy_revision = 'builtin:yangshi-tail-v1:5'
     version = 'v1.1'
     version_history = [
         {
@@ -184,7 +188,6 @@ class YangshiTailPickerV1:
 
     def required_fields(self) -> tuple[str, ...]:
         return (
-            "open",
             "high",
             "low",
             "close",
@@ -205,6 +208,10 @@ class YangshiTailPickerV1:
             pure=True, causal=True, column_mode="coupled", origin="finite",
             lookback_bars=SCORE_POOL_DAYS + 1,
             metadata_fields=("__raw_close", "__instrument_names__"),
+            # All decisions use relative price changes or raw prices. A common
+            # qfq scale change between target-day anchors therefore leaves the
+            # signals, watch set and every published factor unchanged.
+            range_adjustment_anchor_invariant=True,
         )
 
     def compute(

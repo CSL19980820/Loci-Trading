@@ -29,6 +29,8 @@ from src.ledger.infrastructure.store_types import (
     normalize_code,
     normalize_date,
 )
+from src.shared.paths import palace_db as _default_palace_db
+from src.shared.postgres import CompatConnection, explicit_postgres_required, uses_primary_path
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -56,8 +58,16 @@ class PalaceStore(
 
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)
+        self._use_postgres = (
+            explicit_postgres_required()
+            and uses_primary_path(db_path, _default_palace_db())
+        )
+        if self._use_postgres:
+            self.conn = CompatConnection()
+            self.conn.raw.execute("SET search_path TO ledger, public")
+            self.conn.raw.commit()
+            return
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        # timeout/busy_timeout：并发读写（多 API 同时打同一库）时等锁而不是立刻失败。
         self.conn = sqlite3.connect(self.db_path, timeout=30.0)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -83,7 +93,11 @@ class PalaceStore(
         savepoint = f"palace_tx_{id(cursor)}"
         started = False
         try:
-            cursor.execute(f"SAVEPOINT {savepoint}" if nested else "BEGIN IMMEDIATE")
+            cursor.execute(
+                f"SAVEPOINT {savepoint}"
+                if nested
+                else ("BEGIN" if self._use_postgres else "BEGIN IMMEDIATE")
+            )
             started = True
             yield cursor
         except BaseException:

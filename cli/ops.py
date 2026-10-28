@@ -296,7 +296,11 @@ def cmd_job_run(args: argparse.Namespace) -> int:
     with _store(args) as store:
         outcome = run_job(store, args.name, context=_context(args, store), trigger="manual")
     if outcome["status"] == "failed":
-        print(f"任务失败：{outcome['error']}", file=sys.stderr)
+        error = str(outcome.get("error") or "").strip()
+        if not error:
+            result = outcome.get("result") if isinstance(outcome.get("result"), dict) else {}
+            error = str(result.get("summary") or "任务未通过，请查看运行记录")
+        print(f"任务失败：{error}", file=sys.stderr)
         return 1
     print(f"任务完成，耗时 {outcome['duration_ms']} ms")
     print(json.dumps(outcome["result"], ensure_ascii=False, indent=2, default=str)[:4000])

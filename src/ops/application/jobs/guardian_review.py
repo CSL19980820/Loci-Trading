@@ -1,15 +1,12 @@
 """盘前计划、日复盘与周复盘；不调用任何交易撮合函数。"""
-from copy import deepcopy
 from datetime import datetime
 from hashlib import sha256
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.ledger import GuardianStore, PalaceStore
+from src.ledger import GuardianStore
 from src.market import calendar_trading_day
-from src.shared.paths import palace_db
 from src.ops.application.guardian_config import get_config
-from src.ops.application.guardian_context import reference_days, strategy_sources, quant_reference_candidates, observe
 from src.ops.application.guardian_decision import render_positions
 from src.ops.application.guardian_review_agent import generate_review
 from src.ops.application.guardian_review_data import build_review_facts, report_window, PERIOD_LABELS
@@ -112,16 +109,6 @@ def execute_guardian_review(config: dict[str, Any], context: JobContext) -> dict
             with context.market() as market:
                 facts = build_review_facts(ledger, market, period, day, now)
                 facts["correction_reason"] = (existing or {}).get("result", {}).get("correction_reason", "")
-                if day == now.date().isoformat():
-                    with PalaceStore(context.palace_db or palace_db()) as palace:
-                        reference = quant_reference_candidates(observe(palace, reference_days(facts["planning_trade_date"]), ledger.state(), []))
-                    facts["strategy_reference_pool"] = [{"code": r["code"], "name": r["name"], "strategies": r["strategies"],
-                        "signals": deepcopy(r["signals"])} for r in reference if r['signals']]
-                    facts["reference_trading_days"] = reference_days(facts["planning_trade_date"])
-                    facts["active_strategies"] = strategy_sources(store)
-                    facts["reference_pool_as_of"] = now.isoformat()
-                    facts["reference_pool_usage"] = "本次读取的参考池供后续计划，不用于重建日内时点信号；日内操作以cycles和trades为准。"
-                    facts["evidence_ids"].extend(f"reference:{r['code']}" for r in reference)
             context.check_cancelled()
             analysis, usage, sources = generate_review(store, cfg, facts, check_cancelled=context.check_cancelled, palace_path=context.palace_db,
                 resume_checkpoint=(existing or {}).get('result', {}).get('_research_checkpoint'),

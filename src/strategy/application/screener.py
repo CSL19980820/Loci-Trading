@@ -28,6 +28,7 @@ from src.market import (
 from src.strategy.application.catalog import get
 from src.strategy.application.compute_runtime import (
     computation_scope, compute_result, execution_profile, range_compute_end,
+    range_compute_start, range_reuse_active,
 )
 from src.strategy.application.price_constraints import (
     attach_raw_limit_close,
@@ -72,6 +73,7 @@ class ScreenResult:
     universe: dict[str, Any] = field(default_factory=dict)
     universe_funnel: dict[str, int] = field(default_factory=dict)
     data_snapshot: dict[str, Any] = field(default_factory=dict)
+    cache_hit: bool = False
 
     def summary(self) -> str:
         return (
@@ -148,7 +150,10 @@ def screen(
     health_check: bool = True,
     on_progress: ProgressCallback | None = None,
     data_snapshot: Mapping[str, Any] | None = None,
+    finalization: Mapping[str, Any] | None = None,
+    finalization_checked: bool = False,
     live_overlay: bool | None = None,
+    result_cache: bool = False,
 ) -> ScreenResult:
     """在指定交易日跑一次全市场选股。
 
@@ -198,6 +203,48 @@ def screen(
         live_overlay = should_overlay_live(trade_date)
     today = date.today().isoformat()
 
+    cache_trade_date = trade_date
+    if result_cache and data_snapshot is None and not live_overlay:
+        reusable_days = store.trading_days(end=trade_date)
+        cache_trade_date = reusable_days[-1] if reusable_days else trade_date
+    cache_options = {
+        "params": resolved_params,
+        "codes": list(codes) if codes else None,
+        "universe": dict(effective_universe) if effective_universe else None,
+        "adjust": effective_adjust,
+        "extra_bars": extra_bars,
+        "health_check": health_check,
+        "skip_universe_safety": skip_universe_safety,
+    }
+
+    def finish(result: ScreenResult) -> ScreenResult:
+        result.elapsed_seconds = time.monotonic() - started
+        if result_cache and cache_trade_date and not live_overlay and data_snapshot is None:
+            from src.strategy.application.screen_result_cache import save_screen_result
+
+            save_screen_result(store, engine, result, **cache_options)
+        return result
+
+    if result_cache and cache_trade_date and not live_overlay and data_snapshot is None:
+        from src.strategy.application.screen_result_cache import load_screen_result
+
+        cached = load_screen_result(
+            store, engine, cache_trade_date, **cache_options
+        )
+        if cached is not None:
+            if health_check and cached.health is None:
+                from src.market import guard_market_health
+
+                cached.health = guard_market_health(
+                    store, trade_date=cache_trade_date,
+                ).to_dict()
+                cached.elapsed_seconds = time.monotonic() - started
+                from src.strategy.application.screen_result_cache import save_screen_result
+
+                save_screen_result(store, engine, cached, **cache_options)
+            _progress("cache", 100, "使用已校验的定稿结果…")
+            return cached
+
     health: dict[str, Any] | None = None
     if health_check and not codes:
         from src.market import guard_market_health
@@ -227,8 +274,26 @@ def screen(
     start, end = _resolve_start(
         store, trade_date, bars, full_history=requires_full_history
     )
+    snapshot_start = start
+    shared_start = range_compute_start()
+    if shared_start and shared_start < start:
+        # A range task evaluates every day from one origin. Besides improving
+        # task-local reuse, this keeps causal input keys identical across days.
+        start = shared_start
     if live_overlay:
         end = today
+    # 刷新/体检开关只影响可选准备，不能关闭正式收盘行情的门禁；核验实际读库，
+    # 同时覆盖同步 HTTP、异步手动任务、定时任务以及落后的热库。
+    from src.market.application.screen_spot import ScreenSpotError, ensure_closed_day_finalized
+
+    if not finalization_checked:
+        try:
+            finalization = ensure_closed_day_finalized(store, trade_date or end)
+        except ScreenSpotError as exc:
+            raise StrategyError(str(exc)) from exc
+    if finalization is not None:
+        # 排队跨过收盘时刻的盘中请求，定稿后也只能使用正式日 K。
+        live_overlay = False
     profile = execution_profile(engine, resolved_params)
     if not profile.pure:
         # Bound the ordinary reader before it builds a large SQL/pivot heap.
@@ -248,7 +313,7 @@ def screen(
     else:
         snapshot = dict(
             store.data_snapshot(
-                codes=list(resolved.codes), start=start, end=end,
+                codes=list(resolved.codes), start=snapshot_start, end=end,
                 include_source_details=False,
                 **({"source_evidence_mode": "compact"} if isinstance(store, MarketStore) else {}),
                 **({"source_summary_only": True}
@@ -260,11 +325,13 @@ def screen(
         "fields": list(engine.required_fields()),
         "adjust": effective_adjust,
         "history_mode": "full" if requires_full_history else "window",
-        "start": start,
+        "start": snapshot_start,
         "end": end,
         "live_overlay": bool(live_overlay),
         "strategy_validation": runtime_validation,
     }
+    if finalization is not None:
+        result_snapshot["eod_finalization"] = finalization
     _progress(
         "universe",
         38,
@@ -273,7 +340,7 @@ def screen(
 
     if not resolved.codes:
         funnel = resolved.funnel.to_dict()
-        return ScreenResult(
+        return finish(ScreenResult(
             strategy_slug=engine.slug,
             strategy_revision=str(getattr(engine, "strategy_revision", "")),
             trade_date=end,
@@ -286,7 +353,7 @@ def screen(
             universe=resolved.spec,
             universe_funnel=funnel,
             data_snapshot=_seal_snapshot(store, result_snapshot),
-        )
+        ))
 
     _progress("panel", 48, f"加载面板 {len(resolved.codes)} 只…")
     pre_candidate_method = getattr(engine, "live_candidate_codes", None) if live_overlay else None
@@ -397,7 +464,7 @@ def screen(
     if reference is None:
         funnel = resolved.funnel.to_dict()
         funnel["panel_columns"] = 0
-        return ScreenResult(
+        return finish(ScreenResult(
             strategy_slug=engine.slug,
             strategy_revision=str(getattr(engine, "strategy_revision", "")),
             trade_date=end,
@@ -410,11 +477,22 @@ def screen(
             universe=resolved.spec,
             universe_funnel=funnel,
             data_snapshot=_seal_snapshot(store, result_snapshot),
-        )
+        ))
 
     # One range calculation can serve later targets only when their actual inputs
     # match: original origin, axes, metadata and per-day adjustment are all keyed.
-    future_end = range_compute_end(engine, panels, resolved_params) if dynamic_validation and prepared is None and profile.pure and profile.causal and not live_overlay else None
+    range_namespace = (
+        str(engine.slug),
+        repr(effective_universe),
+        tuple(codes or ()),
+        tuple(reference.columns),
+        profile.metadata_fields,
+    ) if profile.range_adjustment_anchor_invariant else None
+    future_end = (
+        range_compute_end(engine, panels, resolved_params)
+        if prepared is None and profile.pure and profile.causal and not live_overlay
+        else None
+    )
     if future_end and future_end > end:
         _progress("compute", 57, "计算区间共享信号…")
         future = store.load_panel(fields=engine.required_fields(), codes=resolved.codes,
@@ -437,7 +515,10 @@ def screen(
         if future_reference is not None:
             first_probe = reference.index[max(0, len(reference.index) - 3)]
             wanted = list(future_reference.index[future_reference.index >= first_probe])
-            compute_result(engine, future, resolved_params, dates=wanted)
+            compute_result(
+                engine, future, resolved_params, dates=wanted,
+                range_namespace=range_namespace,
+            )
         del future, future_reference
 
     _progress("compute", 58, f"计算信号 · {engine.name}…")
@@ -453,8 +534,11 @@ def screen(
     else:
         if prepared is not None:
             result = prepared.result
-        elif dynamic_validation:
-            result = compute_result(engine, panels, resolved_params)
+        elif dynamic_validation or range_reuse_active():
+            result = compute_result(
+                engine, panels, resolved_params,
+                range_namespace=range_namespace,
+            )
         else:
             # Reviewed builtins need only the requested signal day. Their daily
             # origin/qfq anchor varies, so speculative cache hashes have no reuse.
@@ -514,7 +598,7 @@ def screen(
     funnel["signals_true"] = len(picks)
     funnel["watch_signals_true"] = len(watch_picks)
 
-    return ScreenResult(
+    return finish(ScreenResult(
         strategy_slug=engine.slug,
         strategy_revision=str(getattr(engine, "strategy_revision", "")),
         trade_date=target_date,
@@ -529,7 +613,7 @@ def screen(
         universe=resolved.spec,
         universe_funnel=funnel,
         data_snapshot=_seal_snapshot(store, result_snapshot),
-    )
+    ))
 
 
 def _cell(panel: pd.DataFrame | None, trade_date: str, code: str) -> float | None:

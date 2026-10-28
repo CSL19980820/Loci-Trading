@@ -52,7 +52,7 @@ def test_rejection_then_new_decision_fills_and_reconciles_actual_money(tmp_path)
             now = START.replace(minute=minute)
             current = decision(plan_id, 'execute')
             validate_opening_reviews(current, pending)
-            quotes = {'600000': {'code': '600000', 'price': price, 'source': 'fixture',
+            quotes = {'600000': {'code': '600000', 'price': price, 'prev_close': 10, 'source': 'fixture',
                                  'trade_date': '2026-09-21', 'trade_time': now.strftime('%H:%M:%S')}}
             state, fills, rejects = simulate(ledger.state(), current, [], quotes, now, require_execution_terms=True)
             updates = opening_plan_updates(pending, current, fills, rejects)

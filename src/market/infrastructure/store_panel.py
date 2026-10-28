@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from typing import Any
 import sqlite3
 
+import numpy as np
 import pandas as pd
 
 from src.market.infrastructure.duckdb_panel import (
@@ -17,7 +18,9 @@ from src.market.infrastructure.polars_panel import (
 )
 from src.market.infrastructure.store_codes import MarketError, normalize_code
 from src.market.infrastructure.store_panel_window import (
-    cached_factor_rows, cached_raw_panels, read_raw_panel_arrays,
+    cache_adjusted_panels, cache_adjustment_factor_panel,
+    cached_adjusted_panels, cached_adjustment_factor_panel, cached_factor_rows,
+    cached_raw_panels, read_raw_panel_arrays,
 )
 from src.market.infrastructure.store_schema import PANEL_FIELDS, PRICE_FIELDS
 
@@ -116,6 +119,13 @@ class MarketPanelMixin:
         _require_bounded_range(codes, start, end)
 
         needed = list(dict.fromkeys(fields))
+        normalized = [normalize_code(code) for code in codes] if codes else None
+        cached_adjusted = cached_adjusted_panels(
+            self, needed, codes=normalized, start=start, end=end,
+            adjust=adjust, min_bars=min_bars, raw_price_fields=raw_price_fields,
+        )
+        if cached_adjusted is not None:
+            return cached_adjusted
         # 复权要用 close 之外的价格列时，仍只需按 code 取因子，与字段无关。
         columns = ", ".join(["trade_date", "code", *needed])
         where_sql = ""
@@ -127,7 +137,6 @@ class MarketPanelMixin:
             where_sql += " AND trade_date <= ?"
             params.append(end)
         if codes:
-            normalized = [normalize_code(code) for code in codes]
             where_sql += f" AND code IN ({','.join('?' * len(normalized))})"
             params.extend(normalized)
 
@@ -164,21 +173,28 @@ class MarketPanelMixin:
             for field in price_fields:
                 panels[field] = panels[field] * ratio
         # 合并放在列筛选和复权之后，避免重新生成逐列内存块。
-        return {field: _consolidate(panel) for field, panel in {**panels, **raw_prices}.items()}
+        result = {field: _consolidate(panel) for field, panel in {**panels, **raw_prices}.items()}
+        cache_adjusted_panels(
+            self, needed, codes=normalized, start=start, end=end,
+            adjust=adjust, min_bars=min_bars, raw_price_fields=raw_price_fields,
+            panels=result,
+        )
+        return result
 
     def _read_raw_panels(
         self, needed: list[str], columns: str, where_sql: str, params: list[Any],
         *, codes: Sequence[str] | None = None,
     ) -> dict[str, pd.DataFrame]:
         flat: pd.DataFrame | None = None
-        if polars_panel_enabled():
+        pg_connection = getattr(self, "_use_postgres", False)
+        if not pg_connection and polars_panel_enabled():
             flat = read_quotes_flat_polars(
                 self.conn,
                 columns_sql=columns,
                 where_sql=where_sql,
                 params=params,
             )
-        if flat is None and duckdb_panel_enabled():
+        if flat is None and not pg_connection and duckdb_panel_enabled():
             flat = read_quotes_flat_duckdb(
                 self.conn,
                 columns_sql=columns,
@@ -189,11 +205,17 @@ class MarketPanelMixin:
             # The native reader and task-local range cache share one streaming
             # boundary; ordinary reads have no cache budget or SQL row limit.
             for _ in range(3):
-                version = (self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0])
+                version = (
+                    None if pg_connection else
+                    (self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0])
+                )
                 loaded = read_raw_panel_arrays(
                     self.conn, needed, where="1=1" + where_sql, params=params, codes=codes,
                 )
-                current = (self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0])
+                current = (
+                    None if pg_connection else
+                    (self.conn.total_changes, self.conn.execute("PRAGMA data_version").fetchone()[0])
+                )
                 if loaded is not None and current == version:
                     panels, present = loaded
                     if present.empty:
@@ -216,6 +238,9 @@ class MarketPanelMixin:
         codes = list(dict.fromkeys(str(code) for code in reference.columns))
         if reference.empty or not codes:
             return ratio
+        cached_panel = cached_adjustment_factor_panel(self, reference, adjust)
+        if cached_panel is not None:
+            return cached_panel
 
         first_date = str(reference.index[0])
         last_date = str(reference.index[-1])
@@ -277,25 +302,47 @@ class MarketPanelMixin:
                 """,
                 [*codes, first_date, last_date, first_date, last_date, last_date],
             ).fetchall()
-        if not rows:
-            return ratio
-        sparse = pd.DataFrame(
-            [(str(row[0]), str(row[1]), float(row[2])) for row in rows],
-            columns=["code", "trade_date", "hfq_factor"],
+        if rows and hasattr(rows[0], "keys"):
+            rows = [
+                (row["code"], row["trade_date"], row["hfq_factor"])
+                for row in rows
+            ]
+        by_code: dict[str, dict[str, float]] = {}
+        for code, day, factor in rows:
+            code = str(code)
+            if code in reference.columns:
+                by_code.setdefault(code, {})[str(day)] = float(factor)
+
+        days = [str(day) for day in reference.index]
+        values = np.ones((len(days), len(codes)), dtype=float)
+        positions = {code: index for index, code in enumerate(codes)}
+        for code, changes in by_code.items():
+            ordered = sorted(changes.items())
+            anchors = [(day, factor) for day, factor in ordered if day <= first_date]
+            future = [(day, factor) for day, factor in ordered
+                      if first_date < day <= last_date]
+            later = [(day, factor) for day, factor in ordered if day > last_date]
+            if anchors:
+                current = anchors[-1][1]
+            elif future:
+                current = future[0][1]
+            elif later:
+                # Existing semantics back-fill the first known post-window
+                # factor for a stock with no history at the window start.
+                current = later[0][1]
+            else:
+                continue
+            change_index = 0
+            column = positions[code]
+            for row_index, day in enumerate(days):
+                while change_index < len(future) and future[change_index][0] <= day:
+                    current = future[change_index][1]
+                    change_index += 1
+                values[row_index, column] = current
+        aligned = pd.DataFrame(
+            values, index=reference.index, columns=reference.columns, copy=False,
         )
-        sparse = sparse[sparse["code"].isin(set(reference.columns))]
-        if sparse.empty:
-            return ratio
-        wide = sparse.pivot(index="trade_date", columns="code", values="hfq_factor")
-        aligned = (
-            wide.reindex(wide.index.union(reference.index))
-            .sort_index()
-            .ffill()
-            .bfill()
-            .reindex(reference.index)
-            .reindex(columns=reference.columns)
-        )
-        aligned = aligned.astype(float).fillna(1.0)
+        cache_adjustment_factor_panel(self, reference, aligned)
         if adjust == "hfq":
             return aligned
         if adjust == "qfq":

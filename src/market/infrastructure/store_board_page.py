@@ -24,8 +24,8 @@ class MarketBoardPageMixin:
         clause = " AND ".join(where)
         total = int(
             self.conn.execute(
-                f"SELECT COUNT(*) FROM instruments WHERE {clause}", params
-            ).fetchone()[0]
+                f"SELECT COUNT(*) AS count FROM instruments WHERE {clause}", params
+            ).fetchone()["count"]
         )
         rows = self.conn.execute(
             f"SELECT * FROM instruments WHERE {clause} ORDER BY code LIMIT ? OFFSET ?",
@@ -104,7 +104,9 @@ class MarketBoardPageMixin:
             WHERE {clause}
         """
         total = int(
-            self.conn.execute(f"SELECT COUNT(*) {base_from}", join_params).fetchone()[0]
+            self.conn.execute(
+                f"SELECT COUNT(*) AS count {base_from}", join_params
+            ).fetchone()["count"]
         )
         rows = self.conn.execute(
             f"SELECT i.* {base_from} ORDER BY {order} LIMIT ? OFFSET ?",
@@ -182,7 +184,9 @@ class MarketBoardPageMixin:
         """
         join_params: list[Any] = [lookback, lookback, *params]
         total = int(
-            self.conn.execute(f"SELECT COUNT(*) {base_from}", join_params).fetchone()[0]
+            self.conn.execute(
+                f"SELECT COUNT(*) AS count {base_from}", join_params
+            ).fetchone()["count"]
         )
         rows = self.conn.execute(
             f"SELECT i.* {base_from} ORDER BY {order} LIMIT ? OFFSET ?",
@@ -238,7 +242,9 @@ class MarketBoardPageMixin:
         """
         join_params: list[Any] = [lookback, *params]
         total = int(
-            self.conn.execute(f"SELECT COUNT(*) {base_from}", join_params).fetchone()[0]
+            self.conn.execute(
+                f"SELECT COUNT(*) AS count {base_from}", join_params
+            ).fetchone()["count"]
         )
         rows = self.conn.execute(
             f"SELECT i.* {base_from} ORDER BY {order} LIMIT ? OFFSET ?",

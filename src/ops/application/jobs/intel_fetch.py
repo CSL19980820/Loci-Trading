@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from src.ops.application.jobs.context import JobContext
@@ -24,6 +25,25 @@ QUOTA_POOLS = ("structured", "skill")
 
 #: 会影响扇出的 Job 配置键；自检按这几个键还原「调度器实际会打多少次」。
 _KNOB_KEYS = ("theme_top_n", "stock_flow_top_n", "screener_count", "intraday_theme_top_n")
+_TRANSIENT_RETRY_DELAYS = (2.0, 5.0)
+#: Some provider datasets update while the rest of this 80+ call job continues.
+#: Retry deferred transient failures again at the tail: by then several minutes
+#: have elapsed, and retrying only in the first seven seconds is too early.
+_DEFERRED_RETRY_DELAYS = (0.0, 10.0, 30.0)
+
+
+def _retryable_intel_error(message: str) -> bool:
+    """Only retry provider states that explicitly say the same call may succeed."""
+    text = str(message or "").casefold()
+    return any(
+        marker in text
+        for marker in (
+            "-32028",
+            "rate limit exceeded",
+            "-32052",
+            "指数落盘数据暂未更新完成",
+        )
+    )
 
 
 def resolve_pool(value: Any = None) -> str:
@@ -53,6 +73,7 @@ def _run_call_list(
     receipts: list[dict[str, Any]] = []
     prior: dict[str, dict[str, Any]] = {}
     stats = {"ok": 0, "failed": 0, "cached": 0, "quota_skipped": 0}
+    deferred: list[tuple[dict[str, Any], str, dict[str, Any]]] = []
 
     with context.market() as market:
         for item in calls:
@@ -61,43 +82,136 @@ def _run_call_list(
                 continue
             arguments = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
             use_cache = bool(item.get("cache", True))
-            try:
-                payload = call_mcp_tool(
-                    tool,
-                    arguments,
-                    server=server,
-                    pool=pool,
-                    cache=use_cache,
-                    cache_max_age_minutes=cache_max_age_minutes if use_cache else None,
-                    market_store=market,
-                )
-            except McpQuotaError as exc:
-                stats["quota_skipped"] += 1
-                receipts.append({"tool": tool, "ok": False, "skipped": True, "error": str(exc)})
-                logger.warning("intel_fetch 配额用尽，剩余调用跳过：%s", exc)
+            payload: dict[str, Any] | None = None
+            last_error = ""
+            attempts = 0
+            for attempt in range(len(_TRANSIENT_RETRY_DELAYS) + 1):
+                attempts = attempt + 1
+                try:
+                    payload = call_mcp_tool(
+                        tool,
+                        arguments,
+                        server=server,
+                        pool=pool,
+                        cache=use_cache if attempt == 0 else False,
+                        cache_max_age_minutes=cache_max_age_minutes if use_cache else None,
+                        market_store=market,
+                    )
+                except McpQuotaError as exc:
+                    stats["quota_skipped"] += 1
+                    receipts.append(
+                        {"tool": tool, "ok": False, "skipped": True, "error": str(exc)}
+                    )
+                    logger.warning("intel_fetch 配额用尽，剩余调用跳过：%s", exc)
+                    return receipts, prior, stats
+                except Exception as exc:
+                    last_error = str(exc)
+                    if (
+                        _retryable_intel_error(last_error)
+                        and attempt < len(_TRANSIENT_RETRY_DELAYS)
+                    ):
+                        delay = _TRANSIENT_RETRY_DELAYS[attempt]
+                        logger.info(
+                            "intel_fetch 瞬时错误重试 %s（%s/%s，%.1fs）：%s",
+                            tool,
+                            attempt + 1,
+                            len(_TRANSIENT_RETRY_DELAYS),
+                            delay,
+                            last_error[:200],
+                        )
+                        time.sleep(delay)
+                        continue
+                    break
+                if not payload.get("is_error"):
+                    break
+                last_error = str(payload.get("text") or "")
+                if (
+                    _retryable_intel_error(last_error)
+                    and attempt < len(_TRANSIENT_RETRY_DELAYS)
+                ):
+                    delay = _TRANSIENT_RETRY_DELAYS[attempt]
+                    logger.info(
+                        "intel_fetch 瞬时错误重试 %s（%s/%s，%.1fs）：%s",
+                        tool,
+                        attempt + 1,
+                        len(_TRANSIENT_RETRY_DELAYS),
+                        delay,
+                        last_error[:200],
+                    )
+                    time.sleep(delay)
+                    continue
                 break
-            except Exception as exc:
-                stats["failed"] += 1
-                receipts.append({"tool": tool, "ok": False, "error": str(exc)})
-                logger.warning("intel_fetch 调用失败 %s: %s", tool, exc)
-                continue
 
-            ok = not bool(payload.get("is_error"))
+            ok = bool(payload is not None and not payload.get("is_error"))
             if ok:
                 stats["ok"] += 1
                 prior[tool] = payload
             else:
                 stats["failed"] += 1
-            if payload.get("cached"):
+            cached = bool(payload and payload.get("cached"))
+            if cached:
                 stats["cached"] += 1
-            receipts.append(
-                {
-                    "tool": tool,
-                    "ok": ok,
-                    "cached": bool(payload.get("cached")),
-                    "error": "" if ok else str(payload.get("text") or "")[:200],
-                }
-            )
+            receipt = {
+                "tool": tool,
+                "ok": ok,
+                "cached": cached,
+                "attempts": attempts,
+                "error": "" if ok else last_error[:200],
+            }
+            receipts.append(receipt)
+            if not ok and _retryable_intel_error(last_error):
+                deferred.append((item, tool, receipt))
+
+        # The initial retries are deliberately short so a fast provider flap is
+        # recovered without delaying the entire recipe. Dataset-not-ready states
+        # often clear only after the remaining calls have run, so give failures
+        # three bounded tail attempts before deciding the run is failed.
+        for delay in _DEFERRED_RETRY_DELAYS:
+            if not deferred:
+                break
+            if delay:
+                time.sleep(delay)
+            remaining: list[tuple[dict[str, Any], str, dict[str, Any]]] = []
+            for item, tool, receipt in deferred:
+                arguments = (
+                    item.get("arguments")
+                    if isinstance(item.get("arguments"), dict)
+                    else {}
+                )
+                use_cache = bool(item.get("cache", True))
+                payload: dict[str, Any] | None = None
+                last_error = ""
+                try:
+                    payload = call_mcp_tool(
+                        tool,
+                        arguments,
+                        server=server,
+                        pool=pool,
+                        cache=False,
+                        cache_max_age_minutes=cache_max_age_minutes if use_cache else None,
+                        market_store=market,
+                    )
+                except McpQuotaError as exc:
+                    stats["quota_skipped"] += 1
+                    receipt["error"] = str(exc)[:200]
+                    logger.warning("intel_fetch 尾盘重试配额用尽：%s", exc)
+                    continue
+                except Exception as exc:
+                    last_error = str(exc)
+                else:
+                    if not payload.get("is_error"):
+                        receipt.update(ok=True, cached=False, error="")
+                        receipt["attempts"] = int(receipt["attempts"]) + 1
+                        stats["failed"] -= 1
+                        stats["ok"] += 1
+                        prior[tool] = payload
+                        continue
+                    last_error = str(payload.get("text") or "")
+                receipt["attempts"] = int(receipt["attempts"]) + 1
+                receipt["error"] = last_error[:200]
+                if _retryable_intel_error(last_error):
+                    remaining.append((item, tool, receipt))
+            deferred = remaining
     return receipts, prior, stats
 
 

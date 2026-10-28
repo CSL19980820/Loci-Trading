@@ -45,8 +45,11 @@ def fold_opening_plans(cycles, as_of):
 
 
 def pending_opening_plans(ledger, now):
+    from src.ops.application.guardian_memory import current_research
+    state = ledger.state()
     return [{key: value for key, value in p.items() if key != 'history'}
-            for p in fold_opening_plans(ledger.opening_plan_cycles(now.date().isoformat()), now) if p['status'] not in TERMINAL]
+            for p in fold_opening_plans(ledger.opening_plan_cycles(now.date().isoformat()), now)
+            if p['status'] not in TERMINAL and current_research({'slot': p['source_slot']}, state)]
 
 
 def validate_opening_reviews(decision, plans, *, withdrawn_plan_ids=frozenset()):

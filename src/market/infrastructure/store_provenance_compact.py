@@ -2,17 +2,94 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from copy import deepcopy
+import sys
 from typing import TYPE_CHECKING, Any
 
 from src.shared.evidence_compact import (
     compact_source_evidence, RECEIPT_LIMIT, RECEIPT_SOURCE, SAMPLE_LIMIT,
 )
 from src.market.infrastructure.store_provenance_window import cached_quote_evidence
+from src.market.infrastructure.store_panel_window import _ACTIVE_WINDOW
 
 if TYPE_CHECKING:
     from src.market.infrastructure.store import MarketStore
 
 _IN_CHUNK = 900
+_METADATA_FIELDS = ("receipt_id", "code", "state", "unresolved", "generated_at", "selected_source")
+
+
+def _cache_size(value: Any) -> int:
+    size = sys.getsizeof(value)
+    if isinstance(value, dict):
+        return size + sum(_cache_size(key) + _cache_size(item) for key, item in value.items())
+    if isinstance(value, (tuple, list)):
+        return size + sum(_cache_size(item) for item in value)
+    return size
+
+
+def _cache_add(state: Any, kind: str, key: Any, value: Any) -> None:
+    # A conservative allowance covers dict growth and entry bookkeeping in addition
+    # to the retained keys and values; over-budget entries simply stay uncached.
+    size = 256 + _cache_size(kind) + _cache_size(key) + _cache_size(value)
+    if state.provenance_bytes + size <= state.max_provenance_bytes:
+        state.provenance_cache.setdefault(kind, {})[key] = value
+        state.provenance_bytes += size
+
+
+def _provenance_state(
+    store: MarketStore, *, start: str | None, end: str | None,
+) -> Any:
+    state = _ACTIVE_WINDOW.get()
+    if (state is None or state.store is not store or state.conn is not store.conn
+            or not start or not end or start > end or start < state.start or end > state.end
+            or state.max_provenance_bytes <= 0 or not state.refresh_provenance()):
+        return None
+    return state
+
+
+def _cached_ids(state: Any, kind: str, ids: Sequence[str], reader: Any) -> Any:
+    if state is None:
+        return reader(ids)
+    version = state.provenance_version
+    cache = state.provenance_cache.get(kind, {})
+    unique_ids = list(dict.fromkeys(ids))
+    missing = [receipt_id for receipt_id in unique_ids if receipt_id not in cache]
+    if missing:
+        loaded = reader(missing)
+        if kind == "metadata":
+            by_id = {receipt_id: [] for receipt_id in missing}
+            for row in loaded:
+                by_id[str(row["receipt_id"])].append(tuple(row[field] for field in _METADATA_FIELDS[1:]))
+        else:
+            by_id = loaded
+        if not state.refresh_provenance() or state.provenance_version != version:
+            return reader(ids)
+        for receipt_id in missing:
+            _cache_add(state, kind, receipt_id, by_id[receipt_id])
+    else:
+        by_id = {}
+    values = {receipt_id: cache.get(receipt_id, by_id.get(receipt_id)) for receipt_id in unique_ids}
+    if kind == "counts":
+        return values
+    rows = [dict(zip(_METADATA_FIELDS, (receipt_id, *values_tuple)))
+            for receipt_id in unique_ids for values_tuple in values[receipt_id]]
+    rows.sort(key=lambda row: (str(row["generated_at"] or ""), str(row["receipt_id"])))
+    return rows
+
+
+def _cached_call(state: Any, kind: str, key: Any, reader: Any) -> Any:
+    if state is None:
+        return reader()
+    version = state.provenance_version
+    cache = state.provenance_cache.get(kind, {})
+    if key in cache:
+        return deepcopy(cache[key])
+    value = reader()
+    if not state.refresh_provenance() or state.provenance_version != version:
+        return reader()
+    _cache_add(state, kind, key, deepcopy(value))
+    return value
 
 
 def _receipt_metadata(store: MarketStore, receipt_ids: Sequence[str]) -> list[Any]:
@@ -78,27 +155,60 @@ def read_compact_source_evidence(
     else:
         linked_ids = store._linked_receipt_ids(codes, start=start, end=end)
     unlinked_ids = store._unlinked_receipt_ids(codes, start=start, end=end) if include_details else []
-    metadata = _receipt_metadata(store, list(dict.fromkeys([*linked_ids, *unlinked_ids])))
+    state = _provenance_state(store, start=start, end=end)
+    metadata = _cached_ids(state, "metadata", list(dict.fromkeys([*linked_ids, *unlinked_ids])),
+                           lambda ids: _receipt_metadata(store, ids))
     ids = [str(row["receipt_id"]) for row in metadata]
-    counts = _attempt_counts(store, ids)
+    counts = _cached_ids(state, "counts", ids, lambda requested: _attempt_counts(store, requested))
     failed = [row for row in metadata if row["unresolved"] or str(row["state"] or "") == "failed"]
     failed_ids = [str(row["receipt_id"]) for row in failed[:RECEIPT_LIMIT]]
-    failed_rows = store._receipt_rows(
-        codes, start=start, end=end, linked_ids=failed_ids, include_unlinked=False,
+    failed_rows = _cached_call(
+        state, "failed_receipts", tuple(failed_ids),
+        lambda: [dict(row) for row in store._receipt_rows(
+            codes, start=start, end=end, linked_ids=failed_ids, include_unlinked=False,
+        )],
     ) if failed_ids else []
     failed_rows = [row for row in failed_rows
                    if row["unresolved"] or str(row["state"] or "") == "failed"][:RECEIPT_LIMIT]
-    failed_attempts = store._attempts_by_receipt(failed_ids) if failed_ids else {}
+    failed_attempts = _cached_call(
+        state, "failed_attempts", tuple(failed_ids), lambda: store._attempts_by_receipt(failed_ids),
+    ) if failed_ids else {}
     receipts = [store._receipt_detail(row, failed_attempts[str(row["receipt_id"])]) for row in failed_rows]
+    # Complete receipts within the sample budget can share one bounded lookup;
+    # the first overflowing receipt still uses the original per-receipt LIMIT.
+    prefix_ids: list[str] = []
+    prefix_count = 0
+    for row in metadata:
+        receipt_id = str(row["receipt_id"])
+        count = counts[receipt_id]
+        if prefix_count + count > SAMPLE_LIMIT:
+            break
+        if count:
+            prefix_ids.append(receipt_id)
+            prefix_count += count
+        if prefix_count == SAMPLE_LIMIT:
+            break
+    prefix = _cached_call(
+        state, "attempt_prefix", tuple(prefix_ids), lambda: store._attempts_by_receipt(prefix_ids),
+    ) if prefix_ids else {}
+    prefix_remaining = len(prefix_ids)
     attempts = []
     for row in metadata:
         if len(attempts) >= SAMPLE_LIMIT:
             break
         receipt_id = str(row["receipt_id"])
         if counts[receipt_id]:
-            sample = store._attempts_by_receipt([receipt_id], max_rows=SAMPLE_LIMIT - len(attempts))
+            limit = SAMPLE_LIMIT - len(attempts)
+            if prefix_remaining:
+                sample = prefix
+                prefix_remaining -= 1
+            else:
+                sample = _cached_call(
+                    state, "attempt_sample", (receipt_id, limit),
+                    lambda: store._attempts_by_receipt([receipt_id], max_rows=limit),
+                )
             attempts.extend({"receipt_id": receipt_id, "code": str(row["code"]), **attempt}
-                            for attempt in sample[receipt_id])
+                            for attempt in sample[receipt_id][:limit])
     facts = store._aggregate_quote_rows(rows)
     sources = store._source_summaries(
         rows, receipt_map={str(row["receipt_id"]): row for row in metadata} if detailed_quotes else None,

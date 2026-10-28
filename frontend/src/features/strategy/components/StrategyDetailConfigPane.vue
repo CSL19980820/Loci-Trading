@@ -22,6 +22,8 @@ export interface StrategyDetailConfigForm {
   pushWecom: boolean
   runHour: number
   runMinute: number
+  prepareHour: number
+  prepareMinute: number
   intervalMinutes: number
   windowStartHour: number
   windowStartMinute: number
@@ -33,11 +35,16 @@ const props = defineProps<{
   config: StrategyDetailConfigForm
   loadingJob: boolean
   displayRuns: string[]
+  twoStage?: boolean
 }>()
 
 const emit = defineEmits<{
   'patch-config': [partial: Partial<StrategyDetailConfigForm>]
 }>()
+
+const prepareHours = Array.from({ length: 9 }, (_, i) => i + 15)
+const prepareMinutes = Array.from({ length: 60 }, (_, i) => i)
+const auctionMinutes = [25, 26, 27, 28, 29]
 
 function patch(partial: Partial<StrategyDetailConfigForm>): void {
   emit('patch-config', partial)
@@ -96,7 +103,7 @@ function runLabel(raw: string): string {
       </div>
 
       <template v-if="config.scheduleEnabled">
-        <div class="cfg__row">
+        <div v-if="!twoStage" class="cfg__row">
           <span class="cfg__label">方式</span>
           <ToggleGroup
             type="single"
@@ -111,20 +118,42 @@ function runLabel(raw: string): string {
           </ToggleGroup>
         </div>
 
-        <div v-if="config.scheduleMode === 'once'" class="cfg__row">
-          <span class="cfg__label">时点</span>
+        <div v-if="twoStage" class="cfg__row">
+          <span class="cfg__label">晚上预选</span>
+          <div class="cfg__time">
+            <Select :model-value="config.prepareHour" @update:model-value="(value) => patch({ prepareHour: Number(value) })">
+              <SelectTrigger size="sm" class="cfg__select" aria-label="预选小时"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="h in prepareHours" :key="h" :value="h">{{ pad(h) }}</SelectItem>
+              </SelectContent>
+            </Select>
+            <span class="cfg__sep">:</span>
+            <Select :model-value="config.prepareMinute" @update:model-value="(value) => patch({ prepareMinute: Number(value) })">
+              <SelectTrigger size="sm" class="cfg__select" aria-label="预选分钟"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="m in prepareMinutes" :key="m" :value="m">{{ pad(m) }}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div v-if="twoStage || config.scheduleMode === 'once'" class="cfg__row">
+          <div>
+            <span class="cfg__label">{{ twoStage ? '早上选股' : '时点' }}</span>
+            <p v-if="twoStage" class="cfg__hint">竞价确认窗口 09:25–09:29</p>
+          </div>
           <div class="cfg__time">
             <Select :model-value="config.runHour" @update:model-value="(value) => patch({ runHour: Number(value) })">
               <SelectTrigger size="sm" class="cfg__select" aria-label="小时"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem v-for="h in HOUR_OPTS" :key="h" :value="h">{{ pad(h) }}</SelectItem>
+                <SelectItem v-for="h in (twoStage ? [9] : HOUR_OPTS)" :key="h" :value="h">{{ pad(h) }}</SelectItem>
               </SelectContent>
             </Select>
             <span class="cfg__sep">:</span>
             <Select :model-value="config.runMinute" @update:model-value="(value) => patch({ runMinute: Number(value) })">
               <SelectTrigger size="sm" class="cfg__select" aria-label="分钟"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem v-for="m in MINUTE_OPTS" :key="m" :value="m">{{ pad(m) }}</SelectItem>
+                <SelectItem v-for="m in (twoStage ? auctionMinutes : MINUTE_OPTS)" :key="m" :value="m">{{ pad(m) }}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -175,7 +204,7 @@ function runLabel(raw: string): string {
         </template>
 
         <div class="cfg__row">
-          <span class="cfg__label">{{ config.scheduleMode === 'once' ? '下次' : '接下来' }}</span>
+          <span class="cfg__label">{{ twoStage ? '下次早选' : config.scheduleMode === 'once' ? '下次' : '接下来' }}</span>
           <div v-if="displayRuns.length" class="cfg__runs">
             <span v-for="row in displayRuns" :key="row" class="cfg__run">{{ runLabel(row) }}</span>
           </div>
@@ -184,7 +213,10 @@ function runLabel(raw: string): string {
       </template>
 
       <div class="cfg__row">
-        <span class="cfg__label">推送企微</span>
+        <div>
+          <span class="cfg__label">推送企微</span>
+          <p v-if="twoStage" class="cfg__hint">交易日按北京时间执行；仅推送早上选股结果，晚上预选不推送。</p>
+        </div>
         <Switch
           :model-value="config.pushWecom"
           :disabled="!config.scheduleEnabled"
@@ -322,5 +354,11 @@ function runLabel(raw: string): string {
 
 .cfg__muted {
   color: var(--text-tertiary);
+}
+
+.cfg__hint {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-aux);
 }
 </style>

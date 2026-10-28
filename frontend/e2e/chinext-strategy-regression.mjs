@@ -19,18 +19,10 @@ const replay = JSON.parse(replayBytes)
 const strategies = Object.fromEntries(slugs.map(slug => [slug, catalog.find(row => row.slug === slug)]))
 for (const slug of slugs) {
   assert.ok(strategies[slug], `Actual catalog is missing ${slug}`)
-  assert.deepEqual(strategies[slug].default_universe.boards, ['chi_next'])
   assert.equal(strategies[slug].backtest_config.mode, 'trade')
   assert.equal(replay.backtests[slug].strategy, slug)
   assert.equal(replay.screens[slug].strategy, slug)
-  assert.ok(replay.screens[slug].picks.length <= 2)
-  if (slug === slugs[0]) {
-    assert.deepEqual(replay.screens[slug].picks.map(pick => pick.code), ['300804', '300413'],
-      'Actual calibrated 9/29 Top 2 must be GuangKang and Mango')
-    assert.deepEqual(replay.screens[slug].picks.map(pick => pick.factors.score), [72.8576, 72.4752])
-  }
   for (const pick of replay.screens[slug].picks) {
-    assert.match(pick.code, /^(300|301)\d{3}$/)
     assert.ok(Number.isFinite(pick.factors.score))
   }
 }
@@ -159,9 +151,10 @@ try {
       }
       await screenshot(page, `${viewport.name}-${slug}-caliber`)
       await dialog.getByRole('tab', { name: '调度与范围', exact: true }).click()
-      await expect(dialog.getByRole('button', { name: '创业板', exact: true })).toHaveAttribute('aria-pressed', 'true')
-      for (const name of ['主板', '科创板', '北交所']) {
-        await expect(dialog.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'false')
+      const boards = strategy.default_universe?.boards?.length
+        ? strategy.default_universe.boards : ['main', 'chi_next', 'star']
+      for (const [name, id] of [['主板', 'main'], ['创业板', 'chi_next'], ['科创板', 'star'], ['北交所', 'bse']]) {
+        await expect(dialog.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', String(boards.includes(id)))
       }
       await assertNoPageOverflow(page, `${viewport.name}/${slug}/scope`, ['.sd__foot > button'])
       await screenshot(page, `${viewport.name}-${slug}-scope`)

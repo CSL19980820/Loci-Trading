@@ -21,6 +21,7 @@ from src.strategy.application.screener import ScreenResult, screen
 from src.strategy.application import (  # noqa: F401
     contraction_rebreakout,
     double_yin_low_open,
+    first_wave_strategy,
     impulse_inside_breakout,
     qianlong,
     tail_resonance,

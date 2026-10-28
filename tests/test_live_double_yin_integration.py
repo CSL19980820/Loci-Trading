@@ -39,7 +39,8 @@ def forbidden(*_args, **_kwargs):
 def flow(tmp_path, monkeypatch):
     engine = SimpleNamespace(
         slug=SLUG, name="大涨倍量阴次日低开", requires_realtime_inputs=True,
-        screen_staggered=False, screen_push_wecom=False, screen_default_top_n=2,
+        screen_staggered=False, screen_push_wecom=True, screen_default_top_n=2,
+        screen_schedule_configurable=True,
         screen_allowed_boards=("main",),
         default_universe={"preset": "default_a_share", "boards": ["main"]},
         screen_schedule={"mode": "once", "run_hour": 9, "run_minute": 25},
@@ -196,7 +197,7 @@ def test_managed_morning_is_fixed_925_and_prepare_follows_normal_eod_stagger(flo
         assert evening["cron"] == f"{staggered_minute(30)} 15 * * mon-fri"
         assert morning["config"]["top_n"] == 2
         assert evening["kind"] == "screen_prepare" and evening["config"]["top_n"] == 0
-        assert not morning["config"]["push_wecom"] and not evening["config"]["push_wecom"]
+        assert morning["config"]["push_wecom"] and not evening["config"]["push_wecom"]
         assert not evening["config"]["record_candidates"]
         assert morning["config"]["universe"]["boards"] == ["main"]
         assert evening["config"]["universe"]["boards"] == ["main"]
@@ -209,7 +210,7 @@ def test_managed_morning_is_fixed_925_and_prepare_follows_normal_eod_stagger(flo
         assert not store.get_job_by_name("screen-prepare:" + SLUG)["enabled"]
 
 
-def test_off_reenable_and_unbind_update_both_tasks_and_never_enable_notifications(flow):
+def test_off_reenable_and_unbind_update_both_tasks_and_preserve_morning_notifications(flow):
     app = FastAPI()
     app.include_router(strategy_router.build_strategy_router(
         write_dependency=lambda: None, ops_db=flow.ops, palace_db=flow.palace,
@@ -220,7 +221,7 @@ def test_off_reenable_and_unbind_update_both_tasks_and_never_enable_notification
                                        "universe": {"preset": "default_a_share", "boards": ["main", "chi_next"]}})
         assert response.status_code == 200, response.text
         assert response.json()["cron"] == "25 9 * * mon-fri"
-        assert not response.json()["config"]["push_wecom"]
+        assert response.json()["config"]["push_wecom"]
         assert not response.json()["config"]["use_ai_pick"]
         assert response.json()["config"]["universe"]["boards"] == ["main"]
         with OpsStore(flow.ops) as store:
@@ -306,14 +307,14 @@ def test_prepare_incomplete_status_is_never_reported_as_success(flow, monkeypatc
         screen_prepare.execute_screen_prepare({"strategy": SLUG}, JobContext())
 
 
-def test_registry_real_strategy_skips_local_market_queue_and_mutes_stale_push_config(flow, monkeypatch):
+def test_registry_real_strategy_skips_local_market_queue_and_honors_push_config(flow, monkeypatch):
     from src.ops.application.jobs import registry
     monkeypatch.setattr(registry, "screen_memory_slot", forbidden)
     monkeypatch.setattr(registry, "market_heavy_slot", forbidden)
     observed = []
     def push(**kw):
         observed.append(kw)
-        assert kw["job"]["config"]["push_wecom"] is False
+        assert kw["job"]["config"]["push_wecom"] is True
     monkeypatch.setattr(registry, "_maybe_push_wecom", push)
     with OpsStore(flow.ops) as store:
         job_id = store.create_job(name="screen:" + SLUG, kind="screen",
@@ -323,3 +324,67 @@ def test_registry_real_strategy_skips_local_market_queue_and_mutes_stale_push_co
         persisted = store.get_run(result["run_id"])
         assert persisted["result"]["data_snapshot"]["quote_source"] == "sina"
         assert len(observed) == 1
+
+
+@pytest.mark.parametrize("push", [True, False])
+def test_two_stage_schedule_roundtrip_survives_managed_resync(flow, push):
+    app = FastAPI()
+    app.include_router(strategy_router.build_strategy_router(
+        write_dependency=lambda: None, ops_db=flow.ops, palace_db=flow.palace,
+    ))
+    with TestClient(app) as api:
+        path = f"/api/strategies/{SLUG}/job"
+        saved = api.put(path, json={"schedule_mode": "once", "run_hour": 9, "run_minute": 27,
+                                  "prepare_hour": 16, "prepare_minute": 30, "push_wecom": push})
+        assert saved.status_code == 200, saved.text
+        with OpsStore(flow.ops) as store:
+            store.ensure_managed_screen_jobs()
+            store.ensure_managed_screen_jobs()
+            morning = store.get_job_by_name("screen:" + SLUG)
+            evening = store.get_job_by_name("screen-prepare:" + SLUG)
+            assert morning["cron"] == "27 9 * * mon-fri"
+            assert morning["config"]["snapshot_time"] == "09:27"
+            assert morning["config"]["push_wecom"] is push
+            assert evening["cron"] == "30 16 * * mon-fri"
+            assert not evening["config"]["push_wecom"]
+        loaded = api.get(path).json()
+        assert loaded["prepare_schedule"]["run_hour"] == 16
+        assert loaded["prepare_schedule"]["run_minute"] == 30
+        assert loaded["config"]["schedule"]["run_minute"] == 27
+        # Older clients omitting preparation fields must not reset the evening time.
+        assert api.put(path, json={"schedule_mode": "once"}).status_code == 200
+        assert api.get(path).json()["prepare_schedule"]["run_hour"] == 16
+
+
+@pytest.mark.parametrize("values", [
+    {"run_hour": 9, "run_minute": 24}, {"run_hour": 9, "run_minute": 30},
+    {"schedule_mode": "interval"}, {"prepare_hour": 14}, {"prepare_minute": 60},
+])
+def test_two_stage_rejects_unusable_schedule_before_writing(flow, values):
+    app = FastAPI()
+    app.include_router(strategy_router.build_strategy_router(
+        write_dependency=lambda: None, ops_db=flow.ops, palace_db=flow.palace,
+    ))
+    with TestClient(app) as api:
+        response = api.put(f"/api/strategies/{SLUG}/job", json={"schedule_mode": "once", **values})
+        assert response.status_code == 422, response.text
+    with OpsStore(flow.ops) as store:
+        assert store.get_job_by_name("screen:" + SLUG) is None
+
+
+def test_morning_notification_reaches_dispatch_with_selected_stocks(flow, monkeypatch):
+    from src.ops.application.jobs import registry
+    from src.ops.application import notify_dispatch
+    deliveries = []
+    def dispatch(_store, **kwargs):
+        deliveries.append(kwargs)
+        return {"success": True, "sent": ["wecom"]}
+    monkeypatch.setattr(notify_dispatch, "dispatch_text", dispatch)
+    with OpsStore(flow.ops) as store:
+        job_id = store.create_job(name="screen:" + SLUG, kind="screen",
+                                  config={"strategy": SLUG, "push_wecom": True, "record_candidates": True})
+        result = registry.run_job(store, job_id, context=JobContext(ops_store=store, palace_db=flow.palace))
+        assert result["status"] == "success", result
+        assert store.get_run(result["run_id"])["result"]["pushed"] is True
+    assert len(deliveries) == 1
+    assert "600001" in deliveries[0]["body"] and "600002" in deliveries[0]["body"]

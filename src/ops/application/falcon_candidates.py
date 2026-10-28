@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import closing
 import inspect
 import json
 import re
@@ -11,11 +12,15 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from src.ledger import EXCLUDE_BACKFILL_SQL, EXCLUDE_STALE_API_SCREEN_SQL
+from psycopg import Error as PostgresError
+
+from src.ledger import EXCLUDE_BACKFILL_PATTERNS, EXCLUDE_STALE_API_SCREEN_SQL
 from src.market import scheduled_trading_days
 from src.ops.application.retired_slugs import is_retired_strategy_slug
 from src.ops.application.screen.storage import get_screen_package
 from src.ops.application.skills import resolve_skill
+from src.shared.paths import palace_db
+from src.shared.postgres import CompatConnection, explicit_postgres_required, uses_primary_path
 from src.strategy import is_builtin_registered
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -201,17 +206,26 @@ def project_falcon_candidate_scope(scope: dict | None) -> dict:
 
 def _quant_candidates(palace_path: str, cutoff: datetime, dates: list[str], active_slugs: set[str]) -> list[dict]:
     # 读现有库，不初始化 schema，也不触发候选去重/修订写入。
-    uri = Path(palace_path).resolve().as_uri() + "?mode=ro"
     if not dates or not active_slugs:
         return []
     clauses = ["occurred_on IN (" + ",".join("?" for _ in dates) + ")",
                "strategy_slug IN (" + ",".join("?" for _ in active_slugs) + ")",
-               "(source = 'job:screen' OR source LIKE 'api:screen%')",
-               *EXCLUDE_BACKFILL_SQL, EXCLUDE_STALE_API_SCREEN_SQL]
-    with sqlite3.connect(uri, uri=True) as conn:
+               "(source = 'job:screen' OR source LIKE ?)",
+               *("IFNULL(source, '') NOT LIKE ?" for _ in EXCLUDE_BACKFILL_PATTERNS),
+               EXCLUDE_STALE_API_SCREEN_SQL.replace("'api:screen%'", "?")]
+    use_postgres = explicit_postgres_required() and uses_primary_path(palace_path, palace_db())
+    if use_postgres:
+        conn = CompatConnection()
+    else:
+        uri = Path(palace_path).resolve().as_uri() + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True)
         conn.row_factory = sqlite3.Row
+    with closing(conn):
+        if use_postgres:
+            conn.raw.execute("SET search_path TO ledger, public")
         rows = conn.execute("SELECT * FROM candidate_reviews WHERE " + " AND ".join(clauses),
-                            (*dates, *sorted(active_slugs))).fetchall()
+                            (*dates, *sorted(active_slugs), "api:screen%", *EXCLUDE_BACKFILL_PATTERNS,
+                             "api:screen%")).fetchall()
     visible = []
     for row in rows:
         stamp = _timestamp(row["created_at"])
@@ -319,7 +333,7 @@ def load_falcon_candidates(palace_path: str, ops: Any, *, as_of: datetime,
         try:
             active_sources = _active_formula_sources(ops)
             active_sources_ready = True
-        except (sqlite3.Error, OSError, KeyError, ValueError, TypeError) as exc:
+        except (sqlite3.Error, PostgresError, OSError, KeyError, ValueError, TypeError) as exc:
             complete = False
             warnings.append(f"公式选股开关读取失败（{type(exc).__name__}）；本轮不授权新增候选且不执行观察池自动清理。")
         try:
@@ -327,14 +341,14 @@ def load_falcon_candidates(palace_path: str, ops: Any, *, as_of: datetime,
                 candidates = _quant_candidates(str(palace_path), cutoff, window["dates"],
                                                {row["strategy_slug"] for row in active_sources})
                 quant_ready = True
-        except (sqlite3.Error, OSError, KeyError, ValueError, TypeError) as exc:
+        except (sqlite3.Error, PostgresError, OSError, KeyError, ValueError, TypeError) as exc:
             complete = False
             warnings.append(f"量化候选读取失败（{type(exc).__name__}）；本轮不授权新观察、买入或加仓，已有持仓仍可管理退出。")
     try:
         if calendar_ready:
             candidates.extend(_skill_candidates(ops, cutoff, window["dates"], warnings, historical_review=historical_review))
             skill_ready = True
-    except (sqlite3.Error, OSError, KeyError, ValueError, TypeError) as exc:
+    except (sqlite3.Error, PostgresError, OSError, KeyError, ValueError, TypeError) as exc:
         complete = False
         warnings.append(f"技能候选读取失败（{type(exc).__name__}）；本轮不授权新观察、买入或加仓，已有持仓仍可管理退出。")
     if not complete:

@@ -59,6 +59,7 @@ def test_opening_alert_saved_without_fills(tmp_path, monkeypatch, clock, notify,
 
     def decide(_store, _cfg, payload, **_kwargs):
         seen.append(payload)
+        assert not {'candidates', 'active_strategies', 'reference_history_note', 'trading_days'} & payload.keys()
         orders = [{'code': '600000', 'action': 'buy', 'quantity': 100, 'reason': '开盘重新核验',
                    'execution': {'kind': 'limit', 'max_price': 10, 'valid_until': '2026-09-21T09:30:00+08:00'}}] if clock < '09:30:00' else []
         if clock < '09:30:00':
@@ -68,9 +69,8 @@ def test_opening_alert_saved_without_fills(tmp_path, monkeypatch, clock, notify,
     monkeypatch.setattr(guardian, 'datetime', Clock)
     monkeypatch.setattr(guardian, 'get_config', lambda _: cfg)
     monkeypatch.setattr(guardian, 'calendar_trading_day', lambda _: True)
-    monkeypatch.setattr(guardian, 'PalaceStore', MagicMock())
-    monkeypatch.setattr(guardian, 'observe', lambda *_: [])
-    monkeypatch.setattr(guardian, 'strategy_sources', lambda _: [])
+    monkeypatch.setattr('src.ledger.PalaceStore.candidates_payload',
+                        MagicMock(side_effect=AssertionError('不应自动读取量化候选')))
     monkeypatch.setattr(guardian, 'decide', decide)
     monkeypatch.setattr(guardian, 'data_source', lambda: {'label': 'isolated fixture'})
     monkeypatch.setattr(guardian, 'deliver_pending', lambda *_: {})

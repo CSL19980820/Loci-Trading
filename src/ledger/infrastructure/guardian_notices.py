@@ -55,7 +55,7 @@ class GuardianNoticesMixin:
                 return False
             row = self.conn.execute("SELECT result_json FROM guardian_cycles WHERE slot=?", (slot,)).fetchone()
             if row:
-                result = json.loads(row[0])
+                result = json.loads(row["result_json"])
                 result["notify"] = receipt
                 self.conn.execute("UPDATE guardian_cycles SET result_json=? WHERE slot=?",
                                   (json.dumps(result, ensure_ascii=False), slot))

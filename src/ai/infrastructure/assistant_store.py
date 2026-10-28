@@ -24,6 +24,9 @@ from src.ai.infrastructure.assistant_store_lifecycle import AssistantStoreLifecy
 from src.ai.infrastructure.assistant_store_profile import AssistantStoreProfileMixin
 from src.ai.infrastructure.assistant_store_schema import ASSISTANT_SCHEMA_DDL
 from src.ai.infrastructure.assistant_store_util import _dump, _hash, _load, _now, redact
+from src.shared.postgres import CompatConnection, explicit_postgres_required
+from src.shared.postgres import uses_primary_path
+from src.shared.paths import ops_db as _default_ops_db
 
 
 class AssistantStore(
@@ -37,11 +40,20 @@ class AssistantStore(
         if not db_path:
             raise AssistantError("未配置 ops.db，无法保存 AI 会话")
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(self.db_path, timeout=15, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self.conn.execute("PRAGMA busy_timeout = 15000")
+        self._use_postgres = (
+            explicit_postgres_required()
+            and uses_primary_path(self.db_path, _default_ops_db())
+        )
+        if self._use_postgres:
+            self.conn = CompatConnection()
+            self.conn.raw.execute("SET search_path TO ops, public")
+            self.conn.raw.commit()
+        else:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.conn = sqlite3.connect(self.db_path, timeout=15, check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA foreign_keys = ON")
+            self.conn.execute("PRAGMA busy_timeout = 15000")
         self._init_schema()
 
     def close(self) -> None:
@@ -57,7 +69,7 @@ class AssistantStore(
     def _tx(self) -> Iterator[sqlite3.Cursor]:
         cursor = self.conn.cursor()
         try:
-            cursor.execute("BEGIN IMMEDIATE")
+            cursor.execute("BEGIN" if self._use_postgres else "BEGIN IMMEDIATE")
             yield cursor
         except BaseException:
             self.conn.rollback()
@@ -68,6 +80,8 @@ class AssistantStore(
             cursor.close()
 
     def _init_schema(self) -> None:
+        if self._use_postgres:
+            return
         with self.conn:
             self.conn.executescript(ASSISTANT_SCHEMA_DDL)
             self._ensure_profile_schema(self.conn)
@@ -412,8 +426,10 @@ class AssistantStore(
         with self._tx() as cur:
             cur.execute(
                 "INSERT INTO ai_usage_daily(day,provider,model,input_tokens,output_tokens,calls) VALUES(?,?,?,?,?,1)"
-                " ON CONFLICT(day,provider,model) DO UPDATE SET input_tokens=input_tokens+excluded.input_tokens,"
-                " output_tokens=output_tokens+excluded.output_tokens, calls=calls+1",
+                " ON CONFLICT(day,provider,model) DO UPDATE SET"
+                " input_tokens=ai_usage_daily.input_tokens+excluded.input_tokens,"
+                " output_tokens=ai_usage_daily.output_tokens+excluded.output_tokens,"
+                " calls=ai_usage_daily.calls+1",
                 (date.today().isoformat(), provider, model, max(0, input_tokens), max(0, output_tokens)),
             )
 

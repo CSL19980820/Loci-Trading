@@ -348,8 +348,10 @@ def build_strategy_router(
         with _ops() as store:
             job = store.get_job_by_name(job_name)
             opted_out = store.is_screen_job_opted_out(slug)
+            prepare_job = store.get_job_by_name(f"screen-prepare:{slug}")
+        prepare_schedule = ((prepare_job or {}).get("config") or {}).get("schedule")
         if job is None or opted_out or not bool(job.get("enabled", True)):
-            return {"slug": slug, "bound": False, "next_runs": []}
+            return {"slug": slug, "bound": False, "next_runs": [], "prepare_schedule": prepare_schedule}
         cfg = job.get("config") if isinstance(job.get("config"), dict) else {}
         schedule = cfg.get("schedule") if isinstance(cfg.get("schedule"), dict) else {}
         mode = str(schedule.get("mode") or "off")
@@ -369,7 +371,7 @@ def build_strategy_router(
                 )
             except Exception:
                 next_runs = []
-        return {"slug": slug, "bound": True, "next_runs": next_runs, **job}
+        return {"slug": slug, "bound": True, "next_runs": next_runs, "prepare_schedule": prepare_schedule, **job}
 
     @router.put("/api/strategies/{slug}/job", tags=["strategy"])
     def upsert_strategy_job(
@@ -459,17 +461,34 @@ def build_strategy_router(
             config["universe"] = payload.universe.model_dump(exclude_none=True)
         if getattr(engine, "requires_realtime_inputs", False):
             config.update(getattr(engine, "screen_job_config", {}))
-            config["push_wecom"] = False
             config["use_ai_pick"] = False
             config["top_n"] = payload.top_n or int(getattr(engine, "screen_default_top_n", 2))
-            schedule.update(getattr(engine, "screen_schedule", {}))
+            if payload.schedule_mode == "interval":
+                raise HTTPException(status_code=422, detail="竞价选股仅支持交易日定点")
+            defaults = getattr(engine, "screen_schedule", {})
+            schedule["mode"] = "once"
+            for key in ("run_hour", "run_minute"):
+                if key not in payload.model_fields_set:
+                    schedule[key] = defaults[key]
+            if not (schedule["run_hour"] == 9 and 25 <= schedule["run_minute"] < 30):
+                raise HTTPException(status_code=422, detail="早间选股须在09:25至09:29，确保使用已确认的竞价开盘价")
             cron = compose_trading_cron(
                 schedule["mode"], **{key: value for key, value in schedule.items() if key != "mode"},
             )
             config["schedule"] = schedule
+            config["snapshot_time"] = f'{schedule["run_hour"]:02d}:{schedule["run_minute"]:02d}'
 
         with _ops() as store:
             existing = store.get_job_by_name(job_name)
+            declaration = getattr(engine, "screen_prepare_schedule", None)
+            if isinstance(declaration, dict):
+                previous_prepare = store.get_job_by_name(f"screen-prepare:{slug}")
+                prepare_schedule = {**declaration, **(((previous_prepare or {}).get("config") or {}).get("schedule") or {})}
+                if payload.prepare_hour is not None:
+                    prepare_schedule["run_hour"] = payload.prepare_hour
+                if payload.prepare_minute is not None:
+                    prepare_schedule["run_minute"] = payload.prepare_minute
+                config["prepare_schedule"] = prepare_schedule
             allowed_boards = getattr(engine, "screen_allowed_boards", None)
             if allowed_boards:
                 previous_universe = (existing.get("config") or {}).get("universe") if existing else None
@@ -499,7 +518,7 @@ def build_strategy_router(
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             job = store.get_job(job_id)
             from src.ops.application.ensure_screen_jobs import ensure_screen_prepare_job
-            ensure_screen_prepare_job(store, engine, job)
+            prepare_job = ensure_screen_prepare_job(store, engine, job)
 
         _sync_falcon_watch_pools()
         _reload_scheduler()
@@ -523,6 +542,7 @@ def build_strategy_router(
             "slug": slug,
             "bound": bool(job and job.get("enabled", True)),
             "next_runs": next_runs if job and job.get("enabled", True) else [],
+            "prepare_schedule": ((prepare_job or {}).get("config") or {}).get("schedule"),
             **(job or {}),
         }
 

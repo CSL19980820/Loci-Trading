@@ -5,7 +5,7 @@ import json
 import calendar
 import sqlite3
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
@@ -22,6 +22,106 @@ _SUMMARY_FIELDS = (
     "turnover_rows", "share_rows", "legacy_rows", "missing_receipt_metadata_rows",
     "unresolved_source_rows", "invalid_ohlc",
 )
+_SUMMARY_METRIC_FIELDS = _SUMMARY_FIELDS[5:]
+
+
+def _aggregate_source_summary_scopes(
+    rows: Sequence[Mapping[str, object]],
+    scopes: Sequence[tuple[str, str]],
+) -> list[dict[str, object]]:
+    """Roll daily code/source facts up to many overlapping exact scopes.
+
+    A recent-month screen asks for roughly twenty 40-bar provenance windows.
+    Issuing one aggregate SQL statement per window repeats nearly the same
+    PostgreSQL scan. This routine consumes one date-clustered daily aggregate
+    and computes every requested window with NumPy prefix sums.
+    """
+    if not rows or not scopes:
+        return []
+    import numpy as np
+
+    dates = sorted({str(row["trade_date"]) for row in rows})
+    keys = sorted(
+        {(str(row["code"]), row["source_id"]) for row in rows},
+        key=lambda item: (item[0], str(item[1] or "")),
+    )
+    date_position = {day: index for index, day in enumerate(dates)}
+    key_position = {key: index for index, key in enumerate(keys)}
+    date_index = np.fromiter(
+        (date_position[str(row["trade_date"])] for row in rows),
+        dtype=np.int64,
+        count=len(rows),
+    )
+    key_index = np.fromiter(
+        (key_position[(str(row["code"]), row["source_id"])] for row in rows),
+        dtype=np.int64,
+        count=len(rows),
+    )
+    flat = date_index * len(keys) + key_index
+    metric_values = np.asarray(
+        [
+            [int(row[name] or 0) for name in _SUMMARY_METRIC_FIELDS]
+            for row in rows
+        ],
+        dtype=np.int64,
+    )
+    cell_count = len(dates) * len(keys)
+    daily = np.empty((cell_count, len(_SUMMARY_METRIC_FIELDS)), dtype=np.int64)
+    for column in range(metric_values.shape[1]):
+        daily[:, column] = np.bincount(
+            flat, weights=metric_values[:, column], minlength=cell_count,
+        ).astype(np.int64, copy=False)
+    daily = daily.reshape(len(dates), len(keys), len(_SUMMARY_METRIC_FIELDS))
+
+    fetched_values = np.empty(cell_count, dtype=object)
+    for position, row in enumerate(rows):
+        fetched_values[int(flat[position])] = row.get("last_fetched_at")
+    fetched_values = fetched_values.reshape(len(dates), len(keys))
+    prefix = np.empty(
+        (len(dates) + 1, len(keys), len(_SUMMARY_METRIC_FIELDS)),
+        dtype=np.int64,
+    )
+    prefix[0].fill(0)
+    np.cumsum(daily, axis=0, out=prefix[1:])
+
+    output: list[dict[str, object]] = []
+    for first, last in scopes:
+        lower = int(np.searchsorted(dates, first, side="left"))
+        upper = int(np.searchsorted(dates, last, side="right"))
+        if lower >= upper:
+            continue
+        values = prefix[upper] - prefix[lower]
+        present = daily[lower:upper, :, 0] > 0
+        has_rows = present.any(axis=0)
+        if not has_rows.any():
+            continue
+        first_rows = present.argmax(axis=0)
+        last_rows = present.shape[0] - 1 - present[::-1].argmax(axis=0)
+        for index in np.flatnonzero(has_rows):
+            code, source_id = keys[int(index)]
+            last_fetched_at = max(
+                (
+                    value for value in fetched_values[lower:upper, index]
+                    if value not in {None, ""}
+                ),
+                default=None,
+                key=str,
+            )
+            item = {
+                "code": code,
+                "source_id": source_id,
+                "first_date": dates[lower + int(first_rows[index])],
+                "last_date": dates[lower + int(last_rows[index])],
+                "last_fetched_at": last_fetched_at,
+                "window_start": first,
+                "window_end": last,
+            }
+            item.update(
+                (name, int(values[index, column]))
+                for column, name in enumerate(_SUMMARY_METRIC_FIELDS)
+            )
+            output.append(item)
+    return output
 
 
 def _merge_summary_values(left: tuple, right: tuple) -> tuple:
@@ -152,6 +252,15 @@ class _SourceSummaryWindow:
                 + sys.getsizeof(self.start) + sys.getsizeof(self.end)
                 + sys.getsizeof(self.codes) + self.code_bytes
                 + sys.getsizeof(self.rows) + self.row_bytes)
+
+
+@dataclass
+class _SourceSummaryBatch:
+    """Exact per-window aggregates produced by one date-clustered scan."""
+
+    codes: frozenset[str]
+    rows: dict[tuple[str, str], list[dict[str, object]]]
+    row_bytes: int
 
 
 class MarketProvenanceQueryMixin:
@@ -324,10 +433,12 @@ class MarketProvenanceQueryMixin:
     ) -> Iterator[sqlite3.Row]:
         # Large bounded scopes should scan the date-clustered quote table once.
         # Forcing this path on each 900-code chunk would repeat the whole range.
+        postgres = bool(getattr(self, "_use_postgres", False))
         if (len(codes) > _SQL_IN_CHUNK and end and (start or after)
-                and self._date_source_summary_available()):
-            clauses = ["q.code IN (SELECT value FROM json_each(?))"]
-            params = [json.dumps(list(codes), separators=(",", ":"))]
+                and (postgres or self._date_source_summary_available())):
+            clauses = (["q.code = ANY(?)"] if postgres
+                       else ["q.code IN (SELECT CAST(value AS TEXT) FROM json_each(?))"])
+            params = [list(codes) if postgres else json.dumps(list(codes), separators=(",", ":"))]
             if start:
                 clauses.append("q.trade_date >= ?")
                 params.append(str(start))
@@ -336,7 +447,12 @@ class MarketProvenanceQueryMixin:
             if after is not None:
                 clauses.append("q.trade_date > ?")
                 params.append(str(after))
-            sql = self._quote_source_summary_sql(" WHERE " + " AND ".join(clauses), date_major=True)
+            where = " WHERE " + " AND ".join(clauses)
+            sql = (
+                self._quote_source_summary_direct_sql(where)
+                if postgres else
+                self._quote_source_summary_sql(where, date_major=True)
+            )
             cursor = self.conn.execute(sql, params)
             try:
                 yield from cursor
@@ -345,20 +461,116 @@ class MarketProvenanceQueryMixin:
             return
         chunks = [codes[i:i + _SQL_IN_CHUNK] for i in range(0, len(codes), _SQL_IN_CHUNK)] or [()]
         for chunk in chunks:
-            where, params = self._quote_where(chunk, start=start, end=end, alias="q")
-            if after is not None:
-                where += " AND q.trade_date > ?" if where else " WHERE q.trade_date > ?"
-                params.append(after)
-            cursor = self.conn.execute(self._quote_source_summary_sql(where), params)
+            if postgres:
+                clauses = ["q.code = ANY(?)"]
+                params = [list(chunk)]
+                if start:
+                    clauses.append("q.trade_date >= ?")
+                    params.append(str(start))
+                if end:
+                    clauses.append("q.trade_date <= ?")
+                    params.append(str(end))
+                if after is not None:
+                    clauses.append("q.trade_date > ?")
+                    params.append(str(after))
+                where = " WHERE " + " AND ".join(clauses)
+                sql = self._quote_source_summary_direct_sql(where)
+            else:
+                where, params = self._quote_where(chunk, start=start, end=end, alias="q")
+                if after is not None:
+                    where += " AND q.trade_date > ?" if where else " WHERE q.trade_date > ?"
+                    params.append(after)
+                sql = self._quote_source_summary_sql(where)
+            cursor = self.conn.execute(sql, params)
             try:
                 yield from cursor
             finally:
                 cursor.close()
 
+    def _iter_source_summary_batch_rows(
+        self, codes: Sequence[str], *, scopes: Sequence[tuple[str, str]],
+    ) -> Iterator[sqlite3.Row]:
+        """Read independent rolling evidence scopes with bounded parallelism."""
+        if not codes or not scopes:
+            return
+        normalized_scopes = list(dict.fromkeys(
+            (date.fromisoformat(str(first)).isoformat(), date.fromisoformat(str(last)).isoformat())
+            for first, last in scopes
+        ))
+        if not getattr(self, "_use_postgres", False):
+            for first, last in normalized_scopes:
+                for row in self._iter_source_summary_rows(codes, start=first, end=last):
+                    yield {
+                        **dict(row),
+                        "window_start": first,
+                        "window_end": last,
+                    }
+            return
+
+        first_scope = min(date.fromisoformat(first) for first, _last in normalized_scopes)
+        last_scope = max(date.fromisoformat(last) for _first, last in normalized_scopes)
+        span_days = (last_scope - first_scope).days + 1
+        if (
+            len(normalized_scopes) > 1
+            and span_days <= 120
+            and len(codes) * span_days <= 2_000_000
+        ):
+            # Recent-month screens use overlapping rolling windows. One compact
+            # daily aggregate plus NumPy prefix sums replaces 17 repeated range
+            # scans and avoids four competing PostgreSQL connections.
+            sql = self._quote_source_daily_summary_sql(
+                " WHERE q.code = ANY(?)"
+                " AND q.trade_date >= ? AND q.trade_date <= ?"
+            ).replace("?", "%s")
+            cursor = self.conn.execute(
+                sql, [list(codes), first_scope.isoformat(), last_scope.isoformat()],
+            )
+            try:
+                rows = cursor.fetchall()
+            finally:
+                cursor.close()
+            yield from _aggregate_source_summary_scopes(rows, normalized_scopes)
+            return
+
+        # These are independent read-only scans. Four connections keep the
+        # host's modest memory budget bounded while avoiding the serial cost of
+        # 17 nearly overlapping 80-day windows.
+        from concurrent.futures import ThreadPoolExecutor
+        import psycopg
+        from psycopg.rows import dict_row
+        from src.shared.postgres import database_url
+
+        def read_scopes(chunk: Sequence[tuple[str, str]]) -> list[dict[str, object]]:
+            output: list[dict[str, object]] = []
+            with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+                conn.execute("SET search_path TO market, public")
+                for first, last in chunk:
+                    where = (
+                        " WHERE q.code = ANY(?)"
+                        " AND q.trade_date >= ? AND q.trade_date <= ?"
+                    )
+                    params = [list(codes), first, last]
+                    sql = self._quote_source_summary_direct_sql(where).replace("?", "%s")
+                    rows = conn.execute(sql, params).fetchall()
+                    output.extend(
+                        {**dict(row), "window_start": first, "window_end": last}
+                        for row in rows
+                    )
+            return output
+
+        worker_count = min(4, len(normalized_scopes))
+        chunks = [normalized_scopes[offset::worker_count] for offset in range(worker_count)]
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            for rows in pool.map(read_scopes, chunks):
+                yield from rows
+
     def _date_source_summary_available(self) -> bool:
         """Probe JSON and the existing date primary key without changing schema."""
         try:
-            cursor = self.conn.execute("SELECT value FROM json_each(?) LIMIT 1", ('["source_summary"]',))
+            cursor = self.conn.execute(
+                "SELECT CAST(value AS TEXT) FROM json_each(?) LIMIT 1",
+                ('["source_summary"]',),
+            )
             try:
                 row = cursor.fetchone()
             finally:
@@ -366,7 +578,7 @@ class MarketProvenanceQueryMixin:
             if row is None or row[0] != "source_summary":
                 return False
             cursor = self.conn.execute(
-                "SELECT 1 FROM quotes_daily INDEXED BY sqlite_autoindex_quotes_daily_1 WHERE 0"
+                "SELECT 1 FROM quotes_daily INDEXED BY sqlite_autoindex_quotes_daily_1 WHERE FALSE"
             )
             cursor.close()
         except sqlite3.Error:
@@ -383,6 +595,50 @@ class MarketProvenanceQueryMixin:
                 or state.source_summary_declined):
             return None
         version = state.version
+        scopes = state.source_summary_scopes
+        if scopes and (start, end) in scopes:
+            requested = frozenset(codes)
+            batch = state.source_summary_batch
+            if not isinstance(batch, _SourceSummaryBatch):
+                initial_codes = state.source_summary_codes or tuple(codes)
+                rows = list(self._iter_source_summary_batch_rows(
+                    initial_codes, scopes=scopes,
+                ))
+                batch = _SourceSummaryBatch(
+                    codes=frozenset(initial_codes),
+                    rows={},
+                    row_bytes=sys.getsizeof(rows),
+                )
+                for row in rows:
+                    key = (str(row["window_start"]), str(row["window_end"]))
+                    batch.rows.setdefault(key, []).append(row)
+                    batch.row_bytes += sys.getsizeof(row)
+            elif not requested.issubset(batch.codes):
+                missing_codes = sorted(requested - batch.codes)
+                for row in self._iter_source_summary_batch_rows(
+                    missing_codes, scopes=scopes,
+                ):
+                    key = (str(row["window_start"]), str(row["window_end"]))
+                    batch.rows.setdefault(key, []).append(row)
+                    batch.row_bytes += sys.getsizeof(row)
+                batch.codes = frozenset((*batch.codes, *missing_codes))
+            if isinstance(batch, _SourceSummaryBatch):
+                # The batch is already grouped to one row per
+                # (window, code, source). Exact rolling summaries can legitimately
+                # exceed the older 64 MB month-cache ceiling while remaining
+                # within the panel task's overall 384 MB evidence budget.
+                budget = min(state.max_evidence_bytes, 256_000_000)
+                if batch.row_bytes > budget:
+                    state.source_summary_declined = True
+                    return None
+                if state.stale(version):
+                    state.clear()
+                    return None
+                state.source_summary_batch = batch
+            selected = batch.rows.get((start, end), [])
+            if requested != batch.codes:
+                selected = [row for row in selected if str(row["code"]) in requested]
+            return selected
         cached = state.source_summary
         if cached is not None and (start < cached.start or end < cached.end):
             # Reverse requests retain the ordinary reader's exact semantics.
@@ -423,7 +679,7 @@ class MarketProvenanceQueryMixin:
                             return None
                 finally:
                     rows.close()
-            if self.conn.in_transaction or version != state.current_version():
+            if state.stale(version):
                 state.clear()
                 return None
         except Exception:
@@ -485,7 +741,7 @@ class MarketProvenanceQueryMixin:
                     finally:
                         rows.close()
                 month.end = last
-            if self.conn.in_transaction or version != state.current_version():
+            if state.stale(version):
                 state.clear()
                 return None
         except Exception:
@@ -526,6 +782,76 @@ class MarketProvenanceQueryMixin:
             + ") q"
             + " LEFT JOIN source_route_receipts r ON r.receipt_id = q.receipt_id"
             + " GROUP BY q.code, source_id"
+        )
+
+    @staticmethod
+    def _quote_source_summary_direct_sql(where: str) -> str:
+        """PostgreSQL summary path: join first, then aggregate directly by source."""
+        return (
+            "SELECT q.code, CASE WHEN q.receipt_id IS NULL "
+            "THEN COALESCE(NULLIF(q.source, ''), 'unknown') "
+            "ELSE r.selected_source END AS source_id, "
+            "MIN(q.trade_date) AS first_date, MAX(q.trade_date) AS last_date, "
+            "MAX(q.fetched_at) AS last_fetched_at, COUNT(*) AS rows, "
+            "SUM(CASE WHEN q.open IS NOT NULL THEN 1 ELSE 0 END) AS open_rows, "
+            "SUM(CASE WHEN q.high IS NOT NULL THEN 1 ELSE 0 END) AS high_rows, "
+            "SUM(CASE WHEN q.low IS NOT NULL THEN 1 ELSE 0 END) AS low_rows, "
+            "SUM(CASE WHEN q.close IS NOT NULL THEN 1 ELSE 0 END) AS close_rows, "
+            "SUM(CASE WHEN q.volume IS NOT NULL THEN 1 ELSE 0 END) AS volume_rows, "
+            "SUM(CASE WHEN q.amount IS NOT NULL THEN 1 ELSE 0 END) AS amount_rows, "
+            "SUM(CASE WHEN q.turnover IS NOT NULL THEN 1 ELSE 0 END) AS turnover_rows, "
+            "SUM(CASE WHEN q.outstanding_share IS NOT NULL THEN 1 ELSE 0 END) AS share_rows, "
+            "SUM(CASE WHEN q.receipt_id IS NULL THEN 1 ELSE 0 END) AS legacy_rows, "
+            "SUM(CASE WHEN q.receipt_id IS NOT NULL AND r.receipt_id IS NULL "
+            "THEN 1 ELSE 0 END) AS missing_receipt_metadata_rows, "
+            "SUM(CASE WHEN q.receipt_id IS NOT NULL "
+            "AND (r.selected_source IS NULL OR r.selected_source = '') "
+            "THEN 1 ELSE 0 END) AS unresolved_source_rows, "
+            "SUM(CASE WHEN q.open IS NOT NULL AND q.high IS NOT NULL "
+            "AND q.low IS NOT NULL AND q.close IS NOT NULL AND ("
+            "q.high < q.low OR q.high < q.open OR q.high < q.close "
+            "OR q.low > q.open OR q.low > q.close "
+            "OR q.open <= 0 OR q.high <= 0 OR q.low <= 0 OR q.close <= 0"
+            ") THEN 1 ELSE 0 END) AS invalid_ohlc "
+            "FROM quotes_daily q LEFT JOIN source_route_receipts r "
+            "ON r.receipt_id = q.receipt_id"
+            + where
+            + " GROUP BY q.code, source_id"
+        )
+
+    @staticmethod
+    def _quote_source_daily_summary_sql(where: str) -> str:
+        """One compact daily aggregate from which overlapping scopes are rolled."""
+        return (
+            "SELECT q.trade_date, q.code, CASE WHEN q.receipt_id IS NULL "
+            "THEN COALESCE(NULLIF(q.source, ''), 'unknown') "
+            "ELSE r.selected_source END AS source_id, "
+            "COUNT(*) AS rows, "
+            "SUM(CASE WHEN q.open IS NOT NULL THEN 1 ELSE 0 END) AS open_rows, "
+            "SUM(CASE WHEN q.high IS NOT NULL THEN 1 ELSE 0 END) AS high_rows, "
+            "SUM(CASE WHEN q.low IS NOT NULL THEN 1 ELSE 0 END) AS low_rows, "
+            "SUM(CASE WHEN q.close IS NOT NULL THEN 1 ELSE 0 END) AS close_rows, "
+            "SUM(CASE WHEN q.volume IS NOT NULL THEN 1 ELSE 0 END) AS volume_rows, "
+            "SUM(CASE WHEN q.amount IS NOT NULL THEN 1 ELSE 0 END) AS amount_rows, "
+            "SUM(CASE WHEN q.turnover IS NOT NULL THEN 1 ELSE 0 END) AS turnover_rows, "
+            "SUM(CASE WHEN q.outstanding_share IS NOT NULL THEN 1 ELSE 0 END) AS share_rows, "
+            "SUM(CASE WHEN q.receipt_id IS NULL THEN 1 ELSE 0 END) AS legacy_rows, "
+            "SUM(CASE WHEN q.receipt_id IS NOT NULL AND r.receipt_id IS NULL "
+            "THEN 1 ELSE 0 END) AS missing_receipt_metadata_rows, "
+            "SUM(CASE WHEN q.receipt_id IS NOT NULL "
+            "AND (r.selected_source IS NULL OR r.selected_source = '') "
+            "THEN 1 ELSE 0 END) AS unresolved_source_rows, "
+            "SUM(CASE WHEN q.open IS NOT NULL AND q.high IS NOT NULL "
+            "AND q.low IS NOT NULL AND q.close IS NOT NULL AND ("
+            "q.high < q.low OR q.high < q.open OR q.high < q.close "
+            "OR q.low > q.open OR q.low > q.close "
+            "OR q.open <= 0 OR q.high <= 0 OR q.low <= 0 OR q.close <= 0"
+            ") THEN 1 ELSE 0 END) AS invalid_ohlc, "
+            "MAX(q.fetched_at) AS last_fetched_at "
+            "FROM quotes_daily q LEFT JOIN source_route_receipts r "
+            "ON r.receipt_id = q.receipt_id"
+            + where
+            + " GROUP BY q.trade_date, q.code, source_id"
         )
 
     @staticmethod
@@ -873,6 +1199,17 @@ class MarketProvenanceQueryMixin:
         cached = cached_quote_evidence(self, codes, start=start, end=end)
         if cached is not None:
             return cached
+        if getattr(self, "_use_postgres", False) and len(codes) > _SQL_IN_CHUNK and (start or end):
+            clauses = ["code = ANY(?)"]
+            params = [list(codes)]
+            if start:
+                clauses.append("trade_date >= ?")
+                params.append(start)
+            if end:
+                clauses.append("trade_date <= ?")
+                params.append(end)
+            return self.conn.execute(self._quote_evidence_sql(" WHERE " + " AND ".join(clauses)),
+                                     params).fetchall()
         chunks = [codes[i:i + _SQL_IN_CHUNK] for i in range(0, len(codes), _SQL_IN_CHUNK)] or [()]
         rows: list[sqlite3.Row] = []
         for chunk in chunks:
@@ -913,7 +1250,6 @@ class MarketProvenanceQueryMixin:
 
     @staticmethod
     def _aggregate_quote_rows(rows: Sequence[sqlite3.Row]) -> dict[str, object]:
-        total = sum(int(row["rows"] or 0) for row in rows)
         columns = {
             "open": "open_rows",
             "high": "high_rows",
@@ -924,23 +1260,31 @@ class MarketProvenanceQueryMixin:
             "turnover": "turnover_rows",
             "outstanding_share": "share_rows",
         }
+        total = 0
+        invalid = 0
+        observed_codes: set[str] = set()
+        legacy_codes: set[str] = set()
+        counts = dict.fromkeys(columns, 0)
+        for row in rows:
+            total += int(row["rows"] or 0)
+            code = str(row["code"])
+            observed_codes.add(code)
+            if int(row["legacy_rows"] or 0):
+                legacy_codes.add(code)
+            invalid += int(row["invalid_ohlc"] or 0)
+            for field_name, column in columns.items():
+                counts[field_name] += int(row[column] or 0)
         return {
-            "observed_codes": {str(row["code"]) for row in rows},
-            "legacy_codes": {
-                str(row["code"]) for row in rows if int(row["legacy_rows"] or 0)
-            },
+            "observed_codes": observed_codes,
+            "legacy_codes": legacy_codes,
             "field_coverage": {
                 field: {
-                    "rows": sum(int(row[column] or 0) for row in rows),
-                    "ratio": round(
-                        sum(int(row[column] or 0) for row in rows) / total, 6
-                    )
-                    if total
-                    else 0.0,
+                    "rows": count,
+                    "ratio": round(count / total, 6) if total else 0.0,
                 }
-                for field, column in columns.items()
+                for field, count in counts.items()
             },
-            "invalid_ohlc_rows": sum(int(row["invalid_ohlc"] or 0) for row in rows),
+            "invalid_ohlc_rows": invalid,
         }
 
     @staticmethod

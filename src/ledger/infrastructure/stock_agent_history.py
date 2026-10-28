@@ -55,7 +55,9 @@ class StockAgentHistoryMixin:
                 where.append("finished_at IS NOT NULL AND julianday(finished_at) <= julianday(?)")
                 params.append(cutoff)
         clause = " AND ".join(where)
-        total = self.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {clause}", params).fetchone()[0]
+        total = self.conn.execute(
+            f"SELECT COUNT(*) AS count FROM {table} WHERE {clause}", params
+        ).fetchone()["count"]
         columns = ("id,phase,started_at,finished_at,status,summary,actions_json" if kind == "runs" else "*")
         tie = "request_id" if kind == "funding" else "id"
         rows = self.conn.execute(
@@ -88,9 +90,9 @@ class StockAgentHistoryMixin:
         current = agent_now(now)
         if range == "day":
             snapshots = []
-            for row in self.conn.execute("SELECT json_extract(detail_json,'$.valuation_snapshot') FROM stock_agent_runs WHERE agent_id=? AND status='success' AND started_at>=? AND started_at<? ORDER BY started_at,id",
+            for row in self.conn.execute("SELECT json_extract(detail_json,'$.valuation_snapshot') AS snapshot FROM stock_agent_runs WHERE agent_id=? AND status='success' AND started_at>=? AND started_at<? ORDER BY started_at,id",
                     (agent_id, current.date().isoformat(), (current + timedelta(days=1)).date().isoformat())):
-                point = json.loads(row[0]) if row[0] else None
+                point = json.loads(row["snapshot"]) if row["snapshot"] else None
                 if isinstance(point, dict) and str(point.get("at", ""))[:10] == current.date().isoformat():
                     snapshots.append(point)
             daily = self.conn.execute("SELECT * FROM stock_agent_equity WHERE agent_id=? AND day=?", (agent_id, current.date().isoformat())).fetchone()
@@ -115,7 +117,9 @@ class StockAgentHistoryMixin:
         if start:
             where += " AND day>=? AND day<=?"
             params += [start, current.date().isoformat()]
-        total = self.conn.execute(f"SELECT COUNT(*) FROM stock_agent_equity WHERE {where}", params).fetchone()[0]
+        total = self.conn.execute(
+            f"SELECT COUNT(*) AS count FROM stock_agent_equity WHERE {where}", params
+        ).fetchone()["count"]
         rows = self.conn.execute(
             f"SELECT * FROM stock_agent_equity WHERE {where} ORDER BY day DESC LIMIT ?", [*params, limit],
         ).fetchall()
@@ -138,7 +142,11 @@ class StockAgentHistoryMixin:
             conditions.append("started_at < ?")
             values.append((current - timedelta(days=days)).isoformat())
         if count:
-            conditions.append("id IN (SELECT id FROM stock_agent_runs WHERE agent_id=? ORDER BY started_at DESC,id DESC LIMIT -1 OFFSET ?)")
+            limit_clause = "LIMIT -1 " if not getattr(self, "_use_postgres", False) else ""
+            conditions.append(
+                "id IN (SELECT id FROM stock_agent_runs WHERE agent_id=? "
+                f"ORDER BY started_at DESC,id DESC {limit_clause}OFFSET ?)"
+            )
             values.extend([agent_id, max(20, count)])
         if not conditions:
             return {"removed": 0, "due": True, "disabled": True}
@@ -148,7 +156,7 @@ class StockAgentHistoryMixin:
             ORDER BY started_at DESC,id DESC LIMIT 20) AND (""" + " OR ".join(conditions) + ") ORDER BY started_at LIMIT 1000"
         params = [agent_id, current.date().isoformat(), agent_id, *values]
         with self._write():
-            ids = [item[0] for item in self.conn.execute(sql, params)]
+            ids = [item["id"] for item in self.conn.execute(sql, params)]
             if not dry_run:
                 self.conn.executemany("DELETE FROM stock_agent_runs WHERE id=? AND agent_id=? AND status<>'running'", [(item, agent_id) for item in ids])
                 self.conn.execute("UPDATE stock_agent_profiles SET cleaned_runs=cleaned_runs+?,cleanup_at=? WHERE id=?",

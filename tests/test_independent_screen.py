@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -152,6 +153,18 @@ def _same(actual, expected):
         assert actual.watch_signals is None
     else:
         pd.testing.assert_frame_equal(actual.watch_signals, expected.watch_signals, check_exact=True)
+
+
+@pytest.mark.parametrize("revisions, changed", [(('1', '1'), False), (('1', '2'), True)])
+def test_postgres_batch_checks_market_revision_without_sqlite_pragma(revisions, changed):
+    versions = iter(revisions)
+    store = SimpleNamespace(_use_postgres=True, conn=object(), market_revision=lambda: next(versions))
+    request = IndependentRequest("2026-10-27", "2026-10-01", "2026-10-27", (), 1, "none")
+    if changed:
+        with pytest.raises(StrategyError, match="行情库在分批选股期间发生变化"):
+            prepare_independent_day(store, IndependentProbe(), request)
+    else:
+        assert prepare_independent_day(store, IndependentProbe(), request).result.signals.empty
 
 
 @pytest.mark.parametrize("adjust", ["none", "qfq", "hfq"])

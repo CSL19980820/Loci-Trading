@@ -81,12 +81,14 @@ def print_survey(label: str, snap: dict) -> None:
     )
     print("  来源构成: %s" % (snap["by_source"][:8],))
 
-def stock_codes(db_path: Path) -> list[tuple[str, str]]:
+def stock_codes(db_path: Path, *, active_only: bool = False) -> list[tuple[str, str]]:
     conn = sqlite3.connect("file:%s?mode=ro" % db_path.as_posix(), uri=True, timeout=60)
     try:
         rows = conn.execute(
             "SELECT code, instrument_type FROM instruments"
-            " WHERE instrument_type IN ('STOCK','INDEX') ORDER BY code"
+            " WHERE instrument_type IN ('STOCK','INDEX')"
+            + (" AND status = 'normal'" if active_only else "")
+            + " ORDER BY code"
         ).fetchall()
     finally:
         conn.close()
@@ -125,8 +127,10 @@ def main() -> int:
     before = survey(db_path)
     print_survey("改前:", before)
 
-    pairs = stock_codes(db_path)
     wanted = {c.strip() for c in args.codes.split(",") if c.strip()}
+    # 近窗恢复只修活跃标的；已退市证券无最新日 K，不应把整批修复报成失败。
+    # 历史全量重写及显式 --codes 仍允许修复已退市证券的旧数据。
+    pairs = stock_codes(db_path, active_only=args.no_force and not wanted)
     if wanted:
         pairs = [item for item in pairs if item[0] in wanted]
         missing = wanted - {code for code, _kind in pairs}

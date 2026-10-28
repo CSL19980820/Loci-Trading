@@ -196,8 +196,17 @@ def build_stock_agents_router(*, write_dependency, scheduler_getter=None) -> API
             target = payload.research_date.isoformat() if payload.research_date else None
             scope = research_scope(payload.phase, now, target)
             if not scope["historical_review"] and ledger.get(agent_id)["config"]["kind"] == "falcon":
+                if payload.phase == "auction":
+                    from src.ops.application.falcon_auction_inputs import auction_inputs_reason, falcon_auction_inputs
+                    reason = auction_inputs_reason(falcon_auction_inputs(ops, now=now))
+                    if reason:
+                        raise StockAgentConflict(reason)
                 from src.ops.application.falcon_watch_pool import sync_falcon_watch_pools
                 sync_falcon_watch_pools(ops, str(ledger.db_path), as_of=now, agent_id=agent_id)
+                now = agent_time()
+                research_scope(payload.phase, now, target)
+                if payload.phase == "auction" and now >= now.replace(hour=9, minute=29, second=50, microsecond=0):
+                    raise StockAgentConflict("竞价输入就绪时已到研判截止时间，本轮不再认领")
             slot = f"{now.date().isoformat()}:manual:{payload.phase}:{target or 'live'}:{payload.request_id}"
             profile = ledger.claim_run(agent_id, slot, payload.phase, now=now)
             if profile is None:

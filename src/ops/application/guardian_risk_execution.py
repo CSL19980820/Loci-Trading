@@ -8,19 +8,11 @@ from typing import Any
 from src.ops.application.guardian_decision import GuardianDecision
 from src.ops.application.guardian_risk import consume_risk_plans, evaluate_risk_plans, resize_remaining_stops
 
-RISK_RULES = """【持仓风险合同】
-hold或买卖动作可附risk_plans，最多16项，按该动作实际完成后的持仓安装。
-null或省略表示保留原合同，[]明确撤回全部；watch/unwatch不能使用此字段。
-每项必须给action=stop_loss或take_profit、quantity整数股数、trigger_price、reason和execution。
-止损在新鲜报价<=trigger_price、止盈在>=trigger_price时触发；每股每轮最多一笔，止损优先。
-execution含kind、带时区的valid_until及limit的min_price/max_price；明确授权未来风险触发的有效期，
-该风险有效期可以跨轮次，不受本轮execution_deadline限制；本轮直接买卖仍受本轮期限限制。
-首次触发严格使用trigger_price，不提前触发。触发价不等于成交价；触发后的最终成交允许固定授权基准2%波动，不反复扩宽，仍检查有效期、股数、T+1和交易窗口。
-合同绑定实际持仓数量和开仓批次；同批次纯减仓后，程序将仍有效且未消费的止损股数收缩至不超过剩余持仓，触发价、价格边界、期限不变，并保存调整回执。
-加仓、换批次、未知数量变化及止盈计划不自动续接，须重新研判；重复合同不会重新激活已消费合同。重新制定保护时根据实际剩余持仓明确给出有效合同，不以旧文字计划代替结构化保护。
-只有实际成交才消费合同，缺价、T+1或价格回弹拒单后仍可在有效期内重试。
-holding_plan/take_profit_plan/stop_loss_plan等旧自然语言仅供研究，不自动解释为挂单或风险合同。
-"""
+# 旧引用兼容，风险合同方法随通用操作手册维护。
+from src.ops.application.trading_operations_skill import load_trading_operations_skill
+
+RISK_RULES = load_trading_operations_skill()[0]
+
 
 
 def risk_decision(orders: list[dict[str, Any]], events: list[dict[str, Any]]) -> GuardianDecision | None:
@@ -36,6 +28,27 @@ def risk_rejections(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
              "reason": "持仓风险监测缺少有效报价：" + event.get("reason", "行情不可用"),
              "reject_code": codes[event["status"]]}
             for event in events if event.get("status") in codes]
+
+
+def reauthorize_risk_events(
+    events: list[dict[str, Any]], decision: GuardianDecision,
+) -> list[dict[str, Any]]:
+    """关联已校验的本轮模型新授权，保留原合同与首次触发证据。"""
+    updated = copy.deepcopy(events)
+    orders = {(order.code, order.action): order.model_dump(mode="json")
+              for order in decision.orders
+              if order.action in {"stop_loss", "take_profit"} and order.quantity > 0}
+    for event in updated:
+        if event.get("status") != "triggered":
+            continue
+        original = event.get("order") or {}
+        order = orders.get((original.get("code"), original.get("action")))
+        if order is None:
+            event.update(status="withdrawn", reason="模型重新研判后撤回本轮风险执行，原合同保留")
+        elif any(order.get(key) != original.get(key) for key in ("quantity", "reason", "execution")):
+            event.setdefault("original_order", copy.deepcopy(original))
+            event.update(order=order, reauthorized=True)
+    return updated
 
 
 def finish_risk_execution(

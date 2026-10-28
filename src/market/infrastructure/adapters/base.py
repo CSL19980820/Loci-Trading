@@ -156,6 +156,19 @@ class MarketAdapter(ABC):
         """批量现价。返回列至少含 code/date/open/high/low/close/volume/amount。"""
         raise AdapterError(f"{self.meta.id} 不支持 spot_batch")
 
+    def fetch_spot_close(
+        self,
+        codes: list[str],
+        *,
+        instrument_types: dict[str, str] | None = None,
+        batch_size: int = 400,
+    ) -> pd.DataFrame:
+        """收盘快照：除有成交标的外，还须保留“今日明确零成交”的平价行。
+
+        只允许在收盘后用于日终定稿兜底；普通 spot 不应调用本方法。
+        """
+        raise AdapterError(f"{self.meta.id} 不支持收盘快照")
+
     def fetch_live_quotes(
         self,
         codes: list[str],

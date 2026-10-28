@@ -45,7 +45,11 @@ interface RunTrack {
   exact: boolean
 }
 
-const POLL_MS = 1200
+const POLL_FAST_MS = 100
+const POLL_MEDIUM_MS = 350
+const POLL_SLOW_MS = 1200
+const POLL_FAST_WINDOW_MS = 2_000
+const POLL_MEDIUM_WINDOW_MS = 6_000
 
 /** 结果随该次运行的最后一次写入发布；重跑不能继承上一轮的结果。 */
 function slotVersion(slot: ScreenRunSlot): string {
@@ -103,6 +107,8 @@ export const useScreenRunStore = defineStore('screenRun', () => {
 
   let timer: number | undefined
   let pollGeneration = 0
+  let fastPollUntil = 0
+  let mediumPollUntil = 0
   let snapshotRequest: { generation: number; promise: Promise<void> } | null = null
   let snapshotAt = 0
   let snapshotGeneration = -1
@@ -332,9 +338,15 @@ export const useScreenRunStore = defineStore('screenRun', () => {
   function schedulePoll(): void {
     stopPoll()
     const gen = pollGeneration
+    const now = Date.now()
+    const delay = now < fastPollUntil
+      ? POLL_FAST_MS
+      : now < mediumPollUntil
+        ? POLL_MEDIUM_MS
+        : POLL_SLOW_MS
     timer = window.setTimeout(() => {
       void tick(gen)
-    }, POLL_MS)
+    }, delay)
   }
 
   function needsResult(slug: string, slot: ScreenRunSlot): boolean {
@@ -435,7 +447,7 @@ export const useScreenRunStore = defineStore('screenRun', () => {
   async function hydrate(force = false): Promise<void> {
     const gen = pollGeneration
     // 页面晚于 App 挂载也复用同一轮采样，不能因路由多一个消费者就多一次 GET。
-    if (!force && snapshotGeneration === gen && Date.now() - snapshotAt < POLL_MS) {
+    if (!force && snapshotGeneration === gen && Date.now() - snapshotAt < POLL_SLOW_MS) {
       if (needsPoll() && !timer && snapshotRequest?.generation !== gen) schedulePoll()
       return
     }
@@ -561,6 +573,12 @@ export const useScreenRunStore = defineStore('screenRun', () => {
         ...payload,
       })
       mergeSlot(next)
+
+      if (next.status === 'running' && !next.busy_reason) {
+        const now = Date.now()
+        fastPollUntil = now + POLL_FAST_WINDOW_MS
+        mediumPollUntil = now + POLL_MEDIUM_WINDOW_MS
+      }
 
       if (next.busy_reason === 'tenant_limit') {
         const cap = Number(next.max_concurrent_runs || maxConcurrentRuns.value || 0)

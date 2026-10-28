@@ -218,4 +218,25 @@ describe('shared screen progress reads', () => {
     expect(getScreenRunStatus).toHaveBeenCalledTimes(3)
     expect(store.resultFor('b')?.picks[0]?.code).toBe('000002')
   })
+
+  it('polls a newly accepted run at 100 ms so a warm result lands within one second', async () => {
+    const nowSeconds = Date.now() / 1000
+    const running = slot('a', { started_at: nowSeconds, updated_at: nowSeconds })
+    const done = slot('a', {
+      status: 'done',
+      phase: 'done',
+      percent: 100,
+      started_at: nowSeconds,
+      updated_at: nowSeconds + 0.1,
+    })
+    vi.mocked(startScreenRun).mockResolvedValue(running)
+    vi.mocked(getScreenRunStatus).mockImplementation(async options => options?.strategy
+      ? { ...done, result_omitted: false, result: result('000001') }
+      : snapshot(done))
+
+    expect(await store.start({ strategy: 'a' })).toBe('started')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(store.resultFor('a')?.picks[0]?.code).toBe('000001')
+    expect(toast.success).toHaveBeenCalledTimes(1)
+  })
 })

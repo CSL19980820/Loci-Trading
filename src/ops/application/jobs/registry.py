@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from datetime import date, timedelta
 import logging
+import threading
 import time
 import traceback
 from typing import Any
@@ -55,6 +57,14 @@ from src.shared.observability import (
 
 logger = logging.getLogger(__name__)
 
+_POST_CLOSE_WARM_LOCK = threading.Lock()
+_POST_CLOSE_WARM_INFLIGHT: set[str] = set()
+_POST_CLOSE_WARM_STRATEGIES = (
+    "first-wave-pullback-v1",
+    "yangshi-tail-v1",
+)
+_POST_CLOSE_WARM_CALENDAR_DAYS = 30
+
 # 17 种 kind 的**托管 cron 归属**（2026-08 审计结论；改这里等于改 ensure_*）：
 #   sync / screen / outcome / prune / hot_rebuild / data_quality / intel_fetch /
 # skill_watch → 系统托管，见 application/ensure_*.py 与 ensure_all_managed_jobs
@@ -94,6 +104,75 @@ EXECUTORS: dict[str, Executor] = {
     "skill_watch": execute_skill_watch,
     "alert_scan": execute_alert_scan,
 }
+
+
+def _recent_screen_days(store: Any, trade_date: str) -> list[str]:
+    """Return the same 30-day inclusive window used by the "近一月" preset."""
+    try:
+        end = date.fromisoformat(str(trade_date)[:10])
+    except ValueError:
+        return [trade_date] if trade_date else []
+    start = (end - timedelta(days=_POST_CLOSE_WARM_CALENDAR_DAYS - 1)).isoformat()
+    days = list(store.trading_days(start=start, end=trade_date))
+    if days:
+        return days
+    prior = list(store.trading_days(end=trade_date))
+    return [str(prior[-1])] if prior else []
+
+
+def _schedule_post_close_screen_warm(context: JobContext) -> None:
+    """Persist finalized results for the current-day and recent-month user paths."""
+    from src.shared.screen_capacity import screen_capacity_permit
+    from src.shared.tenancy import current_tenant, spawn_tenant_thread
+
+    key = current_tenant()
+    with _POST_CLOSE_WARM_LOCK:
+        if key in _POST_CLOSE_WARM_INFLIGHT:
+            return
+        _POST_CLOSE_WARM_INFLIGHT.add(key)
+
+    def warm() -> None:
+        try:
+            from src.market import resolve_screen_trade_date
+            from src.ops.application.screen_job_config import resolve_screen_universe
+            from src.strategy.application.screen_run_prepare import range_read_scope
+            from src.strategy import get, screen
+
+            with context.market() as store:
+                trade_date = resolve_screen_trade_date(store)
+                days = _recent_screen_days(store, trade_date)
+                if not days:
+                    return
+                with screen_capacity_permit(
+                    label="warm:finalized-screens", wait_sec=0,
+                ):
+                    for slug in _POST_CLOSE_WARM_STRATEGIES:
+                        engine = get(slug)
+                        universe = resolve_screen_universe(
+                            slug,
+                            None,
+                            store=getattr(context, "ops_store", None),
+                        )
+                        with range_read_scope(
+                            store, engine, days, None, universe=universe,
+                        ):
+                            for index, day in enumerate(days):
+                                screen(
+                                    store,
+                                    engine,
+                                    trade_date=day,
+                                    universe=universe,
+                                    health_check=index == 0,
+                                    live_overlay=False,
+                                    result_cache=True,
+                                )
+        except Exception:  # noqa: BLE001 — cache warm must never alter the sync outcome
+            logger.warning("核心战法近一月结果预热失败；下次手动选股会重新计算", exc_info=True)
+        finally:
+            with _POST_CLOSE_WARM_LOCK:
+                _POST_CLOSE_WARM_INFLIGHT.discard(key)
+
+    spawn_tenant_thread(warm, name="loci-warm-first-wave")
 
 
 
@@ -216,7 +295,7 @@ def run_job(
                                            "requires_realtime_inputs", False))
         except Exception:
             pass
-    if realtime_screen or kind == "screen_prepare":
+    if kind == "screen_prepare":
         job = {**job, "config": {**(job.get("config") or {}), "push_wecom": False}}
 
     if idempotency_key and not run_id:
@@ -395,6 +474,15 @@ def run_job(
         push_meta = _maybe_push_wecom(store=store, job=job, status=status, result=result)
         if push_meta:
             result = {**result, **push_meta}
+
+    if (
+        status == "success"
+        and kind == "sync"
+        and str((job.get("config") or {}).get("mode") or "") == "today_refresh"
+    ):
+        # The market writer gate has already exited here. A background read-only
+        # warm makes the finalized day a cache hit without extending sync itself.
+        _schedule_post_close_screen_warm(ctx)
 
     duration = int((time.monotonic() - started) * 1000)
     try:

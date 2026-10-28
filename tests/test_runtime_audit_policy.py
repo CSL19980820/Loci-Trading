@@ -11,6 +11,7 @@ from src.strategy.application import audit
 from src.strategy.application.audit_policy import runtime_audit_mode
 from src.strategy.application.contraction_rebreakout import ContractionRebreakoutV1
 from src.strategy.application.execution_profile import ExecutionProfile
+from src.strategy.application.first_wave_strategy import FirstWavePullbackV1
 from src.strategy.application.impulse_inside_breakout import ImpulseInsideBreakoutV1
 from src.strategy.application.qianlong import QianlongCloseePickerV3
 from src.strategy.application.screen_formula import build_formula_engine
@@ -20,7 +21,10 @@ from src.strategy.application.yangshi_tail import YangshiTailPickerV1
 from src.strategy.domain.base import SignalResult
 
 
-BUILTINS = (ContractionRebreakoutV1, ImpulseInsideBreakoutV1, QianlongCloseePickerV3, SanyuanTailResonance, YangshiTailPickerV1)
+BUILTINS = (
+    ContractionRebreakoutV1, FirstWavePullbackV1, ImpulseInsideBreakoutV1,
+    QianlongCloseePickerV3, SanyuanTailResonance, YangshiTailPickerV1,
+)
 
 
 class FutureFactorEngine:

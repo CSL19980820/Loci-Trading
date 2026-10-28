@@ -226,6 +226,7 @@ def execute_screen(config: dict[str, Any], context: JobContext) -> dict[str, Any
             codes=config.get("codes"),
             universe=config.get("universe"),
             live_overlay=live_overlay,
+            result_cache=True,
         )
         if schedule_check:
             # 拉行情或计算超时也不得把迟到结果写成指定尾盘快照。

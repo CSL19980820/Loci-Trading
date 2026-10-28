@@ -10,7 +10,8 @@ import pytest
 
 from src.strategy.application.audit import audit_truncation
 from src.strategy.application.compute_runtime import (
-    computation_scope, compute_result, range_compute_end, truncate_panels, _SCOPE,
+    computation_scope, compute_result, range_compute_end, range_compute_start,
+    set_range_compute_start, truncate_panels, _SCOPE,
 )
 from src.strategy.application.execution_profile import ExecutionProfile
 from src.strategy.domain.base import SignalResult
@@ -45,6 +46,84 @@ def panels(width=3):
 
 def store():
     return SimpleNamespace(conn=sqlite3.connect(":memory:"))
+
+
+def test_postgres_compute_scope_uses_revision_and_invalidates_on_change():
+    class PostgresConnection:
+        def execute(self, sql):
+            raise AssertionError(f"unexpected SQL: {sql}")
+
+    engine, data = Engine(), panels()
+    market = SimpleNamespace(conn=PostgresConnection(), _use_postgres=True, revision="1")
+    market.market_revision = lambda: market.revision
+    day = data["close"].index[-1]
+    with computation_scope(market, list(data["close"].index)):
+        assert range_compute_end(engine, data, {}) == day
+        first = compute_result(engine, data, dates=[day])
+        second = compute_result(engine, data, dates=[day])
+        assert engine.calls == 1
+        pd.testing.assert_frame_equal(first.signals, second.signals)
+        market.revision = "2"
+        third = compute_result(engine, data, dates=[day])
+        assert engine.calls == 2
+        pd.testing.assert_frame_equal(first.signals, third.signals)
+
+
+def test_anchor_invariant_range_namespace_skips_daily_panel_hashing(monkeypatch):
+    from src.strategy.application import compute_runtime as runtime
+
+    engine = Engine()
+    engine.profile = replace(
+        engine.profile, range_adjustment_anchor_invariant=True,
+    )
+    market, data = store(), panels()
+    dates = list(data["close"].index)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("certified range reuse must not digest panels per day")
+
+    monkeypatch.setattr(runtime, "_input_digest", forbidden)
+    monkeypatch.setattr(runtime, "_causal_input_keys", forbidden)
+    try:
+        with computation_scope(market, dates[4:]):
+            expected = compute_result(
+                engine, data, dates=dates[4:],
+                range_namespace=("same-universe",),
+            )
+            # Different qfq anchors can uniformly scale adjusted prices. The
+            # opt-in capability certifies that this does not alter any output.
+            rescaled = {
+                "close": data["close"] * 0.25,
+            }
+            actual = compute_result(
+                engine, rescaled, dates=[dates[-2]],
+                range_namespace=("same-universe",),
+            )
+            assert engine.calls == 1
+            pd.testing.assert_frame_equal(
+                actual.signals, expected.signals.loc[[dates[-2]]],
+            )
+            pd.testing.assert_frame_equal(
+                actual.factors["value"],
+                expected.factors["value"].loc[[dates[-2]]],
+            )
+    finally:
+        market.conn.close()
+
+
+def test_range_scope_freezes_one_warmup_origin_for_exact_causal_keys():
+    dates = list(panels()["close"].index)
+    market = store()
+    try:
+        with computation_scope(market, dates[4:]):
+            assert range_compute_start() is None
+            set_range_compute_start(dates[1])
+            assert range_compute_start() == dates[1]
+        with computation_scope(market, [dates[5]]):
+            set_range_compute_start(dates[1])
+            assert range_compute_start() is None
+    finally:
+        market.conn.close()
 
 
 def test_one_shot_execution_does_not_hash_or_populate_reuse_cache(monkeypatch):

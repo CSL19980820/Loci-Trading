@@ -74,6 +74,8 @@ const configForm = reactive<StrategyDetailConfigForm>({
   pushWecom: true,
   runHour: 15,
   runMinute: 30,
+  prepareHour: 16,
+  prepareMinute: 30,
   intervalMinutes: 10,
   windowStartHour: 9,
   windowStartMinute: 30,
@@ -82,6 +84,7 @@ const configForm = reactive<StrategyDetailConfigForm>({
 })
 
 const nextRuns = ref<string[]>([])
+const hasPrepareSchedule = ref(false)
 let seedingSchedule = false
 
 const open = computed({
@@ -90,6 +93,7 @@ const open = computed({
 })
 
 const displayedStrategy = computed(() => strategySnapshot.value ?? props.strategy)
+const twoStage = computed(() => hasPrepareSchedule.value || displayedStrategy.value?.slug === 'double-volume-yin-low-open-v1')
 const title = computed(() => displayedStrategy.value?.name || '战法详情')
 const panelId = useId()
 const picksCount = ref(0)
@@ -139,6 +143,7 @@ const revisionText = computed(() => {
 
 const scheduleSummary = computed(() => {
   if (!configForm.scheduleEnabled) return '未定时'
+  if (twoStage.value) return `预选 ${pad(configForm.prepareHour)}:${pad(configForm.prepareMinute)} · 早选 ${pad(configForm.runHour)}:${pad(configForm.runMinute)}`
   if (configForm.scheduleMode === 'interval') return `盘中每 ${configForm.intervalMinutes} 分钟`
   return `交易日 ${pad(configForm.runHour)}:${pad(configForm.runMinute)}`
 })
@@ -186,6 +191,7 @@ watch(
     if (seedingSchedule) return
     nextRuns.value = []
   },
+  { flush: 'sync' },
 )
 
 watch(
@@ -290,11 +296,14 @@ async function removeVersion(version: string): Promise<void> {
 }
 
 function resetSchedule(): void {
+  hasPrepareSchedule.value = false
   configForm.scheduleEnabled = false
   configForm.scheduleMode = 'once'
   configForm.pushWecom = true
-  configForm.runHour = 15
-  configForm.runMinute = 47
+  configForm.runHour = twoStage.value ? 9 : 15
+  configForm.runMinute = twoStage.value ? 25 : 47
+  configForm.prepareHour = 16
+  configForm.prepareMinute = 30
   configForm.intervalMinutes = 10
   configForm.windowStartHour = 9
   configForm.windowStartMinute = 30
@@ -314,13 +323,18 @@ function applyUniverse(spec: UniverseSpec | null | undefined): void {
 }
 
 function hydrateFromJob(job: StrategyJob): void {
+  hasPrepareSchedule.value = Boolean(job.prepare_schedule)
+  if (job.prepare_schedule) {
+    configForm.prepareHour = Number(job.prepare_schedule.run_hour ?? 16)
+    configForm.prepareMinute = Number(job.prepare_schedule.run_minute ?? 30)
+  }
   if (!job.bound) return
   const cfg = job.config ?? {}
   if (cfg.universe) applyUniverse(cfg.universe)
   const schedule = cfg.schedule
   if (schedule?.mode === 'once' || schedule?.mode === 'interval') {
     configForm.scheduleEnabled = true
-    configForm.scheduleMode = schedule.mode
+    configForm.scheduleMode = twoStage.value ? 'once' : schedule.mode
     configForm.runHour = Number(schedule.run_hour ?? 15)
     configForm.runMinute = Number(schedule.run_minute ?? 30)
     configForm.intervalMinutes = Number(schedule.interval_minutes ?? 10)
@@ -348,11 +362,12 @@ async function save(): Promise<void> {
   if (!props.strategy) return
   saving.value = true
   try {
-    const mode: ScheduleMode = configForm.scheduleEnabled ? configForm.scheduleMode : 'off'
+    const mode: ScheduleMode = configForm.scheduleEnabled ? (twoStage.value ? 'once' : configForm.scheduleMode) : 'off'
     const job = await upsertStrategyJob(props.strategy.slug, {
       schedule_mode: mode,
       run_hour: configForm.runHour,
       run_minute: configForm.runMinute,
+      ...(twoStage.value ? { prepare_hour: configForm.prepareHour, prepare_minute: configForm.prepareMinute } : {}),
       interval_minutes: configForm.intervalMinutes,
       window_start_hour: configForm.windowStartHour,
       window_start_minute: configForm.windowStartMinute,
@@ -415,6 +430,7 @@ async function save(): Promise<void> {
               :config="configForm"
               :loading-job="loadingJob"
               :display-runs="displayRuns"
+              :two-stage="twoStage"
               @patch-config="patchConfig"
             />
           </fieldset>

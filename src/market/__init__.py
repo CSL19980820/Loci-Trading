@@ -9,6 +9,8 @@
 - adapters     数据线路 / 粘性竞速（日常 sync 默认）
 - sync_quotes  同步编排（全量回填 / 每日增量）
 """
+from typing import Any
+
 from src.market.infrastructure.adapters import (
     ALL_LANES,
     AdapterError,
@@ -97,6 +99,18 @@ from src.market.infrastructure.turnover_repair import (
     repair_inflated_turnover,
     rescale_star_daily_volumes,
 )
+
+
+def rebuild_quote_row_count(*args: Any, **kwargs: Any) -> Any:
+    from src.market.infrastructure.store_row_count import rebuild_quote_row_count as implementation
+
+    return implementation(*args, **kwargs)
+
+
+def finalize_close_snapshot(*args: Any, **kwargs: Any) -> Any:
+    from src.market.infrastructure.sync_close import finalize_close_snapshot as implementation
+
+    return implementation(*args, **kwargs)
 from src.market.domain.universe import (
     ResolvedUniverse,
     UniverseError,
@@ -340,7 +354,9 @@ __all__ = [
     "provider_master_enabled",
     "resolve_universe",
     "repair_inflated_turnover",
+    "rebuild_quote_row_count",
     "rescale_star_daily_volumes",
+    "finalize_close_snapshot",
     "register_provider",
     "reset_registry",
     "reset_provider_circuit",

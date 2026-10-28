@@ -96,14 +96,22 @@ export function buildPreview(
   endH: number,
   endM: number,
 ): string[] {
-  const now = new Date()
-  const day = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-  if (mode === 'once') return [`${day} ${pad(hour)}:${pad(minute)}`]
-  const start = startH * 60 + startM
-  const end = endH * 60 + endM
+  // 用北京时间生成未来工作日预览；法定休市日由保存后的服务端调度确定。
+  const now = new Date(Date.now() + 8 * 60 * 60 * 1000)
+  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const start = mode === 'once' ? hour * 60 + minute : startH * 60 + startM
+  const end = mode === 'once' ? start : endH * 60 + endM
+  const step = mode === 'once' ? 1 : every
+  if (step <= 0 || start > end) return []
   const out: string[] = []
-  for (let t = start; t <= end && out.length < 5; t += every) {
-    out.push(`${day} ${pad(Math.floor(t / 60))}:${pad(t % 60)}`)
+  const limit = mode === 'once' ? 1 : 5
+  for (let offset = 0; offset < 8 && out.length < limit; offset += 1) {
+    const day = new Date(midnight + offset * 24 * 60 * 60 * 1000)
+    if (day.getUTCDay() === 0 || day.getUTCDay() === 6) continue
+    for (let t = start; t <= end && out.length < limit; t += step) {
+      if (day.getTime() + t * 60 * 1000 <= now.getTime()) continue
+      out.push(`${day.toISOString().slice(0, 10)} ${pad(Math.floor(t / 60))}:${pad(t % 60)}`)
+    }
   }
   return out
 }

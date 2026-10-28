@@ -26,7 +26,8 @@ def test_actual_decision_prompt_is_clean_and_opening_aware(monkeypatch):
     assert '竞价成交金额' in prompt
     assert 'opening_plan_reviews' in prompt
     assert 'T+1' in prompt
-    assert '不设持仓只数上限' in prompt
+    assert 'position_policy/current_position_policy' in prompt
+    assert '上限为0表示不设该项人为上限' in prompt
     assert 'absolute_max' not in captured['payload']['position_policy']
 
 
@@ -35,7 +36,8 @@ def test_phase_prompts_and_legacy_schema_compatibility():
         prompt = review_system(guardian_config.DEFAULTS, phase, {})
         assert '撤销旧' not in prompt
         assert '最多4只' not in prompt
-        assert '不设持仓只数上限' in prompt
+        assert 'position_policy/current_position_policy' in prompt
+        assert '上限为0表示不设该项人为上限' in prompt
     assert 'close_keep_codes' not in GuardianDecision.model_json_schema()['properties']
     # 独立智能体有自己的用户设置，不改变其契约。
     assert 'close_keep_codes' in StockAgentDecision.model_json_schema()['properties']

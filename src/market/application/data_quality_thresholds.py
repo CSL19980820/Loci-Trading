@@ -24,10 +24,11 @@ from typing import Any
 #: 1990 年代单一价格成交日真实值也会相等，所以这条只在**会合成的源**上算。
 _SYNTH_EPSILON = 1.0
 
-#: 已知会合成 amount 的源。新增回退源前先确认它给的是不是真实成交额。
+#: 已知会合成 amount 的源；还须有非一字、有量且数值匹配的行证据。
+#: sina_close 保留新浪同日收盘快照的真实量额，不在此列，也不属于权威源。
 FABRICATING_SOURCES: tuple[str, ...] = ("tencent", "tencent_spot")
 
-#: 权威源前缀。占比低于阈值说明主源长期失联、库在靠回退源续命。
+#: 权威源前缀。低占比提示主源覆盖不足，不等同于回退源成交额合成。
 AUTHORITATIVE_PREFIX = "tdx"
 
 #: 当日临时行的 source 后缀。盘中 spot 先落一批「还没定稿」的行

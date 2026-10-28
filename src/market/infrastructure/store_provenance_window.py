@@ -92,7 +92,10 @@ def _load(state: _PanelWindow, codes: frozenset[str] | None) -> _EvidenceWindow 
     dates: dict[str, int] = {}
     fetched: dict[str, int] = {}
     budget = state.max_evidence_bytes - count * 48
-    flags = " + ".join(f"({name} IS NOT NULL) * {1 << bit}" for bit, name in enumerate(FIELD_COLUMNS))
+    flags = " + ".join(
+        f"(CASE WHEN {name} IS NOT NULL THEN {1 << bit} ELSE 0 END)"
+        for bit, name in enumerate(FIELD_COLUMNS)
+    )
     flags += f" + (CASE WHEN {INVALID_OHLC_SQL} THEN 256 ELSE 0 END)"
     cursor = state.conn.execute(
         "SELECT code, trade_date, receipt_id, CASE WHEN receipt_id IS NULL "
@@ -105,7 +108,8 @@ def _load(state: _PanelWindow, codes: frozenset[str] | None) -> _EvidenceWindow 
             if offset + len(batch) > count:
                 return None
             encoded = []
-            for code, day, receipt_id, source, stamp, valid in batch:
+            for row in batch:
+                code, day, receipt_id, source, stamp, valid = (row[i] for i in range(6))
                 key = (code, receipt_id, source)
                 if key not in groups:
                     # Include group metadata, nine count arrays and result dictionaries.
@@ -136,10 +140,11 @@ def _load(state: _PanelWindow, codes: frozenset[str] | None) -> _EvidenceWindow 
     sources = {}
     for offset in range(0, len(receipt_ids), 900):
         chunk = receipt_ids[offset:offset + 900]
-        for receipt_id, source in state.conn.execute(
+        for row in state.conn.execute(
             "SELECT receipt_id,selected_source FROM source_route_receipts WHERE receipt_id IN ("
             + ",".join("?" for _ in chunk) + ")", chunk,
         ):
+            receipt_id, source = row[0], row[1]
             budget -= 192 + sys.getsizeof(source)
             if budget < 0:
                 return None
@@ -170,7 +175,7 @@ def cached_quote_evidence(
         state.evidence_declined = True
         state.evidence_declined_request = scope
         candidate = _load(state, scope)
-        if state.conn.in_transaction or version != state.current_version():
+        if state.stale(version):
             state.clear()
             return None
         if candidate is None:
@@ -179,7 +184,7 @@ def cached_quote_evidence(
         state.evidence_declined = False
         state.evidence_declined_request = None
     result = state.evidence.aggregate(codes, start, end)
-    if state.conn.in_transaction or version != state.current_version():
+    if state.stale(version):
         state.clear()
         return None
     return result

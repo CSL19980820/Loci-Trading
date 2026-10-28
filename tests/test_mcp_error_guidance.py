@@ -59,3 +59,34 @@ def test_malformed_rpc_error_still_returns_bounded_failure(monkeypatch, error):
     assert "MCP 协议错误" in str(caught.value)
     assert len(str(caught.value)) < 400
     assert "private-token" not in str(caught.value)
+
+
+def test_wudao_rate_limit_is_retried_with_bounded_guidance(monkeypatch) -> None:
+    client = mcp.McpClient(
+        name="wudao",
+        url="https://example.com/mcp",
+        token="private-token",
+    )
+    client._initialized = True
+    attempts = 0
+    slept: list[float] = []
+
+    def rpc(method, params):
+        nonlocal attempts
+        assert method == "tools/call"
+        attempts += 1
+        if attempts < 3:
+            raise mcp.McpError(
+                "wudao 返回 MCP 协议错误（-32028）："
+                "Rate limit exceeded；建议等待 1000 毫秒"
+            )
+        return {"content": [{"type": "text", "text": "ok"}]}
+
+    monkeypatch.setattr(client, "_rpc", rpc)
+    monkeypatch.setattr(mcp.time, "sleep", slept.append)
+
+    result = client.call_tool("scan", {})
+
+    assert result["text"] == "ok"
+    assert attempts == 3
+    assert slept == [1.0, 1.0]
